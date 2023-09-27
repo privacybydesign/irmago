@@ -21,6 +21,8 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+var errRevocationDB = errors.New("revocation database error")
+
 type (
 	revocationUpdateHead struct {
 		SignedAccumulator *revocation.SignedAccumulator
@@ -178,6 +180,10 @@ func (s sqlRevStorage) Close() error {
 func (s sqlRevStorage) Exists(id CredentialTypeIdentifier, pkCounter uint) (bool, error) {
 	var c int64
 	err := s.gorm.Model((*AccumulatorRecord)(nil)).Where(map[string]interface{}{"cred_type": id, "pk_counter": pkCounter}).Count(&c).Error
+	if err != nil {
+		Logger.WithError(err).Error("Failed to check if accumulator exists in database")
+		return false, errRevocationDB
+	}
 	return c > 0, err
 }
 
@@ -188,7 +194,8 @@ func (s sqlRevStorage) Events(id CredentialTypeIdentifier, pkCounter uint, from,
 		"cred_type = ? and pk_counter = ? and eventindex >= ? and eventindex < ?",
 		id, pkCounter, from, to,
 	).Error; err != nil {
-		return nil, err
+		Logger.WithError(err).Error("Failed to retrieve revocation events from database")
+		return nil, errRevocationDB
 	}
 	if len(records) == 0 {
 		return nil, ErrRevocationStateNotFound
@@ -236,7 +243,8 @@ func (s sqlRevStorage) LatestAccumulatorUpdates(id CredentialTypeIdentifier, pkC
 		}
 		return nil
 	}); err != nil {
-		return nil, err
+		Logger.WithError(err).Error("Failed to retrieve latest accumulator updates from database")
+		return nil, errRevocationDB
 	}
 
 	return newUpdates(accsMap, eventsMap), nil
@@ -271,7 +279,7 @@ func (s sqlRevStorage) AppendAccumulatorUpdate(
 	id CredentialTypeIdentifier,
 	handler func(heads map[uint]revocationUpdateHead) (map[uint]*revocation.Update, error),
 ) error {
-	return s.gorm.Transaction(func(tx *gorm.DB) error {
+	if err := s.gorm.Transaction(func(tx *gorm.DB) error {
 		// Retrieve the current accumulator state for every public key of the credential and lock the rows for update.
 		var accs []*AccumulatorRecord
 
@@ -317,12 +325,20 @@ func (s sqlRevStorage) AppendAccumulatorUpdate(
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		Logger.WithError(err).Error("Failed to append accumulator update to database")
+		return errRevocationDB
+	}
+	return nil
 }
 
 // AddIssuanceRecord implements revocationRecordStorage interface.
 func (s sqlRevStorage) AddIssuanceRecord(r *IssuanceRecord) error {
-	return s.gorm.Create(r).Error
+	if err := s.gorm.Create(r).Error; err != nil {
+		Logger.WithError(err).Error("Failed to add issuance record to database")
+		return errRevocationDB
+	}
+	return nil
 }
 
 // IssuanceRecord implements revocationRecordStorage interface.
@@ -345,7 +361,8 @@ func (s sqlRevStorage) UpdateIssuanceRecord(id CredentialTypeIdentifier, key str
 
 		for _, r := range records {
 			if err := tx.Save(r).Error; err != nil {
-				return err
+				Logger.WithError(err).Error("Failed to update issuance record in database")
+				return errRevocationDB
 			}
 		}
 		return nil
@@ -354,7 +371,11 @@ func (s sqlRevStorage) UpdateIssuanceRecord(id CredentialTypeIdentifier, key str
 
 // DeleteExpiredIssuanceRecords implements revocationRecordStorage interface.
 func (s sqlRevStorage) DeleteExpiredIssuanceRecords() error {
-	return s.gorm.Delete(IssuanceRecord{}, "valid_until < ?", time.Now().UnixNano()).Error
+	if err := s.gorm.Delete(IssuanceRecord{}, "valid_until < ?", time.Now().UnixNano()).Error; err != nil {
+		Logger.WithError(err).Error("Failed to delete expired issuance records from database")
+		return errRevocationDB
+	}
+	return nil
 }
 
 // txIssuanceRecords returns all issuance records matching the given credential type, revocation key and issuance time within
@@ -367,7 +388,8 @@ func txIssuanceRecords(tx *gorm.DB, id CredentialTypeIdentifier, key string, iss
 
 	var r []*IssuanceRecord
 	if err := tx.Find(&r, where).Error; err != nil {
-		return nil, err
+		Logger.WithError(err).Error("Failed to retrieve issuance records from database")
+		return nil, errRevocationDB
 	}
 	if len(r) == 0 {
 		return nil, ErrUnknownRevocationKey

@@ -2,11 +2,13 @@ package sessiontest
 
 import (
 	"testing"
+	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,6 +50,45 @@ func TestKeyshareRegister(t *testing.T) {
 
 	doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil)
 	keyshareSessions(t, client, irmaServer)
+}
+
+func TestKeyshareAttributeRenewal(t *testing.T) {
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServer.Stop()
+
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	irmaserver.AllowIssuingExpiredCredentials = true
+	defer func() {
+		irmaserver.AllowIssuingExpiredCredentials = false
+	}()
+
+	// Make keyshare attribute invalid.
+	invalidValidity := irma.Timestamp(time.Now())
+	issuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			Validity:         &invalidValidity,
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
+			Attributes:       map[string]string{"email": "testusername"},
+		},
+	})
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+
+	// Validate that keyshare attribute is invalid.
+	disclosureRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, optionUnsatisfiableRequest)
+
+	// Do a PIN verification. This should detect the invalid keyshare attribute and renew it.
+	valid, _, _, err := client.KeyshareVerifyPin("12345", irma.NewSchemeManagerIdentifier("test"))
+	require.NoError(t, err)
+	require.True(t, valid)
+
+	// Keyshare attribute should be valid again.
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
 }
 
 // Use the existing keyshare enrollment and credentials

@@ -375,8 +375,8 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 	}
 }
 
-func log(level logrus.Level, err error) error {
-	writer := Logger.WithFields(logrus.Fields{"err": TypeString(err)}).WriterLevel(level)
+func log(level logrus.Level, err error, msg ...string) error {
+	writer := Logger.WithFields(logrus.Fields{"err": TypeString(err), "msg": strings.Join(msg, " ")}).WriterLevel(level)
 	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.DebugLevel) {
 		_, _ = writer.Write([]byte(e.ErrorStack()))
 	} else {
@@ -385,8 +385,8 @@ func log(level logrus.Level, err error) error {
 	return err
 }
 
-func LogFatal(err error) error {
-	logger := Logger.WithFields(logrus.Fields{"err": TypeString(err)})
+func LogFatal(err error, msg ...string) error {
+	logger := Logger.WithFields(logrus.Fields{"err": TypeString(err), "msg": strings.Join(msg, " ")})
 	// using log() for this doesn't seem to do anything
 	if e, ok := err.(*errors.Error); ok && Logger.IsLevelEnabled(logrus.DebugLevel) {
 		logger.Fatal(e.ErrorStack())
@@ -396,12 +396,12 @@ func LogFatal(err error) error {
 	return err
 }
 
-func LogError(err error) error {
-	return log(logrus.ErrorLevel, err)
+func LogError(err error, msg ...string) error {
+	return log(logrus.ErrorLevel, err, msg...)
 }
 
-func LogWarning(err error) error {
-	return log(logrus.WarnLevel, err)
+func LogWarning(err error, msg ...string) error {
+	return log(logrus.WarnLevel, err, msg...)
 }
 
 func LogRequest(typ, proto, method, url, from string, headers http.Header, message []byte) {

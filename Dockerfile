@@ -28,7 +28,7 @@ COPY --from=build --chown=irma:irma /home/irma/ /home/irma/
 # Switch to application user
 USER irma
 
-# Include schemes in the Docker image to speed up the start-up time
-RUN ["/bin/irma", "scheme", "download"]
+# Include schemes as assets in the Docker image to speed up the start-up time
+RUN ["/bin/irma", "scheme", "download", "--use-schemes-assets-path"]
 
 ENTRYPOINT ["/bin/irma"]

@@ -3,6 +3,9 @@ package requestorserver
 import (
 	"crypto/tls"
 	"fmt"
+	"net/url"
+	"path"
+	"slices"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -64,6 +67,8 @@ type Permissions struct {
 	Signing    []string `json:"sign_perms" mapstructure:"sign_perms"`
 	Issuing    []string `json:"issue_perms" mapstructure:"issue_perms"`
 	Revoking   []string `json:"revoke_perms" mapstructure:"revoke_perms"`
+
+	Hosts []string `json:"host_perms" mapstructure:"host_perms"`
 }
 
 // Requestor contains all configuration (disclosure or verification permissions and authentication)
@@ -74,6 +79,46 @@ type Requestor struct {
 	AuthenticationMethod  AuthenticationMethod `json:"auth_method" mapstructure:"auth_method"`
 	AuthenticationKey     string               `json:"key" mapstructure:"key"`
 	AuthenticationKeyFile string               `json:"key_file" mapstructure:"key_file"`
+}
+
+func (conf *Configuration) CanRequest(requestor string, request irma.SessionRequest) (bool, string) {
+	if request.Action() == irma.ActionIssuing {
+		if ok, reason := conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials); !ok {
+			return false, reason
+		}
+	}
+
+	condiscon := request.Disclosure().Disclose
+	if len(condiscon) > 0 {
+		if ok, reason := conf.CanVerifyOrSign(requestor, request.Action(), condiscon); !ok {
+			return false, reason
+		}
+	}
+
+	defaultURL, err := url.Parse(conf.URL)
+	if err != nil {
+		return false, "default host is invalid"
+	}
+
+	// If no host is specified in the request, then the default URL from the configuration will be used.
+	// We should take this into account when checking the permissions.
+	host := request.Base().Host
+	if host == "" {
+		host = defaultURL.Host
+	}
+
+	// If no host is specified in the requestor configuration, then we only allow the default host.
+	if len(conf.Requestors[requestor].Hosts) == 0 && host == defaultURL.Host {
+		return true, ""
+	}
+
+	// For all host patterns being set in the requestor configuration, check whether the requested host matches it.
+	for _, hostPattern := range conf.Requestors[requestor].Hosts {
+		if match, _ := path.Match(hostPattern, host); match {
+			return true, ""
+		}
+	}
+	return false, "requestor not allowed to use the requested host"
 }
 
 // CanIssue returns whether or not the specified requestor may issue the specified credentials.
@@ -88,10 +133,10 @@ func (conf *Configuration) CanIssue(requestor string, creds []*irma.CredentialRe
 
 	for _, cred := range creds {
 		id := cred.CredentialTypeID
-		if contains(permissions, "*") ||
-			contains(permissions, id.Root()+".*") ||
-			contains(permissions, id.IssuerIdentifier().String()+".*") ||
-			contains(permissions, id.String()) {
+		if slices.Contains(permissions, "*") ||
+			slices.Contains(permissions, id.Root()+".*") ||
+			slices.Contains(permissions, id.IssuerIdentifier().String()+".*") ||
+			slices.Contains(permissions, id.String()) {
 			continue
 		} else {
 			return false, id.String()
@@ -118,11 +163,11 @@ func (conf *Configuration) CanVerifyOrSign(requestor string, action irma.Action,
 	}
 
 	err := disjunctions.Iterate(func(attr *irma.AttributeRequest) error {
-		if contains(permissions, "*") ||
-			contains(permissions, attr.Type.Root()+".*") ||
-			contains(permissions, attr.Type.CredentialTypeIdentifier().IssuerIdentifier().String()+".*") ||
-			contains(permissions, attr.Type.CredentialTypeIdentifier().String()+".*") ||
-			contains(permissions, attr.Type.String()) {
+		if slices.Contains(permissions, "*") ||
+			slices.Contains(permissions, attr.Type.Root()+".*") ||
+			slices.Contains(permissions, attr.Type.CredentialTypeIdentifier().IssuerIdentifier().String()+".*") ||
+			slices.Contains(permissions, attr.Type.CredentialTypeIdentifier().String()+".*") ||
+			slices.Contains(permissions, attr.Type.String()) {
 			return nil
 		} else {
 			return errors.New(attr.Type.String())
@@ -143,10 +188,10 @@ func (conf *Configuration) CanRevoke(requestor string, cred irma.CredentialTypeI
 	if err != nil {
 		return false, err.Error()
 	}
-	if contains(permissions, "*") ||
-		contains(permissions, cred.Root()+".*") ||
-		contains(permissions, cred.IssuerIdentifier().String()+".*") ||
-		contains(permissions, cred.String()) {
+	if slices.Contains(permissions, "*") ||
+		slices.Contains(permissions, cred.Root()+".*") ||
+		slices.Contains(permissions, cred.IssuerIdentifier().String()+".*") ||
+		slices.Contains(permissions, cred.String()) {
 		return true, ""
 	}
 	return false, cred.String()
@@ -382,14 +427,4 @@ func (conf *Configuration) tlsConfig() (*tls.Config, error) {
 
 func (conf *Configuration) separateClientServer() bool {
 	return conf.ClientPort != 0
-}
-
-// Return true iff query equals an element of strings.
-func contains(strings []string, query string) bool {
-	for _, s := range strings {
-		if s == query {
-			return true
-		}
-	}
-	return false
 }

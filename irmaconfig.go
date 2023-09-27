@@ -886,6 +886,33 @@ func DefaultSchemesPath() string {
 	return p
 }
 
+// DefaultSchemesAssetsPath returns the default storage path for irma_configuration assets,
+// namely DefaultDataPath + "/irma_configuration_assets" if it exists. Otherwise, it returns the empty string.
+func DefaultSchemesAssetsPath() string {
+	p := defaultSchemesAssetsPath()
+	if exists, err := common.PathExists(p); err != nil || !exists {
+		return ""
+	}
+	return p
+}
+
+// EnsureDefaultSchemesAssetsPathExists ensures that the default storage path for irma_configuration assets exists and returns it.
+func EnsureDefaultSchemesAssetsPathExists() string {
+	p := defaultSchemesAssetsPath()
+	if err := common.EnsureDirectoryExists(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+func defaultSchemesAssetsPath() string {
+	p := DefaultDataPath()
+	if p == "" {
+		return ""
+	}
+	return filepath.Join(p, "irma_configuration_assets")
+}
+
 func firstExistingPath(paths []string) string {
 	for _, p := range paths {
 		if err := common.EnsureDirectoryExists(p); err == nil {
