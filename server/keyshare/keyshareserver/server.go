@@ -17,7 +17,6 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/sirupsen/logrus"
 
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
@@ -284,17 +283,13 @@ func (s *Server) generateResponse(ctx context.Context, user *User, authorization
 		return "", errMissingCommitment
 	}
 
-	// Indicate activity on user account
-	err := s.db.setSeen(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not mark user as seen recently")
-		// Do not send to user
-	}
+	// Indicate activity on user account. Do not send error to user.
+	_ = s.db.setSeen(ctx, user)
 
 	// Make log entry
-	err = s.db.addLog(ctx, user, eventTypeIRMASession, nil)
+	err := s.db.addLog(ctx, user, eventTypeIRMASession, nil)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+		// Already logged
 		return "", err
 	}
 
@@ -328,7 +323,7 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 	// Fetch user
 	user, err := s.db.user(r.Context(), claims.Username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -389,7 +384,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	// Fetch user
 	user, err := s.db.user(r.Context(), username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -433,13 +428,13 @@ func (s *Server) verifyAuth(ctx context.Context, user *User, msg irma.KeyshareAu
 		// Handle invalid pin
 		err = s.db.addLog(ctx, user, eventTypePinCheckFailed, tries)
 		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+			// Already logged
 			return irma.KeysharePinStatus{}, err
 		}
 		if tries == 0 {
 			err = s.db.addLog(ctx, user, eventTypePinCheckBlocked, wait)
 			if err != nil {
-				s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+				// Already logged
 				return irma.KeysharePinStatus{}, err
 			}
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -448,20 +443,14 @@ func (s *Server) verifyAuth(ctx context.Context, user *User, msg irma.KeyshareAu
 		}
 	}
 
-	// Handle success
-	err = s.db.resetPinTries(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
-		// Do not send to user
-	}
-	err = s.db.setSeen(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not indicate user activity")
-		// Do not send to user
-	}
+	// Handle success. Do not send error to user.
+	_ = s.db.resetPinTries(ctx, user)
+
+	// Do not send error to user.
+	_ = s.db.setSeen(ctx, user)
+
 	err = s.db.addLog(ctx, user, eventTypePinCheckSuccess, nil)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
 		return irma.KeysharePinStatus{}, err
 	}
 
@@ -495,7 +484,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := s.db.user(r.Context(), claims.Username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -554,17 +543,13 @@ func (s *Server) updatePin(ctx context.Context, user *User, jwtt string) (irma.K
 	}
 	user.Secrets = UserSecrets(secrets)
 
-	// Mark pincheck as success, resetting users wait and count
-	err = s.db.resetPinTries(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
-		// Do not send to user
-	}
+	// Mark pincheck as success, resetting users wait and count. Do not send error to user.
+	_ = s.db.resetPinTries(ctx, user)
 
 	// Write user back
 	err = s.db.updateUser(ctx, user)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not write updated user to database")
+		// Already logged
 		return irma.KeysharePinStatus{}, err
 	}
 
@@ -631,7 +616,7 @@ func (s *Server) register(ctx context.Context, msg irma.KeyshareEnrollment) (*ir
 	user := &User{Username: username, Language: data.Language, Secrets: UserSecrets(secrets)}
 	err = s.db.AddUser(ctx, user)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
+		// Already logged
 		return nil, err
 	}
 
@@ -666,10 +651,7 @@ func (s *Server) sendRegistrationEmail(ctx context.Context, user *User, language
 	// Add it to the database
 	err := s.db.addEmailVerification(ctx, user, email, token, s.conf.EmailTokenValidity)
 	if err != nil {
-		// Rate limiting errors do not need logging.
-		if err != errTooManyTokens {
-			s.conf.Logger.WithField("error", err).Error("Could not generate email verification mail record")
-		}
+		// Already logged
 		return err
 	}
 
@@ -691,7 +673,7 @@ func (s *Server) userMiddleware(next http.Handler) http.Handler {
 		// and fetch its information
 		user, err := s.db.user(r.Context(), username)
 		if err != nil {
-			s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+			// Already logged
 			keyshare.WriteError(w, err)
 			return
 		}
@@ -723,13 +705,13 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 func (s *Server) reservePinCheck(ctx context.Context, user *User) (bool, int, int64, error) {
 	ok, tries, wait, err := s.db.reservePinTry(ctx, user)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
+		// Already logged
 		return false, 0, 0, err
 	}
 	if !ok {
 		err = s.db.addLog(ctx, user, eventTypePinCheckRefused, nil)
 		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+			// Already logged
 			return false, 0, 0, err
 		}
 		return false, tries, wait, nil
