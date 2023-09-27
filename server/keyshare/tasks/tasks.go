@@ -129,16 +129,16 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 
 			if err := keyshare.VerifyMXRecord(email); err != nil {
 				if t.revalidateMail {
-					if err = t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
+					if revErr := t.db.ExecUserContext(ctx, "UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2",
 						time.Now().AddDate(0, 0, 5).Unix(),
-						id); err != nil {
-						t.conf.Logger.WithField("error", err).Error("Could not update email address to set revalidate_on")
-						return err
+						id); revErr != nil {
+						t.conf.Logger.WithField("error", revErr).Error("Could not update email address to set revalidate_on")
+						return revErr
 					}
 				}
 
-				// We wait with further processing until the email address is revalidated
-				// so we can send the expiry mail to all, and only valid, addresses at once
+				// Abort to prevent sending mail. If revalidation is enabled, after the e-mail address is revalidated,
+				// the process will continue so an expiry mail is sent to all, and only valid, addresses at once.
 				return err
 			}
 
@@ -149,7 +149,6 @@ func (t *taskHandler) sendExpiryEmails(ctx context.Context, id int64, username, 
 	)
 
 	if err != nil {
-		t.conf.Logger.WithField("error", err).Error("Could not process user's email addresses")
 		return err
 	}
 
@@ -189,12 +188,18 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 			SELECT count(*)
 			FROM irma.emails
 			WHERE irma.users.id = irma.emails.user_id
-			{{revalidate}}
-		) > 0 AND delete_on IS NULL
+		) > 0 
+		{{revalidate}}
+		AND delete_on IS NULL
 		LIMIT 10`
 
 	if t.revalidateMail {
-		query = strings.ReplaceAll(query, "{{revalidate}}", "AND irma.emails.revalidate_on IS NULL")
+		query = strings.ReplaceAll(query, "{{revalidate}}", `AND (
+			SELECT count(*)
+			FROM irma.emails
+			WHERE irma.users.id = irma.emails.user_id
+			AND irma.emails.revalidate_on IS NOT NULL
+			) = 0`)
 	} else {
 		query = strings.ReplaceAll(query, "{{revalidate}}", "")
 	}
@@ -217,13 +222,13 @@ func (t *taskHandler) expireAccounts(ctx context.Context) {
 
 			// Send emails
 			if err := t.sendExpiryEmails(ctx, id, username, lang); err != nil {
-				if err == keyshare.ErrInvalidEmail {
+				if err == keyshare.ErrInvalidEmail || err == keyshare.ErrInvalidEmailDomain {
 					if !t.revalidateMail {
-						// To have the exact same behavior as before email revalidation functionality,
-						// we return nil when the error is ErrInvalidEmail. Additionally we log the error
-						t.conf.Logger.WithField("error", err).Errorf("User decreases processable amount in expireAccounts, id: %d", id)
+						// We can't do anything about an invalid email address or domain
+						// when revalidation is disabled so we log the error and continue iterating
+						t.conf.Logger.WithField("error", err).Errorf("User decreases processable amount in expireAccounts, user_id: %d", id)
 					}
-					return nil
+					return nil // Don't abort the entire task over an email seding issue, only skip this user
 				}
 
 				return err // already logged, just abort

@@ -40,7 +40,7 @@ func init() {
 
 	flags.StringP("config", "c", "", "path to configuration file")
 	flags.StringP("schemes-path", "s", irma.DefaultSchemesPath(), "path to irma_configuration")
-	flags.String("schemes-assets-path", "", "if specified, copy schemes from here into --schemes-path")
+	flags.String("schemes-assets-path", irma.DefaultSchemesAssetsPath(), "if specified, copy schemes from here into --schemes-path")
 	flags.Int("schemes-update", 60, "update IRMA schemes every x minutes (0 to disable)")
 	flags.StringP("url", "u", "", "external URL to server to which the IRMA client connects, \":port\" being replaced by --port value")
 	flags.String("static-path", "", "Host files under this path as static files (leave empty to disable)")
@@ -111,7 +111,7 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 		DBType:            myirmaserver.DBType(viper.GetString("db_type")),
 		DBConnStr:         viper.GetString("db_str"),
 		DBConnMaxIdle:     viper.GetInt("db_max_idle"),
-		DBMConnMaxOpen:    viper.GetInt("db_max_open"),
+		DBConnMaxOpen:     viper.GetInt("db_max_open"),
 		DBConnMaxIdleTime: viper.GetInt("db_max_idle_time"),
 		DBConnMaxOpenTime: viper.GetInt("db_max_open_time"),
 

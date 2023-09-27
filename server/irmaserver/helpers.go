@@ -303,7 +303,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
-		if cred.Validity.Before(irma.Timestamp(now)) {
+		if !AllowIssuingExpiredCredentials && cred.Validity.Before(irma.Timestamp(now)) {
 			return errors.New("cannot issue expired credentials")
 		}
 	}
@@ -615,6 +615,12 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				*r.(*server.SessionResult) = *result
 			}
 		}()
+
+		expectedHost := session.request.Base().Host
+		if expectedHost != "" && expectedHost != r.Host {
+			server.WriteError(w, server.ErrorUnauthorized, "Host mismatch")
+			return
+		}
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
 	})

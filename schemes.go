@@ -395,8 +395,11 @@ func (conf *Configuration) parseSchemeDescription(dir string) (Scheme, SchemeMan
 
 	var ts *Timestamp
 	ts, exists, err = readTimestamp(filepath.Join(dir, "timestamp"))
-	if err != nil || !exists {
-		return scheme, SchemeManagerStatusParsingError, WrapErrorPrefix(err, "Could not read scheme manager timestamp")
+	if err != nil {
+		return scheme, SchemeManagerStatusParsingError, WrapErrorPrefix(err, "could not read scheme manager timestamp")
+	}
+	if !exists {
+		return scheme, SchemeManagerStatusParsingError, errors.New("scheme manager timestamp not found")
 	}
 	scheme.setTimestamp(*ts)
 
@@ -630,9 +633,13 @@ func (conf *Configuration) isUpToDate(subdir string) (bool, error) {
 		return true, nil
 	}
 	newTime, exists, err := readTimestamp(filepath.Join(conf.assets, subdir, "timestamp"))
-	if err != nil || !exists {
-		return true, WrapErrorPrefix(err, "Could not read asset timestamp of scheme "+subdir)
+	if err != nil {
+		return true, WrapErrorPrefix(err, "could not read asset timestamp of scheme "+subdir)
 	}
+	if !exists {
+		return true, errors.Errorf("no timestamp found for scheme %s", subdir)
+	}
+
 	// The storage version of the manager does not need to have a timestamp. If it does not, it is outdated.
 	oldTime, exists, err := readTimestamp(filepath.Join(conf.Path, subdir, "timestamp"))
 	if err != nil {

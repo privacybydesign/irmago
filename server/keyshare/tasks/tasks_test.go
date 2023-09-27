@@ -278,25 +278,32 @@ func TestEmailRevalidation(t *testing.T) {
 
 	createUser(t, db, 1, "TemporaryInvalid", time.Now().AddDate(-1, -1, -1).Unix(), []string{"user_1@temporaryinvalidaddress.com"})
 	createUser(t, db, 2, "PermanentInvalid", time.Now().AddDate(-1, -1, -1).Unix(), []string{"user_2@permenantlyinvalidaddress.com"})
+	createUser(t, db, 3, "PartlyInvalid", time.Now().AddDate(-1, -1, -1).Unix(), []string{"user_3@permenantlyinvalidaddress.com", "user_3@github.com"})
 
 	require.NoError(t, runWithTimeout(th.expireAccounts))
 	require.NoError(t, runWithTimeout(th.revalidateMails))
 
-	// Is revalidate_on set for both email addresses?
-	assert.Equal(t, 2, countRows(t, db, "emails", "revalidate_on IS NOT NULL"))
+	// Is revalidate_on set for all email addresses?
+	assert.Equal(t, 3, countRows(t, db, "emails", "revalidate_on IS NOT NULL"))
+	assert.Equal(t, 0, countRows(t, db, "users", "delete_on IS NOT NULL"))
 
 	// Correct the temporary invalid e-mail address to a valid one, simulating it becoming valid, and 'forward time'
 	_, err = db.Exec("UPDATE irma.emails SET email = $1, revalidate_on = $2 WHERE id = $3", "user_1@github.com", time.Now().AddDate(0, 0, -1).Unix(), 1)
 	require.NoError(t, err)
 
-	// Forward time for the invalid address
-	_, err = db.Exec("UPDATE irma.emails SET revalidate_on = $1 WHERE id = $2", time.Now().AddDate(0, 0, -1).Unix(), 2)
+	// Forward time for the invalid addresses
+	_, err = db.Exec("UPDATE irma.emails SET revalidate_on = $1 WHERE email LIKE $2", time.Now().AddDate(0, 0, -1).Unix(), "%@permenantlyinvalidaddress.com")
 	require.NoError(t, err)
 
 	// Next revalidation run: the invalid email address should be deleted now
 	require.NoError(t, runWithTimeout(th.revalidateMails))
 
-	assert.Equal(t, 1, countRows(t, db, "emails", ""))
+	assert.Equal(t, 2, countRows(t, db, "emails", ""))
+
+	// Next expireAccounts run: the PartlyInvalid user should be expired since the permanently invalid address is deleted now.
+	require.NoError(t, runWithTimeout(th.expireAccounts))
+	assert.Equal(t, 3, countRows(t, db, "users", ""))
+	assert.Equal(t, 2, countRows(t, db, "users", "delete_on IS NOT NULL"))
 }
 
 func SetupDatabase(t *testing.T) {

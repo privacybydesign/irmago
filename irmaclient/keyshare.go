@@ -309,6 +309,7 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 	case kssPinSuccess:
 		success = true
 		kss.token = pinresult.Message
+		transport.SetHeader(kssUsernameHeader, kss.Username)
 		transport.SetHeader(kssAuthHeader, kss.token)
 		return
 	case kssPinFailure:
