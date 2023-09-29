@@ -182,6 +182,10 @@ func TestProofFunctionality(t *testing.T) {
 		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 
+		// For issuance, initially get P_t
+		_, err = c.GeneratePs(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		require.NoError(t, err)
+
 		// Get keyshare commitment
 		W, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 		require.NoError(t, err)
@@ -245,6 +249,10 @@ func TestCorruptedUserSecrets(t *testing.T) {
 		// Change pin
 		_, err = changePin(t, c, signer, secrets, pin, pin)
 		assert.Error(t, err, "ChangePin accepts corrupted keyshare user secrets")
+
+		// GeneratePs
+		_, err = c.GeneratePs(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		assert.Error(t, err, "GeneratePs accepts corrupted keyshare user secrets")
 
 		// GenerateCommitments
 		_, _, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
@@ -312,6 +320,10 @@ func TestMissingKey(t *testing.T) {
 		// Generate jwt
 		jwtt, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
+
+		// GeneratePs
+		_, err = c.GeneratePs(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1}})
+		assert.Error(t, err, "Missing key not detected by generatePs")
 
 		// GenerateCommitments
 		_, _, err = c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("DNE"), Counter: 1}})

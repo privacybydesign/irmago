@@ -51,6 +51,8 @@ type BaseRequest struct {
 
 	ClientReturnURL  string `json:"clientReturnUrl,omitempty"`  // URL to proceed to when IRMA session is completed
 	AugmentReturnURL bool   `json:"augmentReturnUrl,omitempty"` // Whether to augment the return url with the server session token
+
+	Host string `json:"host,omitempty"` // Host to use in the IRMA session QR
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
@@ -69,6 +71,8 @@ type DisclosureRequest struct {
 
 	Disclose AttributeConDisCon       `json:"disclose,omitempty"`
 	Labels   map[int]TranslatedString `json:"labels,omitempty"`
+
+	SkipExpiryCheck []CredentialTypeIdentifier `json:"skipExpiryCheck,omitempty"`
 }
 
 // A SignatureRequest is a a request to sign a message with certain attributes. Construct new
@@ -615,6 +619,13 @@ func (dr *DisclosureRequest) Validate() error {
 	return nil
 }
 
+func (cr *CredentialRequest) PublicKeyIdentifier() PublicKeyIdentifier {
+	return PublicKeyIdentifier{
+		Issuer:  cr.CredentialTypeID.IssuerIdentifier(),
+		Counter: cr.KeyCounter,
+	}
+}
+
 func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, issuedAt time.Time) (*CredentialInfo, error) {
 	list, err := cr.AttributeList(conf, metadataVersion, nil, issuedAt)
 	if err != nil {
@@ -791,9 +802,6 @@ func (ir *IssuanceRequest) Validate() error {
 		count := cred.CredentialTypeID.PartsCount()
 		if count != 2 {
 			return errors.Errorf("Expected credential ID to consist of 3 parts, %d found", count+1)
-		}
-		if cred.Validity != nil && cred.Validity.Floor().Before(Timestamp(time.Now())) {
-			return errors.New("Expired credential request")
 		}
 	}
 	var err error

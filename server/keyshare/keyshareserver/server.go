@@ -17,7 +17,6 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/sirupsen/logrus"
 
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
@@ -122,6 +121,16 @@ func (s *Server) Handler() http.Handler {
 		router.Route("/api/v1", func(r chi.Router) {
 			s.routeHandler(r)
 		})
+
+		router.Route("/api/v2", func(r chi.Router) {
+			// Keyshare sessions with provably secure keyshare protocol
+			r.Use(s.userMiddleware)
+			r.Use(s.authorizationMiddleware)
+			r.Post("/prove/getPs", s.handlePs)
+			r.Post("/prove/getCommitments", s.handleCommitmentsV2)
+			r.Post("/prove/getResponse", s.handleResponseV2)
+			r.Post("/prove/getResponseLinkable", s.handleResponseV2Linkable)
+		})
 	})
 
 	// IRMA server for issuing myirma credential during registration
@@ -150,8 +159,13 @@ func (s *Server) routeHandler(r chi.Router) http.Handler {
 	r.Group(func(router chi.Router) {
 		router.Use(s.userMiddleware)
 		router.Use(s.authorizationMiddleware)
+
+		// Keyshare protocol
 		router.Post("/prove/getCommitments", s.handleCommitments)
 		router.Post("/prove/getResponse", s.handleResponse)
+
+		// User management
+		router.Get("/users/renewKeyshareAttribute", s.handleRenewKeyshareAttribute)
 	})
 
 	return r
@@ -178,6 +192,56 @@ func (s *Server) loadIdemixKeys(conf *irma.Configuration) error {
 	return errs.ErrorOrNil()
 }
 
+// /prove/getPs
+func (s *Server) handlePs(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+	authorization := r.Context().Value("authorization").(string)
+
+	// Read keys
+	var keys []irma.PublicKeyIdentifier
+	if err := server.ParseBody(r, &keys); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if len(keys) == 0 {
+		s.conf.Logger.Info("Malformed request: no keys for P specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
+		return
+	}
+
+	ps, err := s.generatePs(user, authorization, keys)
+	if err != nil && err == keysharecore.ErrInvalidJWT {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, ps)
+}
+
+func (s *Server) generatePs(user *User, authorization string, keys []irma.PublicKeyIdentifier) (*irma.PMap, error) {
+	// Generate Ps
+	ps, err := s.core.GeneratePs(keysharecore.UserSecrets(user.Secrets), authorization, keys)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Warn("Could not generate Ps for request")
+		return nil, err
+	}
+
+	// Prepare output message format
+	mappedPs := map[irma.PublicKeyIdentifier]*big.Int{}
+	for i, keyID := range keys {
+		mappedPs[keyID] = ps[i]
+	}
+
+	// And send response
+	return &irma.PMap{Ps: mappedPs}, nil
+}
+
 // /prove/getCommitments
 func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	// Fetch from context
@@ -192,7 +256,7 @@ func (s *Server) handleCommitments(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(keys) == 0 {
 		s.conf.Logger.Info("Malformed request: no keys for commitment specified")
-		server.WriteError(w, server.ErrorInvalidRequest, "No key specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
 		return
 	}
 
@@ -234,6 +298,69 @@ func (s *Server) generateCommitments(user *User, authorization string, keys []ir
 
 	// And send response
 	return &irma.ProofPCommitmentMap{Commitments: mappedCommitments}, nil
+}
+
+// /api/v2/prove/getCommitments
+func (s *Server) handleCommitmentsV2(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+	authorization := r.Context().Value("authorization").(string)
+
+	// Read keys
+	var req irma.GetCommitmentsRequest
+	if err := server.ParseBody(r, &req); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if len(req.Keys) == 0 {
+		s.conf.Logger.Info("Malformed request: no keys for commitment specified")
+		server.WriteError(w, server.ErrorInvalidRequest, "no key specified")
+		return
+	}
+
+	commitments, err := s.generateCommitmentsV2(user, authorization, req)
+	if err != nil && (err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT) {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteJson(w, commitments)
+}
+
+func (s *Server) generateCommitmentsV2(user *User, authorization string, req irma.GetCommitmentsRequest) (*irma.ProofPCommitmentMapV2, error) {
+	// Generate commitments
+	commitments, commitID, err := s.core.GenerateCommitments(keysharecore.UserSecrets(user.Secrets), authorization, req.Keys)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Warn("Could not generate commitments for request")
+		return nil, err
+	}
+
+	// Prepare output message format
+	mappedCommitments := map[irma.PublicKeyIdentifier]*big.Int{}
+	for i, keyID := range req.Keys {
+		mappedCommitments[keyID] = commitments[i].Pcommit
+	}
+
+	// Store needed data for later requests.
+	// Of all keys involved in the current session, store the ID of the last one to be used when
+	// the user comes back later to retrieve her response. gabi.ProofP.P will depend on this public
+	// key, which is used only during issuance. Thus, this assumes that during issuance, the user
+	// puts the key ID of the credential(s) being issued at the last index (indeed, the irmaclient
+	// always puts all ProofU's after the ProofD's in the list of proofs it sends to the IRMA
+	// server).
+	s.store.add(user.Username, &session{
+		KeyID:    req.Keys[len(req.Keys)-1],
+		Hw:       req.Hash,
+		CommitID: commitID,
+	})
+
+	// And send response
+	return &irma.ProofPCommitmentMapV2{Commitments: mappedCommitments}, nil
 }
 
 // /prove/getResponse
@@ -279,6 +406,74 @@ func (s *Server) generateResponse(ctx context.Context, user *User, authorization
 		return "", errMissingCommitment
 	}
 
+	// Indicate activity on user account. Do not send error to user.
+	_ = s.db.setSeen(ctx, user)
+
+	// Make log entry
+	err := s.db.addLog(ctx, user, eventTypeIRMASession, nil)
+	if err != nil {
+		// Already logged
+		return "", err
+	}
+
+	proofResponse, err := s.core.GenerateResponse(keysharecore.UserSecrets(user.Secrets), authorization, sessionData.CommitID, challenge, sessionData.KeyID)
+	if err != nil {
+		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
+		return "", err
+	}
+
+	return proofResponse, nil
+}
+
+// /api/v2/prove/getResponse
+func (s *Server) handleResponseV2(w http.ResponseWriter, r *http.Request) {
+	s.keyshareResponse(r.Context(), w, r, false)
+}
+
+func (s *Server) keyshareResponse(ctx context.Context, w http.ResponseWriter, r *http.Request, linkable bool) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+	authorization := r.Context().Value("authorization").(string)
+
+	var req gabi.KeyshareResponseRequest[irma.PublicKeyIdentifier]
+	if err := server.ParseBody(r, &req); err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	// verify access (avoids leaking whether there is a session ongoing to unauthorized callers)
+	if !r.Context().Value("hasValidAuthorization").(bool) {
+		s.conf.Logger.Warn("Could not generate keyshare response due to invalid authorization")
+		server.WriteError(w, server.ErrorInvalidRequest, "Invalid authorization")
+		return
+	}
+
+	// And do the actual responding
+	proofResponse, err := s.generateResponseV2(ctx, user, authorization, req, linkable)
+	if err != nil &&
+		(err == keysharecore.ErrInvalidChallenge ||
+			err == keysharecore.ErrInvalidJWT ||
+			err == errMissingCommitment) {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err != nil {
+		// already logged
+		server.WriteError(w, server.ErrorInternal, err.Error())
+		return
+	}
+
+	server.WriteString(w, proofResponse)
+}
+
+func (s *Server) generateResponseV2(ctx context.Context, user *User, authorization string, req gabi.KeyshareResponseRequest[irma.PublicKeyIdentifier], linkable bool) (string, error) {
+	// Get data from session
+	sessionData := s.store.get(user.Username)
+	if sessionData == nil {
+		s.conf.Logger.Warn("Request for response without previous call to get commitments")
+		return "", errMissingCommitment
+	}
+
 	// Indicate activity on user account
 	err := s.db.setSeen(ctx, user)
 	if err != nil {
@@ -293,13 +488,18 @@ func (s *Server) generateResponse(ctx context.Context, user *User, authorization
 		return "", err
 	}
 
-	proofResponse, err := s.core.GenerateResponse(keysharecore.UserSecrets(user.Secrets), authorization, sessionData.CommitID, challenge, sessionData.KeyID)
+	proofResponse, err := s.core.GenerateResponseV2(keysharecore.UserSecrets(user.Secrets), authorization, sessionData.CommitID, sessionData.Hw, req, sessionData.KeyID, linkable)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not generate response for request")
 		return "", err
 	}
 
 	return proofResponse, nil
+}
+
+// /prove/getLinkableResponse
+func (s *Server) handleResponseV2Linkable(w http.ResponseWriter, r *http.Request) {
+	s.keyshareResponse(r.Context(), w, r, true)
 }
 
 // /users/verify_start
@@ -323,7 +523,7 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 	// Fetch user
 	user, err := s.db.user(r.Context(), claims.Username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -384,7 +584,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	// Fetch user
 	user, err := s.db.user(r.Context(), username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -428,13 +628,13 @@ func (s *Server) verifyAuth(ctx context.Context, user *User, msg irma.KeyshareAu
 		// Handle invalid pin
 		err = s.db.addLog(ctx, user, eventTypePinCheckFailed, tries)
 		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+			// Already logged
 			return irma.KeysharePinStatus{}, err
 		}
 		if tries == 0 {
 			err = s.db.addLog(ctx, user, eventTypePinCheckBlocked, wait)
 			if err != nil {
-				s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+				// Already logged
 				return irma.KeysharePinStatus{}, err
 			}
 			return irma.KeysharePinStatus{Status: "error", Message: fmt.Sprintf("%v", wait)}, nil
@@ -443,20 +643,14 @@ func (s *Server) verifyAuth(ctx context.Context, user *User, msg irma.KeyshareAu
 		}
 	}
 
-	// Handle success
-	err = s.db.resetPinTries(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
-		// Do not send to user
-	}
-	err = s.db.setSeen(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not indicate user activity")
-		// Do not send to user
-	}
+	// Handle success. Do not send error to user.
+	_ = s.db.resetPinTries(ctx, user)
+
+	// Do not send error to user.
+	_ = s.db.setSeen(ctx, user)
+
 	err = s.db.addLog(ctx, user, eventTypePinCheckSuccess, nil)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
 		return irma.KeysharePinStatus{}, err
 	}
 
@@ -490,7 +684,7 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := s.db.user(r.Context(), claims.Username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -503,6 +697,26 @@ func (s *Server) handleChangePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.WriteJson(w, result)
+}
+
+// /users/renewKeyshareAttribute
+func (s *Server) handleRenewKeyshareAttribute(w http.ResponseWriter, r *http.Request) {
+	// Fetch from context
+	user := r.Context().Value("user").(*User)
+
+	// Make an issuance request that first validates whether an old (expired) instance of the keyshare attribute is present
+	// and issues a new one if the username matches.
+	irmaReq := s.keyshareAttributeIssuanceRequest(user.Username)
+	irmaReq.AddSingle(s.conf.KeyshareAttribute, &user.Username, nil)
+	irmaReq.Disclosure().SkipExpiryCheck = []irma.CredentialTypeIdentifier{s.conf.KeyshareAttribute.CredentialTypeIdentifier()}
+
+	sessionptr, _, _, err := s.irmaserv.StartSession(irmaReq, nil)
+	if err != nil {
+		server.WriteError(w, server.ErrorUnknown, err.Error())
+		return
+	}
+
+	server.WriteJson(w, sessionptr)
 }
 
 func (s *Server) updatePin(ctx context.Context, user *User, jwtt string) (irma.KeysharePinStatus, error) {
@@ -529,17 +743,13 @@ func (s *Server) updatePin(ctx context.Context, user *User, jwtt string) (irma.K
 	}
 	user.Secrets = UserSecrets(secrets)
 
-	// Mark pincheck as success, resetting users wait and count
-	err = s.db.resetPinTries(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
-		// Do not send to user
-	}
+	// Mark pincheck as success, resetting users wait and count. Do not send error to user.
+	_ = s.db.resetPinTries(ctx, user)
 
 	// Write user back
 	err = s.db.updateUser(ctx, user)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not write updated user to database")
+		// Already logged
 		return irma.KeysharePinStatus{}, err
 	}
 
@@ -606,7 +816,7 @@ func (s *Server) register(ctx context.Context, msg irma.KeyshareEnrollment) (*ir
 	user := &User{Username: username, Language: data.Language, Secrets: UserSecrets(secrets)}
 	err = s.db.AddUser(ctx, user)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not store new user in database")
+		// Already logged
 		return nil, err
 	}
 
@@ -620,13 +830,7 @@ func (s *Server) register(ctx context.Context, msg irma.KeyshareEnrollment) (*ir
 	}
 
 	// Setup and return issuance session for keyshare credential.
-	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
-		{
-			CredentialTypeID: s.conf.KeyshareAttribute.CredentialTypeIdentifier(),
-			Attributes: map[string]string{
-				s.conf.KeyshareAttribute.Name(): username,
-			},
-		}})
+	request := s.keyshareAttributeIssuanceRequest(username)
 	sessionptr, _, _, err := s.irmaserv.StartSession(request, nil)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not start keyshare credential issuance sessions")
@@ -647,10 +851,7 @@ func (s *Server) sendRegistrationEmail(ctx context.Context, user *User, language
 	// Add it to the database
 	err := s.db.addEmailVerification(ctx, user, email, token, s.conf.EmailTokenValidity)
 	if err != nil {
-		// Rate limiting errors do not need logging.
-		if err != errTooManyTokens {
-			s.conf.Logger.WithField("error", err).Error("Could not generate email verification mail record")
-		}
+		// Already logged
 		return err
 	}
 
@@ -672,7 +873,7 @@ func (s *Server) userMiddleware(next http.Handler) http.Handler {
 		// and fetch its information
 		user, err := s.db.user(r.Context(), username)
 		if err != nil {
-			s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+			// Already logged
 			keyshare.WriteError(w, err)
 			return
 		}
@@ -704,16 +905,28 @@ func (s *Server) authorizationMiddleware(next http.Handler) http.Handler {
 func (s *Server) reservePinCheck(ctx context.Context, user *User) (bool, int, int64, error) {
 	ok, tries, wait, err := s.db.reservePinTry(ctx, user)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reserve pin check slot")
+		// Already logged
 		return false, 0, 0, err
 	}
 	if !ok {
 		err = s.db.addLog(ctx, user, eventTypePinCheckRefused, nil)
 		if err != nil {
-			s.conf.Logger.WithField("error", err).Error("Could not add log entry for user")
+			// Already logged
 			return false, 0, 0, err
 		}
 		return false, tries, wait, nil
 	}
 	return true, tries, wait, nil
+}
+
+func (s *Server) keyshareAttributeIssuanceRequest(username string) *irma.IssuanceRequest {
+	validity := irma.Timestamp(time.Now().AddDate(1, 0, 0)) // 1 year from now
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: s.conf.KeyshareAttribute.CredentialTypeIdentifier(),
+			Attributes: map[string]string{
+				s.conf.KeyshareAttribute.Name(): username,
+			},
+			Validity: &validity,
+		}})
 }

@@ -12,6 +12,7 @@ var (
 	// Database errors:
 
 	ErrUserNotFound = errors.New("could not find specified user")
+	ErrDB           = errors.New("database error")
 
 	// Email errors:
 
@@ -31,6 +32,8 @@ func WriteError(w http.ResponseWriter, err error) {
 	switch err {
 	case ErrUserNotFound:
 		serverError = server.ErrorUserNotRegistered
+	case ErrDB:
+		serverError = server.ErrorInternal
 	case ErrInvalidEmail:
 		serverError = server.ErrorInvalidRequest
 	case ErrInvalidEmailDomain:
