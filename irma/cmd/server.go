@@ -179,9 +179,14 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 		},
 	)
 
+	irmaServerConf, err := configureIRMAServer()
+	if err != nil {
+		return nil, err
+	}
+
 	// Read configuration from flags and/or environmental variables
 	conf := &requestorserver.Configuration{
-		Configuration: configureIRMAServer(),
+		Configuration: irmaServerConf,
 		Permissions: requestorserver.Permissions{
 			Disclosing: handlePermission("disclose_perms"),
 			Signing:    handlePermission("sign_perms"),
@@ -220,11 +225,10 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	}
 
 	// Handle requestors
-	var err error
-	if err = handleMapOrString("requestors", &conf.Requestors); err != nil {
+	if err := handleMapOrString("requestors", &conf.Requestors); err != nil {
 		return nil, err
 	}
-	if err = handleMapOrString("static_sessions", &conf.StaticSessions); err != nil {
+	if err := handleMapOrString("static_sessions", &conf.StaticSessions); err != nil {
 		return nil, err
 	}
 	var m map[string]*irma.RevocationSetting
@@ -233,36 +237,6 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	}
 	for i, s := range m {
 		conf.RevocationSettings[irma.NewCredentialTypeIdentifier(i)] = s
-	}
-
-	// Parse Redis store configuration
-	switch conf.StoreType {
-	case "redis":
-		conf.RedisSettings = &server.RedisSettings{}
-		if conf.RedisSettings.Addr = viper.GetString("redis_addr"); conf.RedisSettings.Addr == "" {
-			return nil, errors.New("When Redis is used as session data store, a Redis URL must be specified with the --redis-addr flag.")
-		}
-
-		if conf.RedisSettings.Password = viper.GetString("redis_pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis_allow_empty_password") {
-			return nil, errors.New("When Redis is used as session data store, a non-empty Redis password must be specified with the --redis-pw flag. This restriction can be relaxed by setting the --redis-allow-empty-password flag to true.")
-		}
-
-		conf.RedisSettings.DB = viper.GetInt("redis_db")
-
-		conf.RedisSettings.TLSCertificate = viper.GetString("redis_tls_cert")
-		conf.RedisSettings.TLSCertificateFile = viper.GetString("redis_tls_cert_file")
-		conf.RedisSettings.DisableTLS = viper.GetBool("redis_no_tls")
-	case "etcd":
-		conf.EtcdSettings = &server.EtcdSettings{
-			Endpoints: viper.GetStringSlice("etcd_endpoints"),
-			Username:  viper.GetString("etcd_username"),
-			Password:  viper.GetString("etcd_password"),
-		}
-
-		if len(conf.EtcdSettings.Endpoints) == 0 {
-			return nil, errors.New("When etcd is used as session data store, at least one etcd endpoint must be specified with the --etcd-endpoints flag.")
-		}
-		// TODO: Add tls cert support and a no-tls flag like the Redis implementation has.
 	}
 
 	logger.Debug("Done configuring")

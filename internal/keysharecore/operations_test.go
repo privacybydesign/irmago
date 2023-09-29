@@ -25,11 +25,7 @@ import (
 )
 
 func TestPinFunctionality(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
 		// generate test pin
@@ -67,11 +63,7 @@ func TestPinFunctionality(t *testing.T) {
 }
 
 func TestVerifyAccess(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
 		// Generate test pins
@@ -162,11 +154,7 @@ func TestVerifyAccess(t *testing.T) {
 }
 
 func TestProofFunctionality(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
@@ -216,11 +204,7 @@ func TestProofFunctionality(t *testing.T) {
 }
 
 func TestCorruptedUserSecrets(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
@@ -265,11 +249,7 @@ func TestCorruptedUserSecrets(t *testing.T) {
 }
 
 func TestIncorrectPin(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
@@ -302,11 +282,7 @@ func TestIncorrectPin(t *testing.T) {
 }
 
 func TestMissingKey(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
@@ -338,11 +314,7 @@ func TestMissingKey(t *testing.T) {
 }
 
 func TestInvalidChallenge(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
@@ -378,11 +350,7 @@ func TestInvalidChallenge(t *testing.T) {
 }
 
 func TestDoubleCommitUse(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
@@ -408,11 +376,7 @@ func TestDoubleCommitUse(t *testing.T) {
 }
 
 func TestNonExistingCommit(t *testing.T) {
-	// Setup keys for test
-	var key AESKey
-	_, err := rand.Read(key[:])
-	require.NoError(t, err)
-	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	c := newTestKeyshareCore(t)
 	c.DangerousAddTrustedPublicKey(irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}, testPubK1)
 
 	for _, signer := range []irmaclient.Signer{nil, test.NewSigner(t)} {
@@ -564,6 +528,21 @@ func signerPublicKey(t *testing.T, signer irmaclient.Signer) *ecdsa.PublicKey {
 
 func generatePin() string {
 	return common.NewRandomString(64, common.AlphanumericChars)
+}
+
+func newTestKeyshareCore(t *testing.T) *Core {
+	// Setup keys for test
+	var key AESKey
+	_, err := rand.Read(key[:])
+	require.NoError(t, err)
+
+	return NewKeyshareCore(&Configuration{
+		DecryptionKeyID: 1,
+		DecryptionKey:   key,
+		JWTPrivateKeyID: 1,
+		JWTPrivateKey:   jwtTestKey,
+		Storage:         NewMemoryConsistentStorage(),
+	})
 }
 
 func TestMain(m *testing.M) {

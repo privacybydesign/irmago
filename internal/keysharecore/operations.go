@@ -27,6 +27,7 @@ var (
 	ErrUnknownCommit             = errors.New("unknown commit id")
 	ErrChallengeResponseRequired = errors.New("challenge-response authentication required")
 	ErrWrongChallenge            = errors.New("wrong challenge")
+	ErrStorageFailure            = errors.New("storage failure")
 )
 
 // ChallengeJWTMaxExpiry is the maximum exp (expiry) that we allow JWTs to have with which calls to
@@ -96,9 +97,10 @@ func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 }
 
 func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, jwtt string) (string, error) {
-	challenge := c.consumeChallenge(s.ID)
-	if challenge == nil {
-		return "", ErrChallengeResponseRequired
+	challenge, err := c.storage.ConsumeAuthChallenge(s.ID)
+	if err != nil {
+		// TODO: ErrChallengeResponseRequired was returned here. What to do with it?
+		return "", err
 	}
 
 	claims := &irma.KeyshareAuthResponseClaims{}
@@ -259,9 +261,9 @@ func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyI
 	}
 
 	// Store commit in backing storage
-	c.commitmentMutex.Lock()
-	c.commitmentData[commitID] = commitSecret
-	c.commitmentMutex.Unlock()
+	if err := c.storage.StoreCommitment(commitID, commitSecret); err != nil {
+		return nil, 0, err
+	}
 
 	return commitments, commitID, nil
 }
@@ -285,12 +287,10 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	}
 
 	// Fetch commit
-	c.commitmentMutex.Lock()
-	commit, ok := c.commitmentData[commitID]
-	delete(c.commitmentData, commitID)
-	c.commitmentMutex.Unlock()
-	if !ok {
-		return "", ErrUnknownCommit
+	commit, err := c.storage.ConsumeCommitment(commitID)
+	if err != nil {
+		// TODO: ErrUnknownCommit was returned here. What to do with it?
+		return "", err
 	}
 
 	// Generate response
@@ -329,12 +329,9 @@ func (c *Core) GenerateResponseV2(
 	}
 
 	// Fetch commit
-	c.commitmentMutex.Lock()
-	commit, ok := c.commitmentData[commitID]
-	delete(c.commitmentData, commitID)
-	c.commitmentMutex.Unlock()
-	if !ok {
-		return "", ErrUnknownCommit
+	commit, err := c.storage.ConsumeCommitment(commitID)
+	if err != nil {
+		return "", err
 	}
 
 	proofP, err := gabi.KeyshareResponse(s.KeyshareSecret, commit, hashedComms, req, c.trustedKeys)
@@ -392,19 +389,10 @@ func (c *Core) GenerateChallenge(secrets UserSecrets, jwtt string) ([]byte, erro
 		return nil, err
 	}
 
-	c.authChallengesMutex.Lock()
-	defer c.authChallengesMutex.Unlock()
-	c.authChallenges[string(s.ID)] = challenge
+	if err := c.storage.StoreAuthChallenge(s.ID, challenge); err != nil {
+		return nil, err
+	}
 	return challenge, nil
-}
-
-func (c *Core) consumeChallenge(id []byte) []byte {
-	c.authChallengesMutex.Lock()
-	defer c.authChallengesMutex.Unlock()
-	stringID := string(id)
-	challenge := c.authChallenges[stringID]
-	delete(c.authChallenges, stringID)
-	return challenge
 }
 
 func (c *Core) SetUserPublicKey(secrets UserSecrets, pin string, pk *ecdsa.PublicKey) (string, UserSecrets, error) {

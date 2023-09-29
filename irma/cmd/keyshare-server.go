@@ -57,6 +57,12 @@ func init() {
 	flags.Int("db-max-idle-time", 0, "Time in seconds after which idle database connections are closed (default unlimited)")
 	flags.Int("db-max-open-time", 0, "Maximum lifetime in seconds of open database connections (default unlimited)")
 
+	headers["store-type"] = "Session store configuration"
+	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
+	flags.StringSlice("etcd-endpoints", nil, "comma-separated list of etcd endpoints")
+	flags.String("etcd-username", "", "etcd cluster username")
+	flags.String("etcd-password", "", "etcd cluster password")
+
 	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
 	flags.String("jwt-privkey-file", "", "Path to file containing private jwt key of keyshare server")
@@ -98,9 +104,14 @@ func init() {
 func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration, error) {
 	readConfig(cmd, "keyshareserver", "keyshareserver", []string{".", "/etc/keyshareserver"}, nil)
 
+	irmaServerConf, err := configureIRMAServer()
+	if err != nil {
+		return nil, err
+	}
+
 	// And build the configuration
 	conf := &keyshareserver.Configuration{
-		Configuration:      configureIRMAServer(),
+		Configuration:      irmaServerConf,
 		EmailConfiguration: configureEmail(),
 
 		DBType:            keyshareserver.DBType(viper.GetString("db_type")),

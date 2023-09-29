@@ -3,7 +3,6 @@ package keysharecore
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"sync"
 
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
@@ -31,13 +30,7 @@ type (
 		jwtIssuer    string
 		jwtPinExpiry int
 
-		// Commit values generated in first step of keyshare protocol
-		commitmentData  map[uint64]*big.Int
-		commitmentMutex sync.Mutex
-
-		// authorization challenges
-		authChallenges      map[string][]byte
-		authChallengesMutex sync.Mutex
+		storage ConsistentStorage
 
 		// IRMA issuer keys that are allowed to be used in keyshare
 		//  sessions
@@ -55,15 +48,23 @@ type (
 
 		JWTIssuer    string
 		JWTPinExpiry int // in seconds
+
+		Storage ConsistentStorage
+	}
+
+	ConsistentStorage interface {
+		StoreCommitment(id uint64, commitment *big.Int) error
+		ConsumeCommitment(id uint64) (*big.Int, error)
+		StoreAuthChallenge(id []byte, challenge []byte) error
+		ConsumeAuthChallenge(id []byte) ([]byte, error)
 	}
 )
 
 func NewKeyshareCore(conf *Configuration) *Core {
 	c := &Core{
 		decryptionKeys: map[uint32]AESKey{},
-		commitmentData: map[uint64]*big.Int{},
 		trustedKeys:    map[irma.PublicKeyIdentifier]*gabikeys.PublicKey{},
-		authChallenges: map[string][]byte{},
+		storage:        conf.Storage,
 	}
 
 	c.setDecryptionKey(conf.DecryptionKeyID, conf.DecryptionKey)

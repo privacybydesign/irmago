@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	etcd_client "go.etcd.io/etcd/client/v3"
+
 	"github.com/go-co-op/gocron"
 
 	"github.com/go-errors/errors"
@@ -26,6 +28,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
+
+const sessionLifetime = 10 * time.Second
 
 type Server struct {
 	// configuration
@@ -46,10 +50,34 @@ type Server struct {
 var errMissingCommitment = errors.New("missing previous call to getCommitments")
 
 func New(conf *Configuration) (*Server, error) {
+	var store sessionStore
+	switch conf.Configuration.StoreType {
+	case "":
+		fallthrough // no specification defaults to the memory session store
+	case "memory":
+		store = newMemorySessionStore(sessionLifetime)
+	case "etcd":
+		etcdClient := conf.EtcdClient
+		if etcdClient == nil {
+			if conf.EtcdSettings == nil {
+				return nil, errors.New("etcd client not configured")
+			}
+			var err error
+			etcdClient, err = etcd_client.New(*conf.EtcdSettings)
+			if err != nil {
+				return nil, err
+			}
+			conf.EtcdClient = etcdClient
+		}
+		store = &etcdSessionStore{client: etcdClient, sessionLifetime: sessionLifetime}
+	default:
+		return nil, errors.New("unsupported session store type")
+	}
+
 	var err error
 	s := &Server{
 		conf:      conf,
-		store:     newMemorySessionStore(10 * time.Second),
+		store:     store,
 		scheduler: gocron.NewScheduler(time.UTC),
 	}
 
@@ -72,7 +100,7 @@ func New(conf *Configuration) (*Server, error) {
 			return nil, err
 		}
 	}
-	s.core, err = setupCore(conf)
+	s.core, err = setupCore(conf, s.store)
 	if err != nil {
 		return nil, err
 	}

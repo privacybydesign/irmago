@@ -148,7 +148,7 @@ func setupDatabase(conf *Configuration) (DB, error) {
 	return db, nil
 }
 
-func setupCore(conf *Configuration) (*keysharecore.Core, error) {
+func setupCore(conf *Configuration, sessionStore sessionStore) (*keysharecore.Core, error) {
 	// Parse keysharecore private keys and create a valid keyshare core
 	if conf.JwtPrivateKey == "" && conf.JwtPrivateKeyFile == "" {
 		return nil, server.LogError(errors.Errorf("Missing keyshare server jwt key"))
@@ -173,6 +173,7 @@ func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 		JWTPrivateKey:   jwtPrivateKey,
 		JWTIssuer:       conf.JwtIssuer,
 		JWTPinExpiry:    conf.JwtPinExpiry,
+		Storage:         sessionStore,
 	})
 	for _, keyFile := range conf.StorageFallbackKeyFiles {
 		id, key, err := readAESKey(keyFile)

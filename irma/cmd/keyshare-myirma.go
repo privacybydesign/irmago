@@ -98,9 +98,14 @@ func init() {
 func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, error) {
 	readConfig(cmd, "myirmaserver", "myirmaserver", []string{".", "/etc/myirmaserver/"}, nil)
 
+	irmaServerConf, err := configureIRMAServer()
+	if err != nil {
+		return nil, err
+	}
+
 	// And build the configuration
 	conf := &myirmaserver.Configuration{
-		Configuration:      configureIRMAServer(),
+		Configuration:      irmaServerConf,
 		EmailConfiguration: configureEmail(),
 
 		CORSAllowedOrigins: viper.GetStringSlice("cors_allowed_origins"),
