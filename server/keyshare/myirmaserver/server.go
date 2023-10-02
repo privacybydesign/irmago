@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	etcd_client "go.etcd.io/etcd/client/v3"
+
 	"github.com/go-co-op/gocron"
 
 	"github.com/go-chi/chi/v5"
@@ -34,6 +36,30 @@ type Server struct {
 var errUnknownEmail = errors.New("Email not associated with account")
 
 func New(conf *Configuration) (*Server, error) {
+	var store sessionStore
+	switch conf.Configuration.StoreType {
+	case "":
+		fallthrough // no specification defaults to the memory session store
+	case "memory":
+		store = newMemorySessionStore()
+	case "etcd":
+		etcdClient := conf.EtcdClient
+		if etcdClient == nil {
+			if conf.EtcdSettings == nil {
+				return nil, errors.New("etcd client not configured")
+			}
+			var err error
+			etcdClient, err = etcd_client.New(*conf.EtcdSettings)
+			if err != nil {
+				return nil, err
+			}
+			conf.EtcdClient = etcdClient
+		}
+		store = &etcdSessionStore{client: etcdClient}
+	default:
+		return nil, errors.New("unsupported session store type")
+	}
+
 	irmaserv, err := irmaserver.New(conf.Configuration)
 	if err != nil {
 		return nil, err
@@ -46,7 +72,7 @@ func New(conf *Configuration) (*Server, error) {
 	s := &Server{
 		conf:      conf,
 		irmaserv:  irmaserv,
-		store:     newMemorySessionStore(time.Duration(conf.SessionLifetime) * time.Second),
+		store:     store,
 		db:        conf.DB,
 		scheduler: gocron.NewScheduler(time.UTC),
 	}
@@ -139,13 +165,13 @@ func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
 		serr server.Error
 		msg  string
 	)
-	if session.loginSessionToken != "" {
+	if session.LoginSessionToken != "" {
 		serr, msg = s.processLoginIrmaSessionResult(r.Context(), session)
 	}
 
 	if serr != (server.Error{}) {
 		server.WriteError(w, serr, msg)
-	} else if session.userID == nil {
+	} else if session.UserID == nil {
 		// Errors matter more than expired status if we have them
 		server.WriteString(w, "expired")
 	} else {
@@ -154,7 +180,7 @@ func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendDeleteEmails(ctx context.Context, session *session) error {
-	user, err := s.db.user(ctx, *session.userID)
+	user, err := s.db.user(ctx, *session.UserID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not fetch user information")
 		return err
@@ -184,7 +210,7 @@ func (s *Server) sendDeleteEmails(ctx context.Context, session *session) error {
 		}
 
 		if revalidation {
-			if err := s.db.scheduleEmailRevalidation(ctx, *session.userID, email.Email, delay); err != nil {
+			if err := s.db.scheduleEmailRevalidation(ctx, *session.UserID, email.Email, delay); err != nil {
 				s.conf.Logger.WithField("error", err).Error("Could not schedule email revalidation")
 				return err
 			}
@@ -194,7 +220,7 @@ func (s *Server) sendDeleteEmails(ctx context.Context, session *session) error {
 	// When not all email addresses are valid and revalidation is enabled the invalid email addresses are
 	// already scheduled for revalidation we block the user account for 5 days
 	if len(addrs) < len(user.Emails) && revalidation {
-		if err := s.db.setPinBlockDate(ctx, *session.userID, delay); err != nil {
+		if err := s.db.setPinBlockDate(ctx, *session.UserID, delay); err != nil {
 			s.conf.Logger.WithField("error", err).Error("Could not update pin block date")
 			return err
 		}
@@ -240,7 +266,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Then remove user
-	err := s.db.scheduleUserRemoval(r.Context(), *session.userID, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
+	err := s.db.scheduleUserRemoval(r.Context(), *session.UserID, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Problem removing user")
 		keyshare.WriteError(w, err)
@@ -358,8 +384,8 @@ func (s *Server) processTokenLogin(ctx context.Context, request tokenLoginReques
 	}
 
 	session := session{
-		token:  common.NewSessionToken(),
-		userID: &id,
+		Token:  common.NewSessionToken(),
+		UserID: &id,
 	}
 
 	if err := s.store.add(session); err != nil {
@@ -372,7 +398,7 @@ func (s *Server) processTokenLogin(ctx context.Context, request tokenLoginReques
 		// not relevant for frontend, so ignore beyond log.
 	}
 
-	return session.token, nil
+	return session.Token, nil
 }
 
 func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
@@ -399,12 +425,12 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session session) (server.Error, string) {
-	result, err := s.irmaserv.GetSessionResult(session.loginSessionToken)
+	result, err := s.irmaserv.GetSessionResult(session.LoginSessionToken)
 	if err != nil {
 		return server.ErrorInternal, ""
 	}
 	if result == nil {
-		session.loginSessionToken = ""
+		session.LoginSessionToken = ""
 		return server.ErrorInternal, "unknown login session"
 	}
 
@@ -413,7 +439,7 @@ func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session sess
 		return server.Error{}, ""
 	}
 
-	session.loginSessionToken = ""
+	session.LoginSessionToken = ""
 
 	if result.ProofStatus != irma.ProofStatusValid {
 		s.conf.Logger.Info("received invalid login attribute")
@@ -429,7 +455,7 @@ func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session sess
 		return server.ErrorInternal, err.Error()
 	}
 
-	session.userID = &id
+	session.UserID = &id
 
 	err = s.db.setSeen(ctx, id)
 	if err != nil {
@@ -441,14 +467,14 @@ func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session sess
 
 func (s *Server) handleIrmaLogin(w http.ResponseWriter, _ *http.Request) {
 	session := session{
-		token: common.NewSessionToken(),
+		Token: common.NewSessionToken(),
 	}
 
 	if err := s.store.add(session); err != nil {
 		keyshare.WriteError(w, err)
 		return
 	}
-	sessiontoken := session.token
+	sessiontoken := session.Token
 
 	qr, loginToken, frontendRequest, err := s.irmaserv.StartSession(
 		newIrmaDisclosureRequest(s.conf.KeyshareAttributes),
@@ -460,7 +486,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	session.loginSessionToken = loginToken
+	session.LoginSessionToken = loginToken
 	s.setCookie(w, sessiontoken, s.conf.SessionLifetime)
 	server.WriteJson(w, server.SessionPackage{
 		SessionPtr:      qr,
@@ -487,8 +513,8 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := session{
-		token:  common.NewSessionToken(),
-		userID: &id,
+		Token:  common.NewSessionToken(),
+		UserID: &id,
 	}
 	if err := s.store.add(session); err != nil {
 		keyshare.WriteError(w, err)
@@ -501,12 +527,12 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		// not relevant for frontend, so ignore beyond log.
 	}
 
-	s.setCookie(w, session.token, s.conf.SessionLifetime)
+	s.setCookie(w, session.Token, s.conf.SessionLifetime)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) logoutUser(w http.ResponseWriter, session *session) {
-	session.userID = nil
+	session.UserID = nil
 	s.setCookie(w, "", -1)
 }
 
@@ -515,13 +541,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		s.logoutUser(w, session)
 		return nil
 	}); err != nil {
-		if err == errUnknownSession {
-			server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
-			return
-		}
-
-		keyshare.WriteError(w, err)
-		return
+		// Ignore error and just delete the cookie.
+		s.setCookie(w, "", -1)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -530,7 +551,7 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*session)
 
 	// Handle finished IRMA session used for adding email address, if any
-	if session.emailSessionToken != "" {
+	if session.EmailSessionToken != "" {
 		e, msg := s.processAddEmailIrmaSessionResult(r.Context(), session)
 		if e != (server.Error{}) {
 			server.WriteError(w, e, msg)
@@ -538,15 +559,15 @@ func (s *Server) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	user, err := s.db.user(r.Context(), *session.userID)
+	user, err := s.db.user(r.Context(), *session.UserID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Problem fetching user information from database")
 		keyshare.WriteError(w, err)
 		return
 	}
 
-	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
-	s.setCookie(w, session.token, s.conf.SessionLifetime)
+	session.Expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
+	s.setCookie(w, session.Token, s.conf.SessionLifetime)
 
 	if user.Emails == nil {
 		user.Emails = []userEmail{}
@@ -564,15 +585,15 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := r.Context().Value("session").(*session)
-	entries, err := s.db.logs(r.Context(), *session.userID, offset, 11)
+	entries, err := s.db.logs(r.Context(), *session.UserID, offset, 11)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not load log entries")
 		keyshare.WriteError(w, err)
 		return
 	}
 
-	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
-	s.setCookie(w, session.token, s.conf.SessionLifetime)
+	session.Expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
+	s.setCookie(w, session.Token, s.conf.SessionLifetime)
 
 	if entries == nil {
 		entries = []logEntry{}
@@ -581,7 +602,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) processRemoveEmail(ctx context.Context, session *session, email string) error {
-	user, err := s.db.user(ctx, *session.userID)
+	user, err := s.db.user(ctx, *session.UserID)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error checking whether email address can be removed")
 		return err
@@ -599,7 +620,7 @@ func (s *Server) processRemoveEmail(ctx context.Context, session *session, email
 
 	if err := keyshare.VerifyMXRecord(email); err != nil {
 		if s.db.hasEmailRevalidation(ctx) {
-			if err := s.db.scheduleEmailRevalidation(ctx, *session.userID, email, 5*24*time.Hour); err != nil {
+			if err := s.db.scheduleEmailRevalidation(ctx, *session.UserID, email, 5*24*time.Hour); err != nil {
 				s.conf.Logger.WithField("error", err).Error("Could not schedule email address for revalidation")
 				return err
 			}
@@ -620,7 +641,7 @@ func (s *Server) processRemoveEmail(ctx context.Context, session *session, email
 		}
 	}
 
-	err = s.db.scheduleEmailRemoval(ctx, *session.userID, email, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
+	err = s.db.scheduleEmailRemoval(ctx, *session.UserID, email, 24*time.Hour*time.Duration(s.conf.DeleteDelay))
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error removing user email address")
 		return err
@@ -654,19 +675,19 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
-	s.setCookie(w, session.token, s.conf.SessionLifetime)
+	session.Expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
+	s.setCookie(w, session.Token, s.conf.SessionLifetime)
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) processAddEmailIrmaSessionResult(ctx context.Context, session *session) (server.Error, string) {
-	result, err := s.irmaserv.GetSessionResult(session.emailSessionToken)
+	result, err := s.irmaserv.GetSessionResult(session.EmailSessionToken)
 	if err != nil {
 		return server.ErrorInternal, ""
 	}
 	if result == nil {
-		session.emailSessionToken = ""
+		session.EmailSessionToken = ""
 		return server.ErrorInternal, "unknown login session"
 	}
 
@@ -675,7 +696,7 @@ func (s *Server) processAddEmailIrmaSessionResult(ctx context.Context, session *
 		return server.Error{}, ""
 	}
 
-	session.emailSessionToken = ""
+	session.EmailSessionToken = ""
 
 	if result.ProofStatus != irma.ProofStatusValid {
 		s.conf.Logger.Info("received invalid email attribute")
@@ -683,7 +704,7 @@ func (s *Server) processAddEmailIrmaSessionResult(ctx context.Context, session *
 	}
 
 	email := *result.Disclosed[0][0].RawValue
-	err = s.db.addEmail(ctx, *session.userID, email)
+	err = s.db.addEmail(ctx, *session.UserID, email)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not add email address to user")
 		return server.ErrorInternal, err.Error()
@@ -705,9 +726,9 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session.emailSessionToken = emailToken
-	session.expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
-	s.setCookie(w, session.token, s.conf.SessionLifetime)
+	session.EmailSessionToken = emailToken
+	session.Expiry = time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second)
+	s.setCookie(w, session.Token, s.conf.SessionLifetime)
 
 	server.WriteJson(w, server.SessionPackage{
 		SessionPtr:      qr,
@@ -718,7 +739,7 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := s.txSessionFromCookie(r, func(session *session) error {
-			if session.userID == nil {
+			if session.UserID == nil {
 				s.conf.Logger.Info("Malformed request: user not logged in")
 				server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
 				return nil

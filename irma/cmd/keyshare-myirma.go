@@ -60,6 +60,12 @@ func init() {
 	flags.Int("db-max-idle-time", 0, "Time in seconds after which idle database connections are closed (default unlimited)")
 	flags.Int("db-max-open-time", 0, "Maximum lifetime in seconds of open database connections (default unlimited)")
 
+	headers["store-type"] = "Session store configuration"
+	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
+	flags.StringSlice("etcd-endpoints", nil, "comma-separated list of etcd endpoints")
+	flags.String("etcd-username", "", "etcd cluster username")
+	flags.String("etcd-password", "", "etcd cluster password")
+
 	headers["keyshare-attributes"] = "IRMA session configuration"
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
 	flags.StringSlice("email-attributes", nil, "Attributes allowed for adding email addresses")
