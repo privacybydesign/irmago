@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [0.14.0] - 2023-10-02
+Note for users of the `irmaclient` package (e.g. maintainers of the [Yivi app](https://github.com/privacybydesign/irmamobile)): the `KeyshareVerifyPin` function requires the renewal endpoint for the keyshare attribute to be present. Therefore, this version should first be deployed on keyshare servers before the client side can be upgraded.
 ### Added
 - Option `skipExpiryCheck` in disclosure requests to allow disclosure of expired credentials (e.g. `"skipExpiryCheck": ["irma-demo.sidn-pbdf.email"]`)
 - Option `host` in session request to overrule host name in IRMA QR if permission has been granted (see below)
@@ -455,6 +458,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.14.0]: https://github.com/privacybydesign/irmago/compare/v0.13.3...v0.14.0
 [0.13.3]: https://github.com/privacybydesign/irmago/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/privacybydesign/irmago/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/privacybydesign/irmago/compare/v0.13.0...v0.13.1
