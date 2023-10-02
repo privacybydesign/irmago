@@ -128,25 +128,23 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
-	session := s.sessionFromCookie(r)
-	if session == nil {
+	session, err := s.sessionFromCookie(r)
+	if err != nil {
+		// TODO: this error might indicate another problem.
 		server.WriteString(w, "expired")
 		return
 	}
 
-	session.Lock()
-	defer session.Unlock()
-
 	var (
-		err server.Error
-		msg string
+		serr server.Error
+		msg  string
 	)
 	if session.loginSessionToken != "" {
-		err, msg = s.processLoginIrmaSessionResult(r.Context(), session)
+		serr, msg = s.processLoginIrmaSessionResult(r.Context(), session)
 	}
 
-	if err != (server.Error{}) {
-		server.WriteError(w, err, msg)
+	if serr != (server.Error{}) {
+		server.WriteError(w, serr, msg)
 	} else if session.userID == nil {
 		// Errors matter more than expired status if we have them
 		server.WriteString(w, "expired")
@@ -249,7 +247,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logoutUser(w, r)
+	s.logoutUser(w, session)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -359,8 +357,14 @@ func (s *Server) processTokenLogin(ctx context.Context, request tokenLoginReques
 		return "", err
 	}
 
-	session := s.store.create()
-	session.userID = &id
+	session := session{
+		token:  common.NewSessionToken(),
+		userID: &id,
+	}
+
+	if err := s.store.add(session); err != nil {
+		return "", err
+	}
 
 	err = s.db.setSeen(ctx, id)
 	if err != nil {
@@ -394,7 +398,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session *session) (server.Error, string) {
+func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session session) (server.Error, string) {
 	result, err := s.irmaserv.GetSessionResult(session.loginSessionToken)
 	if err != nil {
 		return server.ErrorInternal, ""
@@ -436,7 +440,14 @@ func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session *ses
 }
 
 func (s *Server) handleIrmaLogin(w http.ResponseWriter, _ *http.Request) {
-	session := s.store.create()
+	session := session{
+		token: common.NewSessionToken(),
+	}
+
+	if err := s.store.add(session); err != nil {
+		keyshare.WriteError(w, err)
+		return
+	}
 	sessiontoken := session.token
 
 	qr, loginToken, frontendRequest, err := s.irmaserv.StartSession(
@@ -475,8 +486,14 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := s.store.create()
-	session.userID = &id
+	session := session{
+		token:  common.NewSessionToken(),
+		userID: &id,
+	}
+	if err := s.store.add(session); err != nil {
+		keyshare.WriteError(w, err)
+		return
+	}
 
 	err = s.db.setSeen(r.Context(), id)
 	if err != nil {
@@ -488,16 +505,24 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) logoutUser(w http.ResponseWriter, r *http.Request) {
-	session := s.sessionFromCookie(r)
-	if session != nil {
-		session.userID = nil // expire session
-	}
+func (s *Server) logoutUser(w http.ResponseWriter, session *session) {
+	session.userID = nil
 	s.setCookie(w, "", -1)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	s.logoutUser(w, r)
+	if err := s.txSessionFromCookie(r, func(session *session) error {
+		s.logoutUser(w, session)
+		return nil
+	}); err != nil {
+		if err == errUnknownSession {
+			server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
+			return
+		}
+
+		keyshare.WriteError(w, err)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -692,16 +717,26 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session := s.sessionFromCookie(r)
-		if session == nil || session.userID == nil {
-			s.conf.Logger.Info("Malformed request: user not logged in")
-			server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
-			return
-		}
+		if err := s.txSessionFromCookie(r, func(session *session) error {
+			if session.userID == nil {
+				s.conf.Logger.Info("Malformed request: user not logged in")
+				server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
+				return nil
+			}
 
-		session.Lock()
-		defer session.Unlock()
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
+
+			return nil
+		}); err != nil {
+			if err == errUnknownSession {
+				server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
+				return
+			}
+
+			// TODO: this might lead to a duplicate write to w. Check if this is a problem.
+			// This also happens in userMiddleware in irmaserver.
+			keyshare.WriteError(w, err)
+		}
 	})
 }
 
@@ -709,12 +744,20 @@ func (s *Server) staticFilesHandler() http.Handler {
 	return http.StripPrefix(s.conf.StaticPrefix, http.FileServer(http.Dir(s.conf.StaticPath)))
 }
 
-func (s *Server) sessionFromCookie(r *http.Request) *session {
+func (s *Server) sessionFromCookie(r *http.Request) (session, error) {
 	token, err := r.Cookie("session")
 	if err != nil { // only happens if cookie is not present
-		return nil
+		return session{}, err
 	}
 	return s.store.get(token.Value)
+}
+
+func (s *Server) txSessionFromCookie(r *http.Request, handler func(ses *session) error) error {
+	token, err := r.Cookie("session")
+	if err != nil { // only happens if cookie is not present
+		return errUnknownSession // TODO: shouldn't we use another error here?
+	}
+	return s.store.txUpdate(token.Value, handler)
 }
 
 // newIrmaDisclosureRequest composes an irma.DisclosureRequest with one attribute disjunction

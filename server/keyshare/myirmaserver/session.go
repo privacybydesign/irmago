@@ -4,13 +4,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 )
 
-type session struct {
-	sync.Mutex
+var errUnknownSession = errors.New("unknown session")
 
+type session struct {
 	token  string
 	userID *int64
 
@@ -21,40 +21,52 @@ type session struct {
 }
 
 type sessionStore interface {
-	create() *session
-	get(token string) *session
+	add(ses session) error
+	get(token string) (session, error)
+	txUpdate(token string, handler func(ses *session) error) error
 	flush()
 }
 
 type memorySessionStore struct {
 	sync.Mutex
-
-	data            map[string]*session
-	sessionLifetime time.Duration
+	data map[string]session
 }
 
 func newMemorySessionStore(sessionLifetime time.Duration) sessionStore {
 	return &memorySessionStore{
-		sessionLifetime: sessionLifetime,
-		data:            map[string]*session{},
+		data: map[string]session{},
 	}
 }
 
-func (s *memorySessionStore) create() *session {
+func (s *memorySessionStore) add(ses session) error {
 	s.Lock()
 	defer s.Unlock()
-	token := common.NewSessionToken()
-	s.data[token] = &session{
-		token:  token,
-		expiry: time.Now().Add(s.sessionLifetime),
-	}
-	return s.data[token]
+	s.data[ses.token] = ses
+	return nil
 }
 
-func (s *memorySessionStore) get(token string) *session {
+func (s *memorySessionStore) get(token string) (session, error) {
 	s.Lock()
 	defer s.Unlock()
-	return s.data[token]
+	ses, ok := s.data[token]
+	if !ok {
+		return session{}, errUnknownSession
+	}
+	return ses, nil
+}
+
+func (s *memorySessionStore) txUpdate(token string, handler func(ses *session) error) error {
+	s.Lock()
+	defer s.Unlock()
+	ses, ok := s.data[token]
+	if !ok {
+		return errUnknownSession
+	}
+	if err := handler(&ses); err != nil {
+		return err
+	}
+	s.data[token] = ses
+	return nil
 }
 
 func (s *memorySessionStore) flush() {
