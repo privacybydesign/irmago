@@ -466,16 +466,6 @@ func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session sess
 }
 
 func (s *Server) handleIrmaLogin(w http.ResponseWriter, _ *http.Request) {
-	session := session{
-		Token: common.NewSessionToken(),
-	}
-
-	if err := s.store.add(session); err != nil {
-		keyshare.WriteError(w, err)
-		return
-	}
-	sessiontoken := session.Token
-
 	qr, loginToken, frontendRequest, err := s.irmaserv.StartSession(
 		newIrmaDisclosureRequest(s.conf.KeyshareAttributes),
 		nil,
@@ -486,8 +476,16 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	session.LoginSessionToken = loginToken
-	s.setCookie(w, sessiontoken, s.conf.SessionLifetime)
+	session := session{
+		Token:             common.NewSessionToken(),
+		LoginSessionToken: loginToken,
+	}
+	if err := s.store.add(session); err != nil {
+		keyshare.WriteError(w, err)
+		return
+	}
+
+	s.setCookie(w, session.Token, s.conf.SessionLifetime)
 	server.WriteJson(w, server.SessionPackage{
 		SessionPtr:      qr,
 		FrontendRequest: frontendRequest,
