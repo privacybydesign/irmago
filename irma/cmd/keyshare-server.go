@@ -69,8 +69,8 @@ func init() {
 	flags.Int("jwt-privkey-id", 0, "Key identifier of keyshare server public key matching used private key")
 	flags.String("jwt-issuer", keysharecore.JWTIssuerDefault, "JWT issuer used in \"iss\" field")
 	flags.Int("jwt-pin-expiry", keysharecore.JWTPinExpiryDefault, "Expiry of PIN JWT in seconds")
-	flags.String("storage-primary-keyfile", "", "Primary key used for encrypting and decrypting secure containers")
-	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
+	flags.String("storage-primary-key-file", "", "Primary key used for encrypting and decrypting secure containers")
+	flags.StringSlice("storage-fallback-key-file", nil, "Fallback key(s) used to decrypt older secure containers")
 
 	headers["keyshare-attribute"] = "Keyshare server attribute issued during registration"
 	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
