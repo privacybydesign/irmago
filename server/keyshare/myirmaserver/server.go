@@ -154,29 +154,30 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleCheckSession(w http.ResponseWriter, r *http.Request) {
-	session, err := s.sessionFromCookie(r)
-	if err != nil {
-		// TODO: this error might indicate another problem.
-		server.WriteString(w, "expired")
+	var msg string
+	err := s.sessionFromCookie(r, func(session *session) error {
+		if session.LoginSessionToken != "" {
+			if err := s.processLoginIrmaSessionResult(r.Context(), session); err != nil {
+				return err
+			}
+		}
+
+		if session.UserID == nil {
+			msg = "expired"
+		} else {
+			msg = "ok"
+		}
+		return nil
+
+	})
+	if rerr, ok := err.(*irma.RemoteError); ok {
+		server.WriteResponse(w, nil, rerr)
+		return
+	} else if err != nil {
+		server.WriteError(w, server.ErrorInternal, err.Error())
 		return
 	}
-
-	var (
-		serr server.Error
-		msg  string
-	)
-	if session.LoginSessionToken != "" {
-		serr, msg = s.processLoginIrmaSessionResult(r.Context(), session)
-	}
-
-	if serr != (server.Error{}) {
-		server.WriteError(w, serr, msg)
-	} else if session.UserID == nil {
-		// Errors matter more than expired status if we have them
-		server.WriteString(w, "expired")
-	} else {
-		server.WriteString(w, "ok")
-	}
+	server.WriteString(w, msg)
 }
 
 func (s *Server) sendDeleteEmails(ctx context.Context, session *session) error {
@@ -424,35 +425,35 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session session) (server.Error, string) {
+func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session *session) error {
 	result, err := s.irmaserv.GetSessionResult(session.LoginSessionToken)
 	if err != nil {
-		return server.ErrorInternal, ""
+		return server.RemoteError(server.ErrorInternal, "")
 	}
 	if result == nil {
 		session.LoginSessionToken = ""
-		return server.ErrorInternal, "unknown login session"
+		return server.RemoteError(server.ErrorInternal, "unknown login session")
 	}
 
 	if result.Status != irma.ServerStatusDone {
 		// Ignore incomplete attempts, frontend handles these.
-		return server.Error{}, ""
+		return nil
 	}
 
 	session.LoginSessionToken = ""
 
 	if result.ProofStatus != irma.ProofStatusValid {
 		s.conf.Logger.Info("received invalid login attribute")
-		return server.ErrorInvalidProofs, ""
+		return server.RemoteError(server.ErrorInvalidProofs, "")
 	}
 
 	username := *result.Disclosed[0][0].RawValue
 	id, err := s.db.userIDByUsername(ctx, username)
 	if err == keyshare.ErrUserNotFound {
-		return server.ErrorUserNotRegistered, ""
+		return server.RemoteError(server.ErrorUserNotRegistered, "")
 	} else if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during processing of login IRMA session result")
-		return server.ErrorInternal, err.Error()
+		return server.RemoteError(server.ErrorInternal, err.Error())
 	}
 
 	session.UserID = &id
@@ -462,7 +463,7 @@ func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session sess
 		s.conf.Logger.WithField("error", err).Error("Could not update users last seen time/date")
 		// not relevant for frontend, so ignore beyond log.
 	}
-	return server.Error{}, ""
+	return nil
 }
 
 func (s *Server) handleIrmaLogin(w http.ResponseWriter, _ *http.Request) {
@@ -535,7 +536,7 @@ func (s *Server) logoutUser(w http.ResponseWriter, session *session) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if err := s.txSessionFromCookie(r, func(session *session) error {
+	if err := s.sessionFromCookie(r, func(session *session) error {
 		s.logoutUser(w, session)
 		return nil
 	}); err != nil {
@@ -736,7 +737,7 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := s.txSessionFromCookie(r, func(session *session) error {
+		if err := s.sessionFromCookie(r, func(session *session) error {
 			if session.UserID == nil {
 				s.conf.Logger.Info("Malformed request: user not logged in")
 				server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
@@ -763,15 +764,7 @@ func (s *Server) staticFilesHandler() http.Handler {
 	return http.StripPrefix(s.conf.StaticPrefix, http.FileServer(http.Dir(s.conf.StaticPath)))
 }
 
-func (s *Server) sessionFromCookie(r *http.Request) (session, error) {
-	token, err := r.Cookie("session")
-	if err != nil { // only happens if cookie is not present
-		return session{}, err
-	}
-	return s.store.get(token.Value)
-}
-
-func (s *Server) txSessionFromCookie(r *http.Request, handler func(ses *session) error) error {
+func (s *Server) sessionFromCookie(r *http.Request, handler func(ses *session) error) error {
 	token, err := r.Cookie("session")
 	if err != nil { // only happens if cookie is not present
 		return errUnknownSession // TODO: shouldn't we use another error here?
