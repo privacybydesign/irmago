@@ -141,7 +141,7 @@ func (s *etcdSessionStore) StoreAuthChallenge(id []byte, challenge []byte) error
 	encodedValue := base64.StdEncoding.EncodeToString(challenge)
 
 	// TODO: shouldn't we use a lease to prevent that unconsumed commitments stay in the store forever?
-	if _, err := s.client.Put(ctx, commitmentLookupPrefix+encodedKey, encodedValue); err != nil {
+	if _, err := s.client.Put(ctx, authChallengeLookupPrefix+encodedKey, encodedValue); err != nil {
 		server.LogError(err, "failed to store commitment")
 		return keysharecore.ErrStorageFailure
 	}
@@ -152,11 +152,10 @@ func (s *etcdSessionStore) StoreAuthChallenge(id []byte, challenge []byte) error
 func (s *etcdSessionStore) ConsumeAuthChallenge(id []byte) ([]byte, error) {
 	ctx := context.TODO()
 
-	encodedKey := base64.StdEncoding.EncodeToString(id)
-
+	key := authChallengeLookupPrefix + base64.StdEncoding.EncodeToString(id)
 	txResp, err := s.client.Txn(ctx).Then(
-		etcd_client.OpGet(authChallengeLookupPrefix+encodedKey),
-		etcd_client.OpDelete(authChallengeLookupPrefix+encodedKey),
+		etcd_client.OpGet(key),
+		etcd_client.OpDelete(key),
 	).Commit()
 	if err != nil {
 		server.LogError(err, "failed to retrieve commitment")
