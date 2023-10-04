@@ -769,7 +769,7 @@ func (s *Server) sessionFromCookie(r *http.Request, handler func(ses *session) e
 	if err != nil { // only happens if cookie is not present
 		return errUnknownSession // TODO: shouldn't we use another error here?
 	}
-	return s.store.txUpdate(token.Value, handler)
+	return s.store.update(token.Value, handler)
 }
 
 // newIrmaDisclosureRequest composes an irma.DisclosureRequest with one attribute disjunction

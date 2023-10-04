@@ -30,8 +30,9 @@ type session struct {
 
 type sessionStore interface {
 	add(ses session) error
+	// TODO: delete get function here. They are only used in tests, so it should be a helper there.
 	get(token string) (session, error)
-	txUpdate(token string, handler func(ses *session) error) error
+	update(token string, handler func(ses *session) error) error
 	flush()
 }
 
@@ -67,7 +68,7 @@ func (s *memorySessionStore) get(token string) (session, error) {
 	return ses, nil
 }
 
-func (s *memorySessionStore) txUpdate(token string, handler func(ses *session) error) error {
+func (s *memorySessionStore) update(token string, handler func(ses *session) error) error {
 	s.Lock()
 	defer s.Unlock()
 	ses, ok := s.data[token]
@@ -130,7 +131,7 @@ func (s *etcdSessionStore) get(token string) (session, error) {
 	return session, json.Unmarshal(resp.Kvs[0].Value, &session)
 }
 
-func (s *etcdSessionStore) txUpdate(token string, handler func(ses *session) error) error {
+func (s *etcdSessionStore) update(token string, handler func(ses *session) error) error {
 	ctx := context.TODO()
 
 	key := sessionLookupPrefix + token

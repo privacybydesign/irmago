@@ -23,7 +23,7 @@ func TestSessions(t *testing.T) {
 	assert.Equal(t, s, session2)
 
 	emailSessionToken := irma.RequestorToken("emailtoken")
-	err = store.txUpdate(s.Token, func(ses *session) error {
+	err = store.update(s.Token, func(ses *session) error {
 		ses.EmailSessionToken = emailSessionToken
 		return nil
 	})
