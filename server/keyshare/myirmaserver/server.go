@@ -387,6 +387,7 @@ func (s *Server) processTokenLogin(ctx context.Context, request tokenLoginReques
 	session := session{
 		Token:  common.NewSessionToken(),
 		UserID: &id,
+		Expiry: time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second),
 	}
 
 	if err := s.store.add(session); err != nil {
@@ -480,6 +481,7 @@ func (s *Server) handleIrmaLogin(w http.ResponseWriter, _ *http.Request) {
 	session := session{
 		Token:             common.NewSessionToken(),
 		LoginSessionToken: loginToken,
+		Expiry:            time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second),
 	}
 	if err := s.store.add(session); err != nil {
 		keyshare.WriteError(w, err)
@@ -514,6 +516,7 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	session := session{
 		Token:  common.NewSessionToken(),
 		UserID: &id,
+		Expiry: time.Now().Add(time.Duration(s.conf.SessionLifetime) * time.Second),
 	}
 	if err := s.store.add(session); err != nil {
 		keyshare.WriteError(w, err)
