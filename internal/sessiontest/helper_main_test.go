@@ -71,10 +71,14 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 		err = client.Configuration.ParseFolder()
 		require.NoError(t, err)
 	}
+
+	version := extractClientMaxVersion(client)
 	if opts.enabled(optionPrePairingClient) {
-		version := extractClientMaxVersion(client)
-		// set to largest protocol version that dos not support pairing
+		// Set to largest protocol version that does not support pairing
 		*version = irma.ProtocolVersion{Major: 2, Minor: 7}
+	} else if opts.enabled(optionLinkableKeyshareResponse) {
+		// Set to largest protocol version that uses linkable keyshare responses
+		*version = irma.ProtocolVersion{Major: 2, Minor: 8}
 	}
 
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})

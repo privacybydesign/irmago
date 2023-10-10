@@ -540,7 +540,7 @@ func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTT
 	}
 
 	result := &irma.KeysharePinStatus{}
-	err = transport.Post("users/register_publickey", result, irma.KeyshareKeyRegistration{PublicKeyRegistrationJWT: jwtt})
+	err = transport.Post("api/v1/users/register_publickey", result, irma.KeyshareKeyRegistration{PublicKeyRegistrationJWT: jwtt})
 	if err != nil {
 		err = irma.WrapErrorPrefix(err, "failed to register public key")
 		return nil, err
