@@ -111,7 +111,7 @@ func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, err
 		DBType:            myirmaserver.DBType(viper.GetString("db_type")),
 		DBConnStr:         viper.GetString("db_str"),
 		DBConnMaxIdle:     viper.GetInt("db_max_idle"),
-		DBMConnMaxOpen:    viper.GetInt("db_max_open"),
+		DBConnMaxOpen:     viper.GetInt("db_max_open"),
 		DBConnMaxIdleTime: viper.GetInt("db_max_idle_time"),
 		DBConnMaxOpenTime: viper.GetInt("db_max_open_time"),
 

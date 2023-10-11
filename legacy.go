@@ -227,9 +227,10 @@ func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
 	if ldContext != "" {
 		var req struct { // Identical type with default JSON unmarshaler
 			BaseRequest
-			Disclose AttributeConDisCon       `json:"disclose"`
-			Labels   map[int]TranslatedString `json:"labels"`
-			Message  string                   `json:"message"`
+			Disclose        AttributeConDisCon         `json:"disclose"`
+			Labels          map[int]TranslatedString   `json:"labels"`
+			SkipExpiryCheck []CredentialTypeIdentifier `json:"skipExpiryCheck,omitempty"`
+			Message         string                     `json:"message"`
 		}
 		if err = json.Unmarshal(bts, &req); err != nil {
 			return err
@@ -239,6 +240,7 @@ func (sr *SignatureRequest) UnmarshalJSON(bts []byte) (err error) {
 				req.BaseRequest,
 				req.Disclose,
 				req.Labels,
+				req.SkipExpiryCheck,
 			},
 			req.Message,
 		}
@@ -284,15 +286,16 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 	if ldContext != "" {
 		var req struct { // Identical type with default JSON unmarshaler
 			BaseRequest
-			Disclose    AttributeConDisCon       `json:"disclose"`
-			Labels      map[int]TranslatedString `json:"labels"`
-			Credentials []*CredentialRequest     `json:"credentials"`
+			Disclose        AttributeConDisCon         `json:"disclose"`
+			Labels          map[int]TranslatedString   `json:"labels"`
+			SkipExpiryCheck []CredentialTypeIdentifier `json:"skipExpiryCheck,omitempty"`
+			Credentials     []*CredentialRequest       `json:"credentials"`
 		}
 		if err = json.Unmarshal(bts, &req); err != nil {
 			return err
 		}
 		*ir = IssuanceRequest{
-			DisclosureRequest: DisclosureRequest{req.BaseRequest, req.Disclose, req.Labels},
+			DisclosureRequest: DisclosureRequest{req.BaseRequest, req.Disclose, req.Labels, req.SkipExpiryCheck},
 			Credentials:       req.Credentials,
 		}
 		return nil

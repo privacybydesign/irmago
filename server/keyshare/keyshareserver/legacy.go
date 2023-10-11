@@ -13,7 +13,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/keysharecore"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
-	"github.com/sirupsen/logrus"
 )
 
 // /users/register_publickey
@@ -41,7 +40,7 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 	// Fetch user
 	user, err := s.db.user(r.Context(), claims.Username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": claims.Username, "error": err}).Warn("Could not find user in db")
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -79,17 +78,13 @@ func (s *Server) registerPublicKey(ctx context.Context, user *User, pin string, 
 	}
 	user.Secrets = UserSecrets(secrets)
 
-	// Mark pincheck as success, resetting users wait and count
-	err = s.db.resetPinTries(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
-		// Do not send to user
-	}
+	// Mark pincheck as success, resetting users wait and count. Do not send error to user.
+	_ = s.db.resetPinTries(ctx, user)
 
 	// Write user back
 	err = s.db.updateUser(ctx, user)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not write updated user to database")
+		// Already logged
 		return irma.KeysharePinStatus{}, err
 	}
 
@@ -127,17 +122,13 @@ func (s *Server) updatePinLegacy(ctx context.Context, user *User, oldPin, newPin
 	}
 	user.Secrets = UserSecrets(secrets)
 
-	// Mark pincheck as success, resetting users wait and count
-	err = s.db.resetPinTries(ctx, user)
-	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not reset users pin check logic")
-		// Do not send to user
-	}
+	// Mark pincheck as success, resetting users wait and count. Do not send error to user.
+	_ = s.db.resetPinTries(ctx, user)
 
 	// Write user back
 	err = s.db.updateUser(ctx, user)
 	if err != nil {
-		s.conf.Logger.WithField("error", err).Error("Could not write updated user to database")
+		// Already logged
 		return irma.KeysharePinStatus{}, err
 	}
 
@@ -148,7 +139,7 @@ func (s *Server) handleChangePinLegacy(ctx context.Context, w http.ResponseWrite
 	username := msg.Username
 	user, err := s.db.user(ctx, username)
 	if err != nil {
-		s.conf.Logger.WithFields(logrus.Fields{"username": username, "error": err}).Warn("Could not find user in db")
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}
@@ -156,7 +147,7 @@ func (s *Server) handleChangePinLegacy(ctx context.Context, w http.ResponseWrite
 	result, err := s.updatePinLegacy(ctx, user, msg.OldPin, msg.NewPin)
 
 	if err != nil {
-		// already logged
+		// Already logged
 		keyshare.WriteError(w, err)
 		return
 	}

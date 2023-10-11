@@ -45,7 +45,14 @@ func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTim
 
 func (db *postgresDB) userIDByUsername(ctx context.Context, username string) (int64, error) {
 	var id int64
-	return id, db.db.QueryUserContext(ctx, "SELECT id FROM irma.users WHERE username = $1", []interface{}{&id}, username)
+	if err := db.db.QueryUserContext(ctx, "SELECT id FROM irma.users WHERE username = $1", []interface{}{&id}, username); err != nil {
+		server.LogError(err, "Failed to query user id by username")
+		if err == keyshare.ErrUserNotFound {
+			return 0, err
+		}
+		return 0, keyshare.ErrDB
+	}
+	return id, nil
 }
 
 func (db *postgresDB) verifyEmailToken(ctx context.Context, token string) (int64, error) {
@@ -57,10 +64,12 @@ func (db *postgresDB) verifyEmailToken(ctx context.Context, token string) (int64
 		[]interface{}{&id, &email},
 		token, time.Now().Unix())
 	if err == sql.ErrNoRows {
+		server.Logger.Info("Unknown email verification token")
 		return 0, errTokenNotFound
 	}
 	if err != nil {
-		return 0, err
+		server.LogError(err, "Failed to query email verification token")
+		return 0, keyshare.ErrDB
 	}
 
 	err = db.addEmail(ctx, id, email)
@@ -82,9 +91,17 @@ func (db *postgresDB) verifyEmailToken(ctx context.Context, token string) (int64
 }
 
 func (db *postgresDB) scheduleUserRemoval(ctx context.Context, id int64, delay time.Duration) error {
-	return db.db.ExecUserContext(ctx, "UPDATE irma.users SET coredata = NULL, delete_on = $2 WHERE id = $1 AND coredata IS NOT NULL",
+	if err := db.db.ExecUserContext(ctx, "UPDATE irma.users SET coredata = NULL, delete_on = $2 WHERE id = $1 AND coredata IS NOT NULL",
 		id,
-		time.Now().Add(delay).Unix())
+		time.Now().Add(delay).Unix(),
+	); err != nil {
+		server.LogError(err, "Failed to schedule user removal")
+		if err == keyshare.ErrUserNotFound {
+			return err
+		}
+		return keyshare.ErrDB
+	}
+	return nil
 }
 
 func (db *postgresDB) addLoginToken(ctx context.Context, email, token string) error {
@@ -95,7 +112,8 @@ func (db *postgresDB) addLoginToken(ctx context.Context, email, token string) er
 		return errEmailNotFound
 	}
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to query email address while adding login token")
+		return keyshare.ErrDB
 	}
 
 	expiry := time.Now().Add(emailTokenValidity * time.Minute)
@@ -106,7 +124,8 @@ func (db *postgresDB) addLoginToken(ctx context.Context, email, token string) er
 		email,
 		maxPrevExpiry.Unix())
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to check rate limiting while adding login token")
+		return keyshare.ErrDB
 	}
 	if amount > 0 {
 		return errTooManyTokens
@@ -118,7 +137,8 @@ func (db *postgresDB) addLoginToken(ctx context.Context, email, token string) er
 		email,
 		expiry.Unix())
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to insert login token")
+		return keyshare.ErrDB
 	}
 	if aff != 1 {
 		return errors.Errorf("Unexpected number of affected rows %d on token insert", aff)
@@ -142,7 +162,8 @@ func (db *postgresDB) loginUserCandidates(ctx context.Context, token string) ([]
 		},
 		token, time.Now().Unix())
 	if err != nil {
-		return nil, err
+		server.LogError(err, "Failed to query login candidates")
+		return nil, keyshare.ErrDB
 	}
 	if len(candidates) == 0 {
 		return nil, errTokenNotFound
@@ -162,12 +183,14 @@ func (db *postgresDB) verifyLoginToken(ctx context.Context, token, username stri
 		return 0, errTokenNotFound
 	}
 	if err != nil {
-		return 0, err
+		server.LogError(err, "Failed to query login token")
+		return 0, keyshare.ErrDB
 	}
 
 	aff, err := db.db.ExecCountContext(ctx, "DELETE FROM irma.email_login_tokens WHERE token = $1", token)
 	if err != nil {
-		return 0, err
+		server.LogError(err, "Failed to delete login token")
+		return 0, keyshare.ErrDB
 	}
 	if aff != 1 {
 		return 0, errors.Errorf("Unexpected number of affected rows %d for token removal", aff)
@@ -184,7 +207,11 @@ func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 		[]interface{}{&result.Username, &result.language, &result.DeleteInProgress},
 		id)
 	if err != nil {
-		return user{}, err
+		server.LogError(err, "Failed to query user")
+		if err == keyshare.ErrUserNotFound {
+			return user{}, err
+		}
+		return user{}, keyshare.ErrDB
 	}
 
 	query := "SELECT email, (delete_on IS NOT NULL) AS delete_in_progress {{revalidate}} FROM irma.emails WHERE user_id = $1 AND (delete_on >= $2 OR delete_on IS NULL)"
@@ -213,7 +240,8 @@ func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 		},
 		id, time.Now().Unix())
 	if err != nil {
-		return user{}, err
+		server.LogError(err, "Failed to query user emails")
+		return user{}, keyshare.ErrDB
 	}
 	return result, nil
 }
@@ -231,7 +259,8 @@ func (db *postgresDB) logs(ctx context.Context, id int64, offset, amount int) ([
 		},
 		id, offset, amount)
 	if err != nil {
-		return nil, err
+		server.LogError(err, "Failed to query user logs")
+		return nil, keyshare.ErrDB
 	}
 	return result, nil
 }
@@ -240,7 +269,8 @@ func (db *postgresDB) addEmail(ctx context.Context, id int64, email string) erro
 	// Try to restore email in process of deletion
 	aff, err := db.db.ExecCountContext(ctx, "UPDATE irma.emails SET delete_on = NULL WHERE user_id = $1 AND email = $2", id, email)
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to restore email in process of deletion")
+		return keyshare.ErrDB
 	}
 	if aff > 1 {
 		return errors.Errorf("Unexpected number of affected rows %d for email adding", aff)
@@ -250,8 +280,11 @@ func (db *postgresDB) addEmail(ctx context.Context, id int64, email string) erro
 	}
 
 	// Fall back to adding new one
-	_, err = db.db.ExecContext(ctx, "INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", id, email)
-	return err
+	if _, err = db.db.ExecContext(ctx, "INSERT INTO irma.emails (user_id, email) VALUES ($1, $2)", id, email); err != nil {
+		server.LogError(err, "Failed to add email")
+		return keyshare.ErrDB
+	}
+	return nil
 }
 
 func (db *postgresDB) scheduleEmailRemoval(ctx context.Context, id int64, email string, delay time.Duration) error {
@@ -260,7 +293,8 @@ func (db *postgresDB) scheduleEmailRemoval(ctx context.Context, id int64, email 
 		email,
 		time.Now().Add(delay).Unix())
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to schedule email removal")
+		return keyshare.ErrDB
 	}
 	if aff != 1 {
 		return errors.Errorf("Unexpected number of affected rows %d for email removal", aff)
@@ -272,7 +306,7 @@ func (db *postgresDB) setSeen(ctx context.Context, id int64) error {
 	// If the user is scheduled for deletion (delete_on is not null), undo that by resetting
 	// delete_on back to null, but only if the user did not explicitly delete her account herself
 	// in the myIRMA website, in which case coredata is null.
-	return db.db.ExecUserContext(
+	if err := db.db.ExecUserContext(
 		ctx,
 		`UPDATE irma.users
 		 SET last_seen = $1,
@@ -282,7 +316,14 @@ func (db *postgresDB) setSeen(ctx context.Context, id int64) error {
 		     END
 		 WHERE id = $2`,
 		time.Now().Unix(), id,
-	)
+	); err != nil {
+		server.LogError(err, "Failed to set user last seen")
+		if err == keyshare.ErrUserNotFound {
+			return err
+		}
+		return keyshare.ErrDB
+	}
+	return nil
 }
 
 func (db *postgresDB) hasEmailRevalidation(ctx context.Context) bool {
@@ -295,7 +336,8 @@ func (db *postgresDB) scheduleEmailRevalidation(ctx context.Context, id int64, e
 		id,
 		email)
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to schedule email revalidation")
+		return keyshare.ErrDB
 	}
 	if aff != 1 {
 		return errors.Errorf("Unexpected number of affected rows %d for email revalidation", aff)
@@ -308,7 +350,8 @@ func (db *postgresDB) setPinBlockDate(ctx context.Context, id int64, delay time.
 		time.Now().Add(delay).Unix(),
 		id)
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to set pin block date")
+		return keyshare.ErrDB
 	}
 	if aff != 1 {
 		return errors.Errorf("Unexpected number of affected rows %d at setting pin_block_date", aff)

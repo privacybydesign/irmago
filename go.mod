@@ -1,6 +1,8 @@
 module github.com/privacybydesign/irmago
 
-go 1.18
+go 1.21
+
+toolchain go1.21.1
 
 require (
 	github.com/alexandrevicenzi/go-sse v1.6.0
@@ -19,7 +21,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.1
 	github.com/mdp/qrterminal v1.0.1
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/privacybydesign/gabi v0.0.0-20221012093643-8e978bfbb252
+	github.com/privacybydesign/gabi v0.0.0-20221212095008-68a086907750
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cast v1.5.0

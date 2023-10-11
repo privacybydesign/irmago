@@ -515,25 +515,11 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	// Authorize request: check if the requestor is allowed to verify or issue
 	// the requested attributes or credentials
 	request := rrequest.SessionRequest()
-	if request.Action() == irma.ActionIssuing {
-		allowed, reason := s.conf.CanIssue(requestor, request.(*irma.IssuanceRequest).Credentials)
-		if !allowed {
-			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
-				Warn("Requestor not authorized to issue credential; full request: ", server.ToJson(request))
-			server.WriteError(w, server.ErrorUnauthorized, reason)
-			return
-		}
-	}
-
-	condiscon := request.Disclosure().Disclose
-	if len(condiscon) > 0 {
-		allowed, reason := s.conf.CanVerifyOrSign(requestor, request.Action(), condiscon)
-		if !allowed {
-			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
-				Warn("Requestor not authorized to verify attribute; full request: ", server.ToJson(request))
-			server.WriteError(w, server.ErrorUnauthorized, reason)
-			return
-		}
+	if allowed, reason := s.conf.CanRequest(requestor, request); !allowed {
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
+			Warn("Requestor not authorized to do session; full request: ", server.ToJson(request))
+		server.WriteError(w, server.ErrorUnauthorized, reason)
+		return
 	}
 
 	if rrequest.Base().NextSession != nil && rrequest.Base().NextSession.URL == "" {

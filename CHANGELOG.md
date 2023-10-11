@@ -6,6 +6,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Internal
+- Fixed failing tests due to expired test.test2 idemix key
+
+## [0.14.0] - 2023-10-02
+Note for users of the `irmaclient` package (e.g. maintainers of the [Yivi app](https://github.com/privacybydesign/irmamobile)): the `KeyshareVerifyPin` function requires the renewal endpoint for the keyshare attribute to be present. Therefore, this version should first be deployed on keyshare servers before the client side can be upgraded.
+### Added
+- Option `skipExpiryCheck` in disclosure requests to allow disclosure of expired credentials (e.g. `"skipExpiryCheck": ["irma-demo.sidn-pbdf.email"]`)
+- Option `host` in session request to overrule host name in IRMA QR if permission has been granted (see below)
+  ```
+  {
+    "@context": "https://irma.app/ld/request/disclosure/v2",
+    "host": "irma.example.com",
+    "disclose": ...
+  }
+  ```
+  This leads to the following session package:
+  ```
+  {
+    "token":"KzxuWKwL5KGLKr4uerws",
+    "sessionPtr": {"u":"https://irma.example.com/irma/session/ysDohpoySavbHAUDjmpz","irmaqr":"disclosing"},
+    "frontendRequest": {
+      "authorization":"qGrMmL8UZwZ88Sq8gobV",
+      "minProtocolVersion": "1.0",
+      "maxProtocolVersion": "1.1"
+    }
+  }
+  ```
+- Permission option `host_perms` in the requestor configuration to specify which values a requestor may use for the `host` option in session requests
+  ```
+  {
+    "requestors": {
+        "myapp": {
+            "disclose_perms": [ "irma-demo.MijnOverheid.ageLower.over18" ],
+            "sign_perms": [ "irma-demo.MijnOverheid.ageLower.*" ],
+            "issue_perms": [ "irma-demo.MijnOverheid.ageLower" ],
+            "host_perms": ["*.example.com"]
+            "auth_method": "token",
+            "key": "eGE2PSomOT84amVVdTU"
+        }
+    }
+  }
+  ```
+- Renewal endpoint for keyshare attribute in the keyshare server (`/users/renewKeyshareAttribute`)
+- Keyshare server /api/v2/prove/... endpoints for the new keyshare protocol
+
+### Changed
+- `KeyshareVerifyPin` function in irmaclient ensures the keyshare attribute is valid
+- Sending the account expiry email is done when user has only valid e-mail addresses
+- Strip unnecessary details from database errors
+
 ### Fixed
 - User account expiry continues when one or more e-mail addresses are marked for revalidation
 
@@ -411,6 +461,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.14.0]: https://github.com/privacybydesign/irmago/compare/v0.13.3...v0.14.0
 [0.13.3]: https://github.com/privacybydesign/irmago/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/privacybydesign/irmago/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/privacybydesign/irmago/compare/v0.13.0...v0.13.1

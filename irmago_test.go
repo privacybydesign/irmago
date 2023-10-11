@@ -484,7 +484,7 @@ func TestSessionRequests(t *testing.T) {
 
 		{
 			expected: &SignatureRequest{
-				DisclosureRequest{BaseRequest{LDContext: LDContextSignatureRequest}, base.Disclose, base.Labels},
+				DisclosureRequest{BaseRequest{LDContext: LDContextSignatureRequest}, base.Disclose, base.Labels, base.SkipExpiryCheck},
 				sigMessage,
 			},
 			old: &SignatureRequest{},
@@ -539,7 +539,7 @@ func TestSessionRequests(t *testing.T) {
 
 		{
 			expected: &IssuanceRequest{
-				DisclosureRequest: DisclosureRequest{BaseRequest{LDContext: LDContextIssuanceRequest}, base.Disclose, base.Labels},
+				DisclosureRequest: DisclosureRequest{BaseRequest{LDContext: LDContextIssuanceRequest}, base.Disclose, base.Labels, base.SkipExpiryCheck},
 				Credentials: []*CredentialRequest{
 					{
 						CredentialTypeID: NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),

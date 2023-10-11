@@ -197,6 +197,35 @@ func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUs
 	return s, nil
 }
 
+// GeneratePs generates a list of keyshare server P's, i.e. a list of R_0^keyshareSecret.
+func (c *Core) GeneratePs(secrets UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*big.Int, error) {
+	// Validate input request and build key list
+	var keyList []*gabikeys.PublicKey
+	for _, keyID := range keyIDs {
+		key, ok := c.trustedKeys[keyID]
+		if !ok {
+			return nil, ErrKeyNotFound
+		}
+		keyList = append(keyList, key)
+	}
+
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
+	s, err := c.verifyAccess(secrets, accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	var ps []*big.Int
+
+	for _, key := range keyList {
+		ps = append(ps,
+			new(big.Int).Exp(key.R[0], s.KeyshareSecret, key.N))
+	}
+
+	return ps, nil
+}
+
 // GenerateCommitments generates keyshare commitments using the specified Idemix public key(s).
 func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
@@ -209,7 +238,8 @@ func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyI
 		keyList = append(keyList, key)
 	}
 
-	// verify access and decrypt
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
 	s, err := c.verifyAccess(secrets, accessToken)
 	if err != nil {
 		return nil, 0, err
@@ -247,7 +277,8 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 		return "", ErrKeyNotFound
 	}
 
-	// verify access and decrypt
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
 	s, err := c.verifyAccess(secrets, accessToken)
 	if err != nil {
 		return "", err
@@ -264,7 +295,70 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 
 	// Generate response
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"ProofP": gabi.KeyshareResponse(s.KeyshareSecret, commit, challenge, key),
+		"ProofP": gabi.KeyshareResponseLegacy(s.KeyshareSecret, commit, challenge, key),
+		"iat":    time.Now().Unix(),
+		"sub":    "ProofP",
+		"iss":    c.jwtIssuer,
+	})
+	token.Header["kid"] = c.jwtPrivateKeyID
+	return token.SignedString(c.jwtPrivateKey)
+}
+
+// GenerateResponseV2 generates the response of a zero-knowledge proof of the keyshare secret, for a given previous commit and response request.
+// In older versions of the IRMA protocol (2.8 or below), issuers need a response that is linkable to earlier issuance sessions. In this case,
+// the ProofP.P will be set as well. The linkable parameter indicates whether the ProofP.P should be included.
+func (c *Core) GenerateResponseV2(
+	secrets UserSecrets,
+	accessToken string,
+	commitID uint64,
+	hashedComms gabi.KeyshareCommitmentRequest,
+	req gabi.KeyshareResponseRequest[irma.PublicKeyIdentifier],
+	keyID irma.PublicKeyIdentifier,
+	linkable bool) (string, error) {
+	// Validate request
+	key, ok := c.trustedKeys[keyID]
+	if !ok {
+		return "", ErrKeyNotFound
+	}
+
+	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
+	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
+	s, err := c.verifyAccess(secrets, accessToken)
+	if err != nil {
+		return "", err
+	}
+
+	// Fetch commit
+	c.commitmentMutex.Lock()
+	commit, ok := c.commitmentData[commitID]
+	delete(c.commitmentData, commitID)
+	c.commitmentMutex.Unlock()
+	if !ok {
+		return "", ErrUnknownCommit
+	}
+
+	proofP, err := gabi.KeyshareResponse(s.KeyshareSecret, commit, hashedComms, req, c.trustedKeys)
+	if err != nil {
+		return "", err
+	}
+
+	if uint(proofP.C.BitLen()) > gabikeys.DefaultSystemParameters[1024].Lh || proofP.C.Cmp(big.NewInt(0)) < 0 {
+		return "", ErrInvalidChallenge
+	}
+
+	// If the session involves a legacy issuer that doesn't understand the new keyshare protocol,
+	// return a legacy ProofP of the old keyshare protocol, differing as follows to a normal ProofP:
+	// - Includes P = R_0^userSecret in the Proof.P field (making the ProofP linkable)
+	// - The response in ProofP.SResponse should be just our response, not with the user's response added
+	//   as done by added earlier in `gabi.KeyshareResponse()` above, so we subtract the user's response from it.
+	if linkable {
+		proofP.P = new(big.Int).Exp(key.R[0], s.KeyshareSecret, key.N)
+		proofP.SResponse.Sub(proofP.SResponse, req.UserResponse)
+	}
+
+	// Generate response
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"ProofP": proofP,
 		"iat":    time.Now().Unix(),
 		"sub":    "ProofP",
 		"iss":    c.jwtIssuer,

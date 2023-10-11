@@ -14,12 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	sseclient "github.com/sietseringers/go-sse"
 	"github.com/stretchr/testify/require"
 )
@@ -1317,4 +1319,92 @@ func TestIssueExpiredKey(t *testing.T) {
 	expireKey(t, irmaServer.conf.IrmaConfiguration)
 	_, _, _, err := irmaServer.irma.StartSession(getIssuanceRequest(true), nil)
 	require.Error(t, err)
+}
+
+func TestExpiredCredential(t *testing.T) {
+	irmaserver.AllowIssuingExpiredCredentials = true
+	defer func() {
+		irmaserver.AllowIssuingExpiredCredentials = false
+	}()
+
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	// Issue an expired credential
+	invalidValidity := irma.Timestamp(time.Now())
+	value := "13371337"
+	issuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			Validity:         &invalidValidity,
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Radboud",
+				"studentCardNumber": value,
+				"studentID":         "s1234567",
+				"level":             "42",
+			},
+		},
+	})
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+
+	// Try to disclose it and check that it fails.
+	disclosureRequest := irma.NewDisclosureRequest()
+	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentCardNumber"), &value, nil)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, optionUnsatisfiableRequest)
+
+	// Try to disclose it when allowing expired credentials and check that it succeeds.
+	disclosureRequest.SkipExpiryCheck = []irma.CredentialTypeIdentifier{issuanceRequest.Credentials[0].CredentialTypeID}
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
+}
+
+func TestRequestorHostPermissions(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
+	defer rs.Stop()
+
+	// Check that a requestor can use a host that is allowed.
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getDisclosureRequest(id)
+	sesPkg := &server.SessionPackage{}
+
+	// Check that a requestor can't use a host that is not allowed.
+	request.Base().Host = "127.0.0.1:48682"
+	err := irma.NewHTTPTransport(requestorServerURL, false).Post("session", &server.SessionPackage{}, signSessionRequest(t, request))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requestor not allowed to use the requested host")
+
+	// Start a new session using the allowed host.
+	request.Base().Host = "localhost:48682"
+	err = irma.NewHTTPTransport(requestorServerURL, false).Post("session", sesPkg, signSessionRequest(t, request))
+	require.NoError(t, err)
+	realURL := sesPkg.SessionPtr.URL
+
+	// Check that a client can't use another host than the requestor wanted.
+	sesPkg.SessionPtr.URL = strings.Replace(sesPkg.SessionPtr.URL, "localhost", "127.0.0.1", 1)
+	sessionHandler, resultChan := createSessionHandler(t, optionIgnoreError, client, sesPkg, nil, nil)
+	startSessionAtClient(t, sesPkg, client, sessionHandler)
+	result := <-resultChan
+	require.Error(t, result.Err)
+	require.Contains(t, result.Err.Error(), "Host mismatch")
+
+	// Check that a client can use the host the requestor wanted.
+	sesPkg.SessionPtr.URL = realURL
+	sessionHandler, resultChan = createSessionHandler(t, 0, client, sesPkg, nil, nil)
+	startSessionAtClient(t, sesPkg, client, sessionHandler)
+	result = <-resultChan
+	require.Nil(t, result)
+}
+
+func signSessionRequest(t *testing.T, req irma.SessionRequest) string {
+	skbts, err := os.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
+	require.NoError(t, err)
+	sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
+	require.NoError(t, err)
+	j, err := irma.SignSessionRequest(req, jwt.SigningMethodRS256, sk, "requestor1")
+	require.NoError(t, err)
+	return j
 }

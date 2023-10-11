@@ -2,6 +2,7 @@ package irma
 
 import (
 	"crypto/rsa"
+	"slices"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -73,7 +74,7 @@ func (pl ProofList) ExtractPublicKeys(configuration *Configuration) ([]*gabikeys
 
 // Expired returns true if any of the contained disclosure proofs is specified at the specified time,
 // or now, when the specified time is nil.
-func (pl ProofList) Expired(configuration *Configuration, t *time.Time) (bool, error) {
+func (pl ProofList) Expired(configuration *Configuration, t *time.Time, skipExpiryCheck []CredentialTypeIdentifier) (bool, error) {
 	if t == nil {
 		temp := time.Now()
 		t = &temp
@@ -83,10 +84,14 @@ func (pl ProofList) Expired(configuration *Configuration, t *time.Time) (bool, e
 		if !ok {
 			continue
 		}
+
 		metadata := MetadataFromInt(proofd.ADisclosed[1], configuration) // index 1 is metadata attribute
-		if metadata.Expiry().Before(*t) {
+
+		skipCheck := slices.Contains(skipExpiryCheck, metadata.CredentialType().Identifier())
+		if !skipCheck && metadata.Expiry().Before(*t) {
 			return true, nil
 		}
+
 		pk, err := metadata.PublicKey()
 		if err != nil {
 			return false, err
@@ -360,8 +365,11 @@ func (d *Disclosure) VerifyAgainstRequest(
 
 	// Next extract the contained attributes from the proofs, and match them to the signature request if present
 	var required AttributeConDisCon
+	var skipExpiryCheck []CredentialTypeIdentifier
 	if request != nil {
-		required = request.Disclosure().Disclose
+		disclosureRequest := request.Disclosure()
+		required = disclosureRequest.Disclose
+		skipExpiryCheck = disclosureRequest.SkipExpiryCheck
 	}
 	allmatched, list, err := d.DisclosedAttributes(configuration, required, revtimes)
 	if err != nil {
@@ -374,7 +382,7 @@ func (d *Disclosure) VerifyAgainstRequest(
 	}
 
 	// Check that all credentials were unexpired
-	expired, err := ProofList(d.Proofs).Expired(configuration, validAt)
+	expired, err := ProofList(d.Proofs).Expired(configuration, validAt, skipExpiryCheck)
 	if err != nil {
 		return nil, ProofStatusInvalid, err
 	}
