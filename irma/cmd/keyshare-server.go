@@ -57,14 +57,27 @@ func init() {
 	flags.Int("db-max-idle-time", 0, "Time in seconds after which idle database connections are closed (default unlimited)")
 	flags.Int("db-max-open-time", 0, "Maximum lifetime in seconds of open database connections (default unlimited)")
 
+	headers["store-type"] = "Session store configuration"
+	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
+	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
+	flags.StringSlice("redis-sentinel-addrs", nil, "Redis Sentinel addresses, to be specified as host:port")
+	flags.StringSlice("redis-cluster-addrs", nil, "Redis Cluster addresses, to be specified as host:port")
+	flags.Bool("redis-accept-inconsistency-risk", false, "Accept the risk of inconsistent session state when using Redis Sentinel or Redis Cluster")
+	flags.String("redis-pw", "", "Redis server password")
+	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
+	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
+	flags.String("redis-tls-cert", "", "use Redis TLS with specific certificate or certificate authority")
+	flags.String("redis-tls-cert-file", "", "use Redis TLS path to specific certificate or certificate authority")
+	flags.Bool("redis-no-tls", false, "disable Redis TLS (by default, Redis TLS is enabled with the system certificate pool)")
+
 	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
 	flags.String("jwt-privkey-file", "", "Path to file containing private jwt key of keyshare server")
 	flags.Int("jwt-privkey-id", 0, "Key identifier of keyshare server public key matching used private key")
 	flags.String("jwt-issuer", keysharecore.JWTIssuerDefault, "JWT issuer used in \"iss\" field")
 	flags.Int("jwt-pin-expiry", keysharecore.JWTPinExpiryDefault, "Expiry of PIN JWT in seconds")
-	flags.String("storage-primary-keyfile", "", "Primary key used for encrypting and decrypting secure containers")
-	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
+	flags.String("storage-primary-key-file", "", "Primary key used for encrypting and decrypting secure containers")
+	flags.StringSlice("storage-fallback-key-file", nil, "Fallback key(s) used to decrypt older secure containers")
 
 	headers["keyshare-attribute"] = "Keyshare server attribute issued during registration"
 	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
@@ -98,9 +111,14 @@ func init() {
 func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration, error) {
 	readConfig(cmd, "keyshareserver", "keyshareserver", []string{".", "/etc/keyshareserver"}, nil)
 
+	irmaServerConf, err := configureIRMAServer()
+	if err != nil {
+		return nil, err
+	}
+
 	// And build the configuration
 	conf := &keyshareserver.Configuration{
-		Configuration:      configureIRMAServer(),
+		Configuration:      irmaServerConf,
 		EmailConfiguration: configureEmail(),
 
 		DBType:            keyshareserver.DBType(viper.GetString("db_type")),

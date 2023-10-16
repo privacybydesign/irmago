@@ -79,12 +79,16 @@ func TestMemoryStoreNoDeadlock(t *testing.T) {
 	session, err := s.newSession(irma.ActionDisclosing, req, nil, "")
 	require.NoError(t, err)
 
-	session.Lock()
+	memSessions, ok := s.sessions.(*memorySessionStore)
+	require.True(t, ok)
+	memSession := memSessions.requestor[session.RequestorToken]
+
+	memSession.Lock()
 	deletingCompleted := false
 	addingCompleted := false
 	// Make sure the deleting continues on completion such that the test itself will not hang.
 	defer func() {
-		session.Unlock()
+		memSession.Unlock()
 		time.Sleep(100 * time.Millisecond)
 		require.True(t, deletingCompleted)
 	}()

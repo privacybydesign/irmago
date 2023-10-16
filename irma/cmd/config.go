@@ -2,14 +2,15 @@ package cmd
 
 import (
 	"crypto/tls"
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare"
 	"net/smtp"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/server/keyshare"
 
 	"github.com/go-errors/errors"
 	"github.com/mitchellh/mapstructure"
@@ -40,8 +41,8 @@ func configureEmail() keyshare.EmailConfiguration {
 	}
 }
 
-func configureIRMAServer() *server.Configuration {
-	return &server.Configuration{
+func configureIRMAServer() (*server.Configuration, error) {
+	conf := &server.Configuration{
 		SchemesPath:            viper.GetString("schemes_path"),
 		SchemesAssetsPath:      viper.GetString("schemes_assets_path"),
 		SchemesUpdateInterval:  viper.GetInt("schemes_update"),
@@ -68,6 +69,31 @@ func configureIRMAServer() *server.Configuration {
 		AllowUnsignedCallbacks: viper.GetBool("allow_unsigned_callbacks"),
 		AugmentClientReturnURL: viper.GetBool("augment_client_return_url"),
 	}
+
+	// Parse session store configuration
+	switch conf.StoreType {
+	case "redis":
+		conf.RedisSettings = &server.RedisSettings{}
+		conf.RedisSettings.Addr = viper.GetString("redis_addr")
+		conf.RedisSettings.SentinelAddrs = viper.GetStringSlice("redis_sentinel_addrs")
+		conf.RedisSettings.SentinelMasterName = viper.GetString("redis_sentinel_master_name")
+		conf.RedisSettings.AcceptInconsistencyRisk = viper.GetBool("redis_accept_inconsistency_risk")
+
+		if conf.RedisSettings.Addr == "" && len(conf.RedisSettings.SentinelAddrs) == 0 || conf.RedisSettings.Addr != "" && len(conf.RedisSettings.SentinelAddrs) > 0 {
+			return nil, errors.New("When Redis is used as session data store, exactly one of --redis-addr, --redis-sentinel-addrs or --redis-cluster-addrs must be specified.")
+		}
+
+		if conf.RedisSettings.Password = viper.GetString("redis_pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis_allow_empty_password") {
+			return nil, errors.New("When Redis is used as session data store, a non-empty Redis password must be specified with the --redis-pw flag. This restriction can be relaxed by setting the --redis-allow-empty-password flag to true.")
+		}
+
+		conf.RedisSettings.DB = viper.GetInt("redis_db")
+
+		conf.RedisSettings.TLSCertificate = viper.GetString("redis_tls_cert")
+		conf.RedisSettings.TLSCertificateFile = viper.GetString("redis_tls_cert_file")
+		conf.RedisSettings.DisableTLS = viper.GetBool("redis_no_tls")
+	}
+	return conf, nil
 }
 
 func configureTLS() *tls.Config {

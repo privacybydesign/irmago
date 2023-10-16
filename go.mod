@@ -7,7 +7,6 @@ toolchain go1.21.1
 require (
 	github.com/alexandrevicenzi/go-sse v1.6.0
 	github.com/alicebob/miniredis/v2 v2.17.0
-	github.com/bsm/redislock v0.7.2
 	github.com/bwesterb/go-atum v1.1.5
 	github.com/eknkc/basex v1.0.1
 	github.com/fxamacker/cbor v1.5.1

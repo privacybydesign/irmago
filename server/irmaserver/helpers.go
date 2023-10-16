@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -29,73 +28,42 @@ import (
 
 // Session helpers
 
-func (session *session) markAlive() {
+func (session *sessionData) markAlive() {
+	// TODO: use from conf?
 	session.LastActive = time.Now()
-	session.conf.Logger.
+	server.Logger.
 		WithFields(logrus.Fields{"session": session.RequestorToken}).
 		Debug("Session marked active, deletion delayed")
 }
 
-func (session *session) setStatus(status irma.ServerStatus) {
-	session.conf.Logger.
+func (session *sessionData) setStatus(status irma.ServerStatus, conf *server.Configuration) {
+	conf.Logger.
 		WithFields(logrus.Fields{"session": session.RequestorToken, "status": status}).
 		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
-	session.onStatusChange()
-}
-
-func (session *session) onStatusChange() {
-	// Send status update to all listener channels
-	for _, statusChan := range session.statusChannels {
-		statusChan <- session.Status
-		if session.Status.Finished() {
-			close(statusChan)
-		}
-	}
 
 	// Execute callback and handler if status is Finished
 	if session.Status.Finished() {
-		session.doResultCallback()
-
-		if session.handler != nil {
-			handler := session.handler
-			session.handler = nil
-			go handler(session.Result)
-		}
+		session.doResultCallback(conf)
 	}
-
-	// Send updates in case SSE is used
-	if session.sse == nil {
-		return
-	}
-	session.sse.SendMessage("session/"+string(session.ClientToken),
-		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.Status)),
-	)
-	session.sse.SendMessage("session/"+string(session.RequestorToken),
-		sse.SimpleMessage(fmt.Sprintf(`"%s"`, session.Status)),
-	)
-	frontendstatus, _ := json.Marshal(irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next})
-	session.sse.SendMessage("frontendsession/"+string(session.ClientToken),
-		sse.SimpleMessage(string(frontendstatus)),
-	)
 }
 
-func (session *session) doResultCallback() {
+func (session *sessionData) doResultCallback(conf *server.Configuration) {
 	url := session.Rrequest.Base().CallbackURL
 	if url == "" {
 		return
 	}
 	server.DoResultCallback(url,
 		session.Result,
-		session.conf.JwtIssuer,
+		conf.JwtIssuer,
 		session.Rrequest.Base().ResultJwtValidity,
-		session.conf.JwtRSAPrivateKey,
+		conf.JwtRSAPrivateKey,
 	)
 }
 
 // Checks whether requested options are valid in the current session context.
-func (session *session) updateFrontendOptions(request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
+func (session *sessionData) updateFrontendOptions(request *irma.FrontendOptionsRequest) (*irma.SessionOptions, error) {
 	if session.Status != irma.ServerStatusInitialized {
 		return nil, errors.New("Frontend options can only be updated when session is in initialized state")
 	}
@@ -113,22 +81,22 @@ func (session *session) updateFrontendOptions(request *irma.FrontendOptionsReque
 }
 
 // Complete the pairing process of frontend and irma client
-func (session *session) pairingCompleted() error {
+func (session *sessionData) pairingCompleted(conf *server.Configuration) error {
 	if session.Status == irma.ServerStatusPairing {
-		session.setStatus(irma.ServerStatusConnected)
+		session.setStatus(irma.ServerStatusConnected, conf)
 		return nil
 	}
 	return errors.New("Pairing was not enabled")
 }
 
-func (session *session) fail(err server.Error, message string) *irma.RemoteError {
+func (session *sessionData) fail(err server.Error, message string, conf *server.Configuration) *irma.RemoteError {
 	rerr := server.RemoteError(err, message)
 	session.Result = &server.SessionResult{Err: rerr, Token: session.RequestorToken, Status: irma.ServerStatusCancelled, Type: session.Action}
-	session.setStatus(irma.ServerStatusCancelled)
+	session.setStatus(irma.ServerStatusCancelled, conf)
 	return rerr
 }
 
-func (session *session) chooseProtocolVersion(minClient, maxClient *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
+func (session *sessionData) chooseProtocolVersion(minClient, maxClient *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
 	minSessionProtocolVersion := minSecureProtocolVersion
 	if AcceptInsecureProtocolVersions {
 		// Set minimum supported version to 2.5 if condiscon compatibility is required
@@ -137,7 +105,7 @@ func (session *session) chooseProtocolVersion(minClient, maxClient *irma.Protoco
 			minSessionProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 5}
 		}
 		// Set minimum to 2.6 if nonrevocation is required
-		if len(session.request.Base().Revocation) > 0 {
+		if len(session.Rrequest.SessionRequest().Base().Revocation) > 0 {
 			minSessionProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
 		}
 		// Set minimum to 2.7 if chained session are used
@@ -166,7 +134,7 @@ const retryTimeLimit = 10 * time.Second
 // - the body is not empty
 // - last time was not more than 10 seconds ago (retryablehttp client gives up before this)
 // - the session status is what it is expected to be when receiving the request for a second time.
-func (session *session) checkCache(endpoint string, message []byte) (int, []byte) {
+func (session *sessionData) checkCache(endpoint string, message []byte) (int, []byte) {
 	if session.ResponseCache.Endpoint != endpoint ||
 		len(session.ResponseCache.Response) == 0 ||
 		session.ResponseCache.SessionStatus != session.Status ||
@@ -180,15 +148,15 @@ func (session *session) checkCache(endpoint string, message []byte) (int, []byte
 
 // Issuance helpers
 
-func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.CredentialRequest) (*revocation.Witness, error) {
+func (session *sessionData) computeWitness(sk *gabikeys.PrivateKey, cred *irma.CredentialRequest, conf *server.Configuration) (*revocation.Witness, error) {
 	id := cred.CredentialTypeID
-	credtyp := session.conf.IrmaConfiguration.CredentialTypes[id]
-	if !credtyp.RevocationSupported() || !session.request.Base().RevocationSupported() {
+	credtyp := conf.IrmaConfiguration.CredentialTypes[id]
+	if !credtyp.RevocationSupported() || !session.Rrequest.SessionRequest().Base().RevocationSupported() {
 		return nil, nil
 	}
 
 	// ensure the client always gets an up to date nonrevocation witness
-	rs := session.conf.IrmaConfiguration.Revocation
+	rs := conf.IrmaConfiguration.Revocation
 	if err := rs.SyncDB(id); err != nil {
 		return nil, err
 	}
@@ -222,11 +190,11 @@ func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.Crede
 	return witness, nil
 }
 
-func (session *session) computeAttributes(
-	sk *gabikeys.PrivateKey, cred *irma.CredentialRequest,
+func (session *sessionData) computeAttributes(
+	sk *gabikeys.PrivateKey, cred *irma.CredentialRequest, conf *server.Configuration,
 ) ([]*big.Int, *revocation.Witness, error) {
 	id := cred.CredentialTypeID
-	witness, err := session.computeWitness(sk, cred)
+	witness, err := session.computeWitness(sk, cred, conf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -236,7 +204,7 @@ func (session *session) computeAttributes(
 	}
 
 	issuedAt := time.Now()
-	attributes, err := cred.AttributeList(session.conf.IrmaConfiguration, 0x03, nonrevAttr, issuedAt)
+	attributes, err := cred.AttributeList(conf.IrmaConfiguration, 0x03, nonrevAttr, issuedAt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,7 +218,7 @@ func (session *session) computeAttributes(
 			Issued:     issuedAt.UnixNano(),
 			ValidUntil: attributes.Expiry().UnixNano(),
 		}
-		err = session.conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
+		err = conf.IrmaConfiguration.Revocation.SaveIssuanceRecord(id, issrecord, sk)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -311,7 +279,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 	return nil
 }
 
-func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, scheme irma.SchemeManagerIdentifier) (*gabi.ProofP, error) {
+func (session *sessionData) getProofP(commitments *irma.IssueCommitmentMessage, scheme irma.SchemeManagerIdentifier, conf *server.Configuration) (*gabi.ProofP, error) {
 	if session.KssProofs == nil {
 		session.KssProofs = make(map[irma.SchemeManagerIdentifier]*gabi.ProofP)
 	}
@@ -321,12 +289,12 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 		if !contains {
 			return nil, errors.Errorf("no keyshare proof included for scheme %s", scheme.Name())
 		}
-		session.conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
+		conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
 		claims := &struct {
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
 		}{}
-		token, err := jwt.ParseWithClaims(str, claims, session.conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
+		token, err := jwt.ParseWithClaims(str, claims, conf.IrmaConfiguration.KeyshareServerKeyFunc(scheme))
 		if err != nil {
 			return nil, err
 		}
@@ -339,7 +307,7 @@ func (session *session) getProofP(commitments *irma.IssueCommitmentMessage, sche
 	return session.KssProofs[scheme], nil
 }
 
-func (session *session) getClientRequest() (*irma.ClientSessionRequest, error) {
+func (session *sessionData) getClientRequest() (*irma.ClientSessionRequest, error) {
 	info := irma.ClientSessionRequest{
 		LDContext:       irma.LDContextClientSessionRequest,
 		ProtocolVersion: session.Version,
@@ -356,11 +324,12 @@ func (session *session) getClientRequest() (*irma.ClientSessionRequest, error) {
 	return &info, nil
 }
 
-func (session *session) getRequest() (irma.SessionRequest, error) {
+func (session *sessionData) getRequest() (irma.SessionRequest, error) {
+	req := session.Rrequest.SessionRequest()
 	// In case of issuance requests, strip revocation keys from []CredentialRequest
-	isreq, issuing := session.request.(*irma.IssuanceRequest)
+	isreq, issuing := req.(*irma.IssuanceRequest)
 	if !issuing {
-		return session.request, nil
+		return req, nil
 	}
 	cpy, err := copyObject(isreq)
 	if err != nil {
@@ -373,19 +342,9 @@ func (session *session) getRequest() (irma.SessionRequest, error) {
 	return cpy.(*irma.IssuanceRequest), nil
 }
 
-func (session *session) updateAndUnlock() error {
-	err := session.sessions.update(session)
-	if err != nil {
-		return err
-	}
-	session.sessions.unlock(session)
-
-	return nil
-}
-
-func (s *sessionData) hash() [32]byte {
+func (session *sessionData) hash() [32]byte {
 	// Note: This marshalling does not consider the order of the `map[irma.SchemeManagerIdentifier]*gabi.ProofP` items.
-	sessionJSON, err := json.Marshal(s)
+	sessionJSON, err := json.Marshal(session)
 	if err != nil {
 		panic(err)
 	}
@@ -393,13 +352,27 @@ func (s *sessionData) hash() [32]byte {
 	return sha256.Sum256(sessionJSON)
 }
 
+func (session *sessionData) timeout(conf *server.Configuration) time.Duration {
+	maxSessionDuration := time.Duration(conf.MaxSessionLifetime) * time.Minute
+	if session.Status == irma.ServerStatusInitialized && session.Rrequest.Base().ClientTimeout != 0 {
+		maxSessionDuration = time.Duration(session.Rrequest.Base().ClientTimeout) * time.Second
+	} else if session.Status.Finished() {
+		maxSessionDuration = 0
+	}
+	return maxSessionDuration - time.Since(session.LastActive)
+}
+
+func (session *sessionData) ttl(conf *server.Configuration) time.Duration {
+	return session.timeout(conf) + time.Duration(conf.SessionResultLifetime)*time.Minute
+}
+
 // UnmarshalJSON unmarshals sessionData.
-func (s *sessionData) UnmarshalJSON(data []byte) error {
-	type rawSessionData sessionData
+func (session *sessionData) UnmarshalJSON(data []byte) error {
+	type rawSession sessionData
 
 	var temp struct {
 		Rrequest json.RawMessage `json:",omitempty"`
-		rawSessionData
+		rawSession
 	}
 
 	if err := json.Unmarshal(data, &temp); err != nil {
@@ -410,19 +383,19 @@ func (s *sessionData) UnmarshalJSON(data []byte) error {
 		return errors.Errorf("temp.Rrequest == nil: %d \n", temp.Rrequest)
 	}
 
-	*s = sessionData(temp.rawSessionData)
+	*session = sessionData(temp.rawSession)
 
 	// unmarshal Rrequest
-	switch s.Action {
+	switch session.Action {
 	case "issuing":
-		s.Rrequest = &irma.IdentityProviderRequest{}
+		session.Rrequest = &irma.IdentityProviderRequest{}
 	case "disclosing":
-		s.Rrequest = &irma.ServiceProviderRequest{}
+		session.Rrequest = &irma.ServiceProviderRequest{}
 	case "signing":
-		s.Rrequest = &irma.SignatureRequestorRequest{}
+		session.Rrequest = &irma.SignatureRequestorRequest{}
 	}
 
-	return json.Unmarshal(temp.Rrequest, s.Rrequest)
+	return json.Unmarshal(temp.Rrequest, session.Rrequest)
 }
 
 // Other
@@ -524,7 +497,7 @@ func errorWriter(err *irma.RemoteError, writer func(w http.ResponseWriter, objec
 
 func (s *Server) frontendMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session := r.Context().Value("session").(*session)
+		session := r.Context().Value("session").(*sessionData)
 		frontendAuth := irma.FrontendAuthorization(r.Header.Get(irma.AuthorizationHeader))
 
 		if frontendAuth != session.FrontendAuth {
@@ -537,7 +510,7 @@ func (s *Server) frontendMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session := r.Context().Value("session").(*session)
+		session := r.Context().Value("session").(*sessionData)
 
 		// Read r.Body, and then replace with a fresh ReadCloser for the next handler
 		message, err := io.ReadAll(r.Body)
@@ -579,8 +552,24 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		session, err := s.sessions.clientGet(token)
-		if err != nil {
+		if err := s.sessions.clientTransaction(token, func(session *sessionData) error {
+			expectedHost := session.Rrequest.SessionRequest().Base().Host
+			if expectedHost != "" && expectedHost != r.Host {
+				server.WriteError(w, server.ErrorUnauthorized, "Host mismatch")
+				return nil
+			}
+
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
+
+			// Write session result to context for irmac.go functions.
+			result := session.Result
+			resultValue := r.Context().Value("sessionresult")
+			if resultValue != nil {
+				*resultValue.(*server.SessionResult) = *result
+			}
+
+			return nil
+		}); err != nil {
 			if _, ok := err.(*UnknownSessionError); ok {
 				server.WriteError(w, server.ErrorSessionUnknown, "")
 			} else {
@@ -588,35 +577,12 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			}
 			return
 		}
-
-		defer func() {
-			err := session.updateAndUnlock()
-			if err != nil {
-				// Error already logged in update method.
-				server.WriteError(w, server.ErrorInternal, "")
-				return
-			}
-
-			result := session.Result
-			r := r.Context().Value("sessionresult")
-			if r != nil {
-				*r.(*server.SessionResult) = *result
-			}
-		}()
-
-		expectedHost := session.request.Base().Host
-		if expectedHost != "" && expectedHost != r.Host {
-			server.WriteError(w, server.ErrorUnauthorized, "Host mismatch")
-			return
-		}
-
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
 	})
 }
 
 func (s *Server) pairingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session := r.Context().Value("session").(*session)
+		session := r.Context().Value("session").(*sessionData)
 
 		if session.Status == irma.ServerStatusPairing {
 			server.WriteError(w, server.ErrorPairingRequired, "")

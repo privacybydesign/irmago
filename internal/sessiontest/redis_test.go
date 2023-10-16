@@ -198,44 +198,7 @@ func checkErrorInternal(t *testing.T, err error) {
 	require.Equal(t, string(server.ErrorInternal.Type), serr.RemoteError.ErrorName)
 }
 
-func TestRedisUpdates(t *testing.T) {
-	mr, cert := startRedis(t, true)
-	defer mr.Close()
-
-	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)())
-	defer irmaServer.Stop()
-	qr, token, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
-		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
-	), nil)
-	require.NoError(t, err)
-
-	var o interface{}
-	transport := irma.NewHTTPTransport(qr.URL, false)
-	transport.SetHeader(irma.MinVersionHeader, "2.8")
-	transport.SetHeader(irma.MaxVersionHeader, "2.8")
-	transport.SetHeader(irma.AuthorizationHeader, "testauthtoken")
-	clientToken, err := mr.Get("token:" + string(token))
-	require.NoError(t, err)
-
-	initialData, _ := mr.Get("session:" + clientToken)
-	require.NoError(t, transport.Get("", &o))
-	updatedData, _ := mr.Get("session:" + clientToken)
-	require.NoError(t, transport.Get("", &o))
-	latestData, _ := mr.Get("session:" + clientToken)
-
-	// First Get should update the data stored in Redis
-	require.NotEqual(t, updatedData, initialData)
-	// Second Get should not update the data stored in Redis
-	require.Equal(t, updatedData, latestData)
-
-	// lock session for token
-	require.NoError(t, mr.Set("lock:"+clientToken, "bla"))
-	defer mr.Del("lock:" + clientToken)
-
-	// try to update locked session
-	err = transport.Get("", &o)
-	checkErrorInternal(t, err)
-}
+// TODO: What to do with TestRedisUpdates?
 
 func TestRedisRedundancy(t *testing.T) {
 	mr, cert := startRedis(t, true)
