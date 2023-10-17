@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- Improve stability of database drivers by bumping their versions
+
+### Security
+- Use Go toolchain version 1.21.3 for building `irma` CLI tool
+
 ### Internal
 - Fixed failing tests due to expired test.test2 idemix key
 
