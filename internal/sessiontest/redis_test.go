@@ -198,8 +198,6 @@ func checkErrorInternal(t *testing.T, err error) {
 	require.Equal(t, string(server.ErrorInternal.Type), serr.RemoteError.ErrorName)
 }
 
-// TODO: What to do with TestRedisUpdates?
-
 func TestRedisRedundancy(t *testing.T) {
 	mr, cert := startRedis(t, true)
 	defer mr.Close()

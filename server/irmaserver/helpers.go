@@ -28,10 +28,9 @@ import (
 
 // Session helpers
 
-func (session *sessionData) markAlive() {
-	// TODO: use from conf?
+func (session *sessionData) markAlive(conf *server.Configuration) {
 	session.LastActive = time.Now()
-	server.Logger.
+	conf.Logger.
 		WithFields(logrus.Fields{"session": session.RequestorToken}).
 		Debug("Session marked active, deletion delayed")
 }

@@ -448,9 +448,10 @@ func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 		token := string(session.ClientToken)
 		if requestor {
 			token = string(session.RequestorToken)
+		} else {
+			s.serverSentEvents.SendMessage("frontendsession/"+token, sse.NewMessage("", "", "open"))
 		}
 		s.serverSentEvents.SendMessage("session/"+token, sse.NewMessage("", "", "open"))
-		s.serverSentEvents.SendMessage("frontendsession/"+token, sse.NewMessage("", "", "open"))
 	}()
 
 	s.serverSentEvents.ServeHTTP(w, r)
@@ -523,7 +524,7 @@ func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, 
 	return s.SessionStatus(requestorToken)
 }
 func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan chan irma.ServerStatus, err error) {
-	if s.conf.StoreType != "memory" {
+	if s.conf.StoreType == "redis" {
 		return nil, errors.New("SessionStatus cannot be used in combination with Redis/etcd.")
 	}
 
@@ -532,10 +533,12 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 		return nil, err
 	}
 	var timeoutTime time.Time
-	s.sessions.transaction(requestorToken, func(session *sessionData) error {
+	if err := s.sessions.transaction(requestorToken, func(session *sessionData) error {
 		timeoutTime = time.Now().Add(session.timeout(s.conf))
 		return nil
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	statusChan = make(chan irma.ServerStatus, 4)
 	go func() {

@@ -28,7 +28,7 @@ func (session *sessionData) handleDelete(conf *server.Configuration) {
 	if session.Status.Finished() {
 		return
 	}
-	session.markAlive()
+	session.markAlive(conf)
 
 	session.Result = &server.SessionResult{Token: session.RequestorToken, Status: irma.ServerStatusCancelled, Type: session.Action}
 	session.setStatus(irma.ServerStatusCancelled, conf)
@@ -41,7 +41,7 @@ func (session *sessionData) handleGetClientRequest(min, max *irma.ProtocolVersio
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
 	}
 
-	session.markAlive()
+	session.markAlive(conf)
 	logger := conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken})
 
 	var err error
@@ -106,7 +106,7 @@ func (session *sessionData) handleGetStatus() (irma.ServerStatus, *irma.RemoteEr
 }
 
 func (session *sessionData) handlePostSignature(signature *irma.SignedMessage, conf *server.Configuration) (*irma.ServerSessionResponse, *irma.RemoteError) {
-	session.markAlive()
+	session.markAlive(conf)
 
 	var err error
 	var rerr *irma.RemoteError
@@ -132,7 +132,7 @@ func (session *sessionData) handlePostSignature(signature *irma.SignedMessage, c
 }
 
 func (session *sessionData) handlePostDisclosure(disclosure *irma.Disclosure, conf *server.Configuration) (*irma.ServerSessionResponse, *irma.RemoteError) {
-	session.markAlive()
+	session.markAlive(conf)
 
 	var err error
 	var rerr *irma.RemoteError
@@ -156,7 +156,7 @@ func (session *sessionData) handlePostDisclosure(disclosure *irma.Disclosure, co
 }
 
 func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitmentMessage, conf *server.Configuration) (*irma.ServerSessionResponse, *irma.RemoteError) {
-	session.markAlive()
+	session.markAlive(conf)
 	request := session.Rrequest.SessionRequest().(*irma.IssuanceRequest)
 
 	discloseCount := len(commitments.Proofs) - len(request.Credentials)

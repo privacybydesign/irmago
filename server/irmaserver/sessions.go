@@ -231,14 +231,14 @@ func (s *memorySessionStore) deleteExpired() {
 	// First check which sessions have expired
 	// We don't need a write lock for this yet, so postpone that for actual deleting
 	s.RLock()
-	var toCheck []irma.RequestorToken
+	toCheck := make(map[irma.RequestorToken]struct{}, len(s.requestor))
 	for token := range s.requestor {
-		toCheck = append(toCheck, token)
+		toCheck[token] = struct{}{}
 	}
 	s.RUnlock()
 
 	expired := make([]irma.RequestorToken, 0, len(toCheck))
-	for _, token := range toCheck {
+	for token := range toCheck {
 		s.transaction(token, func(session *sessionData) error {
 			if session.ttl(s.conf) <= 0 {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Deleting session")

@@ -80,7 +80,7 @@ func configureIRMAServer() (*server.Configuration, error) {
 		conf.RedisSettings.AcceptInconsistencyRisk = viper.GetBool("redis_accept_inconsistency_risk")
 
 		if conf.RedisSettings.Addr == "" && len(conf.RedisSettings.SentinelAddrs) == 0 || conf.RedisSettings.Addr != "" && len(conf.RedisSettings.SentinelAddrs) > 0 {
-			return nil, errors.New("When Redis is used as session data store, exactly one of --redis-addr, --redis-sentinel-addrs or --redis-cluster-addrs must be specified.")
+			return nil, errors.New("When Redis is used as session data store, either --redis-addr or --redis-sentinel-addrs must be specified.")
 		}
 
 		if conf.RedisSettings.Password = viper.GetString("redis_pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis_allow_empty_password") {

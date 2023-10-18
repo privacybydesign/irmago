@@ -64,7 +64,7 @@ func init() {
 	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
 	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
 	flags.StringSlice("redis-sentinel-addrs", nil, "Redis Sentinel addresses, to be specified as host:port")
-	flags.StringSlice("redis-cluster-addrs", nil, "Redis Cluster addresses, to be specified as host:port")
+	flags.String("redis-sentinel-master-name", "", "Redis Sentinel master name")
 	flags.Bool("redis-accept-inconsistency-risk", false, "Accept the risk of inconsistent session state when using Redis Sentinel or Redis Cluster")
 	flags.String("redis-pw", "", "Redis server password")
 	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
