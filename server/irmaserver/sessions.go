@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -12,9 +11,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 
 	"github.com/sirupsen/logrus"
@@ -48,10 +45,10 @@ type responseCache struct {
 }
 
 type sessionStore interface {
-	add(*sessionData) error
-	transaction(irma.RequestorToken, func(*sessionData) (bool, error)) error
-	clientTransaction(irma.ClientToken, func(*sessionData) (bool, error)) error
-	subscribeUpdates(irma.RequestorToken) (chan *sessionData, error)
+	add(context.Context, *sessionData) error
+	transaction(context.Context, irma.RequestorToken, func(*sessionData) (bool, error)) error
+	clientTransaction(context.Context, irma.ClientToken, func(*sessionData) (bool, error)) error
+	subscribeUpdates(context.Context, irma.RequestorToken) (chan *sessionData, error)
 	stop()
 }
 
@@ -115,7 +112,7 @@ var (
 	maxFrontendProtocolVersion = irma.NewVersion(1, 1)
 )
 
-func (s *memorySessionStore) add(session *sessionData) error {
+func (s *memorySessionStore) add(ctx context.Context, session *sessionData) error {
 	s.Lock()
 	defer s.Unlock()
 	memSes := &memorySessionData{sessionData: session}
@@ -124,7 +121,7 @@ func (s *memorySessionStore) add(session *sessionData) error {
 	return nil
 }
 
-func (s *memorySessionStore) transaction(t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
+func (s *memorySessionStore) transaction(ctx context.Context, t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
 	s.RLock()
 	memSes := s.requestor[t]
 	s.RUnlock()
@@ -135,7 +132,7 @@ func (s *memorySessionStore) transaction(t irma.RequestorToken, handler func(ses
 	return s.handleTransaction(memSes, handler)
 }
 
-func (s *memorySessionStore) clientTransaction(t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
+func (s *memorySessionStore) clientTransaction(ctx context.Context, t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
 	s.RLock()
 	memSes := s.client[t]
 	s.RUnlock()
@@ -188,7 +185,7 @@ func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handle
 	return nil
 }
 
-func (s *memorySessionStore) subscribeUpdates(token irma.RequestorToken) (chan *sessionData, error) {
+func (s *memorySessionStore) subscribeUpdates(ctx context.Context, token irma.RequestorToken) (chan *sessionData, error) {
 	statusChan := make(chan *sessionData)
 	s.Lock()
 	defer s.Unlock()
@@ -218,7 +215,7 @@ func (s *memorySessionStore) deleteExpired() {
 
 	expired := make([]irma.RequestorToken, 0, len(toCheck))
 	for token := range toCheck {
-		if err := s.transaction(token, func(session *sessionData) (bool, error) {
+		if err := s.transaction(context.Background(), token, func(session *sessionData) (bool, error) {
 			if session.ttl(s.conf) <= 0 {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Deleting expired session")
 				expired = append(expired, token)
@@ -243,33 +240,37 @@ func (s *memorySessionStore) deleteExpired() {
 	}
 }
 
-func (s *redisSessionStore) add(session *sessionData) error {
+func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error {
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
 		return server.LogError(err)
 	}
 
 	ttl := session.ttl(s.conf)
-	conn := s.client.Conn(context.Background())
-	if err := conn.Set(context.Background(), requestorTokenLookupPrefix+string(session.RequestorToken), string(session.ClientToken), ttl).Err(); err != nil {
-		return logAsRedisError(err)
-	}
-	if err := conn.Set(context.Background(), clientTokenLookupPrefix+string(session.ClientToken), sessionJSON, ttl).Err(); err != nil {
-		return logAsRedisError(err)
-	}
-
-	if s.client.FailoverMode {
-		if err := s.client.Wait(context.Background(), 1, time.Second).Err(); err != nil {
-			return logAsRedisError(err)
+	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
+		if err := tx.Set(ctx, requestorTokenLookupPrefix+string(session.RequestorToken), string(session.ClientToken), ttl).Err(); err != nil {
+			return err
 		}
+		if err := tx.Set(ctx, clientTokenLookupPrefix+string(session.ClientToken), sessionJSON, ttl).Err(); err != nil {
+			return err
+		}
+
+		if s.client.FailoverMode {
+			if err := s.client.Wait(ctx, 1, time.Second).Err(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return logAsRedisError(err)
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session added or updated in Redis datastore")
 	return nil
 }
 
-func (s *redisSessionStore) transaction(t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
-	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+string(t)).Result()
+func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
+	val, err := s.client.Get(ctx, requestorTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return server.LogError(&UnknownSessionError{t, ""})
 	} else if err != nil {
@@ -282,12 +283,12 @@ func (s *redisSessionStore) transaction(t irma.RequestorToken, handler func(sess
 	}
 	s.conf.Logger.WithFields(logrus.Fields{"session": t, "clientToken": clientToken}).Debug("clientToken found in Redis datastore")
 
-	return s.clientTransaction(clientToken, handler)
+	return s.clientTransaction(ctx, clientToken, handler)
 }
 
-func (s *redisSessionStore) clientTransaction(t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
-	if err := s.client.Watch(context.Background(), func(tx *redis.Tx) error {
-		getResult := tx.Get(context.Background(), clientTokenLookupPrefix+string(t))
+func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
+	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
+		getResult := tx.Get(ctx, clientTokenLookupPrefix+string(t))
 		if getResult.Err() == redis.Nil {
 			// Both session and error need to be returned. The session will already be locked and needs to
 			// be passed along, so it can be unlocked later.
@@ -319,13 +320,13 @@ func (s *redisSessionStore) clientTransaction(t irma.ClientToken, handler func(s
 			return server.LogError(err)
 		}
 
-		err = tx.Set(context.Background(), clientTokenLookupPrefix+string(t), sessionJSON, 0).Err()
+		err = tx.Set(ctx, clientTokenLookupPrefix+string(t), sessionJSON, 0).Err()
 		if err != nil {
 			return logAsRedisError(err)
 		}
 
 		if s.client.FailoverMode {
-			if err := tx.Wait(context.Background(), 1, time.Second).Err(); err != nil {
+			if err := tx.Wait(ctx, 1, time.Second).Err(); err != nil {
 				return logAsRedisError(err)
 			}
 		}
@@ -336,7 +337,7 @@ func (s *redisSessionStore) clientTransaction(t irma.ClientToken, handler func(s
 	return nil
 }
 
-func (s *redisSessionStore) subscribeUpdates(token irma.RequestorToken) (chan *sessionData, error) {
+func (s *redisSessionStore) subscribeUpdates(ctx context.Context, token irma.RequestorToken) (chan *sessionData, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -346,58 +347,6 @@ func (s *redisSessionStore) stop() {
 		_ = logAsRedisError(err)
 	}
 	s.conf.Logger.Info("Redis client closed successfully")
-}
-
-var one *big.Int = big.NewInt(1)
-
-func (s *Server) newSession(action irma.Action, request irma.RequestorRequest, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization) (*sessionData, error) {
-	clientToken := irma.ClientToken(common.NewSessionToken())
-	requestorToken := irma.RequestorToken(common.NewSessionToken())
-	if len(FrontendAuth) == 0 {
-		FrontendAuth = irma.FrontendAuthorization(common.NewSessionToken())
-	}
-
-	base := request.SessionRequest().Base()
-	if s.conf.AugmentClientReturnURL && base.AugmentReturnURL && base.ClientReturnURL != "" {
-		if strings.Contains(base.ClientReturnURL, "?") {
-			base.ClientReturnURL += "&token=" + string(requestorToken)
-		} else {
-			base.ClientReturnURL += "?token=" + string(requestorToken)
-		}
-	}
-
-	ses := &sessionData{
-		Action:         action,
-		Rrequest:       request,
-		LastActive:     time.Now(),
-		RequestorToken: requestorToken,
-		ClientToken:    clientToken,
-		Status:         irma.ServerStatusInitialized,
-		Result: &server.SessionResult{
-			LegacySession: request.SessionRequest().Base().Legacy(),
-			Token:         requestorToken,
-			Type:          action,
-			Status:        irma.ServerStatusInitialized,
-		},
-		Options: irma.SessionOptions{
-			LDContext:     irma.LDContextSessionOptions,
-			PairingMethod: irma.PairingMethodNone,
-		},
-		FrontendAuth:       FrontendAuth,
-		ImplicitDisclosure: disclosed,
-	}
-
-	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")
-	nonce, _ := gabi.GenerateNonce()
-	base.Nonce = nonce
-	base.Context = one
-
-	err := s.sessions.add(ses)
-	if err != nil {
-		return nil, err
-	}
-
-	return ses, nil
 }
 
 func logAsRedisError(err error) error {

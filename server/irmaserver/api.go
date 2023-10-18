@@ -256,7 +256,7 @@ func (s *Server) startNextSession(
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
-	ses, err := s.newSession(action, rrequest, disclosed, FrontendAuth)
+	ses, err := s.newSession(context.Background(), action, rrequest, disclosed, FrontendAuth)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -273,14 +273,16 @@ func (s *Server) startNextSession(
 
 	if handler != nil {
 		go func() {
-			updateChan, err := s.sessions.subscribeUpdates(ses.RequestorToken)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			updateChan, err := s.sessions.subscribeUpdates(ctx, ses.RequestorToken)
 			if err != nil {
 				s.conf.Logger.WithError(err).Error("Failed to subscribe to session status changes for handler")
 				return
 			}
 			for update := range updateChan {
 				if update.Status.Finished() {
-					if err := s.sessions.transaction(ses.RequestorToken, func(ses *sessionData) (bool, error) {
+					if err := s.sessions.transaction(ctx, ses.RequestorToken, func(ses *sessionData) (bool, error) {
 						handler(ses.Result)
 						return false, nil
 					}); err != nil {
@@ -320,7 +322,7 @@ func GetSessionResult(requestorToken irma.RequestorToken) (*server.SessionResult
 	return s.GetSessionResult(requestorToken)
 }
 func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (res *server.SessionResult, err error) {
-	err = s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
+	err = s.sessions.transaction(context.Background(), requestorToken, func(session *sessionData) (bool, error) {
 		res = session.Result
 		return false, nil
 	})
@@ -332,7 +334,7 @@ func GetRequest(requestorToken irma.RequestorToken) (irma.RequestorRequest, erro
 	return s.GetRequest(requestorToken)
 }
 func (s *Server) GetRequest(requestorToken irma.RequestorToken) (req irma.RequestorRequest, err error) {
-	err = s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
+	err = s.sessions.transaction(context.Background(), requestorToken, func(session *sessionData) (bool, error) {
 		req = session.Rrequest
 		return false, nil
 	})
@@ -344,7 +346,7 @@ func CancelSession(requestorToken irma.RequestorToken) error {
 	return s.CancelSession(requestorToken)
 }
 func (s *Server) CancelSession(requestorToken irma.RequestorToken) (err error) {
-	err = s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
+	err = s.sessions.transaction(context.Background(), requestorToken, func(session *sessionData) (bool, error) {
 		session.handleDelete(s.conf)
 		return true, nil
 	})
@@ -359,7 +361,7 @@ func SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.Fronte
 	return s.SetFrontendOptions(requestorToken, request)
 }
 func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (o *irma.SessionOptions, err error) {
-	err = s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
+	err = s.sessions.transaction(context.Background(), requestorToken, func(session *sessionData) (bool, error) {
 		o, err = session.updateFrontendOptions(request)
 		return true, err
 	})
@@ -372,7 +374,7 @@ func PairingCompleted(requestorToken irma.RequestorToken) error {
 	return s.PairingCompleted(requestorToken)
 }
 func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
-	return s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
+	return s.sessions.transaction(context.Background(), requestorToken, func(session *sessionData) (bool, error) {
 		return true, session.pairingCompleted(s.conf)
 	})
 }
@@ -394,7 +396,7 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 		Component: server.ComponentSession,
 		Arg:       string(token),
 	}))
-	return s.sessions.transaction(token, func(session *sessionData) (bool, error) {
+	return s.sessions.transaction(context.Background(), token, func(session *sessionData) (bool, error) {
 		return false, s.subscribeServerSentEvents(w, r, session, true)
 	})
 }
@@ -425,7 +427,7 @@ func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	s.activeSSEHandlersMutex.Unlock()
 
 	if !activeHandler {
-		updateChan, err := s.sessions.subscribeUpdates(session.RequestorToken)
+		updateChan, err := s.sessions.subscribeUpdates(context.Background(), session.RequestorToken)
 		if err != nil {
 			return err
 		}
@@ -468,20 +470,25 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 		return nil, errors.New("SessionStatus cannot be used in combination with Redis/etcd.")
 	}
 
-	updateChan, err := s.sessions.subscribeUpdates(requestorToken)
+	ctx, cancel := context.WithCancel(context.Background())
+	updateChan, err := s.sessions.subscribeUpdates(ctx, requestorToken)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	var timeoutTime time.Time
-	if err := s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
+	if err := s.sessions.transaction(ctx, requestorToken, func(session *sessionData) (bool, error) {
 		timeoutTime = time.Now().Add(session.timeout(s.conf))
 		return false, nil
 	}); err != nil {
+		cancel()
 		return nil, err
 	}
 
 	statusChan = make(chan irma.ServerStatus, 4)
 	go func() {
+		defer cancel()
+
 		var currStatus irma.ServerStatus
 		for {
 			select {

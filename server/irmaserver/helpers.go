@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/alexandrevicenzi/go-sse"
@@ -26,6 +27,8 @@ import (
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
+
+var one *big.Int = big.NewInt(1)
 
 // Session helpers
 
@@ -567,7 +570,7 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 		}
 
 		recorder := server.NewHTTPResponseRecorder(w)
-		if err := s.sessions.clientTransaction(token, func(session *sessionData) (bool, error) {
+		if err := s.sessions.clientTransaction(r.Context(), token, func(session *sessionData) (bool, error) {
 			expectedHost := session.Rrequest.SessionRequest().Base().Host
 			if expectedHost != "" && expectedHost != r.Host {
 				server.WriteError(recorder, server.ErrorUnauthorized, "Host mismatch")
@@ -698,4 +701,60 @@ func (s *Server) serverSentEventsHandler(initialSession *sessionData, updateChan
 			return
 		}
 	}
+}
+
+func (s *Server) newSession(
+	ctx context.Context,
+	action irma.Action,
+	request irma.RequestorRequest,
+	disclosed irma.AttributeConDisCon,
+	frontendAuth irma.FrontendAuthorization,
+) (*sessionData, error) {
+	clientToken := irma.ClientToken(common.NewSessionToken())
+	requestorToken := irma.RequestorToken(common.NewSessionToken())
+	if len(frontendAuth) == 0 {
+		frontendAuth = irma.FrontendAuthorization(common.NewSessionToken())
+	}
+
+	base := request.SessionRequest().Base()
+	if s.conf.AugmentClientReturnURL && base.AugmentReturnURL && base.ClientReturnURL != "" {
+		if strings.Contains(base.ClientReturnURL, "?") {
+			base.ClientReturnURL += "&token=" + string(requestorToken)
+		} else {
+			base.ClientReturnURL += "?token=" + string(requestorToken)
+		}
+	}
+
+	ses := &sessionData{
+		Action:         action,
+		Rrequest:       request,
+		LastActive:     time.Now(),
+		RequestorToken: requestorToken,
+		ClientToken:    clientToken,
+		Status:         irma.ServerStatusInitialized,
+		Result: &server.SessionResult{
+			LegacySession: request.SessionRequest().Base().Legacy(),
+			Token:         requestorToken,
+			Type:          action,
+			Status:        irma.ServerStatusInitialized,
+		},
+		Options: irma.SessionOptions{
+			LDContext:     irma.LDContextSessionOptions,
+			PairingMethod: irma.PairingMethodNone,
+		},
+		FrontendAuth:       frontendAuth,
+		ImplicitDisclosure: disclosed,
+	}
+
+	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")
+	nonce, _ := gabi.GenerateNonce()
+	base.Nonce = nonce
+	base.Context = one
+
+	err := s.sessions.add(ctx, ses)
+	if err != nil {
+		return nil, err
+	}
+
+	return ses, nil
 }

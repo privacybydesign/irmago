@@ -1,10 +1,12 @@
 package irmaserver
 
 import (
-	"github.com/privacybydesign/irmago/internal/test"
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/privacybydesign/irmago/internal/test"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/server"
@@ -76,7 +78,7 @@ func TestMemoryStoreNoDeadlock(t *testing.T) {
 
 	req, err := server.ParseSessionRequest(`{"request":{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"MtILupG0g0J23GNR1YtupQ==","devMode":true,"disclose":[[[{"type":"test.test.email.email","value":"example@example.com"}]]]}}`)
 	require.NoError(t, err)
-	session, err := s.newSession(irma.ActionDisclosing, req, nil, "")
+	session, err := s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "")
 	require.NoError(t, err)
 
 	memSessions, ok := s.sessions.(*memorySessionStore)
@@ -103,7 +105,7 @@ func TestMemoryStoreNoDeadlock(t *testing.T) {
 
 	// Make a new session; this involves adding it to the memory session store.
 	go func() {
-		_, _ = s.newSession(irma.ActionDisclosing, req, nil, "")
+		_, _ = s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "")
 		addingCompleted = true
 	}()
 

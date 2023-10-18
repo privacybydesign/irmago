@@ -91,16 +91,19 @@ func (s *redisSessionStore) add(ctx context.Context, ses session) error {
 	}
 
 	ttl := time.Until(ses.Expiry).Seconds()
-	conn := s.client.Conn(ctx)
-	if err := conn.Set(ctx, sessionLookupPrefix+ses.Token, string(bytes), time.Duration(ttl)*time.Second).Err(); err != nil {
-		s.logger.WithError(err).Error("failed to store session")
-		return errRedis
-	}
-	if s.client.FailoverMode {
-		if err := conn.Wait(ctx, 1, time.Second).Err(); err != nil {
-			s.logger.WithError(err).Error("failed to persist session")
-			return errRedis
+	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
+		if err := tx.Set(ctx, sessionLookupPrefix+ses.Token, string(bytes), time.Duration(ttl)*time.Second).Err(); err != nil {
+			return err
 		}
+		if s.client.FailoverMode {
+			if err := tx.Wait(ctx, 1, time.Second).Err(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		s.logger.WithError(err).Error("failed to add session")
+		return errRedis
 	}
 	return nil
 }
