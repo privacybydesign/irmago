@@ -155,13 +155,16 @@ func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handle
 	}
 
 	if !ses.Status.Finished() && ses.timeout(s.conf) <= 0 {
-		s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Info("Session expired")
 		ses.setStatus(irma.ServerStatusTimeout, s.conf)
 	}
 
 	if update, err := handler(ses); !update || err != nil {
 		return err
 	}
+
+	s.conf.Logger.
+		WithFields(logrus.Fields{"session": ses.RequestorToken, "status": ses.Status}).
+		Info("Session updated")
 
 	// Make a deep copy of the session data, so we can update it in memory without side effects.
 	sesAfter := &sessionData{}
@@ -306,13 +309,16 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 
 		// Timeout check
 		if !session.Status.Finished() && session.timeout(s.conf) <= 0 {
-			s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session expired")
 			session.setStatus(irma.ServerStatusTimeout, s.conf)
 		}
 
 		if update, err := handler(session); !update || err != nil {
 			return err
 		}
+
+		s.conf.Logger.
+			WithFields(logrus.Fields{"session": session.RequestorToken, "status": session.Status}).
+			Info("Session updated")
 
 		// If the session has changed, update it in Redis
 		sessionJSON, err := json.Marshal(session)

@@ -40,9 +40,6 @@ func (session *sessionData) markAlive(conf *server.Configuration) {
 }
 
 func (session *sessionData) setStatus(status irma.ServerStatus, conf *server.Configuration) {
-	conf.Logger.
-		WithFields(logrus.Fields{"session": session.RequestorToken, "status": status}).
-		Info("Session status updated")
 	session.Status = status
 	session.Result.Status = status
 
