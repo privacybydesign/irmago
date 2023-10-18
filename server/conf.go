@@ -105,6 +105,7 @@ type Configuration struct {
 type RedisClient struct {
 	*redis.Client
 	FailoverMode bool
+	KeyPrefix    string
 }
 
 type RedisSettings struct {
@@ -113,9 +114,15 @@ type RedisSettings struct {
 	SentinelMasterName      string   `json:"sentinel_master_name,omitempty" mapstructure:"sentinel_master_name"`
 	AcceptInconsistencyRisk bool     `json:"accept_inconsistency_risk,omitempty" mapstructure:"accept_inconsistency_risk"`
 
+	// Username for Redis authentication. If username is empty, the default user is used.
+	Username string `json:"username,omitempty" mapstructure:"username"`
+	// Password for Redis authentication.
 	Password string `json:"password,omitempty" mapstructure:"password"`
-	DB       int    `json:"db,omitempty" mapstructure:"db"`
-	// TODO: ACL prefix?
+	// ACLPrefix prefixes all Redis keys with the specified string in the format "aclprefix:key".
+	// This can be used for key permissions in the Redis ACL system. If ACLPrefix is empty, no prefix is used.
+	ACLPrefix string `json:"acl_prefix,omitempty" mapstructure:"acl_prefix"`
+
+	DB int `json:"db,omitempty" mapstructure:"db"`
 
 	TLSCertificate     string `json:"tls_cert,omitempty" mapstructure:"tls_cert"`
 	TLSCertificateFile string `json:"tls_cert_file,omitempty" mapstructure:"tls_cert_file"`
@@ -475,7 +482,15 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 			conf.Logger.Warn("Redis replication factor is less than 2, this may cause availability issues")
 		}
 	}
-	conf.redisClient = &RedisClient{Client: cl, FailoverMode: failoverMode}
+	var keyPrefix string
+	if conf.RedisSettings.ACLPrefix != "" {
+		keyPrefix = conf.RedisSettings.ACLPrefix + ":"
+	}
+	conf.redisClient = &RedisClient{
+		Client:       cl,
+		FailoverMode: failoverMode,
+		KeyPrefix:    keyPrefix,
+	}
 	return conf.redisClient, nil
 }
 

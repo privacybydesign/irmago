@@ -92,7 +92,12 @@ func (s *redisSessionStore) add(ctx context.Context, ses session) error {
 
 	ttl := time.Until(ses.Expiry).Seconds()
 	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		if err := tx.Set(ctx, sessionLookupPrefix+ses.Token, string(bytes), time.Duration(ttl)*time.Second).Err(); err != nil {
+		if err := tx.Set(
+			ctx,
+			s.client.KeyPrefix+sessionLookupPrefix+ses.Token,
+			string(bytes),
+			time.Duration(ttl)*time.Second,
+		).Err(); err != nil {
 			return err
 		}
 		if s.client.FailoverMode {
@@ -109,7 +114,7 @@ func (s *redisSessionStore) add(ctx context.Context, ses session) error {
 }
 
 func (s *redisSessionStore) update(ctx context.Context, token string, handler func(ses *session) error) error {
-	key := sessionLookupPrefix + token
+	key := s.client.KeyPrefix + sessionLookupPrefix + token
 
 	err := s.client.Watch(ctx, func(tx *redis.Tx) error {
 		bytes, err := tx.Get(ctx, key).Bytes()

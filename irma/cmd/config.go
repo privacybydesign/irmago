@@ -83,9 +83,11 @@ func configureIRMAServer() (*server.Configuration, error) {
 			return nil, errors.New("When Redis is used as session data store, either --redis-addr or --redis-sentinel-addrs must be specified.")
 		}
 
+		conf.RedisSettings.Username = viper.GetString("redis_user")
 		if conf.RedisSettings.Password = viper.GetString("redis_pw"); conf.RedisSettings.Password == "" && !viper.GetBool("redis_allow_empty_password") {
 			return nil, errors.New("When Redis is used as session data store, a non-empty Redis password must be specified with the --redis-pw flag. This restriction can be relaxed by setting the --redis-allow-empty-password flag to true.")
 		}
+		conf.RedisSettings.ACLPrefix = viper.GetString("redis_acl_prefix")
 
 		conf.RedisSettings.DB = viper.GetInt("redis_db")
 

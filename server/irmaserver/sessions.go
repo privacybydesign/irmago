@@ -251,10 +251,15 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 
 	ttl := session.ttl(s.conf)
 	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		if err := tx.Set(ctx, requestorTokenLookupPrefix+string(session.RequestorToken), string(session.ClientToken), ttl).Err(); err != nil {
+		if err := tx.Set(
+			ctx,
+			s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken),
+			string(session.ClientToken),
+			ttl,
+		).Err(); err != nil {
 			return err
 		}
-		if err := tx.Set(ctx, clientTokenLookupPrefix+string(session.ClientToken), sessionJSON, ttl).Err(); err != nil {
+		if err := tx.Set(ctx, s.client.KeyPrefix+string(session.ClientToken), sessionJSON, ttl).Err(); err != nil {
 			return err
 		}
 
@@ -273,7 +278,7 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 }
 
 func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
-	val, err := s.client.Get(ctx, requestorTokenLookupPrefix+string(t)).Result()
+	val, err := s.client.Get(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return server.LogError(&UnknownSessionError{t, ""})
 	} else if err != nil {
@@ -291,7 +296,7 @@ func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorTok
 
 func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
 	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		getResult := tx.Get(ctx, clientTokenLookupPrefix+string(t))
+		getResult := tx.Get(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t))
 		if getResult.Err() == redis.Nil {
 			// Both session and error need to be returned. The session will already be locked and needs to
 			// be passed along, so it can be unlocked later.
@@ -326,7 +331,7 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			return server.LogError(err)
 		}
 
-		err = tx.Set(ctx, clientTokenLookupPrefix+string(t), sessionJSON, 0).Err()
+		err = tx.Set(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t), sessionJSON, 0).Err()
 		if err != nil {
 			return logAsRedisError(err)
 		}
