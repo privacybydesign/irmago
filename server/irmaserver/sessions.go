@@ -226,13 +226,15 @@ func (s *memorySessionStore) deleteExpired() {
 
 	expired := make([]irma.RequestorToken, 0, len(toCheck))
 	for token := range toCheck {
-		s.transaction(token, func(session *sessionData) error {
+		if err := s.transaction(token, func(session *sessionData) error {
 			if session.ttl(s.conf) <= 0 {
-				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Deleting session")
+				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Deleting expired session")
 				expired = append(expired, token)
 			}
 			return nil
-		})
+		}); err != nil {
+			s.conf.Logger.WithFields(logrus.Fields{"session": token}).WithError(err).Error("Error while deleting expired session")
+		}
 	}
 
 	// Using a write lock, delete the expired sessions
