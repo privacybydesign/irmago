@@ -72,7 +72,7 @@ func New(conf *server.Configuration) (*Server, error) {
 			conf:           conf,
 			requestor:      make(map[irma.RequestorToken]*memorySessionData),
 			client:         make(map[irma.ClientToken]*memorySessionData),
-			statusChannels: make(map[irma.RequestorToken][]chan statusChange),
+			updateChannels: make(map[irma.RequestorToken][]chan *sessionData),
 		}
 
 		if _, err := s.scheduler.Every(10).Seconds().Do(func() {
@@ -275,17 +275,19 @@ func (s *Server) startNextSession(
 
 	if handler != nil {
 		go func() {
-			statusChangeChan, err := s.sessions.subscribeStatusChanges(ses.RequestorToken)
+			updateChan, err := s.sessions.subscribeUpdates(ses.RequestorToken)
 			if err != nil {
 				s.conf.Logger.WithError(err).Error("Failed to subscribe to session status changes for handler")
 				return
 			}
-			for change := range statusChangeChan {
-				if change.Status.Finished() {
-					s.sessions.transaction(ses.RequestorToken, func(ses *sessionData) error {
+			for update := range updateChan {
+				if update.Status.Finished() {
+					if err := s.sessions.transaction(ses.RequestorToken, func(ses *sessionData) error {
 						handler(ses.Result)
 						return nil
-					})
+					}); err != nil {
+						s.conf.Logger.WithError(err).Error("Failed to execute session handler")
+					}
 					return
 				}
 			}
@@ -425,12 +427,12 @@ func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	s.activeSSEHandlersMutex.Unlock()
 
 	if !activeHandler {
-		statusChangeChan, err := s.sessions.subscribeStatusChanges(session.RequestorToken)
+		updateChan, err := s.sessions.subscribeUpdates(session.RequestorToken)
 		if err != nil {
 			return err
 		}
 		go func() {
-			s.serverSentEventsHandler(session, statusChangeChan)
+			s.serverSentEventsHandler(session, updateChan)
 			s.activeSSEHandlersMutex.Lock()
 			defer s.activeSSEHandlersMutex.Unlock()
 			delete(s.activeSSEHandlers, session.RequestorToken)
@@ -458,42 +460,47 @@ func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	return nil
 }
 
-func (s *Server) serverSentEventsHandler(session *sessionData, statusChangeChan chan statusChange) {
-	timeoutTime := time.Now().Add(session.timeout(s.conf))
+func (s *Server) serverSentEventsHandler(initialSession *sessionData, updateChan chan *sessionData) {
+	timeoutTime := time.Now().Add(initialSession.timeout(s.conf))
 
 	// Close the channels when this function returns.
 	defer func() {
-		s.serverSentEvents.CloseChannel("session/" + string(session.RequestorToken))
-		s.serverSentEvents.CloseChannel("session/" + string(session.ClientToken))
-		s.serverSentEvents.CloseChannel("frontendsession/" + string(session.ClientToken))
+		s.serverSentEvents.CloseChannel("session/" + string(initialSession.RequestorToken))
+		s.serverSentEvents.CloseChannel("session/" + string(initialSession.ClientToken))
+		s.serverSentEvents.CloseChannel("frontendsession/" + string(initialSession.ClientToken))
 	}()
 
+	currStatus := initialSession.Status
 	for {
 		select {
-		case change, ok := <-statusChangeChan:
+		case update, ok := <-updateChan:
 			if !ok {
 				return
 			}
+			if currStatus == update.Status {
+				continue
+			}
+			currStatus = update.Status
 
-			frontendStatusBytes, err := json.Marshal(change.FrontendSessionStatus)
+			frontendStatusBytes, err := json.Marshal(update.frontendSessionStatus())
 			if err != nil {
 				s.conf.Logger.Error(err)
 				return
 			}
 
-			s.serverSentEvents.SendMessage("session/"+string(session.RequestorToken),
-				sse.SimpleMessage(fmt.Sprintf(`"%s"`, change.Status)),
+			s.serverSentEvents.SendMessage("session/"+string(update.RequestorToken),
+				sse.SimpleMessage(fmt.Sprintf(`"%s"`, currStatus)),
 			)
-			s.serverSentEvents.SendMessage("session/"+string(session.ClientToken),
-				sse.SimpleMessage(fmt.Sprintf(`"%s"`, change.Status)),
+			s.serverSentEvents.SendMessage("session/"+string(update.ClientToken),
+				sse.SimpleMessage(fmt.Sprintf(`"%s"`, currStatus)),
 			)
-			s.serverSentEvents.SendMessage("frontendsession/"+string(session.ClientToken),
+			s.serverSentEvents.SendMessage("frontendsession/"+string(update.ClientToken),
 				sse.SimpleMessage(string(frontendStatusBytes)),
 			)
-			if change.Status.Finished() {
+			if currStatus.Finished() {
 				return
 			}
-			timeoutTime = time.Now().Add(change.Timeout)
+			timeoutTime = time.Now().Add(update.timeout(s.conf))
 		case <-time.After(time.Until(timeoutTime)):
 			frontendStatus := irma.FrontendSessionStatus{
 				Status: irma.ServerStatusTimeout,
@@ -504,13 +511,13 @@ func (s *Server) serverSentEventsHandler(session *sessionData, statusChangeChan 
 				return
 			}
 
-			s.serverSentEvents.SendMessage("session/"+string(session.RequestorToken),
+			s.serverSentEvents.SendMessage("session/"+string(initialSession.RequestorToken),
 				sse.SimpleMessage(fmt.Sprintf(`"%s"`, frontendStatus.Status)),
 			)
-			s.serverSentEvents.SendMessage("session/"+string(session.ClientToken),
+			s.serverSentEvents.SendMessage("session/"+string(initialSession.ClientToken),
 				sse.SimpleMessage(fmt.Sprintf(`"%s"`, frontendStatus.Status)),
 			)
-			s.serverSentEvents.SendMessage("frontendsession/"+string(session.ClientToken),
+			s.serverSentEvents.SendMessage("frontendsession/"+string(initialSession.ClientToken),
 				sse.SimpleMessage(string(frontendStatusBytes)),
 			)
 			return
@@ -528,7 +535,7 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 		return nil, errors.New("SessionStatus cannot be used in combination with Redis/etcd.")
 	}
 
-	statusChangeChan, err := s.sessions.subscribeStatusChanges(requestorToken)
+	updateChan, err := s.sessions.subscribeUpdates(requestorToken)
 	if err != nil {
 		return nil, err
 	}
@@ -542,20 +549,26 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 
 	statusChan = make(chan irma.ServerStatus, 4)
 	go func() {
+		var currStatus irma.ServerStatus
 		for {
 			select {
-			case change, ok := <-statusChangeChan:
+			case update, ok := <-updateChan:
 				if !ok {
 					close(statusChan)
 					return
 				}
-				statusChan <- change.Status
+				if currStatus == update.Status {
+					continue
+				}
+				currStatus = update.Status
 
-				if change.Status.Finished() {
+				statusChan <- currStatus
+
+				if currStatus.Finished() {
 					close(statusChan)
 					return
 				}
-				timeoutTime = time.Now().Add(change.Timeout)
+				timeoutTime = time.Now().Add(update.timeout(s.conf))
 			case <-time.After(time.Until(timeoutTime)):
 				statusChan <- irma.ServerStatusTimeout
 				close(statusChan)

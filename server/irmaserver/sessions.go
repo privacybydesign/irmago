@@ -51,13 +51,8 @@ type sessionStore interface {
 	add(*sessionData) error
 	transaction(irma.RequestorToken, func(*sessionData) error) error
 	clientTransaction(irma.ClientToken, func(*sessionData) error) error
-	subscribeStatusChanges(irma.RequestorToken) (chan statusChange, error)
+	subscribeUpdates(irma.RequestorToken) (chan *sessionData, error)
 	stop()
-}
-
-type statusChange struct {
-	irma.FrontendSessionStatus
-	Timeout time.Duration
 }
 
 type memorySessionStore struct {
@@ -65,7 +60,7 @@ type memorySessionStore struct {
 	conf           *server.Configuration
 	requestor      map[irma.RequestorToken]*memorySessionData
 	client         map[irma.ClientToken]*memorySessionData
-	statusChannels map[irma.RequestorToken][]chan statusChange
+	updateChannels map[irma.RequestorToken][]chan *sessionData
 }
 
 type memorySessionData struct {
@@ -131,60 +126,38 @@ func (s *memorySessionStore) add(session *sessionData) error {
 
 func (s *memorySessionStore) transaction(t irma.RequestorToken, handler func(session *sessionData) error) error {
 	s.RLock()
-	ses := s.requestor[t]
+	memSes := s.requestor[t]
 	s.RUnlock()
 
-	if ses == nil {
+	if memSes == nil {
 		return server.LogError(&UnknownSessionError{t, ""})
 	}
-
-	ses.Lock()
-	copy, err := copyObject(ses.sessionData)
-	ses.Unlock()
-	if err != nil {
-		return err
-	}
-	sesCopy := copy.(*sessionData)
-
-	if err := s.handleTransaction(sesCopy, handler); err != nil {
-		return err
-	}
-
-	s.Lock()
-	defer s.Unlock()
-	s.requestor[t].sessionData = sesCopy
-	return nil
+	return s.handleTransaction(memSes, handler)
 }
 
 func (s *memorySessionStore) clientTransaction(t irma.ClientToken, handler func(session *sessionData) error) error {
 	s.RLock()
-	ses := s.client[t]
+	memSes := s.client[t]
 	s.RUnlock()
 
-	if ses == nil {
+	if memSes == nil {
 		return server.LogError(&UnknownSessionError{"", t})
 	}
+	return s.handleTransaction(memSes, handler)
+}
 
-	ses.Lock()
-	copy, err := copyObject(ses.sessionData)
-	ses.Unlock()
+func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handler func(session *sessionData) error) error {
+	// The session struct contains pointers to other structs, so we need to give the handler a deep copy to prevent side effects.
+	ses := &sessionData{}
+	memSes.Lock()
+	err := copyObject(memSes.sessionData, ses)
+	memSes.Unlock()
 	if err != nil {
 		return err
 	}
-	sesCopy := copy.(*sessionData)
 
-	if err := s.handleTransaction(sesCopy, handler); err != nil {
-		return err
-	}
-
-	s.Lock()
-	defer s.Unlock()
-	s.client[t].sessionData = sesCopy
-	return nil
-}
-
-func (s *memorySessionStore) handleTransaction(ses *sessionData, handler func(session *sessionData) error) error {
-	prevStatus := ses.Status
+	// Hashing the current session data needs to take place before the timeout check to detect all changes.
+	hashBefore := ses.hash()
 
 	if !ses.Status.Finished() && ses.timeout(s.conf) <= 0 {
 		s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Info("Session expired")
@@ -195,25 +168,39 @@ func (s *memorySessionStore) handleTransaction(ses *sessionData, handler func(se
 		return err
 	}
 
-	if prevStatus != ses.Status {
-		for _, channel := range s.statusChannels[ses.RequestorToken] {
-			channel <- statusChange{
-				FrontendSessionStatus: irma.FrontendSessionStatus{
-					Status:      ses.Status,
-					NextSession: ses.Next,
-				},
-				Timeout: ses.timeout(s.conf),
-			}
-		}
+	// Check if the session has changed.
+	hashAfter := ses.hash()
+	if hashBefore == hashAfter {
+		return nil
 	}
+
+	// Make a deep copy of the session data, so we can update it in memory without side effects.
+	sesCopy := &sessionData{}
+	if err := copyObject(ses, sesCopy); err != nil {
+		return err
+	}
+
+	// Check if the session has changed by another routine, and if not, update it in memory.
+	memSes.Lock()
+	defer memSes.Unlock()
+	if memSes.hash() != hashBefore {
+		return errors.New("session changed by another routine")
+	}
+	memSes.sessionData = sesCopy
+
+	go func() {
+		for _, channel := range s.updateChannels[ses.RequestorToken] {
+			channel <- ses
+		}
+	}()
 	return nil
 }
 
-func (s *memorySessionStore) subscribeStatusChanges(token irma.RequestorToken) (chan statusChange, error) {
-	statusChan := make(chan statusChange, 4)
+func (s *memorySessionStore) subscribeUpdates(token irma.RequestorToken) (chan *sessionData, error) {
+	statusChan := make(chan *sessionData)
 	s.Lock()
 	defer s.Unlock()
-	s.statusChannels[token] = append(s.statusChannels[token], statusChan)
+	s.updateChannels[token] = append(s.updateChannels[token], statusChan)
 	return statusChan, nil
 }
 
@@ -221,7 +208,7 @@ func (s *memorySessionStore) stop() {
 	s.Lock()
 	defer s.Unlock()
 	for _, session := range s.requestor {
-		for _, channel := range s.statusChannels[session.RequestorToken] {
+		for _, channel := range s.updateChannels[session.RequestorToken] {
 			close(channel)
 		}
 	}
@@ -250,12 +237,16 @@ func (s *memorySessionStore) deleteExpired() {
 
 	// Using a write lock, delete the expired sessions
 	s.Lock()
+	defer s.Unlock()
 	for _, token := range expired {
 		session := s.requestor[token]
 		delete(s.client, session.ClientToken)
 		delete(s.requestor, token)
+		for _, channel := range s.updateChannels[token] {
+			close(channel)
+		}
+		delete(s.updateChannels, token)
 	}
-	s.Unlock()
 }
 
 func (s *redisSessionStore) add(session *sessionData) error {
@@ -318,7 +309,7 @@ func (s *redisSessionStore) clientTransaction(t irma.ClientToken, handler func(s
 
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
-		// Hashing the current session data needs to take place before the timeout check to detect all changes!
+		// Hashing the current session data needs to take place before the timeout check to detect all changes.
 		hashBefore := session.hash()
 
 		// Timeout check
@@ -360,7 +351,7 @@ func (s *redisSessionStore) clientTransaction(t irma.ClientToken, handler func(s
 	return nil
 }
 
-func (s *redisSessionStore) subscribeStatusChanges(token irma.RequestorToken) (chan statusChange, error) {
+func (s *redisSessionStore) subscribeUpdates(token irma.RequestorToken) (chan *sessionData, error) {
 	return nil, errors.New("not implemented")
 }
 

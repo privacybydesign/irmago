@@ -330,15 +330,15 @@ func (session *sessionData) getRequest() (irma.SessionRequest, error) {
 	if !issuing {
 		return req, nil
 	}
-	cpy, err := copyObject(isreq)
-	if err != nil {
+	copy := &irma.IssuanceRequest{}
+	if err := copyObject(isreq, copy); err != nil {
 		return nil, err
 	}
-	for _, cred := range cpy.(*irma.IssuanceRequest).Credentials {
+	for _, cred := range copy.Credentials {
 		cred.RevocationSupported = cred.RevocationKey != ""
 		cred.RevocationKey = ""
 	}
-	return cpy.(*irma.IssuanceRequest), nil
+	return copy, nil
 }
 
 func (session *sessionData) hash() [32]byte {
@@ -363,6 +363,13 @@ func (session *sessionData) timeout(conf *server.Configuration) time.Duration {
 
 func (session *sessionData) ttl(conf *server.Configuration) time.Duration {
 	return session.timeout(conf) + time.Duration(conf.SessionResultLifetime)*time.Minute
+}
+
+func (session *sessionData) frontendSessionStatus() irma.FrontendSessionStatus {
+	return irma.FrontendSessionStatus{
+		Status:      session.Status,
+		NextSession: session.Next,
+	}
 }
 
 // UnmarshalJSON unmarshals sessionData.
@@ -418,16 +425,23 @@ func (s *Server) validateRequest(request irma.SessionRequest) error {
 	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
 }
 
-func copyObject(i interface{}) (interface{}, error) {
-	cpy := reflect.New(reflect.TypeOf(i).Elem()).Interface()
-	bts, err := json.Marshal(i)
+func copyObject[T any](object T, copy T) error {
+	bts, err := json.Marshal(object)
 	if err != nil {
+		return err
+	}
+	if err = json.Unmarshal(bts, copy); err != nil {
+		return err
+	}
+	return nil
+}
+
+func copyInterface(i interface{}) (interface{}, error) {
+	copy := reflect.New(reflect.TypeOf(i).Elem()).Interface()
+	if err := copyObject(i, copy); err != nil {
 		return nil, err
 	}
-	if err = json.Unmarshal(bts, cpy); err != nil {
-		return nil, err
-	}
-	return cpy, nil
+	return copy, nil
 }
 
 // purgeRequest logs the request excluding any attribute values.
@@ -438,7 +452,7 @@ func purgeRequest(request irma.RequestorRequest) irma.RequestorRequest {
 	// Ugly hack alert: the easiest way to do this seems to be to convert it to JSON and then back.
 	// As we do not know the precise type of request, we use reflection to create a new instance
 	// of the same type as request, into which we then unmarshal our copy.
-	cpy, err := copyObject(request)
+	cpy, err := copyInterface(request)
 	if err != nil {
 		panic(err)
 	}

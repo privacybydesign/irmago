@@ -447,8 +447,7 @@ func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleFrontendStatus(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value("session").(*sessionData)
-	status := irma.FrontendSessionStatus{Status: session.Status, NextSession: session.Next}
-	server.WriteResponse(w, status, nil)
+	server.WriteResponse(w, session.frontendSessionStatus(), nil)
 }
 
 func (s *Server) handleFrontendStatusEvents(w http.ResponseWriter, r *http.Request) {
