@@ -49,8 +49,8 @@ type responseCache struct {
 
 type sessionStore interface {
 	add(*sessionData) error
-	transaction(irma.RequestorToken, func(*sessionData) error) error
-	clientTransaction(irma.ClientToken, func(*sessionData) error) error
+	transaction(irma.RequestorToken, func(*sessionData) (bool, error)) error
+	clientTransaction(irma.ClientToken, func(*sessionData) (bool, error)) error
 	subscribeUpdates(irma.RequestorToken) (chan *sessionData, error)
 	stop()
 }
@@ -124,7 +124,7 @@ func (s *memorySessionStore) add(session *sessionData) error {
 	return nil
 }
 
-func (s *memorySessionStore) transaction(t irma.RequestorToken, handler func(session *sessionData) error) error {
+func (s *memorySessionStore) transaction(t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
 	s.RLock()
 	memSes := s.requestor[t]
 	s.RUnlock()
@@ -135,7 +135,7 @@ func (s *memorySessionStore) transaction(t irma.RequestorToken, handler func(ses
 	return s.handleTransaction(memSes, handler)
 }
 
-func (s *memorySessionStore) clientTransaction(t irma.ClientToken, handler func(session *sessionData) error) error {
+func (s *memorySessionStore) clientTransaction(t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
 	s.RLock()
 	memSes := s.client[t]
 	s.RUnlock()
@@ -146,47 +146,39 @@ func (s *memorySessionStore) clientTransaction(t irma.ClientToken, handler func(
 	return s.handleTransaction(memSes, handler)
 }
 
-func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handler func(session *sessionData) error) error {
+func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handler func(session *sessionData) (bool, error)) error {
 	// The session struct contains pointers to other structs, so we need to give the handler a deep copy to prevent side effects.
+	sesBefore := memSes.sessionData
 	ses := &sessionData{}
 	memSes.Lock()
-	err := copyObject(memSes.sessionData, ses)
+	err := copyObject(sesBefore, ses)
 	memSes.Unlock()
 	if err != nil {
 		return err
 	}
-
-	// Hashing the current session data needs to take place before the timeout check to detect all changes.
-	hashBefore := ses.hash()
 
 	if !ses.Status.Finished() && ses.timeout(s.conf) <= 0 {
 		s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Info("Session expired")
 		ses.setStatus(irma.ServerStatusTimeout, s.conf)
 	}
 
-	if err := handler(ses); err != nil {
+	if update, err := handler(ses); !update || err != nil {
 		return err
 	}
 
-	// Check if the session has changed.
-	hashAfter := ses.hash()
-	if hashBefore == hashAfter {
-		return nil
-	}
-
 	// Make a deep copy of the session data, so we can update it in memory without side effects.
-	sesCopy := &sessionData{}
-	if err := copyObject(ses, sesCopy); err != nil {
+	sesAfter := &sessionData{}
+	if err := copyObject(ses, sesAfter); err != nil {
 		return err
 	}
 
 	// Check if the session has changed by another routine, and if not, update it in memory.
 	memSes.Lock()
 	defer memSes.Unlock()
-	if memSes.hash() != hashBefore {
+	if sesBefore != memSes.sessionData {
 		return errors.New("session changed by another routine")
 	}
-	memSes.sessionData = sesCopy
+	memSes.sessionData = sesAfter
 
 	go func() {
 		for _, channel := range s.updateChannels[ses.RequestorToken] {
@@ -226,12 +218,12 @@ func (s *memorySessionStore) deleteExpired() {
 
 	expired := make([]irma.RequestorToken, 0, len(toCheck))
 	for token := range toCheck {
-		if err := s.transaction(token, func(session *sessionData) error {
+		if err := s.transaction(token, func(session *sessionData) (bool, error) {
 			if session.ttl(s.conf) <= 0 {
 				s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Deleting expired session")
 				expired = append(expired, token)
 			}
-			return nil
+			return false, nil
 		}); err != nil {
 			s.conf.Logger.WithFields(logrus.Fields{"session": token}).WithError(err).Error("Error while deleting expired session")
 		}
@@ -276,7 +268,7 @@ func (s *redisSessionStore) add(session *sessionData) error {
 	return nil
 }
 
-func (s *redisSessionStore) transaction(t irma.RequestorToken, handler func(session *sessionData) error) error {
+func (s *redisSessionStore) transaction(t irma.RequestorToken, handler func(session *sessionData) (bool, error)) error {
 	val, err := s.client.Get(context.Background(), requestorTokenLookupPrefix+string(t)).Result()
 	if err == redis.Nil {
 		return server.LogError(&UnknownSessionError{t, ""})
@@ -293,7 +285,7 @@ func (s *redisSessionStore) transaction(t irma.RequestorToken, handler func(sess
 	return s.clientTransaction(clientToken, handler)
 }
 
-func (s *redisSessionStore) clientTransaction(t irma.ClientToken, handler func(session *sessionData) error) error {
+func (s *redisSessionStore) clientTransaction(t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
 	if err := s.client.Watch(context.Background(), func(tx *redis.Tx) error {
 		getResult := tx.Get(context.Background(), clientTokenLookupPrefix+string(t))
 		if getResult.Err() == redis.Nil {
@@ -311,23 +303,14 @@ func (s *redisSessionStore) clientTransaction(t irma.ClientToken, handler func(s
 
 		s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session received from Redis datastore")
 
-		// Hashing the current session data needs to take place before the timeout check to detect all changes.
-		hashBefore := session.hash()
-
 		// Timeout check
 		if !session.Status.Finished() && session.timeout(s.conf) <= 0 {
 			s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Info("Session expired")
 			session.setStatus(irma.ServerStatusTimeout, s.conf)
 		}
 
-		if err := handler(session); err != nil {
+		if update, err := handler(session); !update || err != nil {
 			return err
-		}
-
-		// Check if the session has changed
-		hashAfter := session.hash()
-		if hashBefore == hashAfter {
-			return nil
 		}
 
 		// If the session has changed, update it in Redis

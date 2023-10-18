@@ -6,8 +6,6 @@ package irmaserver
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -282,9 +280,9 @@ func (s *Server) startNextSession(
 			}
 			for update := range updateChan {
 				if update.Status.Finished() {
-					if err := s.sessions.transaction(ses.RequestorToken, func(ses *sessionData) error {
+					if err := s.sessions.transaction(ses.RequestorToken, func(ses *sessionData) (bool, error) {
 						handler(ses.Result)
-						return nil
+						return false, nil
 					}); err != nil {
 						s.conf.Logger.WithError(err).Error("Failed to execute session handler")
 					}
@@ -322,9 +320,9 @@ func GetSessionResult(requestorToken irma.RequestorToken) (*server.SessionResult
 	return s.GetSessionResult(requestorToken)
 }
 func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (res *server.SessionResult, err error) {
-	err = s.sessions.transaction(requestorToken, func(session *sessionData) error {
+	err = s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
 		res = session.Result
-		return nil
+		return false, nil
 	})
 	return
 }
@@ -334,9 +332,9 @@ func GetRequest(requestorToken irma.RequestorToken) (irma.RequestorRequest, erro
 	return s.GetRequest(requestorToken)
 }
 func (s *Server) GetRequest(requestorToken irma.RequestorToken) (req irma.RequestorRequest, err error) {
-	err = s.sessions.transaction(requestorToken, func(session *sessionData) error {
+	err = s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
 		req = session.Rrequest
-		return nil
+		return false, nil
 	})
 	return
 }
@@ -346,9 +344,9 @@ func CancelSession(requestorToken irma.RequestorToken) error {
 	return s.CancelSession(requestorToken)
 }
 func (s *Server) CancelSession(requestorToken irma.RequestorToken) (err error) {
-	err = s.sessions.transaction(requestorToken, func(session *sessionData) error {
+	err = s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
 		session.handleDelete(s.conf)
-		return nil
+		return true, nil
 	})
 	return
 }
@@ -361,9 +359,9 @@ func SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.Fronte
 	return s.SetFrontendOptions(requestorToken, request)
 }
 func (s *Server) SetFrontendOptions(requestorToken irma.RequestorToken, request *irma.FrontendOptionsRequest) (o *irma.SessionOptions, err error) {
-	err = s.sessions.transaction(requestorToken, func(session *sessionData) error {
+	err = s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
 		o, err = session.updateFrontendOptions(request)
-		return err
+		return true, err
 	})
 	return
 }
@@ -374,8 +372,8 @@ func PairingCompleted(requestorToken irma.RequestorToken) error {
 	return s.PairingCompleted(requestorToken)
 }
 func (s *Server) PairingCompleted(requestorToken irma.RequestorToken) error {
-	return s.sessions.transaction(requestorToken, func(session *sessionData) error {
-		return session.pairingCompleted(s.conf)
+	return s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
+		return true, session.pairingCompleted(s.conf)
 	})
 }
 
@@ -396,8 +394,8 @@ func (s *Server) SubscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 		Component: server.ComponentSession,
 		Arg:       string(token),
 	}))
-	return s.sessions.transaction(token, func(session *sessionData) error {
-		return s.subscribeServerSentEvents(w, r, session, true)
+	return s.sessions.transaction(token, func(session *sessionData) (bool, error) {
+		return false, s.subscribeServerSentEvents(w, r, session, true)
 	})
 }
 
@@ -460,71 +458,6 @@ func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	return nil
 }
 
-func (s *Server) serverSentEventsHandler(initialSession *sessionData, updateChan chan *sessionData) {
-	timeoutTime := time.Now().Add(initialSession.timeout(s.conf))
-
-	// Close the channels when this function returns.
-	defer func() {
-		s.serverSentEvents.CloseChannel("session/" + string(initialSession.RequestorToken))
-		s.serverSentEvents.CloseChannel("session/" + string(initialSession.ClientToken))
-		s.serverSentEvents.CloseChannel("frontendsession/" + string(initialSession.ClientToken))
-	}()
-
-	currStatus := initialSession.Status
-	for {
-		select {
-		case update, ok := <-updateChan:
-			if !ok {
-				return
-			}
-			if currStatus == update.Status {
-				continue
-			}
-			currStatus = update.Status
-
-			frontendStatusBytes, err := json.Marshal(update.frontendSessionStatus())
-			if err != nil {
-				s.conf.Logger.Error(err)
-				return
-			}
-
-			s.serverSentEvents.SendMessage("session/"+string(update.RequestorToken),
-				sse.SimpleMessage(fmt.Sprintf(`"%s"`, currStatus)),
-			)
-			s.serverSentEvents.SendMessage("session/"+string(update.ClientToken),
-				sse.SimpleMessage(fmt.Sprintf(`"%s"`, currStatus)),
-			)
-			s.serverSentEvents.SendMessage("frontendsession/"+string(update.ClientToken),
-				sse.SimpleMessage(string(frontendStatusBytes)),
-			)
-			if currStatus.Finished() {
-				return
-			}
-			timeoutTime = time.Now().Add(update.timeout(s.conf))
-		case <-time.After(time.Until(timeoutTime)):
-			frontendStatus := irma.FrontendSessionStatus{
-				Status: irma.ServerStatusTimeout,
-			}
-			frontendStatusBytes, err := json.Marshal(frontendStatus)
-			if err != nil {
-				s.conf.Logger.Error(err)
-				return
-			}
-
-			s.serverSentEvents.SendMessage("session/"+string(initialSession.RequestorToken),
-				sse.SimpleMessage(fmt.Sprintf(`"%s"`, frontendStatus.Status)),
-			)
-			s.serverSentEvents.SendMessage("session/"+string(initialSession.ClientToken),
-				sse.SimpleMessage(fmt.Sprintf(`"%s"`, frontendStatus.Status)),
-			)
-			s.serverSentEvents.SendMessage("frontendsession/"+string(initialSession.ClientToken),
-				sse.SimpleMessage(string(frontendStatusBytes)),
-			)
-			return
-		}
-	}
-}
-
 // SessionStatus retrieves a channel on which the current session status of the specified
 // IRMA session can be retrieved.
 func SessionStatus(requestorToken irma.RequestorToken) (chan irma.ServerStatus, error) {
@@ -540,9 +473,9 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 		return nil, err
 	}
 	var timeoutTime time.Time
-	if err := s.sessions.transaction(requestorToken, func(session *sessionData) error {
+	if err := s.sessions.transaction(requestorToken, func(session *sessionData) (bool, error) {
 		timeoutTime = time.Now().Add(session.timeout(s.conf))
-		return nil
+		return false, nil
 	}); err != nil {
 		return nil, err
 	}

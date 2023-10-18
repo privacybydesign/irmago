@@ -733,26 +733,28 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder := server.NewHTTPResponseRecorder(w)
 		if err := s.sessionFromCookie(r, func(session *session) error {
 			if session.UserID == nil {
 				s.conf.Logger.Info("Malformed request: user not logged in")
-				server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
+				server.WriteError(recorder, server.ErrorInvalidRequest, "not logged in")
 				return nil
 			}
 
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
+			next.ServeHTTP(recorder, r.WithContext(context.WithValue(r.Context(), "session", session)))
 
 			return nil
 		}); err != nil {
-			if err == errUnknownSession {
+			if recorder.Flushed {
+				s.conf.Logger.WithError(err).Error("Session middleware: error could not be written to client")
+			} else if err == errUnknownSession {
 				server.WriteError(w, server.ErrorInvalidRequest, "not logged in")
-				return
+			} else {
+				keyshare.WriteError(w, err)
 			}
-
-			// TODO: this might lead to a duplicate write to w. Check if this is a problem.
-			// This also happens in userMiddleware in irmaserver.
-			keyshare.WriteError(w, err)
+			return
 		}
+		recorder.Flush()
 	})
 }
 

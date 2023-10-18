@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -565,14 +566,27 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if err := s.sessions.clientTransaction(token, func(session *sessionData) error {
+		recorder := server.NewHTTPResponseRecorder(w)
+		if err := s.sessions.clientTransaction(token, func(session *sessionData) (bool, error) {
 			expectedHost := session.Rrequest.SessionRequest().Base().Host
 			if expectedHost != "" && expectedHost != r.Host {
-				server.WriteError(w, server.ErrorUnauthorized, "Host mismatch")
-				return nil
+				server.WriteError(recorder, server.ErrorUnauthorized, "Host mismatch")
+				return false, nil
 			}
 
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
+			hashBefore := session.hash()
+			next.ServeHTTP(recorder, r.WithContext(context.WithValue(r.Context(), "session", session)))
+			hashAfter := session.hash()
+			sessionUpdated := hashBefore != hashAfter
+
+			// SSE bypasses the middleware and flushes the response writer directly.
+			// SSE should not have changed the session state, so we return here.
+			if recorder.Flushed {
+				if sessionUpdated {
+					return false, errors.New("handler flushed the response writer and changed session state")
+				}
+				return false, nil
+			}
 
 			// Write session result to context for irmac.go functions.
 			result := session.Result
@@ -581,15 +595,18 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				*resultValue.(*server.SessionResult) = *result
 			}
 
-			return nil
+			return sessionUpdated, nil
 		}); err != nil {
-			if _, ok := err.(*UnknownSessionError); ok {
+			if recorder.Flushed {
+				s.conf.Logger.WithError(err).Error("Session middleware: error could not be written to client")
+			} else if _, ok := err.(*UnknownSessionError); ok {
 				server.WriteError(w, server.ErrorSessionUnknown, "")
 			} else {
 				server.WriteError(w, server.ErrorInternal, "")
 			}
 			return
 		}
+		recorder.Flush()
 	})
 }
 
@@ -616,4 +633,69 @@ func (s *Server) pairingMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) serverSentEventsHandler(initialSession *sessionData, updateChan chan *sessionData) {
+	timeoutTime := time.Now().Add(initialSession.timeout(s.conf))
+
+	// Close the channels when this function returns.
+	defer func() {
+		s.serverSentEvents.CloseChannel("session/" + string(initialSession.RequestorToken))
+		s.serverSentEvents.CloseChannel("session/" + string(initialSession.ClientToken))
+		s.serverSentEvents.CloseChannel("frontendsession/" + string(initialSession.ClientToken))
+	}()
+
+	currStatus := initialSession.Status
+	for {
+		select {
+		case update, ok := <-updateChan:
+			if !ok {
+				return
+			}
+			if currStatus == update.Status {
+				continue
+			}
+			currStatus = update.Status
+
+			frontendStatusBytes, err := json.Marshal(update.frontendSessionStatus())
+			if err != nil {
+				s.conf.Logger.Error(err)
+				return
+			}
+
+			s.serverSentEvents.SendMessage("session/"+string(update.RequestorToken),
+				sse.SimpleMessage(fmt.Sprintf(`"%s"`, currStatus)),
+			)
+			s.serverSentEvents.SendMessage("session/"+string(update.ClientToken),
+				sse.SimpleMessage(fmt.Sprintf(`"%s"`, currStatus)),
+			)
+			s.serverSentEvents.SendMessage("frontendsession/"+string(update.ClientToken),
+				sse.SimpleMessage(string(frontendStatusBytes)),
+			)
+			if currStatus.Finished() {
+				return
+			}
+			timeoutTime = time.Now().Add(update.timeout(s.conf))
+		case <-time.After(time.Until(timeoutTime)):
+			frontendStatus := irma.FrontendSessionStatus{
+				Status: irma.ServerStatusTimeout,
+			}
+			frontendStatusBytes, err := json.Marshal(frontendStatus)
+			if err != nil {
+				s.conf.Logger.Error(err)
+				return
+			}
+
+			s.serverSentEvents.SendMessage("session/"+string(initialSession.RequestorToken),
+				sse.SimpleMessage(fmt.Sprintf(`"%s"`, frontendStatus.Status)),
+			)
+			s.serverSentEvents.SendMessage("session/"+string(initialSession.ClientToken),
+				sse.SimpleMessage(fmt.Sprintf(`"%s"`, frontendStatus.Status)),
+			)
+			s.serverSentEvents.SendMessage("frontendsession/"+string(initialSession.ClientToken),
+				sse.SimpleMessage(string(frontendStatusBytes)),
+			)
+			return
+		}
+	}
 }
