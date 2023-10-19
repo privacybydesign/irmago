@@ -118,9 +118,9 @@ type RedisSettings struct {
 	Username string `json:"username,omitempty" mapstructure:"username"`
 	// Password for Redis authentication.
 	Password string `json:"password,omitempty" mapstructure:"password"`
-	// ACLPrefix prefixes all Redis keys with the specified string in the format "aclprefix:key".
-	// This can be used for key permissions in the Redis ACL system. If ACLPrefix is empty, no prefix is used.
-	ACLPrefix string `json:"acl_prefix,omitempty" mapstructure:"acl_prefix"`
+	// ACLUseKeyPrefixes ensures all Redis keys are prefixed with the username in the format "username:key".
+	// This can be used for key permissions in the Redis ACL system. If ACLUseKeyPrefixes is false, no prefix is used.
+	ACLUseKeyPrefixes bool `json:"acl_use_key_prefixes,omitempty" mapstructure:"acl_use_key_prefixes"`
 
 	DB int `json:"db,omitempty" mapstructure:"db"`
 
@@ -483,8 +483,8 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 		}
 	}
 	var keyPrefix string
-	if conf.RedisSettings.ACLPrefix != "" {
-		keyPrefix = conf.RedisSettings.ACLPrefix + ":"
+	if conf.RedisSettings.ACLUseKeyPrefixes {
+		keyPrefix = conf.RedisSettings.Username + ":"
 	}
 	conf.redisClient = &RedisClient{
 		Client:       cl,
