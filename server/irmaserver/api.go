@@ -273,16 +273,14 @@ func (s *Server) startNextSession(
 
 	if handler != nil {
 		go func() {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			updateChan, err := s.sessions.subscribeUpdates(ctx, ses.RequestorToken)
+			statusChan, err := s.sessionStatusChannel(context.Background(), ses.RequestorToken, ses.timeout(s.conf))
 			if err != nil {
-				s.conf.Logger.WithError(err).Error("Failed to subscribe to session status changes for handler")
+				s.conf.Logger.WithError(err).Error("Failed to subscribe to session status updates for handler")
 				return
 			}
-			for update := range updateChan {
-				if update.Status.Finished() {
-					if err := s.sessions.transaction(ctx, ses.RequestorToken, func(ses *sessionData) (bool, error) {
+			for status := range statusChan {
+				if status.Finished() {
+					if err := s.sessions.transaction(context.Background(), ses.RequestorToken, func(ses *sessionData) (bool, error) {
 						handler(ses.Result)
 						return false, nil
 					}); err != nil {
@@ -473,52 +471,13 @@ func (s *Server) SessionStatus(requestorToken irma.RequestorToken) (statusChan c
 		return nil, errors.New("SessionStatus cannot be used in combination with Redis.")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	updateChan, err := s.sessions.subscribeUpdates(ctx, requestorToken)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	var timeoutTime time.Time
-	if err := s.sessions.transaction(ctx, requestorToken, func(session *sessionData) (bool, error) {
-		timeoutTime = time.Now().Add(session.timeout(s.conf))
+	var timeout time.Duration
+	if err := s.sessions.transaction(context.Background(), requestorToken, func(session *sessionData) (bool, error) {
+		timeout = session.timeout(s.conf)
 		return false, nil
 	}); err != nil {
-		cancel()
 		return nil, err
 	}
 
-	statusChan = make(chan irma.ServerStatus, 4)
-	go func() {
-		defer cancel()
-
-		var currStatus irma.ServerStatus
-		for {
-			select {
-			case update, ok := <-updateChan:
-				if !ok {
-					close(statusChan)
-					return
-				}
-				if currStatus == update.Status {
-					continue
-				}
-				currStatus = update.Status
-
-				statusChan <- currStatus
-
-				if currStatus.Finished() {
-					close(statusChan)
-					return
-				}
-				timeoutTime = time.Now().Add(update.timeout(s.conf))
-			case <-time.After(time.Until(timeoutTime)):
-				statusChan <- irma.ServerStatusTimeout
-				close(statusChan)
-				return
-			}
-		}
-	}()
-
-	return statusChan, nil
+	return s.sessionStatusChannel(context.Background(), requestorToken, timeout)
 }

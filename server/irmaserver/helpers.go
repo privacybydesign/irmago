@@ -702,6 +702,51 @@ func (s *Server) serverSentEventsHandler(initialSession *sessionData, updateChan
 	}
 }
 
+func (s *Server) sessionStatusChannel(ctx context.Context, token irma.RequestorToken, initialTimeout time.Duration) (
+	chan irma.ServerStatus, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	updateChan, err := s.sessions.subscribeUpdates(ctx, token)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	statusChan := make(chan irma.ServerStatus, 4)
+	timeoutTime := time.Now().Add(initialTimeout)
+	go func() {
+		defer cancel()
+
+		var currStatus irma.ServerStatus
+		for {
+			select {
+			case update, ok := <-updateChan:
+				if !ok {
+					close(statusChan)
+					return
+				}
+				if currStatus == update.Status {
+					continue
+				}
+				currStatus = update.Status
+
+				statusChan <- currStatus
+
+				if currStatus.Finished() {
+					close(statusChan)
+					return
+				}
+				timeoutTime = time.Now().Add(update.timeout(s.conf))
+			case <-time.After(time.Until(timeoutTime)):
+				statusChan <- irma.ServerStatusTimeout
+				close(statusChan)
+				return
+			}
+		}
+	}()
+
+	return statusChan, nil
+}
+
 func (s *Server) newSession(
 	ctx context.Context,
 	action irma.Action,
