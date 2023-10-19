@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- Support for Redis in Sentinel mode
+- Redis support for `irma keyshare server` and `irma keyshare myirmaserver`
+
+### Changed
+- Using optimistic locking in the `irma server` instead of pessimistic locking
 
 ### Internal
 - Fixed failing tests due to expired test.test2 idemix key
