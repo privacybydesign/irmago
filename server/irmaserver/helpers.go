@@ -600,8 +600,10 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			if recorder.Flushed {
 				s.conf.Logger.WithError(err).Error("Session middleware: error could not be written to client")
 			} else if _, ok := err.(*UnknownSessionError); ok {
+				s.conf.Logger.WithError(err).Warn("Session middleware: unknown session")
 				server.WriteError(w, server.ErrorSessionUnknown, "")
 			} else {
+				s.conf.Logger.WithError(err).Error("Session middleware: error")
 				server.WriteError(w, server.ErrorInternal, "")
 			}
 			return

@@ -522,6 +522,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, nil)
 	if err != nil {
 		if _, ok := err.(*irmaserver.RedisError); ok {
+			s.conf.Logger.WithError(err).Error("Failed to start session")
 			server.WriteError(w, server.ErrorInternal, "")
 		} else {
 			server.WriteError(w, server.ErrorInvalidRequest, err.Error())
