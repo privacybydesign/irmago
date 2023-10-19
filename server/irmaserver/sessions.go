@@ -273,7 +273,7 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 		return logAsRedisError(err)
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("session added or updated in Redis datastore")
+	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session added in Redis datastore")
 	return nil
 }
 
