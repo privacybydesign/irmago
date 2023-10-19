@@ -289,7 +289,7 @@ func (session *sessionData) getProofP(commitments *irma.IssueCommitmentMessage, 
 		if !contains {
 			return nil, errors.Errorf("no keyshare proof included for scheme %s", scheme.Name())
 		}
-		conf.Logger.Debug("Parsing keyshare ProofP JWT: ", str)
+		conf.Logger.Trace("Parsing keyshare ProofP JWT: ", str)
 		claims := &struct {
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
