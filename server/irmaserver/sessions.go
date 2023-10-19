@@ -246,10 +246,13 @@ func (s *memorySessionStore) deleteExpired() {
 func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error {
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
-		return err
+		return &RedisError{err}
 	}
 
 	ttl := session.ttl(s.conf)
+	if ttl <= 0 {
+		return &RedisError{errors.New("session ttl is in the past")}
+	}
 	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
 		if err := tx.Set(
 			ctx,
@@ -257,20 +260,25 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 			string(session.ClientToken),
 			ttl,
 		).Err(); err != nil {
-			return &RedisError{err}
+			return err
 		}
-		if err := tx.Set(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken), sessionJSON, ttl).Err(); err != nil {
-			return &RedisError{err}
+		if err := tx.Set(
+			ctx,
+			s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken),
+			sessionJSON,
+			ttl,
+		).Err(); err != nil {
+			return err
 		}
 
 		if s.client.FailoverMode {
 			if err := s.client.Wait(ctx, 1, time.Second).Err(); err != nil {
-				return &RedisError{err}
+				return err
 			}
 		}
 		return nil
 	}); err != nil {
-		return err
+		return &RedisError{err}
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken}).Debug("Session added in Redis datastore")
@@ -295,12 +303,12 @@ func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorTok
 }
 
 func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
-	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
+	err := s.client.Watch(ctx, func(tx *redis.Tx) error {
 		getResult := tx.Get(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t))
 		if getResult.Err() == redis.Nil {
 			return &UnknownSessionError{"", t}
 		} else if getResult.Err() != nil {
-			return &RedisError{getResult.Err()}
+			return getResult.Err()
 		}
 
 		session := &sessionData{}
@@ -329,19 +337,28 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			return err
 		}
 
-		err = tx.Set(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t), sessionJSON, 0).Err()
-		if err != nil {
-			return &RedisError{err}
+		ttl := session.ttl(s.conf)
+		if ttl <= 0 {
+			return errors.New("session ttl is in the past")
 		}
 
+		if err := tx.Set(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t), sessionJSON, ttl).Err(); err != nil {
+			return err
+		}
+		if err := tx.Expire(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken), ttl).Err(); err != nil {
+			return err
+		}
 		if s.client.FailoverMode {
 			if err := tx.Wait(ctx, 1, time.Second).Err(); err != nil {
-				return &RedisError{err}
+				return err
 			}
 		}
 		return nil
-	}); err != nil {
+	})
+	if _, ok := err.(*UnknownSessionError); ok {
 		return err
+	} else if err != nil {
+		return &RedisError{err}
 	}
 	return nil
 }

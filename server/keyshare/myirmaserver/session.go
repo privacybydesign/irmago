@@ -90,13 +90,16 @@ func (s *redisSessionStore) add(ctx context.Context, ses session) error {
 		return err
 	}
 
-	ttl := time.Until(ses.Expiry).Seconds()
+	ttl := time.Until(ses.Expiry)
+	if ttl <= 0 {
+		return errors.New("session expiry time is in the past")
+	}
 	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
 		if err := tx.Set(
 			ctx,
 			s.client.KeyPrefix+sessionLookupPrefix+ses.Token,
 			string(bytes),
-			time.Duration(ttl)*time.Second,
+			ttl,
 		).Err(); err != nil {
 			return err
 		}
@@ -138,7 +141,11 @@ func (s *redisSessionStore) update(ctx context.Context, token string, handler fu
 			return err
 		}
 
-		if err := tx.Set(ctx, key, string(updatedBytes), time.Until(session.Expiry)).Err(); err != nil {
+		ttl := time.Until(session.Expiry)
+		if ttl <= 0 {
+			return errors.New("session expiry time is in the past")
+		}
+		if err := tx.Set(ctx, key, string(updatedBytes), ttl).Err(); err != nil {
 			return err
 		}
 

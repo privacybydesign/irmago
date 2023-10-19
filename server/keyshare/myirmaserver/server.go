@@ -45,7 +45,7 @@ func New(conf *Configuration) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
-		store = &redisSessionStore{client: cl}
+		store = &redisSessionStore{client: cl, logger: conf.Logger}
 	default:
 		return nil, errors.New("unsupported session store type")
 	}
