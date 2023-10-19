@@ -427,11 +427,14 @@ func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 	s.activeSSEHandlersMutex.Unlock()
 
 	if !activeHandler {
-		updateChan, err := s.sessions.subscribeUpdates(context.Background(), session.RequestorToken)
+		ctx, cancel := context.WithCancel(context.Background())
+		updateChan, err := s.sessions.subscribeUpdates(ctx, session.RequestorToken)
 		if err != nil {
+			cancel()
 			return err
 		}
 		go func() {
+			defer cancel()
 			s.serverSentEventsHandler(session, updateChan)
 			s.activeSSEHandlersMutex.Lock()
 			defer s.activeSSEHandlersMutex.Unlock()
