@@ -16,7 +16,7 @@ function checkResponse(response, expectedOutput = '') {
     'verify status code': (r) => r.status === 200,
     'verify body': (r) => r.body.includes(expectedOutput),
   });
-  if (!checkOutput) fail('unexpected response');
+  if (!checkOutput) fail('unexpected response: status ${response.status}');
 }
 
 export default function () {
@@ -24,7 +24,7 @@ export default function () {
     "@context": "https://irma.app/ld/request/disclosure/v2",
     "disclose": [
       [
-        [ "irma-demo.sidn-pbdf.email.email" ]
+        ["irma-demo.sidn-pbdf.email.email"]
       ]
     ]
   }), {
