@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	// "github.com/alicebob/miniredis/v2"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-redis/redis/v8"
 	irma "github.com/privacybydesign/irmago"
