@@ -51,6 +51,8 @@ type BaseRequest struct {
 
 	ClientReturnURL  string `json:"clientReturnUrl,omitempty"`  // URL to proceed to when IRMA session is completed
 	AugmentReturnURL bool   `json:"augmentReturnUrl,omitempty"` // Whether to augment the return url with the server session token
+
+	Host string `json:"host,omitempty"` // Host to use in the IRMA session QR
 }
 
 // An AttributeCon is only satisfied if all of its containing attribute requests are satisfied.
@@ -69,6 +71,8 @@ type DisclosureRequest struct {
 
 	Disclose AttributeConDisCon       `json:"disclose,omitempty"`
 	Labels   map[int]TranslatedString `json:"labels,omitempty"`
+
+	SkipExpiryCheck []CredentialTypeIdentifier `json:"skipExpiryCheck,omitempty"`
 }
 
 // A SignatureRequest is a a request to sign a message with certain attributes. Construct new
@@ -615,6 +619,13 @@ func (dr *DisclosureRequest) Validate() error {
 	return nil
 }
 
+func (cr *CredentialRequest) PublicKeyIdentifier() PublicKeyIdentifier {
+	return PublicKeyIdentifier{
+		Issuer:  cr.CredentialTypeID.IssuerIdentifier(),
+		Counter: cr.KeyCounter,
+	}
+}
+
 func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, issuedAt time.Time) (*CredentialInfo, error) {
 	list, err := cr.AttributeList(conf, metadataVersion, nil, issuedAt)
 	if err != nil {
@@ -674,7 +685,7 @@ func stringSliceEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i, _ := range a {
+	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
@@ -747,7 +758,7 @@ func (ir *IssuanceRequest) Identifiers() *IrmaIdentifierSet {
 			ir.ids.Issuers[issuer] = struct{}{}
 			credID := credreq.CredentialTypeID
 			ir.ids.CredentialTypes[credID] = struct{}{}
-			for attr, _ := range credreq.Attributes { // this is kind of ugly
+			for attr := range credreq.Attributes { // this is kind of ugly
 				ir.ids.AttributeTypes[NewAttributeTypeIdentifier(credID.String()+"."+attr)] = struct{}{}
 			}
 			if ir.ids.PublicKeys[issuer] == nil {
@@ -791,9 +802,6 @@ func (ir *IssuanceRequest) Validate() error {
 		count := cred.CredentialTypeID.PartsCount()
 		if count != 2 {
 			return errors.Errorf("Expected credential ID to consist of 3 parts, %d found", count+1)
-		}
-		if cred.Validity != nil && cred.Validity.Floor().Before(Timestamp(time.Now())) {
-			return errors.New("Expired credential request")
 		}
 	}
 	var err error
@@ -858,20 +866,22 @@ func (sr *SignatureRequest) Validate() error {
 	return nil
 }
 
-// Check if Timestamp is before other Timestamp. Used for checking expiry of attributes
+// Before checks if Timestamp is before other Timestamp. Used for checking expiry of attributes.
 func (t Timestamp) Before(u Timestamp) bool {
 	return time.Time(t).Before(time.Time(u))
 }
 
+// After checks if Timestamp is after other Timestamp. Used for checking expiry of attributes.
 func (t Timestamp) After(u Timestamp) bool {
 	return time.Time(t).After(time.Time(u))
 }
 
+// Sub returns the time difference between two Timestamps.
 func (t Timestamp) Sub(u Timestamp) time.Duration {
 	return time.Time(t).Sub(time.Time(u))
 }
 
-// To check whether Timestamp is uninitialized
+// IsZero checks whether Timestamp is uninitialized
 func (t Timestamp) IsZero() bool {
 	return time.Time(t).IsZero()
 }
@@ -904,7 +914,7 @@ func (t *Timestamp) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Timestamp implements Stringer.
+// String returns the timestamp as a Unix time string.
 func (t *Timestamp) String() string {
 	return fmt.Sprint(time.Time(*t).Unix())
 }

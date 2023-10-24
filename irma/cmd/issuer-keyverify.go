@@ -102,7 +102,7 @@ On machines of 2 - 3 GHz verification will take some 5 - 15 minutes, during whic
 		follower.StepDone()
 
 		// Construct proof structure
-		bases := append([]*big.Int{pk.Z, pk.S})
+		bases := []*big.Int{pk.Z, pk.S}
 		if pk.G != nil {
 			bases = append(bases, pk.G)
 		}

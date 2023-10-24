@@ -563,7 +563,7 @@ func (s *Server) handleRevocationGetUpdateLatest(w http.ResponseWriter, r *http.
 		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "not supported by this server"))
 		return
 	}
-	updates, err := s.conf.IrmaConfiguration.Revocation.UpdateLatest(cred, count, counter)
+	updates, err := s.conf.IrmaConfiguration.Revocation.LatestUpdates(cred, count, counter)
 	if err != nil {
 		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorRevocation, err.Error()))
 		return
@@ -620,5 +620,4 @@ func (s *Server) handleRevocationPostIssuanceRecord(w http.ResponseWriter, r *ht
 		server.WriteBinaryResponse(w, nil, server.RemoteError(server.ErrorRevocation, err.Error()))
 	}
 	w.WriteHeader(200)
-	return
 }

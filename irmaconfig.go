@@ -67,7 +67,7 @@ type Configuration struct {
 	readOnly    bool
 }
 
-// ConfigurationListeners are the interface provided to react to changes in schemes.
+// ConfigurationListener are the interface provided to react to changes in schemes.
 type ConfigurationListener func(conf *Configuration)
 
 type UnknownIdentifierError struct {
@@ -101,7 +101,7 @@ func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configurati
 
 	if conf.assets != "" { // If an assets folder is specified, then it must exist
 		if err = common.AssertPathExists(conf.assets); err != nil {
-			return nil, errors.WrapPrefix(err, "Nonexistent assets folder specified", 0)
+			return nil, WrapErrorPrefix(err, "Nonexistent assets folder specified")
 		}
 	}
 	if err = common.EnsureDirectoryExists(conf.Path); err != nil {
@@ -225,7 +225,7 @@ func (conf *Configuration) ParseFolder() (err error) {
 // Any error encountered during parsing is considered recoverable only if it is of type *SchemeManagerError;
 // In this case the scheme in which it occurred is downloaded from its remote and re-parsed.
 // If any other error is encountered at any time, it is returned immediately.
-// If no error is returned, parsing and possibly restoring has been succesfull, and there should be no
+// If no error is returned, parsing and possibly restoring has been successful, and there should be no
 // disabled schemes.
 func (conf *Configuration) ParseOrRestoreFolder() (rerr error) {
 	err := conf.ParseFolder()
@@ -596,8 +596,6 @@ func (conf *Configuration) checkCredentialTypes(session SessionRequest, missing 
 		}
 		return nil
 	})
-
-	return
 }
 
 func (conf *Configuration) checkIdentifiers(session SessionRequest) (*IrmaIdentifierSet, *IrmaIdentifierSet, error) {
@@ -886,6 +884,33 @@ func DefaultSchemesPath() string {
 		return ""
 	}
 	return p
+}
+
+// DefaultSchemesAssetsPath returns the default storage path for irma_configuration assets,
+// namely DefaultDataPath + "/irma_configuration_assets" if it exists. Otherwise, it returns the empty string.
+func DefaultSchemesAssetsPath() string {
+	p := defaultSchemesAssetsPath()
+	if exists, err := common.PathExists(p); err != nil || !exists {
+		return ""
+	}
+	return p
+}
+
+// EnsureDefaultSchemesAssetsPathExists ensures that the default storage path for irma_configuration assets exists and returns it.
+func EnsureDefaultSchemesAssetsPathExists() string {
+	p := defaultSchemesAssetsPath()
+	if err := common.EnsureDirectoryExists(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+func defaultSchemesAssetsPath() string {
+	p := DefaultDataPath()
+	if p == "" {
+		return ""
+	}
+	return filepath.Join(p, "irma_configuration_assets")
 }
 
 func firstExistingPath(paths []string) string {

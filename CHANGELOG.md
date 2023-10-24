@@ -6,11 +6,121 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.14.1] - 2023-10-18
+### Fixed
+- Improve stability of database drivers by bumping their versions
+
+### Security
+- Use Go toolchain version 1.21.3 for building `irma` CLI tool
+
+### Internal
+- Fixed failing tests due to expired test.test2 idemix key
+
+## [0.14.0] - 2023-10-02
+Note for users of the `irmaclient` package (e.g. maintainers of the [Yivi app](https://github.com/privacybydesign/irmamobile)): the `KeyshareVerifyPin` function requires the renewal endpoint for the keyshare attribute to be present. Therefore, this version should first be deployed on keyshare servers before the client side can be upgraded.
+### Added
+- Option `skipExpiryCheck` in disclosure requests to allow disclosure of expired credentials (e.g. `"skipExpiryCheck": ["irma-demo.sidn-pbdf.email"]`)
+- Option `host` in session request to overrule host name in IRMA QR if permission has been granted (see below)
+  ```
+  {
+    "@context": "https://irma.app/ld/request/disclosure/v2",
+    "host": "irma.example.com",
+    "disclose": ...
+  }
+  ```
+  This leads to the following session package:
+  ```
+  {
+    "token":"KzxuWKwL5KGLKr4uerws",
+    "sessionPtr": {"u":"https://irma.example.com/irma/session/ysDohpoySavbHAUDjmpz","irmaqr":"disclosing"},
+    "frontendRequest": {
+      "authorization":"qGrMmL8UZwZ88Sq8gobV",
+      "minProtocolVersion": "1.0",
+      "maxProtocolVersion": "1.1"
+    }
+  }
+  ```
+- Permission option `host_perms` in the requestor configuration to specify which values a requestor may use for the `host` option in session requests
+  ```
+  {
+    "requestors": {
+        "myapp": {
+            "disclose_perms": [ "irma-demo.MijnOverheid.ageLower.over18" ],
+            "sign_perms": [ "irma-demo.MijnOverheid.ageLower.*" ],
+            "issue_perms": [ "irma-demo.MijnOverheid.ageLower" ],
+            "host_perms": ["*.example.com"]
+            "auth_method": "token",
+            "key": "eGE2PSomOT84amVVdTU"
+        }
+    }
+  }
+  ```
+- Renewal endpoint for keyshare attribute in the keyshare server (`/users/renewKeyshareAttribute`)
+- Keyshare server /api/v2/prove/... endpoints for the new keyshare protocol
+
+### Changed
+- `KeyshareVerifyPin` function in irmaclient ensures the keyshare attribute is valid
+- Sending the account expiry email is done when user has only valid e-mail addresses
+- Strip unnecessary details from database errors
+
+### Fixed
+- User account expiry continues when one or more e-mail addresses are marked for revalidation
+
+## [0.13.3] - 2023-09-06
+### Fixed
+- Auto-update mechanism of IRMA configuration not working in ghcr.io/privacybydesign/irma Docker container
+- Panics occur when the timestamp file does not exist in a scheme directory
+
+## [0.13.2] - 2023-08-22
+### Changed
+- Remove mail header 'Content-Transfer-Encoding: binary'
+  The header gets converted to 'Content-Transfer-Encoding: quoted-printable' causing 'arc=fail (body hash mismatch)' with gmail
+
+## [0.13.1] - 2023-08-16
+### Fixed
+- Invalid amount of arguments in query scan when e-mail revalidation is disabled
+
+## [0.13.0] - 2023-08-10
+### Added
+- E-mail address revalidation, addressing issues where user's e-mail addresses can be (temporary) invalid
+- Publish the Docker image of the `irma` CLI tool on ghcr.io/privacybydesign/irma
+- Support for revocation db type `sqlserver` (Microsoft SQL Server)
+
 ### Changed
 - Use separate application user in Dockerfile for entrypoint
+- Rename RevocationStorage's UpdateLatest function to LatestUpdates. This name better fits its behaviour. The functionality stays the same.
+- Validate revocation witness before revocation update is applied
+- RevocationStorage's EnableRevocation function does not return an error anymore if it has been enabled already
+- Use a Docker image created from scratch as base for the Dockerfile
+- Custom WrapErrorPrefix function that respects the error's type
+- Log info message of irma.SessionError errors
+
+As part of e-mail address revalidation:
+- `VerifyMXRecord` incorporates a check to see if there is an active network connection
+- MyIrma server: `/user` returns an additional field `revalidate_in_progress` in the JSON response body, indicating whether the e-mail address is being revalidated or not
+- MyIrma server: `/user/delete` and `/email/remove` return a 500 status code and `REVALIDATE_EMAIL` error type if one or more e-mail addresses of the user are invalid
+
+**Note:** Enabling e-mail address revalidation requires a change in the database schema. In order to do this please add the `revalidate_on` column of type `bigint` to the `irma.emails` table. See the [schema](https://github.com/privacybydesign/irmago/tree/master/server/keyshare/schema.sql#L50) file. Otherwise e-mail address revalidation is disabled and there will not be a breaking change.
+
+### Fixed
+- Race conditions in database logic of revocation storage
+- `irma scheme verify` not detecting missing files in index
+- Scheme verification/signing does not reject credentials with invalid revocation settings
+- Write transactions within memory implementation of revocation storage may lead to unintended changes
 
 ### Removed
 - Superfluous openssl package in Dockerfile
+
+### Security
+- Let IRMA servers by default reject IRMA/Yivi apps that don't support pairing codes (IRMA protocol version <= 2.7)
+
+**Note:** This is an important security update for issuers to make sure that pairing codes cannot be circumvented.
+IRMA apps that don't support pairing codes should not be in circulation anymore, so this change won't affect users.
+Yivi apps have always supported pairing codes.
+
+### Internal
+- Linter switch from golint to staticcheck
+- Use Postgres 15 for unit and component tests
 
 ## [0.12.6] - 2023-05-31
 ### Fixed
@@ -358,6 +468,12 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.14.1]: https://github.com/privacybydesign/irmago/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/privacybydesign/irmago/compare/v0.13.3...v0.14.0
+[0.13.3]: https://github.com/privacybydesign/irmago/compare/v0.13.2...v0.13.3
+[0.13.2]: https://github.com/privacybydesign/irmago/compare/v0.13.1...v0.13.2
+[0.13.1]: https://github.com/privacybydesign/irmago/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/privacybydesign/irmago/compare/v0.12.6...v0.13.0
 [0.12.6]: https://github.com/privacybydesign/irmago/compare/v0.12.5...v0.12.6
 [0.12.5]: https://github.com/privacybydesign/irmago/compare/v0.12.4...v0.12.5
 [0.12.4]: https://github.com/privacybydesign/irmago/compare/v0.12.3...v0.12.4

@@ -83,29 +83,33 @@ func signRequest(request irma.RequestorRequest, name, authmethod, key string) (s
 }
 
 func configureRequest(cmd *cobra.Command) (irma.RequestorRequest, *irma.Configuration, error) {
-	irmaconfigPath, err := cmd.Flags().GetString("schemes-path")
+	irmaConfigPath, err := cmd.Flags().GetString("schemes-path")
 	if err != nil {
 		return nil, nil, err
 	}
-	irmaconfig, err := irma.NewConfiguration(irmaconfigPath, irma.ConfigurationOptions{})
+	irmaConfigAssetsPath, err := cmd.Flags().GetString("schemes-assets-path")
 	if err != nil {
 		return nil, nil, err
 	}
-	if err = irmaconfig.ParseFolder(); err != nil {
+	irmaConfig, err := irma.NewConfiguration(irmaConfigPath, irma.ConfigurationOptions{Assets: irmaConfigAssetsPath})
+	if err != nil {
 		return nil, nil, err
 	}
-	if len(irmaconfig.SchemeManagers) == 0 {
-		if err = irmaconfig.DownloadDefaultSchemes(); err != nil {
+	if err = irmaConfig.ParseFolder(); err != nil {
+		return nil, nil, err
+	}
+	if len(irmaConfig.SchemeManagers) == 0 {
+		if err = irmaConfig.DownloadDefaultSchemes(); err != nil {
 			return nil, nil, err
 		}
 	}
 
-	request, err := constructSessionRequest(cmd, irmaconfig)
+	request, err := constructSessionRequest(cmd, irmaConfig)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return request, irmaconfig, nil
+	return request, irmaConfig, nil
 }
 
 // Helper functions
@@ -310,13 +314,13 @@ func authmethodAlias(f *pflag.FlagSet, name string) pflag.NormalizedName {
 	switch name {
 	case "authmethod":
 		name = "auth-method"
-		break
 	}
 	return pflag.NormalizedName(name)
 }
 
 func addRequestFlags(flags *pflag.FlagSet) {
 	flags.StringP("schemes-path", "s", irma.DefaultSchemesPath(), "path to irma_configuration")
+	flags.String("schemes-assets-path", irma.DefaultSchemesAssetsPath(), "if specified, copy schemes from here into --schemes-path")
 	flags.StringP("auth-method", "a", "none", "Authentication method to server (none, token, rsa, hmac)")
 	flags.SetNormalizeFunc(authmethodAlias)
 	flags.String("key", "", "Key to sign request with")

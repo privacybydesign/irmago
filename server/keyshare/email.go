@@ -2,6 +2,7 @@ package keyshare
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"net"
 	"net/mail"
@@ -59,49 +60,65 @@ func (conf EmailConfiguration) translateTemplate(templates map[string]*template.
 	return templates[conf.DefaultLanguage]
 }
 
+// SendEmail sends a templated email to the supplied email address(es).
+// When multiple recipients are specified, the email is sent as a BCC email.
 func (conf EmailConfiguration) SendEmail(
 	templates map[string]*template.Template,
 	subjects map[string]string,
 	templateData map[string]string,
-	email string,
+	to []string,
 	lang string,
 ) error {
-	var msg bytes.Buffer
-	err := conf.translateTemplate(templates, lang).Execute(&msg, templateData)
-	if err != nil {
+	var content bytes.Buffer
+	if err := conf.translateTemplate(templates, lang).Execute(&content, templateData); err != nil {
 		server.Logger.WithField("error", err).Error("Could not generate email from template")
 		return err
 	}
 
-	// Do input validation on email address fields.
-	toAddr, err := mail.ParseAddress(email)
-	if err != nil {
-		return ErrInvalidEmail
-	}
-	err = verifyMXRecord(email)
-	if err != nil {
-		return ErrInvalidEmail
-	}
-	fromAddr, err := mail.ParseAddress(conf.EmailFrom)
+	from, err := ParseEmailAddress(conf.EmailFrom)
 	if err != nil {
 		// Email address comes from configuration, so this is a server error.
+		server.Logger.WithField("error", err).Error("From address in configuration is invalid")
 		return err
 	}
 
-	err = sendHTMLEmail(
-		conf.EmailServer,
-		conf.EmailAuth,
-		fromAddr,
-		toAddr,
-		conf.TranslateString(subjects, lang),
-		msg.Bytes(),
-	)
-	if err != nil {
+	if len(to) == 0 {
+		return errors.New("no to address specified")
+	}
+
+	if _, err = mail.ParseAddressList(strings.Join(to, ",")); err != nil {
+		return ErrInvalidEmail
+	}
+
+	message := bytes.Buffer{}
+
+	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email
+	if len(to) == 1 {
+		fmt.Fprintf(&message, "To: %s\r\n", to[0])
+	}
+
+	fmt.Fprintf(&message, "From: %s\r\n", from.Address)
+	fmt.Fprintf(&message, "Subject: %s\r\n", conf.TranslateString(subjects, lang))
+	fmt.Fprintf(&message, "Content-Type: text/html; charset=UTF-8\r\n")
+	fmt.Fprintf(&message, "\r\n")
+	fmt.Fprint(&message, content.String())
+
+	if err := smtp.SendMail(conf.EmailServer, conf.EmailAuth, from.Address, to, message.Bytes()); err != nil {
 		server.Logger.WithField("error", err).Error("Could not send email")
 		return err
 	}
 
 	return nil
+}
+
+// ParseEmailAddress parses a single RFC 5322 address, e.g. "Barry Gibbs <bg@example.com>"
+func ParseEmailAddress(email string) (*mail.Address, error) {
+	addr, err := mail.ParseAddress(email)
+	if err != nil {
+		return nil, ErrInvalidEmail
+	}
+
+	return addr, nil
 }
 
 func (conf EmailConfiguration) VerifyEmailServer() error {
@@ -124,27 +141,30 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 	return nil
 }
 
-func sendHTMLEmail(addr string, a smtp.Auth, from, to *mail.Address, subject string, msg []byte) error {
-	headers := []byte("To: " + to.Address + "\r\n" +
-		"From: " + from.Address + "\r\n" +
-		"Subject: " + subject + "\r\n" +
-		"Content-Type: text/html; charset=UTF-8\r\n" +
-		"Content-Transfer-Encoding: binary\r\n" +
-		"\r\n")
-	return smtp.SendMail(addr, a, from.Address, []string{to.Address}, append(headers, msg...))
-}
+// VerifyMXRecord checks if the given email address has a valid MX record. If none is found, it alternatively
+// looks for a valid A or AAAA record as this is used as fallback by mailservers
+func VerifyMXRecord(email string) error {
+	if email == "" {
+		return ErrInvalidEmail
+	}
 
-func verifyMXRecord(email string) error {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return errors.Errorf("no '@'-sign found in %v", email)
-	}
-	records, err := net.LookupMX(email[at+1:])
-	if err != nil {
-		return err
-	}
-	if len(records) == 0 {
-		return errors.Errorf("no domain part found in %v", email)
+	host := email[strings.LastIndex(email, "@")+1:]
+
+	if records, err := net.LookupMX(host); err != nil || len(records) == 0 {
+		if err != nil {
+			if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
+				// When DNS is not resolving or there is no active network connection
+				server.Logger.WithField("error", err).Error("No active network connection")
+				return ErrNoNetwork
+			}
+		}
+
+		// Check if there is a valid A or AAAA record which is used as fallback by mailservers
+		// when there are no MX records present
+		if records, err := net.LookupIP(host); err != nil || len(records) == 0 {
+			return ErrInvalidEmailDomain
+		}
+		return nil
 	}
 	return nil
 }

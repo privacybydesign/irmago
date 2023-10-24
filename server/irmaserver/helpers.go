@@ -129,22 +129,25 @@ func (session *session) fail(err server.Error, message string) *irma.RemoteError
 }
 
 func (session *session) chooseProtocolVersion(minClient, maxClient *irma.ProtocolVersion) (*irma.ProtocolVersion, error) {
-	// Set minimum supported version to 2.5 if condiscon compatibility is required
-	minServer := minProtocolVersion
-	if !session.LegacyCompatible {
-		minServer = &irma.ProtocolVersion{Major: 2, Minor: 5}
-	}
-	// Set minimum to 2.6 if nonrevocation is required
-	if len(session.request.Base().Revocation) > 0 {
-		minServer = &irma.ProtocolVersion{Major: 2, Minor: 6}
-	}
-	// Set minimum to 2.7 if chained session are used
-	if session.Rrequest.Base().NextSession != nil {
-		minServer = &irma.ProtocolVersion{Major: 2, Minor: 7}
+	minSessionProtocolVersion := minSecureProtocolVersion
+	if AcceptInsecureProtocolVersions {
+		// Set minimum supported version to 2.5 if condiscon compatibility is required
+		minSessionProtocolVersion = minProtocolVersion
+		if !session.LegacyCompatible {
+			minSessionProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 5}
+		}
+		// Set minimum to 2.6 if nonrevocation is required
+		if len(session.request.Base().Revocation) > 0 {
+			minSessionProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 6}
+		}
+		// Set minimum to 2.7 if chained session are used
+		if session.Rrequest.Base().NextSession != nil {
+			minSessionProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 7}
+		}
 	}
 
-	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minServer) || maxClient.BelowVersion(minClient) {
-		err := errors.Errorf("Protocol version negotiation failed, min=%s max=%s minServer=%s maxServer=%s", minClient.String(), maxClient.String(), minServer.String(), maxProtocolVersion.String())
+	if minClient.AboveVersion(maxProtocolVersion) || maxClient.BelowVersion(minSessionProtocolVersion) || maxClient.BelowVersion(minClient) {
+		err := errors.Errorf("Protocol version negotiation failed, min=%s max=%s minServer=%s maxServer=%s", minClient.String(), maxClient.String(), minSessionProtocolVersion.String(), maxProtocolVersion.String())
 		_ = server.LogWarning(err)
 		return nil, err
 	}
@@ -192,7 +195,7 @@ func (session *session) computeWitness(sk *gabikeys.PrivateKey, cred *irma.Crede
 
 	// Fetch latest revocation record, and then extract the current value of the accumulator
 	// from it to generate the witness from
-	updates, err := rs.UpdateLatest(id, 0, &cred.KeyCounter)
+	updates, err := rs.LatestUpdates(id, 0, &cred.KeyCounter)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +303,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
-		if cred.Validity.Before(irma.Timestamp(now)) {
+		if !AllowIssuingExpiredCredentials && cred.Validity.Before(irma.Timestamp(now)) {
 			return errors.New("cannot issue expired credentials")
 		}
 	}
@@ -600,6 +603,12 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 				*r.(*server.SessionResult) = *result
 			}
 		}()
+
+		expectedHost := session.request.Base().Host
+		if expectedHost != "" && expectedHost != r.Host {
+			server.WriteError(w, server.ErrorUnauthorized, "Host mismatch")
+			return
+		}
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "session", session)))
 	})

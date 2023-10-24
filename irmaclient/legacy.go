@@ -535,14 +535,14 @@ func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTT
 		},
 	})
 	if err != nil {
-		err = errors.WrapPrefix(err, "failed to sign public key registration JWT", 0)
+		err = irma.WrapErrorPrefix(err, "failed to sign public key registration JWT")
 		return nil, err
 	}
 
 	result := &irma.KeysharePinStatus{}
 	err = transport.Post("users/register_publickey", result, irma.KeyshareKeyRegistration{PublicKeyRegistrationJWT: jwtt})
 	if err != nil {
-		err = errors.WrapPrefix(err, "failed to register public key", 0)
+		err = irma.WrapErrorPrefix(err, "failed to register public key")
 		return nil, err
 	}
 
@@ -551,10 +551,24 @@ func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTT
 		kss.ChallengeResponse = true
 		err = client.storage.StoreKeyshareServers(client.keyshareServers)
 		if err != nil {
-			err = errors.WrapPrefix(err, "failed to store updated keyshare server", 0)
+			err = irma.WrapErrorPrefix(err, "failed to store updated keyshare server")
 			return nil, err
 		}
 	}
 
 	return result, nil
+}
+
+// removeKeysharePsFromProofUs fixes a difference in gabi between the old keyshare protocol and
+// the new one. In the old one, during issuance the client sends a proof of knowledge only of its
+// own keyshare to the issuer. In the new one, it sends a proof of knowledge of the full secret.
+// Therefore, the proofU contains a PoK over the full secret, while in case of the old keyshare
+// protocol, the issuer expects a PoK only of the user's keyshare. This method removes the
+// keyshare server's contribution for use in the old keyshare protocol.
+func (ks *keyshareSession) removeKeysharePsFromProofUs(proofs gabi.ProofList) {
+	for i, proof := range proofs {
+		if proofU, ok := proof.(*gabi.ProofU); ok {
+			proofU.RemoveKeyshareP(ks.builders[i].(*gabi.CredentialBuilder))
+		}
+	}
 }

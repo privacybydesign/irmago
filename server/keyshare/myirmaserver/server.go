@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/mail"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-co-op/gocron"
@@ -162,16 +162,62 @@ func (s *Server) sendDeleteEmails(ctx context.Context, session *session) error {
 		return err
 	}
 
+	if len(user.Emails) == 0 {
+		return nil
+	}
+
+	revalidation := s.db.hasEmailRevalidation(ctx)
+	delay := 5 * 24 * time.Hour
+	addrs := []string{}
+
+	// Gather all valid and working email addresses. When revalidation is enabled
+	// and there is an invalid email address, we schedule revalidation for that email address
 	for _, email := range user.Emails {
-		// The error gets already logged in the SendEmail method. We can still proceed with deleting
-		// the user account, even if one or more notification mails could not be sent.
-		_ = s.conf.SendEmail(
+		err := keyshare.VerifyMXRecord(email.Email)
+
+		if err == nil {
+			addrs = append(addrs, email.Email)
+			continue
+		}
+
+		if err == keyshare.ErrNoNetwork {
+			// Already logged
+			return err
+		}
+
+		if revalidation {
+			if err := s.db.scheduleEmailRevalidation(ctx, *session.userID, email.Email, delay); err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not schedule email revalidation")
+				return err
+			}
+		}
+	}
+
+	// When not all email addresses are valid and revalidation is enabled the invalid email addresses are
+	// already scheduled for revalidation we block the user account for 5 days
+	if len(addrs) < len(user.Emails) && revalidation {
+		if err := s.db.setPinBlockDate(ctx, *session.userID, delay); err != nil {
+			s.conf.Logger.WithField("error", err).Error("Could not update pin block date")
+			return err
+		}
+
+		return nil
+	}
+
+	// Send a delete email to the valid email addresses. If there would be none we do not return an error
+	// since the account can be deleted without sending a notification email.
+	// In case email revalidation is enabled, the email adresses are scheduled for revalidation.
+	if len(addrs) > 0 {
+		if err := s.conf.SendEmail(
 			s.conf.deleteAccountTemplates,
 			s.conf.DeleteAccountSubjects,
-			map[string]string{"Username": user.Username, "Email": email.Email, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
-			email.Email,
+			map[string]string{"Username": user.Username, "Email": strings.Join(addrs, ", "), "Delay": strconv.Itoa(s.conf.DeleteDelay)},
+			addrs,
 			user.language,
-		)
+		); err != nil {
+			s.conf.Logger.WithError(err).Warn("Could not send delete email")
+			return err
+		}
 	}
 
 	return nil
@@ -182,8 +228,13 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	// First, send emails
 	if s.conf.EmailServer != "" {
-		err := s.sendDeleteEmails(r.Context(), session)
-		if err != nil {
+		if err := s.sendDeleteEmails(r.Context(), session); err != nil {
+
+			if (err == keyshare.ErrInvalidEmail || err == keyshare.ErrInvalidEmailDomain) && s.db.hasEmailRevalidation(r.Context()) {
+				server.WriteError(w, server.ErrorRevalidateEmail, "Email address is scheduled for revalidation")
+				return
+			}
+
 			// already logged
 			keyshare.WriteError(w, err)
 			return
@@ -221,13 +272,16 @@ type emailLoginRequest struct {
 
 func (s *Server) sendLoginEmail(ctx context.Context, request emailLoginRequest) error {
 	// Early detect input error of s.conf.SendEmail to prevent a database lookup with unvalidated user input.
-	_, err := mail.ParseAddress(request.Email)
-	if err != nil {
+	if _, err := keyshare.ParseEmailAddress(request.Email); err != nil {
+		return keyshare.ErrInvalidEmail
+	}
+
+	if err := keyshare.VerifyMXRecord(request.Email); err != nil {
 		return keyshare.ErrInvalidEmail
 	}
 
 	token := common.NewSessionToken()
-	err = s.db.addLoginToken(ctx, request.Email, token)
+	err := s.db.addLoginToken(ctx, request.Email, token)
 	if err == errEmailNotFound || err == errTooManyTokens {
 		return err
 	} else if err != nil {
@@ -240,7 +294,7 @@ func (s *Server) sendLoginEmail(ctx context.Context, request emailLoginRequest) 
 		s.conf.loginEmailTemplates,
 		s.conf.LoginEmailSubjects,
 		map[string]string{"TokenURL": baseURL + token},
-		request.Email,
+		[]string{request.Email},
 		request.Language,
 	)
 }
@@ -518,16 +572,25 @@ func (s *Server) processRemoveEmail(ctx context.Context, session *session, email
 		return errUnknownEmail
 	}
 
+	if err := keyshare.VerifyMXRecord(email); err != nil {
+		if s.db.hasEmailRevalidation(ctx) {
+			if err := s.db.scheduleEmailRevalidation(ctx, *session.userID, email, 5*24*time.Hour); err != nil {
+				s.conf.Logger.WithField("error", err).Error("Could not schedule email address for revalidation")
+				return err
+			}
+		}
+		return err
+	}
+
 	if s.conf.EmailServer != "" {
-		err = s.conf.SendEmail(
+		if err = s.conf.SendEmail(
 			s.conf.deleteEmailTemplates,
 			s.conf.DeleteEmailSubjects,
 			map[string]string{"Username": user.Username, "Delay": strconv.Itoa(s.conf.DeleteDelay)},
-			email,
+			[]string{email},
 			user.language,
-		)
-		if err != nil {
-			// already logged
+		); err != nil {
+			s.conf.Logger.WithError(err).Warn("Could not send delete email")
 			return err
 		}
 	}
@@ -550,10 +613,16 @@ func (s *Server) handleRemoveEmail(w http.ResponseWriter, r *http.Request) {
 
 	session := r.Context().Value("session").(*session)
 	err := s.processRemoveEmail(r.Context(), session, email)
-	if err == errUnknownEmail || err == keyshare.ErrInvalidEmail {
+	if err == errUnknownEmail {
 		server.WriteError(w, server.ErrorInvalidRequest, "Not a valid email address for user")
 		return
 	}
+
+	if (err == keyshare.ErrInvalidEmail || err == keyshare.ErrInvalidEmailDomain) && s.db.hasEmailRevalidation(r.Context()) {
+		server.WriteError(w, server.ErrorRevalidateEmail, "Email address is scheduled for revalidation")
+		return
+	}
+
 	if err != nil {
 		// already logged
 		keyshare.WriteError(w, err)

@@ -17,19 +17,19 @@ runs:
   using: composite
   steps:
     - name: Set up Go
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v4
       with:
-        go-version: ^1.16
+        go-version: ^1.21
 
     - name: Determine artifact output filename
       id: artifact-name-generator
-      run: echo "artifact-name=irma-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}" >> $GITHUB_OUTPUT
+      run: echo "artifact-name=irma-${{ inputs.os }}-${{ inputs.arch }}${{ inputs.os == 'windows' && '.exe' || '' }}" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Build
       run: go build -v -a -ldflags '-extldflags "-static"' -o ${{ steps.artifact-name-generator.outputs.artifact-name }} ./irma
       shell: bash
       env:
-        GOOS: ${{ matrix.os }}
-        GOARCH: ${{ matrix.arch }}
+        GOOS: ${{ inputs.os }}
+        GOARCH: ${{ inputs.arch }}
         CGO_ENABLED: "0"

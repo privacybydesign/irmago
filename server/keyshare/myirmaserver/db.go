@@ -24,11 +24,16 @@ type db interface {
 	scheduleEmailRemoval(ctx context.Context, id int64, email string, delay time.Duration) error
 
 	setSeen(ctx context.Context, id int64) error
+
+	hasEmailRevalidation(ctx context.Context) bool
+	scheduleEmailRevalidation(ctx context.Context, id int64, email string, delay time.Duration) error
+	setPinBlockDate(ctx context.Context, id int64, delay time.Duration) error
 }
 
 type userEmail struct {
-	Email            string `json:"email"`
-	DeleteInProgress bool   `json:"delete_in_progress"`
+	Email                string `json:"email"`
+	DeleteInProgress     bool   `json:"delete_in_progress"`
+	RevalidateInProgress bool   `json:"revalidate_in_progress"`
 }
 
 type user struct {

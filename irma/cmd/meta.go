@@ -20,10 +20,15 @@ var metaCmd = &cobra.Command{
 	Short: "Parse an IRMA metadata attribute and print its contents",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		confpath, err := cmd.Flags().GetString("irmaconf")
+		confPath, err := cmd.Flags().GetString("irmaconf")
 		if err != nil {
 			die("Failed to get irma_configuration flag", err)
 		}
+		confAssetsPath, err := cmd.Flags().GetString("irmaconf-assets")
+		if err != nil {
+			die("Failed to get irma_configuration flag", err)
+		}
+
 		metaint := new(big.Int)
 		_, ok := metaint.SetString(args[0], 10)
 		if !ok {
@@ -38,18 +43,18 @@ var metaCmd = &cobra.Command{
 			metaint.SetBytes(bts)
 		}
 
-		if err := printMetadataAttr(metaint, confpath); err != nil {
+		if err := printMetadataAttr(metaint, confPath, confAssetsPath); err != nil {
 			die("", err)
 		}
 		return nil
 	},
 }
 
-func printMetadataAttr(metaint *big.Int, confpath string) error {
-	if err := common.AssertPathExists(confpath); err != nil {
+func printMetadataAttr(metaint *big.Int, confPath string, confAssetsPath string) error {
+	if err := common.AssertPathExists(confPath); err != nil {
 		return errors.WrapPrefix(err, "Cannot read irma_configuration", 0)
 	}
-	conf, err := irma.NewConfiguration(confpath, irma.ConfigurationOptions{ReadOnly: true})
+	conf, err := irma.NewConfiguration(confPath, irma.ConfigurationOptions{ReadOnly: true, Assets: confAssetsPath})
 	if err != nil {
 		return errors.WrapPrefix(err, "Failed to parse irma_configuration", 0)
 	}
@@ -99,4 +104,5 @@ func init() {
 	RootCmd.AddCommand(metaCmd)
 
 	metaCmd.Flags().StringP("irmaconf", "i", irma.DefaultSchemesPath(), "path to irma_configuration")
+	metaCmd.Flags().String("irmaconf-assets", irma.DefaultSchemesAssetsPath(), "if specified, copy schemes from here into irmaconf")
 }

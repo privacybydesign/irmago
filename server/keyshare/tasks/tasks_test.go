@@ -52,6 +52,22 @@ func countDeleteDates(t *testing.T, db *sql.DB) map[string]int {
 	return dateMap
 }
 
+func createUser(t *testing.T, db *sql.DB, id int, username string, lastSeen int64, mails []string) {
+	_, err := db.Exec("INSERT INTO irma.users (id, username, language, coredata, last_seen, pin_counter, pin_block_date) VALUES ($1,$2, '', '', $3, 0, 0)",
+		id,
+		username,
+		lastSeen)
+	require.NoError(t, err)
+
+	if len(mails) > 0 {
+		for _, m := range mails {
+			_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES ($1, $2, NULL)",
+				id, m)
+			require.NoError(t, err)
+		}
+	}
+}
+
 func TestCleanupEmails(t *testing.T) {
 	SetupDatabase(t)
 	defer TeardownDatabase(t)
@@ -231,6 +247,63 @@ func TestConfiguration(t *testing.T) {
 		Logger: irma.Logger,
 	})
 	assert.Error(t, err)
+}
+
+func TestEmailRevalidation(t *testing.T) {
+	SetupDatabase(t)
+	testdataPath := test.FindTestdataFolder(t)
+	defer TeardownDatabase(t)
+
+	db, err := sql.Open("pgx", test.PostgresTestUrl)
+	require.NoError(t, err)
+
+	th, err := newHandler(&Configuration{
+		DBConnStr:   test.PostgresTestUrl,
+		DeleteDelay: 30,
+		ExpiryDelay: 365,
+		EmailConfiguration: keyshare.EmailConfiguration{
+			EmailServer:     "localhost:1025",
+			EmailFrom:       "test@example.com",
+			DefaultLanguage: "en",
+		},
+		DeleteExpiredAccountFiles: map[string]string{
+			"en": filepath.Join(testdataPath, "emailtemplate.html"),
+		},
+		DeleteExpiredAccountSubjects: map[string]string{
+			"en": "testsubject",
+		},
+		Logger: irma.Logger,
+	})
+	require.NoError(t, err)
+
+	createUser(t, db, 1, "TemporaryInvalid", time.Now().AddDate(-1, -1, -1).Unix(), []string{"user_1@temporaryinvalidaddress.com"})
+	createUser(t, db, 2, "PermanentInvalid", time.Now().AddDate(-1, -1, -1).Unix(), []string{"user_2@permenantlyinvalidaddress.com"})
+	createUser(t, db, 3, "PartlyInvalid", time.Now().AddDate(-1, -1, -1).Unix(), []string{"user_3@permenantlyinvalidaddress.com", "user_3@github.com"})
+
+	require.NoError(t, runWithTimeout(th.expireAccounts))
+	require.NoError(t, runWithTimeout(th.revalidateMails))
+
+	// Is revalidate_on set for all email addresses?
+	assert.Equal(t, 3, countRows(t, db, "emails", "revalidate_on IS NOT NULL"))
+	assert.Equal(t, 0, countRows(t, db, "users", "delete_on IS NOT NULL"))
+
+	// Correct the temporary invalid e-mail address to a valid one, simulating it becoming valid, and 'forward time'
+	_, err = db.Exec("UPDATE irma.emails SET email = $1, revalidate_on = $2 WHERE id = $3", "user_1@github.com", time.Now().AddDate(0, 0, -1).Unix(), 1)
+	require.NoError(t, err)
+
+	// Forward time for the invalid addresses
+	_, err = db.Exec("UPDATE irma.emails SET revalidate_on = $1 WHERE email LIKE $2", time.Now().AddDate(0, 0, -1).Unix(), "%@permenantlyinvalidaddress.com")
+	require.NoError(t, err)
+
+	// Next revalidation run: the invalid email address should be deleted now
+	require.NoError(t, runWithTimeout(th.revalidateMails))
+
+	assert.Equal(t, 2, countRows(t, db, "emails", ""))
+
+	// Next expireAccounts run: the PartlyInvalid user should be expired since the permanently invalid address is deleted now.
+	require.NoError(t, runWithTimeout(th.expireAccounts))
+	assert.Equal(t, 3, countRows(t, db, "users", ""))
+	assert.Equal(t, 2, countRows(t, db, "users", "delete_on IS NOT NULL"))
 }
 
 func SetupDatabase(t *testing.T) {

@@ -25,10 +25,12 @@ var (
 	logger   = logrus.New()
 	testdata = test.FindTestdataFolder(nil)
 
-	revocationTestAttr  = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
-	revocationTestCred  = revocationTestAttr.CredentialTypeIdentifier()
-	revKeyshareTestAttr = irma.NewAttributeTypeIdentifier("test.test.revocable.email")
-	revKeyshareTestCred = revKeyshareTestAttr.CredentialTypeIdentifier()
+	revocationTestAttr        = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	revocationTestCred        = revocationTestAttr.CredentialTypeIdentifier()
+	revKeyshareTestAttr       = irma.NewAttributeTypeIdentifier("test.test.revocable.email")
+	revKeyshareTestCred       = revKeyshareTestAttr.CredentialTypeIdentifier()
+	revKeyshareSecondTestAttr = irma.NewAttributeTypeIdentifier("test.test.revocable-2.email")
+	revKeyshareSecondTestCred = revKeyshareSecondTestAttr.CredentialTypeIdentifier()
 
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
@@ -234,8 +236,9 @@ func IrmaServerConfiguration() *server.Configuration {
 		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
 		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
-			revocationTestCred:  {RevocationServerURL: revocationServerURL, SSE: true},
-			revKeyshareTestCred: {RevocationServerURL: revocationServerURL},
+			revocationTestCred:        {RevocationServerURL: revocationServerURL, SSE: true},
+			revKeyshareTestCred:       {RevocationServerURL: revocationServerURL},
+			revKeyshareSecondTestCred: {RevocationServerURL: revocationServerURL},
 		},
 		JwtPrivateKeyFile: jwtPrivkeyPath,
 		StaticSessions: map[string]interface{}{
@@ -278,14 +281,23 @@ func RequestorServerAuthConfiguration() *requestorserver.Configuration {
 		"requestor1": {
 			AuthenticationMethod:  requestorserver.AuthenticationMethodPublicKey,
 			AuthenticationKeyFile: filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
+			Permissions: requestorserver.Permissions{
+				Hosts: []string{"localhost:48682"},
+			},
 		},
 		"requestor2": {
 			AuthenticationMethod: requestorserver.AuthenticationMethodToken,
 			AuthenticationKey:    TokenAuthenticationKey,
+			Permissions: requestorserver.Permissions{
+				Hosts: []string{"localhost:48682"},
+			},
 		},
 		"requestor3": {
 			AuthenticationMethod: requestorserver.AuthenticationMethodHmac,
 			AuthenticationKey:    HmacAuthenticationKey,
+			Permissions: requestorserver.Permissions{
+				Hosts: []string{"localhost:48682"},
+			},
 		},
 	}
 	return conf

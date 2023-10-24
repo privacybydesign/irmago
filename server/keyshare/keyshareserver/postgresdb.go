@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	_ "github.com/jackc/pgx/stdlib"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/keyshare"
 )
 
@@ -62,19 +62,22 @@ func (db *postgresDB) AddUser(ctx context.Context, user *User) error {
 		user.Secrets,
 		time.Now().Unix())
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to add user")
+		return keyshare.ErrDB
 	}
 	defer common.Close(res)
 	if !res.Next() {
 		if err = res.Err(); err != nil {
-			return err
+			server.LogError(err, "Failed to prepare results of add user query")
+			return keyshare.ErrDB
 		}
 		return errUserAlreadyExists
 	}
 	var id int64
 	err = res.Scan(&id)
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to scan for user id after adding user")
+		return keyshare.ErrDB
 	}
 	user.id = id
 	return nil
@@ -89,20 +92,31 @@ func (db *postgresDB) user(ctx context.Context, username string) (*User, error) 
 		username,
 	)
 	if err != nil {
-		return nil, err
+		server.LogError(err, "Failed to query user")
+		if err == keyshare.ErrUserNotFound {
+			return nil, err
+		}
+		return nil, keyshare.ErrDB
 	}
 	return &result, nil
 }
 
 func (db *postgresDB) updateUser(ctx context.Context, user *User) error {
-	return db.db.ExecUserContext(
+	if err := db.db.ExecUserContext(
 		ctx,
 		"UPDATE irma.users SET username = $1, language = $2, coredata = $3 WHERE id=$4",
 		user.Username,
 		user.Language,
 		user.Secrets,
 		user.id,
-	)
+	); err != nil {
+		server.LogError(err, "Failed to update user")
+		if err == keyshare.ErrUserNotFound {
+			return err
+		}
+		return keyshare.ErrDB
+	}
+	return nil
 }
 
 func (db *postgresDB) reservePinTry(ctx context.Context, user *User) (bool, int, int64, error) {
@@ -121,7 +135,8 @@ func (db *postgresDB) reservePinTry(ctx context.Context, user *User) (bool, int,
 		maxPinTries-1,
 		user.id)
 	if err != nil {
-		return false, 0, 0, err
+		server.LogError(err, "Failed to reserve pin try")
+		return false, 0, 0, keyshare.ErrDB
 	}
 	defer common.Close(uprows)
 
@@ -132,24 +147,28 @@ func (db *postgresDB) reservePinTry(ctx context.Context, user *User) (bool, int,
 	)
 	if !uprows.Next() {
 		if err = uprows.Err(); err != nil {
-			return false, 0, 0, err
+			server.LogError(err, "Failed to prepare results of pin try query")
+			return false, 0, 0, keyshare.ErrDB
 		}
 		// if no results, then account either does not exist (which would be weird here) or is blocked
 		// so request wait timeout
 		pinrows, err := db.db.QueryContext(ctx, "SELECT pin_block_date FROM irma.users WHERE id=$1 AND coredata IS NOT NULL", user.id)
 		if err != nil {
-			return false, 0, 0, err
+			server.LogError(err, "Failed to query pin block date")
+			return false, 0, 0, keyshare.ErrDB
 		}
 		defer common.Close(pinrows)
 		if !pinrows.Next() {
 			if err = pinrows.Err(); err != nil {
-				return false, 0, 0, err
+				server.LogError(err, "Failed to prepare results of pin block date query")
+				return false, 0, 0, keyshare.ErrDB
 			}
 			return false, 0, 0, keyshare.ErrUserNotFound
 		}
 		err = pinrows.Scan(&wait)
 		if err != nil {
-			return false, 0, 0, err
+			server.LogError(err, "Failed to scan for pin block date")
+			return false, 0, 0, keyshare.ErrDB
 		}
 	} else {
 		// Pin check is allowed (implied since there is a result, so pinBlockDate <= now)
@@ -157,7 +176,8 @@ func (db *postgresDB) reservePinTry(ctx context.Context, user *User) (bool, int,
 		allowed = true
 		err = uprows.Scan(&tries, &wait)
 		if err != nil {
-			return false, 0, 0, err
+			server.LogError(err, "Failed to scan for pin counter and block date")
+			return false, 0, 0, keyshare.ErrDB
 		}
 		tries = maxPinTries - tries
 		if tries < 0 {
@@ -173,18 +193,25 @@ func (db *postgresDB) reservePinTry(ctx context.Context, user *User) (bool, int,
 }
 
 func (db *postgresDB) resetPinTries(ctx context.Context, user *User) error {
-	return db.db.ExecUserContext(
+	if err := db.db.ExecUserContext(
 		ctx,
 		"UPDATE irma.users SET pin_counter = 0, pin_block_date = 0 WHERE id = $1",
 		user.id,
-	)
+	); err != nil {
+		server.LogError(err, "Failed to reset pin tries")
+		if err == keyshare.ErrUserNotFound {
+			return err
+		}
+		return keyshare.ErrDB
+	}
+	return nil
 }
 
 func (db *postgresDB) setSeen(ctx context.Context, user *User) error {
 	// If the user is scheduled for deletion (delete_on is not null), undo that by resetting
 	// delete_on back to null, but only if the user did not explicitly delete her account herself
 	// in the myIRMA website, in which case coredata is null.
-	return db.db.ExecUserContext(
+	if err := db.db.ExecUserContext(
 		ctx,
 		`UPDATE irma.users
 		 SET last_seen = $1,
@@ -194,7 +221,14 @@ func (db *postgresDB) setSeen(ctx context.Context, user *User) error {
 		     END
 		 WHERE id = $2`,
 		time.Now().Unix(), user.id,
-	)
+	); err != nil {
+		server.LogError(err, "Failed to update last seen")
+		if err == keyshare.ErrUserNotFound {
+			return err
+		}
+		return keyshare.ErrDB
+	}
+	return nil
 }
 
 func (db *postgresDB) addLog(ctx context.Context, user *User, eventType eventType, param interface{}) error {
@@ -213,7 +247,11 @@ func (db *postgresDB) addLog(ctx context.Context, user *User, eventType eventTyp
 		eventType,
 		encodedParamString,
 		user.id)
-	return err
+	if err != nil {
+		server.LogError(err, "Failed to add log entry")
+		return keyshare.ErrDB
+	}
+	return nil
 }
 
 func (db *postgresDB) addEmailVerification(ctx context.Context, user *User, emailAddress, token string, validity int) error {
@@ -225,7 +263,11 @@ func (db *postgresDB) addEmailVerification(ctx context.Context, user *User, emai
 		emailAddress,
 		maxPrevExpiry.Unix())
 	if err != nil {
-		return err
+		server.LogError(err, "Failed to count email verification tokens")
+		if err == keyshare.ErrUserNotFound {
+			return err
+		}
+		return keyshare.ErrDB
 	}
 	if amount >= emailTokenRateLimit {
 		return errTooManyTokens
@@ -236,5 +278,9 @@ func (db *postgresDB) addEmailVerification(ctx context.Context, user *User, emai
 		emailAddress,
 		user.id,
 		expiry.Unix())
+	if err != nil {
+		server.LogError(err, "Failed to add email verification token")
+		return keyshare.ErrDB
+	}
 	return err
 }

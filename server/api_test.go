@@ -117,7 +117,7 @@ func TestServerTimeouts(t *testing.T) {
 				defer common.Close(r.Body)
 				// check that reading has halted with an error just after the deadline
 				require.Error(t, err)
-				require.Greater(t, int64(timeout+50*time.Millisecond), int64(time.Now().Sub(start)))
+				require.Greater(t, int64(timeout+50*time.Millisecond), int64(time.Since(start)))
 				w.WriteHeader(400)
 			}),
 			body: readerFunc(func(p []byte) (int, error) {
@@ -145,7 +145,7 @@ func TestServerTimeouts(t *testing.T) {
 
 			// Check whether an error is returned when the context deadline exceeds and the handler
 			// does not act upon this within 200 ms. We add 50 ms slack to prevent race conditions.
-			require.Greater(t, int64(timeout+250*time.Millisecond), int64(time.Now().Sub(start)))
+			require.Greater(t, int64(timeout+250*time.Millisecond), int64(time.Since(start)))
 			require.GreaterOrEqual(t, res.StatusCode, 400)
 			require.True(t, called)
 		})

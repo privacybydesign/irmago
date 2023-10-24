@@ -2,11 +2,13 @@ package sessiontest
 
 import (
 	"testing"
+	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,6 +52,45 @@ func TestKeyshareRegister(t *testing.T) {
 	keyshareSessions(t, client, irmaServer)
 }
 
+func TestKeyshareAttributeRenewal(t *testing.T) {
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	defer keyshareServer.Stop()
+
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+
+	irmaserver.AllowIssuingExpiredCredentials = true
+	defer func() {
+		irmaserver.AllowIssuingExpiredCredentials = false
+	}()
+
+	// Make keyshare attribute invalid.
+	invalidValidity := irma.Timestamp(time.Now())
+	issuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			Validity:         &invalidValidity,
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
+			Attributes:       map[string]string{"email": "testusername"},
+		},
+	})
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+
+	// Validate that keyshare attribute is invalid.
+	disclosureRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, optionUnsatisfiableRequest)
+
+	// Do a PIN verification. This should detect the invalid keyshare attribute and renew it.
+	valid, _, _, err := client.KeyshareVerifyPin("12345", irma.NewSchemeManagerIdentifier("test"))
+	require.NoError(t, err)
+	require.True(t, valid)
+
+	// Keyshare attribute should be valid again.
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
+}
+
 // Use the existing keyshare enrollment and credentials
 // in a keyshare session of each session type.
 func TestKeyshareSessions(t *testing.T) {
@@ -62,7 +103,7 @@ func TestKeyshareSessions(t *testing.T) {
 	keyshareSessions(t, client, irmaServer)
 }
 
-func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer, options ...option) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	issuanceRequest := getCombinedIssuanceRequest(id)
@@ -73,15 +114,15 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaS
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)
-	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil, options...)
 
 	disclosureRequest := getDisclosureRequest(id)
 	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, options...)
 
 	sigRequest := getSigningRequest(id)
 	sigRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	doSession(t, sigRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, sigRequest, client, irmaServer, nil, nil, nil, options...)
 }
 
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {

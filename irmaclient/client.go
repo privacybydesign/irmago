@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
-	"github.com/sirupsen/logrus"
 )
 
 // This file contains most methods of the Client (c.f. session.go
@@ -75,6 +75,7 @@ type Client struct {
 	credMutex sync.Mutex
 }
 
+// Preferences contains the preferences of the user of this client.
 // TODO: consider if we should save irmamobile preferences here, because they would automatically
 // be part of any backup and syncing solution we implement at a later time
 type Preferences struct {
@@ -250,15 +251,6 @@ func (client *Client) loadCredentialStorage() (err error) {
 	}
 	client.credentialsCache = concmap.New[credLookup, *credential]()
 	return
-}
-
-func (client *Client) nonrevCredPrepareCache(credid irma.CredentialTypeIdentifier, index int) error {
-	irma.Logger.WithFields(logrus.Fields{"credid": credid, "index": index}).Debug("Preparing cache")
-	cred, err := client.credential(credid, index)
-	if err != nil {
-		return err
-	}
-	return cred.NonrevPrepareCache()
 }
 
 func (client *Client) reportError(err error) {
@@ -452,8 +444,8 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 	return client.RemoveCredential(cred.CredentialType().Identifier(), index)
 }
 
-// Removes all attributes, signatures, logs and userdata
-// Includes the user's secret key, keyshare servers and preferences/updates
+// RemoveStorage removes all attributes, signatures, logs and userdata.
+// This includes the user's secret key, keyshare servers and preferences/updates.
 // A fresh secret key is installed.
 func (client *Client) RemoveStorage() error {
 	var err error
@@ -600,7 +592,7 @@ func (client *Client) credCandidates(request irma.SessionRequest, con irma.Attri
 		var c []*credCandidate
 		haveUsableCred := false
 		for _, attrlist := range attrlistlist {
-			satisfies, usable := client.satisfiesCon(request.Base(), attrlist, con)
+			satisfies, usable := client.satisfiesCon(request, attrlist, con)
 			if satisfies { // add it to the list, even if they are unusable
 				c = append(c, &credCandidate{Type: credTypeID, Hash: attrlist.Hash()})
 				if usable { // having one usable credential will do
@@ -676,7 +668,7 @@ func (client *Client) addCredSuggestion(
 //   - if the attrs can satisfy the conjunction (as long as it is usable),
 //   - if the attrs are usable (they are not expired, or revoked, or not revocation-aware while
 //     a nonrevocation proof is required).
-func (client *Client) satisfiesCon(base *irma.BaseRequest, attrs *irma.AttributeList, con irma.AttributeCon) (bool, bool) {
+func (client *Client) satisfiesCon(request irma.SessionRequest, attrs *irma.AttributeList, con irma.AttributeCon) (bool, bool) {
 	var credfound bool
 	credtype := attrs.CredentialType().Identifier()
 	for _, attr := range con {
@@ -696,7 +688,13 @@ func (client *Client) satisfiesCon(base *irma.BaseRequest, attrs *irma.Attribute
 		return false, false
 	}
 	cred, _, _ := client.credentialByHash(attrs.Hash())
-	usable := !attrs.Revoked && attrs.IsValid() && (!base.RequestsRevocation(credtype) || cred.NonRevocationWitness != nil)
+	usable := !attrs.Revoked && (!request.Base().RequestsRevocation(credtype) || cred.NonRevocationWitness != nil)
+
+	skipExpiryCheck := slices.Contains(request.Disclosure().SkipExpiryCheck, attrs.CredentialType().Identifier())
+	if !skipExpiryCheck {
+		usable = usable && attrs.IsValid()
+	}
+
 	return true, usable
 }
 
@@ -954,22 +952,44 @@ func generateIssuerProofNonce() (*big.Int, error) {
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
 // for the future credentials as well as possibly any disclosed attributes, and generates
 // a nonce against which the issuer's proof of knowledge must verify.
-func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest, choice *irma.DisclosureChoice,
+func (client *Client) IssuanceProofBuilders(
+	request *irma.IssuanceRequest, choice *irma.DisclosureChoice, keyshareSession *keyshareSession,
 ) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
 	issuerProofNonce, err := generateIssuerProofNonce()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
+
+	var keysharePs = map[irma.SchemeManagerIdentifier]*irma.PMap{}
+	if keyshareSession != nil {
+		keysharePs, err = keyshareSession.getKeysharePs(request)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
 	for _, futurecred := range request.Credentials {
 		var pk *gabikeys.PublicKey
+		keyID := futurecred.PublicKeyIdentifier()
+		schemeID := keyID.Issuer.SchemeManagerIdentifier()
+		distributed := client.Configuration.SchemeManagers[schemeID].Distributed()
+		var keyshareP *big.Int
+		var present bool
+		if distributed {
+			keyshareP, present = keysharePs[schemeID].Ps[keyID]
+			if distributed && !present {
+				return nil, nil, nil, errors.Errorf("missing keyshareP for %s-%d", keyID.Issuer, keyID.Counter)
+			}
+		}
+
 		pk, err = client.Configuration.PublicKey(futurecred.CredentialTypeID.IssuerIdentifier(), futurecred.KeyCounter)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		credtype := client.Configuration.CredentialTypes[futurecred.CredentialTypeID]
 		credBuilder, err := gabi.NewCredentialBuilder(pk, request.GetContext(),
-			client.secretkey.Key, issuerProofNonce, credtype.RandomBlindAttributeIndices())
+			client.secretkey.Key, issuerProofNonce, keyshareP, credtype.RandomBlindAttributeIndices())
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -988,7 +1008,7 @@ func (client *Client) IssuanceProofBuilders(request *irma.IssuanceRequest, choic
 // and also returns the credential builders which will become the new credentials upon combination with the issuer's signature.
 func (client *Client) IssueCommitments(request *irma.IssuanceRequest, choice *irma.DisclosureChoice,
 ) (*irma.IssueCommitmentMessage, gabi.ProofBuilderList, error) {
-	builders, choices, issuerProofNonce, err := client.IssuanceProofBuilders(request, choice)
+	builders, choices, issuerProofNonce, err := client.IssuanceProofBuilders(request, choice, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1122,7 +1142,7 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 		}
 	}
 	if err != nil {
-		return errors.WrapPrefix(err, "failed to validate pin", 0)
+		return irma.WrapErrorPrefix(err, "failed to validate pin")
 	}
 	if !pinCorrect {
 		return errors.New("incorrect pin")
@@ -1164,11 +1184,32 @@ func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifie
 	// If the session succeeds or fails, the keyshare server is stored to disk or
 	// removed from the client by the keyshareEnrollmentHandler.
 	client.keyshareServers[managerID] = kss
-	client.newQrSession(qr, &keyshareEnrollmentHandler{
-		client: client,
-		pin:    pin,
-		kss:    kss,
-	})
+	handler := &backgroundIssuanceHandler{
+		pin: pin,
+		credentialsToBeIssuedCallback: func(creds []*irma.CredentialRequest) {
+			// We need to store the keyshare username before the issuance permission is granted.
+			// Otherwise, authentication to the keyshare server fails during issuance of the keyshare attribute.
+			for _, attr := range creds[0].Attributes {
+				kss.Username = attr
+				break
+			}
+		},
+		resultErr: make(chan error),
+	}
+	client.newQrSession(qr, handler)
+	go func() {
+		err := <-handler.resultErr
+		if err != nil {
+			client.handler.EnrollmentFailure(managerID, irma.WrapErrorPrefix(err, "keyshare attribute issuance"))
+			return
+		}
+		err = client.storage.StoreKeyshareServers(client.keyshareServers)
+		if err != nil {
+			client.handler.EnrollmentFailure(managerID, err)
+			return
+		}
+		client.handler.EnrollmentSuccess(kss.SchemeManagerIdentifier)
+	}()
 
 	return nil
 }
@@ -1191,9 +1232,12 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 		}
 	}
 	kss := client.keyshareServers[schemeid]
-	return client.verifyPinWorker(pin, kss,
-		irma.NewHTTPTransport(scheme.KeyshareServer, !client.Preferences.DeveloperMode),
-	)
+	transport := irma.NewHTTPTransport(scheme.KeyshareServer, !client.Preferences.DeveloperMode)
+	success, tries, blocked, err := client.verifyPinWorker(pin, kss, transport)
+	if err == nil && success {
+		client.ensureKeyshareAttributeValid(pin, kss, transport)
+	}
+	return success, tries, blocked, err
 }
 
 func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
@@ -1402,6 +1446,33 @@ func (client *Client) keyshareRemoveMultiple(schemeIDs []irma.SchemeManagerIdent
 	})
 }
 
+func (client *Client) ensureKeyshareAttributeValid(pin string, kss *keyshareServer, transport *irma.HTTPTransport) {
+	// The user has no way to deal with the errors that may occur here, so we just report them and return.
+	manager := client.Configuration.SchemeManagers[kss.SchemeManagerIdentifier]
+	attrs := client.Attributes(irma.NewAttributeTypeIdentifier(manager.KeyshareAttribute).CredentialTypeIdentifier(), 0)
+	if attrs == nil {
+		client.reportError(errors.New("keyshare attribute not present"))
+		return
+	}
+	// Renew the keyshare attribute if it expires within a month.
+	if attrs.MetadataAttribute.Expiry().Before(time.Now().AddDate(0, 1, 0)) {
+		qr := &irma.Qr{}
+		if err := transport.Get("users/renewKeyshareAttribute", &qr); err != nil {
+			client.reportError(err)
+			return
+		}
+		handler := &backgroundIssuanceHandler{
+			pin:       pin,
+			resultErr: make(chan error),
+		}
+		client.newQrSession(qr, handler)
+		if err := <-handler.resultErr; err != nil {
+			client.reportError(err)
+			return
+		}
+	}
+}
+
 // Add, load and store log entries
 
 // LoadNewestLogs returns the log entries of latest past events
@@ -1449,7 +1520,7 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 			if diff <= 0 {
 				continue
 			}
-			attrs = append(attrs, make([]*big.Int, diff, diff)...)
+			attrs = append(attrs, make([]*big.Int, diff)...)
 			for j := len(attrs) - diff; j < len(attrs); j++ {
 				attrs[j] = big.NewInt(0)
 			}
@@ -1500,9 +1571,6 @@ func (dcs DisclosureCandidates) Choose() ([]*irma.AttributeIdentifier, error) {
 	for _, attr := range dcs {
 		if !attr.Present() {
 			return nil, errors.New("credential not present")
-		}
-		if attr.Expired {
-			return nil, errors.New("cannot choose expired credential")
 		}
 		if attr.Revoked {
 			return nil, errors.New("cannot choose revoked credential")

@@ -211,8 +211,9 @@ func TestRedisUpdates(t *testing.T) {
 
 	var o interface{}
 	transport := irma.NewHTTPTransport(qr.URL, false)
-	transport.SetHeader(irma.MinVersionHeader, "2.5")
-	transport.SetHeader(irma.MaxVersionHeader, "2.5")
+	transport.SetHeader(irma.MinVersionHeader, "2.8")
+	transport.SetHeader(irma.MaxVersionHeader, "2.8")
+	transport.SetHeader(irma.AuthorizationHeader, "testauthtoken")
 	clientToken, err := mr.Get("token:" + string(token))
 	require.NoError(t, err)
 
@@ -245,7 +246,7 @@ func TestRedisRedundancy(t *testing.T) {
 
 	for i, port := range ports {
 		c := redisRequestorConfigDecorator(mr, cert, "", RequestorServerAuthConfiguration)()
-		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", port)
+		c.Configuration.URL = fmt.Sprintf("http://localhost:%d/irma", requestorServerPort)
 		c.Port = port
 		rs := StartRequestorServer(t, c)
 		servers[i] = rs

@@ -226,3 +226,15 @@ func (db *memoryDB) setSeen(_ context.Context, id int64) error {
 	}
 	return keyshare.ErrUserNotFound
 }
+
+func (db *memoryDB) hasEmailRevalidation(_ context.Context) bool {
+	return false
+}
+
+func (db *memoryDB) scheduleEmailRevalidation(_ context.Context, _ int64, _ string, _ time.Duration) error {
+	return nil
+}
+
+func (db *memoryDB) setPinBlockDate(_ context.Context, _ int64, _ time.Duration) error {
+	return nil
+}
