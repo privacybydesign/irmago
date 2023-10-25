@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.14.2] - 2023-10-25
 ### Fixed
 - IRMA session gets stuck in communicating status when user is requested to confirm PIN in `irmaclient`
 
@@ -470,6 +470,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.14.2]: https://github.com/privacybydesign/irmago/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/privacybydesign/irmago/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/privacybydesign/irmago/compare/v0.13.3...v0.14.0
 [0.13.3]: https://github.com/privacybydesign/irmago/compare/v0.13.2...v0.13.3
