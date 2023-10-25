@@ -17,7 +17,7 @@ function checkResponse(response, expectedOutput = '') {
     'verify status code': (r) => r.status === 200,
     'verify body': (r) => r.body != null && r.body.includes(expectedOutput),
   });
-  if (!checkOutput) fail(`unexpected response: status ${response.status}, error "${response.error}", body "${response.body}"`);
+  if (!checkOutput) fail(`unexpected response: url ${response.request.url}, status ${response.status}, error "${response.error}", body "${response.body}"`);
 }
 
 export default function () {
