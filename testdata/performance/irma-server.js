@@ -13,10 +13,11 @@ export const options = {
 
 function checkResponse(response, expectedOutput = '') {
   const checkOutput = check(response, {
+    'verify response': (r) => r.error === '',
     'verify status code': (r) => r.status === 200,
-    'verify body': (r) => r.body.includes(expectedOutput),
+    'verify body': (r) => r.body != null && r.body.includes(expectedOutput),
   });
-  if (!checkOutput) fail(`unexpected response: status ${response.status}`);
+  if (!checkOutput) fail(`unexpected response: status ${response.status}, error "${response.error}", body "${response.body}"`);
 }
 
 export default function () {
