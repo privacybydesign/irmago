@@ -80,7 +80,9 @@ func TestKeyshareAttributeRenewal(t *testing.T) {
 
 	// Validate that keyshare attribute is invalid.
 	disclosureRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
-	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, optionUnsatisfiableRequest)
+	result := doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, optionUnsatisfiableRequest)
+	// Session remains active when being unsatisfiable, so we have to close it manually.
+	result.Dismisser.Dismiss()
 
 	// Do a PIN verification. This should detect the invalid keyshare attribute and renew it.
 	valid, _, _, err := client.KeyshareVerifyPin("12345", irma.NewSchemeManagerIdentifier("test"))
