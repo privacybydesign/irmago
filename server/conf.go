@@ -122,6 +122,11 @@ type RedisSettings struct {
 	// This can be used for key permissions in the Redis ACL system. If ACLUseKeyPrefixes is false, no prefix is used.
 	ACLUseKeyPrefixes bool `json:"acl_use_key_prefixes,omitempty" mapstructure:"acl_use_key_prefixes"`
 
+	// SentinelUsername for Redis Sentinel authentication. If sentinel_username is empty, the default user is used.
+	SentinelUsername string `json:"sentinel_username,omitempty" mapstructure:"sentinel_username"`
+	// SentinelPassword for Redis Sentinel authentication.
+	SentinelPassword string `json:"sentinel_password,omitempty" mapstructure:"sentinel_password"`
+
 	DB int `json:"db,omitempty" mapstructure:"db"`
 
 	TLSCertificate     string `json:"tls_cert,omitempty" mapstructure:"tls_cert"`
@@ -454,15 +459,19 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 	var cl *redis.Client
 	if len(conf.RedisSettings.SentinelAddrs) > 0 {
 		cl = redis.NewFailoverClient(&redis.FailoverOptions{
-			MasterName:    conf.RedisSettings.SentinelMasterName,
-			SentinelAddrs: conf.RedisSettings.SentinelAddrs,
-			Password:      conf.RedisSettings.Password,
-			DB:            conf.RedisSettings.DB,
-			TLSConfig:     tlsConfig,
+			MasterName:       conf.RedisSettings.SentinelMasterName,
+			SentinelAddrs:    conf.RedisSettings.SentinelAddrs,
+			Username:         conf.RedisSettings.Username,
+			Password:         conf.RedisSettings.Password,
+			SentinelUsername: conf.RedisSettings.SentinelUsername,
+			SentinelPassword: conf.RedisSettings.SentinelPassword,
+			DB:               conf.RedisSettings.DB,
+			TLSConfig:        tlsConfig,
 		})
 	} else {
 		cl = redis.NewClient(&redis.Options{
 			Addr:      conf.RedisSettings.Addr,
+			Username:  conf.RedisSettings.Username,
 			Password:  conf.RedisSettings.Password,
 			DB:        conf.RedisSettings.DB,
 			TLSConfig: tlsConfig,

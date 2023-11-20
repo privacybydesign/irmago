@@ -68,6 +68,8 @@ func init() {
 	flags.Bool("redis-accept-inconsistency-risk", false, "accept the risk of inconsistent session state when using Redis Sentinel")
 	flags.String("redis-username", "", "Redis server username (when using ACLs)")
 	flags.String("redis-pw", "", "Redis server password")
+	flags.String("redis-sentinel-username", "", "Redis Sentinel username (when using ACLs)")
+	flags.String("redis-sentinel-pw", "", "Redis Sentinel password")
 	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
 	flags.Bool("redis-acl-use-key-prefixes", false, "if enabled all Redis keys will be prefixed with the username for ACLs (username:key)")
 	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
