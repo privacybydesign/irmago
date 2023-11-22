@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Fixed
-- Background revocation tasks not stopped on close
+- Background revocation tasks not stopped when closing an `irmaclient`
 
 ## [0.14.2] - 2023-10-25
 ### Fixed
