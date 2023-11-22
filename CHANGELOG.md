@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Support for Redis in Sentinel mode
 - Redis support for `irma keyshare server` and `irma keyshare myirmaserver`
+- `/health` endpoint for `irma server`, `irma keyshare server` and `irma keyshare myirmaserver`
 
 ### Changed
 - Using optimistic locking in the `irma server` instead of pessimistic locking

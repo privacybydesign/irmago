@@ -107,6 +107,10 @@ func (s *Server) Handler() http.Handler {
 		opts := server.LogOptions{Response: true, Headers: true, From: false, EncodeBinary: false}
 		router.Use(server.LogMiddleware("keyshare-myirma", opts))
 
+		router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			server.WriteString(w, "OK")
+		})
+
 		// Login/logout
 		router.Post("/login/irma", s.handleIrmaLogin)
 		router.Post("/login/email", s.handleEmailLogin)

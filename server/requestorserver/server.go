@@ -198,6 +198,10 @@ func (s *Server) Handler() http.Handler {
 		r.Use(cors.New(corsOptions).Handler)
 		r.Use(server.LogMiddleware("requestor", log))
 
+		router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			server.WriteString(w, "OK")
+		})
+
 		// Server routes
 		r.Route("/session", func(r chi.Router) {
 			r.Post("/", s.handleCreateSession)
