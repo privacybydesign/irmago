@@ -277,7 +277,7 @@ func (s *Server) sendLoginEmail(ctx context.Context, request emailLoginRequest) 
 	}
 
 	if err := keyshare.VerifyMXRecord(request.Email); err != nil {
-		return keyshare.ErrInvalidEmail
+		return keyshare.ErrInvalidEmailDomain
 	}
 
 	token := common.NewSessionToken()
@@ -311,10 +311,10 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In case sendLoginEmail fails with errEmailNotFound or errTooManyRequests, then we
+	// In case sendLoginEmail fails with errEmailNotFound, errTooManyRequests or ErrInvalidEmailDomain, then we
 	// should not write an error. Otherwise, we would leak information about our user base.
 	err := s.sendLoginEmail(r.Context(), request)
-	if err != nil && err != errEmailNotFound && err != errTooManyTokens {
+	if err != nil && err != errEmailNotFound && err != errTooManyTokens && err != keyshare.ErrInvalidEmailDomain {
 		// already logged
 		keyshare.WriteError(w, err)
 		return
