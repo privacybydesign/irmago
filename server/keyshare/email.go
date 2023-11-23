@@ -166,15 +166,16 @@ func VerifyMXRecord(email string) error {
 		}
 	}
 
-	invalidHosts := 0
+	hasValidHost := false
 	for _, h := range records {
-		// Check if host specified at MX record valid
-		if addr, err := net.LookupHost(h.Host); err != nil || len(addr) == 0 {
-			invalidHosts++
+		// Check if host specified at MX record is valid
+		if addr, err := net.LookupHost(h.Host); err == nil || len(addr) > 0 {
+			hasValidHost = true
+			break
 		}
 	}
 
-	if invalidHosts >= len(records) {
+	if !hasValidHost {
 		return ErrInvalidEmailDomain
 	}
 
