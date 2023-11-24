@@ -81,7 +81,7 @@ func init() {
 	flags.String("jwt-issuer", keysharecore.JWTIssuerDefault, "JWT issuer used in \"iss\" field")
 	flags.Int("jwt-pin-expiry", keysharecore.JWTPinExpiryDefault, "Expiry of PIN JWT in seconds")
 	flags.String("storage-primary-key-file", "", "Primary key used for encrypting and decrypting secure containers")
-	flags.StringSlice("storage-fallback-key-file", nil, "Fallback key(s) used to decrypt older secure containers")
+	flags.String("storage-fallback-keys-dir", "", "Directory containing fallback key(s) used to decrypt older secure containers (only .key files are considered; the storage primary key file and hidden files are ignored)")
 
 	headers["keyshare-attribute"] = "Keyshare server attribute issued during registration"
 	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
@@ -132,13 +132,13 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		DBConnMaxIdleTime: viper.GetInt("db_max_idle_time"),
 		DBConnMaxOpenTime: viper.GetInt("db_max_open_time"),
 
-		JwtKeyID:                viper.GetUint32("jwt_privkey_id"),
-		JwtPrivateKey:           viper.GetString("jwt_privkey"),
-		JwtPrivateKeyFile:       viper.GetString("jwt_privkey_file"),
-		JwtIssuer:               viper.GetString("jwt_issuer"),
-		JwtPinExpiry:            viper.GetInt("jwt_pin_expiry"),
-		StoragePrimaryKeyFile:   viper.GetString("storage_primary_key_file"),
-		StorageFallbackKeyFiles: viper.GetStringSlice("storage_fallback_key_file"),
+		JwtKeyID:               viper.GetUint32("jwt_privkey_id"),
+		JwtPrivateKey:          viper.GetString("jwt_privkey"),
+		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
+		JwtIssuer:              viper.GetString("jwt_issuer"),
+		JwtPinExpiry:           viper.GetInt("jwt_pin_expiry"),
+		StoragePrimaryKeyFile:  viper.GetString("storage_primary_key_file"),
+		StorageFallbackKeysDir: viper.GetString("storage_fallback_keys_dir"),
 
 		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare_attribute")),
 

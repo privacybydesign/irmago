@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Using optimistic locking in the `irma server` instead of pessimistic locking
+- `storage-fallback-key-file` option of `irma keyshare server` being replaced by `storage-fallback-keys-dir` option
 
 ## [0.14.2] - 2023-10-25
 ### Fixed
