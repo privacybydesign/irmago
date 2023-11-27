@@ -9,6 +9,7 @@ import (
 	"net/mail"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
@@ -127,6 +128,13 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 	if conf.EmailServer == "" {
 		return nil
 	}
+
+	// smtp.Dial does not support timeouts, so we use net.DialTimeout instead.
+	conn, err := net.DialTimeout("tcp", conf.EmailServer, 10*time.Second)
+	if err != nil {
+		return errors.Errorf("failed to connect to email server: %v", err)
+	}
+	conn.Close()
 
 	client, err := smtp.Dial(conf.EmailServer)
 	if err != nil {
