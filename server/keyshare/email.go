@@ -2,6 +2,7 @@ package keyshare
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"html/template"
 	"net"
@@ -15,6 +16,7 @@ import (
 
 type EmailConfiguration struct {
 	EmailServer     string `json:"email_server" mapstructure:"email_server"`
+	EmailHostname   string `json:"email_hostname" mapstructure:"email_hostname"`
 	EmailFrom       string `json:"email_from" mapstructure:"email_from"`
 	DefaultLanguage string `json:"default_language" mapstructure:"default_language"`
 	EmailAuth       smtp.Auth
@@ -130,7 +132,18 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 	if err != nil {
 		return errors.Errorf("failed to connect to email server: %v", err)
 	}
+	if conf.EmailHostname != "" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return errors.Errorf("email hostname is specified but email server does not support STARTTLS")
+		}
+		if err := client.StartTLS(&tls.Config{ServerName: conf.EmailHostname}); err != nil {
+			return errors.Errorf("failed to start TLS on connection to email server: %v", err)
+		}
+	}
 	if conf.EmailAuth != nil {
+		if conf.EmailHostname == "" && !strings.HasPrefix(conf.EmailServer, "localhost:") {
+			return errors.Errorf("email authentication is enabled but email server is neither using TLS nor running on localhost")
+		}
 		if err = client.Auth(conf.EmailAuth); err != nil {
 			return errors.Errorf("failed to authenticate to email server: %v", err)
 		}

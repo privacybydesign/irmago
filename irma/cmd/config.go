@@ -35,6 +35,7 @@ func configureEmail() keyshare.EmailConfiguration {
 
 	return keyshare.EmailConfiguration{
 		EmailServer:     viper.GetString("email_server"),
+		EmailHostname:   viper.GetString("email_hostname"),
 		EmailAuth:       emailAuth,
 		EmailFrom:       viper.GetString("email_from"),
 		DefaultLanguage: viper.GetString("default_language"),
