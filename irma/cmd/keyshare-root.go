@@ -31,6 +31,7 @@ type stoppableServer interface {
 func runServer(serv stoppableServer, logger *logrus.Logger) {
 	// Determine full listening address.
 	fullAddr := fmt.Sprintf("%s:%d", viper.GetString("listen_addr"), viper.GetInt("port"))
+	logger.Info("Server listening at ", fullAddr)
 
 	// Load TLS configuration
 	TLSConfig := configureTLS()
