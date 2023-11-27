@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -104,6 +105,15 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 		},
 	}
 
+	// Create cookie jar to store cookies in
+	var cookieJar *cookiejar.Jar
+	if parsedURL, err := url.Parse(serverURL); err == nil {
+		cookieJar, err = cookiejar.New(&cookiejar.Options{PublicSuffixList: httpPublicSuffixList{host: parsedURL.Host}})
+		if err != nil {
+			Logger.Warnf("failed to create cookie jar: %s", err.Error())
+		}
+	}
+
 	client := &retryablehttp.Client{
 		Logger:       transportlogger,
 		RetryWaitMin: 100 * time.Millisecond,
@@ -120,6 +130,7 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 		HTTPClient: &http.Client{
 			Timeout:   time.Second * 5,
 			Transport: innerTransport,
+			Jar:       cookieJar,
 		},
 	}
 
@@ -342,4 +353,18 @@ func (transport *HTTPTransport) Get(url string, result interface{}) error {
 // Delete performs a DELETE.
 func (transport *HTTPTransport) Delete() error {
 	return transport.jsonRequest("", http.MethodDelete, nil, nil)
+}
+
+// httpPublicSuffixList implements the PublicSuffixList interface for use in cookiejar.
+// It is used to prevent cookies from being sent to other domains and subdomains as the host.
+type httpPublicSuffixList struct {
+	host string
+}
+
+func (p httpPublicSuffixList) PublicSuffix(domain string) string {
+	return p.host
+}
+
+func (p httpPublicSuffixList) String() string {
+	return "github.com/privacybydesign/irmago/httpPublicSuffixList-v1"
 }
