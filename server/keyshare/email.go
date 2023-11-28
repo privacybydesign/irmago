@@ -169,7 +169,7 @@ func VerifyMXRecord(email string) error {
 	hasValidHost := false
 	for _, h := range records {
 		// Check if host specified at MX record is valid
-		if addr, err := net.LookupHost(h.Host); err == nil || len(addr) > 0 {
+		if addr, err := net.LookupHost(h.Host); err == nil && len(addr) > 0 {
 			hasValidHost = true
 			break
 		}
