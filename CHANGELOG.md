@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Fixed
 - Invalid hostname specified in MX record bypasses e-mail address revalidation
+- Background revocation tasks not stopped when closing an `irmaclient`
 
 ## [0.14.2] - 2023-10-25
 ### Fixed
