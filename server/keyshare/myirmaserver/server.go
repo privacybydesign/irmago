@@ -311,10 +311,10 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In case sendLoginEmail fails with errEmailNotFound, errTooManyRequests or ErrInvalidEmailDomain, then we
+	// In case sendLoginEmail fails with errEmailNotFound or errTooManyRequests, then we
 	// should not write an error. Otherwise, we would leak information about our user base.
 	err := s.sendLoginEmail(r.Context(), request)
-	if err != nil && err != errEmailNotFound && err != errTooManyTokens && err != keyshare.ErrInvalidEmailDomain {
+	if err != nil && err != errEmailNotFound && err != errTooManyTokens {
 		// already logged
 		keyshare.WriteError(w, err)
 		return
