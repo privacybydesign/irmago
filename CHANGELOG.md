@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Background revocation tasks not stopped when closing an `irmaclient`
 
+### Internal
+- Fixed issue with expired `irma-demo.MijnOverheid` key in testdata
+
 ## [0.14.2] - 2023-10-25
 ### Fixed
 - IRMA session gets stuck in communicating status when user is requested to confirm PIN in `irmaclient`
