@@ -1371,7 +1371,7 @@ func (client *Client) KeyshareRemoveAll() error {
 	return client.stripStorage(managers, false)
 }
 
-// stripStorage removes all credentials and logs of the specified schemes from storage.
+// stripStorage removes all credentials and optionally removes all logs of the specified schemes from storage.
 func (client *Client) stripStorage(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
