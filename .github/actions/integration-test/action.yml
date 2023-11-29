@@ -69,6 +69,10 @@ runs:
         ref: ${{ inputs.test-ref }}
         path: irmago_test_checkout
 
+    - name: Use testdata from current checkout
+      run: cp -R ./testdata ./irmago_test_checkout
+      shell: bash
+
     - name: Run integration tests
       working-directory: irmago_test_checkout
       env:
