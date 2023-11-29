@@ -14,7 +14,7 @@ func TestServerRegistrationWithEmail(t *testing.T) {
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
 
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@example.com","language":"en"}`, nil,
+		`{"pin":"testpin","email":"test@github.com","language":"en"}`, nil,
 		200, nil,
 	)
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
@@ -26,7 +26,7 @@ func TestServerRegistrationWithEmail(t *testing.T) {
 	// rejecting the registration would be too severe. So the registration is accepted and the
 	// server falls back to its default language.
 	test.HTTPPost(t, nil, "http://localhost:8080/client/register",
-		`{"pin":"testpin","email":"test@example.com","language":"nonexistinglanguage"}`, nil,
+		`{"pin":"testpin","email":"test@github.com","language":"nonexistinglanguage"}`, nil,
 		200, nil,
 	)
 

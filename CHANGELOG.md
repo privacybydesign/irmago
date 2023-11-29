@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Fixed
 - HTTP cookies not stored in `irmaclient` when received from a `Set-Cookie` header
+- Invalid hostname specified in MX record bypasses e-mail address revalidation
 - Background revocation tasks not stopped when closing an `irmaclient`
 
 ### Internal
 - Fixed issue with expired `irma-demo.MijnOverheid` key in testdata
+- Always use testdata of current branch for integration-test jobs in GitHub Actions workflow
 
 ## [0.14.2] - 2023-10-25
 ### Fixed
