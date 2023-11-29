@@ -167,6 +167,27 @@ func TestRetryHTTPRequest(t *testing.T) {
 	require.Equal(t, "42\n", string(bts))
 }
 
+func TestHTTPTransportCookieJar(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/setcookie", func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "testcookie", Value: "42", Domain: "localhost"})
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/checkcookie", func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie("testcookie")
+		require.NoError(t, err)
+		require.Equal(t, "42", c.Value)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	server := &http.Server{Addr: "localhost:48682", Handler: mux}
+	go server.ListenAndServe()
+	defer server.Close()
+
+	transport := NewHTTPTransport("http://localhost:48682", false)
+	require.NoError(t, transport.Get("/setcookie", nil))
+	require.NoError(t, transport.Get("/checkcookie", nil))
+}
+
 func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	test.StartSchemeManagerHttpServer()
 	defer test.StopSchemeManagerHttpServer()
