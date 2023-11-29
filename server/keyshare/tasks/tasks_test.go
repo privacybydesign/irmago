@@ -145,9 +145,9 @@ func TestExpireAccounts(t *testing.T) {
 		xTimesEntry(12, "(%s, 'ExpiredUser%s', '', '', 0, 0, 0), ")+
 		"(28, 'ExpiredUserWithoutMail', '', '', 0, 0, 0)", time.Now().Unix())
 	require.NoError(t, err)
-	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@example.com', NULL), " +
-		xTimesEntry(12, "(%s, 'test%s@example.com', NULL), ") +
-		"(28, 'test@example.com', NULL)")
+	_, err = db.Exec("INSERT INTO irma.emails (user_id, email, delete_on) VALUES (15, 'test@github.com', NULL), " +
+		xTimesEntry(12, "(%s, 'test%s@github.com', NULL), ") +
+		"(28, 'test@github.com', NULL)")
 	require.NoError(t, err)
 
 	th, err := newHandler(&Configuration{
