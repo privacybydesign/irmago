@@ -1356,7 +1356,10 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager and removes all associated credentials.
 func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error {
-	return client.keyshareRemoveMultiple([]irma.SchemeManagerIdentifier{manager}, false)
+	if _, contains := client.keyshareServers[manager]; !contains {
+		return errors.New("can't uninstall unknown keyshare server")
+	}
+	return client.removeMultipleSchemes([]irma.SchemeManagerIdentifier{manager}, false)
 }
 
 // KeyshareRemoveAll removes all keyshare server registrations and associated credentials.
@@ -1365,16 +1368,10 @@ func (client *Client) KeyshareRemoveAll() error {
 	for schemeID := range client.keyshareServers {
 		managers = append(managers, schemeID)
 	}
-	return client.keyshareRemoveMultiple(managers, false)
+	return client.removeMultipleSchemes(managers, false)
 }
 
-func (client *Client) keyshareRemoveMultiple(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
-	for _, schemeID := range schemeIDs {
-		if _, contains := client.keyshareServers[schemeID]; !contains {
-			return errors.New("can't uninstall unknown keyshare server")
-		}
-	}
-
+func (client *Client) removeMultipleSchemes(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 
@@ -1542,18 +1539,31 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 	return nil
 }
 
-// RemoveScheme removes the given scheme and all credentials and log entries related to it.
+// RemoveScheme removes the given scheme manager and all credentials and log entries related to it.
 func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error {
 	scheme, ok := client.Configuration.SchemeManagers[schemeID]
 	if !ok {
 		return errors.New("unknown scheme manager")
 	}
 
-	err := client.keyshareRemoveMultiple([]irma.SchemeManagerIdentifier{schemeID}, true)
+	err := client.removeMultipleSchemes([]irma.SchemeManagerIdentifier{schemeID}, true)
 	if err != nil {
 		return err
 	}
 	err = client.Configuration.DangerousDeleteScheme(scheme)
+	if err != nil {
+		return err
+	}
+	return client.Configuration.ParseFolder()
+}
+
+// RemoveRequestorScheme removes the given requestor scheme and all requestors and issue wizards related to it.
+func (client *Client) RemoveRequestorScheme(schemeID irma.RequestorSchemeIdentifier) error {
+	scheme, ok := client.Configuration.RequestorSchemes[schemeID]
+	if !ok {
+		return errors.New("unknown requestor scheme")
+	}
+	err := client.Configuration.DangerousDeleteScheme(scheme)
 	if err != nil {
 		return err
 	}
