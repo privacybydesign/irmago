@@ -1359,7 +1359,7 @@ func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error
 	if _, contains := client.keyshareServers[manager]; !contains {
 		return errors.New("can't uninstall unknown keyshare server")
 	}
-	return client.removeMultipleSchemes([]irma.SchemeManagerIdentifier{manager}, false)
+	return client.stripStorage([]irma.SchemeManagerIdentifier{manager}, false)
 }
 
 // KeyshareRemoveAll removes all keyshare server registrations and associated credentials.
@@ -1368,10 +1368,11 @@ func (client *Client) KeyshareRemoveAll() error {
 	for schemeID := range client.keyshareServers {
 		managers = append(managers, schemeID)
 	}
-	return client.removeMultipleSchemes(managers, false)
+	return client.stripStorage(managers, false)
 }
 
-func (client *Client) removeMultipleSchemes(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
+// stripStorage removes all credentials and logs of the specified schemes from storage.
+func (client *Client) stripStorage(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 
@@ -1546,7 +1547,7 @@ func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error 
 		return errors.New("unknown scheme manager")
 	}
 
-	err := client.removeMultipleSchemes([]irma.SchemeManagerIdentifier{schemeID}, true)
+	err := client.stripStorage([]irma.SchemeManagerIdentifier{schemeID}, true)
 	if err != nil {
 		return err
 	}
