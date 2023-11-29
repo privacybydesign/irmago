@@ -106,12 +106,10 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	}
 
 	// Create cookie jar to store cookies in
-	var cookieJar *cookiejar.Jar
-	if parsedURL, err := url.Parse(serverURL); err == nil {
-		cookieJar, err = cookiejar.New(&cookiejar.Options{PublicSuffixList: httpPublicSuffixList{host: parsedURL.Host}})
-		if err != nil {
-			Logger.Warnf("failed to create cookie jar: %s", err.Error())
-		}
+	cookieJar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: httpPublicSuffixList{}})
+	if err != nil {
+		Logger.Warnf("failed to create cookie jar: %s", err.Error())
+		cookieJar = nil
 	}
 
 	client := &retryablehttp.Client{
@@ -357,12 +355,10 @@ func (transport *HTTPTransport) Delete() error {
 
 // httpPublicSuffixList implements the PublicSuffixList interface for use in cookiejar.
 // It is used to prevent cookies from being sent to other domains and subdomains as the host.
-type httpPublicSuffixList struct {
-	host string
-}
+type httpPublicSuffixList struct{}
 
 func (p httpPublicSuffixList) PublicSuffix(domain string) string {
-	return p.host
+	return domain
 }
 
 func (p httpPublicSuffixList) String() string {
