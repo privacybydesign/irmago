@@ -229,6 +229,8 @@ func New(
 }
 
 func (client *Client) Close() error {
+	client.PauseJobs()
+	client.Configuration.Scheduler.Stop()
 	return client.storage.Close()
 }
 
