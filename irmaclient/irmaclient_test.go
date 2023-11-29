@@ -338,6 +338,10 @@ func TestRemoveSchemes(t *testing.T) {
 	for wizardID := range client.Configuration.IssueWizards {
 		require.False(t, strings.HasPrefix(wizardID.String(), testRequestorsSchemeID.String()))
 	}
+
+	// Remove nonexistent requestor scheme
+	err = client.RemoveRequestorScheme(irma.NewRequestorSchemeIdentifier("nonexistent"))
+	require.Error(t, err)
 }
 
 func TestWrongSchemeManager(t *testing.T) {
