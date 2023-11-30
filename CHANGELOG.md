@@ -5,10 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- `RemoveRequestorScheme` function in `irmaclient` to remove a requestor scheme from the `irma_configuration` directory
+
 ### Fixed
 - HTTP cookies not stored in `irmaclient` when received from a `Set-Cookie` header
 - Invalid hostname specified in MX record bypasses e-mail address revalidation
 - Background revocation tasks not stopped when closing an `irmaclient`
+- `RemoveScheme` function in `irmaclient` not deleting issuer schemes without a keyshare server ([#260](https://github.com/privacybydesign/irmago/issues/260))
 
 ### Internal
 - Fixed issue with expired `irma-demo.MijnOverheid` key in testdata
