@@ -606,3 +606,55 @@ func FilterStopError(err error) error {
 	}
 	return err
 }
+
+type HTTPResponseRecorder struct {
+	wrapped http.ResponseWriter
+	Flushed bool
+
+	statusCode int
+	header     http.Header
+	body       []byte
+}
+
+func NewHTTPResponseRecorder(w http.ResponseWriter) *HTTPResponseRecorder {
+	return &HTTPResponseRecorder{
+		wrapped: w,
+		header:  w.Header().Clone(),
+	}
+}
+
+// Header implements http.ResponseWriter
+func (r *HTTPResponseRecorder) Header() http.Header {
+	return r.header
+}
+
+// Write implements http.ResponseWriter
+func (r *HTTPResponseRecorder) Write(b []byte) (int, error) {
+	r.body = append(r.body, b...)
+	return len(b), nil
+}
+
+// WriteHeader implements http.ResponseWriter
+func (r *HTTPResponseRecorder) WriteHeader(statusCode int) {
+	r.statusCode = statusCode
+}
+
+// Flush implements http.Flusher.
+func (r *HTTPResponseRecorder) Flush() {
+	if !r.Flushed {
+		for k, v := range r.Header() {
+			r.wrapped.Header()[k] = v
+		}
+		if r.statusCode > 0 {
+			r.wrapped.WriteHeader(r.statusCode)
+		}
+		r.Flushed = true
+	}
+	if len(r.body) > 0 {
+		r.wrapped.Write(r.body)
+		if flusher, ok := r.wrapped.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		r.body = nil
+	}
+}

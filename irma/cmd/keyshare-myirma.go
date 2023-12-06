@@ -60,6 +60,23 @@ func init() {
 	flags.Int("db-max-idle-time", 0, "Time in seconds after which idle database connections are closed (default unlimited)")
 	flags.Int("db-max-open-time", 0, "Maximum lifetime in seconds of open database connections (default unlimited)")
 
+	headers["store-type"] = "Session store configuration"
+	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
+	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
+	flags.StringSlice("redis-sentinel-addrs", nil, "Redis Sentinel addresses, to be specified as host:port")
+	flags.String("redis-sentinel-master-name", "", "Redis Sentinel master name")
+	flags.Bool("redis-accept-inconsistency-risk", false, "accept the risk of inconsistent session state when using Redis Sentinel")
+	flags.String("redis-username", "", "Redis server username (when using ACLs)")
+	flags.String("redis-pw", "", "Redis server password")
+	flags.String("redis-sentinel-username", "", "Redis Sentinel username (when using ACLs)")
+	flags.String("redis-sentinel-pw", "", "Redis Sentinel password")
+	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
+	flags.Bool("redis-acl-use-key-prefixes", false, "if enabled all Redis keys will be prefixed with the username for ACLs (username:key)")
+	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
+	flags.String("redis-tls-cert", "", "use Redis TLS with specific certificate or certificate authority")
+	flags.String("redis-tls-cert-file", "", "use Redis TLS path to specific certificate or certificate authority")
+	flags.Bool("redis-no-tls", false, "disable Redis TLS (by default, Redis TLS is enabled with the system certificate pool)")
+
 	headers["keyshare-attributes"] = "IRMA session configuration"
 	flags.StringSlice("keyshare-attributes", nil, "Attributes allowed for login to myirma")
 	flags.StringSlice("email-attributes", nil, "Attributes allowed for adding email addresses")
@@ -98,9 +115,14 @@ func init() {
 func configureMyirmaServer(cmd *cobra.Command) (*myirmaserver.Configuration, error) {
 	readConfig(cmd, "myirmaserver", "myirmaserver", []string{".", "/etc/myirmaserver/"}, nil)
 
+	irmaServerConf, err := configureIRMAServer()
+	if err != nil {
+		return nil, err
+	}
+
 	// And build the configuration
 	conf := &myirmaserver.Configuration{
-		Configuration:      configureIRMAServer(),
+		Configuration:      irmaServerConf,
 		EmailConfiguration: configureEmail(),
 
 		CORSAllowedOrigins: viper.GetStringSlice("cors_allowed_origins"),

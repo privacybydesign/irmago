@@ -198,6 +198,10 @@ func (s *Server) Handler() http.Handler {
 		r.Use(cors.New(corsOptions).Handler)
 		r.Use(server.LogMiddleware("requestor", log))
 
+		router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			server.WriteString(w, "OK")
+		})
+
 		// Server routes
 		r.Route("/session", func(r chi.Router) {
 			r.Post("/", s.handleCreateSession)
@@ -522,6 +526,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, nil)
 	if err != nil {
 		if _, ok := err.(*irmaserver.RedisError); ok {
+			s.conf.Logger.WithError(err).Error("Failed to start session")
 			server.WriteError(w, server.ErrorInternal, "")
 		} else {
 			server.WriteError(w, server.ErrorInvalidRequest, err.Error())

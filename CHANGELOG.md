@@ -6,7 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
+- Support for Redis in Sentinel mode
+- Redis support for `irma keyshare server` and `irma keyshare myirmaserver`
+- `/health` endpoint for `irma server`, `irma keyshare server` and `irma keyshare myirmaserver`
 - `RemoveRequestorScheme` function in `irmaclient` to remove a requestor scheme from the `irma_configuration` directory
+
+### Changed
+- Using optimistic locking in the `irma server` instead of pessimistic locking
+- `storage-fallback-key-file` option of `irma keyshare server` being replaced by `storage-fallback-keys-dir` option
 
 ### Fixed
 - HTTP cookies not stored in `irmaclient` when received from a `Set-Cookie` header

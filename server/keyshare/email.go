@@ -2,12 +2,14 @@ package keyshare
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"html/template"
 	"net"
 	"net/mail"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
@@ -15,6 +17,7 @@ import (
 
 type EmailConfiguration struct {
 	EmailServer     string `json:"email_server" mapstructure:"email_server"`
+	EmailHostname   string `json:"email_hostname" mapstructure:"email_hostname"`
 	EmailFrom       string `json:"email_from" mapstructure:"email_from"`
 	DefaultLanguage string `json:"default_language" mapstructure:"default_language"`
 	EmailAuth       smtp.Auth
@@ -126,11 +129,29 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 		return nil
 	}
 
+	// smtp.Dial does not support timeouts, so we use net.DialTimeout instead.
+	conn, err := net.DialTimeout("tcp", conf.EmailServer, 10*time.Second)
+	if err != nil {
+		return errors.Errorf("failed to connect to email server: %v", err)
+	}
+	conn.Close()
+
 	client, err := smtp.Dial(conf.EmailServer)
 	if err != nil {
 		return errors.Errorf("failed to connect to email server: %v", err)
 	}
+	if conf.EmailHostname != "" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return errors.Errorf("email hostname is specified but email server does not support STARTTLS")
+		}
+		if err := client.StartTLS(&tls.Config{ServerName: conf.EmailHostname}); err != nil {
+			return errors.Errorf("failed to start TLS on connection to email server: %v", err)
+		}
+	}
 	if conf.EmailAuth != nil {
+		if conf.EmailHostname == "" && !strings.HasPrefix(conf.EmailServer, "localhost:") {
+			return errors.Errorf("email authentication is enabled but email server is neither using TLS nor running on localhost")
+		}
 		if err = client.Auth(conf.EmailAuth); err != nil {
 			return errors.Errorf("failed to authenticate to email server: %v", err)
 		}

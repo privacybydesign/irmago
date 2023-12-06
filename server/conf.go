@@ -1,16 +1,20 @@
 package server
 
 import (
+	"context"
 	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-co-op/gocron"
 	"github.com/go-errors/errors"
+	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
@@ -51,6 +55,8 @@ type Configuration struct {
 	StoreType string `json:"store_type" mapstructure:"store_type"`
 	// RedisSettings that need to be specified when Redis is used as session data store.
 	RedisSettings *RedisSettings `json:"redis_settings" mapstructure:"redis_settings"`
+	// redisClient that is already initialized using the above RedisSettings.
+	redisClient *RedisClient `json:"-"`
 
 	// Static session requests that can be created by POST /session/{name}
 	StaticSessions map[string]interface{} `json:"static_sessions"`
@@ -96,10 +102,32 @@ type Configuration struct {
 	Production bool `json:"production" mapstructure:"production"`
 }
 
+type RedisClient struct {
+	*redis.Client
+	FailoverMode bool
+	KeyPrefix    string
+}
+
 type RedisSettings struct {
-	Addr     string `json:"address,omitempty" mapstructure:"address"`
+	Addr                    string   `json:"address,omitempty" mapstructure:"address"`
+	SentinelAddrs           []string `json:"sentinel_addresses,omitempty" mapstructure:"sentinel_addresses"`
+	SentinelMasterName      string   `json:"sentinel_master_name,omitempty" mapstructure:"sentinel_master_name"`
+	AcceptInconsistencyRisk bool     `json:"accept_inconsistency_risk,omitempty" mapstructure:"accept_inconsistency_risk"`
+
+	// Username for Redis authentication. If username is empty, the default user is used.
+	Username string `json:"username,omitempty" mapstructure:"username"`
+	// Password for Redis authentication.
 	Password string `json:"password,omitempty" mapstructure:"password"`
-	DB       int    `json:"db,omitempty" mapstructure:"db"`
+	// ACLUseKeyPrefixes ensures all Redis keys are prefixed with the username in the format "username:key".
+	// This can be used for key permissions in the Redis ACL system. If ACLUseKeyPrefixes is false, no prefix is used.
+	ACLUseKeyPrefixes bool `json:"acl_use_key_prefixes,omitempty" mapstructure:"acl_use_key_prefixes"`
+
+	// SentinelUsername for Redis Sentinel authentication. If sentinel_username is empty, the default user is used.
+	SentinelUsername string `json:"sentinel_username,omitempty" mapstructure:"sentinel_username"`
+	// SentinelPassword for Redis Sentinel authentication.
+	SentinelPassword string `json:"sentinel_password,omitempty" mapstructure:"sentinel_password"`
+
+	DB int `json:"db,omitempty" mapstructure:"db"`
 
 	TLSCertificate     string `json:"tls_cert,omitempty" mapstructure:"tls_cert"`
 	TLSCertificateFile string `json:"tls_cert_file,omitempty" mapstructure:"tls_cert_file"`
@@ -413,6 +441,98 @@ func (conf *Configuration) verifyJwtPrivateKey() error {
 	conf.JwtRSAPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
 	conf.Logger.Info("Private key parsed, JWT endpoints enabled")
 	return err
+}
+
+// RedisClient returns the Redis client using the settings from the configuration.
+func (conf *Configuration) RedisClient() (*RedisClient, error) {
+	if conf.redisClient != nil {
+		return conf.redisClient, nil
+	}
+
+	// Configure Redis TLS. If Redis TLS is disabled, tlsConfig becomes nil and the redis client will not use TLS.
+	tlsConfig, err := conf.redisTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	// setup client
+	var cl *redis.Client
+	if len(conf.RedisSettings.SentinelAddrs) > 0 {
+		cl = redis.NewFailoverClient(&redis.FailoverOptions{
+			MasterName:       conf.RedisSettings.SentinelMasterName,
+			SentinelAddrs:    conf.RedisSettings.SentinelAddrs,
+			Username:         conf.RedisSettings.Username,
+			Password:         conf.RedisSettings.Password,
+			SentinelUsername: conf.RedisSettings.SentinelUsername,
+			SentinelPassword: conf.RedisSettings.SentinelPassword,
+			DB:               conf.RedisSettings.DB,
+			TLSConfig:        tlsConfig,
+		})
+	} else {
+		cl = redis.NewClient(&redis.Options{
+			Addr:      conf.RedisSettings.Addr,
+			Username:  conf.RedisSettings.Username,
+			Password:  conf.RedisSettings.Password,
+			DB:        conf.RedisSettings.DB,
+			TLSConfig: tlsConfig,
+		})
+	}
+	if err := cl.Ping(context.Background()).Err(); err != nil {
+		return nil, errors.WrapPrefix(err, "failed to connect to Redis", 0)
+	}
+
+	// Check whether Redis is in failover mode (either Redis Sentinel or Redis Cluster)
+	failoverMode := len(conf.RedisSettings.SentinelAddrs) > 0 || cl.ClusterInfo(context.Background()).Err() == nil
+	if failoverMode {
+		if !conf.RedisSettings.AcceptInconsistencyRisk {
+			return nil, errors.New("inconsistency risk not accepted for using Redis Sentinel/Cluster (see --accept-inconsistency-risk in irma server -h)")
+		}
+		if replicasReached, _ := cl.Wait(context.Background(), 2, 2*time.Second).Result(); replicasReached < 2 {
+			conf.Logger.Warn("Redis replication factor is less than 2, this may cause availability issues")
+		}
+	}
+	var keyPrefix string
+	if conf.RedisSettings.ACLUseKeyPrefixes {
+		keyPrefix = conf.RedisSettings.Username + ":"
+	}
+	conf.redisClient = &RedisClient{
+		Client:       cl,
+		FailoverMode: failoverMode,
+		KeyPrefix:    keyPrefix,
+	}
+	return conf.redisClient, nil
+}
+
+func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
+	if conf.RedisSettings.DisableTLS {
+		if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
+			err := errors.New("Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+		}
+		return nil, nil
+	}
+
+	if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
+		cert, err := common.ReadKey(conf.RedisSettings.TLSCertificate, conf.RedisSettings.TLSCertificateFile)
+		if err != nil {
+			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+		}
+		tlsConfig := &tls.Config{
+			RootCAs: x509.NewCertPool(),
+		}
+		tlsConfig.RootCAs.AppendCertsFromPEM(cert)
+		return tlsConfig, nil
+	}
+
+	// By default, the certificate pool of the system is used
+	systemCerts, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+	}
+	tlsConfig := &tls.Config{
+		RootCAs: systemCerts,
+	}
+	return tlsConfig, nil
 }
 
 // ReplacePortString is a helper that returns a copy of the specified url of the form
