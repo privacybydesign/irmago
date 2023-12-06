@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -296,6 +297,51 @@ func TestCredentialRemoval(t *testing.T) {
 	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
+}
+
+func TestRemoveSchemes(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	// Unset configuration assets to enable removal of schemes
+	var err error
+	client.Configuration, err = irma.NewConfiguration(
+		client.Configuration.Path,
+		irma.ConfigurationOptions{IgnorePrivateKeys: true},
+	)
+	require.NoError(t, err)
+	err = client.Configuration.ParseFolder()
+	require.NoError(t, err)
+
+	// Remove demo scheme
+	irmaDemoSchemeID := irma.NewSchemeManagerIdentifier("irma-demo")
+	err = client.RemoveScheme(irmaDemoSchemeID)
+	require.NoError(t, err)
+	require.NotContains(t, client.Configuration.SchemeManagers, irmaDemoSchemeID)
+
+	// Remove test scheme
+	testSchemeID := irma.NewSchemeManagerIdentifier("test")
+	err = client.RemoveScheme(testSchemeID)
+	require.NoError(t, err)
+	require.NotContains(t, client.Configuration.SchemeManagers, testSchemeID)
+
+	// Remove nonexistent scheme
+	err = client.RemoveScheme(irma.NewSchemeManagerIdentifier("nonexistent"))
+	require.Error(t, err)
+
+	// Remove requestor scheme
+	testRequestorsSchemeID := irma.NewRequestorSchemeIdentifier("test-requestors")
+	err = client.RemoveRequestorScheme(testRequestorsSchemeID)
+	require.NoError(t, err)
+	require.NotContains(t, client.Configuration.RequestorSchemes, testRequestorsSchemeID)
+	require.NotContains(t, client.Configuration.Requestors, testRequestorsSchemeID)
+	for wizardID := range client.Configuration.IssueWizards {
+		require.False(t, strings.HasPrefix(wizardID.String(), testRequestorsSchemeID.String()))
+	}
+
+	// Remove nonexistent requestor scheme
+	err = client.RemoveRequestorScheme(irma.NewRequestorSchemeIdentifier("nonexistent"))
+	require.Error(t, err)
 }
 
 func TestWrongSchemeManager(t *testing.T) {

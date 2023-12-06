@@ -299,7 +299,7 @@ func (s *Server) sendLoginEmail(ctx context.Context, request emailLoginRequest) 
 	}
 
 	if err := keyshare.VerifyMXRecord(request.Email); err != nil {
-		return keyshare.ErrInvalidEmail
+		return keyshare.ErrInvalidEmailDomain
 	}
 
 	token := common.NewSessionToken()

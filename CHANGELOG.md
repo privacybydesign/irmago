@@ -9,10 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for Redis in Sentinel mode
 - Redis support for `irma keyshare server` and `irma keyshare myirmaserver`
 - `/health` endpoint for `irma server`, `irma keyshare server` and `irma keyshare myirmaserver`
+- `RemoveRequestorScheme` function in `irmaclient` to remove a requestor scheme from the `irma_configuration` directory
 
 ### Changed
 - Using optimistic locking in the `irma server` instead of pessimistic locking
 - `storage-fallback-key-file` option of `irma keyshare server` being replaced by `storage-fallback-keys-dir` option
+
+### Fixed
+- HTTP cookies not stored in `irmaclient` when received from a `Set-Cookie` header
+- Invalid hostname specified in MX record bypasses e-mail address revalidation
+- Background revocation tasks not stopped when closing an `irmaclient`
+- `RemoveScheme` function in `irmaclient` not deleting issuer schemes without a keyshare server ([#260](https://github.com/privacybydesign/irmago/issues/260))
+
+### Internal
+- Fixed issue with expired `irma-demo.MijnOverheid` key in testdata
+- Always use testdata of current branch for integration-test jobs in GitHub Actions workflow
 
 ## [0.14.2] - 2023-10-25
 ### Fixed

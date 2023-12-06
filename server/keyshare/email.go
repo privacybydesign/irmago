@@ -171,13 +171,13 @@ func VerifyMXRecord(email string) error {
 
 	host := email[strings.LastIndex(email, "@")+1:]
 
-	if records, err := net.LookupMX(host); err != nil || len(records) == 0 {
-		if err != nil {
-			if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
-				// When DNS is not resolving or there is no active network connection
-				server.Logger.WithField("error", err).Error("No active network connection")
-				return ErrNoNetwork
-			}
+	records, err := net.LookupMX(host)
+
+	if err != nil || len(records) == 0 {
+		if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
+			// When DNS is not resolving or there is no active network connection
+			server.Logger.WithField("error", err).Error("No active network connection")
+			return ErrNoNetwork
 		}
 
 		// Check if there is a valid A or AAAA record which is used as fallback by mailservers
@@ -185,7 +185,20 @@ func VerifyMXRecord(email string) error {
 		if records, err := net.LookupIP(host); err != nil || len(records) == 0 {
 			return ErrInvalidEmailDomain
 		}
-		return nil
 	}
+
+	hasValidHost := false
+	for _, h := range records {
+		// Check if host specified at MX record is valid
+		if addr, err := net.LookupHost(h.Host); err == nil && len(addr) > 0 {
+			hasValidHost = true
+			break
+		}
+	}
+
+	if !hasValidHost {
+		return ErrInvalidEmailDomain
+	}
+
 	return nil
 }
