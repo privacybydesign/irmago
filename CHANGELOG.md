@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Security
+- Update go toolchain to 1.21.5
 
 ## [0.15.0] - 2023-12-11
 ### Added
