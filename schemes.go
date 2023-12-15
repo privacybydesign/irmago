@@ -258,10 +258,18 @@ func (conf *Configuration) UpdateScheme(scheme Scheme, downloaded *IrmaIdentifie
 	return nil
 }
 
+func (conf *Configuration) IsInAssets(scheme Scheme) (bool, error) {
+	if conf.assets == "" {
+		return false, nil
+	}
+	_, exists, err := common.Stat(path.Join(conf.assets, scheme.id()))
+	return exists, err
+}
+
 // DangerousDeleteScheme deletes the given scheme from the configuration.
 // Be aware: this action is dangerous when the scheme is still in use.
 func (conf *Configuration) DangerousDeleteScheme(scheme Scheme) error {
-	_, exists, err := common.Stat(path.Join(conf.assets, scheme.id()))
+	exists, err := conf.IsInAssets(scheme)
 	if err != nil {
 		return err
 	}

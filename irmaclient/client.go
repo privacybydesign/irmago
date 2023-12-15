@@ -1547,7 +1547,15 @@ func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error 
 		return errors.New("unknown scheme manager")
 	}
 
-	err := client.stripStorage([]irma.SchemeManagerIdentifier{schemeID}, true)
+	isInAssets, err := client.Configuration.IsInAssets(scheme)
+	if err != nil {
+		return err
+	}
+	if isInAssets {
+		return errors.New("cannot remove scheme manager that is in assets")
+	}
+
+	err = client.stripStorage([]irma.SchemeManagerIdentifier{schemeID}, true)
 	if err != nil {
 		return err
 	}
