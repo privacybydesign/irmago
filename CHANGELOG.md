@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `RemoveScheme` function in `irmaclient` already stripping storage before checking whether the scheme is in assets
 
+### Security
+- Update go toolchain to 1.21.5
+
 ## [0.15.0] - 2023-12-11
 ### Added
 - Support for Redis in Sentinel mode
