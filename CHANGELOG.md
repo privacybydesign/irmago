@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [0.15.1] - 2023-12-18
 ### Fixed
 - `RemoveScheme` function in `irmaclient` already stripping storage before checking whether the scheme is in assets
 
@@ -498,6 +500,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.15.1]: https://github.com/privacybydesign/irmago/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/privacybydesign/irmago/compare/v0.14.2...v0.15.0
 [0.14.2]: https://github.com/privacybydesign/irmago/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/privacybydesign/irmago/compare/v0.14.0...v0.14.1

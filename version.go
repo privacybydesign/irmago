@@ -5,4 +5,4 @@
 package irma
 
 // Version of the IRMA command line and libraries
-const Version = "0.15.0"
+const Version = "0.15.1"
