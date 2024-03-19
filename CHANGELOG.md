@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Internal
+- Fix sqlserver tests in GitHub Actions workflow
+
 ## [0.15.1] - 2023-12-18
 ### Fixed
 - `RemoveScheme` function in `irmaclient` already stripping storage before checking whether the scheme is in assets
