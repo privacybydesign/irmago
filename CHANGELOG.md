@@ -6,8 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.15.2] - 2024-03-19
 ### Security
 - Update go toolchain to 1.22.1
+- Update github.com/jackc/pgx/v5 dependency from 5.4.3 to 5.5.4
 
 ### Internal
 - Fix sqlserver tests in GitHub Actions workflow
@@ -506,6 +508,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.15.2]: https://github.com/privacybydesign/irmago/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/privacybydesign/irmago/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/privacybydesign/irmago/compare/v0.14.2...v0.15.0
 [0.14.2]: https://github.com/privacybydesign/irmago/compare/v0.14.1...v0.14.2
