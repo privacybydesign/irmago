@@ -1,6 +1,7 @@
 verbose: 2
 
 schemes_path: testdata/irma_configuration
+schemes_assets_path: testdata/irma_configuration # Override default value to prevent dev configuration to be overwritten
 schemes_update: 0
 url: http://localhost:port/
 port: 8081
