@@ -129,9 +129,11 @@ type RedisSettings struct {
 
 	DB int `json:"db,omitempty" mapstructure:"db"`
 
-	TLSCertificate     string `json:"tls_cert,omitempty" mapstructure:"tls_cert"`
-	TLSCertificateFile string `json:"tls_cert_file,omitempty" mapstructure:"tls_cert_file"`
-	DisableTLS         bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
+	TLSCertificate           string `json:"tls_cert,omitempty" mapstructure:"tls_cert"`
+	TLSCertificateFile       string `json:"tls_cert_file,omitempty" mapstructure:"tls_cert_file"`
+	TLSClientCertificateFile string `json:"tls_client_cert_file,omitempty" mapstructure:"tls_client_cert_file"`
+	TLSClientKeyFile         string `json:"tls_client_key_file,omitempty" mapstructure:"tls_client_key_file"`
+	DisableTLS               bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
 }
 
 // Check ensures that the Configuration is loaded, usable and free of errors.
@@ -513,14 +515,28 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	}
 
 	if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
-		cert, err := common.ReadKey(conf.RedisSettings.TLSCertificate, conf.RedisSettings.TLSCertificateFile)
+		caCert, err := common.ReadKey(conf.RedisSettings.TLSCertificate, conf.RedisSettings.TLSCertificateFile)
 		if err != nil {
 			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
 		}
+
 		tlsConfig := &tls.Config{
 			RootCAs: x509.NewCertPool(),
 		}
-		tlsConfig.RootCAs.AppendCertsFromPEM(cert)
+		tlsConfig.RootCAs.AppendCertsFromPEM(caCert)
+
+		if conf.RedisSettings.TLSClientKeyFile != "" || conf.RedisSettings.TLSClientCertificateFile != "" {
+			if conf.RedisSettings.TLSClientKeyFile == "" || conf.RedisSettings.TLSClientCertificateFile == "" {
+				return nil, errors.New("provide either certificate and key or neither of them")
+			}
+
+			cert, err := tls.LoadX509KeyPair(conf.RedisSettings.TLSClientCertificateFile, conf.RedisSettings.TLSClientKeyFile)
+			if err != nil {
+				return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+			}
+
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
 		return tlsConfig, nil
 	}
 
