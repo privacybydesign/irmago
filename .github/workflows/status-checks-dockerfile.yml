@@ -16,7 +16,7 @@ jobs:
   docker-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Build Dockerfile
         run: docker build -t ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }} .
