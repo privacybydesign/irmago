@@ -25,7 +25,7 @@ jobs:
             arch: arm
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Build artifact
         uses: ./.github/actions/build
@@ -35,7 +35,7 @@ jobs:
           arch: ${{ matrix.arch }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: irma-${{ matrix.os }}-${{ matrix.arch }}
           path: ${{ steps.build.outputs.artifact-name }}
@@ -43,7 +43,7 @@ jobs:
   docker-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # We only run the build stage to prevent that the IRMA schemes are downloaded.
       - name: Run Dockerfile build stage
@@ -56,10 +56,10 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
 
@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Run all unit tests
         run: docker-compose run test -v ./...
 
@@ -107,7 +107,7 @@ jobs:
           - v0.13.2
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Run integration test
         uses: ./.github/actions/integration-test
@@ -124,7 +124,7 @@ jobs:
           - f0023141ec429d912e329665f937d05b178a3fee # v0.13.2 (integration test did not exist when version tag was created)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Run integration test
         uses: ./.github/actions/integration-test
@@ -147,10 +147,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
