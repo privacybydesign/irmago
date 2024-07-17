@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.16.0] - 2024-07-17
+### Added
+- Option to configure client mtls redis cert and key for `irma server`, `irma keyshare server` and `irma keyshare myirmaserver`
+
+### Security
+- Update go toolchain to 1.22.5
+- Update github.com/hashicorp/go-retryablehttp dependency from 0.7.1 to 0.7.7
+
+### Internal
+- Phase out deprecated GitHub Actions packages
+
 ## [0.15.2] - 2024-03-19
 ### Security
 - Update go toolchain to 1.22.1
@@ -508,6 +519,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.16.0]: https://github.com/privacybydesign/irmago/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/privacybydesign/irmago/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/privacybydesign/irmago/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/privacybydesign/irmago/compare/v0.14.2...v0.15.0
