@@ -51,7 +51,7 @@ runs:
       shell: bash
 
     - name: Run keyshare server utilities
-      run: docker-compose up -d
+      run: docker compose up -d
       shell: bash
 
     # We add & at the end of each command to run them in the background.

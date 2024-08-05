@@ -94,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run all unit tests
-        run: docker-compose run test -v ./...
+        run: docker compose run test -v ./...
 
   # The integration tests are split into two jobs, one for the client side and one for the server side.
   # They test whether irmago versions with different versions of gabi can interact.
