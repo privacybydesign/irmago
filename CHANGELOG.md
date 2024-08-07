@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Internal
+- Fix docker-compose not being available for test jobs in default GH Actions runner image
+
 ## [0.16.0] - 2024-07-17
 ### Added
 - Option to configure client mtls redis cert and key for `irma server`, `irma keyshare server` and `irma keyshare myirmaserver`
