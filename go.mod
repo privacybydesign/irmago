@@ -15,7 +15,7 @@ require (
 	github.com/go-co-op/gocron v1.28.3
 	github.com/go-errors/errors v1.4.2
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/golang-jwt/jwt/v4 v4.5.0
+	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/mdp/qrterminal v1.0.1
