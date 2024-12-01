@@ -1,6 +1,7 @@
 verbose: 2
 
 schemes_path: testdata/irma_configuration
+schemes_assets_path: testdata/irma_configuration # To prevent assets from Docker image to be used
 schemes_update: 0
 privkeys: testdata/privatekeys
 url: http://localhost:8080/
