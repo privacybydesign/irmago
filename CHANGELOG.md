@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Option to generate and use scheme private keys encrypted with a passphrase
 
+### Changed
+- Use golang version 1.23
+
 ### Security
 - Update go toolchain to 1.23.5
 - Update golang.org/x/crypto to 0.32.0
