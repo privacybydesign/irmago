@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Option to generate and use scheme private keys encrypted with a passphrase
+
+### Security
+- Update go toolchain to 1.23.5
+- Update golang.org/x/crypto to 0.32.0
+
 ### Internal
 - Fix docker-compose not being available for test jobs in default GH Actions runner image
 
