@@ -1,20 +1,25 @@
 package common
 
 import (
+	"bytes"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"encoding/xml"
 	"fmt"
-	"github.com/go-errors/errors"
-	"github.com/privacybydesign/gabi/big"
-	"github.com/sirupsen/logrus"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/go-errors/errors"
+	"github.com/privacybydesign/gabi/big"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/ssh"
 )
 
 var Logger *logrus.Logger
@@ -32,6 +37,8 @@ const (
 	pairingCodeLength  = 4
 
 	SessionTokenRegex = "[" + AlphanumericChars + "]{20}"
+
+	EncryptedSchemePrivateKeyHeader = "ENCRYPTED IRMA SCHEME PRIVATE KEY"
 )
 
 // AssertPathExists returns nil only if it has been successfully
@@ -471,4 +478,26 @@ func ParseNestedLDContext(bts []byte) (string, error) {
 		return "", err
 	}
 	return v.Request.LDContext, nil
+}
+
+func ParseSchemePrivateKeyWithPassphrase(bts []byte, passphrase []byte) (*ecdsa.PrivateKey, error) {
+	// Mask our custom private key header such that the SSH library understands it.
+	sshBts := bytes.Replace(bts, []byte(EncryptedSchemePrivateKeyHeader), []byte("OPENSSH PRIVATE KEY"), 2)
+	key, err := ssh.ParseRawPrivateKeyWithPassphrase(sshBts, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	if ecdsaKey, ok := key.(*ecdsa.PrivateKey); ok {
+		return ecdsaKey, nil
+	}
+	return nil, errors.New("not an ECDSA key")
+}
+
+func MarshalSchemePrivateKeyWithPassphrase(key *ecdsa.PrivateKey, passphrase []byte) ([]byte, error) {
+	pemBlock, err := ssh.MarshalPrivateKeyWithPassphrase(key, "", passphrase)
+	if err != nil {
+		return nil, err
+	}
+	pemBlock.Type = EncryptedSchemePrivateKeyHeader
+	return pem.EncodeToMemory(pemBlock), nil
 }
