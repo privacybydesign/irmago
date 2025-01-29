@@ -2,12 +2,14 @@ package keyshare
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"html/template"
 	"net"
 	"net/mail"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/server"
@@ -15,6 +17,7 @@ import (
 
 type EmailConfiguration struct {
 	EmailServer     string `json:"email_server" mapstructure:"email_server"`
+	EmailHostname   string `json:"email_hostname" mapstructure:"email_hostname"`
 	EmailFrom       string `json:"email_from" mapstructure:"email_from"`
 	DefaultLanguage string `json:"default_language" mapstructure:"default_language"`
 	EmailAuth       smtp.Auth
@@ -126,11 +129,29 @@ func (conf EmailConfiguration) VerifyEmailServer() error {
 		return nil
 	}
 
+	// smtp.Dial does not support timeouts, so we use net.DialTimeout instead.
+	conn, err := net.DialTimeout("tcp", conf.EmailServer, 10*time.Second)
+	if err != nil {
+		return errors.Errorf("failed to connect to email server: %v", err)
+	}
+	conn.Close()
+
 	client, err := smtp.Dial(conf.EmailServer)
 	if err != nil {
 		return errors.Errorf("failed to connect to email server: %v", err)
 	}
+	if conf.EmailHostname != "" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return errors.Errorf("email hostname is specified but email server does not support STARTTLS")
+		}
+		if err := client.StartTLS(&tls.Config{ServerName: conf.EmailHostname}); err != nil {
+			return errors.Errorf("failed to start TLS on connection to email server: %v", err)
+		}
+	}
 	if conf.EmailAuth != nil {
+		if conf.EmailHostname == "" && !strings.HasPrefix(conf.EmailServer, "localhost:") {
+			return errors.Errorf("email authentication is enabled but email server is neither using TLS nor running on localhost")
+		}
 		if err = client.Auth(conf.EmailAuth); err != nil {
 			return errors.Errorf("failed to authenticate to email server: %v", err)
 		}
@@ -150,13 +171,13 @@ func VerifyMXRecord(email string) error {
 
 	host := email[strings.LastIndex(email, "@")+1:]
 
-	if records, err := net.LookupMX(host); err != nil || len(records) == 0 {
-		if err != nil {
-			if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
-				// When DNS is not resolving or there is no active network connection
-				server.Logger.WithField("error", err).Error("No active network connection")
-				return ErrNoNetwork
-			}
+	records, err := net.LookupMX(host)
+
+	if err != nil || len(records) == 0 {
+		if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
+			// When DNS is not resolving or there is no active network connection
+			server.Logger.WithField("error", err).Error("No active network connection")
+			return ErrNoNetwork
 		}
 
 		// Check if there is a valid A or AAAA record which is used as fallback by mailservers
@@ -164,7 +185,20 @@ func VerifyMXRecord(email string) error {
 		if records, err := net.LookupIP(host); err != nil || len(records) == 0 {
 			return ErrInvalidEmailDomain
 		}
-		return nil
 	}
+
+	hasValidHost := false
+	for _, h := range records {
+		// Check if host specified at MX record is valid
+		if addr, err := net.LookupHost(h.Host); err == nil && len(addr) > 0 {
+			hasValidHost = true
+			break
+		}
+	}
+
+	if !hasValidHost {
+		return ErrInvalidEmailDomain
+	}
+
 	return nil
 }

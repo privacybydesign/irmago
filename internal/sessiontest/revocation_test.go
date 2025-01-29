@@ -34,7 +34,7 @@ var (
 	revocationDbStrs = map[string]string{
 		"postgres":  "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable",
 		"mysql":     "testuser:testpassword@tcp(127.0.0.1)/test",
-		"sqlserver": "sqlserver://testuser:test-Password@127.0.0.1:1433?database=test",
+		"sqlserver": "sqlserver://testuser:testpassword@127.0.0.1:1433?database=test",
 	}
 
 	revocationPkCounter uint = 2

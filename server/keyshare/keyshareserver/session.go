@@ -1,9 +1,10 @@
 package keyshareserver
 
 import (
-	"github.com/privacybydesign/gabi"
 	"sync"
 	"time"
+
+	"github.com/privacybydesign/gabi"
 
 	irma "github.com/privacybydesign/irmago"
 )

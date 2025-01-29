@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // signCmd represents the sign command
@@ -140,7 +142,17 @@ func readPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	return signed.UnmarshalPemPrivateKey(bts)
+	if bytes.Contains(bts, []byte(common.EncryptedSchemePrivateKeyHeader)) {
+		fmt.Print("Enter passphrase: ")
+		passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Println()
+		if err != nil {
+			return nil, err
+		}
+		return common.ParseSchemePrivateKeyWithPassphrase(bts, passphrase)
+	} else {
+		return signed.UnmarshalPemPrivateKey(bts)
+	}
 }
 
 func calculateFileHash(id, confpath, path string, info os.FileInfo, index irma.SchemeManagerIndex, typ irma.SchemeType) error {

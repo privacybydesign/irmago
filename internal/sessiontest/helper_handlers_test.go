@@ -139,7 +139,10 @@ func (th TestHandler) RequestVerificationPermission(request *irma.DisclosureRequ
 	if th.wait != 0 {
 		time.Sleep(th.wait)
 	}
-	callback(true, &choice)
+	// Do callback asynchronously to simulate user giving permission.
+	time.AfterFunc(100*time.Millisecond, func() {
+		callback(true, &choice)
+	})
 }
 func (th TestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, ServerName *irma.RequestorInfo, callback irmaclient.PermissionHandler) {
 	th.RequestVerificationPermission(&request.DisclosureRequest, satisfiable, candidates, ServerName, callback)
@@ -148,10 +151,16 @@ func (th TestHandler) RequestSignaturePermission(request *irma.SignatureRequest,
 	th.RequestVerificationPermission(&request.DisclosureRequest, satisfiable, candidates, ServerName, callback)
 }
 func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
-	callback(true)
+	// Do callback asynchronously to simulate user giving permission.
+	time.AfterFunc(100*time.Millisecond, func() {
+		callback(true)
+	})
 }
 func (th TestHandler) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
-	callback(true, "12345")
+	// Do callback asynchronously to simulate user entering pin.
+	time.AfterFunc(100*time.Millisecond, func() {
+		callback(true, "12345")
+	})
 }
 func (th TestHandler) PairingRequired(pairingCode string) {
 	// Send pairing code via channel to calling test. This is done such that

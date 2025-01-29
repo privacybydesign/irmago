@@ -57,14 +57,33 @@ func init() {
 	flags.Int("db-max-idle-time", 0, "Time in seconds after which idle database connections are closed (default unlimited)")
 	flags.Int("db-max-open-time", 0, "Maximum lifetime in seconds of open database connections (default unlimited)")
 
+	headers["store-type"] = "Session store configuration"
+	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
+	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
+	flags.StringSlice("redis-sentinel-addrs", nil, "Redis Sentinel addresses, to be specified as host:port")
+	flags.String("redis-sentinel-master-name", "", "Redis Sentinel master name")
+	flags.Bool("redis-accept-inconsistency-risk", false, "accept the risk of inconsistent session state when using Redis Sentinel")
+	flags.String("redis-username", "", "Redis server username (when using ACLs)")
+	flags.String("redis-pw", "", "Redis server password")
+	flags.String("redis-sentinel-username", "", "Redis Sentinel username (when using ACLs)")
+	flags.String("redis-sentinel-pw", "", "Redis Sentinel password")
+	flags.Bool("redis-allow-empty-password", false, "explicitly allow an empty string as Redis password")
+	flags.Bool("redis-acl-use-key-prefixes", false, "if enabled all Redis keys will be prefixed with the username for ACLs (username:key)")
+	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
+	flags.String("redis-tls-cert", "", "use Redis TLS with specific certificate or certificate authority")
+	flags.String("redis-tls-cert-file", "", "use Redis TLS path to specific certificate or certificate authority")
+	flags.String("redis-tls-client-key-file", "", "use Redis mTLS with specified client path")
+	flags.String("redis-tls-client-cert-file", "", "use Redis mTLS with specified client certificate path")
+	flags.Bool("redis-no-tls", false, "disable Redis TLS (by default, Redis TLS is enabled with the system certificate pool)")
+
 	headers["jwt-privkey"] = "Cryptographic keys"
 	flags.String("jwt-privkey", "", "Private jwt key of keyshare server")
 	flags.String("jwt-privkey-file", "", "Path to file containing private jwt key of keyshare server")
 	flags.Int("jwt-privkey-id", 0, "Key identifier of keyshare server public key matching used private key")
 	flags.String("jwt-issuer", keysharecore.JWTIssuerDefault, "JWT issuer used in \"iss\" field")
 	flags.Int("jwt-pin-expiry", keysharecore.JWTPinExpiryDefault, "Expiry of PIN JWT in seconds")
-	flags.String("storage-primary-keyfile", "", "Primary key used for encrypting and decrypting secure containers")
-	flags.StringSlice("storage-fallback-keyfile", nil, "Fallback key(s) used to decrypt older secure containers")
+	flags.String("storage-primary-key-file", "", "Primary key used for encrypting and decrypting secure containers")
+	flags.String("storage-fallback-keys-dir", "", "Directory containing fallback key(s) used to decrypt older secure containers (only .key files are considered; the storage primary key file and hidden files are ignored)")
 
 	headers["keyshare-attribute"] = "Keyshare server attribute issued during registration"
 	flags.String("keyshare-attribute", "", "Attribute identifier that contains username")
@@ -98,9 +117,14 @@ func init() {
 func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration, error) {
 	readConfig(cmd, "keyshareserver", "keyshareserver", []string{".", "/etc/keyshareserver"}, nil)
 
+	irmaServerConf, err := configureIRMAServer()
+	if err != nil {
+		return nil, err
+	}
+
 	// And build the configuration
 	conf := &keyshareserver.Configuration{
-		Configuration:      configureIRMAServer(),
+		Configuration:      irmaServerConf,
 		EmailConfiguration: configureEmail(),
 
 		DBType:            keyshareserver.DBType(viper.GetString("db_type")),
@@ -110,13 +134,13 @@ func configureKeyshareServer(cmd *cobra.Command) (*keyshareserver.Configuration,
 		DBConnMaxIdleTime: viper.GetInt("db_max_idle_time"),
 		DBConnMaxOpenTime: viper.GetInt("db_max_open_time"),
 
-		JwtKeyID:                viper.GetUint32("jwt_privkey_id"),
-		JwtPrivateKey:           viper.GetString("jwt_privkey"),
-		JwtPrivateKeyFile:       viper.GetString("jwt_privkey_file"),
-		JwtIssuer:               viper.GetString("jwt_issuer"),
-		JwtPinExpiry:            viper.GetInt("jwt_pin_expiry"),
-		StoragePrimaryKeyFile:   viper.GetString("storage_primary_key_file"),
-		StorageFallbackKeyFiles: viper.GetStringSlice("storage_fallback_key_file"),
+		JwtKeyID:               viper.GetUint32("jwt_privkey_id"),
+		JwtPrivateKey:          viper.GetString("jwt_privkey"),
+		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
+		JwtIssuer:              viper.GetString("jwt_issuer"),
+		JwtPinExpiry:           viper.GetInt("jwt_pin_expiry"),
+		StoragePrimaryKeyFile:  viper.GetString("storage_primary_key_file"),
+		StorageFallbackKeysDir: viper.GetString("storage_fallback_keys_dir"),
 
 		KeyshareAttribute: irma.NewAttributeTypeIdentifier(viper.GetString("keyshare_attribute")),
 

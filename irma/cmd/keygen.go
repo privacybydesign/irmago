@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -12,6 +13,7 @@ import (
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // keygenCmd represents the keygen command
@@ -25,6 +27,10 @@ var keygenCmd = &cobra.Command{
 			return err
 		}
 		pkfile, err := cmd.Flags().GetString("publickey")
+		if err != nil {
+			return err
+		}
+		usePassphrase, err := cmd.Flags().GetBool("pass")
 		if err != nil {
 			return err
 		}
@@ -44,9 +50,21 @@ var keygenCmd = &cobra.Command{
 		}
 
 		// Marshal keys
-		pemEncoded, err := signed.MarshalPemPrivateKey(key)
-		if err != nil {
-			return err
+		var pemEncoded []byte
+		if usePassphrase {
+			passphrase, err := promptForNewPassphrase()
+			if err != nil {
+				return err
+			}
+			pemEncoded, err = common.MarshalSchemePrivateKeyWithPassphrase(key, passphrase)
+			if err != nil {
+				return err
+			}
+		} else {
+			pemEncoded, err = signed.MarshalPemPrivateKey(key)
+			if err != nil {
+				return err
+			}
 		}
 		pemEncodedPub, err := signed.MarshalPemPublicKey(&key.PublicKey)
 		if err != nil {
@@ -67,8 +85,28 @@ var keygenCmd = &cobra.Command{
 	},
 }
 
+func promptForNewPassphrase() ([]byte, error) {
+	fmt.Print("Enter passphrase for new key: ")
+	passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return nil, err
+	}
+	fmt.Print("Confirm passphrase: ")
+	confirmedPassphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(passphrase, confirmedPassphrase) {
+		return nil, errors.New("passphrases did not match")
+	}
+	return passphrase, nil
+}
+
 func init() {
 	schemeCmd.AddCommand(keygenCmd)
 	keygenCmd.Flags().StringP("privatekey", "s", "sk.pem", "filename for private key")
 	keygenCmd.Flags().StringP("publickey", "p", "pk.pem", "filename for public key")
+	keygenCmd.Flags().Bool("pass", false, "ask for a passphrase to encrypt the private key")
 }
