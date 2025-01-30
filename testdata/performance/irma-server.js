@@ -2,6 +2,7 @@ import { check, fail, sleep } from 'k6';
 import http from 'k6/http';
 
 const url = __ENV.URL;
+const token = __ENV.TOKEN;
 
 export const options = {
   minIterationDuration: '30s',
@@ -31,6 +32,7 @@ export default function () {
   }), {
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': token,
     },
   });
   checkResponse(newSessionResp);
@@ -46,7 +48,7 @@ export default function () {
 
   const sessionResp = http.get(sessionPtrUrl, {
     headers: {
-      'Authorization': '12345',
+      'Authorization': token,
       'X-IRMA-MinProtocolVersion': '2.8',
       'X-IRMA-MaxProtocolVersion': '2.8',
     },

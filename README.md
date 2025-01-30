@@ -127,10 +127,12 @@ First, you need to install `k6`:
 The performance tests of the `irma server` can be started in the following way:
 
     k6 run ./testdata/performance/irma-server.js --env URL=http://localhost:8088
+    k6 run ./testdata/performance/irma-server.js --env URL=https://is.staging.yivi.app --env TOKEN=<redacted>
 
 The performance tests of the keyshare server can be started in the following way:
 
     k6 run ./testdata/performance/keyshare-server.js --env URL=http://localhost:8080 --env ISSUER_ID=test.test
+    k6 run ./testdata/performance/keyshare-server.js --env URL=https://keyshare.staging.yivi.app --env ISSUER_ID=pbdf-staging.pbdf
 
 By default, k6 runs a single test iteration using 1 virtual user. These defaults can be adjusted by specifying test stages using the [`-s` CLI parameter](https://k6.io/docs/using-k6/options/#stages).
 
