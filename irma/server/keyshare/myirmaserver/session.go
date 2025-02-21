@@ -94,17 +94,12 @@ func (s *redisSessionStore) add(ctx context.Context, ses session) error {
 	if ttl <= 0 {
 		return errors.New("session expiry time is in the past")
 	}
-	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		_, err := tx.Pipelined(ctx, func(p redis.Pipeliner) error {
-			return p.Set(
-				ctx,
-				s.client.KeyPrefix+sessionLookupPrefix+ses.Token,
-				string(bytes),
-				ttl,
-			).Err()
-		})
-		return err
-	}); err != nil {
+	if err := s.client.Set(
+		ctx,
+		s.client.KeyPrefix+sessionLookupPrefix+ses.Token,
+		string(bytes),
+		ttl,
+	).Err(); err != nil {
 		s.logger.WithError(err).Error("failed to add session")
 		return errRedis
 	}
