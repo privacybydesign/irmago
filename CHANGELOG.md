@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Use golang version 1.23
+- Don't wait for at least one Redis replica anymore when using Redis Sentinel mode
+
+### Fixed
+- Redis write actions not discarded when a conflict occurs due to optimistic locking
 
 ### Security
 - Update go toolchain to 1.23.5
