@@ -253,24 +253,21 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 	if ttl <= 0 {
 		return &RedisError{errors.New("session ttl is in the past")}
 	}
-	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		_, err := tx.TxPipelined(ctx, func(p redis.Pipeliner) error {
-			if err := p.Set(
-				ctx,
-				s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken),
-				string(session.ClientToken),
-				ttl,
-			).Err(); err != nil {
-				return err
-			}
-			return p.Set(
-				ctx,
-				s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken),
-				sessionJSON,
-				ttl,
-			).Err()
-		})
-		return err
+	if _, err := s.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
+		if err := p.Set(
+			ctx,
+			s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken),
+			string(session.ClientToken),
+			ttl,
+		).Err(); err != nil {
+			return err
+		}
+		return p.Set(
+			ctx,
+			s.client.KeyPrefix+clientTokenLookupPrefix+string(session.ClientToken),
+			sessionJSON,
+			ttl,
+		).Err()
 	}); err != nil {
 		return &RedisError{err}
 	}
