@@ -9,7 +9,7 @@ keyshare_attribute: test.test.mijnirma.email
 
 db_str: postgresql://testuser:testpassword@postgres.localhost:5432/test
 
-jwt_privkey_file: testdata/jwtkeys/kss-sk.pem
+jwt_privkey_file: testdata/jwtkeys/test-kss-sk-0.pem
 storage_primary_key_file: testdata/keyshareStorageTestkey
 
 email_server: mailhog.localhost:1025
