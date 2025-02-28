@@ -17,9 +17,9 @@ func TestKeyshareChangePin(t *testing.T) {
 	testSchemeID := irma.NewSchemeManagerIdentifier("test")
 	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
 
-	ks1 := testkeyshare.StartKeyshareServer(t, irma.Logger, testSchemeID)
+	ks1 := testkeyshare.StartKeyshareServer(t, irma.Logger, testSchemeID, 0)
 	defer ks1.Stop()
-	ks2 := testkeyshare.StartKeyshareServer(t, irma.Logger, test2SchemeID)
+	ks2 := testkeyshare.StartKeyshareServer(t, irma.Logger, test2SchemeID, 0)
 	defer ks2.Stop()
 
 	client, handler := parseStorage(t)
@@ -45,14 +45,14 @@ func TestKeyshareChangePin(t *testing.T) {
 }
 
 func TestKeyshareChangePinFailed(t *testing.T) {
-	ks1 := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"))
+	ks1 := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	ks1Stopped := false
 	defer func() {
 		if !ks1Stopped {
 			ks1.Stop()
 		}
 	}()
-	ks2 := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test2"))
+	ks2 := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test2"), 0)
 	defer ks2.Stop()
 
 	client, handler := parseStorage(t)
@@ -76,7 +76,7 @@ func TestKeyshareChangePinFailed(t *testing.T) {
 }
 
 func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
-	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"))
+	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer ks.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
@@ -106,7 +106,7 @@ func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 }
 
 func TestKeyshareAuthentication(t *testing.T) {
-	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"))
+	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer ks.Stop()
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)

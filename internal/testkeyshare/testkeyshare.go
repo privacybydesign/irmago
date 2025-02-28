@@ -23,7 +23,7 @@ type KeyshareServer struct {
 	t *testing.T
 }
 
-func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier) *KeyshareServer {
+func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) *KeyshareServer {
 	db := keyshareserver.NewMemoryDB()
 	err := db.AddUser(context.Background(), &keyshareserver.User{
 		Username: "",
@@ -64,8 +64,8 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeMan
 			URL:                   parsedURL.String(),
 		},
 		DB:                    db,
-		JwtKeyID:              0,
-		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
+		JwtKeyID:              jwtKeyID,
+		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", fmt.Sprintf("%s-kss-sk-%d.pem", schemeID, jwtKeyID)),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareAttribute:     keyshareAttr,
 	})

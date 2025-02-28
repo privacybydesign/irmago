@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
+	"strconv"
 	"time"
 
 	"github.com/privacybydesign/gabi"
@@ -91,7 +92,7 @@ func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 		"exp":      t.Add(time.Duration(c.jwtPinExpiry) * time.Second).Unix(),
 		"token_id": base64.StdEncoding.EncodeToString(s.ID),
 	})
-	token.Header["kid"] = c.jwtPrivateKeyID
+	token.Header["kid"] = strconv.Itoa(int(c.jwtPrivateKeyID))
 	return token.SignedString(c.jwtPrivateKey)
 }
 
@@ -300,7 +301,7 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 		"sub":    "ProofP",
 		"iss":    c.jwtIssuer,
 	})
-	token.Header["kid"] = c.jwtPrivateKeyID
+	token.Header["kid"] = strconv.Itoa(int(c.jwtPrivateKeyID))
 	return token.SignedString(c.jwtPrivateKey)
 }
 
@@ -363,7 +364,7 @@ func (c *Core) GenerateResponseV2(
 		"sub":    "ProofP",
 		"iss":    c.jwtIssuer,
 	})
-	token.Header["kid"] = c.jwtPrivateKeyID
+	token.Header["kid"] = strconv.Itoa(int(c.jwtPrivateKeyID))
 	return token.SignedString(c.jwtPrivateKey)
 }
 

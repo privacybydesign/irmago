@@ -13,6 +13,6 @@
 	<KeyshareServer>http://localhost:8080</KeyshareServer>
 	<KeyshareWebsite>http://localhost:8081</KeyshareWebsite>
 	<KeyshareAttribute>test.test.mijnirma.email</KeyshareAttribute>
-	<TimestampServer>https://irma.sidn.nl/atumd/</TimestampServer>
+	<TimestampServer>https://atumd.staging.yivi.app/</TimestampServer>
 	<Contact>https://privacybydesign.foundation/</Contact>
 </SchemeManager>

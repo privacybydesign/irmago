@@ -42,7 +42,8 @@ services:
     ports:
       - 3306:3306
   sqlserver:
-    image: kcollins/mssql:2019-latest
+    image: kcollins/mssql:2022-latest
+    platform: linux/amd64
     environment:
       ACCEPT_EULA: Y # Confirms your acceptance of the End-User Licensing Agreement.
       MSSQL_RANDOM_SA_PASSWORD: Y
