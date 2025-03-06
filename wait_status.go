@@ -32,8 +32,8 @@ func subscribeSSE(transport *HTTPTransport, statuschan chan ServerStatus, errorc
 		for {
 			e, open := <-events
 
-            // events channel is closed because sseclient.Notify failed
-            // if we don't return here, there will be endless nils and we're stuck in an infinite loop
+			// events channel is closed because sseclient.Notify failed
+			// if we don't return here, there will be endless nils and we're stuck in an infinite loop
 			if !open {
 				return
 			}
