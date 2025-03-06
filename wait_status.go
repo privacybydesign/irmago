@@ -30,7 +30,14 @@ func subscribeSSE(transport *HTTPTransport, statuschan chan ServerStatus, errorc
 	cancelled := false
 	go func() {
 		for {
-			e := <-events
+			e, open := <-events
+
+            // events channel is closed because sseclient.Notify failed
+            // if we don't return here, there will be endless nils and we're stuck in an infinite loop
+			if !open {
+				return
+			}
+
 			if e == nil || e.Type == "open" {
 				continue
 			}
@@ -46,6 +53,7 @@ func subscribeSSE(transport *HTTPTransport, statuschan chan ServerStatus, errorc
 	}()
 
 	err := sseclient.Notify(ctx, transport.Server+"statusevents", true, events)
+
 	// When sse was cancelled, an error is expected to be returned. The channels are already closed then.
 	if cancelled {
 		return nil
@@ -80,7 +88,10 @@ func poll(transport *HTTPTransport, initialStatus ServerStatus, statuschan chan 
 
 func pollUntilChange(transport *HTTPTransport, initialStatus ServerStatus, statuschan chan ServerStatus, errorchan chan error) {
 	// First we wait
-	<-time.NewTimer(pollInterval).C
+	timer := time.NewTimer(pollInterval)
+	defer timer.Stop()
+
+	<-timer.C
 
 	// Get session status
 	var s string
