@@ -118,6 +118,10 @@ func (s *Server) Handler() http.Handler {
 
 		s.routeHandler(router)
 
+		router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			server.WriteString(w, "OK")
+		})
+
 		router.Route("/api/v1", func(r chi.Router) {
 			s.routeHandler(r)
 		})

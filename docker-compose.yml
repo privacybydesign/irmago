@@ -42,13 +42,14 @@ services:
     ports:
       - 3306:3306
   sqlserver:
-    image: kcollins/mssql:2019-latest
+    image: kcollins/mssql:2022-latest
+    platform: linux/amd64
     environment:
       ACCEPT_EULA: Y # Confirms your acceptance of the End-User Licensing Agreement.
-      SA_PASSWORD: test-Password # Include dash and uppercase letter to meet password requirements.
+      MSSQL_RANDOM_SA_PASSWORD: Y
       MSSQL_DATABASE: test
       MSSQL_USER: testuser
-      MSSQL_PASSWORD: test-Password
+      MSSQL_PASSWORD: testpassword
       MSSQL_PID: Developer
     ports:
       - 1433:1433

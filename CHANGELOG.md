@@ -5,6 +5,89 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Internal
+- Dev: make sure keyshare and myirmaserver don't crash when using example configuration 
+
+### Added
+- Option to generate and use scheme private keys encrypted with a passphrase
+
+### Changed
+- Use golang version 1.23
+
+### Fixed
+- Key ID not being set correctly in keyshare JWTs
+- Infinite loop in SSE go-routine in sessions with pairing mode enabled
+
+### Security
+- Update go toolchain to 1.23.5
+- Update golang.org/x/crypto to 0.32.0
+
+### Internal
+- Fix docker-compose not being available for test jobs in default GH Actions runner image
+
+## [0.16.0] - 2024-07-17
+### Added
+- Option to configure client mtls redis cert and key for `irma server`, `irma keyshare server` and `irma keyshare myirmaserver`
+
+### Security
+- Update go toolchain to 1.22.5
+- Update github.com/hashicorp/go-retryablehttp dependency from 0.7.1 to 0.7.7
+
+### Internal
+- Phase out deprecated GitHub Actions packages
+
+## [0.15.2] - 2024-03-19
+### Security
+- Update go toolchain to 1.22.1
+- Update github.com/jackc/pgx/v5 dependency from 5.4.3 to 5.5.4
+
+### Internal
+- Fix sqlserver tests in GitHub Actions workflow
+
+## [0.15.1] - 2023-12-18
+### Fixed
+- `RemoveScheme` function in `irmaclient` already stripping storage before checking whether the scheme is in assets
+
+### Security
+- Update go toolchain to 1.21.5
+
+## [0.15.0] - 2023-12-11
+### Added
+- Support for Redis in Sentinel mode
+- Redis support for `irma keyshare server` and `irma keyshare myirmaserver`
+- `/health` endpoint for `irma server`, `irma keyshare server` and `irma keyshare myirmaserver`
+- `RemoveRequestorScheme` function in `irmaclient` to remove a requestor scheme from the `irma_configuration` directory
+
+### Changed
+- Using optimistic locking in the `irma server` instead of pessimistic locking
+- `storage-fallback-key-file` option of `irma keyshare server` being replaced by `storage-fallback-keys-dir` option
+
+### Fixed
+- HTTP cookies not stored in `irmaclient` when received from a `Set-Cookie` header
+- Invalid hostname specified in MX record bypasses e-mail address revalidation
+- Background revocation tasks not stopped when closing an `irmaclient`
+- `RemoveScheme` function in `irmaclient` not deleting issuer schemes without a keyshare server ([#260](https://github.com/privacybydesign/irmago/issues/260))
+
+### Internal
+- Fixed issue with expired `irma-demo.MijnOverheid` key in testdata
+- Always use testdata of current branch for integration-test jobs in GitHub Actions workflow
+
+## [0.14.2] - 2023-10-25
+### Fixed
+- IRMA session gets stuck in communicating status when user is requested to confirm PIN in `irmaclient`
+
+## [0.14.1] - 2023-10-18
+### Fixed
+- Improve stability of database drivers by bumping their versions
+
+### Security
+- Use Go toolchain version 1.21.3 for building `irma` CLI tool
+
+### Internal
+- Fixed failing tests due to expired test.test2 idemix key
+
+## [0.14.0] - 2023-10-02
+Note for users of the `irmaclient` package (e.g. maintainers of the [Yivi app](https://github.com/privacybydesign/irmamobile)): the `KeyshareVerifyPin` function requires the renewal endpoint for the keyshare attribute to be present. Therefore, this version should first be deployed on keyshare servers before the client side can be upgraded.
 ### Added
 - Option `skipExpiryCheck` in disclosure requests to allow disclosure of expired credentials (e.g. `"skipExpiryCheck": ["irma-demo.sidn-pbdf.email"]`)
 - Option `host` in session request to overrule host name in IRMA QR if permission has been granted (see below)
@@ -455,6 +538,13 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.16.0]: https://github.com/privacybydesign/irmago/compare/v0.15.2...v0.16.0
+[0.15.2]: https://github.com/privacybydesign/irmago/compare/v0.15.1...v0.15.2
+[0.15.1]: https://github.com/privacybydesign/irmago/compare/v0.15.0...v0.15.1
+[0.15.0]: https://github.com/privacybydesign/irmago/compare/v0.14.2...v0.15.0
+[0.14.2]: https://github.com/privacybydesign/irmago/compare/v0.14.1...v0.14.2
+[0.14.1]: https://github.com/privacybydesign/irmago/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/privacybydesign/irmago/compare/v0.13.3...v0.14.0
 [0.13.3]: https://github.com/privacybydesign/irmago/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/privacybydesign/irmago/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/privacybydesign/irmago/compare/v0.13.0...v0.13.1

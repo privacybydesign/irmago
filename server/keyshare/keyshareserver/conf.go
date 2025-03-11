@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"html/template"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -49,8 +51,8 @@ type Configuration struct {
 	JwtPrivateKey     string `json:"jwt_privkey" mapstructure:"jwt_privkey"`
 	JwtPrivateKeyFile string `json:"jwt_privkey_file" mapstructure:"jwt_privkey_file"`
 	// Decryption keys used for user secrets
-	StorageFallbackKeyFiles []string `json:"storage_fallback_key_files" mapstructure:"storage_fallback_key_files"`
-	StoragePrimaryKeyFile   string   `json:"storage_primary_key_file" mapstructure:"storage_primary_key_file"`
+	StorageFallbackKeysDir string `json:"storage_fallback_keys_dir" mapstructure:"storage_fallback_keys_dir"`
+	StoragePrimaryKeyFile  string `json:"storage_primary_key_file" mapstructure:"storage_primary_key_file"`
 
 	// Keyshare attribute to issue during registration
 	KeyshareAttribute irma.AttributeTypeIdentifier `json:"keyshare_attribute" mapstructure:"keyshare_attribute"`
@@ -161,7 +163,11 @@ func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to read keyshare server jwt key", 0))
 	}
-	decKeyID, decKey, err := readAESKey(conf.StoragePrimaryKeyFile)
+	storagePrimaryKeyFilePath, err := filepath.Abs(conf.StoragePrimaryKeyFile)
+	if err != nil {
+		return nil, server.LogError(errors.WrapPrefix(err, "failed to get absolute path of primary storage key", 0))
+	}
+	decKeyID, decKey, err := readAESKey(storagePrimaryKeyFilePath)
 	if err != nil {
 		return nil, server.LogError(errors.WrapPrefix(err, "failed to load primary storage key", 0))
 	}
@@ -174,12 +180,32 @@ func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 		JWTIssuer:       conf.JwtIssuer,
 		JWTPinExpiry:    conf.JwtPinExpiry,
 	})
-	for _, keyFile := range conf.StorageFallbackKeyFiles {
-		id, key, err := readAESKey(keyFile)
+	if conf.StorageFallbackKeysDir != "" {
+		dirEntries, err := os.ReadDir(conf.StorageFallbackKeysDir)
 		if err != nil {
-			return nil, server.LogError(errors.WrapPrefix(err, "failed to load fallback key "+keyFile, 0))
+			return nil, server.LogError(errors.WrapPrefix(err, "failed to read fallback keys directory", 0))
 		}
-		core.DangerousAddDecryptionKey(id, key)
+		for _, dirEntry := range dirEntries {
+			if dirEntry.IsDir() || !strings.HasSuffix(dirEntry.Name(), ".key") || strings.HasPrefix(dirEntry.Name(), ".") {
+				conf.Logger.Warnf("Ignoring storage fallback key file %s", dirEntry.Name())
+				continue
+			}
+
+			pth, err := filepath.Abs(path.Join(conf.StorageFallbackKeysDir, dirEntry.Name()))
+			if err != nil {
+				return nil, server.LogError(errors.WrapPrefix(err, "failed to get absolute path of fallback key "+dirEntry.Name(), 0))
+			}
+			if pth == storagePrimaryKeyFilePath {
+				conf.Logger.Debugf("Skipping primary storage key %s as fallback key", dirEntry.Name())
+				continue
+			}
+
+			id, key, err := readAESKey(pth)
+			if err != nil {
+				return nil, server.LogError(errors.WrapPrefix(err, "failed to load fallback key "+dirEntry.Name(), 0))
+			}
+			core.DangerousAddDecryptionKey(id, key)
+		}
 	}
 
 	return core, nil

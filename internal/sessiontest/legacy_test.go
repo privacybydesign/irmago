@@ -75,7 +75,7 @@ func TestWithoutPairingSupport(t *testing.T) {
 }
 
 func TestLinkableKeyshareResponse(t *testing.T) {
-	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 	client, handler := parseStorage(t, optionLinkableKeyshareResponse)
 	defer test.ClearTestStorage(t, client, handler.storage)

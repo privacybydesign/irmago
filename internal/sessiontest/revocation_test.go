@@ -1,6 +1,9 @@
 //go:build !local_tests
 // +build !local_tests
 
+// Workaround debug directive for https://github.com/microsoft/mssql-docker/issues/895
+//go:debug x509negativeserial=1
+
 package sessiontest
 
 import (
@@ -34,7 +37,7 @@ var (
 	revocationDbStrs = map[string]string{
 		"postgres":  "host=127.0.0.1 port=5432 user=testuser dbname=test password='testpassword' sslmode=disable",
 		"mysql":     "testuser:testpassword@tcp(127.0.0.1)/test",
-		"sqlserver": "sqlserver://testuser:test-Password@127.0.0.1:1433?database=test",
+		"sqlserver": "sqlserver://testuser:testpassword@127.0.0.1:1433?database=test",
 	}
 
 	revocationPkCounter uint = 2
@@ -724,7 +727,7 @@ func TestKeyshareRevocation(t *testing.T) {
 	t.Run("Keyshare", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
-		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 		defer keyshareServer.Stop()
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, client, handler.storage)
@@ -735,7 +738,7 @@ func TestKeyshareRevocation(t *testing.T) {
 	t.Run("Both", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
-		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 		defer keyshareServer.Stop()
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, client, handler.storage)
@@ -747,7 +750,7 @@ func TestKeyshareRevocation(t *testing.T) {
 	t.Run("KeyshareMultipleCredentials", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
-		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"))
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 		defer keyshareServer.Stop()
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, client, handler.storage)

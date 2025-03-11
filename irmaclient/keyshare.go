@@ -166,7 +166,9 @@ func newKeyshareSession(
 	}
 
 	ks.sessionHandler.KeysharePin()
-	return ks, ks.VerifyPin(-1)
+	authenticated := make(chan bool, 1)
+	ks.VerifyPin(-1, authenticated)
+	return ks, <-authenticated
 }
 
 func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
@@ -216,29 +218,37 @@ func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error)
 
 // VerifyPin asks for a pin, repeatedly if necessary, informing the handler of success or failure.
 // It returns whether the authentication was successful or not.
-func (ks *keyshareSession) VerifyPin(attempts int) bool {
+func (ks *keyshareSession) VerifyPin(attempts int, authenticated chan bool) {
 	ks.pinRequestor.RequestPin(attempts, PinHandler(func(proceed bool, pin string) {
 		if !proceed {
 			ks.sessionHandler.KeyshareCancelled()
+			authenticated <- false
 			return
 		}
 		success, attemptsRemaining, blocked, manager, err := ks.verifyPinAttempt(pin)
 		if err != nil {
 			ks.sessionHandler.KeyshareError(&manager, err)
+			authenticated <- false
 			return
 		}
 		if blocked != 0 {
 			ks.sessionHandler.KeyshareBlocked(manager, blocked)
+			authenticated <- false
 			return
 		}
 		if success {
-			ks.sessionHandler.KeysharePinOK()
+			if ok := ks.keyshareServer.tokenValid(ks.client.Configuration); ok {
+				ks.sessionHandler.KeysharePinOK()
+				authenticated <- true
+			} else {
+				ks.sessionHandler.KeyshareError(&manager, errors.New("keyshare token invalid after successful authentication"))
+				authenticated <- false
+			}
 			return
 		}
 		// Not successful but no error and not yet blocked: try again
-		ks.VerifyPin(attemptsRemaining)
+		ks.VerifyPin(attemptsRemaining, authenticated)
 	}))
-	return ks.keyshareServer.tokenValid(ks.client.Configuration)
 }
 
 // challengeRequestJWTExpiry is the expiry of the JWT sent to the keyshareserver at
@@ -410,8 +420,9 @@ func (ks *keyshareSession) GetCommitments() {
 				// (but only if we did not ask for a PIN earlier)
 				ks.pinCheck = false
 				ks.sessionHandler.KeysharePin()
-				authenticated := ks.VerifyPin(-1)
-				if authenticated {
+				authenticated := make(chan bool, 1)
+				ks.VerifyPin(-1, authenticated)
+				if <-authenticated {
 					ks.GetCommitments()
 				}
 				return

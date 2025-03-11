@@ -1,6 +1,7 @@
 verbose: 2
 
 schemes_path: testdata/irma_configuration
+schemes_assets_path: testdata/irma_configuration # Override default value to prevent dev configuration to be overwritten
 schemes_update: 0
 privkeys: testdata/privatekeys
 url: http://localhost:8080/
@@ -9,7 +10,7 @@ keyshare_attribute: test.test.mijnirma.email
 
 db_str: postgresql://testuser:testpassword@postgres.localhost:5432/test
 
-jwt_privkey_file: testdata/jwtkeys/kss-sk.pem
+jwt_privkey_file: testdata/jwtkeys/test-kss-sk-0.pem
 storage_primary_key_file: testdata/keyshareStorageTestkey
 
 email_server: mailhog.localhost:1025
