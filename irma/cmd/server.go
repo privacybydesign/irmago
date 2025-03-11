@@ -136,6 +136,8 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.Int("redis-db", 0, "database to be selected after connecting to the server (default 0)")
 	flags.String("redis-tls-cert", "", "use Redis TLS with specific certificate or certificate authority")
 	flags.String("redis-tls-cert-file", "", "use Redis TLS path to specific certificate or certificate authority")
+	flags.String("redis-tls-client-key-file", "", "use Redis mTLS with specified client key path")
+	flags.String("redis-tls-client-cert-file", "", "use Redis mTLS with specified client certificate path")
 	flags.Bool("redis-no-tls", false, "disable Redis TLS (by default, Redis TLS is enabled with the system certificate pool)")
 
 	headers["jwt-issuer"] = "JWT configuration"

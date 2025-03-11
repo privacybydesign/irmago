@@ -96,6 +96,9 @@ func configureIRMAServer() (*server.Configuration, error) {
 
 		conf.RedisSettings.TLSCertificate = viper.GetString("redis_tls_cert")
 		conf.RedisSettings.TLSCertificateFile = viper.GetString("redis_tls_cert_file")
+		conf.RedisSettings.TLSClientKeyFile = viper.GetString("redis_tls_client_key_file")
+		conf.RedisSettings.TLSClientCertificateFile = viper.GetString("redis_tls_client_cert_file")
+
 		conf.RedisSettings.DisableTLS = viper.GetBool("redis_no_tls")
 	}
 	return conf, nil

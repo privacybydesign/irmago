@@ -20,7 +20,7 @@ func validConf(t *testing.T) *Configuration {
 		},
 		DBType:                DBTypeMemory,
 		JwtKeyID:              0,
-		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
+		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "test-kss-sk-0.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareAttribute:     irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
 		EmailTokenValidity:    168,
@@ -44,7 +44,7 @@ func TestConf(t *testing.T) {
 	assert.Error(t, err)
 
 	conf = validConf(t)
-	conf.JwtPrivateKeyFile = filepath.Join(testdataPath, "jwtkeys", "kss-sk-does-not-exist.pem")
+	conf.JwtPrivateKeyFile = filepath.Join(testdataPath, "jwtkeys", "test-kss-sk-does-not-exist.pem")
 	_, err = New(conf)
 	assert.Error(t, err)
 
@@ -54,7 +54,7 @@ func TestConf(t *testing.T) {
 	assert.Error(t, err)
 
 	conf = validConf(t)
-	conf.StoragePrimaryKeyFile = filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem")
+	conf.StoragePrimaryKeyFile = filepath.Join(testdataPath, "jwtkeys", "test-kss-sk-0.pem")
 	_, err = New(conf)
 	assert.Error(t, err)
 

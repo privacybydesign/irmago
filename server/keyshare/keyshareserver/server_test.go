@@ -481,7 +481,7 @@ func StartKeyshareServer(t *testing.T, db DB, emailserver string) (*Server, *htt
 		},
 		DB:                    db,
 		JwtKeyID:              0,
-		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "kss-sk.pem"),
+		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", "test-kss-sk-0.pem"),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareAttribute:     irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
 		EmailTokenValidity:    168,

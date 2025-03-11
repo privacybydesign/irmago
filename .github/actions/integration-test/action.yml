@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: ^1.18
 
@@ -25,7 +25,7 @@ runs:
 
     - name: Download IRMA server artifact (artifact id)
       if: ${{ !startsWith(inputs.irma-server-artifact, 'https://') }}
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: ${{ inputs.irma-server-artifact }}
         path: bin-is
@@ -41,7 +41,7 @@ runs:
 
     - name: Download keyshare server artifact (artifact id)
       if: ${{ !startsWith(inputs.keyshare-server-artifact, 'https://') }}
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: ${{ inputs.keyshare-server-artifact }}
         path: bin-ks
@@ -51,7 +51,7 @@ runs:
       shell: bash
 
     - name: Run keyshare server utilities
-      run: docker-compose up -d
+      run: docker compose up -d
       shell: bash
 
     # We add & at the end of each command to run them in the background.
@@ -64,7 +64,7 @@ runs:
       shell: bash
 
     - name: Checkout test code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         ref: ${{ inputs.test-ref }}
         path: irmago_test_checkout
