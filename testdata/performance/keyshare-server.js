@@ -1,4 +1,4 @@
-import { fail } from 'k6';
+import { check, fail } from 'k6';
 import { instance, vu } from 'k6/execution';
 import http from 'k6/http';
 
@@ -14,6 +14,15 @@ export const options = {
   },
 };
 
+function checkResponse(response, expectedOutput = '') {
+  const checkOutput = check(response, {
+    'verify response': (r) => r.error === '',
+    'verify status code': (r) => r.status === 200,
+    'verify body': (r) => r.body != null && r.body.includes(expectedOutput),
+  });
+  if (!checkOutput) fail(`unexpected response: url ${response.request.url}, status ${response.status}, error "${response.error}", body "${response.body}"`);
+}
+
 export function setup() {
   if (!url || !issuerID) {
     fail('Must specify URL and ISSUER_ID options via environment variables');
@@ -27,12 +36,13 @@ export function setup() {
   const registerPayloadStr = JSON.stringify(registerPayload);
 
   // An IRMA account cannot be used in parallel, so every VU needs its own account.
-  const testAccounts = Array.from({length: instance.vusInitialized}, () => {
+  const testAccounts = Array.from({ length: instance.vusInitialized }, () => {
     const registerResp = http.post(`${url}/client/register`, registerPayloadStr, {
       headers: {
         'Content-Type': 'application/json',
       },
     });
+    checkResponse(registerResp);
 
     const sessionResp = http.get(registerResp.json().u, {
       headers: {
@@ -41,8 +51,9 @@ export function setup() {
         'X-IRMA-MaxProtocolVersion': '2.8',
       },
     });
+    checkResponse(sessionResp);
 
-    http.del(registerResp.json().u);
+    checkResponse(http.del(registerResp.json().u));
 
     return {
       id: Object.values(sessionResp.json().request.credentials[0].attributes)[0],
@@ -59,6 +70,7 @@ export default function ({ testAccounts }) {
   const testAccount = testAccounts[vu.idInTest - 1];
 
   const pinResp = http.post(`${url}/users/verify/pin`, JSON.stringify(testAccount));
+  checkResponse(pinResp);
 
   const proveParams = {
     headers: {
@@ -67,7 +79,7 @@ export default function ({ testAccounts }) {
     },
   };
 
-  http.post(`${url}/prove/getCommitments`, `["${issuerID}-0"]`, proveParams);
+  checkResponse(http.post(`${url}/prove/getCommitments`, `["${issuerID}-0"]`, proveParams));
 
-  http.post(`${url}/prove/getResponse`, '"5adEmlEg9U2zjNlPxyPvRym2AzWkBo4kIZJ7ytNg0q0="', proveParams);
+  checkResponse(http.post(`${url}/prove/getResponse`, '"5adEmlEg9U2zjNlPxyPvRym2AzWkBo4kIZJ7ytNg0q0="', proveParams));
 }
