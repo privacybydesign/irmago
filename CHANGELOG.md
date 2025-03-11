@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Key ID not being set correctly in keyshare JWTs
+- Infinite loop in SSE go-routine in sessions with pairing mode enabled
 
 ### Security
 - Update go toolchain to 1.23.5
