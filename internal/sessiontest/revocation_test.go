@@ -1,6 +1,9 @@
 //go:build !local_tests
 // +build !local_tests
 
+// Workaround debug directive for https://github.com/microsoft/mssql-docker/issues/895
+//go:debug x509negativeserial=1
+
 package sessiontest
 
 import (
