@@ -2,6 +2,10 @@ package keyshareserver
 
 import (
 	"crypto/sha256"
+	"net/http"
+	"testing"
+	"time"
+
 	"github.com/fxamacker/cbor"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
@@ -10,9 +14,6 @@ import (
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/stretchr/testify/require"
-	"net/http"
-	"testing"
-	"time"
 )
 
 func TestServerInvalidMessageV2(t *testing.T) {
@@ -112,7 +113,7 @@ func TestKeyshareSessionsV2(t *testing.T) {
 
 		// no active session, can't retrieve result
 		test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getResponse",
-		server.ToJson(responseReq), http.Header{
+			server.ToJson(responseReq), http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
 			},
@@ -120,7 +121,7 @@ func TestKeyshareSessionsV2(t *testing.T) {
 		)
 
 		test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getResponseLinkable",
-		server.ToJson(responseReq), http.Header{
+			server.ToJson(responseReq), http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
 			},
@@ -165,7 +166,7 @@ func TestKeyshareSessionsV2(t *testing.T) {
 
 		// can't retrieve result with fake authorization
 		test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getResponse",
-		server.ToJson(responseReq), http.Header{
+			server.ToJson(responseReq), http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{"fakeauthorization"},
 			},
