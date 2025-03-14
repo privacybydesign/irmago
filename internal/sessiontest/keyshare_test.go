@@ -282,6 +282,6 @@ func TestKeyshareServerRestart(t *testing.T) {
 	defer test.ClearTestStorage(t, client, handler.storage)
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
-	
+
 	keyshareSessions(t, client, irmaServer)
 }
