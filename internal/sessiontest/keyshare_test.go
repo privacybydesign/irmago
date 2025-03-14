@@ -1,6 +1,9 @@
 package sessiontest
 
 import (
+	"context"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server/irmaserver"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -240,5 +244,44 @@ func TestNewKeyshareJWTKey(t *testing.T) {
 	defer test.ClearTestStorage(t, client, handler.storage)
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
+	keyshareSessions(t, client, irmaServer)
+}
+
+func TestKeyshareServerRestart(t *testing.T) {
+	handler1, host := testkeyshare.KeyshareServerHandler(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	handler2, _ := testkeyshare.KeyshareServerHandler(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+
+	keyshareResponseRequested := false
+	httpServer := &http.Server{
+		Addr: host,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "getResponse") {
+				keyshareResponseRequested = true
+			}
+			if keyshareResponseRequested {
+				handler2.ServeHTTP(w, r)
+			} else {
+				handler1.ServeHTTP(w, r)
+			}
+		}),
+	}
+
+	go func() {
+		err := httpServer.ListenAndServe()
+		if err == http.ErrServerClosed {
+			err = nil
+		}
+		assert.NoError(t, err)
+	}()
+	defer func() {
+		err := httpServer.Shutdown(context.Background())
+		assert.NoError(t, err)
+	}()
+
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	
 	keyshareSessions(t, client, irmaServer)
 }

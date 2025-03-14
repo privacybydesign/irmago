@@ -36,12 +36,13 @@ var (
 	ErrorRevocation           Error = Error{Type: "REVOCATION", Status: 500, Description: "Revocation error"}
 	ErrorUnknownRevocationKey Error = Error{Type: "UNKNOWN_REVOCATION_KEY", Status: 404, Description: "No issuance records correspond to the given revocationKey"}
 
-	ErrorUnsupported     Error = Error{Type: "UNSUPPORTED", Status: 501, Description: "Unsupported by this server"}
-	ErrorInvalidRequest  Error = Error{Type: "INVALID_REQUEST", Status: 400, Description: "Invalid HTTP request"}
-	ErrorProtocolVersion Error = Error{Type: "PROTOCOL_VERSION", Status: 400, Description: "Protocol version negotiation failed"}
-	ErrorInvalidToken    Error = Error{Type: "INVALID_TOKEN", Status: 403, Description: "Provided token is unknown or invalid"}
-	ErrorInternal        Error = Error{Type: "INTERNAL_ERROR", Status: 500, Description: "Internal server error"}
-	ErrorRevalidateEmail Error = Error{Type: "REVALIDATE_EMAIL", Status: 500, Description: "Invalid email address is scheduled for revalidation"}
+	ErrorUnsupported       Error = Error{Type: "UNSUPPORTED", Status: 501, Description: "Unsupported by this server"}
+	ErrorInvalidRequest    Error = Error{Type: "INVALID_REQUEST", Status: 400, Description: "Invalid HTTP request"}
+	ErrorProtocolVersion   Error = Error{Type: "PROTOCOL_VERSION", Status: 400, Description: "Protocol version negotiation failed"}
+	ErrorInvalidToken      Error = Error{Type: "INVALID_TOKEN", Status: 403, Description: "Provided token is unknown or invalid"}
+	ErrorMissingCommitment Error = Error{Type: "MISSING_COMMITMENT", Status: 409, Description: "Keyshare response was requested without responding commitment"}
+	ErrorInternal          Error = Error{Type: "INTERNAL_ERROR", Status: 500, Description: "Internal server error"}
+	ErrorRevalidateEmail   Error = Error{Type: "REVALIDATE_EMAIL", Status: 500, Description: "Invalid email address is scheduled for revalidation"}
 )
 
 // Keyshare errors
