@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 - Fix docker-compose not being available for test jobs in default GH Actions runner image
 - Dev: make sure keyshare and myirmaserver don't crash when using example configuration
+- Add arm64 docker build to delivery workflow
 
 ## [0.16.0] - 2024-07-17
 ### Added
