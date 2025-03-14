@@ -5,9 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
-### Internal
-- Dev: make sure keyshare and myirmaserver don't crash when using example configuration 
 
+## [0.17.0] - 2025-03-14
 ### Added
 - Option to generate and use scheme private keys encrypted with a passphrase
 
@@ -25,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 - Fix docker-compose not being available for test jobs in default GH Actions runner image
+- Dev: make sure keyshare and myirmaserver don't crash when using example configuration
+- Add arm64 docker build to delivery workflow
 
 ## [0.16.0] - 2024-07-17
 ### Added
@@ -539,6 +540,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.17.0]: https://github.com/privacybydesign/irmago/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/privacybydesign/irmago/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/privacybydesign/irmago/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/privacybydesign/irmago/compare/v0.15.0...v0.15.1
