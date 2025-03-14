@@ -94,22 +94,12 @@ func (s *redisSessionStore) add(ctx context.Context, ses session) error {
 	if ttl <= 0 {
 		return errors.New("session expiry time is in the past")
 	}
-	if err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		if err := tx.Set(
-			ctx,
-			s.client.KeyPrefix+sessionLookupPrefix+ses.Token,
-			string(bytes),
-			ttl,
-		).Err(); err != nil {
-			return err
-		}
-		if s.client.FailoverMode {
-			if err := tx.Wait(ctx, 1, time.Second).Err(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
+	if err := s.client.Set(
+		ctx,
+		s.client.KeyPrefix+sessionLookupPrefix+ses.Token,
+		string(bytes),
+		ttl,
+	).Err(); err != nil {
 		s.logger.WithError(err).Error("failed to add session")
 		return errRedis
 	}
@@ -145,16 +135,10 @@ func (s *redisSessionStore) update(ctx context.Context, token string, handler fu
 		if ttl <= 0 {
 			return errors.New("session expiry time is in the past")
 		}
-		if err := tx.Set(ctx, key, string(updatedBytes), ttl).Err(); err != nil {
-			return err
-		}
-
-		if s.client.FailoverMode {
-			if err := tx.Wait(ctx, 1, time.Second).Err(); err != nil {
-				return err
-			}
-		}
-		return nil
+		_, err = tx.TxPipelined(ctx, func(p redis.Pipeliner) error {
+			return p.Set(ctx, key, string(updatedBytes), ttl).Err()
+		})
+		return err
 	})
 	if err == errUnknownSession {
 		return err

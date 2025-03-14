@@ -79,7 +79,7 @@ type (
 	SchemeFileHash []byte
 
 	// SchemeManagerIndex is a (signed) list of files under a scheme
-	// along with their SHA266 hash
+	// along with their SHA256 hash
 	SchemeManagerIndex map[string]SchemeFileHash
 
 	SchemeManagerStatus string
