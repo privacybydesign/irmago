@@ -108,21 +108,23 @@ func TestKeyshareSessionsV2(t *testing.T) {
 	for _, user := range []struct {
 		username, auth string
 	}{{"testusername", auth1}, {"legacyuser", auth2}} {
+		commitmentReq, responseReq := prepareRequests(t)
+
 		// no active session, can't retrieve result
 		test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getResponse",
-			"12345678", http.Header{
+		server.ToJson(responseReq), http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
 			},
-			400, nil,
+			409, nil,
 		)
 
 		test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getResponseLinkable",
-			"12345678", http.Header{
+		server.ToJson(responseReq), http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
 			},
-			400, nil,
+			409, nil,
 		)
 
 		// can't retrieve commitments with fake authorization
@@ -163,7 +165,7 @@ func TestKeyshareSessionsV2(t *testing.T) {
 
 		// can't retrieve result with fake authorization
 		test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getResponse",
-			"12345678", http.Header{
+		server.ToJson(responseReq), http.Header{
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{"fakeauthorization"},
 			},
@@ -177,8 +179,6 @@ func TestKeyshareSessionsV2(t *testing.T) {
 			},
 			400, nil,
 		)
-
-		commitmentReq, responseReq := prepareRequests(t)
 
 		// can start session while another is already active
 		test.HTTPPost(t, nil, "http://localhost:8080/api/v2/prove/getCommitments",
