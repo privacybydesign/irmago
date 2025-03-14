@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Use golang version 1.23
+- Make keyshare protocol more resilient by retrying when `getResponse` fails due to a server conflict
 
 ### Fixed
 - Key ID not being set correctly in keyshare JWTs

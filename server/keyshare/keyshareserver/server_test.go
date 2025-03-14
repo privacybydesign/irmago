@@ -416,7 +416,7 @@ func TestKeyshareSessions(t *testing.T) {
 				"X-IRMA-Keyshare-Username": []string{user.username},
 				"Authorization":            []string{user.auth},
 			},
-			400, nil,
+			409, nil,
 		)
 
 		// can't retrieve commitments with fake authorization

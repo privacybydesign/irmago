@@ -50,6 +50,7 @@ type keyshareSession struct {
 	timestamp        *atum.Timestamp
 	pinCheck         bool
 	protocolVersion  *irma.ProtocolVersion
+	retryAttempts    int
 }
 
 type keyshareServer struct {
@@ -429,6 +430,16 @@ func (ks *keyshareSession) GetProofPs() {
 		}
 		var j string
 		err = transport.Post("prove/getResponse", &j, challenge)
+		// Keyshare server stores our commitment in memory for consistency reasons. If it returns a server.ErrorMissingCommitment,
+		// then the server probably restarted and we should regenerate the commitment.
+		if serr, ok := err.(*irma.SessionError); ok && serr.RemoteStatus == http.StatusConflict {
+			ks.retryAttempts++
+			irma.Logger.Infof("Keyshare server could not generate response due to conflict (attempt %d of 3)", ks.retryAttempts)
+			if ks.retryAttempts < 3 {
+				ks.GetCommitments()
+				return
+			}
+		}
 		if err != nil {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
