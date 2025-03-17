@@ -28,6 +28,7 @@ var (
 	ErrUnknownCommit             = errors.New("unknown commit id")
 	ErrChallengeResponseRequired = errors.New("challenge-response authentication required")
 	ErrWrongChallenge            = errors.New("wrong challenge")
+	ErrMissingChallenge          = errors.New("missing challenge")
 )
 
 // ChallengeJWTMaxExpiry is the maximum exp (expiry) that we allow JWTs to have with which calls to
@@ -99,7 +100,7 @@ func (c *Core) authJWT(s *unencryptedUserSecrets) (string, error) {
 func (c *Core) verifyChallengeResponse(s unencryptedUserSecrets, jwtt string) (string, error) {
 	challenge := c.consumeChallenge(s.ID)
 	if challenge == nil {
-		return "", ErrChallengeResponseRequired
+		return "", ErrMissingChallenge
 	}
 
 	claims := &irma.KeyshareAuthResponseClaims{}

@@ -251,17 +251,21 @@ func TestKeyshareServerRestart(t *testing.T) {
 	handler1, host := testkeyshare.KeyshareServerHandler(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	handler2, _ := testkeyshare.KeyshareServerHandler(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 
-	keyshareResponseRequested := false
+	handlerToUse := handler1
+	handlerToUseForProves := handler1
 	httpServer := &http.Server{
 		Addr: host,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.Contains(r.URL.Path, "getResponse") {
-				keyshareResponseRequested = true
+			if strings.Contains(r.URL.Path, "pin_challengeresponse") {
+				handlerToUse = handler2
+			} else if strings.Contains(r.URL.Path, "getResponse") {
+				handlerToUseForProves = handler2
 			}
-			if keyshareResponseRequested {
-				handler2.ServeHTTP(w, r)
+
+			if strings.Contains(r.URL.Path, "/prove/") {
+				handlerToUseForProves.ServeHTTP(w, r)
 			} else {
-				handler1.ServeHTTP(w, r)
+				handlerToUse.ServeHTTP(w, r)
 			}
 		}),
 	}
