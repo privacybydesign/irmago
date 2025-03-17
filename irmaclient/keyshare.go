@@ -246,7 +246,7 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 	// then the server probably restarted and we should retry the whole challenge-response sequence.
 	pinResult := &irma.KeysharePinStatus{}
 	var pinResultErr error
-	for range 3 {
+	for i := range 3 {
 		auth := &irma.KeyshareAuthChallenge{}
 		err = transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: authRequestJWT})
 		if err != nil {
@@ -276,6 +276,7 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 
 		pinResultErr = transport.Post("users/verify/pin_challengeresponse", pinResult, irma.KeyshareAuthResponse{AuthResponseJWT: authResponseJWT})
 		if serr, ok := pinResultErr.(*irma.SessionError); ok && serr.RemoteStatus == http.StatusConflict {
+			irma.Logger.Infof("Keyshare server could not generate pin response due to conflict (attempt %d of 3)", i)
 			continue
 		}
 		break
