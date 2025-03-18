@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Changed
 - Make keyshare pin challenge more resilient by retrying when `pin_challengeresponse` fails due to a server conflict
+- Download schemes from `https://schemes.yivi.app/` instead of `https://privacybydesign.foundation/schememanager/`
 
 ## [0.17.0] - 2025-03-14
 ### Added
