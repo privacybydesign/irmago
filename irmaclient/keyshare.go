@@ -234,7 +234,7 @@ const challengeRequestJWTExpiry = 3 * time.Minute
 
 func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
 	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
-	jwtt, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthRequestClaims{
+	authRequestJWT, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthRequestClaims{
 		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(challengeRequestJWTExpiry))},
 		Username:         kss.Username,
 	})
@@ -242,40 +242,46 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 		return nil, err
 	}
 
-	auth := &irma.KeyshareAuthChallenge{}
-	err = transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: jwtt})
-	if err != nil {
-		return nil, err
-	}
-	var ok bool
-	for _, method := range auth.Candidates {
-		if method == irma.KeyshareAuthMethodChallengeResponse {
-			ok = true
-			break
+	// Keyshare server stores a challenge in memory for consistency reasons. If it returns a server.ErrorMissingChallenge,
+	// then the server probably restarted and we should retry the whole challenge-response sequence.
+	pinResult := &irma.KeysharePinStatus{}
+	var pinResultErr error
+	for i := range 3 {
+		auth := &irma.KeyshareAuthChallenge{}
+		err = transport.Post("users/verify_start", auth, irma.KeyshareAuthRequest{AuthRequestJWT: authRequestJWT})
+		if err != nil {
+			return nil, err
 		}
-	}
-	if !ok {
-		return nil, errors.New("challenge-response authentication method not supported")
-	}
+		var ok bool
+		for _, method := range auth.Candidates {
+			if method == irma.KeyshareAuthMethodChallengeResponse {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return nil, errors.New("challenge-response authentication method not supported")
+		}
 
-	jwtt, err = SignerCreateJWT(signer, keyname, irma.KeyshareAuthResponseClaims{
-		KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
-			Username:  kss.Username,
-			Pin:       kss.HashedPin(pin),
-			Challenge: auth.Challenge,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
+		authResponseJWT, err := SignerCreateJWT(signer, keyname, irma.KeyshareAuthResponseClaims{
+			KeyshareAuthResponseData: irma.KeyshareAuthResponseData{
+				Username:  kss.Username,
+				Pin:       kss.HashedPin(pin),
+				Challenge: auth.Challenge,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
 
-	pinresult := &irma.KeysharePinStatus{}
-	err = transport.Post("users/verify/pin_challengeresponse", pinresult, irma.KeyshareAuthResponse{AuthResponseJWT: jwtt})
-	if err != nil {
-		return nil, err
+		pinResultErr = transport.Post("users/verify/pin_challengeresponse", pinResult, irma.KeyshareAuthResponse{AuthResponseJWT: authResponseJWT})
+		if serr, ok := pinResultErr.(*irma.SessionError); i == 0 || ok && serr.RemoteStatus == http.StatusConflict {
+			irma.Logger.Infof("Keyshare server could not generate pin response due to conflict (attempt %d of 3)", i+1)
+			continue
+		}
+		break
 	}
-
-	return pinresult, nil
+	return pinResult, pinResultErr
 }
 
 func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (

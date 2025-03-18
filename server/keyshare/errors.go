@@ -59,6 +59,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		serverError = server.ErrorUnexpectedRequest
 	case keysharecore.ErrWrongChallenge:
 		serverError = server.ErrorUnexpectedRequest
+	case keysharecore.ErrMissingChallenge:
+		serverError = server.ErrorMissingChallenge
 	default:
 		serverError = server.ErrorInternal
 	}
