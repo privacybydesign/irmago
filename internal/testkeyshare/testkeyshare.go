@@ -23,7 +23,7 @@ type KeyshareServer struct {
 	t *testing.T
 }
 
-func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) *KeyshareServer {
+func KeyshareServerHandler(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) (handler http.Handler, host string) {
 	db := keyshareserver.NewMemoryDB()
 	err := db.AddUser(context.Background(), &keyshareserver.User{
 		Username: "",
@@ -70,10 +70,15 @@ func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeMan
 		KeyshareAttribute:     keyshareAttr,
 	})
 	require.NoError(t, err)
+	return s.Handler(), parsedURL.Host
+}
+
+func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) *KeyshareServer {
+	handler, host := KeyshareServerHandler(t, l, schemeID, jwtKeyID)
 
 	keyshareServ := &KeyshareServer{http.Server{
-		Addr:    parsedURL.Host,
-		Handler: s.Handler(),
+		Addr:    host,
+		Handler: handler,
 	}, t}
 
 	go func() {

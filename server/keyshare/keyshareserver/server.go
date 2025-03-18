@@ -389,8 +389,12 @@ func (s *Server) handleResponse(w http.ResponseWriter, r *http.Request) {
 
 	// And do the actual responding
 	proofResponse, err := s.generateResponse(r.Context(), user, authorization, challenge)
-	if err == errMissingCommitment {
+	if err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err == errMissingCommitment {
+		server.WriteError(w, server.ErrorMissingCommitment, err.Error())
 		return
 	}
 	if err != nil {
@@ -454,11 +458,12 @@ func (s *Server) keyshareResponse(ctx context.Context, w http.ResponseWriter, r 
 
 	// And do the actual responding
 	proofResponse, err := s.generateResponseV2(ctx, user, authorization, req, linkable)
-	if err != nil &&
-		(err == keysharecore.ErrInvalidChallenge ||
-			err == keysharecore.ErrInvalidJWT ||
-			err == errMissingCommitment) {
+	if err == keysharecore.ErrInvalidChallenge || err == keysharecore.ErrInvalidJWT {
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+	if err == errMissingCommitment {
+		server.WriteError(w, server.ErrorMissingCommitment, err.Error())
 		return
 	}
 	if err != nil {
