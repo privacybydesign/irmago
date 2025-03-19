@@ -27,7 +27,7 @@ type KeysharePinRequestor interface {
 }
 
 type keyshareSessionHandler interface {
-	KeyshareDone(message interface{})
+	KeyshareDone(builders gabi.ProofBuilderList, timestamp *atum.Timestamp, attrIndices irma.DisclosedAttributeIndices, message interface{})
 	KeyshareCancelled()
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -43,6 +43,8 @@ type keyshareSession struct {
 	pinRequestor     KeysharePinRequestor
 	builders         gabi.ProofBuilderList
 	session          irma.SessionRequest
+	choice           *irma.DisclosureChoice
+	attrIndices      irma.DisclosedAttributeIndices
 	schemeIDs        map[irma.SchemeManagerIdentifier]struct{}
 	client           *Client
 	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
@@ -102,6 +104,7 @@ func newKeyshareSession(
 	client *Client,
 	pin KeysharePinRequestor,
 	session irma.SessionRequest,
+	choice *irma.DisclosureChoice,
 	implicitDisclosure [][]*irma.AttributeIdentifier,
 	protocolVersion *irma.ProtocolVersion,
 ) (*keyshareSession, bool) {
@@ -136,6 +139,7 @@ func newKeyshareSession(
 	ks := &keyshareSession{
 		schemeIDs:       schemeIDs,
 		session:         session,
+		choice:          choice,
 		client:          client,
 		sessionHandler:  sessionHandler,
 		transports:      map[irma.SchemeManagerIdentifier]*irma.HTTPTransport{},
@@ -378,6 +382,12 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 // of all keyshare servers of their part of the private key, and merges these commitments
 // in our own proof builders.
 func (ks *keyshareSession) GetCommitments() {
+	err := ks.initBuilders()
+	if err != nil {
+		ks.fail(irma.NewSchemeManagerIdentifier(""), irma.WrapErrorPrefix(err, "builders could not be initialized"))
+		return
+	}
+
 	pkidsBuilders := make([]irma.PublicKeyIdentifier, len(ks.builders))
 	pkidsKeyshare := map[irma.SchemeManagerIdentifier][]irma.PublicKeyIdentifier{}
 	pksKeyshare := map[irma.PublicKeyIdentifier]*gabikeys.PublicKey{}
@@ -534,7 +544,7 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeM
 		for manager, response := range responses {
 			message.ProofPjwts[manager.String()] = response
 		}
-		ks.sessionHandler.KeyshareDone(message)
+		ks.sessionHandler.KeyshareDone(ks.builders, ks.timestamp, ks.attrIndices, message)
 	}
 }
 
@@ -564,12 +574,18 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 		ks.sessionHandler.KeyshareError(nil, err)
 		return
 	}
-	ks.sessionHandler.KeyshareDone(list)
+	ks.sessionHandler.KeyshareDone(ks.builders, ks.timestamp, ks.attrIndices, list)
 }
 
 // getKeysharePs retrieves all P values (i.e. R_0^{keyshare server secret}) from all keyshare servers,
 // for use during issuance.
-func (ks *keyshareSession) getKeysharePs(request *irma.IssuanceRequest) (map[irma.PublicKeyIdentifier]*big.Int, error) {
+func (ks *keyshareSession) getKeysharePs() (map[irma.PublicKeyIdentifier]*big.Int, error) {
+	// Only in issuance sessions P values need to be retrieved.
+	request, ok := ks.session.(*irma.IssuanceRequest)
+	if !ok {
+		return nil, nil
+	}
+
 	// Assemble keys of which to retrieve P's, grouped per keyshare server
 	distributedKeys := map[irma.SchemeManagerIdentifier][]irma.PublicKeyIdentifier{}
 	for _, futurecred := range request.Credentials {
@@ -608,4 +624,20 @@ func (ks *keyshareSession) getKeysharePs(request *irma.IssuanceRequest) (map[irm
 	}
 
 	return keysharePs, nil
+}
+
+// initBuilders initializes the builders for disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
+// and issuing respectively).
+func (ks *keyshareSession) initBuilders() (err error) {
+	switch ks.session.Action() {
+	case irma.ActionSigning, irma.ActionDisclosing:
+		ks.builders, ks.attrIndices, ks.timestamp, err = ks.client.ProofBuilders(ks.choice, ks.session)
+	case irma.ActionIssuing:
+		keysharePs, keyshareErr := ks.getKeysharePs()
+		if keyshareErr != nil {
+			return keyshareErr
+		}
+		ks.builders, ks.attrIndices, ks.issuerProofNonce, err = ks.client.IssuanceProofBuilders(ks.session.(*irma.IssuanceRequest), ks.choice, keysharePs)
+	}
+	return
 }

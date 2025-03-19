@@ -954,21 +954,13 @@ func generateIssuerProofNonce() (*big.Int, error) {
 // for the future credentials as well as possibly any disclosed attributes, and generates
 // a nonce against which the issuer's proof of knowledge must verify.
 func (client *Client) IssuanceProofBuilders(
-	request *irma.IssuanceRequest, choice *irma.DisclosureChoice, keyshareSession *keyshareSession,
+	request *irma.IssuanceRequest, choice *irma.DisclosureChoice, keysharePs map[irma.PublicKeyIdentifier]*big.Int,
 ) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
 	issuerProofNonce, err := generateIssuerProofNonce()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	builders := gabi.ProofBuilderList([]gabi.ProofBuilder{})
-
-	var keysharePs = map[irma.PublicKeyIdentifier]*big.Int{}
-	if keyshareSession != nil {
-		keysharePs, err = keyshareSession.getKeysharePs(request)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-	}
 
 	for _, futurecred := range request.Credentials {
 		keyID := futurecred.PublicKeyIdentifier()
