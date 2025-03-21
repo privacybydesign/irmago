@@ -565,7 +565,7 @@ func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTT
 // Therefore, the proofU contains a PoK over the full secret, while in case of the old keyshare
 // protocol, the issuer expects a PoK only of the user's keyshare. This method removes the
 // keyshare server's contribution for use in the old keyshare protocol.
-func (ks *keyshareSession) removeKeysharePsFromProofUs(proofs gabi.ProofList) {
+func (ks *keyshareSessionImpl) removeKeysharePsFromProofUs(proofs gabi.ProofList) {
 	for i, proof := range proofs {
 		if proofU, ok := proof.(*gabi.ProofU); ok {
 			proofU.RemoveKeyshareP(ks.builders[i].(*gabi.CredentialBuilder))

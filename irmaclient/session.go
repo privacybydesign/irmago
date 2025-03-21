@@ -483,7 +483,7 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 		session.sendResponse(builders, timestamp, message)
 		session.finish(false)
 	} else {
-		keyshareSession, auth := newKeyshareSession(
+		handleKeyshareSession(
 			session,
 			session.client,
 			session.Handler,
@@ -492,11 +492,6 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 			session.implicitDisclosure,
 			session.Version,
 		)
-		if !auth {
-			// newKeyshareSession() calls session.fail() in case of failure, no need to do that here
-			return
-		}
-		keyshareSession.GetCommitments()
 	}
 }
 
@@ -749,19 +744,19 @@ func (session *session) Dismiss() {
 
 // Keyshare session handler methods
 
-func (session *session) KeyshareDone(builders gabi.ProofBuilderList, timestamp *atum.Timestamp, attrIndices irma.DisclosedAttributeIndices, message interface{}) {
+func (session *session) KeyshareDone(ks keyshareSession) {
 	switch session.Action {
 	case irma.ActionSigning:
 		fallthrough
 	case irma.ActionDisclosing:
-		session.sendResponse(builders, timestamp, &irma.Disclosure{
-			Proofs:  message.(gabi.ProofList),
-			Indices: attrIndices,
+		session.sendResponse(ks.ProofBuilders(), ks.Timestamp(), &irma.Disclosure{
+			Proofs:  ks.ProofList(),
+			Indices: ks.DisclosedAttributeIndices(),
 		})
 	case irma.ActionIssuing:
-		session.sendResponse(builders, timestamp, &irma.IssueCommitmentMessage{
-			IssueCommitmentMessage: message.(*gabi.IssueCommitmentMessage),
-			Indices:                attrIndices,
+		session.sendResponse(ks.ProofBuilders(), ks.Timestamp(), &irma.IssueCommitmentMessage{
+			IssueCommitmentMessage: ks.IssueCommitmentMessage(),
+			Indices:                ks.DisclosedAttributeIndices(),
 		})
 	}
 }

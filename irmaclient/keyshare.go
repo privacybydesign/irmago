@@ -27,7 +27,7 @@ type KeysharePinRequestor interface {
 }
 
 type keyshareSessionHandler interface {
-	KeyshareDone(builders gabi.ProofBuilderList, timestamp *atum.Timestamp, attrIndices irma.DisclosedAttributeIndices, message interface{})
+	KeyshareDone(keyshareSession)
 	KeyshareCancelled()
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
 	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
@@ -38,22 +38,32 @@ type keyshareSessionHandler interface {
 	KeysharePinOK()
 }
 
-type keyshareSession struct {
-	sessionHandler   keyshareSessionHandler
-	pinRequestor     KeysharePinRequestor
-	builders         gabi.ProofBuilderList
-	session          irma.SessionRequest
-	choice           *irma.DisclosureChoice
-	attrIndices      irma.DisclosedAttributeIndices
-	schemeIDs        map[irma.SchemeManagerIdentifier]struct{}
-	client           *Client
-	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
-	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
-	issuerProofNonce *big.Int
-	timestamp        *atum.Timestamp
-	pinCheck         bool
-	protocolVersion  *irma.ProtocolVersion
-	retryAttempts    int
+type keyshareSession interface {
+	ProofBuilders() gabi.ProofBuilderList
+	Timestamp() *atum.Timestamp
+	DisclosedAttributeIndices() irma.DisclosedAttributeIndices
+	IssueCommitmentMessage() *gabi.IssueCommitmentMessage
+	ProofList() gabi.ProofList
+}
+
+type keyshareSessionImpl struct {
+	sessionHandler         keyshareSessionHandler
+	pinRequestor           KeysharePinRequestor
+	builders               gabi.ProofBuilderList
+	session                irma.SessionRequest
+	choice                 *irma.DisclosureChoice
+	attrIndices            irma.DisclosedAttributeIndices
+	schemeIDs              map[irma.SchemeManagerIdentifier]struct{}
+	client                 *Client
+	keyshareServer         *keyshareServer // The one keyshare server in use in case of issuance
+	transports             map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
+	issuerProofNonce       *big.Int
+	timestamp              *atum.Timestamp
+	pinCheck               bool
+	protocolVersion        *irma.ProtocolVersion
+	retryAttempts          int
+	issueCommitmentMessage *gabi.IssueCommitmentMessage
+	proofList              gabi.ProofList
 }
 
 type keyshareServer struct {
@@ -94,12 +104,12 @@ func (kss *keyshareServer) HashedPin(pin string) string {
 	return base64.StdEncoding.EncodeToString(hash[:]) + "\n"
 }
 
-// newKeyshareSession starts and completes the entire keyshare protocol with all involved keyshare servers
+// handleKeyshareSession starts and completes the entire keyshare protocol with all involved keyshare servers
 // for the specified session, merging the keyshare proofs into the specified ProofBuilder's.
 // The user's pin is retrieved using the KeysharePinRequestor, repeatedly, until either it is correct; or the
 // user cancels; or one of the keyshare servers blocks us.
 // Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
-func newKeyshareSession(
+func handleKeyshareSession(
 	sessionHandler keyshareSessionHandler,
 	client *Client,
 	pin KeysharePinRequestor,
@@ -107,7 +117,7 @@ func newKeyshareSession(
 	choice *irma.DisclosureChoice,
 	implicitDisclosure [][]*irma.AttributeIdentifier,
 	protocolVersion *irma.ProtocolVersion,
-) (*keyshareSession, bool) {
+) {
 	ksscount := 0
 
 	// A number of times below we need to look at all involved schemes, and then we need to take into
@@ -126,17 +136,17 @@ func newKeyshareSession(
 			if _, enrolled := client.keyshareServers[managerID]; !enrolled {
 				err := errors.New("Not enrolled to keyshare server of scheme manager " + managerID.String())
 				sessionHandler.KeyshareError(&managerID, err)
-				return nil, false
+				return
 			}
 		}
 	}
 	if _, issuing := session.(*irma.IssuanceRequest); issuing && ksscount > 1 {
 		err := errors.New("Issuance session involving more than one keyshare servers are not supported")
 		sessionHandler.KeyshareError(nil, err)
-		return nil, false
+		return
 	}
 
-	ks := &keyshareSession{
+	ks := &keyshareSessionImpl{
 		schemeIDs:       schemeIDs,
 		session:         session,
 		choice:          choice,
@@ -166,14 +176,15 @@ func newKeyshareSession(
 		}
 	}
 
-	if !ks.pinCheck {
-		return ks, true
+	if ks.pinCheck {
+		ks.sessionHandler.KeysharePin()
+		authenticated := make(chan bool, 1)
+		ks.verifyPin(-1, authenticated)
+		if !<-authenticated {
+			return
+		}
 	}
-
-	ks.sessionHandler.KeysharePin()
-	authenticated := make(chan bool, 1)
-	ks.VerifyPin(-1, authenticated)
-	return ks, <-authenticated
+	ks.getCommitments()
 }
 
 func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
@@ -197,7 +208,7 @@ func (kss *keyshareServer) tokenValid(conf *irma.Configuration) bool {
 	return true
 }
 
-func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error) {
+func (ks *keyshareSessionImpl) fail(manager irma.SchemeManagerIdentifier, err error) {
 	serr, ok := err.(*irma.SessionError)
 	if ok {
 		if serr.RemoteError != nil && len(serr.RemoteError.ErrorName) > 0 {
@@ -221,9 +232,9 @@ func (ks *keyshareSession) fail(manager irma.SchemeManagerIdentifier, err error)
 	}
 }
 
-// VerifyPin asks for a pin, repeatedly if necessary, informing the handler of success or failure.
+// verifyPin asks for a pin, repeatedly if necessary, informing the handler of success or failure.
 // It returns whether the authentication was successful or not.
-func (ks *keyshareSession) VerifyPin(attempts int, authenticated chan bool) {
+func (ks *keyshareSessionImpl) verifyPin(attempts int, authenticated chan bool) {
 	ks.pinRequestor.RequestPin(attempts, PinHandler(func(proceed bool, pin string) {
 		if !proceed {
 			ks.sessionHandler.KeyshareCancelled()
@@ -252,7 +263,7 @@ func (ks *keyshareSession) VerifyPin(attempts int, authenticated chan bool) {
 			return
 		}
 		// Not successful but no error and not yet blocked: try again
-		ks.VerifyPin(attemptsRemaining, authenticated)
+		ks.verifyPin(attemptsRemaining, authenticated)
 	}))
 }
 
@@ -357,7 +368,7 @@ func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport
 // parameter.
 // - If this or anything else (specified in err) goes wrong, success will be false.
 // If all is ok, success will be true.
-func (ks *keyshareSession) verifyPinAttempt(pin string) (
+func (ks *keyshareSessionImpl) verifyPinAttempt(pin string) (
 	success bool, tries int, blocked int, manager irma.SchemeManagerIdentifier, err error) {
 	for manager = range ks.schemeIDs {
 		if !ks.client.Configuration.SchemeManagers[manager].Distributed() {
@@ -378,10 +389,10 @@ func (ks *keyshareSession) verifyPinAttempt(pin string) (
 	return
 }
 
-// GetCommitments gets the commitments (first message in Schnorr zero-knowledge protocol)
+// getCommitments gets the commitments (first message in Schnorr zero-knowledge protocol)
 // of all keyshare servers of their part of the private key, and merges these commitments
 // in our own proof builders.
-func (ks *keyshareSession) GetCommitments() {
+func (ks *keyshareSessionImpl) getCommitments() {
 	err := ks.initBuilders()
 	if err != nil {
 		ks.fail(irma.NewSchemeManagerIdentifier(""), irma.WrapErrorPrefix(err, "builders could not be initialized"))
@@ -438,9 +449,9 @@ func (ks *keyshareSession) GetCommitments() {
 				ks.pinCheck = false
 				ks.sessionHandler.KeysharePin()
 				authenticated := make(chan bool, 1)
-				ks.VerifyPin(-1, authenticated)
+				ks.verifyPin(-1, authenticated)
 				if <-authenticated {
-					ks.GetCommitments()
+					ks.getCommitments()
 				}
 				return
 			}
@@ -459,13 +470,13 @@ func (ks *keyshareSession) GetCommitments() {
 		}
 	}
 
-	ks.GetProofPs(randomizers, challengeInput)
+	ks.getProofPs(randomizers, challengeInput)
 }
 
-// GetProofPs uses the combined commitments of all keyshare servers and ourself
+// getProofPs uses the combined commitments of all keyshare servers and ourself
 // to calculate the challenge, which is sent to the keyshare servers in order to
 // receive their responses (2nd and 3rd message in Schnorr zero-knowledge protocol).
-func (ks *keyshareSession) GetProofPs(randomizers map[string]*big.Int, hashInput []gabi.KeyshareUserChallengeInput[irma.PublicKeyIdentifier]) {
+func (ks *keyshareSessionImpl) getProofPs(randomizers map[string]*big.Int, hashInput []gabi.KeyshareUserChallengeInput[irma.PublicKeyIdentifier]) {
 	_, isSig := ks.session.(*irma.SignatureRequest)
 	_, isIssuance := ks.session.(*irma.IssuanceRequest)
 
@@ -502,7 +513,7 @@ func (ks *keyshareSession) GetProofPs(randomizers map[string]*big.Int, hashInput
 			ks.retryAttempts++
 			irma.Logger.Infof("Keyshare server could not generate response due to conflict (attempt %d of 3)", ks.retryAttempts)
 			if ks.retryAttempts < 3 {
-				ks.GetCommitments()
+				ks.getCommitments()
 				return
 			}
 		}
@@ -513,13 +524,13 @@ func (ks *keyshareSession) GetProofPs(randomizers map[string]*big.Int, hashInput
 		responses[managerID] = respJwt
 	}
 
-	ks.Finish(challenge, responses)
+	ks.finish(challenge, responses)
 }
 
-// Finish the keyshare protocol: in case of issuance, put the keyshare jwt in the
+// finish the keyshare protocol: in case of issuance, put the keyshare jwt in the
 // IssueCommitmentMessage; in case of disclosure and signing, parse each keyshare jwt,
 // merge in the received ProofP's, and finish.
-func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeManagerIdentifier]string) {
+func (ks *keyshareSessionImpl) finish(challenge *big.Int, responses map[irma.SchemeManagerIdentifier]string) {
 	switch ks.session.(type) {
 	case *irma.DisclosureRequest: // Can't use fallthrough in a type switch in go
 		ks.finishDisclosureOrSigning(challenge, responses)
@@ -539,16 +550,16 @@ func (ks *keyshareSession) Finish(challenge *big.Int, responses map[irma.SchemeM
 			ks.removeKeysharePsFromProofUs(list)
 		}
 
-		message := &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.issuerProofNonce}
-		message.ProofPjwts = map[string]string{}
+		ks.issueCommitmentMessage = &gabi.IssueCommitmentMessage{Proofs: list, Nonce2: ks.issuerProofNonce}
+		ks.issueCommitmentMessage.ProofPjwts = map[string]string{}
 		for manager, response := range responses {
-			message.ProofPjwts[manager.String()] = response
+			ks.issueCommitmentMessage.ProofPjwts[manager.String()] = response
 		}
-		ks.sessionHandler.KeyshareDone(ks.builders, ks.timestamp, ks.attrIndices, message)
+		ks.sessionHandler.KeyshareDone(ks)
 	}
 }
 
-func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, responses map[irma.SchemeManagerIdentifier]string) {
+func (ks *keyshareSessionImpl) finishDisclosureOrSigning(challenge *big.Int, responses map[irma.SchemeManagerIdentifier]string) {
 	proofPs := make([]*gabi.ProofP, len(ks.builders))
 	for i, builder := range ks.builders {
 		// Parse each received JWT
@@ -569,17 +580,18 @@ func (ks *keyshareSession) finishDisclosureOrSigning(challenge *big.Int, respons
 	}
 
 	// Create merged proofs and finish protocol
-	list, err := ks.builders.BuildDistributedProofList(challenge, proofPs)
+	var err error
+	ks.proofList, err = ks.builders.BuildDistributedProofList(challenge, proofPs)
 	if err != nil {
 		ks.sessionHandler.KeyshareError(nil, err)
 		return
 	}
-	ks.sessionHandler.KeyshareDone(ks.builders, ks.timestamp, ks.attrIndices, list)
+	ks.sessionHandler.KeyshareDone(ks)
 }
 
 // getKeysharePs retrieves all P values (i.e. R_0^{keyshare server secret}) from all keyshare servers,
 // for use during issuance.
-func (ks *keyshareSession) getKeysharePs() (map[irma.PublicKeyIdentifier]*big.Int, error) {
+func (ks *keyshareSessionImpl) getKeysharePs() (map[irma.PublicKeyIdentifier]*big.Int, error) {
 	// Only in issuance sessions P values need to be retrieved.
 	request, ok := ks.session.(*irma.IssuanceRequest)
 	if !ok {
@@ -628,7 +640,7 @@ func (ks *keyshareSession) getKeysharePs() (map[irma.PublicKeyIdentifier]*big.In
 
 // initBuilders initializes the builders for disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
 // and issuing respectively).
-func (ks *keyshareSession) initBuilders() (err error) {
+func (ks *keyshareSessionImpl) initBuilders() (err error) {
 	switch ks.session.Action() {
 	case irma.ActionSigning, irma.ActionDisclosing:
 		ks.builders, ks.attrIndices, ks.timestamp, err = ks.client.ProofBuilders(ks.choice, ks.session)
@@ -640,4 +652,29 @@ func (ks *keyshareSession) initBuilders() (err error) {
 		ks.builders, ks.attrIndices, ks.issuerProofNonce, err = ks.client.IssuanceProofBuilders(ks.session.(*irma.IssuanceRequest), ks.choice, keysharePs)
 	}
 	return
+}
+
+// DisclosedAttributeIndices implements keyshareSession.
+func (ks *keyshareSessionImpl) DisclosedAttributeIndices() irma.DisclosedAttributeIndices {
+	return ks.attrIndices
+}
+
+// IssueCommitmentMessage implements keyshareSession.
+func (ks *keyshareSessionImpl) IssueCommitmentMessage() *gabi.IssueCommitmentMessage {
+	return ks.issueCommitmentMessage
+}
+
+// ProofBuilders implements keyshareSession.
+func (ks *keyshareSessionImpl) ProofBuilders() gabi.ProofBuilderList {
+	return ks.builders
+}
+
+// ProofList implements keyshareSession.
+func (ks *keyshareSessionImpl) ProofList() gabi.ProofList {
+	return ks.proofList
+}
+
+// Timestamp implements keyshareSession.
+func (ks *keyshareSessionImpl) Timestamp() *atum.Timestamp {
+	return ks.timestamp
 }
