@@ -281,7 +281,11 @@ func (pki *PublicKeyIdentifier) UnmarshalText(text []byte) error {
 }
 
 func (pki *PublicKeyIdentifier) MarshalText() (text []byte, err error) {
-	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
+	return []byte(pki.String()), nil
+}
+
+func (pki *PublicKeyIdentifier) String() string {
+	return fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)
 }
 
 // MarshalText implements encoding.TextMarshaler.

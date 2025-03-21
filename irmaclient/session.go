@@ -11,7 +11,6 @@ import (
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi"
-	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 )
@@ -75,7 +74,6 @@ type session struct {
 
 	token          string
 	choice         *irma.DisclosureChoice
-	attrIndices    irma.DisclosedAttributeIndices
 	client         *Client
 	request        irma.SessionRequest
 	done           <-chan struct{}
@@ -85,13 +83,6 @@ type session struct {
 
 	next               *session
 	implicitDisclosure [][]*irma.AttributeIdentifier
-
-	// State for issuance sessions
-	issuerProofNonce *big.Int
-	builders         gabi.ProofBuilderList
-
-	// State for signature sessions
-	timestamp *atum.Timestamp
 
 	// These are empty on manual sessions
 	Hostname  string
@@ -484,42 +475,29 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 	}
 
 	if !session.Distributed() {
-		message, err := session.getProof()
+		builders, timestamp, message, err := session.getProof()
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 			return
 		}
-		session.sendResponse(message)
+		session.sendResponse(builders, timestamp, message)
 		session.finish(false)
 	} else {
-		var err error
-		keyshareSession, auth := newKeyshareSession(
+		handleKeyshareSession(
 			session,
 			session.client,
 			session.Handler,
 			session.request,
+			session.choice,
 			session.implicitDisclosure,
 			session.Version,
 		)
-		if !auth {
-			// newKeyshareSession() calls session.fail() in case of failure, no need to do that here
-			return
-		}
-		session.builders, session.attrIndices, session.issuerProofNonce, err = session.getBuilders(keyshareSession)
-		if err != nil {
-			session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-			return
-		}
-		keyshareSession.builders = session.builders
-		keyshareSession.issuerProofNonce = session.issuerProofNonce
-		keyshareSession.timestamp = session.timestamp
-		keyshareSession.GetCommitments()
 	}
 }
 
 // sendResponse sends the proofs of knowledge of the hidden attributes and/or the secret key, or the constructed
 // attribute-based signature, to the API server.
-func (session *session) sendResponse(message interface{}) {
+func (session *session) sendResponse(builders gabi.ProofBuilderList, timestamp *atum.Timestamp, message interface{}) {
 	var log *LogEntry
 	var err error
 	var messageJson []byte
@@ -529,7 +507,7 @@ func (session *session) sendResponse(message interface{}) {
 
 	switch session.Action {
 	case irma.ActionSigning:
-		irmaSignature, err := session.request.(*irma.SignatureRequest).SignatureFromMessage(message, session.timestamp)
+		irmaSignature, err := session.request.(*irma.SignatureRequest).SignatureFromMessage(message, timestamp)
 		if err != nil {
 			session.fail(&irma.SessionError{ErrorType: irma.ErrorSerialization, Info: "Type assertion failed"})
 			return
@@ -554,7 +532,7 @@ func (session *session) sendResponse(message interface{}) {
 		path = "commitments"
 	}
 
-	log, err = session.createLogEntry(message)
+	log, err = session.createLogEntry(timestamp, message)
 	if err != nil {
 		session.fail(&irma.SessionError{Info: "Failed to create log entry", Err: err})
 		return
@@ -570,7 +548,7 @@ func (session *session) sendResponse(message interface{}) {
 			return
 		}
 		if session.Action == irma.ActionIssuing {
-			if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
+			if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, session.request.(*irma.IssuanceRequest), builders); err != nil {
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 				return
 			}
@@ -599,38 +577,16 @@ func (session *session) sendResponse(message interface{}) {
 
 // Response calculation methods
 
-// getBuilders computes the builders for disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
-// and issuing respectively).
-func (session *session) getBuilders(keyshareSession *keyshareSession) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
-	var builders gabi.ProofBuilderList
-	var err error
-	var issuerProofNonce *big.Int
-	var choices irma.DisclosedAttributeIndices
-
-	switch session.Action {
-	case irma.ActionSigning, irma.ActionDisclosing:
-		builders, choices, session.timestamp, err = session.client.ProofBuilders(session.choice, session.request)
-	case irma.ActionIssuing:
-		builders, choices, issuerProofNonce, err = session.client.IssuanceProofBuilders(session.request.(*irma.IssuanceRequest), session.choice, keyshareSession)
-	}
-
-	return builders, choices, issuerProofNonce, err
-}
-
 // getProofs computes the disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
 // and issuing respectively) to be sent to the server.
-func (session *session) getProof() (interface{}, error) {
-	var message interface{}
-	var err error
-
+func (session *session) getProof() (builders gabi.ProofBuilderList, timestamp *atum.Timestamp, message interface{}, err error) {
 	switch session.Action {
 	case irma.ActionSigning, irma.ActionDisclosing:
-		message, session.timestamp, err = session.client.Proofs(session.choice, session.request)
+		message, timestamp, err = session.client.Proofs(session.choice, session.request)
 	case irma.ActionIssuing:
-		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest), session.choice)
+		message, builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest), session.choice)
 	}
-
-	return message, err
+	return
 }
 
 // Helper functions
@@ -788,19 +744,19 @@ func (session *session) Dismiss() {
 
 // Keyshare session handler methods
 
-func (session *session) KeyshareDone(message interface{}) {
+func (session *session) KeyshareDone(ks keyshareSession) {
 	switch session.Action {
 	case irma.ActionSigning:
 		fallthrough
 	case irma.ActionDisclosing:
-		session.sendResponse(&irma.Disclosure{
-			Proofs:  message.(gabi.ProofList),
-			Indices: session.attrIndices,
+		session.sendResponse(ks.ProofBuilders(), ks.Timestamp(), &irma.Disclosure{
+			Proofs:  ks.ProofList(),
+			Indices: ks.DisclosedAttributeIndices(),
 		})
 	case irma.ActionIssuing:
-		session.sendResponse(&irma.IssueCommitmentMessage{
-			IssueCommitmentMessage: message.(*gabi.IssueCommitmentMessage),
-			Indices:                session.attrIndices,
+		session.sendResponse(ks.ProofBuilders(), ks.Timestamp(), &irma.IssueCommitmentMessage{
+			IssueCommitmentMessage: ks.IssueCommitmentMessage(),
+			Indices:                ks.DisclosedAttributeIndices(),
 		})
 	}
 }

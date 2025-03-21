@@ -50,6 +50,7 @@ const (
 	optionClientWait
 	optionWait
 	optionPrePairingClient
+	optionLinkableKeyshareResponse
 	optionPolling
 	optionNoSchemeAssets
 )

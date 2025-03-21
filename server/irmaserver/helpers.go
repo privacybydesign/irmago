@@ -301,6 +301,18 @@ func (session *sessionData) getProofP(commitments *irma.IssueCommitmentMessage, 
 		if !token.Valid {
 			return nil, errors.Errorf("invalid keyshare proof included for scheme %s", scheme.Name())
 		}
+
+		// Validate whether proofP has the expected values given the chosen protocol version.
+		if session.Version.Below(2, 9) {
+			if claims.ProofP.P == nil {
+				return nil, errors.Errorf("p value missing in keyshare server proofP for scheme %s", scheme.Name())
+			}
+		} else {
+			if claims.ProofP.P != nil {
+				return nil, errors.Errorf("p value unexpectedly set in keyshare server proofP for scheme %s", scheme.Name())
+			}
+		}
+
 		session.KssProofs[scheme] = claims.ProofP
 	}
 
