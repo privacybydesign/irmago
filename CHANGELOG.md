@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make keyshare pin challenge more resilient by retrying when `pin_challengeresponse` fails due to a server conflict
 - Download schemes from `https://schemes.yivi.app/` instead of `https://privacybydesign.foundation/schememanager/`
 
+  Note: if the scheme auto-update mechanism is enabled in your `irma server` (enabled by default), please make sure outgoing
+  network traffic is allowed from your `irma server` to schemes.yivi.app (51.158.130.42) and privacybydesign.foundation (37.97.206.70)
+
 ## [0.17.0] - 2025-03-14
 ### Added
 - Option to generate and use scheme private keys encrypted with a passphrase
