@@ -544,6 +544,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.17.1]: https://github.com/privacybydesign/irmago/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/privacybydesign/irmago/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/privacybydesign/irmago/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/privacybydesign/irmago/compare/v0.15.1...v0.15.2
