@@ -27,14 +27,14 @@ import (
 
 var DefaultSchemes = [2]SchemePointer{
 	{
-		URL: "https://privacybydesign.foundation/schememanager/irma-demo",
+		URL: "https://schemes.yivi.app/irma-demo",
 		Publickey: []byte(`-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHVnmAY+kGkFZn7XXozdI4HY8GOjm
 54ngh4chTfn6WsTCf2w5rprfIqML61z2VTE4k8yJ0Z1QbyW6cdaao8obTQ==
 -----END PUBLIC KEY-----`),
 	},
 	{
-		URL: "https://privacybydesign.foundation/schememanager/pbdf",
+		URL: "https://schemes.yivi.app/pbdf",
 		Publickey: []byte(`-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAELzHV5ipBimWpuZIDaQQd+KmNpNop
 dpBeCqpDwf+Grrw9ReODb6nwlsPJ/c/gqLnc+Y3sKOAJ2bFGI+jHBSsglg==
