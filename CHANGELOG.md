@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Make keyshare pin challenge more resilient by retrying when `pin_challengeresponse` fails due to a server conflict
 
+### Security
+- Update github.com/golang-jwt/jwt/v4 from 4.5.1 to 4.5.2
+
 ## [0.17.0] - 2025-03-14
 ### Added
 - Option to generate and use scheme private keys encrypted with a passphrase
