@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.17.1] - 2025-04-01
 ### Changed
 - Make keyshare pin challenge more resilient by retrying when `pin_challengeresponse` fails due to a server conflict
+- Download schemes from `https://schemes.yivi.app/` instead of `https://privacybydesign.foundation/schememanager/`
+
+  Note: if the scheme auto-update mechanism is enabled in your `irma server` (enabled by default), please make sure outgoing
+  network traffic is allowed from your `irma server` to schemes.yivi.app (51.158.130.42) and privacybydesign.foundation (37.97.206.70)
 
 ### Security
 - Update github.com/golang-jwt/jwt/v4 from 4.5.1 to 4.5.2
