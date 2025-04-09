@@ -272,9 +272,11 @@ func (s *redisSessionStore) add(ctx context.Context, session *sessionData) error
 		}
 
 		if s.client.FailoverMode {
-			if err := s.client.Wait(ctx, 1, time.Second).Err(); err != nil {
+			replicas, err := s.client.Wait(ctx, 1, time.Second).Result()
+			if err != nil {
 				return err
 			}
+			s.conf.Logger.WithFields(logrus.Fields{"session": session.RequestorToken, "replicas": replicas}).Debug("Redis datastore acknowledged write")
 		}
 		return nil
 	}); err != nil {
@@ -349,9 +351,13 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 			return err
 		}
 		if s.client.FailoverMode {
-			if err := tx.Wait(ctx, 1, time.Second).Err(); err != nil {
+			replicas, err := s.client.Wait(ctx, 1, time.Second).Result()
+			if err != nil {
 				return err
 			}
+			s.conf.Logger.
+				WithFields(logrus.Fields{"session": session.RequestorToken, "replicas": replicas}).
+				Debug("Redis datastore acknowledged write")
 		}
 		return nil
 	})
