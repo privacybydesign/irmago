@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.18.1] - 2025-04-10
+### Fix
+- Bug in `irmaclient` that caused the pin challenge to always be called (at least) twice
+
 ## [0.18.0] - 2025-04-09
 ### Changed
 - Download schemes from `https://schemes.yivi.app/` instead of `https://privacybydesign.foundation/schememanager/`
@@ -554,6 +558,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.18.1]: https://github.com/privacybydesign/irmago/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/privacybydesign/irmago/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/privacybydesign/irmago/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/privacybydesign/irmago/compare/v0.16.0...v0.17.0
