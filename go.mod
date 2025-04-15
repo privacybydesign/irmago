@@ -1,8 +1,7 @@
 module github.com/privacybydesign/irmago
 
 go 1.23
-
-toolchain go1.23.5
+toolchain go1.24.1
 
 require (
 	github.com/alexandrevicenzi/go-sse v1.6.0
@@ -30,8 +29,8 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
 	go.etcd.io/bbolt v1.3.6
-	golang.org/x/crypto v0.32.0
-	golang.org/x/term v0.28.0
+	golang.org/x/crypto v0.35.0
+	golang.org/x/term v0.29.0
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/driver/postgres v1.5.3
 	gorm.io/driver/sqlserver v1.5.2
@@ -87,9 +86,9 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yuin/gopher-lua v0.0.0-20200816102855-ee81675732da // indirect
 	go.uber.org/atomic v1.9.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	gopkg.in/ini.v1 v1.66.6 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
