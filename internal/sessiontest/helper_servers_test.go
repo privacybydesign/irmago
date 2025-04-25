@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -74,6 +77,42 @@ func init() {
 	}
 }
 
+// Setup symbolic links for tests that require them
+func ensureSymlinks(tb testing.TB) func(tb testing.TB) {
+	// Some tests expect symbolic links to be present
+	// Notation is <symlink location> : <target>
+	symlinks := map[string]string{
+		"..\\..\\testdata\\irma_configuration_updated\\test":  "..\\..\\testdata\\irma_configuration\\test",
+		"..\\..\\testdata\\irma_configuration_updated\\test2": "..\\..\\testdata\\irma_configuration\\test2",
+	}
+
+	var c *exec.Cmd
+	var symlinkError error
+
+	for symlinkLocation, target := range symlinks {
+		if _, err := os.Stat(symlinkLocation); os.IsNotExist(err) {
+			// Create the symbolic link
+			switch runtime.GOOS {
+			case "windows":
+				c = exec.Command("cmd", "/c", "mklink", "/J", symlinkLocation, target)
+				symlinkError = c.Run()
+
+			default: //Mac & Linux
+				symlinkError = os.Symlink(symlinkLocation, target)
+			}
+
+			if symlinkError != nil {
+				fmt.Println("Error creating symbolic links: ", symlinkError)
+			}
+		}
+	}
+
+	// Return a function to teardown the test
+	return func(tb testing.TB) {
+
+	}
+}
+
 // apply performs partial function application: it takes (1) a test function which apart from
 // *testing.T additionally accepting a configuration function and session options, and (2) a
 // configuration function and session objects, and returns a function suitable for unit testing by
@@ -100,6 +139,8 @@ func StartRequestorServer(t *testing.T, configuration *requestorserver.Configura
 }
 
 func StartIrmaServer(t *testing.T, conf *server.Configuration) *IrmaServer {
+	ensureSymlinks(t)
+
 	if conf == nil {
 		conf = IrmaServerConfiguration()
 	}

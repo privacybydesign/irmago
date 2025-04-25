@@ -177,6 +177,7 @@ func TestRedisWithTLSCertFile(t *testing.T) {
 	require.NoError(t, err)
 	certfile := file.Name()
 	defer func() {
+		file.Close()
 		require.NoError(t, os.Remove(certfile))
 	}()
 

@@ -100,4 +100,5 @@ func TestLogging(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.NotEmpty(t, attrs)
 	require.Equal(t, attrid, attrs[0][0].Identifier)
+	require.NoError(t, client.Close())
 }
