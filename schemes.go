@@ -1504,7 +1504,7 @@ func (scheme *RequestorScheme) handleUpdateFile(conf *Configuration, path, filen
 		if err != nil {
 			return err
 		}
-		//if _, err = downloadSignedFile(transport, path, filepath.Join("assets", filename), hash); err != nil {
+
 		urlPath, err := url.JoinPath("assets", filename)
 		if err != nil {
 			return err

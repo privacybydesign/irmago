@@ -78,7 +78,7 @@ func init() {
 }
 
 // Setup symbolic links for tests that require them
-func ensureSymlinks(tb testing.TB) func(tb testing.TB) {
+func ensureSymlinks(tb testing.TB) {
 	// Some tests expect symbolic links to be present
 	// Notation is <symlink location> : <target>
 	symlinks := map[string]string{
@@ -107,11 +107,6 @@ func ensureSymlinks(tb testing.TB) func(tb testing.TB) {
 		if symlinkError != nil {
 			fmt.Println("Error creating symbolic links: ", symlinkError)
 		}
-	}
-
-	// Return a function to teardown the test
-	return func(tb testing.TB) {
-
 	}
 }
 
