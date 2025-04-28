@@ -82,8 +82,8 @@ func ensureSymlinks(tb testing.TB) func(tb testing.TB) {
 	// Some tests expect symbolic links to be present
 	// Notation is <symlink location> : <target>
 	symlinks := map[string]string{
-		"..\\..\\testdata\\irma_configuration_updated\\test":  "..\\..\\testdata\\irma_configuration\\test",
-		"..\\..\\testdata\\irma_configuration_updated\\test2": "..\\..\\testdata\\irma_configuration\\test2",
+		filepath.Join("..", "..", "testdata", "irma_configuration_updated", "test"):  filepath.Join("..", "..", "testdata", "irma_configuration", "test"),
+		filepath.Join("..", "..", "testdata", "irma_configuration_updated", "test2"): filepath.Join("..", "..", "testdata", "irma_configuration", "test2"),
 	}
 
 	var c *exec.Cmd
@@ -100,7 +100,7 @@ func ensureSymlinks(tb testing.TB) func(tb testing.TB) {
 
 		default: //Mac & Linux
 			if _, err := os.Lstat(symlinkLocation); os.IsNotExist(err) {
-				symlinkError = os.Symlink(symlinkLocation, target)
+				symlinkError = os.Symlink(target, symlinkLocation)
 			}
 		}
 
