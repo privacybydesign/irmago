@@ -90,20 +90,22 @@ func ensureSymlinks(tb testing.TB) func(tb testing.TB) {
 	var symlinkError error
 
 	for symlinkLocation, target := range symlinks {
-		if _, err := os.Stat(symlinkLocation); os.IsNotExist(err) {
-			// Create the symbolic link
-			switch runtime.GOOS {
-			case "windows":
+		// Create the symbolic link
+		switch runtime.GOOS {
+		case "windows":
+			if _, err := os.Stat(symlinkLocation); os.IsNotExist(err) {
 				c = exec.Command("cmd", "/c", "mklink", "/J", symlinkLocation, target)
 				symlinkError = c.Run()
+			}
 
-			default: //Mac & Linux
+		default: //Mac & Linux
+			if _, err := os.Lstat(symlinkLocation); os.IsNotExist(err) {
 				symlinkError = os.Symlink(symlinkLocation, target)
 			}
+		}
 
-			if symlinkError != nil {
-				fmt.Println("Error creating symbolic links: ", symlinkError)
-			}
+		if symlinkError != nil {
+			fmt.Println("Error creating symbolic links: ", symlinkError)
 		}
 	}
 
