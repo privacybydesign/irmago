@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -773,9 +774,15 @@ func (conf *Configuration) checkUnsignedFiles(dir string, index SchemeManagerInd
 		if err != nil {
 			return err
 		}
+
 		schemepath := filepath.Join(index.Scheme(), relpath)
+
+		// On Linux and MacOS, filepath.Rel returns a path with forward slashes, on Windows with backslashes.
+		// However, scheme index is always stored with forward slashes, so we need to convert the path to forward slashes.
+		schemepath = filepath.ToSlash(schemepath)
+
 		for _, ex := range sigExceptions {
-			if ex.MatchString(filepath.ToSlash(schemepath)) {
+			if ex.MatchString(schemepath) {
 				return nil
 			}
 		}
@@ -1497,7 +1504,12 @@ func (scheme *RequestorScheme) handleUpdateFile(conf *Configuration, path, filen
 		if err != nil {
 			return err
 		}
-		if _, err = downloadSignedFile(transport, path, filepath.Join("assets", filename), hash); err != nil {
+
+		urlPath, err := url.JoinPath("assets", filename)
+		if err != nil {
+			return err
+		}
+		if _, err = downloadSignedFile(transport, path, urlPath, hash); err != nil {
 			return err
 		}
 	}

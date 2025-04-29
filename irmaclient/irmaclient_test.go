@@ -294,6 +294,7 @@ func TestCredentialRemoval(t *testing.T) {
 	err = client.storage.db.Close()
 	require.NoError(t, err)
 	client, _ = parseExistingStorage(t, handler.storage)
+	defer client.storage.db.Close()
 	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
@@ -393,6 +394,7 @@ func TestFreshStorage(t *testing.T) {
 	storage := test.CreateTestStorage(t)
 	client, handler := parseExistingStorage(t, storage)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 	require.NotNil(t, client)
 }
 
@@ -403,9 +405,11 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 	err := client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
 
-	err = client.storage.db.Close()
+	err = client.storage.Close()
 	require.NoError(t, err)
 	client, _ = parseExistingStorage(t, handler.storage)
+	err = client.storage.Close()
+	require.NoError(t, err)
 
 	require.NotContains(t, client.keyshareServers, "test")
 }
@@ -413,6 +417,7 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 func TestUpdatingStorage(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 	require.NotNil(t, client)
 
 	// Check whether all update functions succeeded
@@ -424,6 +429,7 @@ func TestUpdatingStorage(t *testing.T) {
 func TestRemoveStorage(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	// Check whether we have logs in storage to know whether the logs bucket is there
 	logs, err := client.LoadNewestLogs(1)
@@ -452,6 +458,7 @@ func TestRemoveStorage(t *testing.T) {
 
 func TestCredentialsConcurrency(t *testing.T) {
 	client, _ := parseStorage(t)
+	defer client.Close()
 	grp := sync.WaitGroup{}
 
 	for j := 0; j < 1000; j++ {
