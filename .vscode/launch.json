@@ -9,7 +9,6 @@
             "program": "${workspaceFolder}/irma/main.go",
             "args": [
                 "server",
-                "-c=${workspaceFolder}/testdata/configurations/requestorserver_nextsession.yml"
             ]
         },
         {
