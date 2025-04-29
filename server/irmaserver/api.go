@@ -27,13 +27,14 @@ import (
 var AllowIssuingExpiredCredentials = false
 
 type Server struct {
-	conf                   *server.Configuration
-	router                 *chi.Mux
-	sessions               sessionStore
-	scheduler              *gocron.Scheduler
-	serverSentEvents       *sse.Server
-	activeSSEHandlers      map[irma.RequestorToken]bool
-	activeSSEHandlersMutex sync.Mutex
+	conf                     *server.Configuration
+	router                   *chi.Mux
+	sessions                 sessionStore
+	scheduler                *gocron.Scheduler
+	serverSentEvents         *sse.Server
+	activeSSEHandlers        map[irma.RequestorToken]bool
+	activeSSEHandlersMutex   sync.Mutex
+	NextSessionAuthorization irma.SessionAuthorizationFunc
 }
 
 // Default server instance
@@ -60,6 +61,9 @@ func New(conf *server.Configuration) (*Server, error) {
 		scheduler:         gocron.NewScheduler(time.UTC),
 		serverSentEvents:  e,
 		activeSSEHandlers: make(map[irma.RequestorToken]bool),
+		NextSessionAuthorization: func(requestor string, request irma.SessionRequest) (bool, string) {
+			return false, "NextSessions unauthorized by default."
+		},
 	}
 
 	switch conf.StoreType {
@@ -201,14 +205,14 @@ func (s *Server) Stop() {
 // ([]byte or string) JSON representation of one of those (for more details, see server.ParseSessionRequest().)
 func StartSession(request interface{}, handler server.SessionHandler,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
-	return s.StartSession(request, handler)
+	return s.StartSession(request, handler, "")
 }
-func (s *Server) StartSession(req interface{}, handler server.SessionHandler,
+func (s *Server) StartSession(req interface{}, handler server.SessionHandler, requestor string,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
-	return s.startNextSession(req, handler, nil, "")
+	return s.startNextSession(req, handler, nil, "", requestor)
 }
 func (s *Server) startNextSession(
-	req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization,
+	req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization, requestor string,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	if s.conf.StoreType == "redis" && handler != nil {
 		return nil, "", nil, errors.New("Handlers cannot be used in combination with Redis.")
@@ -256,7 +260,7 @@ func (s *Server) startNextSession(
 	}
 
 	request.Base().DevelopmentMode = !s.conf.Production
-	ses, err := s.newSession(context.Background(), action, rrequest, disclosed, FrontendAuth)
+	ses, err := s.newSession(context.Background(), action, rrequest, disclosed, FrontendAuth, requestor)
 	if err != nil {
 		return nil, "", nil, err
 	}

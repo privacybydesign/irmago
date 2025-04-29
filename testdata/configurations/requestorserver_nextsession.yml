@@ -1,0 +1,23 @@
+production: true
+url: "http://192.168.1.154:8088"
+no_tls: true
+no_auth: false
+no_email: true
+allow_unsigned_callbacks: true
+
+requestors:
+  alice:
+    auth_method: token
+    key: secret1
+    disclose_perms: ["irma-demo.*"]
+    issue_perms: ["irma-demo.interpolis.login"]
+  eve:
+    auth_method: token
+    key: secret2
+    disclose_perms: ["irma-demo.*"]
+    issue_perms: []
+  eve2:
+    auth_method: token
+    key: secret3
+    disclose_perms: ["irma-demo.*"]
+    issue_perms: ["irma-demo.IRMATube.*"]

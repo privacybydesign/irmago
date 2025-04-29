@@ -487,7 +487,7 @@ func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	})
 
 	irmaServer := StartIrmaServer(t, nil)
-	_, _, _, err := irmaServer.irma.StartSession(request, nil)
+	_, _, _, err := irmaServer.irma.StartSession(request, nil, "")
 	irmaServer.Stop()
 	require.EqualError(t, err, "Error type: randomblind\nDescription: randomblind attribute cannot be set in credential request\nStatus code: 0")
 
@@ -865,7 +865,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
 	irmaServer := StartIrmaServer(t, nil) // Run a server with old configuration (level is non-optional)
-	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil)
+	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil, "")
 	expectedError := &irma.RequiredAttributeMissingError{
 		ErrorType: irma.ErrorRequiredAttributeMissing,
 		Missing: &irma.IrmaIdentifierSet{
@@ -889,7 +889,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, nil)
+	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, nil, "")
 	require.NoError(t, err)
 	irmaServer.Stop()
 }
@@ -1087,7 +1087,7 @@ func TestInvalidRequest(t *testing.T) {
 	_, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
 		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
-	), nil)
+	), nil, "")
 	require.Error(t, err)
 }
 
@@ -1096,7 +1096,7 @@ func TestDoubleGET(t *testing.T) {
 	defer irmaServer.Stop()
 	qr, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
-	), nil)
+	), nil, "")
 	require.NoError(t, err)
 
 	// Simulate the first GET by the client in the session protocol, twice
@@ -1116,7 +1116,7 @@ func TestInsecureProtocolVersion(t *testing.T) {
 	// Test whether the server accepts a request with an insecure protocol version
 	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 
-	qr, _, _, err := irmaServer.irma.StartSession(request, func(result *server.SessionResult) {})
+	qr, _, _, err := irmaServer.irma.StartSession(request, func(result *server.SessionResult) {}, "")
 	require.NoError(t, err)
 
 	var o interface{}
@@ -1152,7 +1152,7 @@ func TestClientDeveloperMode(t *testing.T) {
 
 	// Try to start another session with our non-https server
 	issuanceRequest = getNameIssuanceRequest()
-	qr, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil)
+	qr, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil, "")
 	require.NoError(t, err)
 	c := make(chan *SessionResult, 1)
 	j, err := json.Marshal(qr)
@@ -1270,7 +1270,7 @@ func TestIssueExpiredKey(t *testing.T) {
 
 	// server aborts issuance sessions in case of expired public keys
 	expireKey(t, irmaServer.conf.IrmaConfiguration)
-	_, _, _, err := irmaServer.irma.StartSession(getIssuanceRequest(true), nil)
+	_, _, _, err := irmaServer.irma.StartSession(getIssuanceRequest(true), nil, "")
 	require.Error(t, err)
 }
 

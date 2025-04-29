@@ -108,7 +108,7 @@ func startServer(t *testing.T, opts option, irmaServer *IrmaServer, conf interfa
 func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request interface{}) *server.SessionPackage {
 	switch s := serv.(type) {
 	case *IrmaServer:
-		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil)
+		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil, "")
 		require.NoError(t, err)
 		return &server.SessionPackage{
 			SessionPtr:      qr,

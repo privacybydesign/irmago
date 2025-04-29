@@ -467,7 +467,7 @@ func (s *Server) processLoginIrmaSessionResult(ctx context.Context, session *ses
 func (s *Server) handleIrmaLogin(w http.ResponseWriter, r *http.Request) {
 	qr, loginToken, frontendRequest, err := s.irmaserv.StartSession(
 		newIrmaDisclosureRequest(s.conf.KeyshareAttributes),
-		nil,
+		nil, "",
 	)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for login")
@@ -717,7 +717,7 @@ func (s *Server) handleAddEmail(w http.ResponseWriter, r *http.Request) {
 
 	qr, emailToken, frontendRequest, err := s.irmaserv.StartSession(
 		newIrmaDisclosureRequest(s.conf.EmailAttributes),
-		nil,
+		nil, "",
 	)
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Error during startup of IRMA session for adding email address")

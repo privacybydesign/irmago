@@ -240,7 +240,7 @@ func TestRedisSessionFailure(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
 
-	qr, _, _, err := irmaServer.irma.StartSession(request, nil)
+	qr, _, _, err := irmaServer.irma.StartSession(request, nil, "")
 	require.NoError(t, err)
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestRedisLibraryErrors(t *testing.T) {
 
 	token := irma.RequestorToken("Sxqcpng37mAdBKgoAJXl")
 
-	_, _, _, err := irmaServer.irma.StartSession(request, nil)
+	_, _, _, err := irmaServer.irma.StartSession(request, nil, "")
 	require.Error(t, err)
 	_, err = irmaServer.irma.GetSessionResult(token)
 	require.Error(t, err)

@@ -8,7 +8,8 @@
             "mode": "auto",
             "program": "${workspaceFolder}/irma/main.go",
             "args": [
-                "server"
+                "server",
+                "-c=${workspaceFolder}/testdata/configurations/requestorserver_nextsession.yml"
             ]
         },
         {

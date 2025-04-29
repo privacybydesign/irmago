@@ -719,7 +719,7 @@ func (s *Server) handleRenewKeyshareAttribute(w http.ResponseWriter, r *http.Req
 	irmaReq.AddSingle(s.conf.KeyshareAttribute, &user.Username, nil)
 	irmaReq.Disclosure().SkipExpiryCheck = []irma.CredentialTypeIdentifier{s.conf.KeyshareAttribute.CredentialTypeIdentifier()}
 
-	sessionptr, _, _, err := s.irmaserv.StartSession(irmaReq, nil)
+	sessionptr, _, _, err := s.irmaserv.StartSession(irmaReq, nil, "")
 	if err != nil {
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
@@ -840,7 +840,7 @@ func (s *Server) register(ctx context.Context, msg irma.KeyshareEnrollment) (*ir
 
 	// Setup and return issuance session for keyshare credential.
 	request := s.keyshareAttributeIssuanceRequest(username)
-	sessionptr, _, _, err := s.irmaserv.StartSession(request, nil)
+	sessionptr, _, _, err := s.irmaserv.StartSession(request, nil, "")
 	if err != nil {
 		s.conf.Logger.WithField("error", err).Error("Could not start keyshare credential issuance sessions")
 		return nil, err

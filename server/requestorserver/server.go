@@ -141,6 +141,10 @@ func New(config *Configuration) (*Server, error) {
 	if err := config.initialize(); err != nil {
 		return nil, err
 	}
+
+	// Authorize NextSessions against the requestor configuration
+	irmaserv.NextSessionAuthorization = config.CanRequest
+
 	return &Server{
 		conf:     config,
 		irmaserv: irmaserv,
@@ -523,7 +527,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, nil)
+	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, nil, requestor)
 	if err != nil {
 		if _, ok := err.(*irmaserver.RedisError); ok {
 			s.conf.Logger.WithError(err).Error("Failed to start session")
