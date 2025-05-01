@@ -169,6 +169,8 @@ func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts
 	// Also check whether this is actually stored
 	require.NoError(t, client.Close())
 	client, _ = parseExistingStorage(t, handler.storage)
+	defer client.Close()
+
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
 
@@ -275,6 +277,8 @@ func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...opt
 	// Also check whether this is actually stored
 	require.NoError(t, client.Close())
 	client, _ = parseExistingStorage(t, handler.storage)
+	defer client.Close()
+
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 }
@@ -350,6 +354,7 @@ func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ..
 
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
@@ -369,6 +374,7 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -450,6 +456,8 @@ func testIssuedCredentialIsStored(t *testing.T, conf interface{}, opts ...option
 	require.NoError(t, client.Close())
 
 	client, _ = parseExistingStorage(t, handler.storage)
+	defer client.Close()
+
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
 	doSession(t, getDisclosureRequest(id), client, nil, nil, nil, conf, opts...)
 }
