@@ -1,3 +1,4 @@
+// from the other side
 package irmaclient
 
 import (
