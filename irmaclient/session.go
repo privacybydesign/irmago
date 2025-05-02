@@ -121,13 +121,44 @@ var supportedVersions = map[int][]int{
 
 // Session constructors
 
+type OpenId4VpRequest struct {
+	RequestUri string `json:"request_uri"`
+	ClientId   string `json:"client_id"`
+}
+
+type AnyRequest struct {
+	OpenId4Vp *OpenId4VpRequest `json:"openid4vp"`
+	Irma      *json.RawMessage  `json:"irma"`
+}
+
+func (client *Client) newOpenId4VpSession(request OpenId4VpRequest) SessionDismisser {
+	irma.Logger.Infof("starting openid4vp from go: %v", request)
+	return nil
+}
+
 // NewSession starts a new IRMA session, given (along with a handler to pass feedback to) a session request.
 // When the request is not suitable to start an IRMA session from, it calls the Failure method of the specified Handler.
 func (client *IrmaClient) NewSession(sessionrequest string, handler Handler) SessionDismisser {
 	bts := []byte(sessionrequest)
 
+	var anyRequest AnyRequest
+	err := json.Unmarshal(bts, &anyRequest)
+	if err != nil {
+		handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest})
+		return nil
+	}
+
+	if anyRequest.OpenId4Vp != nil {
+		return client.newOpenId4VpSession(*anyRequest.OpenId4Vp)
+	}
+
+	if anyRequest.Irma == nil {
+		handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
+		return nil
+	}
+
 	qr := &irma.Qr{}
-	if err := json.Unmarshal(bts, qr); err == nil && qr.IsQr() {
+	if err := json.Unmarshal(*anyRequest.Irma, qr); err == nil && qr.IsQr() {
 		if err = qr.Validate(); err != nil {
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
 			return nil
