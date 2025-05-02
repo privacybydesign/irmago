@@ -52,7 +52,7 @@ func TestKeyshareRegister(t *testing.T) {
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
-	doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil)
+	doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil, nil)
 	keyshareSessions(t, client, irmaServer)
 }
 
@@ -80,11 +80,11 @@ func TestKeyshareAttributeRenewal(t *testing.T) {
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	})
-	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil, nil)
 
 	// Validate that keyshare attribute is invalid.
 	disclosureRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
-	result := doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, optionUnsatisfiableRequest)
+	result := doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, nil, optionUnsatisfiableRequest)
 	// Session remains active when being unsatisfiable, so we have to close it manually.
 	result.Dismisser.Dismiss()
 
@@ -94,7 +94,7 @@ func TestKeyshareAttributeRenewal(t *testing.T) {
 	require.True(t, valid)
 
 	// Keyshare attribute should be valid again.
-	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, nil)
 }
 
 // Use the existing keyshare enrollment and credentials
@@ -120,15 +120,15 @@ func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaS
 			Attributes:       map[string]string{"email": "testusername"},
 		},
 	)
-	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil, options...)
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil, nil, options...)
 
 	disclosureRequest := getDisclosureRequest(id)
 	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, options...)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, nil, options...)
 
 	sigRequest := getSigningRequest(id)
 	sigRequest.AddSingle(irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), nil, nil)
-	doSession(t, sigRequest, client, irmaServer, nil, nil, nil, options...)
+	doSession(t, sigRequest, client, irmaServer, nil, nil, nil, nil, options...)
 }
 
 func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
@@ -139,7 +139,7 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 
 	id := irma.NewAttributeTypeIdentifier("test.test.mijnirma.email")
 	request := getCombinedIssuanceRequest(id)
-	doSession(t, request, nil, irmaServer, nil, nil, nil)
+	doSession(t, request, nil, irmaServer, nil, nil, nil, nil)
 
 	id = irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request = irma.NewIssuanceRequest([]*irma.CredentialRequest{
@@ -150,7 +150,7 @@ func TestIssuanceCombinedMultiSchemeSession(t *testing.T) {
 			},
 		},
 	}, id)
-	doSession(t, request, nil, irmaServer, nil, nil, nil)
+	doSession(t, request, nil, irmaServer, nil, nil, nil, nil)
 }
 
 func TestMultipleKeyshareServers(t *testing.T) {
@@ -176,7 +176,7 @@ func TestMultipleKeyshareServers(t *testing.T) {
 		irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
 		irma.NewAttributeTypeIdentifier("test2.test.mijnirma.email"),
 	)
-	doSession(t, request, client, irmaServer, nil, nil, nil)
+	doSession(t, request, client, irmaServer, nil, nil, nil, nil)
 
 	logs, err = client.LoadNewestLogs(20)
 	require.NoError(t, err)
@@ -218,21 +218,24 @@ func TestKeyshareChainedSessions(t *testing.T) {
 	defer keyshareServer.Stop()
 
 	t.Run("BothKeyshare", func(t *testing.T) {
-		doChainedSessions(t, IrmaServerConfiguration,
+		doNonRequestorChainedSessions(t, IrmaServerConfiguration,
 			irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
 			irma.NewCredentialTypeIdentifier("test.test2.email"),
+			optionIgnoreError,
 		)
 	})
 	t.Run("WithWithoutKeyshare", func(t *testing.T) {
-		doChainedSessions(t, IrmaServerConfiguration,
+		doNonRequestorChainedSessions(t, IrmaServerConfiguration,
 			irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
 			irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			optionIgnoreError,
 		)
 	})
 	t.Run("WithoutWith", func(t *testing.T) {
-		doChainedSessions(t, IrmaServerConfiguration,
+		doNonRequestorChainedSessions(t, IrmaServerConfiguration,
 			irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"),
 			irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
+			optionIgnoreError,
 		)
 	})
 }

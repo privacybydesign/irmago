@@ -34,6 +34,15 @@ type Server struct {
 	stopped  chan struct{}
 }
 
+func (s *Server) StartSession(req interface{}, handler server.SessionHandler, requestor string,
+) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+	return s.irmaserv.StartSession(req, handler, requestor)
+}
+
+func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (res *server.SessionResult, err error) {
+	return s.irmaserv.GetSessionResult(requestorToken)
+}
+
 // Start the server. If successful then it will not return until Stop() is called.
 func (s *Server) Start(config *Configuration) error {
 	if s.conf.LogJSON {

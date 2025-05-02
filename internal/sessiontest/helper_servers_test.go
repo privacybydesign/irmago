@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -164,7 +165,10 @@ func (s *IrmaServer) Stop() {
 }
 
 func chainedServerHandler(
-	t *testing.T, conf *server.Configuration, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
+	t *testing.T,
+	publicKey *rsa.PublicKey,
+	credentialTypes map[irma.CredentialTypeIdentifier]*irma.CredentialType,
+	id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -201,7 +205,8 @@ func chainedServerHandler(
 			server.SessionResult
 		}{}
 		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (interface{}, error) {
-			return &conf.JwtRSAPrivateKey.PublicKey, nil
+			//return &conf.JwtRSAPrivateKey.PublicKey, nil
+			return publicKey, nil
 		})
 		require.NoError(t, err)
 		result := claims.SessionResult
@@ -215,7 +220,7 @@ func chainedServerHandler(
 			CredentialTypeID: cred,
 			Attributes:       map[string]string{},
 		}
-		for _, attrtype := range conf.IrmaConfiguration.CredentialTypes[cred].AttributeTypes {
+		for _, attrtype := range credentialTypes[cred].AttributeTypes {
 			credreq.Attributes[attrtype.ID] = *attr
 		}
 
@@ -240,7 +245,7 @@ func chainedServerHandler(
 	mux.HandleFunc("/3", func(w http.ResponseWriter, r *http.Request) {
 		request := irma.NewDisclosureRequest()
 		request.Disclose = irma.AttributeConDisCon{{{{
-			Type:  conf.IrmaConfiguration.CredentialTypes[cred].AttributeTypes[0].GetAttributeTypeIdentifier(),
+			Type:  credentialTypes[cred].AttributeTypes[0].GetAttributeTypeIdentifier(),
 			Value: attr,
 		}}}}
 		bts, err := json.Marshal(request)
@@ -254,11 +259,12 @@ func chainedServerHandler(
 }
 
 func StartNextRequestServer(
-	t *testing.T, conf *server.Configuration, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
+	t *testing.T, publicKey *rsa.PublicKey, credentialTypes map[irma.CredentialTypeIdentifier]*irma.CredentialType,
+	id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
 ) *http.Server {
 	s := &http.Server{
 		Addr:    fmt.Sprintf("localhost:%d", nextSessionServerPort),
-		Handler: chainedServerHandler(t, conf, id, cred),
+		Handler: chainedServerHandler(t, publicKey, credentialTypes, id, cred),
 	}
 	go func() {
 		_ = s.ListenAndServe()
@@ -314,6 +320,37 @@ func RequestorServerConfiguration() *requestorserver.Configuration {
 
 func RequestorServerAuthConfiguration() *requestorserver.Configuration {
 	conf := RequestorServerConfiguration()
+	conf.DisableRequestorAuthentication = false
+	conf.Requestors = map[string]requestorserver.Requestor{
+		"requestor1": {
+			AuthenticationMethod:  requestorserver.AuthenticationMethodPublicKey,
+			AuthenticationKeyFile: filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
+			Permissions: requestorserver.Permissions{
+				Hosts: []string{"localhost:48682"},
+			},
+		},
+		"requestor2": {
+			AuthenticationMethod: requestorserver.AuthenticationMethodToken,
+			AuthenticationKey:    TokenAuthenticationKey,
+			Permissions: requestorserver.Permissions{
+				Hosts: []string{"localhost:48682"},
+			},
+		},
+		"requestor3": {
+			AuthenticationMethod: requestorserver.AuthenticationMethodHmac,
+			AuthenticationKey:    HmacAuthenticationKey,
+			Permissions: requestorserver.Permissions{
+				Hosts: []string{"localhost:48682"},
+			},
+		},
+	}
+	return conf
+}
+
+func RequestorServerAuthConfiguration2() *requestorserver.Configuration {
+	conf := RequestorServerConfiguration()
+	irmaServerConf := IrmaServerConfiguration()
+	irmaServerConf.URL = requestorServerURL + "/irma"
 	conf.DisableRequestorAuthentication = false
 	conf.Requestors = map[string]requestorserver.Requestor{
 		"requestor1": {

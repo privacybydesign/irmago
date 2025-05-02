@@ -27,14 +27,14 @@ func testSessionUsingLegacyStorage(t *testing.T, dir string) {
 	// Test whether credential from legacy storage is still usable
 	idStudentCard := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(idStudentCard)
-	doSession(t, request, client, nil, nil, nil, nil)
+	doSession(t, request, client, nil, nil, nil, nil, nil)
 
 	// Issue new credential
-	doSession(t, getMultipleIssuanceRequest(), client, nil, nil, nil, nil)
+	doSession(t, getMultipleIssuanceRequest(), client, nil, nil, nil, nil, nil)
 
 	// Test whether credential is still there
 	idRoot := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
-	doSession(t, getDisclosureRequest(idRoot), client, nil, nil, nil, nil)
+	doSession(t, getDisclosureRequest(idRoot), client, nil, nil, nil, nil, nil)
 
 	// Re-open client
 	require.NoError(t, client.Close())
@@ -42,7 +42,7 @@ func testSessionUsingLegacyStorage(t *testing.T, dir string) {
 	defer client.Close()
 
 	// Test whether credential is still there after the storage has been reloaded
-	doSession(t, getDisclosureRequest(idRoot), client, nil, nil, nil, nil)
+	doSession(t, getDisclosureRequest(idRoot), client, nil, nil, nil, nil, nil)
 }
 
 func TestWithoutPairingSupport(t *testing.T) {

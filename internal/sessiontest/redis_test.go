@@ -135,7 +135,7 @@ func TestRedis(t *testing.T) {
 	t.Run("IssuanceSession", apply(testIssuanceSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
 	t.Run("IssuedCredentialIsStored", apply(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
 
-	t.Run("ChainedSessions", apply(testChainedSessions, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
+	t.Run("ChainedSessions", apply(testNonRequestorChainedSessions, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
 	t.Run("UnknownRequestorToken", apply(testUnknownRequestorToken, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
 }
 
@@ -225,7 +225,7 @@ func TestRedisRedundancy(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	doSession(t, request, nil, nil, nil, nil, nil, optionReuseServer)
+	doSession(t, request, nil, nil, nil, nil, nil, nil, optionReuseServer)
 }
 
 // Tests whether the right error is returned by the client's Failure handler
