@@ -121,7 +121,7 @@ func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request inte
 			FrontendRequest: frontendRequest,
 		}
 	case *requestorserver.Server:
-		qr, requestorToken, frontendRequest, err := s.StartSession(request, nil, "")
+		qr, requestorToken, frontendRequest, err := s.StartSession(request, nil, "requestor1")
 		require.NoError(t, err)
 		return &server.SessionPackage{
 			SessionPtr:      qr,
@@ -346,6 +346,7 @@ func doChainedSessions(
 ) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
 
@@ -373,6 +374,42 @@ func doChainedSessions(
 	}
 
 	require.NoError(t, errors.New("newly issued credential not found in client"))
+}
+
+func doUnauthorizedChainedSession(
+	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+) {
+	client, handler := parseStorage(t, opts...)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
+
+	buildConfig := conf.(func() *requestorserver.Configuration)()
+
+	requestorServer := StartRequestorServer(t, buildConfig)
+	defer requestorServer.Stop()
+	nextServer := StartNextRequestServer(t, &buildConfig.JwtRSAPrivateKey.PublicKey, buildConfig.IrmaConfiguration.CredentialTypes, id, cred)
+	defer func() {
+		_ = nextServer.Close()
+	}()
+
+	var request irma.ServiceProviderRequest
+	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("unauthorized-next-session-1", &request))
+
+	// In case of chained sessions, the server's session store is queried twice in a single
+	// HTTP handler (when processing the irmaclient's response). The mutexes involved have caused
+	// deadlocks in the past when the frontend polls the session status, so we simulate polling in
+	// this test.
+	doSession(t, &request, client, nil, requestorServer, nil, nil, nil, append(opts, optionPolling)...)
+
+	// Check that we have a new credential
+	newCreds := []*irma.CredentialInfo{}
+	for _, cred := range client.CredentialInfoList() {
+		if cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1 * irma.ExpiryFactor * time.Second))) {
+			newCreds = append(newCreds, cred)
+		}
+	}
+
+	require.Empty(t, newCreds)
 }
 
 // Chained sessions are a requestor server feature, which is not supported by other types like keyshare.

@@ -255,6 +255,42 @@ func chainedServerHandler(
 		require.NoError(t, err)
 	})
 
+	// Request disclosure of attribute specified by the id parameter
+	mux.HandleFunc("/unauthorized-next-session-1", func(w http.ResponseWriter, r *http.Request) {
+		request := &irma.ServiceProviderRequest{
+			Request: getDisclosureRequest(id),
+			RequestorBaseRequest: irma.RequestorBaseRequest{
+				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/unauthorized-next-session-2"},
+			},
+		}
+		bts, err := json.Marshal(request)
+		require.NoError(t, err)
+		_, err = w.Write(bts)
+		require.NoError(t, err)
+	})
+
+	// Try to issue a credential without being authorized in the requestor server configuration
+	mux.HandleFunc("/unauthorized-next-session-2", func(w http.ResponseWriter, r *http.Request) {
+		expiry := irma.Timestamp(irma.FloorToEpochBoundary(time.Now().AddDate(1, 0, 0)))
+		request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+			{
+				Validity:         &expiry,
+				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+				Attributes: map[string]string{
+					"university":        "Radboud",
+					"studentCardNumber": "31415927",
+					"studentID":         "s1234567",
+					"level":             "42",
+				},
+			},
+		})
+		bts, err := json.Marshal(request)
+		require.NoError(t, err)
+		logger.Trace("Unauthorized next session request: ", string(bts))
+		_, err = w.Write(bts)
+		require.NoError(t, err)
+	})
+
 	return mux
 }
 
@@ -347,31 +383,25 @@ func RequestorServerAuthConfiguration() *requestorserver.Configuration {
 	return conf
 }
 
-func RequestorServerAuthConfiguration2() *requestorserver.Configuration {
+// RequestorServerPermissionsConfiguration returns a requestor server configuration with
+// 'requestor1' as requestor, is only allowed to disclose irma-demo.MijnOverheid credentials and issue the irma-demo.IRMATube.member attribute.
+func RequestorServerPermissionsConfiguration() *requestorserver.Configuration {
 	conf := RequestorServerConfiguration()
 	irmaServerConf := IrmaServerConfiguration()
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	conf.DisableRequestorAuthentication = false
+	conf.Production = true
+	conf.DisableTLS = true
+	conf.AllowUnsignedCallbacks = true
+	conf.Permissions = requestorserver.Permissions{}
 	conf.Requestors = map[string]requestorserver.Requestor{
 		"requestor1": {
-			AuthenticationMethod:  requestorserver.AuthenticationMethodPublicKey,
-			AuthenticationKeyFile: filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
-			Permissions: requestorserver.Permissions{
-				Hosts: []string{"localhost:48682"},
-			},
-		},
-		"requestor2": {
 			AuthenticationMethod: requestorserver.AuthenticationMethodToken,
 			AuthenticationKey:    TokenAuthenticationKey,
 			Permissions: requestorserver.Permissions{
-				Hosts: []string{"localhost:48682"},
-			},
-		},
-		"requestor3": {
-			AuthenticationMethod: requestorserver.AuthenticationMethodHmac,
-			AuthenticationKey:    HmacAuthenticationKey,
-			Permissions: requestorserver.Permissions{
-				Hosts: []string{"localhost:48682"},
+				Hosts:      []string{"localhost:48682"},
+				Disclosing: []string{"irma-demo.MijnOverheid.*"},
+				Issuing:    []string{"irma-demo.MijnOverheid.*"},
 			},
 		},
 	}

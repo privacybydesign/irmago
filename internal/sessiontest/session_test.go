@@ -42,6 +42,7 @@ import (
 
 func TestRequestorServer(t *testing.T) {
 	t.Run("ChainedSessions", apply(testRequestorChainedSessions, RequestorServerAuthConfiguration))
+	t.Run("UnauthorizedChainedSession", apply(testUnauthorizedRequestorChainedSession, RequestorServerPermissionsConfiguration))
 	t.Run("DisclosureSession", apply(testDisclosureSession, RequestorServerConfiguration))
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, RequestorServerConfiguration))
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, RequestorServerConfiguration))
@@ -552,6 +553,14 @@ func testRequestorChainedSessions(t *testing.T, conf interface{}, opts ...option
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
 		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
 		opts...,
+	)
+}
+
+func testUnauthorizedRequestorChainedSession(t *testing.T, conf interface{}, opts ...option) {
+	doUnauthorizedChainedSession(t, conf,
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+		append(opts, optionIgnoreError)...,
 	)
 }
 
