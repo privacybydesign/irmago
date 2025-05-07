@@ -8,12 +8,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -69,7 +70,7 @@ func StartSession(requestString *C.char) (r *C.char) {
 	}
 
 	// Run the actual core function
-	qr, requestorToken, frontendRequest, err := s.StartSession(C.GoString(requestString), nil)
+	qr, requestorToken, frontendRequest, err := s.StartSession(C.GoString(requestString), nil, "")
 
 	// And properly return the result
 	if err != nil {
