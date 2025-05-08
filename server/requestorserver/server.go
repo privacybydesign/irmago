@@ -34,6 +34,15 @@ type Server struct {
 	stopped  chan struct{}
 }
 
+func (s *Server) StartSession(req interface{}, handler server.SessionHandler, requestor string,
+) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
+	return s.irmaserv.StartSession(req, handler, requestor)
+}
+
+func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (res *server.SessionResult, err error) {
+	return s.irmaserv.GetSessionResult(requestorToken)
+}
+
 // Start the server. If successful then it will not return until Stop() is called.
 func (s *Server) Start(config *Configuration) error {
 	if s.conf.LogJSON {
@@ -141,6 +150,10 @@ func New(config *Configuration) (*Server, error) {
 	if err := config.initialize(); err != nil {
 		return nil, err
 	}
+
+	// Authorize NextSessions against the requestor configuration
+	irmaserv.NextSessionAuthorization = config.CanRequest
+
 	return &Server{
 		conf:     config,
 		irmaserv: irmaserv,
@@ -523,7 +536,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	}
 
 	// Everything is authenticated and parsed, we're good to go!
-	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, nil)
+	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, nil, requestor)
 	if err != nil {
 		if _, ok := err.(*irmaserver.RedisError); ok {
 			s.conf.Logger.WithError(err).Error("Failed to start session")

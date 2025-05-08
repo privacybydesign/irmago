@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Remove legacy storage from irmaclient
 
+### Security
+ - Fix for [CVE GHSA-pv8v-c99h-c5q4](https://github.com/privacybydesign/irmago/security/advisories/GHSA-pv8v-c99h-c5q4) (Next session functionality can be used to do sessions on irma server without proper permissions)
+
 ## [0.18.1] - 2025-04-10
 ### Fix
 - Bug in `irmaclient` that caused the pin challenge to always be called (at least) twice

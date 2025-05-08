@@ -310,13 +310,20 @@ func (s *Server) startNext(session *sessionData, res *irma.ServerSessionResponse
 	if next == nil {
 		return nil
 	}
+
+	// Check if the next session is authorized
+	if authorized, reason := s.NextSessionAuthorization(session.Requestor, next.SessionRequest()); !authorized {
+		return errors.New("next session not authorized: " + reason)
+	}
+
 	// All attributes that were disclosed in the previous session, as well as any attributes
 	// from sessions before that, need to be disclosed in the new session as well.
 	// Therefore pass them as parameters to startNextSession
-	qr, token, _, err := s.startNextSession(next, nil, disclosed, session.FrontendAuth)
+	qr, token, _, err := s.startNextSession(next, nil, disclosed, session.FrontendAuth, session.Requestor)
 	if err != nil {
 		return err
 	}
+
 	session.Result.NextSession = token
 	session.Next = qr
 
@@ -501,7 +508,7 @@ func (s *Server) handleStaticMessage(w http.ResponseWriter, r *http.Request) {
 		server.WriteResponse(w, nil, server.RemoteError(server.ErrorInvalidRequest, "unknown static session"))
 		return
 	}
-	qr, _, _, err := s.StartSession(rrequest, nil)
+	qr, _, _, err := s.StartSession(rrequest, nil, "")
 	if err != nil {
 		server.WriteResponse(w, nil, server.RemoteError(server.ErrorMalformedInput, err.Error()))
 		return

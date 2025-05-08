@@ -8,7 +8,7 @@
             "mode": "auto",
             "program": "${workspaceFolder}/irma/main.go",
             "args": [
-                "server"
+                "server",
             ]
         },
         {

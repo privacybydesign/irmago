@@ -128,7 +128,7 @@ func (conf *Configuration) CanRequest(requestor string, request irma.SessionRequ
 func (conf *Configuration) CanIssue(requestor string, creds []*irma.CredentialRequest) (bool, string) {
 	permissions := append(conf.Requestors[requestor].Issuing, conf.Issuing...)
 	if len(permissions) == 0 { // requestor is not present in the permissions
-		return false, ""
+		return false, "No issuer permissions configured"
 	}
 
 	for _, cred := range creds {
@@ -139,7 +139,7 @@ func (conf *Configuration) CanIssue(requestor string, creds []*irma.CredentialRe
 			slices.Contains(permissions, id.String()) {
 			continue
 		} else {
-			return false, id.String()
+			return false, fmt.Sprintf("No issuer permissions configured for credential '%s'", id.String())
 		}
 	}
 

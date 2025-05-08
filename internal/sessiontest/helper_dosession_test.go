@@ -70,15 +70,20 @@ func (o option) enabled(opt option) bool {
 // by the parameters:
 // - If irmaServer is not nil or optionReuseServer is enabled, this function does nothing.
 // - Otherwise an IRMA server or library is started, depending on the type of conf.
-func startServer(t *testing.T, opts option, irmaServer *IrmaServer, conf interface{}) (stopper, interface{}, bool) {
-	if irmaServer != nil {
+func startServer(t *testing.T, opts option, irmaServer *IrmaServer, requestorServer *requestorserver.Server, conf interface{}) (stopper, interface{}, bool) {
+	if irmaServer != nil || requestorServer != nil {
 		if opts.enabled(optionReuseServer) {
-			require.FailNow(t, "either specify irmaServer or optionReuseServer, not both")
+			require.FailNow(t, "either specify irmaServer/requestorserver or optionReuseServer, not both")
 		}
 		if conf != nil {
-			require.FailNow(t, "either specify irmaServer or conf, not both")
+			require.FailNow(t, "either specify irmaServer/requestorserver or conf, not both")
 		}
-		return irmaServer, nil, false
+
+		if irmaServer != nil {
+			return irmaServer, nil, false
+		}
+
+		return requestorServer, nil, false
 	}
 	if opts.enabled(optionReuseServer) {
 		if conf != nil {
@@ -108,7 +113,15 @@ func startServer(t *testing.T, opts option, irmaServer *IrmaServer, conf interfa
 func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request interface{}) *server.SessionPackage {
 	switch s := serv.(type) {
 	case *IrmaServer:
-		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil)
+		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil, "")
+		require.NoError(t, err)
+		return &server.SessionPackage{
+			SessionPtr:      qr,
+			Token:           requestorToken,
+			FrontendRequest: frontendRequest,
+		}
+	case *requestorserver.Server:
+		qr, requestorToken, frontendRequest, err := s.StartSession(request, nil, "requestor1")
 		require.NoError(t, err)
 		return &server.SessionPackage{
 			SessionPtr:      qr,
@@ -121,12 +134,21 @@ func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request inte
 			err    error
 		)
 		url := requestorServerURL
+
+		var req irma.SessionRequest
+		switch r := request.(type) {
+		case *irma.ServiceProviderRequest:
+			req = r.SessionRequest()
+		default:
+			req = r.(irma.SessionRequest)
+		}
+
 		if useJWTs {
 			skbts, err := os.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
 			require.NoError(t, err)
 			sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
 			require.NoError(t, err)
-			j, err := irma.SignSessionRequest(request.(irma.SessionRequest), jwt.SigningMethodRS256, sk, "requestor1")
+			j, err := irma.SignSessionRequest(req, jwt.SigningMethodRS256, sk, "requestor1")
 			require.NoError(t, err)
 			err = irma.NewHTTPTransport(url, false).Post("session", &sesPkg, j)
 			require.NoError(t, err)
@@ -221,11 +243,15 @@ func waitSessionFinished(t *testing.T, serv interface{}, token irma.RequestorTok
 		time.Sleep(100 * time.Millisecond)
 		return
 	}
-
-	require.IsType(t, &IrmaServer{}, serv)
-	irmaServer := serv.(*IrmaServer).irma
 	for {
-		res, err := irmaServer.GetSessionResult(token)
+		var res *server.SessionResult
+		var err error
+		switch s := serv.(type) {
+		case *IrmaServer:
+			res, err = s.irma.GetSessionResult(token)
+		case *requestorserver.Server:
+			res, err = s.GetSessionResult(token)
+		}
 		require.NoError(t, err)
 		if res.Status.Finished() {
 			return
@@ -249,6 +275,7 @@ func doSession(
 	request interface{},
 	client *irmaclient.Client,
 	irmaServer *IrmaServer,
+	requestorServer *requestorserver.Server,
 	frontendOptionsHandler func(handler *TestHandler),
 	pairingHandler func(handler *TestHandler),
 	config interface{},
@@ -261,7 +288,7 @@ func doSession(
 	}
 
 	opts := processOptions(options...)
-	serv, conf, shouldStop := startServer(t, opts, irmaServer, config)
+	serv, conf, shouldStop := startServer(t, opts, irmaServer, requestorServer, config)
 	if shouldStop {
 		defer serv.Stop()
 	}
@@ -319,11 +346,13 @@ func doChainedSessions(
 ) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
-	require.IsType(t, IrmaServerConfiguration, conf)
-	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
-	defer irmaServer.Stop()
-	nextServer := StartNextRequestServer(t, irmaServer.conf, id, cred)
+	buildConfig := conf.(func() *requestorserver.Configuration)()
+
+	requestorServer := StartRequestorServer(t, buildConfig)
+	defer requestorServer.Stop()
+	nextServer := StartNextRequestServer(t, &buildConfig.JwtRSAPrivateKey.PublicKey, buildConfig.IrmaConfiguration.CredentialTypes, id, cred)
 	defer func() {
 		_ = nextServer.Close()
 	}()
@@ -335,7 +364,7 @@ func doChainedSessions(
 	// HTTP handler (when processing the irmaclient's response). The mutexes involved have caused
 	// deadlocks in the past when the frontend polls the session status, so we simulate polling in
 	// this test.
-	doSession(t, &request, client, irmaServer, nil, nil, nil, append(opts, optionPolling)...)
+	doSession(t, &request, client, nil, requestorServer, nil, nil, nil, append(opts, optionPolling)...)
 
 	// check that we have a new credential
 	for _, cred := range client.CredentialInfoList() {
@@ -345,4 +374,68 @@ func doChainedSessions(
 	}
 
 	require.NoError(t, errors.New("newly issued credential not found in client"))
+}
+
+func doUnauthorizedChainedSession(
+	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+) {
+	client, handler := parseStorage(t, opts...)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
+
+	buildConfig := conf.(func() *requestorserver.Configuration)()
+
+	requestorServer := StartRequestorServer(t, buildConfig)
+	defer requestorServer.Stop()
+	nextServer := StartNextRequestServer(t, &buildConfig.JwtRSAPrivateKey.PublicKey, buildConfig.IrmaConfiguration.CredentialTypes, id, cred)
+	defer func() {
+		_ = nextServer.Close()
+	}()
+
+	var request irma.ServiceProviderRequest
+	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("unauthorized-next-session-1", &request))
+
+	// In case of chained sessions, the server's session store is queried twice in a single
+	// HTTP handler (when processing the irmaclient's response). The mutexes involved have caused
+	// deadlocks in the past when the frontend polls the session status, so we simulate polling in
+	// this test.
+	doSession(t, &request, client, nil, requestorServer, nil, nil, nil, append(opts, optionPolling)...)
+
+	// Check that we have a new credential
+	newCreds := []*irma.CredentialInfo{}
+	for _, cred := range client.CredentialInfoList() {
+		if cred.SignedOn.After(irma.Timestamp(time.Now().Add(-1 * irma.ExpiryFactor * time.Second))) {
+			newCreds = append(newCreds, cred)
+		}
+	}
+
+	require.Empty(t, newCreds)
+}
+
+// Chained sessions are a requestor server feature, which is not supported by other types like keyshare.
+// They will never allow chained sessions to be authorized, which is why we need a different test function
+func doNonRequestorChainedSessions(
+	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+) {
+	client, handler := parseStorage(t, opts...)
+	defer test.ClearTestStorage(t, client, handler.storage)
+
+	require.IsType(t, IrmaServerConfiguration, conf)
+	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
+	defer irmaServer.Stop()
+	nextServer := StartNextRequestServer(t, &irmaServer.conf.JwtRSAPrivateKey.PublicKey, irmaServer.conf.IrmaConfiguration.CredentialTypes, id, cred)
+	defer func() {
+		_ = nextServer.Close()
+	}()
+
+	var request irma.ServiceProviderRequest
+	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
+
+	// In case of chained sessions, the server's session store is queried twice in a single
+	// HTTP handler (when processing the irmaclient's response). The mutexes involved have caused
+	// deadlocks in the past when the frontend polls the session status, so we simulate polling in
+	// this test.
+	rs := doSession(t, &request, client, irmaServer, nil, nil, nil, nil, append(opts, optionPolling)...)
+
+	require.Error(t, rs.clientResult.Err)
 }

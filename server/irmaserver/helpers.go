@@ -753,6 +753,7 @@ func (s *Server) newSession(
 	request irma.RequestorRequest,
 	disclosed irma.AttributeConDisCon,
 	frontendAuth irma.FrontendAuthorization,
+	requestor string,
 ) (*sessionData, error) {
 	clientToken := irma.ClientToken(common.NewSessionToken())
 	requestorToken := irma.RequestorToken(common.NewSessionToken())
@@ -788,6 +789,7 @@ func (s *Server) newSession(
 		},
 		FrontendAuth:       frontendAuth,
 		ImplicitDisclosure: disclosed,
+		Requestor:          requestor,
 	}
 
 	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")
