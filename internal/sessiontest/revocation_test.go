@@ -46,7 +46,7 @@ var (
 func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler, server *irmaserver.Server) {
 	// issue first credential
 	credid := attr.CredentialTypeIdentifier()
-	result := doSession(t, revocationIssuanceRequest(t, credid), client, nil, nil, nil, nil)
+	result := doSession(t, revocationIssuanceRequest(t, credid), client, nil, nil, nil, nil, nil)
 	require.Nil(t, result.Err)
 
 	// Issue second credential, which may overwrite the first one in case of singleton credtypes.
@@ -55,7 +55,7 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	issrequest := revocationIssuanceRequest(t, credid)
 	key := issrequest.Credentials[0].RevocationKey
 	issrequest.Credentials[0].RevocationKey = key + "2"
-	result = doSession(t, issrequest, client, nil, nil, nil, nil)
+	result = doSession(t, issrequest, client, nil, nil, nil, nil, nil)
 	require.Nil(t, result.Err)
 
 	// perform disclosure session (of key2) with nonrevocation proof
@@ -130,7 +130,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 		client, handler := parseStorage(t)
 		defer test.ClearTestStorage(t, client, handler.storage)
 		request := revocationIssuanceRequest(t, revocationTestCred)
-		result := doSession(t, request, client, revServer, nil, nil, nil)
+		result := doSession(t, request, client, revServer, nil, nil, nil, nil)
 		require.Nil(t, result.Err)
 
 		// do disclosure and signature sessions
@@ -706,7 +706,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 			Attributes: map[string]string{
 				"BSN": "299792458",
 			},
-		}}), client, irmaServer, nil, nil, nil)
+		}}), client, irmaServer, nil, nil, nil, nil)
 		require.Nil(t, result.Err)
 
 		// Restore revocation setup
@@ -806,7 +806,7 @@ func revocationSession(t *testing.T, client *irmaclient.Client, request irma.Ses
 	if request == nil {
 		request = revocationRequest(revocationTestAttr)
 	}
-	result := doSession(t, request, client, irmaServer, nil, nil, nil, options...)
+	result := doSession(t, request, client, irmaServer, nil, nil, nil, nil, options...)
 	if processOptions(options...)&optionIgnoreError == 0 && result.SessionResult != nil {
 		require.Nil(t, result.Err)
 	}
@@ -819,7 +819,7 @@ func revocationSetup(t *testing.T, irmaServer *IrmaServer, dbType string) (*Irma
 
 	// issue a MijnOverheid.root instance with revocation enabled
 	client, handler := parseStorage(t)
-	result := doSession(t, revocationIssuanceRequest(t, revocationTestCred), client, irmaServer, nil, nil, nil)
+	result := doSession(t, revocationIssuanceRequest(t, revocationTestCred), client, irmaServer, nil, nil, nil, nil)
 	require.Nil(t, result.Err)
 
 	return revServer, client, handler

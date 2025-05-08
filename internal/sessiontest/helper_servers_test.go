@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -164,7 +165,10 @@ func (s *IrmaServer) Stop() {
 }
 
 func chainedServerHandler(
-	t *testing.T, conf *server.Configuration, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
+	t *testing.T,
+	publicKey *rsa.PublicKey,
+	credentialTypes map[irma.CredentialTypeIdentifier]*irma.CredentialType,
+	id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -201,7 +205,8 @@ func chainedServerHandler(
 			server.SessionResult
 		}{}
 		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (interface{}, error) {
-			return &conf.JwtRSAPrivateKey.PublicKey, nil
+			//return &conf.JwtRSAPrivateKey.PublicKey, nil
+			return publicKey, nil
 		})
 		require.NoError(t, err)
 		result := claims.SessionResult
@@ -215,7 +220,7 @@ func chainedServerHandler(
 			CredentialTypeID: cred,
 			Attributes:       map[string]string{},
 		}
-		for _, attrtype := range conf.IrmaConfiguration.CredentialTypes[cred].AttributeTypes {
+		for _, attrtype := range credentialTypes[cred].AttributeTypes {
 			credreq.Attributes[attrtype.ID] = *attr
 		}
 
@@ -240,7 +245,7 @@ func chainedServerHandler(
 	mux.HandleFunc("/3", func(w http.ResponseWriter, r *http.Request) {
 		request := irma.NewDisclosureRequest()
 		request.Disclose = irma.AttributeConDisCon{{{{
-			Type:  conf.IrmaConfiguration.CredentialTypes[cred].AttributeTypes[0].GetAttributeTypeIdentifier(),
+			Type:  credentialTypes[cred].AttributeTypes[0].GetAttributeTypeIdentifier(),
 			Value: attr,
 		}}}}
 		bts, err := json.Marshal(request)
@@ -250,15 +255,52 @@ func chainedServerHandler(
 		require.NoError(t, err)
 	})
 
+	// Request disclosure of attribute specified by the id parameter
+	mux.HandleFunc("/unauthorized-next-session-1", func(w http.ResponseWriter, r *http.Request) {
+		request := &irma.ServiceProviderRequest{
+			Request: getDisclosureRequest(id),
+			RequestorBaseRequest: irma.RequestorBaseRequest{
+				NextSession: &irma.NextSessionData{URL: nextSessionServerURL + "/unauthorized-next-session-2"},
+			},
+		}
+		bts, err := json.Marshal(request)
+		require.NoError(t, err)
+		_, err = w.Write(bts)
+		require.NoError(t, err)
+	})
+
+	// Try to issue a credential without being authorized in the requestor server configuration
+	mux.HandleFunc("/unauthorized-next-session-2", func(w http.ResponseWriter, r *http.Request) {
+		expiry := irma.Timestamp(irma.FloorToEpochBoundary(time.Now().AddDate(1, 0, 0)))
+		request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+			{
+				Validity:         &expiry,
+				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+				Attributes: map[string]string{
+					"university":        "Radboud",
+					"studentCardNumber": "31415927",
+					"studentID":         "s1234567",
+					"level":             "42",
+				},
+			},
+		})
+		bts, err := json.Marshal(request)
+		require.NoError(t, err)
+		logger.Trace("Unauthorized next session request: ", string(bts))
+		_, err = w.Write(bts)
+		require.NoError(t, err)
+	})
+
 	return mux
 }
 
 func StartNextRequestServer(
-	t *testing.T, conf *server.Configuration, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
+	t *testing.T, publicKey *rsa.PublicKey, credentialTypes map[irma.CredentialTypeIdentifier]*irma.CredentialType,
+	id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier,
 ) *http.Server {
 	s := &http.Server{
 		Addr:    fmt.Sprintf("localhost:%d", nextSessionServerPort),
-		Handler: chainedServerHandler(t, conf, id, cred),
+		Handler: chainedServerHandler(t, publicKey, credentialTypes, id, cred),
 	}
 	go func() {
 		_ = s.ListenAndServe()
@@ -335,6 +377,31 @@ func RequestorServerAuthConfiguration() *requestorserver.Configuration {
 			AuthenticationKey:    HmacAuthenticationKey,
 			Permissions: requestorserver.Permissions{
 				Hosts: []string{"localhost:48682"},
+			},
+		},
+	}
+	return conf
+}
+
+// RequestorServerPermissionsConfiguration returns a requestor server configuration with
+// 'requestor1' as requestor, is only allowed to disclose irma-demo.MijnOverheid credentials and issue the irma-demo.IRMATube.member attribute.
+func RequestorServerPermissionsConfiguration() *requestorserver.Configuration {
+	conf := RequestorServerConfiguration()
+	irmaServerConf := IrmaServerConfiguration()
+	irmaServerConf.URL = requestorServerURL + "/irma"
+	conf.DisableRequestorAuthentication = false
+	conf.Production = true
+	conf.DisableTLS = true
+	conf.AllowUnsignedCallbacks = true
+	conf.Permissions = requestorserver.Permissions{}
+	conf.Requestors = map[string]requestorserver.Requestor{
+		"requestor1": {
+			AuthenticationMethod: requestorserver.AuthenticationMethodToken,
+			AuthenticationKey:    TokenAuthenticationKey,
+			Permissions: requestorserver.Permissions{
+				Hosts:      []string{"localhost:48682"},
+				Disclosing: []string{"irma-demo.MijnOverheid.*"},
+				Issuing:    []string{"irma-demo.MijnOverheid.*"},
 			},
 		},
 	}

@@ -20,7 +20,7 @@ func TestLogging(t *testing.T) {
 
 	// Do issuance session
 	request = getCombinedIssuanceRequest(attrid)
-	doSession(t, request, client, nil, nil, nil, nil)
+	doSession(t, request, client, nil, nil, nil, nil, nil)
 
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestLogging(t *testing.T) {
 
 	// Do disclosure session
 	request = getDisclosureRequest(attrid)
-	doSession(t, request, client, nil, nil, nil, nil)
+	doSession(t, request, client, nil, nil, nil, nil, nil)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+2)
@@ -77,7 +77,7 @@ func TestLogging(t *testing.T) {
 
 	// Do signature session
 	request = getSigningRequest(attrid)
-	doSession(t, request, client, nil, nil, nil, nil)
+	doSession(t, request, client, nil, nil, nil, nil, nil)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)

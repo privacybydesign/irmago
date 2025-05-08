@@ -38,7 +38,7 @@ func TestSessionHandlerInvokedOnCancel(t *testing.T) {
 	var handlerInvoked bool
 	_, token, _, err := s.StartSession(request, func(result *server.SessionResult) {
 		handlerInvoked = true
-	})
+	}, "")
 	require.NoError(t, err)
 
 	require.NoError(t, s.CancelSession(token))
@@ -61,7 +61,7 @@ func TestSessionHandlerInvokedOnTimeout(t *testing.T) {
 	var handlerInvoked bool
 	_, _, _, err = s.StartSession(request, func(result *server.SessionResult) {
 		handlerInvoked = true
-	})
+	}, "")
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
@@ -78,7 +78,7 @@ func TestMemoryStoreNoDeadlock(t *testing.T) {
 
 	req, err := server.ParseSessionRequest(`{"request":{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"MtILupG0g0J23GNR1YtupQ==","devMode":true,"disclose":[[[{"type":"test.test.email.email","value":"example@example.com"}]]]}}`)
 	require.NoError(t, err)
-	session, err := s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "")
+	session, err := s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "", "")
 	require.NoError(t, err)
 
 	memSessions, ok := s.sessions.(*memorySessionStore)
@@ -105,7 +105,7 @@ func TestMemoryStoreNoDeadlock(t *testing.T) {
 
 	// Make a new session; this involves adding it to the memory session store.
 	go func() {
-		_, _ = s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "")
+		_, _ = s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "", "")
 		addingCompleted = true
 	}()
 
