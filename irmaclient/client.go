@@ -124,7 +124,7 @@ func (client *Client) LoadNewestLogs(max int) ([]*LogEntry, error) {
 	return client.irmaClient.LoadNewestLogs(max)
 }
 
-func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, error){
+func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, error) {
 	return client.irmaClient.LoadLogsBefore(beforeIndex, max)
 }
 
