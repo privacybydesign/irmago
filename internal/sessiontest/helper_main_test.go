@@ -28,12 +28,12 @@ func TestMain(m *testing.M) {
 	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T, opts ...option) (*irmaclient.Client, *TestClientHandler) {
+func parseStorage(t *testing.T, opts ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
 	storage := test.SetupTestStorage(t)
 	return parseExistingStorage(t, storage, opts...)
 }
 
-func parseExistingStorage(t *testing.T, storage string, options ...option) (*irmaclient.Client, *TestClientHandler) {
+func parseExistingStorage(t *testing.T, storage string, options ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
 	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
 
@@ -51,7 +51,7 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	client, err := irmaclient.New(
+	client, err := irmaclient.NewIrmaClient(
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
@@ -155,7 +155,7 @@ func extractClientTransport(dismisser irmaclient.SessionDismisser) *irma.HTTPTra
 	return extractPrivateField(dismisser, "transport").(*irma.HTTPTransport)
 }
 
-func extractClientMaxVersion(client *irmaclient.Client) *irma.ProtocolVersion {
+func extractClientMaxVersion(client *irmaclient.IrmaClient) *irma.ProtocolVersion {
 	return extractPrivateField(client, "maxVersion").(*irma.ProtocolVersion)
 }
 

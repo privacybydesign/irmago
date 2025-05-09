@@ -113,7 +113,7 @@ func TestCreateSdJwtVcIssuerReprWithDisclosures(t *testing.T) {
 	issuer := "https://example.com"
 	disclosures, err := MultipleNewDisclosureContents(map[string]any{
 		"family_name": "Yivi",
-		"locality":    "Utrecht",
+		"location":    "Utrecht",
 	})
 	requireNoErr(t, err)
 

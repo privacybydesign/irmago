@@ -686,7 +686,7 @@ func testCombinedSessionMultipleAttributes(t *testing.T, conf interface{}, opts 
 	require.Equal(t, irma.ServerStatusDone, doSession(t, &ir, nil, nil, nil, nil, nil, conf, opts...).Status)
 }
 
-func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.Client, conf interface{}, opts ...option) {
+func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClient, conf interface{}, opts ...option) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),

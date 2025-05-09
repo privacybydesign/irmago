@@ -76,7 +76,7 @@ type session struct {
 	token          string
 	choice         *irma.DisclosureChoice
 	attrIndices    irma.DisclosedAttributeIndices
-	client         *Client
+	client         *IrmaClient
 	request        irma.SessionRequest
 	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
@@ -100,7 +100,7 @@ type session struct {
 }
 
 type sessions struct {
-	client   *Client
+	client   *IrmaClient
 	sessions map[string]*session
 }
 
@@ -121,44 +121,13 @@ var supportedVersions = map[int][]int{
 
 // Session constructors
 
-type OpenId4VpRequest struct {
-	RequestUri string `json:"request_uri"`
-	ClientId   string `json:"client_id"`
-}
-
-type AnyRequest struct {
-	OpenId4Vp *OpenId4VpRequest `json:"openid4vp"`
-	Irma      *json.RawMessage  `json:"irma"`
-}
-
-func (client *Client) newOpenId4VpSession(request OpenId4VpRequest) SessionDismisser {
-	irma.Logger.Infof("starting openid4vp from go: %v", request)
-	return nil
-}
-
 // NewSession starts a new IRMA session, given (along with a handler to pass feedback to) a session request.
 // When the request is not suitable to start an IRMA session from, it calls the Failure method of the specified Handler.
-func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
+func (client *IrmaClient) NewSession(sessionrequest string, handler Handler) SessionDismisser {
 	bts := []byte(sessionrequest)
 
-	var anyRequest AnyRequest
-	err := json.Unmarshal(bts, &anyRequest)
-	if err != nil {
-		handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest})
-		return nil
-	}
-
-	if anyRequest.OpenId4Vp != nil {
-		return client.newOpenId4VpSession(*anyRequest.OpenId4Vp)
-	}
-
-	if anyRequest.Irma == nil {
-		handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
-		return nil
-	}
-
 	qr := &irma.Qr{}
-	if err := json.Unmarshal(*anyRequest.Irma, qr); err == nil && qr.IsQr() {
+	if err := json.Unmarshal(bts, qr); err == nil && qr.IsQr() {
 		if err = qr.Validate(); err != nil {
 			handler.Failure(&irma.SessionError{ErrorType: irma.ErrorInvalidRequest, Err: err})
 			return nil
@@ -189,7 +158,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 }
 
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
-func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
+func (client *IrmaClient) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	client.PauseJobs()
 
 	doneChannel := make(chan struct{}, 1)
@@ -212,7 +181,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 }
 
 // newQrSession creates and starts a new interactive IRMA session
-func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
+func (client *IrmaClient) newQrSession(qr *irma.Qr, handler Handler) *session {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
 		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)

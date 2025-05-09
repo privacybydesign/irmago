@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// a string containg the key binding jwt (just the jwt, no ~ or something)
+// KeyBindingJwt is a string containing the key binding jwt (just the jwt, no ~ or something)
 type KeyBindingJwt string
 
 type KeyBindingJwtPayload struct {
@@ -28,7 +28,7 @@ const (
 	Key_Audience string = "aud"
 )
 
-// An interface for creating a key binding jwt from a hash.
+// KbJwtCreator is an interface for creating a key binding jwt from a hash.
 // Can be used to move creating the kbjwt to a server.
 type KbJwtCreator interface {
 	// takes in the hash over the issuer signed JWT and the selected disclosures
