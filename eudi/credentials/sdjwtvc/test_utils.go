@@ -203,7 +203,7 @@ func (f *failingMetadataFetcherWrongIssuerKeys) FetchIssuerMetadata(url string) 
 	return IssuerMetadata{
 		Issuer: "https://openid4vc.staging.yivi.app",
 		Jwks: []any{
-			// public key corresponsing to the test issuer private key in the test files
+			// public key corresponding to the test issuer private key in the test files
 			map[string]string{
 				"crv": "P-256",
 				"kty": "EC",
@@ -220,7 +220,7 @@ func (f *validTestMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetada
 	return IssuerMetadata{
 		Issuer: "https://openid4vc.staging.yivi.app",
 		Jwks: []any{
-			// public key corresponsing to the test issuer private key in the test files
+			// public key corresponding to the test issuer private key in the test files
 			map[string]string{
 				"crv": "P-256",
 				"kty": "EC",
@@ -243,7 +243,7 @@ func (f *validTestMetadataFetcherMultipleKeys) FetchIssuerMetadata(url string) (
 				"x":   "-R_HI1wywYtEYr-DJa5HdTnI8dsjZer6g",
 				"y":   "meL8U3jpnY1PcKdFpM3zjZspPMbD3j6J-AIcAivk",
 			},
-			// public key corresponsing to the test issuer private key in the test files
+			// public key corresponding to the test issuer private key in the test files
 			map[string]string{
 				"crv": "P-256",
 				"kty": "EC",
