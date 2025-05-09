@@ -31,7 +31,7 @@ runs:
         path: ./bin-is
 
     - name: Set file permissions for bin-is
-      run: ls -la && ls -la / && pwd && chmod +x ./bin-is/irma-linux-amd64
+      run: ls -la && ls -la / && pwd && ls -la ./bin-is && chmod +x ./bin-is/irma-linux-amd64
       shell: bash
 
     - name: Download keyshare server artifact (url)
@@ -47,7 +47,7 @@ runs:
         path: ./bin-ks
 
     - name: Set file permissions for bin-ks
-      run:  ls -la && ls -la / && pwd && chmod +x ./bin-ks/irma-linux-amd64
+      run:  ls -la && ls -la / && pwd  && ls -la ./bin-ks && chmod +x ./bin-ks/irma-linux-amd64
       shell: bash
 
     - name: Run keyshare server utilities
