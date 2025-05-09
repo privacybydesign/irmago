@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// a string containg the key binding jwt (just the jwt, no ~ or something)
+// a string containing the key binding jwt (just the jwt, no ~ or something)
 type KeyBindingJwt string
 
 type KeyBindingJwtPayload struct {
