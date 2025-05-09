@@ -35,6 +35,7 @@ jobs:
       - name: Build artifact
         run: |
           mkdir build
+          go mod tidy
           go build -o build ./...
 
       - name: Upload artifact
