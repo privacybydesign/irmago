@@ -93,7 +93,7 @@ func getTestFilePath(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to find go mod root: %v", err)
 	}
-	keyPath := fmt.Sprintf("%s/test_keys/%s", root, name)
+	keyPath := fmt.Sprintf("%s/testdata/eudi/%s", root, name)
 	return keyPath, nil
 }
 
