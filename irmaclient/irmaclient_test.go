@@ -37,12 +37,12 @@ func TestMain(m *testing.M) {
 	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T) (*Client, *TestClientHandler) {
+func parseStorage(t *testing.T) (*IrmaClient, *TestClientHandler) {
 	storage := test.SetupTestStorage(t)
 	return parseExistingStorage(t, storage)
 }
 
-func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHandler) {
+func parseExistingStorage(t *testing.T, storage string) (*IrmaClient, *TestClientHandler) {
 	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
 	path := test.FindTestdataFolder(t)
 
@@ -73,7 +73,7 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 	return client, handler
 }
 
-func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
+func verifyClientIsUnmarshaled(t *testing.T, client *IrmaClient) {
 	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	require.NoError(t, err, "could not fetch credential")
 	require.NotNil(t, cred, "Credential should exist")
@@ -94,7 +94,7 @@ func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
 	)
 }
 
-func verifyCredentials(t *testing.T, client *Client) {
+func verifyCredentials(t *testing.T, client *IrmaClient) {
 	var pk *gabikeys.PublicKey
 	for credtype, credsmap := range client.attributes {
 		for index, attrs := range credsmap {
@@ -114,7 +114,7 @@ func verifyCredentials(t *testing.T, client *Client) {
 	}
 }
 
-func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
+func verifyKeyshareIsUnmarshaled(t *testing.T, client *IrmaClient) {
 	require.NotNil(t, client.keyshareServers)
 	testManager := irma.NewSchemeManagerIdentifier("test")
 	require.Contains(t, client.keyshareServers, testManager)

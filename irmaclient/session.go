@@ -76,7 +76,7 @@ type session struct {
 	token          string
 	choice         *irma.DisclosureChoice
 	attrIndices    irma.DisclosedAttributeIndices
-	client         *Client
+	client         *IrmaClient
 	request        irma.SessionRequest
 	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
@@ -100,7 +100,7 @@ type session struct {
 }
 
 type sessions struct {
-	client   *Client
+	client   *IrmaClient
 	sessions map[string]*session
 }
 
@@ -123,7 +123,7 @@ var supportedVersions = map[int][]int{
 
 // NewSession starts a new IRMA session, given (along with a handler to pass feedback to) a session request.
 // When the request is not suitable to start an IRMA session from, it calls the Failure method of the specified Handler.
-func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
+func (client *IrmaClient) NewSession(sessionrequest string, handler Handler) SessionDismisser {
 	bts := []byte(sessionrequest)
 
 	qr := &irma.Qr{}
@@ -158,7 +158,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 }
 
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
-func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
+func (client *IrmaClient) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	client.PauseJobs()
 
 	doneChannel := make(chan struct{}, 1)
@@ -181,7 +181,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 }
 
 // newQrSession creates and starts a new interactive IRMA session
-func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
+func (client *IrmaClient) newQrSession(qr *irma.Qr, handler Handler) *session {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
 		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)

@@ -132,7 +132,7 @@ func checkChallengeResponseEnforced(t *testing.T, kss *keyshareServer) {
 	require.Equal(t, keysharecore.ErrChallengeResponseRequired.Error(), sessErr.RemoteError.Message)
 }
 
-func verifyPin(t *testing.T, client *Client) {
+func verifyPin(t *testing.T, client *IrmaClient) {
 	succeeded, tries, blocked, err := client.KeyshareVerifyPin("12345", irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
 	require.True(t, succeeded)
@@ -140,7 +140,7 @@ func verifyPin(t *testing.T, client *Client) {
 	require.Equal(t, tries, 0)
 }
 
-func verifyWrongPin(t *testing.T, client *Client) {
+func verifyWrongPin(t *testing.T, client *IrmaClient) {
 	succeeded, tries, blocked, err := client.KeyshareVerifyPin("00000", irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
 	require.False(t, succeeded)
