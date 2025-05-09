@@ -48,7 +48,7 @@ func generateSalt(numBytes int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// creates a disclosure content struct with a salt
+// NewDisclosureContent creates a disclosure content struct with a salt
 func NewDisclosureContent(key string, value any) (DisclosureContent, error) {
 	salt, err := generateSalt(16) // 128 bit salt
 	if err != nil {
@@ -139,7 +139,7 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 	jsonValues := make(map[string]interface{})
 
 	if !strings.HasPrefix(payload.Issuer, "https://") {
-		return "", fmt.Errorf("Issuer (`iss`) field is required to be an https link, but is %s", payload.Issuer)
+		return "", fmt.Errorf("issuer (`iss`) field is required to be an https link, but is %s", payload.Issuer)
 	}
 
 	if len(payload.Sd) != 0 {

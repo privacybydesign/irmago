@@ -172,7 +172,7 @@ type EncryptedResponsePayload struct {
 	VpToken map[string][]string `json:"vp_token"`
 }
 
-// a map from dcql query id to a list of credentials (e.g. a list of sd-jwt vc's)
+// VpToken is a map from dcql query id to a list of credentials (e.g. a list of sd-jwt vc's)
 type VpToken map[string][]string
 
 type AuthorizationResponseConfig struct {
