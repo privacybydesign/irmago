@@ -94,7 +94,7 @@ services:
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
     working_dir: /irmago
-    entrypoint: go test -p 1
+    entrypoint: go mod tidy && go test -p 1
     command: ./...
 
   # Service to run the 'irma' command line tool
