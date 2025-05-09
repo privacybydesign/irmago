@@ -15,7 +15,7 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 	issuer := "https://example.com"
 	disclosures, err := MultipleNewDisclosureContents(map[string]any{
 		"family_name": "Yivi",
-		"locality":    "Utrecht",
+		"location":    "Utrecht",
 	})
 	requireNoErr(t, err)
 	jwtCreator := newEcdsaJwtCreatorWithIssuerTestkey()
