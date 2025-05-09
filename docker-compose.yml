@@ -1,5 +1,3 @@
-version: '3.1'
-
 services:
   # Dependencies for running unit tests and for running the 'irma' command line tool using one of the test configurations.
   postgres:
