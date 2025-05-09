@@ -73,6 +73,9 @@ jobs:
       # gofmt does not return non-zero exit codes on failure, so we have to check that there are no issues using grep.
       run: gofmt -d -e . | (! grep ^)
       
+    - name: Download modules
+      run: go mod tidy
+
     - name: Run go vet
       run: go vet ./...
       
