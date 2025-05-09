@@ -59,7 +59,7 @@ type VerificationContext struct {
 	JwtVerifier           JwtVerifier
 }
 
-// A decoded representation of an SD-JWT VC for the verifier
+// VerifiedSdJwtVc is the decoded representation of an SD-JWT VC for the verifier
 type VerifiedSdJwtVc struct {
 	IssuedSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []DisclosureContent

@@ -72,6 +72,7 @@ type CredentialQuery struct {
 	ClaimSets []ClaimSet `json:"claim_sets,omitempty"`
 }
 
+// QueryResponse contains the values required for a response to a query.
 // The authorization response contains a `vp_token` parameter with a json object
 // where the keys are the IDs of the DCQL queries and the values are an array of
 // serialized credentials
@@ -83,6 +84,7 @@ type QueryResponse struct {
 	Credentials []string
 }
 
+// ClaimsPathPointer is a list of components that construct a full path to a claim.
 // Semantics of a claims path pointer when applied to a json-based credential:
 //
 // A string value indicates that the respective key is to be selected,

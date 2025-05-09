@@ -186,6 +186,7 @@ type AuthorizationResponseConfig struct {
 }
 
 // implement jwt.Claims interface, so we can decode the auth request JWT
+
 func (ar *AuthorizationRequest) GetExpirationTime() (*jwt.NumericDate, error) { return nil, nil }
 func (ar *AuthorizationRequest) GetIssuedAt() (*jwt.NumericDate, error)       { return nil, nil }
 func (ar *AuthorizationRequest) GetNotBefore() (*jwt.NumericDate, error)      { return nil, nil }
@@ -228,16 +229,16 @@ func (client *Client) StartSession(url string) error {
 	return client.HandleAuthorizationRequest(request)
 }
 
-func (config *Client) HandleAuthorizationRequest(request *AuthorizationRequest) error {
-	queryResponses, err := dcql.QueryCredentials(request.DcqlQuery, config.QueryHandlers)
+func (client *Client) HandleAuthorizationRequest(request *AuthorizationRequest) error {
+	queryResponses, err := dcql.QueryCredentials(request.DcqlQuery, client.QueryHandlers)
 
 	if err != nil {
 		return err
 	}
 
-	client := http.Client{}
+	httpClient := http.Client{}
 	authResponse := AuthorizationResponseConfig{
-		CompatibilityMode: config.Compatibility,
+		CompatibilityMode: client.Compatibility,
 		State:             request.State,
 		QueryResponses:    queryResponses,
 		ResponseUri:       request.ResponseUri,
@@ -249,7 +250,7 @@ func (config *Client) HandleAuthorizationRequest(request *AuthorizationRequest) 
 		return err
 	}
 
-	response, err := client.Do(responseReq)
+	response, err := httpClient.Do(responseReq)
 	if err != nil {
 		return err
 	}
