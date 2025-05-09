@@ -60,7 +60,7 @@ func parseExistingStorage(t *testing.T, storage string) (*IrmaClient, *TestClien
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	client, err := New(
+	client, err := NewIrmaClient(
 		filepath.Join(storage, "client"),
 		filepath.Join(path, "irma_configuration"),
 		handler,
