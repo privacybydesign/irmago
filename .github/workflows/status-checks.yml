@@ -27,18 +27,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build artifact
-        uses: ./.github/actions/build
-        id: build
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          os: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
+          go-version-file: go.mod
+
+      - name: Build artifact
+        run: |
+          mkdir build
+          go build -o build ./...
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: irma-${{ matrix.os }}-${{ matrix.arch }}
-          path: ${{ steps.build.outputs.artifact-name }}
+          path: build/irma
 
   docker-build:
     runs-on: ubuntu-latest
@@ -60,7 +63,6 @@ jobs:
 
     - name: Clean Go toolchain module cache
       run: rm -rf  /opt/hostedtoolcache/go
-
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
