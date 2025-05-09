@@ -133,7 +133,7 @@ type CnfField struct {
 
 type HashingAlgorithm string
 
-// IssuerSignedJwtPayload_ToJson convers the payload of the issuer signed jwt to json,
+// IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
 // taking into account some sdjwtvc specific rules
 func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, error) {
 	jsonValues := make(map[string]interface{})
