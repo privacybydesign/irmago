@@ -47,7 +47,7 @@ runs:
         path: ./bin-ks
 
     - name: Set file permissions for bin-ks
-      run: chmod +x ./bin-ks/irma-linux-amd64
+      run:  ls -la && ls -la / && chmod +x chmod +x ./bin-ks/irma-linux-amd64
       shell: bash
 
     - name: Run keyshare server utilities
