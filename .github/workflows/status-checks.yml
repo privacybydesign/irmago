@@ -58,6 +58,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Clean Go toolchain module cache
+      run: rm -rf ~/go/pkg/mod/golang.org/toolchain*
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
