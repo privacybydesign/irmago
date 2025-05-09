@@ -414,7 +414,7 @@ func (f *HttpIssuerMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetad
 	}, nil
 }
 
-// Splits the sdjwt at the ~ characters and returns the individual components.
+// SplitSdJwtVc splits the sdjwt at the ~ characters and returns the individual components.
 // The IssuerSignedJwt is guaranteed to contain a value (if there's no error).
 // The EncodedDisclosure list could be empty if there are no dislcosures.
 // The KbJwt may be nil if there's no key binding jwt.
