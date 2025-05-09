@@ -83,7 +83,7 @@ jobs:
       run: misspell -error .
 
     - name: Install staticcheck
-      run: go install honnef.co/go/tools/cmd/staticcheck@2024.1.1
+      run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
     - name: Run staticcheck
       run: staticcheck -checks "all,-ST1000,-ST1003,-SA1019,-SA1029" ./...
