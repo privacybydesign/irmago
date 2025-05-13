@@ -27,7 +27,7 @@ import (
 // where the salt should be a cryptographically random string, the key a string
 // and the value a valid json value
 
-// An easier to use representation of the content of a disclosure.
+// DisclosureContent is an easier to use representation of the content of a disclosure.
 // This should be turned into a json array before processing further.
 type DisclosureContent struct {
 	// RECOMMENDED to base64url-encode a minimum of 128 bits of cryptographically secure random data,
@@ -48,7 +48,7 @@ func generateSalt(numBytes int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// creates a disclosure content struct with a salt
+// NewDisclosureContent creates a disclosure content struct with a salt
 func NewDisclosureContent(key string, value any) (DisclosureContent, error) {
 	salt, err := generateSalt(16) // 128 bit salt
 	if err != nil {
@@ -120,11 +120,11 @@ func DecodeDisclosures(disclosures []EncodedDisclosure) ([]DisclosureContent, er
 	return result, nil
 }
 
-// the base64url encoded version of a json array based on the `DisclosureContent` struct
+// EncodedDisclosure is the base64url encoded version of a json array based on the `DisclosureContent` struct
 // (without any ~ before or after it)
 type EncodedDisclosure string
 
-// a hashed + base64url-encoded version of the `EncodedDisclosure` type
+// HashedDisclosure is the hashed + base64url-encoded version of the `EncodedDisclosure` type
 type HashedDisclosure string
 
 type CnfField struct {
@@ -133,12 +133,13 @@ type CnfField struct {
 
 type HashingAlgorithm string
 
-// convert the payload of the issuer signed jwt to json, taking into account some sdjwtvc specific rules
+// IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
+// taking into account some sdjwtvc specific rules
 func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, error) {
 	jsonValues := make(map[string]interface{})
 
 	if !strings.HasPrefix(payload.Issuer, "https://") {
-		return "", fmt.Errorf("Issuer (`iss`) field is required to be an https link, but is %s", payload.Issuer)
+		return "", fmt.Errorf("issuer (`iss`) field is required to be an https link, but is %s", payload.Issuer)
 	}
 
 	if len(payload.Sd) != 0 {
@@ -185,7 +186,7 @@ const (
 	KbJwtTyp          string = "kb+jwt"
 )
 
-// A representation of the payload of the issuer signed jwt part of an SD-JWT VC
+// IssuerSignedJwtPayload is a representation of the payload of the issuer signed jwt part of an SD-JWT VC
 type IssuerSignedJwtPayload struct {
 	// OPTIONAL: The identifier of the Subject of the Verifiable Credential.
 	// The Issuer MAY use it to provide the Subject identifier known by the Issuer.
@@ -223,19 +224,19 @@ type IssuerSignedJwtPayload struct {
 	NotBefore int64
 }
 
-// the issued signed jwt as a string (so only the section of the sd-jwt vc up to and NOT including the first ~)
+// IssuerSignedJwt is the issued signed jwt as a string (so only the section of the sd-jwt vc up to and NOT including the first ~)
 type IssuerSignedJwt string
 
-// represents any full sd-jwt vc as a string, be it with or without disclosres or key binding jwt
+// SdJwtVc represents any full sd-jwt vc as a string, be it with or without disclosres or key binding jwt
 type SdJwtVc string
 
-// A representation of the SD-JWT VC that can be used by the issuer or holder to issue and disclose
+// SdJwtVc_IssuerRepresentation is a representation of the SD-JWT VC that can be used by the issuer or holder to issue and disclose
 type SdJwtVc_IssuerRepresentation struct {
 	IssuerSignedJwt IssuerSignedJwt
 	Disclosures     []DisclosureContent
 }
 
-// created an intermediate representation
+// CreateSdJwtVc_IssuerRepresentation creates an intermediate representation
 func CreateSdJwtVc_IssuerRepresentation(issuer string, disclosures []DisclosureContent, jwtCreator JwtCreator) (*SdJwtVc_IssuerRepresentation, error) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "",
@@ -325,7 +326,7 @@ func makeClaimDisclosureArrayJson(claim DisclosureContent) ([]byte, error) {
 	return jsonBytes, nil
 }
 
-// creates a base64url encoded disclosure
+// EncodeDisclosure creates a base64url encoded disclosure
 func EncodeDisclosure(sdClaim DisclosureContent) (EncodedDisclosure, error) {
 	jsonBytes, err := makeClaimDisclosureArrayJson(sdClaim)
 
@@ -337,10 +338,10 @@ func EncodeDisclosure(sdClaim DisclosureContent) (EncodedDisclosure, error) {
 	return EncodedDisclosure(encoded), nil
 }
 
-// encode them for the disclosure part of the sd jwt
-func EncodeDisclosures(sdClaims []DisclosureContent) ([]EncodedDisclosure, error) {
+// EncodeDisclosures encodes the list of claims for the disclosure part of the sd jwt
+func EncodeDisclosures(disclosures []DisclosureContent) ([]EncodedDisclosure, error) {
 	result := []EncodedDisclosure{}
-	for _, c := range sdClaims {
+	for _, c := range disclosures {
 		disc, err := EncodeDisclosure(c)
 		if err != nil {
 			return []EncodedDisclosure{}, err
@@ -395,7 +396,7 @@ func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator
 func CreateTestSdJwtVc() (SdJwtVc, error) {
 	sdClaims, err := MultipleNewDisclosureContents(map[string]any{
 		"family_name": "Yivi",
-		"locality":    "Utrecht",
+		"location":    "Utrecht",
 	})
 
 	if err != nil {

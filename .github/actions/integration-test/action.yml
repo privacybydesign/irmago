@@ -16,11 +16,13 @@ runs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: ^1.18
+        go-version-file: go.mod
 
     - name: Download IRMA server artifact (url)
       if: startsWith(inputs.irma-server-artifact, 'https://')
-      run: curl --create-dirs -L -o ./bin-is/irma-linux-amd64 ${{ inputs.irma-server-artifact }}
+      run: |
+        curl --create-dirs -L -o ./bin-is/irma-linux-amd64 ${{ inputs.irma-server-artifact }}
+        mv ./bin-is/irma-linux-amd64 ./bin-is/irma
       shell: bash
 
     - name: Download IRMA server artifact (artifact id)
@@ -28,15 +30,17 @@ runs:
       uses: actions/download-artifact@v4
       with:
         name: ${{ inputs.irma-server-artifact }}
-        path: bin-is
+        path: ./bin-is
 
     - name: Set file permissions for bin-is
-      run: chmod +x ./bin-is/irma-linux-amd64
+      run: chmod +x ./bin-is/irma
       shell: bash
 
     - name: Download keyshare server artifact (url)
       if: startsWith(inputs.keyshare-server-artifact, 'https://')
-      run: curl --create-dirs -L -o ./bin-ks/irma-linux-amd64 ${{ inputs.keyshare-server-artifact }}
+      run: |
+        curl --create-dirs -L -o ./bin-ks/irma-linux-amd64 ${{ inputs.keyshare-server-artifact }}
+        mv ./bin-ks/irma-linux-amd64 ./bin-ks/irma
       shell: bash
 
     - name: Download keyshare server artifact (artifact id)
@@ -44,10 +48,10 @@ runs:
       uses: actions/download-artifact@v4
       with:
         name: ${{ inputs.keyshare-server-artifact }}
-        path: bin-ks
+        path: ./bin-ks
 
     - name: Set file permissions for bin-ks
-      run: chmod +x ./bin-ks/irma-linux-amd64
+      run:  chmod +x ./bin-ks/irma
       shell: bash
 
     - name: Run keyshare server utilities
@@ -56,11 +60,11 @@ runs:
 
     # We add & at the end of each command to run them in the background.
     - name: Run IRMA server
-      run: ./bin-is/irma-linux-amd64 server -s testdata/irma_configuration --url http://localhost:port -p 48682 -k testdata/privatekeys &
+      run: ./bin-is/irma server -s testdata/irma_configuration --url http://localhost:port -p 48682 -k testdata/privatekeys &
       shell: bash
 
     - name: Run keyshare server
-      run: ./bin-ks/irma-linux-amd64 keyshare server -c testdata/configurations/keyshareserver.yml &
+      run: ./bin-ks/irma keyshare server -c testdata/configurations/keyshareserver.yml &
       shell: bash
 
     - name: Checkout test code

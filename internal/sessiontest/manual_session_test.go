@@ -13,7 +13,7 @@ import (
 )
 
 // Create a ManualTestHandler for unit tests
-func createManualSessionHandler(t *testing.T, client *irmaclient.Client) *ManualTestHandler {
+func createManualSessionHandler(t *testing.T, client *irmaclient.IrmaClient) *ManualTestHandler {
 	return &ManualTestHandler{
 		TestHandler: TestHandler{
 			t:      t,
@@ -23,7 +23,7 @@ func createManualSessionHandler(t *testing.T, client *irmaclient.Client) *Manual
 	}
 }
 
-func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
+func manualSessionHelper(t *testing.T, client *irmaclient.IrmaClient, h *ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
 	if client == nil {
 		var handler *TestClientHandler
 		client, handler = parseStorage(t)

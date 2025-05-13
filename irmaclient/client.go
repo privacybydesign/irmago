@@ -1,4 +1,3 @@
-// from the other side
 package irmaclient
 
 import (
@@ -45,6 +44,99 @@ import (
 // in multiple places would be bad).
 
 type Client struct {
+	irmaClient *IrmaClient
+}
+
+func New(
+	storagePath string,
+	irmaConfigurationPath string,
+	handler ClientHandler,
+	signer Signer,
+	aesKey [32]byte,
+) (*Client, error) {
+	irmaClient, err := NewIrmaClient(storagePath, irmaConfigurationPath, handler, signer, aesKey)
+	return &Client{
+		irmaClient: irmaClient,
+	}, err
+}
+
+func (client *Client) Close() error {
+	return client.irmaClient.Close()
+}
+
+func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
+	return client.irmaClient.NewSession(sessionrequest, handler)
+}
+
+func (client *Client) GetIrmaConfiguration() *irma.Configuration {
+	return client.irmaClient.Configuration
+}
+
+func (client *Client) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+	return client.irmaClient.UnenrolledSchemeManagers()
+}
+
+func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+	return client.irmaClient.EnrolledSchemeManagers()
+}
+
+func (client *Client) CredentialInfoList() irma.CredentialInfoList {
+	return client.irmaClient.CredentialInfoList()
+}
+
+func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
+	return client.irmaClient.KeyshareVerifyPin(pin, schemeid)
+}
+
+func (client *Client) KeyshareChangePin(oldPin, newPin string) {
+	client.irmaClient.KeyshareChangePin(oldPin, newPin)
+}
+
+func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email *string, pin string, lang string) {
+	client.irmaClient.KeyshareEnroll(manager, email, pin, lang)
+}
+
+func (client *Client) RemoveCredentialByHash(hash string) error {
+	return client.irmaClient.RemoveCredentialByHash(hash)
+}
+
+func (client *Client) UpdateSchemes() {
+	client.irmaClient.Configuration.UpdateSchemes()
+}
+
+func (client *Client) RemoveScheme(id irma.SchemeManagerIdentifier) error {
+	return client.irmaClient.RemoveScheme(id)
+}
+
+func (client *Client) RemoveRequestorScheme(id irma.RequestorSchemeIdentifier) error {
+	return client.irmaClient.RemoveRequestorScheme(id)
+}
+
+func (client *Client) InstallScheme(url string, publickey []byte) error {
+	return client.irmaClient.Configuration.InstallScheme(url, publickey)
+}
+
+func (client *Client) RemoveStorage() error {
+	return client.irmaClient.RemoveStorage()
+}
+
+func (client *Client) LoadNewestLogs(max int) ([]*LogEntry, error) {
+	return client.irmaClient.LoadNewestLogs(max)
+}
+
+func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, error) {
+	return client.irmaClient.LoadLogsBefore(beforeIndex, max)
+}
+
+func (client *Client) SetPreferences(prefs Preferences) {
+	client.irmaClient.SetPreferences(prefs)
+}
+
+func (client *Client) GetPreferences() Preferences {
+	return client.irmaClient.Preferences
+}
+
+type IrmaClient struct {
 	// Stuff we manage on disk
 	secretkey        *secretKey
 	attributes       map[irma.CredentialTypeIdentifier][]*irma.AttributeList
@@ -136,7 +228,7 @@ type secretKey struct {
 	Key *big.Int
 }
 
-// New creates a new Client that uses the directory
+// NewIrmaClient creates a new IrmaClient that uses the directory
 // specified by storagePath for (de)serializing itself. irmaConfigurationPath
 // is the path to a (possibly readonly) folder containing irma_configuration;
 // and handler is used for informing the user of new stuff, and when a
@@ -146,13 +238,13 @@ type secretKey struct {
 //
 // NOTE: It is the responsibility of the caller that there exists a (properly
 // protected) directory at storagePath!
-func New(
+func NewIrmaClient(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
 	aesKey [32]byte,
-) (*Client, error) {
+) (*IrmaClient, error) {
 	var err error
 	if err = common.AssertPathExists(storagePath); err != nil {
 		return nil, err
@@ -161,7 +253,7 @@ func New(
 		return nil, err
 	}
 
-	client := &Client{
+	client := &IrmaClient{
 		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
 		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		irmaConfigurationPath: irmaConfigurationPath,
@@ -229,13 +321,13 @@ func New(
 	return client, schemeMgrErr
 }
 
-func (client *Client) Close() error {
+func (client *IrmaClient) Close() error {
 	client.PauseJobs()
 	client.Configuration.Scheduler.Stop()
 	return client.storage.Close()
 }
 
-func (client *Client) loadCredentialStorage() (err error) {
+func (client *IrmaClient) loadCredentialStorage() (err error) {
 	if client.secretkey, err = client.storage.LoadSecretKey(); err != nil {
 		return
 	}
@@ -256,14 +348,14 @@ func (client *Client) loadCredentialStorage() (err error) {
 	return
 }
 
-func (client *Client) reportError(err error) {
+func (client *IrmaClient) reportError(err error) {
 	irma.Logger.Error(err)
 	client.handler.ReportError(err)
 }
 
 // StartJobs performs scheduled background jobs in separate goroutines.
 // Pause pending jobs with PauseJobs().
-func (client *Client) StartJobs() {
+func (client *IrmaClient) StartJobs() {
 	irma.Logger.Debug("starting jobs")
 	if client.jobsPause != nil {
 		irma.Logger.Debug("already running")
@@ -289,7 +381,7 @@ func (client *Client) StartJobs() {
 }
 
 // PauseJobs pauses background job processing.
-func (client *Client) PauseJobs() {
+func (client *IrmaClient) PauseJobs() {
 	irma.Logger.Debug("pausing jobs")
 	if client.jobsPaused {
 		irma.Logger.Debug("already paused")
@@ -300,7 +392,7 @@ func (client *Client) PauseJobs() {
 }
 
 // CredentialInfoList returns a list of information of all contained credentials.
-func (client *Client) CredentialInfoList() irma.CredentialInfoList {
+func (client *IrmaClient) CredentialInfoList() irma.CredentialInfoList {
 	list := irma.CredentialInfoList([]*irma.CredentialInfo{})
 
 	for _, attrlistlist := range client.attributes {
@@ -318,7 +410,7 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 
 // addCredential adds the specified credential to the Client, saving its signature
 // immediately, and optionally cm.attributes as well.
-func (client *Client) addCredential(cred *credential) (err error) {
+func (client *IrmaClient) addCredential(cred *credential) (err error) {
 	id := irma.NewCredentialTypeIdentifier("")
 	if cred.CredentialType() != nil {
 		id = cred.CredentialType().Identifier()
@@ -389,7 +481,7 @@ func generateSecretKey() (*secretKey, error) {
 
 // Removal methods
 
-func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeLog bool) error {
+func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int, storeLog bool) error {
 	// Remove attributes
 	list, exists := client.attributes[id]
 	if !exists || index >= len(list) {
@@ -431,7 +523,7 @@ func (client *Client) remove(id irma.CredentialTypeIdentifier, index int, storeL
 }
 
 // RemoveCredential removes the specified credential if that is allowed.
-func (client *Client) RemoveCredential(id irma.CredentialTypeIdentifier, index int) error {
+func (client *IrmaClient) RemoveCredential(id irma.CredentialTypeIdentifier, index int) error {
 	if client.Configuration.CredentialTypes[id].DisallowDelete {
 		return errors.Errorf("configuration does not allow removal of credential type %s", id.String())
 	}
@@ -439,7 +531,7 @@ func (client *Client) RemoveCredential(id irma.CredentialTypeIdentifier, index i
 }
 
 // RemoveCredentialByHash removes the specified credential.
-func (client *Client) RemoveCredentialByHash(hash string) error {
+func (client *IrmaClient) RemoveCredentialByHash(hash string) error {
 	cred, index, err := client.credentialByHash(hash)
 	if err != nil {
 		return err
@@ -450,7 +542,7 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 // RemoveStorage removes all attributes, signatures, logs and userdata.
 // This includes the user's secret key, keyshare servers and preferences/updates.
 // A fresh secret key is installed.
-func (client *Client) RemoveStorage() error {
+func (client *IrmaClient) RemoveStorage() error {
 	var err error
 
 	// Remove data from memory
@@ -481,7 +573,7 @@ func (client *Client) RemoveStorage() error {
 // Attribute and credential getter methods
 
 // attrs returns cm.attributes[id], initializing it to an empty slice if necessary
-func (client *Client) attrs(id irma.CredentialTypeIdentifier) []*irma.AttributeList {
+func (client *IrmaClient) attrs(id irma.CredentialTypeIdentifier) []*irma.AttributeList {
 	list, exists := client.attributes[id]
 	if !exists {
 		list = make([]*irma.AttributeList, 0, 1)
@@ -491,7 +583,7 @@ func (client *Client) attrs(id irma.CredentialTypeIdentifier) []*irma.AttributeL
 }
 
 // Attributes returns the attribute list of the requested credential, or nil if we do not have it.
-func (client *Client) Attributes(id irma.CredentialTypeIdentifier, counter int) (attributes *irma.AttributeList) {
+func (client *IrmaClient) Attributes(id irma.CredentialTypeIdentifier, counter int) (attributes *irma.AttributeList) {
 	list := client.attrs(id)
 	if len(list) <= counter {
 		return
@@ -499,7 +591,7 @@ func (client *Client) Attributes(id irma.CredentialTypeIdentifier, counter int) 
 	return list[counter]
 }
 
-func (client *Client) attributesByHash(hash string) (*irma.AttributeList, int) {
+func (client *IrmaClient) attributesByHash(hash string) (*irma.AttributeList, int) {
 	lookup, present := client.lookup[hash]
 	if !present {
 		return nil, 0
@@ -507,7 +599,7 @@ func (client *Client) attributesByHash(hash string) (*irma.AttributeList, int) {
 	return client.attributes[lookup.id][lookup.counter], lookup.counter
 }
 
-func (client *Client) credentialByHash(hash string) (*credential, int, error) {
+func (client *IrmaClient) credentialByHash(hash string) (*credential, int, error) {
 	attrs, index := client.attributesByHash(hash)
 	if attrs != nil {
 		cred, err := client.credential(attrs.CredentialType().Identifier(), index)
@@ -516,7 +608,7 @@ func (client *Client) credentialByHash(hash string) (*credential, int, error) {
 	return nil, 0, nil
 }
 
-func (client *Client) credentialByID(id irma.CredentialIdentifier) (*credential, error) {
+func (client *IrmaClient) credentialByID(id irma.CredentialIdentifier) (*credential, error) {
 	cred, _, err := client.credentialByHash(id.Hash)
 	return cred, err
 }
@@ -524,7 +616,7 @@ func (client *Client) credentialByID(id irma.CredentialIdentifier) (*credential,
 // credential returns the requested credential, or nil if we do not have it.
 // FIXME: this function can cause concurrent map writes panics when invoked concurrently simultaneously,
 // in client.Configuration.publicKeys and client.credentialsCache.
-func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) (cred *credential, err error) {
+func (client *IrmaClient) credential(id irma.CredentialTypeIdentifier, counter int) (cred *credential, err error) {
 	// If the requested credential is not in credential map, we check if its attributes were
 	// deserialized during New(). If so, there should be a corresponding signature file,
 	// so we read that, construct the credential, and add it to the credential map
@@ -572,7 +664,7 @@ func (client *Client) credential(id irma.CredentialTypeIdentifier, counter int) 
 // in the conjunction. (A credential instance from the client is a candidate it it contains
 // attributes required in this conjunction). If one credential type occurs multiple times in the
 // conjunction it is not added twice.
-func (client *Client) credCandidates(request irma.SessionRequest, con irma.AttributeCon) (credCandidateSet, bool, error) {
+func (client *IrmaClient) credCandidates(request irma.SessionRequest, con irma.AttributeCon) (credCandidateSet, bool, error) {
 	var candidates [][]*credCandidate
 	satisfiable := true
 
@@ -619,7 +711,7 @@ func (client *Client) credCandidates(request irma.SessionRequest, con irma.Attri
 
 // addCredSuggestion decides whether or not to include an "empty" credential candidate
 // (i.e. without hash) with the disclosure candidates to the user as a suggestion.
-func (client *Client) addCredSuggestion(
+func (client *IrmaClient) addCredSuggestion(
 	request irma.SessionRequest, credTypeID irma.CredentialTypeIdentifier,
 	fixedAttrValue, haveCandidates bool,
 ) bool {
@@ -657,7 +749,7 @@ func (client *Client) addCredSuggestion(
 //   - if the attrs can satisfy the conjunction (as long as it is usable),
 //   - if the attrs are usable (they are not expired, or revoked, or not revocation-aware while
 //     a nonrevocation proof is required).
-func (client *Client) satisfiesCon(request irma.SessionRequest, attrs *irma.AttributeList, con irma.AttributeCon) (bool, bool) {
+func (client *IrmaClient) satisfiesCon(request irma.SessionRequest, attrs *irma.AttributeList, con irma.AttributeCon) (bool, bool) {
 	var credfound bool
 	credtype := attrs.CredentialType().Identifier()
 	for _, attr := range con {
@@ -697,7 +789,7 @@ func (set credCandidateSet) multiply(candidates []*credCandidate) credCandidateS
 	return result
 }
 
-func (set credCandidateSet) expand(client *Client, base *irma.BaseRequest, con irma.AttributeCon) ([]DisclosureCandidates, error) {
+func (set credCandidateSet) expand(client *IrmaClient, base *irma.BaseRequest, con irma.AttributeCon) ([]DisclosureCandidates, error) {
 	var result []DisclosureCandidates
 
 	for _, s := range set {
@@ -744,7 +836,7 @@ func cartesianProduct(candidates [][]*credCandidate) credCandidateSet {
 // candidatesDisCon returns attributes present in this client that satisfy the specified attribute
 // disjunction. It returns a list of candidate attribute sets, each of which would satisfy the
 // specified disjunction.
-func (client *Client) candidatesDisCon(request irma.SessionRequest, discon irma.AttributeDisCon) (
+func (client *IrmaClient) candidatesDisCon(request irma.SessionRequest, discon irma.AttributeDisCon) (
 	candidates []DisclosureCandidates, satisfiable bool, err error,
 ) {
 	candidates = []DisclosureCandidates{}
@@ -793,7 +885,7 @@ func (client *Client) candidatesDisCon(request irma.SessionRequest, discon irma.
 
 // Candidates returns a list of options for the user to choose from,
 // given a session request and the credentials currently in storage.
-func (client *Client) Candidates(request irma.SessionRequest) (
+func (client *IrmaClient) Candidates(request irma.SessionRequest) (
 	candidates [][]DisclosureCandidates, satisfiable bool, err error,
 ) {
 	condiscon := request.Disclosure().Disclose
@@ -823,7 +915,7 @@ type attributeGroup struct {
 
 // Given the user's choice of attributes to be disclosed, group them per credential out of which they
 // are to be disclosed
-func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (
+func (client *IrmaClient) groupCredentials(choice *irma.DisclosureChoice) (
 	[]attributeGroup, irma.DisclosedAttributeIndices, error,
 ) {
 	if choice == nil || choice.Attributes == nil {
@@ -870,7 +962,7 @@ func (client *Client) groupCredentials(choice *irma.DisclosureChoice) (
 }
 
 // ProofBuilders constructs a list of proof builders for the specified attribute choice.
-func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.SessionRequest,
+func (client *IrmaClient) ProofBuilders(choice *irma.DisclosureChoice, request irma.SessionRequest,
 ) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *atum.Timestamp, error) {
 	todisclose, attributeIndices, err := client.groupCredentials(choice)
 	if err != nil {
@@ -916,7 +1008,7 @@ func (client *Client) ProofBuilders(choice *irma.DisclosureChoice, request irma.
 }
 
 // Proofs computes disclosure proofs containing the attributes specified by choice.
-func (client *Client) Proofs(choice *irma.DisclosureChoice, request irma.SessionRequest) (*irma.Disclosure, *atum.Timestamp, error) {
+func (client *IrmaClient) Proofs(choice *irma.DisclosureChoice, request irma.SessionRequest) (*irma.Disclosure, *atum.Timestamp, error) {
 	builders, choices, timestamp, err := client.ProofBuilders(choice, request)
 	if err != nil {
 		return nil, nil, err
@@ -941,7 +1033,7 @@ func generateIssuerProofNonce() (*big.Int, error) {
 // IssuanceProofBuilders constructs a list of proof builders in the issuance protocol
 // for the future credentials as well as possibly any disclosed attributes, and generates
 // a nonce against which the issuer's proof of knowledge must verify.
-func (client *Client) IssuanceProofBuilders(
+func (client *IrmaClient) IssuanceProofBuilders(
 	request *irma.IssuanceRequest, choice *irma.DisclosureChoice, keyshareSession *keyshareSession,
 ) (gabi.ProofBuilderList, irma.DisclosedAttributeIndices, *big.Int, error) {
 	issuerProofNonce, err := generateIssuerProofNonce()
@@ -995,7 +1087,7 @@ func (client *Client) IssuanceProofBuilders(
 
 // IssueCommitments computes issuance commitments, along with disclosure proofs specified by choice,
 // and also returns the credential builders which will become the new credentials upon combination with the issuer's signature.
-func (client *Client) IssueCommitments(request *irma.IssuanceRequest, choice *irma.DisclosureChoice,
+func (client *IrmaClient) IssueCommitments(request *irma.IssuanceRequest, choice *irma.DisclosureChoice,
 ) (*irma.IssueCommitmentMessage, gabi.ProofBuilderList, error) {
 	builders, choices, issuerProofNonce, err := client.IssuanceProofBuilders(request, choice, nil)
 	if err != nil {
@@ -1016,7 +1108,7 @@ func (client *Client) IssueCommitments(request *irma.IssuanceRequest, choice *ir
 
 // ConstructCredentials constructs and saves new credentials using the specified issuance signature messages
 // and credential builders.
-func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *irma.IssuanceRequest, builders gabi.ProofBuilderList) error {
+func (client *IrmaClient) ConstructCredentials(msg []*gabi.IssueSignatureMessage, request *irma.IssuanceRequest, builders gabi.ProofBuilderList) error {
 	if len(msg) > len(builders) {
 		return errors.New("Received unexpected amount of signatures")
 	}
@@ -1077,7 +1169,7 @@ func (client *Client) ConstructCredentials(msg []*gabi.IssueSignatureMessage, re
 
 // Keyshare server handling
 
-func (client *Client) genSchemeManagersList(enrolled bool) []irma.SchemeManagerIdentifier {
+func (client *IrmaClient) genSchemeManagersList(enrolled bool) []irma.SchemeManagerIdentifier {
 	list := []irma.SchemeManagerIdentifier{}
 	for name, manager := range client.Configuration.SchemeManagers {
 		if _, contains := client.keyshareServers[name]; manager.Distributed() && contains == enrolled {
@@ -1087,16 +1179,16 @@ func (client *Client) genSchemeManagersList(enrolled bool) []irma.SchemeManagerI
 	return list
 }
 
-func (client *Client) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+func (client *IrmaClient) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.genSchemeManagersList(false)
 }
 
-func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
+func (client *IrmaClient) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.genSchemeManagersList(true)
 }
 
 // KeyshareEnroll attempts to enroll at the keyshare server of the specified scheme manager.
-func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email *string, pin string, lang string) {
+func (client *IrmaClient) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email *string, pin string, lang string) {
 	go func() {
 		err := client.keyshareEnrollWorker(manager, email, pin, lang)
 		if err != nil {
@@ -1105,7 +1197,7 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 	}()
 }
 
-func (client *Client) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifier, email *string, pin string, lang string) error {
+func (client *IrmaClient) keyshareEnrollWorker(managerID irma.SchemeManagerIdentifier, email *string, pin string, lang string) error {
 	manager, ok := client.Configuration.SchemeManagers[managerID]
 	if !ok {
 		return errors.New("Unknown scheme manager")
@@ -1211,7 +1303,7 @@ func challengeResponseKeyName(scheme irma.SchemeManagerIdentifier) string {
 // KeyshareVerifyPin verifies the specified PIN at the keyshare server, returning if it succeeded;
 // if not, how many tries are left, or for how long the user is blocked. If an error is returned
 // it is of type *irma.SessionError.
-func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
+func (client *IrmaClient) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
 	scheme := client.Configuration.SchemeManagers[schemeid]
 	if scheme == nil || !scheme.Distributed() {
 		return false, 0, 0, &irma.SessionError{
@@ -1229,7 +1321,7 @@ func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerI
 	return success, tries, blocked, err
 }
 
-func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
+func (client *IrmaClient) KeyshareChangePin(oldPin string, newPin string) {
 	go func() {
 		// Check whether all keyshare servers are available.
 		for schemeID, kss := range client.keyshareServers {
@@ -1293,7 +1385,7 @@ func (client *Client) KeyshareChangePin(oldPin string, newPin string) {
 	}()
 }
 
-func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdentifier, oldPin string, newPin string) error {
+func (client *IrmaClient) keyshareChangePinWorker(managerID irma.SchemeManagerIdentifier, oldPin string, newPin string) error {
 	kss, ok := client.keyshareServers[managerID]
 	if !ok {
 		return errors.New("Unknown keyshare server")
@@ -1342,7 +1434,7 @@ func (client *Client) keyshareChangePinWorker(managerID irma.SchemeManagerIdenti
 }
 
 // KeyshareRemove unenrolls the keyshare server of the specified scheme manager and removes all associated credentials.
-func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error {
+func (client *IrmaClient) KeyshareRemove(manager irma.SchemeManagerIdentifier) error {
 	if _, contains := client.keyshareServers[manager]; !contains {
 		return errors.New("can't uninstall unknown keyshare server")
 	}
@@ -1350,7 +1442,7 @@ func (client *Client) KeyshareRemove(manager irma.SchemeManagerIdentifier) error
 }
 
 // KeyshareRemoveAll removes all keyshare server registrations and associated credentials.
-func (client *Client) KeyshareRemoveAll() error {
+func (client *IrmaClient) KeyshareRemoveAll() error {
 	var managers []irma.SchemeManagerIdentifier
 	for schemeID := range client.keyshareServers {
 		managers = append(managers, schemeID)
@@ -1359,7 +1451,7 @@ func (client *Client) KeyshareRemoveAll() error {
 }
 
 // stripStorage removes all credentials and optionally removes all logs of the specified schemes from storage.
-func (client *Client) stripStorage(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
+func (client *IrmaClient) stripStorage(schemeIDs []irma.SchemeManagerIdentifier, removeLogs bool) error {
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 
@@ -1433,7 +1525,7 @@ func (client *Client) stripStorage(schemeIDs []irma.SchemeManagerIdentifier, rem
 	})
 }
 
-func (client *Client) ensureKeyshareAttributeValid(pin string, kss *keyshareServer, transport *irma.HTTPTransport) {
+func (client *IrmaClient) ensureKeyshareAttributeValid(pin string, kss *keyshareServer, transport *irma.HTTPTransport) {
 	// The user has no way to deal with the errors that may occur here, so we just report them and return.
 	manager := client.Configuration.SchemeManagers[kss.SchemeManagerIdentifier]
 	attrs := client.Attributes(irma.NewAttributeTypeIdentifier(manager.KeyshareAttribute).CredentialTypeIdentifier(), 0)
@@ -1464,17 +1556,17 @@ func (client *Client) ensureKeyshareAttributeValid(pin string, kss *keyshareServ
 
 // LoadNewestLogs returns the log entries of latest past events
 // (sorted from new to old, the result length is limited to max).
-func (client *Client) LoadNewestLogs(max int) ([]*LogEntry, error) {
+func (client *IrmaClient) LoadNewestLogs(max int) ([]*LogEntry, error) {
 	return client.storage.LoadNewestLogs(max)
 }
 
 // LoadLogsBefore returns the log entries of past events that took place before log entry with ID 'beforeIndex'
 // (sorted from new to old, the result length is limited to max).
-func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, error) {
+func (client *IrmaClient) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, error) {
 	return client.storage.LoadLogsBefore(beforeIndex, max)
 }
 
-func (client *Client) SetPreferences(pref Preferences) {
+func (client *IrmaClient) SetPreferences(pref Preferences) {
 	if pref.DeveloperMode {
 		irma.Logger.Info("developer mode enabled")
 	} else {
@@ -1485,13 +1577,13 @@ func (client *Client) SetPreferences(pref Preferences) {
 	client.applyPreferences()
 }
 
-func (client *Client) applyPreferences() {}
+func (client *IrmaClient) applyPreferences() {}
 
 // ConfigurationUpdated should be run after Configuration.Download().
 // For any credential type in the updated scheme to which new attributes were added, this function
 // sets the value of these new attributes to 0 in all instances that the client currently has of this
 // credential type.
-func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) error {
+func (client *IrmaClient) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) error {
 	if downloaded == nil || len(downloaded.CredentialTypes) == 0 {
 		return nil
 	}
@@ -1528,7 +1620,7 @@ func (client *Client) ConfigurationUpdated(downloaded *irma.IrmaIdentifierSet) e
 }
 
 // RemoveScheme removes the given scheme manager and all credentials and log entries related to it.
-func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error {
+func (client *IrmaClient) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error {
 	scheme, ok := client.Configuration.SchemeManagers[schemeID]
 	if !ok {
 		return errors.New("unknown scheme manager")
@@ -1554,7 +1646,7 @@ func (client *Client) RemoveScheme(schemeID irma.SchemeManagerIdentifier) error 
 }
 
 // RemoveRequestorScheme removes the given requestor scheme and all requestors and issue wizards related to it.
-func (client *Client) RemoveRequestorScheme(schemeID irma.RequestorSchemeIdentifier) error {
+func (client *IrmaClient) RemoveRequestorScheme(schemeID irma.RequestorSchemeIdentifier) error {
 	scheme, ok := client.Configuration.RequestorSchemes[schemeID]
 	if !ok {
 		return errors.New("unknown requestor scheme")

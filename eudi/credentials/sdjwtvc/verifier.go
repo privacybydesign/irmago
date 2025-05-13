@@ -13,6 +13,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 type JwtVerifier interface {
@@ -58,7 +59,7 @@ type VerificationContext struct {
 	JwtVerifier           JwtVerifier
 }
 
-// A decoded representation of an SD-JWT VC for the verifier
+// VerifiedSdJwtVc is the decoded representation of an SD-JWT VC for the verifier
 type VerifiedSdJwtVc struct {
 	IssuedSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []DisclosureContent
@@ -413,7 +414,7 @@ func (f *HttpIssuerMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetad
 	}, nil
 }
 
-// Splits the sdjwt at the ~ characters and returns the individual components.
+// SplitSdJwtVc splits the sdjwt at the ~ characters and returns the individual components.
 // The IssuerSignedJwt is guaranteed to contain a value (if there's no error).
 // The EncodedDisclosure list could be empty if there are no dislcosures.
 // The KbJwt may be nil if there's no key binding jwt.
