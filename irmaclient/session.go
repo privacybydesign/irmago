@@ -56,8 +56,6 @@ type Handler interface {
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
-	RequestSchemeManagerPermission(manager *irma.SchemeManager,
-		callback func(proceed bool))
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }
