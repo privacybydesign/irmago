@@ -86,7 +86,6 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 			handler.Failure(nil)
 			return
 		}
-		handler.Success("managed to complete openid4vp session")
 	}()
 }
 
@@ -102,9 +101,40 @@ type AuthorizationResponseConfig struct {
 
 func (client *OpenID4VPClient) HandleAuthorizationRequest(request *openid4vp.AuthorizationRequest, handler Handler) error {
 	queryResponses, err := dcql.QueryCredentials(request.DcqlQuery, client.QueryHandlers)
-
 	if err != nil {
 		return err
+	}
+
+	disclosureRequest := &irma.DisclosureRequest{}
+	satisfiable := true
+
+	candidates := [][]DisclosureCandidates{}
+
+	requestorInfo := irma.RequestorInfo{
+		ID:         irma.RequestorIdentifier{},
+		Scheme:     irma.RequestorSchemeIdentifier{},
+		Name:       map[string]string{},
+		Industry:   &irma.TranslatedString{},
+		Hostnames:  []string{},
+		Logo:       new(string),
+		LogoPath:   new(string),
+		ValidUntil: &irma.Timestamp{},
+		Unverified: false,
+		Languages:  []string{},
+		Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
+	}
+
+	advanceFlag := make(chan bool, 1)
+
+	handler.RequestVerificationPermission(disclosureRequest, satisfiable, candidates, &requestorInfo, PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+		advanceFlag <- proceed
+	}))
+
+	advance := <-advanceFlag
+
+	if !advance {
+		handler.Cancelled()
+		return nil
 	}
 
 	httpClient := http.Client{}
@@ -128,6 +158,7 @@ func (client *OpenID4VPClient) HandleAuthorizationRequest(request *openid4vp.Aut
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("response status was not ok: %v", response)
 	}
+	handler.Success("managed to complete openid4vp session")
 	return nil
 }
 
