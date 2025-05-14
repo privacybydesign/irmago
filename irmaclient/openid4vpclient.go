@@ -105,34 +105,9 @@ func (client *OpenID4VPClient) HandleAuthorizationRequest(request *openid4vp.Aut
 		return err
 	}
 
-	disclosureRequest := &irma.DisclosureRequest{}
-	satisfiable := true
-
-	candidates := [][]DisclosureCandidates{}
-
-	requestorInfo := irma.RequestorInfo{
-		ID:         irma.RequestorIdentifier{},
-		Scheme:     irma.RequestorSchemeIdentifier{},
-		Name:       map[string]string{},
-		Industry:   &irma.TranslatedString{},
-		Hostnames:  []string{},
-		Logo:       new(string),
-		LogoPath:   new(string),
-		ValidUntil: &irma.Timestamp{},
-		Unverified: false,
-		Languages:  []string{},
-		Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
-	}
-
-	advanceFlag := make(chan bool, 1)
-
-	handler.RequestVerificationPermission(disclosureRequest, satisfiable, candidates, &requestorInfo, PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
-		advanceFlag <- proceed
-	}))
-
-	advance := <-advanceFlag
-
-	if !advance {
+	choice := client.requestAndAwaitPermission(handler)
+	if choice == nil {
+		irma.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
 		handler.Cancelled()
 		return nil
 	}
@@ -160,6 +135,75 @@ func (client *OpenID4VPClient) HandleAuthorizationRequest(request *openid4vp.Aut
 	}
 	handler.Success("managed to complete openid4vp session")
 	return nil
+}
+
+func (client *OpenID4VPClient) requestAndAwaitPermission(handler Handler) *irma.DisclosureChoice {
+	disclosureRequest := &irma.DisclosureRequest{}
+	satisfiable := true
+
+	candidates := [][]DisclosureCandidates{
+		{
+			{
+				&DisclosureCandidate{
+					AttributeIdentifier: &irma.AttributeIdentifier{
+						Type:           irma.NewAttributeTypeIdentifier("pbdf.pbdf.email.email"),
+						CredentialHash: "",
+					},
+					Value:        map[string]string{},
+					Expired:      false,
+					Revoked:      false,
+					NotRevokable: false,
+				},
+			},
+			{
+				&DisclosureCandidate{
+					AttributeIdentifier: &irma.AttributeIdentifier{
+						Type:           irma.NewAttributeTypeIdentifier("pbdf.pbdf.mobilenumber.mobilenumber"),
+						CredentialHash: "",
+					},
+					Value:        map[string]string{},
+					Expired:      false,
+					Revoked:      false,
+					NotRevokable: false,
+				},
+			},
+		},
+	}
+
+	requestorInfo := irma.RequestorInfo{
+		ID:     irma.RequestorIdentifier{},
+		Scheme: irma.RequestorSchemeIdentifier{},
+		Name: map[string]string{
+			"nl": "OpenID4VP Demo Verifier",
+			"en": "OpenID4VP Demo Verifier",
+		},
+		Industry:   &irma.TranslatedString{},
+		Hostnames:  []string{},
+		Logo:       new(string),
+		LogoPath:   new(string),
+		ValidUntil: &irma.Timestamp{},
+		Unverified: false,
+		Languages:  []string{},
+		Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
+	}
+
+	choiceChan := make(chan *irma.DisclosureChoice, 1)
+
+	handler.RequestVerificationPermission(disclosureRequest,
+		satisfiable,
+		candidates,
+		&requestorInfo,
+		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+			if proceed {
+				choiceChan <- choice
+			} else {
+				choiceChan <- nil
+			}
+		},
+		),
+	)
+
+	return <-choiceChan
 }
 
 func ParseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRequest, error) {
