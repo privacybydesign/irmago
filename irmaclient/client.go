@@ -8,11 +8,8 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
-
-
 
 type SdJwtVcCredentialQueryHandler struct{}
 
@@ -55,7 +52,7 @@ func createFullSdJwtVc() (sdjwtvc.SdJwtVc, error) {
 }
 
 type Client struct {
-	openid4vpClient *openid4vp.OpenID4VPClient
+	openid4vpClient *OpenID4VPClient
 	irmaClient      *IrmaClient
 }
 
@@ -66,7 +63,7 @@ func New(
 	signer Signer,
 	aesKey [32]byte,
 ) (*Client, error) {
-	openid4vpClient, err := openid4vp.NewOpenID4VPClient([]dcql.CredentialQueryHandler{
+	openid4vpClient, err := NewOpenID4VPClient([]dcql.CredentialQueryHandler{
 		&SdJwtVcCredentialQueryHandler{},
 	})
 	if err != nil {
@@ -88,29 +85,17 @@ func (client *Client) Close() error {
 	return client.irmaClient.Close()
 }
 
-type DummyDismisser struct{}
-
-func (d *DummyDismisser) Dismiss() {}
-
 func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
 	var result irma.Qr
 	err := json.Unmarshal([]byte(sessionrequest), &result)
 	if err != nil {
-		// handler.Cancelled()
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
-		return &DummyDismisser{}
+		handler.Failure(nil)
+		return nil
 	}
 
 	if result.Type == "disclosing" {
-		err = client.openid4vpClient.NewSession(result.URL)
-		if err != nil {
-			irma.Logger.Errorf("new session error: %v", err)
-		} else {
-			irma.Logger.Info("successfully disclosed")
-			handler.Success("OpenID4VP works! (somewhat)")
-		}
-		// handler.Cancelled()
-		return &DummyDismisser{}
+		return client.openid4vpClient.NewSession(result.URL, handler)
 	}
 
 	return client.irmaClient.NewSession(sessionrequest, handler)
