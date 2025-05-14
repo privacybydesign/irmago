@@ -37,7 +37,7 @@ function openApp(data) {
     window.location.href = customUrl
 }
 
-document.getElementById("getButton").addEventListener("click", function() {
+document.getElementById("start-session").addEventListener("click", function() {
     fetch(
         "http://localhost:8080/ui/presentations",
         {
@@ -55,7 +55,7 @@ document.getElementById("getButton").addEventListener("click", function() {
         return response.json()
     }).then((data) => {
         console.log("data: ", data)
-            openApp(data)
+        openApp(data)
     })
         .catch((error) => {
             console.error("error: ", error)

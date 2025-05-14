@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -203,13 +204,29 @@ const (
 	Compatibility_Draft24     CompatibilityMode = "draft24"
 )
 
-type Client struct {
+type OpenID4VPClient struct {
 	Compatibility CompatibilityMode
 	QueryHandlers []dcql.CredentialQueryHandler
 }
 
-func (client *Client) StartSession(url string) error {
-	response, err := http.Get(url)
+func NewOpenID4VPClient(queryHandlers []dcql.CredentialQueryHandler) (*OpenID4VPClient, error) {
+	return &OpenID4VPClient {
+		Compatibility: Compatibility_Draft24,
+		QueryHandlers: queryHandlers,
+	}, nil
+}
+
+func (client *OpenID4VPClient) NewSession(fullUrl string) error {
+	components, err := url.Parse(fullUrl)
+
+	if err != nil {
+		return err
+	}
+
+	uri := components.Query().Get("request_uri")
+
+	irma.Logger.Infof("starting openid4vp session: %v\n", uri)
+	response, err := http.Get(uri)
 	if err != nil {
 		return err
 	}
@@ -226,10 +243,11 @@ func (client *Client) StartSession(url string) error {
 	if err != nil {
 		return err
 	}
+	irma.Logger.Infof("auth request: %#v\n", request)
 	return client.HandleAuthorizationRequest(request)
 }
 
-func (client *Client) HandleAuthorizationRequest(request *AuthorizationRequest) error {
+func (client *OpenID4VPClient) HandleAuthorizationRequest(request *AuthorizationRequest) error {
 	queryResponses, err := dcql.QueryCredentials(request.DcqlQuery, client.QueryHandlers)
 
 	if err != nil {

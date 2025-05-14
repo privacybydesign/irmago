@@ -9,6 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	_ "embed"
+
+	"github.com/privacybydesign/irmago/testdata"
 )
 
 func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
@@ -97,12 +101,9 @@ func getTestFilePath(name string) (string, error) {
 	return keyPath, nil
 }
 
+
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
-	keyPath, err := getTestFilePath("holder_ec_priv.pem")
-	if err != nil {
-		return nil, err
-	}
-	key, err := ReadEcdsaPrivateKey(keyPath)
+	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}
@@ -110,11 +111,7 @@ func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
 }
 
 func readTestIssuerPrivateKey() (*ecdsa.PrivateKey, error) {
-	keyPath, err := getTestFilePath("issuer_ec_priv.pem")
-	if err != nil {
-		return nil, err
-	}
-	key, err := ReadEcdsaPrivateKey(keyPath)
+	key, err := DecodeEcdsaPrivateKey(testdata.IssuerPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}
@@ -142,12 +139,8 @@ func NewKbJwtCreatorWithHolderTestKey() (*DefaultKbJwtCreator, error) {
 }
 
 func readHolderPublicJwk() (CnfField, error) {
-	key, err := os.ReadFile("test_keys/holder_ec_pub.jwk")
-	if err != nil {
-		return CnfField{}, err
-	}
 	var jwk map[string]interface{}
-	err = json.Unmarshal(key, &jwk)
+	err := json.Unmarshal(testdata.HolderPubJwkBytes, &jwk)
 	if err != nil {
 		return CnfField{}, err
 	}
