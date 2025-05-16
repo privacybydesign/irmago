@@ -1,0 +1,38 @@
+services:
+  # eudi verifier using direct_post (no encryption) as the response_mode
+  eudi_verifier:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.3.3
+    container_name: eudi_verifier
+    ports:
+      - "8080:8080"
+    environment:
+      - VERIFIER_RESPONSE_MODE="DirectPost"
+      - VERIFIER_PUBLIC_URL="0.0.0.0:8080"
+
+  # eudi verifier using direct_post.jwt (with encryption) as the response_mode
+  # eudi_verifier_jwt:
+  #   image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:edge
+  #   container_name: eudi_verifier_jwt
+  #   ports:
+  #     - "8081:8081"
+  #   environment:
+  #     - VERIFIER_RESPONSE_MODE="DirectPostJwt"
+  #     - VERIFIER_PUBLIC_URL="0.0.0.0:8081"
+  #     - SERVER_PORT=8081
+
+  custom_verifier_frontend:
+    build: ./eudi-demo-frontend
+    ports:
+      - "4400:4400"
+    volumes:
+      - ./eudi-demo-frontend:/app
+
+  # eudi_verifier_fontend:
+  #   image: ghcr.io/eu-digital-identity-wallet/eudi-web-verifier:latest
+  #   container_name: verifier_frontend
+  #   ports:
+  #     - "4300:4300"
+  #   environment:
+  #     - DOMAIN_NAME=""
+  #     - HOST_API="http://localhost:8080"
+  #
