@@ -37,28 +37,32 @@ func (client *OpenID4VPClient) Dismiss() {
 	irma.Logger.Info("openid4vp: session dismissed")
 }
 
+func handlerFailure(handler Handler, message string, fmtArgs ...any) {
+	irma.Logger.Errorf(message, fmtArgs...)
+	handler.Failure(&irma.SessionError{
+		Err: fmt.Errorf(message, fmtArgs...),
+	})
+}
+
 func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handler) {
 	go func() {
 		components, err := url.Parse(fullUrl)
 
 		if err != nil {
-			irma.Logger.Errorf("openid4vp: failed to parse request: %v", err)
-			handler.Failure(nil)
+			handlerFailure(handler, "openid4vp: failed to parse request: %v", err)
 			return
 		}
 
 		uri := components.Query().Get("request_uri")
 		if uri == "" {
-			irma.Logger.Error("openid4vp: request missing required request_uri")
-			handler.Failure(nil)
+			handlerFailure(handler, "openid4vp: request missing required request_uri")
 			return
 		}
 
 		irma.Logger.Infof("starting openid4vp session: %v\n", uri)
 		response, err := http.Get(uri)
 		if err != nil {
-			irma.Logger.Errorf("openid4vp: failed to get authorization request: %v", err)
-			handler.Failure(nil)
+			handlerFailure(handler, "openid4vp: failed to get authorization request: %v", err)
 			return
 		}
 
@@ -67,23 +71,20 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 		jawd, err := io.ReadAll(response.Body)
 
 		if err != nil {
-			irma.Logger.Errorf("openid4vp: failed to read authorization request body: %v", err)
-			handler.Failure(nil)
+			handlerFailure(handler, "openid4vp: failed to read authorization request body: %v", err)
 			return
 		}
 
 		request, err := ParseAuthorizationRequestJwt(string(jawd))
 		if err != nil {
-			irma.Logger.Errorf("openid4vp: failed to read authorization request jwt: %v", err)
-			handler.Failure(nil)
+			handlerFailure(handler, "openid4vp: failed to read authorization request jwt: %v", err)
 			return
 		}
 		irma.Logger.Infof("auth request: %#v\n", request)
 		err = client.HandleAuthorizationRequest(request, handler)
 
 		if err != nil {
-			irma.Logger.Errorf("openid4vp: failed to handle authorization request: %v", err)
-			handler.Failure(nil)
+			handlerFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
 			return
 		}
 	}()
@@ -147,7 +148,7 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(handler Handler) *irma.
 				&DisclosureCandidate{
 					AttributeIdentifier: &irma.AttributeIdentifier{
 						Type:           irma.NewAttributeTypeIdentifier("pbdf.pbdf.email.email"),
-						CredentialHash: "",
+						CredentialHash: "hash",
 					},
 					Value:        map[string]string{},
 					Expired:      false,
@@ -155,18 +156,18 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(handler Handler) *irma.
 					NotRevokable: false,
 				},
 			},
-			{
-				&DisclosureCandidate{
-					AttributeIdentifier: &irma.AttributeIdentifier{
-						Type:           irma.NewAttributeTypeIdentifier("pbdf.pbdf.mobilenumber.mobilenumber"),
-						CredentialHash: "",
-					},
-					Value:        map[string]string{},
-					Expired:      false,
-					Revoked:      false,
-					NotRevokable: false,
-				},
-			},
+			// {
+			// 	&DisclosureCandidate{
+			// 		AttributeIdentifier: &irma.AttributeIdentifier{
+			// 			Type:           irma.NewAttributeTypeIdentifier("pbdf.pbdf.mobilenumber.mobilenumber"),
+			// 			CredentialHash: "hash",
+			// 		},
+			// 		Value:        map[string]string{},
+			// 		Expired:      false,
+			// 		Revoked:      false,
+			// 		NotRevokable: false,
+			// 	},
+			// },
 		},
 	}
 

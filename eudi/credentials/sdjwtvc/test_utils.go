@@ -101,7 +101,6 @@ func getTestFilePath(name string) (string, error) {
 	return keyPath, nil
 }
 
-
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
 	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	if err != nil || key == nil {
