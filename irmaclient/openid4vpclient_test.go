@@ -74,7 +74,7 @@ func TestOpenId4VpClient(t *testing.T) {
 	storage, err := NewSdJwtVcStorage()
 	require.NoError(t, err)
 
-	client, err := NewOpenID4VPClient(storage)
+	client, err := NewOpenID4VPClient(storage, nil)
 	require.NoError(t, err)
 
 	url, err := GetAuthRequestUri()
