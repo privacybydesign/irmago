@@ -93,6 +93,10 @@ func extractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jw
 
 	confirm, err := utils.ExtractOptionalWith(claims, Key_Confirmationkey, parseConfirmField)
 
+	if err != nil {
+		return "", nil, err
+	}
+
 	keyJson, err := json.Marshal(confirm.Jwk)
 	if err != nil {
 		return "", nil, err
