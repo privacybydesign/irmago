@@ -22,7 +22,7 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 		"location":    "Utrecht",
 	})
 	requireNoErr(t, err)
-	jwtCreator := newEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdJwt, err := CreateSdJwtVcForIssuance(issuer, disclosures, jwtCreator)
 	requireNoErr(t, err)
 	return sdJwt
@@ -79,7 +79,7 @@ func jsonToMap(js string) map[string]interface{} {
 	return result
 }
 
-func newEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
+func NewEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
 	key, err := readTestIssuerPrivateKey()
 	if err != nil {
 		return nil

@@ -59,13 +59,13 @@ func Test_BuildSdJwtVc_NoVct_BuildFailure(t *testing.T) {
 }
 
 func requireBuildFailure(t *testing.T, builder *SdJwtVcBuilder) {
-	jwtCreator := newEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	_, err := builder.Build(jwtCreator)
 	requireErr(t, err)
 }
 
 func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
-	jwtCreator := newEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	requireNoErr(t, err)
 	context := createTestVerificationContext()

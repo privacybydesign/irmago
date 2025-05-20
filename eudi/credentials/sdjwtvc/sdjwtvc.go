@@ -424,7 +424,7 @@ func CreateTestSdJwtVc() (SdJwtVc, error) {
 		IssuedAt:                 1516239022,
 	}
 
-	signer := newEcdsaJwtCreatorWithIssuerTestkey()
+	signer := NewEcdsaJwtCreatorWithIssuerTestkey()
 	jwt, err := CreateIssuerSignedJwt(sdJwtClaims, signer)
 
 	if err != nil {

@@ -6,11 +6,23 @@ const request = {
                 "id": "32f54163-7166-48f1-93d8-ff217bdb0653",
                 "format": "dc+sd-jwt",
                 "meta": {
-                    "doctype_value": "eu.europa.ec.eudi.pid.1"
+                    "vct_values": ["pbdf.pbdf.email"]
                 },
                 "claims": [
                     {
-                        "path": ["pbdf.pbdf.email.email"]
+                        "path": ["email"]
+                    }
+                ]
+            },
+            {
+                "id": "32f54163-7166-48f1-93d8-ff217bdb0654",
+                "format": "dc+sd-jwt",
+                "meta": {
+                    "vct_values": ["pbdf.pbdf.mobilenumber"]
+                },
+                "claims": [
+                    {
+                        "path": ["mobilenumber"]
                     }
                 ]
             }
