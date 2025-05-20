@@ -2,117 +2,10 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"fmt"
-	"time"
 
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/eudi/credentials"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
-
-type SdJwtVcCredentialQueryHandler struct {
-	storage *SdJwtVcStorage
-}
-
-func (qh *SdJwtVcCredentialQueryHandler) SupportsFormat(format credentials.CredentialFormat) bool {
-	return format == credentials.Format_SdJwtVc || format == credentials.Format_SdJwtVc_Legacy
-}
-
-func (qh *SdJwtVcCredentialQueryHandler) Handle(query dcql.CredentialQuery) (dcql.QueryResponse, error) {
-	sdjwt := qh.storage.GetRawCredentials()[0]
-	return dcql.QueryResponse{
-		QueryId:     query.Id,
-		Credentials: []string{string(sdjwt)},
-	}, nil
-}
-
-func createFullSdJwtVc() (sdjwtvc.SdJwtVc, error) {
-	sdjwt, err := sdjwtvc.CreateTestSdJwtVc()
-
-	if err != nil {
-		return "", err
-	}
-
-	kbJwtCreator, err := sdjwtvc.NewKbJwtCreatorWithHolderTestKey()
-
-	if err != nil {
-		return "", err
-	}
-
-	kbjwt, err := sdjwtvc.CreateKbJwt(sdjwt, kbJwtCreator)
-
-	if err != nil {
-		return "", err
-	}
-	fullCredential := sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwt, kbjwt)
-	fmt.Printf("sdjwt: \n\n%v\n\n\n", fullCredential)
-	return fullCredential, nil
-}
-
-type SdJwtVcStorage struct {
-	creds []sdjwtvc.SdJwtVc
-}
-
-func NewSdJwtVcStorage() (*SdJwtVcStorage, error) {
-
-	// contents, err := sdjwtvc.MultipleNewDisclosureContents(map[string]any {
-	// 	"mobilephone": "+31612345678",
-	// })
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// signer := sdjwtvc.
-	// builder := sdjwtvc.NewSdJwtVcBuilder().WithDisclosures(contents).Build()
-
-	email, err := createFullSdJwtVc()
-	if err != nil {
-		return nil, err
-	}
-	return &SdJwtVcStorage{
-		creds: []sdjwtvc.SdJwtVc{
-			email,
-		},
-	}, nil
-}
-
-func (s *SdJwtVcStorage) GetRawCredentials() []sdjwtvc.SdJwtVc {
-	return s.creds
-}
-
-func (s *SdJwtVcStorage) GetCredentials() irma.CredentialInfoList {
-	result := irma.CredentialInfoList{}
-
-	for range s.creds {
-		// hash := sha256.Sum256([]byte(sdjwt))
-		info := &irma.CredentialInfo{
-			ID:              "email",
-			IssuerID:        "pbdf",
-			SchemeManagerID: "pbdf",
-			SignedOn: irma.Timestamp(
-				time.Unix(1747393254, 0),
-			),
-			Expires: irma.Timestamp(
-				time.Unix(1847393254, 0),
-			),
-			Attributes: map[irma.AttributeTypeIdentifier]irma.TranslatedString{
-				irma.NewAttributeTypeIdentifier("pbdf.pbdf.email.email"): {
-					"":   "test@gmail.com",
-					"en": "test@gmail.com",
-					"nl": "test@gmail.com",
-				},
-			},
-			Hash:                "hash",
-			Revoked:             false,
-			RevocationSupported: false,
-		}
-
-		result = append(result, info)
-	}
-
-	return result
-}
 
 type Client struct {
 	sdjwtvcStorage  *SdJwtVcStorage
@@ -132,9 +25,7 @@ func New(
 		return nil, err
 	}
 
-	openid4vpClient, err := NewOpenID4VPClient([]dcql.CredentialQueryHandler{
-		&SdJwtVcCredentialQueryHandler{storage: sdjwtvcStorage},
-	})
+	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage)
 	if err != nil {
 		return nil, err
 	}
@@ -184,17 +75,12 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 }
 
 func (client *Client) CredentialInfoList() irma.CredentialInfoList {
-	sdjwtvcs := client.sdjwtvcStorage.GetCredentials()
+	sdjwtvcs := client.sdjwtvcStorage.GetCredentialInfoList()
 	idemix := client.irmaClient.CredentialInfoList()
 
 	result := irma.CredentialInfoList{}
-
-	for _, sdjwtvc := range sdjwtvcs {
-		result = append(result, sdjwtvc)
-	}
-	for _, idmx := range idemix {
-		result = append(result, idmx)
-	}
+	result = append(result, sdjwtvcs...)
+	result = append(result, idemix...)
 
 	return result
 }

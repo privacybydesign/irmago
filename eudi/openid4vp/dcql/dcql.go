@@ -70,6 +70,11 @@ type CredentialQuery struct {
 	// OPTIONAL: A non-empty array containing arrays of identifiers for elements in `claims`
 	// that specifies which combinations of `claims` for the credential are requested.
 	ClaimSets []ClaimSet `json:"claim_sets,omitempty"`
+
+	// OPTIONAL. A boolean which indicates whether the Verifier requires a Cryptographic Holder Binding proof.
+	// The default value is true, i.e., a Verifiable Presentation with Cryptographic Holder Binding is required.
+	// If set to false, the Verifier accepts a Credential without Cryptographic Holder Binding proof.
+	RequireHolderBinding bool `json:"require_cryptographic_holder_binding,omitempty"`
 }
 
 // QueryResponse contains the values required for a response to a query.
@@ -80,7 +85,6 @@ type QueryResponse struct {
 	// corresponds to a Credential.Id field
 	QueryId string
 	// the resulting serialized credential
-	// FIXME: **THIS SHOULD BE AN _ARRAY_ OF STRINGS, THE EUDI VERIFIER IS WRONG**
 	Credentials []string
 }
 
