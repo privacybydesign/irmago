@@ -5,6 +5,7 @@ import (
 
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 )
 
 type Client struct {
@@ -25,7 +26,17 @@ func New(
 		return nil, err
 	}
 
-	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage)
+	jwtCreator, err := sdjwtvc.NewDefaultEcdsaJwtCreatorWithHolderPrivateKey()
+	if err != nil {
+		return nil, err
+	}
+
+	kbjwtCreator := sdjwtvc.DefaultKbJwtCreator{
+		Clock:      sdjwtvc.NewSystemClock(),
+		JwtCreator: jwtCreator,
+	}
+
+	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, &kbjwtCreator)
 	if err != nil {
 		return nil, err
 	}

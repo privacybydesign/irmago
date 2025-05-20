@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/privacybydesign/irmago/testdata"
 )
 
 type JwtCreator interface {
@@ -17,6 +18,13 @@ type JwtCreator interface {
 
 type DefaultEcdsaJwtCreator struct {
 	key *ecdsa.PrivateKey
+}
+
+func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (JwtCreator, error) {
+	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
+	return &DefaultEcdsaJwtCreator{
+		key: key,
+	}, err
 }
 
 func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]string, payload string) (string, error) {

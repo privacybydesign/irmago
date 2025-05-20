@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/testdata"
 )
 
 type sdjwtvcStorageEntry struct {
@@ -28,9 +29,18 @@ type SdJwtVcStorage struct {
 	entries []sdjwtvcStorageEntry
 }
 
+func (s *SdJwtVcStorage) GetCredentialByHash(hash string) (*sdjwtvcStorageEntry, error) {
+	for _, entry := range s.entries {
+		if entry.info.Hash == hash {
+			return &entry, nil
+		}
+	}
+	return nil, fmt.Errorf("no entry found for hash '%s'", hash)
+}
+
 func NewSdJwtVcStorage() (*SdJwtVcStorage, error) {
 	contents, err := sdjwtvc.MultipleNewDisclosureContents(map[string]any{
-		"mobilephone": "+31612345678",
+		"mobilenumber": "+31612345678",
 	})
 	if err != nil {
 		return nil, err
@@ -38,8 +48,10 @@ func NewSdJwtVcStorage() (*SdJwtVcStorage, error) {
 	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
 	mobilephone, err := sdjwtvc.NewSdJwtVcBuilder().
 		WithDisclosures(contents).
+		WithHolderKey(testdata.ParseHolderPubJwk()).
 		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
-		WithVerifiableCredentialType("pbdf.pbdf.mobilephone").
+		WithVerifiableCredentialType("pbdf.pbdf.mobilenumber").
+		WithIssuerUrl("https://openid4vc.staging.yivi.app").
 		Build(signer)
 
 	if err != nil {
@@ -85,6 +97,8 @@ func NewSdJwtVcStorage() (*SdJwtVcStorage, error) {
 		WithDisclosures(emailContents).
 		WithVerifiableCredentialType("pbdf.pbdf.email").
 		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
+		WithHolderKey(testdata.ParseHolderPubJwk()).
+		WithIssuerUrl("https://openid4vc.staging.yivi.app").
 		Build(signer)
 
 	if err != nil {
@@ -136,13 +150,17 @@ func (s *SdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList {
 	return result
 }
 
+// ========================================================================
+
 type OpenID4VPClient struct {
+	KeyBinder     sdjwtvc.KbJwtCreator
 	Storage       *SdJwtVcStorage
 	Compatibility openid4vp.CompatibilityMode
 }
 
-func NewOpenID4VPClient(storage *SdJwtVcStorage) (*OpenID4VPClient, error) {
+func NewOpenID4VPClient(storage *SdJwtVcStorage, keybinder sdjwtvc.KbJwtCreator) (*OpenID4VPClient, error) {
 	return &OpenID4VPClient{
+		KeyBinder:     keybinder,
 		Compatibility: openid4vp.Compatibility_Draft24,
 		Storage:       storage,
 	}, nil
@@ -220,6 +238,15 @@ type AuthorizationResponseConfig struct {
 	EncryptionKey     *jwk.Key
 }
 
+func logMarshalled(message string, value any) {
+	jsoon, err := json.MarshalIndent(value, "", "   ")
+	if err != nil {
+		irma.Logger.Errorf("%s: failed to marshal: %v", message, err)
+	} else {
+		irma.Logger.Infof("\n%s\n%s\n\n", message, string(jsoon))
+	}
+}
+
 func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.AuthorizationRequest, handler Handler) error {
 	candidates, err := client.getCandidates(request.DcqlQuery)
 
@@ -227,14 +254,21 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 		return err
 	}
 
-	choice := client.requestAndAwaitPermission(candidates, handler)
+	choice := client.requestAndAwaitPermission(candidates.candidates, handler)
 	if choice == nil {
 		irma.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
 		handler.Cancelled()
 		return nil
 	}
 
-	credentials := client.getCredentialsForChoice(choice.Attributes)
+	logMarshalled("choice:", choice)
+	credentials, err := client.getCredentialsForChoice(candidates.queryIdMap, choice.Attributes)
+
+	if err != nil {
+		return err
+	}
+
+	logMarshalled("credentials for choice:", credentials)
 
 	httpClient := http.Client{}
 	authResponse := AuthorizationResponseConfig{
@@ -246,6 +280,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 		ResponseMode:      request.ResponseMode,
 	}
 	responseReq, err := createAuthorizationResponseHttpRequest(authResponse)
+	logMarshalled("responsereq:", responseReq)
 	if err != nil {
 		return err
 	}
@@ -262,39 +297,100 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 }
 
 // will return the SdJwtVc instances to be sent as the response to the complete DcqlQuery, based on the users choices.
-func (client *OpenID4VPClient) getCredentialsForChoice(attributes [][]*irma.AttributeIdentifier) []dcql.QueryResponse {
-	// for _, group := range attributes {
-	// 	// for _, _ := range group {
-	// 	// 	// mem
-	// 	// }
-	// }
-	return []dcql.QueryResponse{}
+func (client *OpenID4VPClient) getCredentialsForChoice(
+	queryIdMap map[irma.AttributeIdentifier]string,
+	choices [][]*irma.AttributeIdentifier,
+) ([]dcql.QueryResponse, error) {
+	jsoon, err := json.MarshalIndent(choices, "", "    ")
+	if err != nil {
+		irma.Logger.Errorf("failed to marshal attributes from choice: %v", choices)
+	} else {
+		irma.Logger.Infof("selected choices:\n%s\n\n", string(jsoon))
+	}
+
+	result := map[string][]sdjwtvc.SdJwtVc{}
+
+	for _, group := range choices {
+		for _, attribute := range group {
+			queryId := queryIdMap[*attribute]
+
+			cred, err := client.Storage.GetCredentialByHash(attribute.CredentialHash)
+			if err != nil {
+				continue
+			}
+			_, ok := result[queryId]
+			if !ok {
+				result[queryId] = []sdjwtvc.SdJwtVc{cred.rawRedentials[0]}
+			} else {
+				result[queryId] = append(result[queryId], cred.rawRedentials[0])
+			}
+		}
+	}
+
+	queryResponses := []dcql.QueryResponse{}
+	for key, value := range result {
+		strings := []string{}
+		for _, sdjwt := range value {
+			kbjwt, err := sdjwtvc.CreateKbJwt(sdjwt, client.KeyBinder)
+			if err != nil {
+				return []dcql.QueryResponse{}, err
+			}
+
+			fullSdJwt := sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwt, kbjwt)
+
+			strings = append(strings, string(fullSdJwt))
+		}
+		queryResponses = append(queryResponses, dcql.QueryResponse{
+			QueryId:     key,
+			Credentials: strings,
+		})
+	}
+	return queryResponses, nil
 }
 
 // assume for now that there are never two choices for the same set of attributes
-func (client *OpenID4VPClient) getCandidates(query dcql.DcqlQuery) ([][]DisclosureCandidates, error) {
-	candidates := [][]DisclosureCandidates{}
+func (client *OpenID4VPClient) getCandidates(query dcql.DcqlQuery) (*queryResult, error) {
+	result := queryResult{
+		candidates: [][]DisclosureCandidates{},
+		queryIdMap: map[irma.AttributeIdentifier]string{},
+	}
 
 	for _, query := range query.Credentials {
 		results, err := client.findCandidatesForCredentialQuery(query)
 		if err != nil {
-			return candidates, err
+			return nil, err
 		}
-		candidates = append(candidates, results)
+		for _, candidatesList := range results.candidates {
+			for _, attributes := range candidatesList {
+				result.queryIdMap[*attributes.AttributeIdentifier] = results.queryId
+			}
+		}
+		result.candidates = append(result.candidates, results.candidates)
 	}
-	return candidates, nil
+	return &result, nil
+}
+
+type queryResult struct {
+	candidates [][]DisclosureCandidates
+	queryIdMap map[irma.AttributeIdentifier]string
+}
+
+type credentialQueryResult struct {
+	// the available candidates for this query
+	candidates []DisclosureCandidates
+	queryId    string
 }
 
 // A credential query is searching only for claims within a single credential.
 // If attributes from multiple credentials are required at the same time, they'll
 // have separate CredentialQueries for each credential.
-func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.CredentialQuery) ([]DisclosureCandidates, error) {
+func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.CredentialQuery) (*credentialQueryResult, error) {
 	if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
 		return nil, fmt.Errorf("format not supported: %v", query.Format)
 	}
 
 	if len(query.Meta.VctValues) != 1 {
-		return []DisclosureCandidates{}, fmt.Errorf("the vct_values array must exactly contain one value: %v", query.Meta.VctValues)
+		return nil, fmt.Errorf("the vct_values array must exactly contain one value: %v", query.Meta.VctValues)
 	}
 
 	// we're assuming the vct field in the sdjwtvc to be the full credential path, e.g. `pbdf.pbdf.email`
@@ -324,7 +420,10 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 			}
 		}
 	}
-	return []DisclosureCandidates{credCandidates}, nil
+	return &credentialQueryResult{
+		candidates: []DisclosureCandidates{credCandidates},
+		queryId:    query.Id,
+	}, nil
 }
 
 func (client *OpenID4VPClient) requestAndAwaitPermission(candidates [][]DisclosureCandidates, handler Handler) *irma.DisclosureChoice {
