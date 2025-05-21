@@ -253,7 +253,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 		return err
 	}
 
-	choice := client.requestAndAwaitPermission(candidates.candidates, handler)
+	choice := client.requestAndAwaitPermission(candidates, handler)
 	if choice == nil {
 		irma.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
 		handler.Cancelled()
@@ -346,8 +346,8 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 
 		sdjwtWithKb := sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt)
 
-		queryResponses = append(queryResponses, dcql.QueryResponse {
-			QueryId: queryId,
+		queryResponses = append(queryResponses, dcql.QueryResponse{
+			QueryId:     queryId,
 			Credentials: []string{string(sdjwtWithKb)},
 		})
 	}
@@ -357,34 +357,40 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 // assume for now that there are never two choices for the same set of attributes
 func (client *OpenID4VPClient) getCandidates(query dcql.DcqlQuery) (*queryResult, error) {
 	result := queryResult{
-		candidates: [][]DisclosureCandidates{},
-		queryIdMap: map[irma.AttributeIdentifier]string{},
+		candidates:  [][]DisclosureCandidates{},
+		queryIdMap:  map[irma.AttributeIdentifier]string{},
+		satisfiable: true,
 	}
 
 	for _, query := range query.Credentials {
-		results, err := client.findCandidatesForCredentialQuery(query)
+		singleQueryResult, err := client.findCandidatesForCredentialQuery(query)
 		if err != nil {
 			return nil, err
 		}
-		for _, candidatesList := range results.candidates {
+		for _, candidatesList := range singleQueryResult.candidates {
 			for _, attributes := range candidatesList {
-				result.queryIdMap[*attributes.AttributeIdentifier] = results.queryId
+				result.queryIdMap[*attributes.AttributeIdentifier] = singleQueryResult.queryId
 			}
 		}
-		result.candidates = append(result.candidates, results.candidates)
+		result.candidates = append(result.candidates, singleQueryResult.candidates)
+		if !singleQueryResult.satisfiable {
+			result.satisfiable = false
+		}
 	}
 	return &result, nil
 }
 
 type queryResult struct {
-	candidates [][]DisclosureCandidates
-	queryIdMap map[irma.AttributeIdentifier]string
+	candidates  [][]DisclosureCandidates
+	queryIdMap  map[irma.AttributeIdentifier]string
+	satisfiable bool
 }
 
 type credentialQueryResult struct {
 	// the available candidates for this query
-	candidates []DisclosureCandidates
-	queryId    string
+	candidates  []DisclosureCandidates
+	queryId     string
+	satisfiable bool
 }
 
 // A credential query is searching only for claims within a single credential.
@@ -404,39 +410,58 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 
 	credCandidates := []DisclosureCandidates{}
 
-	// search in the storage for the credential we're looking for
-	for _, entry := range client.Storage.entries {
-		credId := fmt.Sprintf("%s.%s.%s", entry.info.SchemeManagerID, entry.info.IssuerID, entry.info.ID)
+	entries := client.findInStorage(credentialId)
 
-		// we have an instance of the requested credential type
-		if credentialId == credId {
-			// make a DisclosureCandidates containing each of the attributes/claims
+	// when no entries are found, the query is not satisfiable
+	if len(entries) == 0 {
+		toAdd := DisclosureCandidates{}
+		for _, claim := range query.Claims {
+			candidate := DisclosureCandidate{
+				AttributeIdentifier: &irma.AttributeIdentifier{
+					Type: irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, claim.Path[0])),
+				},
+			}
+			toAdd = append(toAdd, &candidate)
+		}
+		credCandidates = append(credCandidates, toAdd)
+	} else {
+		for _, entry := range entries {
 			toAdd := DisclosureCandidates{}
 			for _, claim := range query.Claims {
 				candidate := DisclosureCandidate{
 					AttributeIdentifier: &irma.AttributeIdentifier{
-						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credId, claim.Path[0])),
+						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, claim.Path[0])),
 						CredentialHash: entry.info.Hash,
 					},
-					Value:        map[string]string{},
-					Expired:      false,
-					Revoked:      false,
-					NotRevokable: false,
 				}
 				toAdd = append(toAdd, &candidate)
 			}
 			credCandidates = append(credCandidates, toAdd)
 		}
 	}
+
 	return &credentialQueryResult{
-		candidates: credCandidates,
-		queryId:    query.Id,
+		candidates:  credCandidates,
+		queryId:     query.Id,
+		satisfiable: len(entries) != 0,
 	}, nil
 }
 
-func (client *OpenID4VPClient) requestAndAwaitPermission(candidates [][]DisclosureCandidates, handler Handler) *irma.DisclosureChoice {
+func (client *OpenID4VPClient) findInStorage(credentialId string) []*sdjwtvcStorageEntry {
+	result := []*sdjwtvcStorageEntry{}
+	for _, entry := range client.Storage.entries {
+		credId := fmt.Sprintf("%s.%s.%s", entry.info.SchemeManagerID, entry.info.IssuerID, entry.info.ID)
+
+		// we have an instance of the requested credential type
+		if credentialId == credId {
+			result = append(result, &entry)
+		}
+	}
+	return result
+}
+
+func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResult, handler Handler) *irma.DisclosureChoice {
 	disclosureRequest := &irma.DisclosureRequest{}
-	satisfiable := true
 
 	requestorInfo := irma.RequestorInfo{
 		ID:     irma.RequestorIdentifier{},
@@ -457,9 +482,10 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(candidates [][]Disclosu
 
 	choiceChan := make(chan *irma.DisclosureChoice, 1)
 
-	handler.RequestVerificationPermission(disclosureRequest,
-		satisfiable,
-		candidates,
+	handler.RequestVerificationPermission(
+		disclosureRequest,
+		queryResult.satisfiable,
+		queryResult.candidates,
 		&requestorInfo,
 		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 			if proceed {
