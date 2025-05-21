@@ -11,6 +11,9 @@ const request = {
                 "claims": [
                     {
                         "path": ["email"]
+                    },
+                    {
+                        "path": ["domain"]
                     }
                 ]
             },

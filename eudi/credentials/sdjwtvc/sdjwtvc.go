@@ -164,6 +164,10 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 	return string(jsonBytes), err
 }
 
+func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, error) {
+	return fullSdjwt, nil
+}
+
 const (
 	HashAlg_Sha256 HashingAlgorithm = "sha-256"
 
