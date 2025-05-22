@@ -169,7 +169,7 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 // Note that this expects an sdjwtvc without a kbjwt, as it would not make sense to
 // remove disclosures from an sdjwtvc with a kbjwt.
 func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, error) {
-	issuerSignedJwt, disclosures, _, err:= SplitSdJwtVc(fullSdjwt)
+	issuerSignedJwt, disclosures, _, err := SplitSdJwtVc(fullSdjwt)
 	if err != nil {
 		return "", fmt.Errorf("failed to split sdjwtvc: %v", err)
 	}
