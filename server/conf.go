@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
@@ -100,6 +101,8 @@ type Configuration struct {
 
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
+
+	OpenId4VciSettings *OpenId4VciSettings `json:"openid4vci" mapstructure:"openid4vci"`
 }
 
 type RedisClient struct {
@@ -136,6 +139,15 @@ type RedisSettings struct {
 	DisableTLS               bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
 }
 
+type OpenId4VciSettings struct {
+	JwtPrivateKey     string `json:"jwt_privkey,omitempty" mapstructure:"jwt_privkey"`
+	JwtPrivateKeyFile string `json:"jwt_privkey_file,omitempty" mapstructure:"jwt_privkey_file"`
+
+	// Parsed JWT private key
+	Enabled            bool              `json:"-"`
+	JwtEcdsaPrivateKey *ecdsa.PrivateKey `json:"-"`
+}
+
 // Check ensures that the Configuration is loaded, usable and free of errors.
 func (conf *Configuration) Check() error {
 	if conf.Logger == nil {
@@ -161,6 +173,7 @@ func (conf *Configuration) Check() error {
 		conf.verifyRevocation,
 		conf.verifyJwtPrivateKey,
 		conf.verifyStaticSessions,
+		conf.verifyOpenId4VciSettings,
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
@@ -549,6 +562,33 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 		RootCAs: systemCerts,
 	}
 	return tlsConfig, nil
+}
+
+func (conf *Configuration) verifyOpenId4VciSettings() error {
+	if conf.OpenId4VciSettings == nil {
+		conf.OpenId4VciSettings = &OpenId4VciSettings{
+			Enabled: false,
+		}
+	}
+
+	if conf.OpenId4VciSettings.JwtPrivateKey == "" && conf.OpenId4VciSettings.JwtPrivateKeyFile == "" {
+		return nil
+	}
+
+	keybytes, err := common.ReadKey(conf.OpenId4VciSettings.JwtPrivateKey, conf.OpenId4VciSettings.JwtPrivateKeyFile)
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to read OpenId4VCI private key", 0)
+	}
+
+	conf.OpenId4VciSettings.JwtEcdsaPrivateKey, err = jwt.ParseECPrivateKeyFromPEM(keybytes)
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to parse OpenId4VCI private key", 0)
+	}
+
+	conf.Logger.Info("OpenId4VCI private key parsed, JWT endpoints enabled")
+	conf.OpenId4VciSettings.Enabled = true
+
+	return nil
 }
 
 // ReplacePortString is a helper that returns a copy of the specified url of the form
