@@ -63,16 +63,16 @@ type sessionRequestData struct {
 }
 
 func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
-	var result sessionRequestData
-	err := json.Unmarshal([]byte(sessionrequest), &result)
+	var sessionReq sessionRequestData
+	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
 	if err != nil {
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
 		handler.Failure(nil)
 		return nil
 	}
 
-	if result.Protocol == "openid4vp" {
-		return client.openid4vpClient.NewSession(result.URL, handler)
+	if sessionReq.Protocol == "openid4vp" {
+		return client.openid4vpClient.NewSession(sessionReq.URL, handler)
 	}
 
 	return client.irmaClient.NewSession(sessionrequest, handler)
