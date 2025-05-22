@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -88,6 +89,7 @@ type SignatureRequest struct {
 type IssuanceRequest struct {
 	DisclosureRequest
 	Credentials []*CredentialRequest `json:"credentials"`
+	SdJwts      []*sdjwtvc.SdJwtVc   `json:"_sdjwts"`
 
 	// Derived data
 	CredentialInfoList        CredentialInfoList `json:",omitempty"`

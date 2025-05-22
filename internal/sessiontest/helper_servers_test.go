@@ -39,7 +39,8 @@ var (
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
 
-	jwtPrivkeyPath = filepath.Join(testdata, "jwtkeys", "sk.pem")
+	jwtPrivkeyPath      = filepath.Join(testdata, "jwtkeys", "sk.pem")
+	jwtEcdsaPrivkeyPath = filepath.Join(testdata, "eudi", "issuer_ec_priv.pem")
 )
 
 const (
@@ -333,6 +334,22 @@ func IrmaServerConfiguration() *server.Configuration {
 					},
 				},
 			},
+		},
+	}
+}
+
+// TODO: fix this configuration so that it works with https, which is mandatory for the 'iss' claim
+func IrmaServerOpenId4VciConfiguration() *server.Configuration {
+	return &server.Configuration{
+		URL:                   fmt.Sprintf("http://localhost:%d", irmaServerPort),
+		Logger:                logger,
+		DisableSchemesUpdate:  true,
+		DisableTLS:            true,
+		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		JwtPrivateKeyFile:     jwtPrivkeyPath,
+		OpenId4VciSettings: &server.OpenId4VciSettings{
+			JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
 		},
 	}
 }
