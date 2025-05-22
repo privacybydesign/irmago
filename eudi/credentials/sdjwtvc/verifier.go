@@ -16,6 +16,17 @@ import (
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
+// AlwaysVerifiedJwtVerifier parses a jwt and deems it valid no matter what the pub key is
+type AlwaysVerifiedJwtVerifier struct{}
+
+func (v *AlwaysVerifiedJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err error) {
+	_, pl, err := decodeJwtWithoutCheckingSignature(jwt)
+	if err != nil {
+		return []byte{}, err
+	}
+	return json.Marshal(pl)
+}
+
 type JwtVerifier interface {
 	Verify(jwt string, key any) (payload []byte, err error)
 }
