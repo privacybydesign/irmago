@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"testing"
 
 	_ "embed"
@@ -88,19 +86,6 @@ func NewEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
 	return &DefaultEcdsaJwtCreator{key: key}
 }
 
-func getTestFilePath(name string) (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to find working directory: %v", err)
-	}
-	root, err := findGoModRoot(wd)
-	if err != nil {
-		return "", fmt.Errorf("failed to find go mod root: %v", err)
-	}
-	keyPath := fmt.Sprintf("%s/testdata/eudi/%s", root, name)
-	return keyPath, nil
-}
-
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
 	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	if err != nil || key == nil {
@@ -144,21 +129,6 @@ func readHolderPublicJwk() (CnfField, error) {
 		return CnfField{}, err
 	}
 	return CnfField{Jwk: jwk}, nil
-}
-
-func findGoModRoot(start string) (string, error) {
-	dir := start
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("go.mod not found")
-		}
-		dir = parent
-	}
 }
 
 // =======================================================================
