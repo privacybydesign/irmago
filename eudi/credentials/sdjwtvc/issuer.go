@@ -9,7 +9,6 @@ import (
 type SdJwtVcBuilder struct {
 	lifetime             *int64
 	issuerUrl            *string
-	disableTlsCheck      bool
 	cnfPubKey            *CnfField
 	status               *string
 	subject              *string
@@ -36,7 +35,6 @@ func (b *SdJwtVcBuilder) WithHaipCompatibility() *SdJwtVcBuilder {
 
 func (b *SdJwtVcBuilder) WithIssuerUrl(url string, disableTlsCheck bool) *SdJwtVcBuilder {
 	b.issuerUrl = &url
-	b.disableTlsCheck = disableTlsCheck
 	return b
 }
 
@@ -81,7 +79,7 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	payload := map[string]any{}
 	if b.issuerUrl != nil {
 		if !strings.HasPrefix(*b.issuerUrl, "https://") {
-			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", *b.issuerUrl)
+			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was %s)", *b.issuerUrl)
 		}
 		payload[Key_Issuer] = *b.issuerUrl
 	}
