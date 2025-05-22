@@ -164,6 +164,30 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 	return string(jsonBytes), err
 }
 
+// SelectDisclosures removes all disclosures at the end of the provided sdjwtvc,
+// except the ones specified.
+// Note that this expects an sdjwtvc without a kbjwt, as it would not make sense to
+// remove disclosures from an sdjwtvc with a kbjwt.
+func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, error) {
+	issuerSignedJwt, disclosures, _, err := SplitSdJwtVc(fullSdjwt)
+	if err != nil {
+		return "", fmt.Errorf("failed to split sdjwtvc: %v", err)
+	}
+
+	disclosuresToKeep := []EncodedDisclosure{}
+	for _, disclosure := range disclosures {
+		decoded, err := DecodeDisclosure(disclosure)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode disclosure: %v", err)
+		}
+		if Contains(disclosureNames, decoded.Key) {
+			disclosuresToKeep = append(disclosuresToKeep, disclosure)
+		}
+	}
+
+	return CreateSdJwtVc(issuerSignedJwt, disclosuresToKeep), nil
+}
+
 const (
 	HashAlg_Sha256 HashingAlgorithm = "sha-256"
 
@@ -424,7 +448,7 @@ func CreateTestSdJwtVc() (SdJwtVc, error) {
 		IssuedAt:                 1516239022,
 	}
 
-	signer := newEcdsaJwtCreatorWithIssuerTestkey()
+	signer := NewEcdsaJwtCreatorWithIssuerTestkey()
 	jwt, err := CreateIssuerSignedJwt(sdJwtClaims, signer)
 
 	if err != nil {

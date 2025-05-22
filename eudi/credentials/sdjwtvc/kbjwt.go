@@ -3,6 +3,9 @@ package sdjwtvc
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 // KeyBindingJwt is a string containing the key binding jwt (just the jwt, no ~ or something)
@@ -32,7 +35,7 @@ const (
 // Can be used to move creating the kbjwt to a server.
 type KbJwtCreator interface {
 	// takes in the hash over the issuer signed JWT and the selected disclosures
-	CreateKbJwt(sdJwtHash string) (KeyBindingJwt, error)
+	CreateKbJwt(sdJwtHash string, holderPubKey jwk.Key) (KeyBindingJwt, error)
 }
 
 type DefaultKbJwtCreator struct {
@@ -40,7 +43,7 @@ type DefaultKbJwtCreator struct {
 	JwtCreator JwtCreator
 }
 
-func (c *DefaultKbJwtCreator) CreateKbJwt(hash string) (KeyBindingJwt, error) {
+func (c *DefaultKbJwtCreator) CreateKbJwt(hash string, holderKey jwk.Key) (KeyBindingJwt, error) {
 	payload := KeyBindingJwtPayload{
 		IssuerSignedJwtHash: hash,
 		Nonce:               "nonce",
@@ -60,7 +63,7 @@ func (c *DefaultKbJwtCreator) CreateKbJwt(hash string) (KeyBindingJwt, error) {
 }
 
 func CreateKbJwt(sdJwt SdJwtVc, creator KbJwtCreator) (KeyBindingJwt, error) {
-	alg, err := extractHashingAlgorithm(sdJwt)
+	alg, holderKey, err := extractHashingAlgorithmAndHolderPubKey(sdJwt)
 	if err != nil {
 		return "", err
 	}
@@ -70,22 +73,38 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KbJwtCreator) (KeyBindingJwt, error) {
 		return "", nil
 	}
 
-	return creator.CreateKbJwt(hash)
+	return creator.CreateKbJwt(hash, holderKey)
 }
 
-func extractHashingAlgorithm(sdJwt SdJwtVc) (HashingAlgorithm, error) {
+func extractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {
 	issuerSignedJwt, _, _, err := SplitSdJwtVc(sdJwt)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	_, claims, err := decodeJwtWithoutCheckingSignature(string(issuerSignedJwt))
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	alg, ok := claims[Key_SdAlg].(string)
 	if !ok {
-		return "", fmt.Errorf("failed to get %s field from claims", Key_SdAlg)
+		return "", nil, fmt.Errorf("failed to get %s field from claims", Key_SdAlg)
 	}
-	return HashingAlgorithm(alg), nil
+
+	confirm, err := utils.ExtractOptionalWith(claims, Key_Confirmationkey, parseConfirmField)
+
+	if err != nil {
+		return "", nil, err
+	}
+
+	keyJson, err := json.Marshal(confirm.Jwk)
+	if err != nil {
+		return "", nil, err
+	}
+	key, err := jwk.ParseKey(keyJson)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to parse key (%v) from json: %v", keyJson, err)
+	}
+
+	return HashingAlgorithm(alg), key, nil
 }

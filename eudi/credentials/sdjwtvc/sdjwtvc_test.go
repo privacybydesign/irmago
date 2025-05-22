@@ -96,7 +96,7 @@ func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 	disclosures, err := MultipleNewDisclosureContents(map[string]any{"family": "Yivi"})
 	requireNoErr(t, err)
 
-	jwtCreator := newEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwt, err := CreateSdJwtVcForIssuance(issuer, disclosures, jwtCreator)
 	requireNoErr(t, err)
 
@@ -117,7 +117,7 @@ func TestCreateSdJwtVcIssuerReprWithDisclosures(t *testing.T) {
 	})
 	requireNoErr(t, err)
 
-	jwtCreator := newEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdJwt, err := CreateSdJwtVc_IssuerRepresentation(issuer, disclosures, jwtCreator)
 	requireNoErr(t, err)
 
@@ -139,7 +139,7 @@ func TestCreateSdJwtVcWithDisclosuresAndKbJwt(t *testing.T) {
 func TestCreateSdJwtVcWithoutDisclosuresOrKbJwt(t *testing.T) {
 	issuer := "https://example.com"
 	disclosures := []DisclosureContent{}
-	jwtCreator := newEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdJwt, err := CreateSdJwtVc_IssuerRepresentation(issuer, disclosures, jwtCreator)
 
 	if err != nil {

@@ -5,9 +5,11 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"os"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/privacybydesign/irmago/testdata"
 )
 
 type JwtCreator interface {
@@ -16,6 +18,13 @@ type JwtCreator interface {
 
 type DefaultEcdsaJwtCreator struct {
 	key *ecdsa.PrivateKey
+}
+
+func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (JwtCreator, error) {
+	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
+	return &DefaultEcdsaJwtCreator{
+		key: key,
+	}, err
 }
 
 func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]string, payload string) (string, error) {
@@ -40,16 +49,21 @@ func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]s
 	return jwt, nil
 }
 
+func DecodeEcdsaPrivateKey(bytes []byte) (*ecdsa.PrivateKey, error) {
+	block, _ := pem.Decode(bytes)
+	if block == nil || block.Type != "EC PRIVATE KEY" {
+		return nil, errors.New("failed to decode ecsda private key")
+	}
+
+	return x509.ParseECPrivateKey(block.Bytes)
+
+}
+
 func ReadEcdsaPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 	keyBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	block, _ := pem.Decode(keyBytes)
-	if block == nil || block.Type != "EC PRIVATE KEY" {
-		return nil, err
-	}
-
-	return x509.ParseECPrivateKey(block.Bytes)
+	return DecodeEcdsaPrivateKey(keyBytes)
 }

@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"testing"
+
+	_ "embed"
+
+	"github.com/privacybydesign/irmago/testdata"
 )
 
 func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
@@ -18,7 +20,7 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 		"location":    "Utrecht",
 	})
 	requireNoErr(t, err)
-	jwtCreator := newEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdJwt, err := CreateSdJwtVcForIssuance(issuer, disclosures, jwtCreator)
 	requireNoErr(t, err)
 	return sdJwt
@@ -75,7 +77,7 @@ func jsonToMap(js string) map[string]interface{} {
 	return result
 }
 
-func newEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
+func NewEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
 	key, err := readTestIssuerPrivateKey()
 	if err != nil {
 		return nil
@@ -84,25 +86,8 @@ func newEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
 	return &DefaultEcdsaJwtCreator{key: key}
 }
 
-func getTestFilePath(name string) (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to find working directory: %v", err)
-	}
-	root, err := findGoModRoot(wd)
-	if err != nil {
-		return "", fmt.Errorf("failed to find go mod root: %v", err)
-	}
-	keyPath := fmt.Sprintf("%s/testdata/eudi/%s", root, name)
-	return keyPath, nil
-}
-
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
-	keyPath, err := getTestFilePath("holder_ec_priv.pem")
-	if err != nil {
-		return nil, err
-	}
-	key, err := ReadEcdsaPrivateKey(keyPath)
+	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}
@@ -110,11 +95,7 @@ func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
 }
 
 func readTestIssuerPrivateKey() (*ecdsa.PrivateKey, error) {
-	keyPath, err := getTestFilePath("issuer_ec_priv.pem")
-	if err != nil {
-		return nil, err
-	}
-	key, err := ReadEcdsaPrivateKey(keyPath)
+	key, err := DecodeEcdsaPrivateKey(testdata.IssuerPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}
@@ -142,31 +123,12 @@ func NewKbJwtCreatorWithHolderTestKey() (*DefaultKbJwtCreator, error) {
 }
 
 func readHolderPublicJwk() (CnfField, error) {
-	key, err := os.ReadFile("test_keys/holder_ec_pub.jwk")
-	if err != nil {
-		return CnfField{}, err
-	}
 	var jwk map[string]interface{}
-	err = json.Unmarshal(key, &jwk)
+	err := json.Unmarshal(testdata.HolderPubJwkBytes, &jwk)
 	if err != nil {
 		return CnfField{}, err
 	}
 	return CnfField{Jwk: jwk}, nil
-}
-
-func findGoModRoot(start string) (string, error) {
-	dir := start
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("go.mod not found")
-		}
-		dir = parent
-	}
 }
 
 // =======================================================================
