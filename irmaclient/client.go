@@ -57,8 +57,13 @@ func (client *Client) Close() error {
 	return client.irmaClient.Close()
 }
 
+type sessionRequestData struct {
+	irma.Qr
+	Protocol string `json:"protocol,omitempty"`
+}
+
 func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
-	var result irma.Qr
+	var result sessionRequestData
 	err := json.Unmarshal([]byte(sessionrequest), &result)
 	if err != nil {
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
@@ -66,7 +71,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return nil
 	}
 
-	if result.Type == "disclosing" {
+	if result.Protocol == "openid4vp" {
 		return client.openid4vpClient.NewSession(result.URL, handler)
 	}
 
