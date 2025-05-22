@@ -97,6 +97,7 @@ func createStorageEntry(vct string, issuerUrl string, claims map[string]any) (sd
 			Hash:                hash,
 			Revoked:             false,
 			RevocationSupported: false,
+			CredentialFormat:    "dc+sd-jwt",
 		},
 	}
 	return entry, nil
