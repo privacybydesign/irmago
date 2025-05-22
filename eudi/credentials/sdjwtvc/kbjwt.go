@@ -15,7 +15,7 @@ type KeyBindingJwtPayload struct {
 	// REQUIRED: the hash over the **COMPLETE** issuer signed JWT part of the SD-JWT
 	IssuerSignedJwtHash string `json:"sd_hash"`
 
-	// REQUIRED: the nonce for this, should always have the value "nonce"
+	// REQUIRED: the nonce for this, should correspond to the one from the authorization
 	Nonce string `json:"nonce"`
 
 	// REQUIRED: the time of issuance
@@ -35,7 +35,7 @@ const (
 // Can be used to move creating the kbjwt to a server.
 type KbJwtCreator interface {
 	// takes in the hash over the issuer signed JWT and the selected disclosures
-	CreateKbJwt(sdJwtHash string, holderPubKey jwk.Key) (KeyBindingJwt, error)
+	CreateKbJwt(sdJwtHash string, holderPubKey jwk.Key, nonce string) (KeyBindingJwt, error)
 }
 
 type DefaultKbJwtCreator struct {
@@ -43,10 +43,10 @@ type DefaultKbJwtCreator struct {
 	JwtCreator JwtCreator
 }
 
-func (c *DefaultKbJwtCreator) CreateKbJwt(hash string, holderKey jwk.Key) (KeyBindingJwt, error) {
+func (c *DefaultKbJwtCreator) CreateKbJwt(hash string, holderKey jwk.Key, nonce string) (KeyBindingJwt, error) {
 	payload := KeyBindingJwtPayload{
 		IssuerSignedJwtHash: hash,
-		Nonce:               "nonce",
+		Nonce:               nonce,
 		IssuedAt:            c.Clock.Now(),
 		Audience:            "Verifier",
 	}
@@ -62,7 +62,7 @@ func (c *DefaultKbJwtCreator) CreateKbJwt(hash string, holderKey jwk.Key) (KeyBi
 	return KeyBindingJwt(jwt), err
 }
 
-func CreateKbJwt(sdJwt SdJwtVc, creator KbJwtCreator) (KeyBindingJwt, error) {
+func CreateKbJwt(sdJwt SdJwtVc, creator KbJwtCreator, nonce string) (KeyBindingJwt, error) {
 	alg, holderKey, err := extractHashingAlgorithmAndHolderPubKey(sdJwt)
 	if err != nil {
 		return "", err
@@ -73,7 +73,7 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KbJwtCreator) (KeyBindingJwt, error) {
 		return "", nil
 	}
 
-	return creator.CreateKbJwt(hash, holderKey)
+	return creator.CreateKbJwt(hash, holderKey, nonce)
 }
 
 func extractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {

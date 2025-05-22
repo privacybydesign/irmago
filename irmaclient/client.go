@@ -9,7 +9,7 @@ import (
 )
 
 type Client struct {
-	sdjwtvcStorage  *SdJwtVcStorage
+	sdjwtvcStorage  *InMemorySdJwtVcStorage
 	openid4vpClient *OpenID4VPClient
 	irmaClient      *IrmaClient
 }
