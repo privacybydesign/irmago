@@ -7,6 +7,7 @@ import (
 )
 
 type SdJwtVcBuilder struct {
+	lifetime             *int64
 	issuerUrl            *string
 	cnfPubKey            *CnfField
 	status               *string
@@ -20,6 +21,11 @@ type SdJwtVcBuilder struct {
 
 func NewSdJwtVcBuilder() *SdJwtVcBuilder {
 	return &SdJwtVcBuilder{}
+}
+
+func (b *SdJwtVcBuilder) WithLifetime(lifetime int64) *SdJwtVcBuilder {
+	b.lifetime = &lifetime
+	return b
 }
 
 func (b *SdJwtVcBuilder) WithHaipCompatibility() *SdJwtVcBuilder {
@@ -94,6 +100,9 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	if b.clock != nil {
 		now := (*b.clock).Now()
 		payload[Key_IssuedAt] = now
+		if b.lifetime != nil {
+			payload[Key_ExpiryTime] = now + *b.lifetime
+		}
 	}
 
 	disclosures, err := EncodeDisclosures(b.disclosures)

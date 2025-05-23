@@ -26,11 +26,11 @@ type sdjwtvcStorageEntry struct {
 	info          irma.CredentialInfo
 }
 
-type SdJwtVcStorage struct {
+type InMemorySdJwtVcStorage struct {
 	entries []sdjwtvcStorageEntry
 }
 
-func (s *SdJwtVcStorage) GetCredentialByHash(hash string) (*sdjwtvcStorageEntry, error) {
+func (s *InMemorySdJwtVcStorage) GetCredentialByHash(hash string) (*sdjwtvcStorageEntry, error) {
 	for _, entry := range s.entries {
 		if entry.info.Hash == hash {
 			return &entry, nil
@@ -39,72 +39,26 @@ func (s *SdJwtVcStorage) GetCredentialByHash(hash string) (*sdjwtvcStorageEntry,
 	return nil, fmt.Errorf("no entry found for hash '%s'", hash)
 }
 
-func createStorageEntry(vct string, issuerUrl string, claims map[string]any) (sdjwtvcStorageEntry, error) {
+func createSdJwtVc(vct, issuerUrl string, claims map[string]any) (sdjwtvc.SdJwtVc, error) {
 	contents, err := sdjwtvc.MultipleNewDisclosureContents(claims)
 	if err != nil {
-		return sdjwtvcStorageEntry{}, err
+		return "", err
 	}
 
 	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdjwt, err := sdjwtvc.NewSdJwtVcBuilder().
+	return sdjwtvc.NewSdJwtVcBuilder().
 		WithDisclosures(contents).
 		WithHolderKey(testdata.ParseHolderPubJwk()).
 		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 		WithVerifiableCredentialType(vct).
 		WithIssuerUrl(issuerUrl).
+		WithClock(sdjwtvc.NewSystemClock()).
+		WithLifetime(1000000000).
 		Build(signer)
-
-	if err != nil {
-		return sdjwtvcStorageEntry{}, err
-	}
-
-	infoAttrs := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
-	for key, value := range claims {
-		attrKey := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", vct, key))
-		infoAttrs[attrKey] = irma.TranslatedString{
-			"":   value.(string),
-			"en": value.(string),
-			"nl": value.(string),
-		}
-	}
-
-	hashContent, err := json.Marshal(claims)
-	if err != nil {
-		return sdjwtvcStorageEntry{}, err
-	}
-
-	hash, err := sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, string(hashContent))
-	if err != nil {
-		return sdjwtvcStorageEntry{}, err
-	}
-
-	ids := strings.Split(vct, ".")
-	entry := sdjwtvcStorageEntry{
-		rawRedentials: []sdjwtvc.SdJwtVc{
-			sdjwt,
-		},
-		info: irma.CredentialInfo{
-			ID:              ids[2],
-			IssuerID:        ids[1],
-			SchemeManagerID: ids[0],
-			SignedOn: irma.Timestamp(
-				time.Unix(1747393254, 0),
-			),
-			Expires: irma.Timestamp(
-				time.Unix(1847393254, 0),
-			),
-			Attributes:          infoAttrs,
-			Hash:                hash,
-			Revoked:             false,
-			RevocationSupported: false,
-			CredentialFormat:    "dc+sd-jwt",
-		},
-	}
-	return entry, nil
 }
 
-func NewSdJwtVcStorage() (*SdJwtVcStorage, error) {
-	mobilephoneEntry, err := createStorageEntry("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+func NewSdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
+	mobilephoneEntry, err := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
 		map[string]any{
 			"mobilenumber": "+31612345678",
 		},
@@ -113,7 +67,7 @@ func NewSdJwtVcStorage() (*SdJwtVcStorage, error) {
 	if err != nil {
 		return nil, err
 	}
-	emailEntry, err := createStorageEntry("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry, err := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	})
@@ -122,7 +76,7 @@ func NewSdJwtVcStorage() (*SdJwtVcStorage, error) {
 		return nil, err
 	}
 
-	emailEntry2, err := createStorageEntry("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry2, err := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	})
@@ -131,16 +85,30 @@ func NewSdJwtVcStorage() (*SdJwtVcStorage, error) {
 		return nil, err
 	}
 
-	return &SdJwtVcStorage{
-		entries: []sdjwtvcStorageEntry{
-			mobilephoneEntry,
-			emailEntry,
-			emailEntry2,
-		},
-	}, nil
+	emailEntry3, err := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "yivi@gmail.com",
+		"domain": "gmail.com",
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	storage := &InMemorySdJwtVcStorage{
+		entries: []sdjwtvcStorageEntry{},
+	}
+
+	storage.StoreCredentials([]sdjwtvc.SdJwtVc{
+		mobilephoneEntry,
+		emailEntry,
+		emailEntry2,
+		emailEntry3,
+	})
+
+	return storage, nil
 }
 
-func (s *SdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList {
+func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList {
 	result := irma.CredentialInfoList{}
 
 	for _, entry := range s.entries {
@@ -150,15 +118,116 @@ func (s *SdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList {
 	return result
 }
 
+func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []*sdjwtvcStorageEntry {
+	result := []*sdjwtvcStorageEntry{}
+	for _, entry := range s.entries {
+		credId := fmt.Sprintf("%s.%s.%s", entry.info.SchemeManagerID, entry.info.IssuerID, entry.info.ID)
+
+		// we have an instance of the requested credential type
+		if id == credId {
+			result = append(result, &entry)
+		}
+	}
+	return result
+}
+
+func (s *InMemorySdJwtVcStorage) StoreCredentials(credentials []sdjwtvc.SdJwtVc) error {
+	for _, c := range credentials {
+		info, err := createCredentialInfoFromSdJwtVc(c)
+
+		if err != nil {
+			return err
+		}
+
+		s.entries = append(s.entries, sdjwtvcStorageEntry{
+			info:          *info,
+			rawRedentials: []sdjwtvc.SdJwtVc{c},
+		})
+	}
+	return nil
+}
+
+func createCredentialInfoFromSdJwtVc(cred sdjwtvc.SdJwtVc) (*irma.CredentialInfo, error) {
+	ctx := sdjwtvc.VerificationContext{
+		IssuerMetadataFetcher: sdjwtvc.NewHttpIssuerMetadataFetcher(),
+		Clock:                 sdjwtvc.NewSystemClock(),
+		JwtVerifier:           sdjwtvc.NewJwxJwtVerifier(),
+	}
+	decoded, err := sdjwtvc.ParseAndVerifySdJwtVc(ctx, cred)
+
+	if err != nil {
+		return nil, err
+	}
+
+	attributes := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
+	for _, d := range decoded.Disclosures {
+		strValue, ok := d.Value.(string)
+		if !ok {
+			return nil, fmt.Errorf("failed to convert disclosure to string for attribute '%s'", d.Key)
+		}
+		schemeId := fmt.Sprintf("%s.%s", decoded.IssuerSignedJwtPayload.VerifiableCredentialType, d.Key)
+		id := irma.NewAttributeTypeIdentifier(schemeId)
+		attributes[id] = irma.TranslatedString{
+			"":   strValue,
+			"en": strValue,
+			"nl": strValue,
+		}
+	}
+
+	hashContent, err := json.Marshal(attributes)
+	if err != nil {
+		return nil, err
+	}
+
+	hash, err := sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, string(hashContent))
+	if err != nil {
+		return nil, err
+	}
+
+	idComponents := strings.Split(decoded.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
+	if num := len(idComponents); num != 3 {
+		return nil, fmt.Errorf(
+			"credential id expected to have exactly 3 components, separated by dots: %s",
+			decoded.IssuerSignedJwtPayload.VerifiableCredentialType,
+		)
+	}
+	info := irma.CredentialInfo{
+		ID:              idComponents[2],
+		IssuerID:        idComponents[1],
+		SchemeManagerID: idComponents[0],
+		SignedOn: irma.Timestamp(
+			time.Unix(decoded.IssuerSignedJwtPayload.IssuedAt, 0),
+		),
+		Expires: irma.Timestamp(
+			time.Unix(decoded.IssuerSignedJwtPayload.Expiry, 0),
+		),
+		Attributes:          attributes,
+		Hash:                hash,
+		Revoked:             false,
+		RevocationSupported: false,
+		CredentialFormat:    "dc+sd-jwt",
+	}
+	return &info, nil
+}
+
+// ========================================================================
+
+type SdJwtVcStorage interface {
+	StoreCredentials(credentials []sdjwtvc.SdJwtVc) error
+	GetCredentialsForId(id string) []*sdjwtvcStorageEntry
+	GetCredentialByHash(hash string) (*sdjwtvcStorageEntry, error)
+	GetCredentialInfoList() irma.CredentialInfoList
+}
+
 // ========================================================================
 
 type OpenID4VPClient struct {
 	KeyBinder     sdjwtvc.KbJwtCreator
-	Storage       *SdJwtVcStorage
+	Storage       SdJwtVcStorage
 	Compatibility openid4vp.CompatibilityMode
 }
 
-func NewOpenID4VPClient(storage *SdJwtVcStorage, keybinder sdjwtvc.KbJwtCreator) (*OpenID4VPClient, error) {
+func NewOpenID4VPClient(storage SdJwtVcStorage, keybinder sdjwtvc.KbJwtCreator) (*OpenID4VPClient, error) {
 	return &OpenID4VPClient{
 		KeyBinder:     keybinder,
 		Compatibility: openid4vp.Compatibility_Draft24,
@@ -262,7 +331,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 	}
 
 	logMarshalled("choice:", choice)
-	credentials, err := client.getCredentialsForChoices(candidates.queryIdMap, choice.Attributes)
+	credentials, err := client.getCredentialsForChoices(candidates.queryIdMap, choice.Attributes, request.Nonce)
 
 	if err != nil {
 		return err
@@ -300,6 +369,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 func (client *OpenID4VPClient) getCredentialsForChoices(
 	queryIdMap map[irma.AttributeIdentifier]string,
 	choices [][]*irma.AttributeIdentifier,
+	nonce string,
 ) ([]dcql.QueryResponse, error) {
 	// map of attribute identifiers by the dcql query id
 	attributesByQueryId := map[string][]*irma.AttributeIdentifier{}
@@ -340,7 +410,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to select disclosures: %v", err)
 		}
 
-		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.KeyBinder)
+		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.KeyBinder, nonce)
 		if err != nil {
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to create kbjwt: %v", err)
 		}
@@ -411,7 +481,7 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 
 	credCandidates := []DisclosureCandidates{}
 
-	entries := client.findInStorage(credentialId)
+	entries := client.Storage.GetCredentialsForId(credentialId)
 
 	// when no entries are found, the query is not satisfiable
 	if len(entries) == 0 {
@@ -446,19 +516,6 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 		queryId:     query.Id,
 		satisfiable: len(entries) != 0,
 	}, nil
-}
-
-func (client *OpenID4VPClient) findInStorage(credentialId string) []*sdjwtvcStorageEntry {
-	result := []*sdjwtvcStorageEntry{}
-	for _, entry := range client.Storage.entries {
-		credId := fmt.Sprintf("%s.%s.%s", entry.info.SchemeManagerID, entry.info.IssuerID, entry.info.ID)
-
-		// we have an instance of the requested credential type
-		if credentialId == credId {
-			result = append(result, &entry)
-		}
-	}
-	return result
 }
 
 func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResult, handler Handler) *irma.DisclosureChoice {

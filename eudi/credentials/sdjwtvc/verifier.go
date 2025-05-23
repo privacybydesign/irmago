@@ -61,7 +61,7 @@ type VerificationContext struct {
 
 // VerifiedSdJwtVc is the decoded representation of an SD-JWT VC for the verifier
 type VerifiedSdJwtVc struct {
-	IssuedSignedJwtPayload IssuerSignedJwtPayload
+	IssuerSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []DisclosureContent
 	KeyBindingJwt          *KeyBindingJwtPayload
 }
@@ -105,7 +105,7 @@ func ParseAndVerifySdJwtVc(context VerificationContext, sdjwtvc SdJwtVc) (Verifi
 	}
 
 	return VerifiedSdJwtVc{
-		IssuedSignedJwtPayload: issuerSignedJwtPayload,
+		IssuerSignedJwtPayload: issuerSignedJwtPayload,
 		KeyBindingJwt:          kbJwtPayload,
 		Disclosures:            decodedDisclosures,
 	}, nil
