@@ -338,20 +338,18 @@ func IrmaServerConfiguration() *server.Configuration {
 	}
 }
 
-// TODO: fix this configuration so that it works with https, which is mandatory for the 'iss' claim
-func IrmaServerOpenId4VciConfiguration() *server.Configuration {
-	return &server.Configuration{
-		URL:                   fmt.Sprintf("http://localhost:%d", irmaServerPort),
-		Logger:                logger,
-		DisableSchemesUpdate:  true,
-		DisableTLS:            true,
-		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
-		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
-		JwtPrivateKeyFile:     jwtPrivkeyPath,
-		OpenId4VciSettings: &server.OpenId4VciSettings{
-			JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
-		},
+func IrmaServerOpenId4VciConfiguration() *requestorserver.Configuration {
+	requestorServerConf := RequestorServerConfiguration()
+	requestorServerConf.URL = fmt.Sprintf("https://localhost:%d/irma", irmaServerPort)
+
+	requestorServerConf.Production = true
+	requestorServerConf.TlsCertificateFile = filepath.Join(testdata, "configurations", "certs", "localhost.crt")
+	requestorServerConf.TlsPrivateKeyFile = filepath.Join(testdata, "configurations", "certs", "localhost.key")
+	requestorServerConf.OpenId4VciSettings = &server.OpenId4VciSettings{
+		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
 	}
+
+	return requestorServerConf
 }
 
 func RequestorServerConfiguration() *requestorserver.Configuration {

@@ -12,6 +12,18 @@
             ]
         },
         {
+            "name": "IRMA Server - OpenID4VCI ready",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/irma/main.go",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "server",
+                "-c=${workspaceFolder}/testdata/configurations/irmaserver-openid4vci.yml"
+            ]
+        },
+        {
             "name": "IRMA keyshare server",
             "type": "go",
             "request": "launch",
