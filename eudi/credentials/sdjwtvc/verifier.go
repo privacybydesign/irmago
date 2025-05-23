@@ -16,17 +16,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
-// AlwaysVerifiedJwtVerifier parses a jwt and deems it valid no matter what the pub key is
-type AlwaysVerifiedJwtVerifier struct{}
-
-func (v *AlwaysVerifiedJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err error) {
-	_, pl, err := decodeJwtWithoutCheckingSignature(jwt)
-	if err != nil {
-		return []byte{}, err
-	}
-	return json.Marshal(pl)
-}
-
 type JwtVerifier interface {
 	Verify(jwt string, key any) (payload []byte, err error)
 }
@@ -72,7 +61,7 @@ type VerificationContext struct {
 
 // VerifiedSdJwtVc is the decoded representation of an SD-JWT VC for the verifier
 type VerifiedSdJwtVc struct {
-	IssuedSignedJwtPayload IssuerSignedJwtPayload
+	IssuerSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []DisclosureContent
 	KeyBindingJwt          *KeyBindingJwtPayload
 }
@@ -116,7 +105,7 @@ func ParseAndVerifySdJwtVc(context VerificationContext, sdjwtvc SdJwtVc) (Verifi
 	}
 
 	return VerifiedSdJwtVc{
-		IssuedSignedJwtPayload: issuerSignedJwtPayload,
+		IssuerSignedJwtPayload: issuerSignedJwtPayload,
 		KeyBindingJwt:          kbJwtPayload,
 		Disclosures:            decodedDisclosures,
 	}, nil
