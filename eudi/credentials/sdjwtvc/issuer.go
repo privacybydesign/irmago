@@ -33,7 +33,7 @@ func (b *SdJwtVcBuilder) WithHaipCompatibility() *SdJwtVcBuilder {
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithIssuerUrl(url string) *SdJwtVcBuilder {
+func (b *SdJwtVcBuilder) WithIssuerUrl(url string, disableTlsCheck bool) *SdJwtVcBuilder {
 	b.issuerUrl = &url
 	return b
 }
@@ -79,7 +79,7 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	payload := map[string]any{}
 	if b.issuerUrl != nil {
 		if !strings.HasPrefix(*b.issuerUrl, "https://") {
-			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", *b.issuerUrl)
+			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was %s)", *b.issuerUrl)
 		}
 		payload[Key_Issuer] = *b.issuerUrl
 	}

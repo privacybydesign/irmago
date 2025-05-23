@@ -3,12 +3,14 @@ package irma
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/privacybydesign/gabi/big"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/privacybydesign/gabi/big"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 
 	"fmt"
@@ -561,6 +563,7 @@ func (status ServerStatus) Finished() bool {
 type ServerSessionResponse struct {
 	ProofStatus     ProofStatus                   `json:"proofStatus"`
 	IssueSignatures []*gabi.IssueSignatureMessage `json:"sigs,omitempty"`
+	SdJwts          []*sdjwtvc.SdJwtVc            `json:"sdjwts,omitempty"`
 	NextSession     *Qr                           `json:"nextSession,omitempty"`
 
 	// needed for legacy (un)marshaling

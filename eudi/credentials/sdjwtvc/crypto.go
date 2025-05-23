@@ -17,13 +17,13 @@ type JwtCreator interface {
 }
 
 type DefaultEcdsaJwtCreator struct {
-	key *ecdsa.PrivateKey
+	PrivateKey *ecdsa.PrivateKey
 }
 
 func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (JwtCreator, error) {
 	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	return &DefaultEcdsaJwtCreator{
-		key: key,
+		PrivateKey: key,
 	}, err
 }
 
@@ -41,7 +41,7 @@ func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]s
 		sdjwt.Header[key] = value
 	}
 
-	jwt, err := sdjwt.SignedString(c.key)
+	jwt, err := sdjwt.SignedString(c.PrivateKey)
 	if err != nil {
 		return "", err
 	}

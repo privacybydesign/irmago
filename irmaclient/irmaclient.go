@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -15,7 +14,6 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
 )
 
@@ -54,7 +52,7 @@ type IrmaClient struct {
 	lookup map[string]*credLookup
 
 	// Where we store/load it to/from
-	storage storage
+	storage *storage
 
 	// Versions the client supports
 	minVersion *irma.ProtocolVersion
@@ -86,19 +84,15 @@ type IrmaClient struct {
 // NOTE: It is the responsibility of the caller that there exists a (properly
 // protected) directory at storagePath!
 func NewIrmaClient(
-	storagePath string,
+	//storagePath string,
+	conf *irma.Configuration,
 	irmaConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
+	storage *storage,
 	aesKey [32]byte,
 ) (*IrmaClient, error) {
 	var err error
-	if err = common.AssertPathExists(storagePath); err != nil {
-		return nil, err
-	}
-	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
-		return nil, err
-	}
 
 	client := &IrmaClient{
 		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
@@ -110,13 +104,15 @@ func NewIrmaClient(
 		maxVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
 	}
 
-	client.Configuration, err = irma.NewConfiguration(
-		filepath.Join(storagePath, "irma_configuration"),
-		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
-	)
-	if err != nil {
-		return nil, err
-	}
+	client.Configuration = conf
+
+	// client.Configuration, err = irma.NewConfiguration(
+	// 	filepath.Join(storagePath, "irma_configuration"),
+	// 	irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+	// )
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	schemeMgrErr := client.Configuration.ParseOrRestoreFolder()
 	// If schemMgrErr is of type SchemeManagerError, we continue and
@@ -127,7 +123,8 @@ func NewIrmaClient(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration, aesKey: aesKey}
+	//client.storage = NewStorage(storagePath, client.Configuration, aesKey)
+	client.storage = storage
 	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}

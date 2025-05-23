@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 
@@ -232,11 +233,21 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 		sigs = append(sigs, sig)
 	}
 
+	// Generate SD-JWT here if configured
+	var sdJwts []*sdjwtvc.SdJwtVc
+	if s.conf.OpenId4VciSettings.Enabled {
+		sdJwts, err = s.generateSdJwts(request)
+		if err != nil {
+			return nil, session.fail(server.ErrorIssuanceFailed, err.Error(), conf)
+		}
+	}
+
 	return &irma.ServerSessionResponse{
 		SessionType:     irma.ActionIssuing,
 		ProtocolVersion: session.Version,
 		ProofStatus:     session.Result.ProofStatus,
 		IssueSignatures: sigs,
+		SdJwts:          sdJwts,
 	}, nil
 }
 
@@ -449,6 +460,7 @@ func (s *Server) handleSessionGetRequest(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		rerr = session.fail(server.ErrorRevocation, err.Error(), s.conf)
 	}
+
 	server.WriteResponse(w, request, rerr)
 }
 

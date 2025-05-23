@@ -39,7 +39,8 @@ var (
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
 
-	jwtPrivkeyPath = filepath.Join(testdata, "jwtkeys", "sk.pem")
+	jwtPrivkeyPath      = filepath.Join(testdata, "jwtkeys", "sk.pem")
+	jwtEcdsaPrivkeyPath = filepath.Join(testdata, "eudi", "issuer_ec_priv.pem")
 )
 
 const (
@@ -335,6 +336,20 @@ func IrmaServerConfiguration() *server.Configuration {
 			},
 		},
 	}
+}
+
+func IrmaServerOpenId4VciConfiguration() *requestorserver.Configuration {
+	requestorServerConf := RequestorServerConfiguration()
+	requestorServerConf.URL = fmt.Sprintf("https://localhost:%d/irma", irmaServerPort)
+
+	requestorServerConf.Production = true
+	requestorServerConf.TlsCertificateFile = filepath.Join(testdata, "configurations", "certs", "localhost.crt")
+	requestorServerConf.TlsPrivateKeyFile = filepath.Join(testdata, "configurations", "certs", "localhost.key")
+	requestorServerConf.OpenId4VciSettings = &server.OpenId4VciSettings{
+		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
+	}
+
+	return requestorServerConf
 }
 
 func RequestorServerConfiguration() *requestorserver.Configuration {

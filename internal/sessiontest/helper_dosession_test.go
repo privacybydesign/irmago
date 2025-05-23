@@ -52,6 +52,7 @@ const (
 	optionPrePairingClient
 	optionPolling
 	optionNoSchemeAssets
+	optionExpectSdJwts
 )
 
 func processOptions(options ...option) option {
@@ -331,6 +332,14 @@ func doSession(
 
 	serverResult := getSessionResult(t, sesPkg, serv, useJWTs, opts)
 	require.Equal(t, sesPkg.Token, serverResult.Token)
+
+	if opts.enabled(optionExpectSdJwts) {
+		//client.Attributes()
+		//client.SdJwts
+		//require.NotEmpty(t, serverResult.(*irma.ClientSessionRequest).SdJwts)
+	} else {
+		//require.(t, serverResult.SdJwts)
+	}
 
 	if opts.enabled(optionRetryPost) {
 		var result string

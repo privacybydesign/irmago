@@ -2,10 +2,12 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"path/filepath"
 
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 type Client struct {
@@ -21,6 +23,15 @@ func New(
 	signer Signer,
 	aesKey [32]byte,
 ) (*Client, error) {
+	var err error
+
+	if err = common.AssertPathExists(storagePath); err != nil {
+		return nil, err
+	}
+	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
+		return nil, err
+	}
+
 	sdjwtvcStorage, err := NewSdJwtVcStorage()
 	if err != nil {
 		return nil, err
@@ -41,7 +52,16 @@ func New(
 		return nil, err
 	}
 
-	irmaClient, err := NewIrmaClient(storagePath, irmaConfigurationPath, handler, signer, aesKey)
+	conf, err := irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	storage := NewIrmaStorage(storagePath, conf, aesKey)
+	irmaClient, err := NewIrmaClient(conf, irmaConfigurationPath, handler, signer, storage, aesKey)
 	if err != nil {
 		return nil, err
 	}
