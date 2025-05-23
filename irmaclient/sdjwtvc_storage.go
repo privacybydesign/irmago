@@ -16,19 +16,20 @@ import (
 // ========================================================================
 
 type SdJwtVcStorage interface {
-	// Should remove all instances for the credential with the given hash.
+	// RemoveAll should remove all instances for the credential with the given hash.
 	RemoveAll() error
-	// Should remove all instances for the credential with the given hash.
+	// RemoveCredentialByHash should remove all instances for the credential with the given hash.
 	// Should _not_ return an error if the credential is not found.
 	RemoveCredentialByHash(id string) error
 
-	// Should remove a single instance (the last used one) of the credential for the given hash.
+	// RemoveLastUsedInstanceOfCredentialByHash should remove a single instance
+	// (the last used one) of the credential for the given hash.
 	RemoveLastUsedInstanceOfCredentialByHash(id string) error
 
-	// Assumes each of the provided sdjwts to be linked to the credential info
+	// StoreCredential assumes each of the provided sdjwts to be linked to the credential info
 	StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error
 
-	// Gets all instances for a credential id from the scheme
+	// GetCredentialsForId gets all instances for a credential id from the scheme
 	GetCredentialsForId(id string) []SdJwtVcAndInfo
 	GetCredentialByHash(hash string) (*SdJwtVcAndInfo, error)
 	GetCredentialInfoList() irma.CredentialInfoList
@@ -70,7 +71,6 @@ type BboltSdJwtVcStorage struct {
 	aesKey [32]byte
 }
 
-// Should remove all instances for the credential with the given hash.
 func (s *BboltSdJwtVcStorage) RemoveAll() (err error) {
 	err = s.db.Update(func(tx *bbolt.Tx) error {
 		err := tx.DeleteBucket([]byte(sdjwtvcBucketName))
@@ -82,8 +82,6 @@ func (s *BboltSdJwtVcStorage) RemoveAll() (err error) {
 	return err
 }
 
-// Should remove all instances for the credential with the given hash.
-// Should _not_ return an error if the credential is not found.
 func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (err error) {
 	err = s.db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
@@ -102,7 +100,6 @@ func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (err error) {
 	return err
 }
 
-// Should remove a single instance (the last used one) of the credential for the given hash.
 func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash string) (err error) {
 	err = s.db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
@@ -175,22 +172,6 @@ func (s *BboltSdJwtVcStorage) StoreCredentials(info irma.CredentialInfo, credent
 
 		return nil
 	})
-}
-
-// itob returns an 8-byte big endian representation of v.
-func itob(v uint64) []byte {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, v)
-	return b
-}
-
-func marshalAndEncryptInfo(info irma.CredentialInfo, aesKey [32]byte) ([]byte, error) {
-	marshalled, err := json.Marshal(info)
-	if err != nil {
-		return nil, err
-	}
-
-	return encrypt(marshalled, aesKey)
 }
 
 func (s *BboltSdJwtVcStorage) GetCredentialsForId(id string) (result []SdJwtVcAndInfo) {
@@ -286,6 +267,23 @@ func getCredential(credentialBucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtVcAnd
 		SdJwtVc: sdjwt,
 	}, nil
 }
+
+// itob returns an 8-byte big endian representation of v.
+func itob(v uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, v)
+	return b
+}
+
+func marshalAndEncryptInfo(info irma.CredentialInfo, aesKey [32]byte) ([]byte, error) {
+	marshalled, err := json.Marshal(info)
+	if err != nil {
+		return nil, err
+	}
+
+	return encrypt(marshalled, aesKey)
+}
+
 
 func getFirstCredentialInstanceFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (sdjwtvc.SdJwtVc, error) {
 	creds := bucket.Bucket([]byte(credentialsKey))
@@ -399,18 +397,14 @@ func NewInMemorySdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
 	return storage, nil
 }
 
-// Should remove all instances for the credential with the given hash.
 func (s *InMemorySdJwtVcStorage) RemoveAll() error {
 	return nil
 }
 
-// Should remove a single instance (the last used one) of the credential for the given hash.
 func (s *InMemorySdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(id string) error {
 	return nil
 }
 
-// Should remove all instances for the credential with the given hash.
-// Should _not_ return an error if the credential is not found.
 func (s *InMemorySdJwtVcStorage) RemoveCredentialByHash(hash string) error {
 
 	return nil
