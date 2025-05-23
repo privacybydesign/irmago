@@ -284,7 +284,6 @@ func marshalAndEncryptInfo(info irma.CredentialInfo, aesKey [32]byte) ([]byte, e
 	return encrypt(marshalled, aesKey)
 }
 
-
 func getFirstCredentialInstanceFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (sdjwtvc.SdJwtVc, error) {
 	creds := bucket.Bucket([]byte(credentialsKey))
 	if creds == nil {
