@@ -9,7 +9,6 @@ import (
 type SdJwtVcBuilder struct {
 	lifetime             *int64
 	issuerUrl            *string
-	disableTlsCheck      bool
 	cnfPubKey            *CnfField
 	status               *string
 	subject              *string
@@ -34,9 +33,8 @@ func (b *SdJwtVcBuilder) WithHaipCompatibility() *SdJwtVcBuilder {
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithIssuerUrl(url string, disableTlsCheck bool) *SdJwtVcBuilder {
+func (b *SdJwtVcBuilder) WithIssuerUrl(url string) *SdJwtVcBuilder {
 	b.issuerUrl = &url
-	b.disableTlsCheck = disableTlsCheck
 	return b
 }
 

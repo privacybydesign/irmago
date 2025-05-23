@@ -23,7 +23,7 @@ type DefaultEcdsaJwtCreator struct {
 func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (JwtCreator, error) {
 	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	return &DefaultEcdsaJwtCreator{
-		key: key,
+		PrivateKey: key,
 	}, err
 }
 
