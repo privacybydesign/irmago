@@ -71,7 +71,7 @@ func (h *testHandler) RequestSignaturePermission(request *irma.SignatureRequest,
 func (h *testHandler) RequestPin(remainingAttempts int, callback PinHandler) {}
 
 func TestOpenId4VpClient(t *testing.T) {
-	storage, err := NewSdJwtVcStorage()
+	storage, err := NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
 	client, err := NewOpenID4VPClient(storage, nil)
