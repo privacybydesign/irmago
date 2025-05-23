@@ -33,12 +33,12 @@ func parseStorage(t *testing.T, opts ...option) (*irmaclient.IrmaClient, *TestCl
 	return parseExistingStorage(t, storage, opts...)
 }
 
-func parseExistingStorage(t *testing.T, storage string, options ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
-	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
+func parseExistingStorage(t *testing.T, storageFolder string, options ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
+	handler := &TestClientHandler{t: t, c: make(chan error), storage: storageFolder}
 	path := test.FindTestdataFolder(t)
 
 	var signer irmaclient.Signer
-	bts, err := os.ReadFile(filepath.Join(storage, "client", "ecdsa_sk.pem"))
+	bts, err := os.ReadFile(filepath.Join(storageFolder, "client", "ecdsa_sk.pem"))
 	if os.IsNotExist(err) {
 		signer = test.NewSigner(t)
 	} else {
@@ -51,26 +51,38 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	client, err := irmaclient.NewIrmaClient(
-		filepath.Join(storage, "client"),
-		filepath.Join(path, "irma_configuration"),
-		handler,
-		signer,
-		aesKey,
+	storagePath := filepath.Join(storageFolder, "client")
+	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+	conf, err := irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
 	)
 	require.NoError(t, err)
 
 	// Set max version we want to test on
 	opts := processOptions(options...)
 	if opts.enabled(optionNoSchemeAssets) {
-		client.Configuration, err = irma.NewConfiguration(
-			client.Configuration.Path,
+		conf, err = irma.NewConfiguration(
+			irmaConfigurationPath,
 			irma.ConfigurationOptions{IgnorePrivateKeys: true},
 		)
 		require.NoError(t, err)
-		err = client.Configuration.ParseFolder()
+		err = conf.ParseFolder()
 		require.NoError(t, err)
 	}
+
+	storage := irmaclient.NewIrmaStorage(storagePath, conf, aesKey)
+
+	client, err := irmaclient.NewIrmaClient(
+		conf,
+		irmaConfigurationPath,
+		handler,
+		signer,
+		storage,
+		aesKey,
+	)
+	require.NoError(t, err)
+
 	if opts.enabled(optionPrePairingClient) {
 		version := extractClientMaxVersion(client)
 		// set to largest protocol version that dos not support pairing

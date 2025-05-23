@@ -24,6 +24,7 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 	requireBuildFailure(t, builder)
 }
 
+<<<<<<< HEAD
 // TODO: fix this test; or fix the test-setup for integration tests, so that it uses https and we do not need a workaround for tests
 func Test_BuildSdJwtVc_InvalidIssuerUrl_TlsDisabled_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
@@ -33,6 +34,8 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_TlsDisabled_Success(t *testing.T) {
 	requireValidSdJwtVc(t, builder)
 }
 
+=======
+>>>>>>> e7817c31 (Start extracting client storage)
 func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 	disclosures, err := MultipleNewDisclosureContents(map[string]any{
 		"name":     "Yivi",

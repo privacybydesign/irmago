@@ -721,7 +721,6 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClien
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
-	//require.NotNil(t, result.Dismisser.)
 	require.Equal(t, attrid, result.Disclosed[0][0].Identifier)
 	require.Equal(t, "456", result.Disclosed[0][0].Value["en"])
 

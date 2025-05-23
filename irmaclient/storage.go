@@ -54,6 +54,14 @@ func (s *storage) path(p string) string {
 	return filepath.Join(s.storagePath, p)
 }
 
+func NewIrmaStorage(storagePath string, config *irma.Configuration, aesKey [32]byte) *storage {
+	return &storage{
+		storagePath:   storagePath,
+		Configuration: config,
+		aesKey:        aesKey,
+	}
+}
+
 // Open initializes the credential storage,
 // ensuring that it is in a usable state.
 // Setting it up in a properly protected location (e.g., with automatic
