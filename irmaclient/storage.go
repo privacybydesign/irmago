@@ -90,7 +90,7 @@ func (s *storage) txStore(tx *transaction, bucketName string, key string, value 
 		return err
 	}
 
-	ciphertext, err := s.encrypt(btsValue)
+	ciphertext, err := encrypt(btsValue, s.aesKey)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (s *storage) txLoad(tx *transaction, bucketName string, key string, dest in
 		return false, nil
 	}
 
-	plaintext, err := s.decrypt(bts)
+	plaintext, err := decrypt(bts, s.aesKey)
 	if err != nil {
 		return false, err
 	}
@@ -299,7 +299,7 @@ func (s *storage) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 		return err
 	}
 
-	ciphertext, err := s.encrypt(v)
+	ciphertext, err := encrypt(v, s.aesKey)
 	if err != nil {
 		return err
 	}
@@ -396,7 +396,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			credTypeID := irma.NewCredentialTypeIdentifier(string(key))
 			var attrlistlist []*irma.AttributeList
 
-			plaintext, err := s.decrypt(value)
+			plaintext, err := decrypt(value, s.aesKey)
 			if err != nil {
 				return err
 			}
@@ -510,7 +510,7 @@ func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) err
 }
 
 func (s *storage) decryptLog(encryptedLog []byte) (*LogEntry, error) {
-	plaintext, err := s.decrypt(encryptedLog)
+	plaintext, err := decrypt(encryptedLog, s.aesKey)
 	if err != nil {
 		return nil, err
 	}
@@ -604,8 +604,8 @@ func (s *storage) DeleteAll() error {
 	})
 }
 
-func (s *storage) decrypt(ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(s.aesKey[:])
+func decrypt(ciphertext []byte, aesKey [32]byte) ([]byte, error) {
+	block, err := aes.NewCipher(aesKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -623,8 +623,8 @@ func (s *storage) decrypt(ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (s *storage) encrypt(plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(s.aesKey[:])
+func encrypt(bytes []byte, aesKey [32]byte) ([]byte, error) {
+	block, err := aes.NewCipher(aesKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -640,5 +640,5 @@ func (s *storage) encrypt(plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return gcm.Seal(nonce, nonce, plaintext, nil), nil
+	return gcm.Seal(nonce, nonce, bytes, nil), nil
 }
