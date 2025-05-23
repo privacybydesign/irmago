@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -126,14 +127,14 @@ func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList
 	return result
 }
 
-func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []*SdJwtVcAndInfo {
-	result := []*SdJwtVcAndInfo{}
+func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []SdJwtVcAndInfo {
+	result := []SdJwtVcAndInfo{}
 	for _, entry := range s.entries {
 		credId := fmt.Sprintf("%s.%s.%s", entry.info.SchemeManagerID, entry.info.IssuerID, entry.info.ID)
 
 		// we have an instance of the requested credential type
 		if id == credId {
-			result = append(result, &SdJwtVcAndInfo{
+			result = append(result, SdJwtVcAndInfo{
 				Info:    entry.info,
 				SdJwtVc: entry.rawRedentials[0],
 			})
@@ -229,7 +230,7 @@ type SdJwtVcStorage interface {
 	StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error
 
 	// Gets all instances for a credential id from the scheme
-	GetCredentialsForId(id string) []*SdJwtVcAndInfo
+	GetCredentialsForId(id string) []SdJwtVcAndInfo
 	GetCredentialByHash(hash string) (*SdJwtVcAndInfo, error)
 	GetCredentialInfoList() irma.CredentialInfoList
 }
@@ -335,13 +336,96 @@ func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash stri
 }
 
 func (s *BboltSdJwtVcStorage) StoreCredentials(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		sdjwtBucket, err := tx.CreateBucketIfNotExists([]byte(sdjwtvcBucketName))
 
-	return nil
+		if err != nil {
+			return err
+		}
+
+		credBucket, err := sdjwtBucket.CreateBucketIfNotExists([]byte(info.Hash))
+		if err != nil {
+			return err
+		}
+
+		encryptedInfo, err := marshalAndEncryptInfo(info, s.aesKey)
+		if err != nil {
+			return err
+		}
+		credBucket.Put([]byte(infoKey), encryptedInfo)
+
+		rawCredentialsBucket, err := credBucket.CreateBucket([]byte(credentialsKey))
+		if err != nil {
+			return err
+		}
+
+		for _, sdjwt := range credentials {
+			id, err := credBucket.NextSequence()
+			if err != nil {
+				return err
+			}
+			encryptedSdjwt, err := encrypt([]byte(sdjwt), s.aesKey)
+			if err != nil {
+				return err
+			}
+			err = rawCredentialsBucket.Put(itob(id), encryptedSdjwt)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
-func (s *BboltSdJwtVcStorage) GetCredentialsForId(id string) []*SdJwtVcAndInfo {
+// itob returns an 8-byte big endian representation of v.
+func itob(v uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, v)
+	return b
+}
 
-	return nil
+func marshalAndEncryptInfo(info irma.CredentialInfo, aesKey [32]byte) ([]byte, error) {
+	marshalled, err := json.Marshal(info)
+	if err != nil {
+		return nil, err
+	}
+
+	return encrypt(marshalled, aesKey)
+}
+
+func (s *BboltSdJwtVcStorage) GetCredentialsForId(id string) (result []SdJwtVcAndInfo) {
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
+
+		if sdjwtBucket == nil {
+			return fmt.Errorf("sdjwtvc bucket doesn't exist")
+		}
+
+		return sdjwtBucket.Tx().ForEach(func(key []byte, bucket *bbolt.Bucket) error {
+			info, err := getCredentialInfoFromBucket(bucket, s.aesKey)
+			if err != nil {
+				return fmt.Errorf("failed to get credential info from bucket")
+			}
+			infoId := fmt.Sprintf("%s.%s.%s", info.SchemeManagerID, info.IssuerID, info.ID)
+			if infoId == id {
+				sdjwt, err := getFirstCredentialInstanceFromBucket(bucket, s.aesKey)
+				if err != nil {
+					return err
+				}
+				result = append(result, SdJwtVcAndInfo{
+					SdJwtVc: sdjwt,
+					Info:    *info,
+				})
+			}
+
+			return nil
+		})
+	})
+	if err != nil {
+		irma.Logger.Errorf("bbolt GetCredentialsForId: %v", err)
+	}
+	return result
 }
 
 func (s *BboltSdJwtVcStorage) GetCredentialByHash(hash string) (result *SdJwtVcAndInfo, err error) {
