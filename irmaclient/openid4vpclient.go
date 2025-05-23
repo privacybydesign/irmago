@@ -165,7 +165,7 @@ func createCredentialInfoFromSdJwtVc(cred sdjwtvc.SdJwtVc) (*irma.CredentialInfo
 		if !ok {
 			return nil, fmt.Errorf("failed to convert disclosure to string for attribute '%s'", d.Key)
 		}
-		schemeId := fmt.Sprintf("%s.%s", decoded.IssuedSignedJwtPayload.VerifiableCredentialType, d.Key)
+		schemeId := fmt.Sprintf("%s.%s", decoded.IssuerSignedJwtPayload.VerifiableCredentialType, d.Key)
 		id := irma.NewAttributeTypeIdentifier(schemeId)
 		attributes[id] = irma.TranslatedString{
 			"":   strValue,
@@ -184,11 +184,11 @@ func createCredentialInfoFromSdJwtVc(cred sdjwtvc.SdJwtVc) (*irma.CredentialInfo
 		return nil, err
 	}
 
-	idComponents := strings.Split(decoded.IssuedSignedJwtPayload.VerifiableCredentialType, ".")
+	idComponents := strings.Split(decoded.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
 	if num := len(idComponents); num != 3 {
 		return nil, fmt.Errorf(
 			"credential id expected to have exactly 3 components, separated by dots: %s",
-			decoded.IssuedSignedJwtPayload.VerifiableCredentialType,
+			decoded.IssuerSignedJwtPayload.VerifiableCredentialType,
 		)
 	}
 	info := irma.CredentialInfo{
@@ -196,10 +196,10 @@ func createCredentialInfoFromSdJwtVc(cred sdjwtvc.SdJwtVc) (*irma.CredentialInfo
 		IssuerID:        idComponents[1],
 		SchemeManagerID: idComponents[0],
 		SignedOn: irma.Timestamp(
-			time.Unix(decoded.IssuedSignedJwtPayload.IssuedAt, 0),
+			time.Unix(decoded.IssuerSignedJwtPayload.IssuedAt, 0),
 		),
 		Expires: irma.Timestamp(
-			time.Unix(decoded.IssuedSignedJwtPayload.Expiry, 0),
+			time.Unix(decoded.IssuerSignedJwtPayload.Expiry, 0),
 		),
 		Attributes:          attributes,
 		Hash:                hash,
