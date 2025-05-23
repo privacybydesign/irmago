@@ -24,6 +24,15 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 	requireBuildFailure(t, builder)
 }
 
+// TODO: fix this test; or fix the test-setup for integration tests, so that it uses https and we do not need a workaround for tests
+func Test_BuildSdJwtVc_InvalidIssuerUrl_TlsDisabled_Success(t *testing.T) {
+	builder := NewSdJwtVcBuilder().
+		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
+		WithIssuerUrl("http://openid4vc.staging.yivi.app")
+
+	requireValidSdJwtVc(t, builder)
+}
+
 func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 	disclosures, err := MultipleNewDisclosureContents(map[string]any{
 		"name":     "Yivi",

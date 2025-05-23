@@ -823,7 +823,7 @@ func (s *Server) generateSdJwts(request *irma.IssuanceRequest) ([]*sdjwtvc.SdJwt
 	for c, cred := range request.Credentials {
 		b := sdjwtvc.NewSdJwtVcBuilder()
 		b.WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256)
-		b.WithIssuerUrl(s.conf.URL, s.conf.DisableTLS)
+		b.WithIssuerUrl(s.conf.URL)
 		b.WithVerifiableCredentialType(cred.CredentialTypeID.String())
 
 		disclosures := make([]sdjwtvc.DisclosureContent, len(cred.Attributes))
