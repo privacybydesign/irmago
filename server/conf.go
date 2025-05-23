@@ -102,6 +102,7 @@ type Configuration struct {
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
 
+	// TODO: move to requestorserver.Configuration?
 	OpenId4VciSettings *OpenId4VciSettings `json:"openid4vci" mapstructure:"openid4vci"`
 }
 

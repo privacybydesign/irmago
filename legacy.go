@@ -5,7 +5,6 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -291,7 +290,6 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 			Labels          map[int]TranslatedString   `json:"labels"`
 			SkipExpiryCheck []CredentialTypeIdentifier `json:"skipExpiryCheck,omitempty"`
 			Credentials     []*CredentialRequest       `json:"credentials"`
-			SdJwts          []*sdjwtvc.SdJwtVc         `json:"_sdjwts,omitempty"`
 		}
 		if err = json.Unmarshal(bts, &req); err != nil {
 			return err
@@ -299,7 +297,6 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 		*ir = IssuanceRequest{
 			DisclosureRequest: DisclosureRequest{req.BaseRequest, req.Disclose, req.Labels, req.SkipExpiryCheck},
 			Credentials:       req.Credentials,
-			SdJwts:            req.SdJwts,
 		}
 		return nil
 	}
@@ -346,6 +343,7 @@ func (s *ServerSessionResponse) UnmarshalJSON(bts []byte) error {
 	if err != nil {
 		return err
 	}
+
 	s.ProofStatus = ProofStatusValid
 	return nil
 }

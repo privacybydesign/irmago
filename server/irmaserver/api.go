@@ -239,19 +239,6 @@ func (s *Server) startNextSession(
 		if err := s.validateIssuanceRequest(request.(*irma.IssuanceRequest)); err != nil {
 			return nil, "", nil, err
 		}
-
-		// Generate SD-JWT here if configured
-		if s.conf.OpenId4VciSettings.Enabled {
-			// Convert IssuanceRequest to ClientIssuanceRequest and add a SD-JWT
-			sdJwts, err := s.generateSdJwts(request.(*irma.IssuanceRequest))
-			if err != nil {
-				// TODO: handle error
-				//server.WriteError(w, server.ErrorInternal, err.Error())
-			}
-
-			request.(*irma.IssuanceRequest).SdJwts = sdJwts
-		}
-
 	}
 
 	pairingRecommended := false
