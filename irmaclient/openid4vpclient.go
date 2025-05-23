@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/testdata"
+	"go.etcd.io/bbolt"
 )
 
 type sdjwtvcStorageEntry struct {
@@ -30,10 +31,13 @@ type InMemorySdJwtVcStorage struct {
 	entries []sdjwtvcStorageEntry
 }
 
-func (s *InMemorySdJwtVcStorage) GetCredentialByHash(hash string) (*sdjwtvcStorageEntry, error) {
+func (s *InMemorySdJwtVcStorage) GetCredentialByHash(hash string) (*SdJwtVcAndInfo, error) {
 	for _, entry := range s.entries {
 		if entry.info.Hash == hash {
-			return &entry, nil
+			return &SdJwtVcAndInfo{
+				Info:    entry.info,
+				SdJwtVc: entry.rawRedentials[0],
+			}, nil
 		}
 	}
 	return nil, fmt.Errorf("no entry found for hash '%s'", hash)
@@ -57,55 +61,59 @@ func createSdJwtVc(vct, issuerUrl string, claims map[string]any) (sdjwtvc.SdJwtV
 		Build(signer)
 }
 
-func NewSdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
-	mobilephoneEntry, err := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+func NewInMemorySdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
+	storage := &InMemorySdJwtVcStorage{
+		entries: []sdjwtvcStorageEntry{},
+	}
+
+	// ignoring all errors here, since it's not production code anyway
+	mobilephoneEntry, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
 		map[string]any{
 			"mobilenumber": "+31612345678",
 		},
 	)
 
-	if err != nil {
-		return nil, err
-	}
-	emailEntry, err := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	info, _ := createCredentialInfoFromSdJwtVc(mobilephoneEntry)
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{mobilephoneEntry})
+
+	emailEntry, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	})
 
-	if err != nil {
-		return nil, err
-	}
+	info, _ = createCredentialInfoFromSdJwtVc(emailEntry)
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry})
 
-	emailEntry2, err := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry2, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	})
 
-	if err != nil {
-		return nil, err
-	}
-
-	emailEntry3, err := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry3, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	})
 
-	if err != nil {
-		return nil, err
-	}
-
-	storage := &InMemorySdJwtVcStorage{
-		entries: []sdjwtvcStorageEntry{},
-	}
-
-	storage.StoreCredentials([]sdjwtvc.SdJwtVc{
-		mobilephoneEntry,
-		emailEntry,
-		emailEntry2,
-		emailEntry3,
-	})
-
+	info, _ = createCredentialInfoFromSdJwtVc(emailEntry2)
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry2, emailEntry3})
 	return storage, nil
+}
+
+// Should remove all instances for the credential with the given hash.
+func (s *InMemorySdJwtVcStorage) RemoveAll() error {
+	return nil
+}
+
+// Should remove a single instance (the last used one) of the credential for the given hash.
+func (s *InMemorySdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(id string) error {
+	return nil
+}
+
+// Should remove all instances for the credential with the given hash.
+// Should _not_ return an error if the credential is not found.
+func (s *InMemorySdJwtVcStorage) RemoveCredentialByHash(hash string) error {
+
+	return nil
 }
 
 func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList {
@@ -118,32 +126,27 @@ func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList
 	return result
 }
 
-func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []*sdjwtvcStorageEntry {
-	result := []*sdjwtvcStorageEntry{}
+func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []*SdJwtVcAndInfo {
+	result := []*SdJwtVcAndInfo{}
 	for _, entry := range s.entries {
 		credId := fmt.Sprintf("%s.%s.%s", entry.info.SchemeManagerID, entry.info.IssuerID, entry.info.ID)
 
 		// we have an instance of the requested credential type
 		if id == credId {
-			result = append(result, &entry)
+			result = append(result, &SdJwtVcAndInfo{
+				Info:    entry.info,
+				SdJwtVc: entry.rawRedentials[0],
+			})
 		}
 	}
 	return result
 }
 
-func (s *InMemorySdJwtVcStorage) StoreCredentials(credentials []sdjwtvc.SdJwtVc) error {
-	for _, c := range credentials {
-		info, err := createCredentialInfoFromSdJwtVc(c)
-
-		if err != nil {
-			return err
-		}
-
-		s.entries = append(s.entries, sdjwtvcStorageEntry{
-			info:          *info,
-			rawRedentials: []sdjwtvc.SdJwtVc{c},
-		})
-	}
+func (s *InMemorySdJwtVcStorage) StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error {
+	s.entries = append(s.entries, sdjwtvcStorageEntry{
+		info:          info,
+		rawRedentials: credentials,
+	})
 	return nil
 }
 
@@ -213,10 +216,224 @@ func createCredentialInfoFromSdJwtVc(cred sdjwtvc.SdJwtVc) (*irma.CredentialInfo
 // ========================================================================
 
 type SdJwtVcStorage interface {
-	StoreCredentials(credentials []sdjwtvc.SdJwtVc) error
-	GetCredentialsForId(id string) []*sdjwtvcStorageEntry
-	GetCredentialByHash(hash string) (*sdjwtvcStorageEntry, error)
+	// Should remove all instances for the credential with the given hash.
+	RemoveAll() error
+	// Should remove all instances for the credential with the given hash.
+	// Should _not_ return an error if the credential is not found.
+	RemoveCredentialByHash(id string) error
+
+	// Should remove a single instance (the last used one) of the credential for the given hash.
+	RemoveLastUsedInstanceOfCredentialByHash(id string) error
+
+	// Assumes each of the provided sdjwts to be linked to the credential info
+	StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error
+
+	// Gets all instances for a credential id from the scheme
+	GetCredentialsForId(id string) []*SdJwtVcAndInfo
+	GetCredentialByHash(hash string) (*SdJwtVcAndInfo, error)
 	GetCredentialInfoList() irma.CredentialInfoList
+}
+
+type SdJwtVcAndInfo struct {
+	SdJwtVc sdjwtvc.SdJwtVc
+	Info    irma.CredentialInfo
+}
+
+// ========================================================================
+
+const (
+	sdjwtvcBucketName = "dc+sd-jwt"
+	infoKey           = "info"
+	credentialsKey    = "credentials"
+)
+
+func NewBBoltSdJwtVcStorage(db *bbolt.DB, aesKey [32]byte) *BboltSdJwtVcStorage {
+	return &BboltSdJwtVcStorage{db: db, aesKey: aesKey}
+}
+
+type BboltSdJwtVcStorage struct {
+	// Layout for the sdjwtvc bucket in this database:
+	// - dc+sd-jwt: bucket
+	// ----- hash: bucket
+	// --------- info: encrypted-serialized CredentialInfo
+	// --------- credentials: bucket
+	// ------------- id: encrypted sdjwtvc string
+	// ------------- id: encrypted sdjwtvc string
+	// ------------- id: encrypted sdjwtvc string
+	// ----- hash: bucket
+	// --------- info: encrypted-serialized CredentialInfo
+	// --------- credentials: bucket
+	// ------------- id: encrypted sdjwtvc string
+	// ------------- id: encrypted sdjwtvc string
+	// ------------- id: encrypted sdjwtvc string
+	db     *bbolt.DB
+	aesKey [32]byte
+}
+
+// Should remove all instances for the credential with the given hash.
+func (s *BboltSdJwtVcStorage) RemoveAll() (err error) {
+	err = s.db.Update(func(tx *bbolt.Tx) error {
+		err := tx.DeleteBucket([]byte(sdjwtvcBucketName))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
+// Should remove all instances for the credential with the given hash.
+// Should _not_ return an error if the credential is not found.
+func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (err error) {
+	err = s.db.Update(func(tx *bbolt.Tx) error {
+		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
+		// if the sdjwtvc bucket doesn't exist, the credential to remove obviously also doesn't...
+		if sdjwtBucket == nil {
+			return nil
+		}
+
+		err := sdjwtBucket.DeleteBucket([]byte(hash))
+
+		if err != nil && err != bbolt.ErrBucketNotFound {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
+// Should remove a single instance (the last used one) of the credential for the given hash.
+func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash string) (err error) {
+	err = s.db.Update(func(tx *bbolt.Tx) error {
+		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
+		// if the sdjwtvc bucket doesn't exist, the credential to remove obviously also doesn't...
+		if sdjwtBucket == nil {
+			return nil
+		}
+
+		credBucket := tx.Bucket([]byte(hash))
+		// if the credential bucket doesn't exist, the credential to remove obviously also doesn't...
+		if credBucket == nil {
+			return nil
+		}
+
+		credentialsBucket := tx.Bucket([]byte(credentialsKey))
+		if credentialsBucket == nil {
+			return nil
+		}
+
+		key, _ := credentialsBucket.Cursor().First()
+		err := credentialsBucket.Delete(key)
+
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	return err
+}
+
+func (s *BboltSdJwtVcStorage) StoreCredentials(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error {
+
+	return nil
+}
+
+func (s *BboltSdJwtVcStorage) GetCredentialsForId(id string) []*SdJwtVcAndInfo {
+
+	return nil
+}
+
+func (s *BboltSdJwtVcStorage) GetCredentialByHash(hash string) (result *SdJwtVcAndInfo, err error) {
+	err = s.db.View(func(tx *bbolt.Tx) error {
+		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
+
+		if sdjwtBucket == nil {
+			return fmt.Errorf("sdjwtvc bucket doesn't exist")
+		}
+
+		credentialBucket := sdjwtBucket.Bucket([]byte(hash))
+		if credentialBucket == nil {
+			return fmt.Errorf("failed to find credential for hash: %s", hash)
+		}
+
+		result, err = getCredential(credentialBucket, s.aesKey)
+		return err
+	})
+
+	return result, err
+}
+
+func (s *BboltSdJwtVcStorage) GetCredentialInfoList() (result irma.CredentialInfoList) {
+	s.db.View(func(tx *bbolt.Tx) error {
+		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
+
+		if sdjwtBucket == nil {
+			return nil
+		}
+
+		err := sdjwtBucket.Tx().ForEach(func(key []byte, bucket *bbolt.Bucket) error {
+			info, err := getCredentialInfoFromBucket(bucket, s.aesKey)
+
+			if err != nil {
+				return err
+			}
+
+			result = append(result, info)
+			return nil
+		})
+		return err
+	})
+
+	return result
+}
+
+func getCredential(credentialBucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtVcAndInfo, error) {
+	info, err := getCredentialInfoFromBucket(credentialBucket, aesKey)
+	if err != nil {
+		return nil, err
+	}
+	sdjwt, err := getFirstCredentialInstanceFromBucket(credentialBucket, aesKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SdJwtVcAndInfo{
+		Info:    *info,
+		SdJwtVc: sdjwt,
+	}, nil
+}
+
+func getFirstCredentialInstanceFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (sdjwtvc.SdJwtVc, error) {
+	creds := bucket.Bucket([]byte(credentialsKey))
+	if creds == nil {
+		return "", fmt.Errorf("no credentials bucket found")
+	}
+	_, value := creds.Cursor().First()
+	if value == nil {
+		return "", fmt.Errorf("no sdjwtvc instance left for this credential")
+	}
+	decrypted, err := decrypt(value, aesKey)
+	if err != nil {
+		return "", err
+	}
+	return sdjwtvc.SdJwtVc(decrypted), nil
+}
+
+func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*irma.CredentialInfo, error) {
+	encrypted := bucket.Get([]byte(infoKey))
+	decrypted, err := decrypt(encrypted, aesKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var info irma.CredentialInfo
+	err = json.Unmarshal(decrypted, &info)
+	if err != nil {
+		return nil, err
+	}
+
+	return &info, nil
 }
 
 // ========================================================================
@@ -405,7 +622,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			disclosureNames = append(disclosureNames, attr.Type.Name())
 		}
 
-		sdjwtSelected, err := sdjwtvc.SelectDisclosures(sdjwt.rawRedentials[0], disclosureNames)
+		sdjwtSelected, err := sdjwtvc.SelectDisclosures(sdjwt.SdJwtVc, disclosureNames)
 		if err != nil {
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to select disclosures: %v", err)
 		}
@@ -502,7 +719,7 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 				candidate := DisclosureCandidate{
 					AttributeIdentifier: &irma.AttributeIdentifier{
 						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, claim.Path[0])),
-						CredentialHash: entry.info.Hash,
+						CredentialHash: entry.Info.Hash,
 					},
 				}
 				toAdd = append(toAdd, &candidate)
