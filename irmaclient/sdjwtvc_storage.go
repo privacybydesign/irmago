@@ -100,38 +100,31 @@ func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (err error) {
 	return err
 }
 
-func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash string) (err error) {
-	err = s.db.Update(func(tx *bbolt.Tx) error {
+func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash string) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
 		// if the sdjwtvc bucket doesn't exist, the credential to remove obviously also doesn't...
 		if sdjwtBucket == nil {
 			return nil
 		}
 
-		credBucket := tx.Bucket([]byte(hash))
+		credBucket := sdjwtBucket.Bucket([]byte(hash))
 		// if the credential bucket doesn't exist, the credential to remove obviously also doesn't...
 		if credBucket == nil {
-			return nil
+			return fmt.Errorf("no credential bucket found for %s", string(hash))
 		}
 
-		credentialsBucket := tx.Bucket([]byte(credentialsKey))
+		credentialsBucket := credBucket.Bucket([]byte(credentialsKey))
 		if credentialsBucket == nil {
-			return nil
+			return fmt.Errorf("no credential instances found for %s", string(hash))
 		}
 
 		key, _ := credentialsBucket.Cursor().First()
-		err := credentialsBucket.Delete(key)
-
-		if err != nil {
-			return err
-		}
-		return nil
+		return credentialsBucket.Delete(key)
 	})
-
-	return err
 }
 
-func (s *BboltSdJwtVcStorage) StoreCredentials(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error {
+func (s *BboltSdJwtVcStorage) StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket, err := tx.CreateBucketIfNotExists([]byte(sdjwtvcBucketName))
 
