@@ -61,7 +61,7 @@ func NewDisclosureContent(key string, value any) (DisclosureContent, error) {
 	}, nil
 }
 
-func MultipleNewDisclosureContents(values map[string]any) ([]DisclosureContent, error) {
+func MultipleNewDisclosureContents[T any](values map[string]T) ([]DisclosureContent, error) {
 	result := []DisclosureContent{}
 	for key, value := range values {
 		disc, err := NewDisclosureContent(key, value)
@@ -385,7 +385,7 @@ func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator
 }
 
 func CreateTestSdJwtVc() (SdJwtVc, error) {
-	sdClaims, err := MultipleNewDisclosureContents(map[string]any{
+	sdClaims, err := MultipleNewDisclosureContents(map[string]string{
 		"family_name": "Yivi",
 		"location":    "Utrecht",
 	})

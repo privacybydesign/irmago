@@ -78,7 +78,7 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 }
 
 func TestCreateMultipleDisclosures(t *testing.T) {
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"name":     "Yivi",
 		"location": "Utrecht",
 		"country":  "Netherlands",
@@ -93,7 +93,7 @@ func TestCreateMultipleDisclosures(t *testing.T) {
 
 func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 	issuer := "https://example.com"
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{"family": "Yivi"})
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{"family": "Yivi"})
 	requireNoErr(t, err)
 
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()

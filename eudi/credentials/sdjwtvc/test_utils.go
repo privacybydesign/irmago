@@ -15,7 +15,7 @@ import (
 
 func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 	issuer := "https://example.com"
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"family_name": "Yivi",
 		"location":    "Utrecht",
 	})
@@ -275,7 +275,7 @@ func createHolderCnfField() CnfField {
 }
 
 func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"name":     "Yivi",
 		"location": "Utrecht",
 	})

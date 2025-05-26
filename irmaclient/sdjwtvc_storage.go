@@ -373,7 +373,7 @@ func (s *InMemorySdJwtVcStorage) GetCredentialByHash(hash string) (*SdJwtVcAndIn
 	return nil, fmt.Errorf("no entry found for hash '%s'", hash)
 }
 
-func createSdJwtVc(vct, issuerUrl string, claims map[string]any) (sdjwtvc.SdJwtVc, error) {
+func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.SdJwtVc, error) {
 	contents, err := sdjwtvc.MultipleNewDisclosureContents(claims)
 	if err != nil {
 		return "", err

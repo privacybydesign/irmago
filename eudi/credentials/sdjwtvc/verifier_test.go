@@ -212,7 +212,7 @@ func Test_UnsupportedSdAlg_Fails(t *testing.T) {
 }
 
 func Test_DisclosuresThatAreNotInSdField_Fails(t *testing.T) {
-	otherDisclosures, err := MultipleNewDisclosureContents(map[string]any{
+	otherDisclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"name":     "IRMA",
 		"location": "Nijmegen",
 	})
