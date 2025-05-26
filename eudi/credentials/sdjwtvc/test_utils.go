@@ -22,7 +22,6 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 	requireNoErr(t, err)
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 
-
 	sdJwt, err := NewSdJwtVcBuilder().
 		WithHolderKey(testdata.ParseHolderPubJwk()).
 		WithIssuerUrl(issuer).
