@@ -20,11 +20,11 @@ type SdJwtVcStorage interface {
 	RemoveAll() error
 	// RemoveCredentialByHash should remove all instances for the credential with the given hash.
 	// Should _not_ return an error if the credential is not found.
-	RemoveCredentialByHash(id string) error
+	RemoveCredentialByHash(hash string) error
 
 	// RemoveLastUsedInstanceOfCredentialByHash should remove a single instance
 	// (the last used one) of the credential for the given hash.
-	RemoveLastUsedInstanceOfCredentialByHash(id string) error
+	RemoveLastUsedInstanceOfCredentialByHash(hash string) error
 
 	// StoreCredential assumes each of the provided sdjwts to be linked to the credential info
 	StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error
@@ -182,23 +182,25 @@ func (s *BboltSdJwtVcStorage) GetCredentialsForId(id string) (result []SdJwtVcAn
 			return fmt.Errorf("sdjwtvc bucket doesn't exist")
 		}
 
-		return sdjwtBucket.Tx().ForEach(func(key []byte, bucket *bbolt.Bucket) error {
-			info, err := getCredentialInfoFromBucket(bucket, s.aesKey)
-			if err != nil {
-				return fmt.Errorf("failed to get credential info from bucket")
-			}
-			infoId := fmt.Sprintf("%s.%s.%s", info.SchemeManagerID, info.IssuerID, info.ID)
-			if infoId == id {
-				sdjwt, err := getFirstCredentialInstanceFromBucket(bucket, s.aesKey)
+		return sdjwtBucket.ForEach(func(key []byte, value []byte) error {
+			if value == nil {
+				bucket := sdjwtBucket.Bucket(key)
+				info, err := getCredentialInfoFromBucket(bucket, s.aesKey)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to get credential info from bucket: %v", err)
 				}
-				result = append(result, SdJwtVcAndInfo{
-					SdJwtVc: sdjwt,
-					Info:    *info,
-				})
+				infoId := fmt.Sprintf("%s.%s.%s", info.SchemeManagerID, info.IssuerID, info.ID)
+				if infoId == id {
+					sdjwt, err := getFirstCredentialInstanceFromBucket(bucket, s.aesKey)
+					if err != nil {
+						return err
+					}
+					result = append(result, SdJwtVcAndInfo{
+						SdJwtVc: sdjwt,
+						Info:    *info,
+					})
+				}
 			}
-
 			return nil
 		})
 	})
@@ -304,13 +306,13 @@ func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*irma.C
 	encrypted := bucket.Get([]byte(infoKey))
 	decrypted, err := decrypt(encrypted, aesKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decrypt: %v", err)
 	}
 
 	var info irma.CredentialInfo
 	err = json.Unmarshal(decrypted, &info)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal: %v (%v)", err, string(decrypted))
 	}
 
 	return &info, nil
