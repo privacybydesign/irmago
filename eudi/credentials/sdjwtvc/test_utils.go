@@ -21,7 +21,15 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 	})
 	requireNoErr(t, err)
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdJwt, err := CreateSdJwtVcForIssuance(issuer, disclosures, jwtCreator)
+
+	sdJwt, err := NewSdJwtVcBuilder().
+		WithHolderKey(testdata.ParseHolderPubJwk()).
+		WithIssuerUrl(issuer).
+		WithDisclosures(disclosures).
+		WithVerifiableCredentialType("pbdf.pbdf.email").
+		WithHashingAlgorithm(HashAlg_Sha256).
+		Build(jwtCreator)
+
 	requireNoErr(t, err)
 	return sdJwt
 }

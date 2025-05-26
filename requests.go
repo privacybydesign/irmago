@@ -886,7 +886,7 @@ func (t Timestamp) IsZero() bool {
 	return time.Time(t).IsZero()
 }
 
-func (t *Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+func (t Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	return e.EncodeElement(t.String(), start)
 }
 
@@ -900,7 +900,7 @@ func (t *Timestamp) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 }
 
 // MarshalJSON marshals a timestamp.
-func (t *Timestamp) MarshalJSON() ([]byte, error) {
+func (t Timestamp) MarshalJSON() ([]byte, error) {
 	return []byte(t.String()), nil
 }
 
