@@ -260,39 +260,6 @@ type SdJwtVc_IssuerRepresentation struct {
 	Disclosures     []DisclosureContent
 }
 
-// CreateSdJwtVc_IssuerRepresentation creates an intermediate representation
-func CreateSdJwtVc_IssuerRepresentation(issuer string, disclosures []DisclosureContent, jwtCreator JwtCreator) (*SdJwtVc_IssuerRepresentation, error) {
-	payload := IssuerSignedJwtPayload{
-		Subject:                  "",
-		VerifiableCredentialType: "",
-		Expiry:                   0,
-		IssuedAt:                 0,
-		Issuer:                   issuer,
-		Sd:                       []HashedDisclosure{},
-		SdAlg:                    HashAlg_Sha256,
-		Confirm:                  CnfField{},
-	}
-
-	jwt, err := CreateIssuerSignedJwt(payload, jwtCreator)
-	if err != nil {
-		return nil, err
-	}
-
-	return &SdJwtVc_IssuerRepresentation{
-		IssuerSignedJwt: IssuerSignedJwt(jwt),
-		Disclosures:     disclosures,
-	}, nil
-}
-
-func CreateSdJwtVcForIssuance(issuer string, disclosures []DisclosureContent, jwtCreator JwtCreator) (SdJwtVc, error) {
-	content, err := CreateSdJwtVc_IssuerRepresentation(issuer, disclosures, jwtCreator)
-	if err != nil {
-		return "", err
-	}
-
-	return CreateSdJwtVcWithDisclosureContents(content.IssuerSignedJwt, content.Disclosures)
-}
-
 func CreateHash(algorithm HashingAlgorithm, content string) (string, error) {
 	if algorithm != HashAlg_Sha256 {
 		return "", fmt.Errorf("%s is not a supported hashing algorithm, valid choice: %s", algorithm, HashAlg_Sha256)
