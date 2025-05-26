@@ -25,6 +25,86 @@ func TestSdJwtVcStorage(t *testing.T) {
 		"remove instances of sdjwtvc",
 		testRemovingInstancesOfSdJwtVc,
 	)
+	RunTestWithTempBboltSdJwtVcStorage(t,
+		"remove all from storage",
+		testRemoveAllFromSdJwtVcStorage,
+	)
+	RunTestWithTempBboltSdJwtVcStorage(t,
+		"adding multiple sets of sdjwts with differing attributes",
+		testAddingMultipleAttributePairs,
+	)
+	RunTestWithTempBboltSdJwtVcStorage(t,
+		"adding multiple sets of same attributes should not affect info list",
+		testAddingMultipleInstancesWithSameAttributeSets,
+	)
+}
+
+// Adding sets of sdjwts with the same attributes should add the sdjwts to the list of existing sdjwt instances.
+// The result should not affect the info list
+func testAddingMultipleInstancesWithSameAttributeSets(t *testing.T, storage SdJwtVcStorage) {
+	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email": "test@gmail.com",
+	}, 5)
+
+	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email": "test@gmail.com",
+	}, 5)
+
+	err := storage.StoreCredential(emailInfo1, emailSdJwts1)
+	require.NoError(t, err)
+
+	infoList := storage.GetCredentialInfoList()
+	require.Equal(t, len(infoList), 1)
+
+	err = storage.StoreCredential(emailInfo2, emailSdJwts2)
+	require.NoError(t, err)
+
+	infoList = storage.GetCredentialInfoList()
+	require.Equal(t, len(infoList), 1)
+}
+
+// adding sets of sdjwts with differing attribute sets should result in multiple credential infos in the info list
+func testAddingMultipleAttributePairs(t *testing.T, storage SdJwtVcStorage) {
+	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email": "test@gmail.com",
+	}, 5)
+
+	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email": "test2@gmail.com",
+	}, 5)
+
+	err := storage.StoreCredential(emailInfo1, emailSdJwts1)
+	require.NoError(t, err)
+
+	err = storage.StoreCredential(emailInfo2, emailSdJwts2)
+	require.NoError(t, err)
+
+	infoList := storage.GetCredentialInfoList()
+	require.Equal(t, len(infoList), 2)
+}
+
+func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
+	emailInfo, emailSdJwts := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email": "test@gmail.com",
+	}, 2)
+	mobileInfo, mobileSdJwts := createMultipleSdJwtVcs(t, "pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app", map[string]any{
+		"mobilenumber": "1234567",
+	}, 3)
+
+	err := storage.StoreCredential(emailInfo, emailSdJwts)
+	require.NoError(t, err)
+
+	err = storage.StoreCredential(mobileInfo, mobileSdJwts)
+	require.NoError(t, err)
+
+	infoList := storage.GetCredentialInfoList()
+	require.Equal(t, len(infoList), 2)
+
+	err = storage.RemoveAll()
+	require.NoError(t, err)
+
+	infoList = storage.GetCredentialInfoList()
+	require.Empty(t, infoList)
 }
 
 func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
@@ -54,6 +134,10 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 	err := storage.StoreCredential(info, sdjwts)
 	require.NoError(t, err)
 
+	// there should be one credential showing up in the info list
+	infoList := storage.GetCredentialInfoList()
+	require.Equal(t, len(infoList), 1)
+
 	// first one, it should be available
 	result, err := storage.GetCredentialByHash(info.Hash)
 	require.NoError(t, err)
@@ -76,6 +160,10 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 	result, err = storage.GetCredentialByHash(info.Hash)
 	require.Error(t, err)
 	require.Nil(t, result)
+
+	// the whole credential should now also not show up in the info list
+	infoList = storage.GetCredentialInfoList()
+	require.Empty(t, infoList)
 }
 
 func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStorage) {

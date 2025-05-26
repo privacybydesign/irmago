@@ -101,7 +101,7 @@ func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (err error) {
 }
 
 func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash string) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
+	err := s.db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
 		// if the sdjwtvc bucket doesn't exist, the credential to remove obviously also doesn't...
 		if sdjwtBucket == nil {
@@ -120,7 +120,41 @@ func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash stri
 		}
 
 		key, _ := credentialsBucket.Cursor().First()
-		return credentialsBucket.Delete(key)
+		err := credentialsBucket.Delete(key)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// delete the whole credential + info bucket if there are no more sdjwtvc instances left
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
+		if sdjwtBucket == nil {
+			return nil
+		}
+
+		credBucket := sdjwtBucket.Bucket([]byte(hash))
+		if credBucket == nil {
+			return fmt.Errorf("no credential bucket found for %s", string(hash))
+		}
+
+		credentialsBucket := credBucket.Bucket([]byte(credentialsKey))
+		if credentialsBucket == nil {
+			return fmt.Errorf("no credential instances found for %s", string(hash))
+		}
+
+		// if there are no more sdjwtvc instances anymore
+		if credentialsBucket.Stats().KeyN == 0 {
+			// delete the bucket
+			return sdjwtBucket.DeleteBucket([]byte(hash))
+		}
+
+		return nil
 	})
 }
 
@@ -137,13 +171,17 @@ func (s *BboltSdJwtVcStorage) StoreCredential(info irma.CredentialInfo, credenti
 			return err
 		}
 
-		encryptedInfo, err := marshalAndEncryptInfo(info, s.aesKey)
-		if err != nil {
-			return err
+		// if the info is not there yet...
+		if credBucket.Get([]byte(infoKey)) == nil {
+			// put the info there...
+			encryptedInfo, err := marshalAndEncryptInfo(info, s.aesKey)
+			if err != nil {
+				return err
+			}
+			credBucket.Put([]byte(infoKey), encryptedInfo)
 		}
-		credBucket.Put([]byte(infoKey), encryptedInfo)
 
-		rawCredentialsBucket, err := credBucket.CreateBucket([]byte(credentialsKey))
+		rawCredentialsBucket, err := credBucket.CreateBucketIfNotExists([]byte(credentialsKey))
 		if err != nil {
 			return err
 		}
@@ -231,7 +269,8 @@ func (s *BboltSdJwtVcStorage) GetCredentialInfoList() (result irma.CredentialInf
 			return nil
 		}
 
-		err := sdjwtBucket.Tx().ForEach(func(key []byte, bucket *bbolt.Bucket) error {
+		return sdjwtBucket.ForEach(func(key []byte, value []byte) error {
+			bucket := sdjwtBucket.Bucket(key)
 			info, err := getCredentialInfoFromBucket(bucket, s.aesKey)
 
 			if err != nil {
@@ -241,7 +280,6 @@ func (s *BboltSdJwtVcStorage) GetCredentialInfoList() (result irma.CredentialInf
 			result = append(result, info)
 			return nil
 		})
-		return err
 	})
 
 	return result
