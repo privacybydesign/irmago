@@ -338,18 +338,13 @@ func IrmaServerConfiguration() *server.Configuration {
 	}
 }
 
-func RequestorServerWithSdJwtConfiguration() *requestorserver.Configuration {
-	requestorServerConf := RequestorServerConfiguration()
-	requestorServerConf.DisableTLS = true
-	requestorServerConf.OpenId4VciSettings = &server.OpenId4VciSettings{
-		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
-	}
-	return requestorServerConf
-}
-
 func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf := IrmaServerConfiguration()
 	irmaServerConf.URL = requestorServerURL + "/irma"
+	irmaServerConf.DisableTLS = true
+	irmaServerConf.OpenId4VciSettings = &server.OpenId4VciSettings{
+		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
+	}
 	return &requestorserver.Configuration{
 		Configuration:                  irmaServerConf,
 		DisableRequestorAuthentication: true,

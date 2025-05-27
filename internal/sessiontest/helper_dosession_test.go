@@ -333,10 +333,6 @@ func doSession(
 	serverResult := getSessionResult(t, sesPkg, serv, useJWTs, opts)
 	require.Equal(t, sesPkg.Token, serverResult.Token)
 
-	if opts.enabled(optionExpectSdJwts) {
-		// TODO: add tests to verify that the SD-JWTs are actually present in the client's storage
-	}
-
 	if opts.enabled(optionRetryPost) {
 		var result string
 		err := clientTransport.Post("proofs", &result, sessionHandler.(*TestHandler).result)

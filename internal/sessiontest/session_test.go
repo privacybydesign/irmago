@@ -82,7 +82,7 @@ func TestIrmaServer(t *testing.T) {
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, IrmaServerConfiguration))
 	t.Run("SigningSession", apply(testSigningSession, IrmaServerConfiguration))
 	t.Run("IssuanceSession", apply(testIssuanceSession, IrmaServerConfiguration))
-	t.Run("IssuanceSessionWithSdJwt", apply(testSdJwtIssuanceSession, RequestorServerWithSdJwtConfiguration))
+	t.Run("IssuanceSessionWithSdJwt", apply(testSdJwtIssuanceSession, RequestorServerConfiguration))
 
 	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, IrmaServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, IrmaServerConfiguration))
