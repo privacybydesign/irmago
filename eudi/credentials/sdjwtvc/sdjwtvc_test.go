@@ -99,7 +99,7 @@ func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 
 	sdjwt, err := NewSdJwtVcBuilder().
-		WithIssuerUrl(issuer).
+		WithIssuerUrl(issuer, false).
 		WithVerifiableCredentialType("pbdf.pbdf.email").
 		WithDisclosures(disclosures).
 		WithHashingAlgorithm(HashAlg_Sha256).

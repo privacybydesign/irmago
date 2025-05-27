@@ -76,11 +76,6 @@ runs:
     - name: Use testdata from current checkout
       run: cp -R ./testdata ./irmago_test_checkout
       shell: bash
-      
-    - name: Trust test certificate
-      run: |
-        cp ./testdata/configurations/certs/localhost.crt /usr/local/share/ca-certificates/localhost.crt
-      shell: bash
 
     - name: Run integration tests
       working-directory: irmago_test_checkout

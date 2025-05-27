@@ -24,7 +24,7 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 
 	sdJwt, err := NewSdJwtVcBuilder().
 		WithHolderKey(testdata.ParseHolderPubJwk()).
-		WithIssuerUrl(issuer).
+		WithIssuerUrl(issuer, false).
 		WithDisclosures(disclosures).
 		WithVerifiableCredentialType("pbdf.pbdf.email").
 		WithHashingAlgorithm(HashAlg_Sha256).
@@ -297,7 +297,7 @@ func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
 		withHolderPrivateKey(holderKey).
 		withIssuerPrivateKey(issuerKey).
 		withVct(DefaultVerifiableCredentialType).
-		withIssuerUrl("https://openid4vc.staging.yivi.app").
+		withIssuerUrl("https://openid4vc.staging.yivi.app", false).
 		withIssuedAt(1745394126).
 		withExpiryTime(1945394126).
 		withNotBefore(50).
@@ -324,8 +324,9 @@ func (c testSdJwtVcConfig) withIssuerPrivateKey(key *ecdsa.PrivateKey) testSdJwt
 	return c
 }
 
-func (c testSdJwtVcConfig) withIssuerUrl(url string) testSdJwtVcConfig {
+func (c testSdJwtVcConfig) withIssuerUrl(url string, allowNonHttps bool) testSdJwtVcConfig {
 	c.issuerUrl = &url
+	c.allowNonHttps = allowNonHttps
 	return c
 }
 
@@ -427,14 +428,15 @@ func (c testSdJwtVcConfig) withDisclosures(disclosures []DisclosureContent) test
 
 type testSdJwtVcConfig struct {
 	// stuff inside the issuer signed payload
-	issuerUrl  *string
-	issuedAt   *int64
-	expiryTime *int64
-	notBefore  *int64
-	cnfPubKey  *CnfField
-	sdClaims   *[]HashedDisclosure
-	sdAlg      *HashingAlgorithm
-	vct        *string
+	issuerUrl     *string
+	allowNonHttps bool
+	issuedAt      *int64
+	expiryTime    *int64
+	notBefore     *int64
+	cnfPubKey     *CnfField
+	sdClaims      *[]HashedDisclosure
+	sdAlg         *HashingAlgorithm
+	vct           *string
 
 	// stuff inside the issuer signed header
 	typHeader *string

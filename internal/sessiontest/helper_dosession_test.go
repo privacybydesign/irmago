@@ -52,7 +52,6 @@ const (
 	optionPrePairingClient
 	optionPolling
 	optionNoSchemeAssets
-	optionHttpsTransport
 	optionExpectSdJwts
 )
 
@@ -175,11 +174,6 @@ func startSessionAtClient(t *testing.T, sesPkg *server.SessionPackage, client *i
 func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper, useJWTs bool, opts option) *server.SessionResult {
 	waitSessionFinished(t, serv, sesPkg.Token, opts.enabled(optionWait))
 
-	baseUrl := requestorServerURL
-	if opts.enabled(optionHttpsTransport) {
-		baseUrl = requestorServerHttpsURL
-	}
-
 	switch s := serv.(type) {
 	case *IrmaServer:
 		result, err := s.irma.GetSessionResult(sesPkg.Token)
@@ -188,7 +182,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 	default:
 		if useJWTs {
 			var res string
-			err := irma.NewHTTPTransport(baseUrl+"/session/"+string(sesPkg.Token), false).Get("result-jwt", &res)
+			err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result-jwt", &res)
 			require.NoError(t, err)
 
 			bts, err := os.ReadFile(jwtPrivkeyPath)
@@ -211,7 +205,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 			return claims.SessionResult
 		} else {
 			var res server.SessionResult
-			err := irma.NewHTTPTransport(baseUrl+"/session/"+string(sesPkg.Token), false).Get("result", &res)
+			err := irma.NewHTTPTransport(requestorServerURL+"/session/"+string(sesPkg.Token), false).Get("result", &res)
 			require.NoError(t, err)
 			return &res
 		}
@@ -340,11 +334,7 @@ func doSession(
 	require.Equal(t, sesPkg.Token, serverResult.Token)
 
 	if opts.enabled(optionExpectSdJwts) {
-		//client.Attributes()
-		//client.SdJwts
-		//require.NotEmpty(t, serverResult.(*irma.ClientSessionRequest).SdJwts)
-	} else {
-		//require.(t, serverResult.SdJwts)
+		// TODO: add tests to verify that the SD-JWTs are actually present in the client's storage
 	}
 
 	if opts.enabled(optionRetryPost) {

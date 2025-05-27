@@ -48,9 +48,8 @@ const (
 
 	schemeServerURL = "http://localhost:48681"
 
-	requestorServerPort     = 48682
-	requestorServerURL      = "http://localhost:48682"
-	requestorServerHttpsURL = "https://localhost:48682"
+	requestorServerPort = 48682
+	requestorServerURL  = "http://localhost:48682"
 
 	revocationServerPort = 48683
 	revocationServerURL  = "http://localhost:48683"
@@ -341,15 +340,10 @@ func IrmaServerConfiguration() *server.Configuration {
 
 func RequestorServerWithSdJwtConfiguration() *requestorserver.Configuration {
 	requestorServerConf := RequestorServerConfiguration()
-	requestorServerConf.URL = fmt.Sprintf("%s/irma", requestorServerHttpsURL)
-
-	requestorServerConf.Production = true
-	requestorServerConf.TlsCertificateFile = filepath.Join(testdata, "configurations", "certs", "localhost.crt")
-	requestorServerConf.TlsPrivateKeyFile = filepath.Join(testdata, "configurations", "certs", "localhost.key")
+	requestorServerConf.DisableTLS = true
 	requestorServerConf.OpenId4VciSettings = &server.OpenId4VciSettings{
 		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
 	}
-
 	return requestorServerConf
 }
 

@@ -807,7 +807,7 @@ func (s *Server) newSession(
 	return ses, nil
 }
 
-func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl string) ([]*sdjwtvc.SdJwtVc, error) {
+func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl string, allowNonHttps bool) ([]*sdjwtvc.SdJwtVc, error) {
 	// Check that the request is a valid issuance request
 	req, err := session.getRequest()
 	if err != nil {
@@ -846,7 +846,7 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 
 		b := sdjwtvc.NewSdJwtVcBuilder().
 			WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
-			WithIssuerUrl(issuerUrl).
+			WithIssuerUrl(issuerUrl, allowNonHttps).
 			WithVerifiableCredentialType(cred.CredentialTypeID.String()).
 			WithDisclosures(disclosures)
 

@@ -658,7 +658,7 @@ func testIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 }
 
 func testSdJwtIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
-	doIssuanceSession(t, false, nil, conf, append(opts, optionHttpsTransport, optionExpectSdJwts)...)
+	doIssuanceSession(t, false, nil, conf, append(opts, optionExpectSdJwts)...)
 }
 
 func testCombinedSessionMultipleAttributes(t *testing.T, conf interface{}, opts ...option) {
