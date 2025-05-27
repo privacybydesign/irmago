@@ -15,7 +15,6 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -89,10 +88,9 @@ type SignatureRequest struct {
 type IssuanceRequest struct {
 	DisclosureRequest
 	Credentials []*CredentialRequest `json:"credentials"`
-	SdJwts      []*sdjwtvc.SdJwtVc   `json:"_sdjwts"`
 
 	// Flag to indicate whether the client should receive SD-JWTs next to the IRMA credentials
-	RequestSdJwt bool `json:"requestSdJwt,omitempty"`
+	RequestSdJwts bool `json:"requestSdJwts,omitempty"`
 
 	// Derived data
 	CredentialInfoList        CredentialInfoList `json:",omitempty"`

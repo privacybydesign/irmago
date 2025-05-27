@@ -62,6 +62,14 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+
+	if err = common.AssertPathExists(storagePath); err != nil {
+		require.NoError(t, err)
+	}
+	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
+		require.NoError(t, err)
+	}
+
 	conf, err := irma.NewConfiguration(
 		filepath.Join(storagePath, "irma_configuration"),
 		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
@@ -70,7 +78,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
 
-	client, err := NewIrmaClient(
+	client, _ := NewIrmaClient(
 		conf,
 		irmaConfigurationPath,
 		handler,

@@ -11,7 +11,7 @@ func Test_BuildSdJwtVc_BareMinimum_Success(t *testing.T) {
 func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
 		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
-		WithIssuerUrl("https://openid4vc.staging.yivi.app", false)
+		WithIssuerUrl("https://openid4vc.staging.yivi.app")
 
 	requireValidSdJwtVc(t, builder)
 }
@@ -19,18 +19,9 @@ func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
 		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
-		WithIssuerUrl("http://openid4vc.staging.yivi.app", false)
-
-	requireBuildFailure(t, builder)
-}
-
-// TODO: fix this test; or fix the test-setup for integration tests, so that it uses https and we do not need a workaround for tests
-func Test_BuildSdJwtVc_InvalidIssuerUrl_TlsDisabled_Success(t *testing.T) {
-	builder := NewSdJwtVcBuilder().
-		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
 		WithIssuerUrl("http://openid4vc.staging.yivi.app")
 
-	requireValidSdJwtVc(t, builder)
+	requireBuildFailure(t, builder)
 }
 
 func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {

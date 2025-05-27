@@ -106,14 +106,6 @@ func NewIrmaClient(
 
 	client.Configuration = conf
 
-	// client.Configuration, err = irma.NewConfiguration(
-	// 	filepath.Join(storagePath, "irma_configuration"),
-	// 	irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
-	// )
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	schemeMgrErr := client.Configuration.ParseOrRestoreFolder()
 	// If schemMgrErr is of type SchemeManagerError, we continue and
 	// return it at the end; otherwise bail out now
@@ -123,7 +115,6 @@ func NewIrmaClient(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	//client.storage = NewStorage(storagePath, client.Configuration, aesKey)
 	client.storage = storage
 	if err = client.storage.Open(); err != nil {
 		return nil, err

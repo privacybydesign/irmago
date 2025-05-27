@@ -235,8 +235,8 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 
 	// Generate SD-JWT here if configured
 	var sdJwts []*sdjwtvc.SdJwtVc
-	if s.conf.OpenId4VciSettings.Enabled {
-		sdJwts, err = s.generateSdJwts(request)
+	if conf.OpenId4VciSettings.Enabled {
+		sdJwts, err = session.generateSdJwts(conf.OpenId4VciSettings.JwtEcdsaPrivateKey, conf.URL)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error(), conf)
 		}

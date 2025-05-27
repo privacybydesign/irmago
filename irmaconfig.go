@@ -92,20 +92,20 @@ type ConfigurationOptions struct {
 // NewConfiguration returns a new configuration. After this
 // ParseFolder() should be called to parse the specified path.
 func NewConfiguration(path string, opts ConfigurationOptions) (conf *Configuration, err error) {
+	if opts.Assets != "" { // If an assets folder is specified, then it must exist
+		if err = common.AssertPathExists(opts.Assets); err != nil {
+			return nil, WrapErrorPrefix(err, "Nonexistent assets folder specified")
+		}
+	}
+	if err = common.EnsureDirectoryExists(path); err != nil {
+		return nil, err
+	}
+
 	conf = &Configuration{
 		Path:     path,
 		assets:   opts.Assets,
 		readOnly: opts.ReadOnly,
 		options:  opts,
-	}
-
-	if conf.assets != "" { // If an assets folder is specified, then it must exist
-		if err = common.AssertPathExists(conf.assets); err != nil {
-			return nil, WrapErrorPrefix(err, "Nonexistent assets folder specified")
-		}
-	}
-	if err = common.EnsureDirectoryExists(conf.Path); err != nil {
-		return nil, err
 	}
 
 	// Init all maps
