@@ -78,7 +78,7 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 }
 
 func TestCreateMultipleDisclosures(t *testing.T) {
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"name":     "Yivi",
 		"location": "Utrecht",
 		"country":  "Netherlands",
@@ -93,11 +93,18 @@ func TestCreateMultipleDisclosures(t *testing.T) {
 
 func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 	issuer := "https://example.com"
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{"family": "Yivi"})
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{"family": "Yivi"})
 	requireNoErr(t, err)
 
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdjwt, err := CreateSdJwtVcForIssuance(issuer, disclosures, jwtCreator)
+
+	sdjwt, err := NewSdJwtVcBuilder().
+		WithIssuerUrl(issuer).
+		WithVerifiableCredentialType("pbdf.pbdf.email").
+		WithDisclosures(disclosures).
+		WithHashingAlgorithm(HashAlg_Sha256).
+		Build(jwtCreator)
+
 	requireNoErr(t, err)
 
 	if !strings.HasSuffix(string(sdjwt), "~") {
@@ -109,23 +116,6 @@ func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 	}
 }
 
-func TestCreateSdJwtVcIssuerReprWithDisclosures(t *testing.T) {
-	issuer := "https://example.com"
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
-		"family_name": "Yivi",
-		"location":    "Utrecht",
-	})
-	requireNoErr(t, err)
-
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdJwt, err := CreateSdJwtVc_IssuerRepresentation(issuer, disclosures, jwtCreator)
-	requireNoErr(t, err)
-
-	if num := len(sdJwt.Disclosures); num != 2 {
-		t.Fatalf("expected num disclosures to be 2, but it was %v", num)
-	}
-}
-
 func TestCreateSdJwtVcWithDisclosuresAndKbJwt(t *testing.T) {
 	sdjwt := createDefaultTestingSdJwt(t)
 	kbjwt := createKbJwtWithTestHolderKey(t, sdjwt)
@@ -133,28 +123,5 @@ func TestCreateSdJwtVcWithDisclosuresAndKbJwt(t *testing.T) {
 
 	if numTildes := strings.Count(string(fullSdjwt), "~"); numTildes != 3 {
 		t.Fatalf("expected 3 ~, but got %v (%v)", numTildes, fullSdjwt)
-	}
-}
-
-func TestCreateSdJwtVcWithoutDisclosuresOrKbJwt(t *testing.T) {
-	issuer := "https://example.com"
-	disclosures := []DisclosureContent{}
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdJwt, err := CreateSdJwtVc_IssuerRepresentation(issuer, disclosures, jwtCreator)
-
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(sdJwt.Disclosures) != 0 {
-		t.Fatal("sdjwt disclosured should be empty but is not")
-	}
-
-	if sdJwt.IssuerSignedJwt == "" {
-		t.Fatalf("signed issuer jwt should not be empty but is")
-	}
-
-	if strings.HasSuffix(string(sdJwt.IssuerSignedJwt), "~") {
-		t.Fatalf("signed issuer jwt should not end with ~")
 	}
 }

@@ -21,11 +21,12 @@ services:
   #     - SERVER_PORT=8081
 
   custom_verifier_frontend:
-    build: ./eudi-demo-frontend
+    build: ./eudi_demo_frontend
     ports:
-      - "4400:4400"
+      - "5173:5173"
     volumes:
-      - ./eudi-demo-frontend:/app
+      - ./eudi_demo_frontend:/app
+      - /app/node_modules
 
   # eudi_verifier_fontend:
   #   image: ghcr.io/eu-digital-identity-wallet/eudi-web-verifier:latest

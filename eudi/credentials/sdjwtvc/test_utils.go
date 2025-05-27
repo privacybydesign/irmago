@@ -15,13 +15,21 @@ import (
 
 func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 	issuer := "https://example.com"
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"family_name": "Yivi",
 		"location":    "Utrecht",
 	})
 	requireNoErr(t, err)
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdJwt, err := CreateSdJwtVcForIssuance(issuer, disclosures, jwtCreator)
+
+	sdJwt, err := NewSdJwtVcBuilder().
+		WithHolderKey(testdata.ParseHolderPubJwk()).
+		WithIssuerUrl(issuer).
+		WithDisclosures(disclosures).
+		WithVerifiableCredentialType("pbdf.pbdf.email").
+		WithHashingAlgorithm(HashAlg_Sha256).
+		Build(jwtCreator)
+
 	requireNoErr(t, err)
 	return sdJwt
 }
@@ -267,7 +275,7 @@ func createHolderCnfField() CnfField {
 }
 
 func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"name":     "Yivi",
 		"location": "Utrecht",
 	})

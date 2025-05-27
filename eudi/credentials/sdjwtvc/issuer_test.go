@@ -25,7 +25,7 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 }
 
 func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"name":     "Yivi",
 		"location": "Utrecht",
 	})
@@ -40,7 +40,7 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 }
 
 func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_Failure(t *testing.T) {
-	disclosures, err := MultipleNewDisclosureContents(map[string]any{
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"name":     "Yivi",
 		"location": "Utrecht",
 	})

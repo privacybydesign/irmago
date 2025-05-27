@@ -61,7 +61,7 @@ func NewDisclosureContent(key string, value any) (DisclosureContent, error) {
 	}, nil
 }
 
-func MultipleNewDisclosureContents(values map[string]any) ([]DisclosureContent, error) {
+func MultipleNewDisclosureContents[T any](values map[string]T) ([]DisclosureContent, error) {
 	result := []DisclosureContent{}
 	for key, value := range values {
 		disc, err := NewDisclosureContent(key, value)
@@ -260,39 +260,6 @@ type SdJwtVc_IssuerRepresentation struct {
 	Disclosures     []DisclosureContent
 }
 
-// CreateSdJwtVc_IssuerRepresentation creates an intermediate representation
-func CreateSdJwtVc_IssuerRepresentation(issuer string, disclosures []DisclosureContent, jwtCreator JwtCreator) (*SdJwtVc_IssuerRepresentation, error) {
-	payload := IssuerSignedJwtPayload{
-		Subject:                  "",
-		VerifiableCredentialType: "",
-		Expiry:                   0,
-		IssuedAt:                 0,
-		Issuer:                   issuer,
-		Sd:                       []HashedDisclosure{},
-		SdAlg:                    HashAlg_Sha256,
-		Confirm:                  CnfField{},
-	}
-
-	jwt, err := CreateIssuerSignedJwt(payload, jwtCreator)
-	if err != nil {
-		return nil, err
-	}
-
-	return &SdJwtVc_IssuerRepresentation{
-		IssuerSignedJwt: IssuerSignedJwt(jwt),
-		Disclosures:     disclosures,
-	}, nil
-}
-
-func CreateSdJwtVcForIssuance(issuer string, disclosures []DisclosureContent, jwtCreator JwtCreator) (SdJwtVc, error) {
-	content, err := CreateSdJwtVc_IssuerRepresentation(issuer, disclosures, jwtCreator)
-	if err != nil {
-		return "", err
-	}
-
-	return CreateSdJwtVcWithDisclosureContents(content.IssuerSignedJwt, content.Disclosures)
-}
-
 func CreateHash(algorithm HashingAlgorithm, content string) (string, error) {
 	if algorithm != HashAlg_Sha256 {
 		return "", fmt.Errorf("%s is not a supported hashing algorithm, valid choice: %s", algorithm, HashAlg_Sha256)
@@ -418,7 +385,7 @@ func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator
 }
 
 func CreateTestSdJwtVc() (SdJwtVc, error) {
-	sdClaims, err := MultipleNewDisclosureContents(map[string]any{
+	sdClaims, err := MultipleNewDisclosureContents(map[string]string{
 		"family_name": "Yivi",
 		"location":    "Utrecht",
 	})

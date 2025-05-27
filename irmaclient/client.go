@@ -32,7 +32,7 @@ func New(
 		return nil, err
 	}
 
-	sdjwtvcStorage, err := NewSdJwtVcStorage()
+	sdjwtvcStorage, err := NewInMemorySdJwtVcStorage()
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +134,10 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 }
 
 func (client *Client) RemoveCredentialByHash(hash string) error {
+	err := client.sdjwtvcStorage.RemoveCredentialByHash(hash)
+	if err != nil {
+		return err
+	}
 	return client.irmaClient.RemoveCredentialByHash(hash)
 }
 
@@ -154,6 +158,7 @@ func (client *Client) InstallScheme(url string, publickey []byte) error {
 }
 
 func (client *Client) RemoveStorage() error {
+	client.sdjwtvcStorage.RemoveAll()
 	return client.irmaClient.RemoveStorage()
 }
 
