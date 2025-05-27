@@ -831,11 +831,6 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 	sdJwts := make([]*sdjwtvc.SdJwtVc, len(issuanceReq.Credentials))
 
 	for c, cred := range issuanceReq.Credentials {
-		b := sdjwtvc.NewSdJwtVcBuilder()
-		b.WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256)
-		b.WithIssuerUrl(issuerUrl)
-		b.WithVerifiableCredentialType(cred.CredentialTypeID.String())
-
 		disclosures := make([]sdjwtvc.DisclosureContent, len(cred.Attributes))
 		i := 0
 		for attrKey, attrVal := range cred.Attributes {
@@ -848,7 +843,12 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 			disclosures[i] = disclosure
 			i++
 		}
-		b.WithDisclosures(disclosures)
+
+		b := sdjwtvc.NewSdJwtVcBuilder().
+			WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
+			WithIssuerUrl(issuerUrl).
+			WithVerifiableCredentialType(cred.CredentialTypeID.String()).
+			WithDisclosures(disclosures)
 
 		sdJwt, err := b.Build(&creator)
 
