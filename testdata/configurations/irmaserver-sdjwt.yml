@@ -6,7 +6,7 @@ no_auth: false
 no_email: true
 allow_unsigned_callbacks: true
 
-openid4vci:
+sdjwt_issuance:
   jwt_privkey_file: "./testdata/eudi/issuer_ec_priv.pem"
 
 requestors:

@@ -61,7 +61,7 @@ func New(
 	}
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
-	irmaClient, err := NewIrmaClient(conf, irmaConfigurationPath, handler, signer, storage, aesKey)
+	irmaClient, err := NewIrmaClient(conf, irmaConfigurationPath, handler, signer, storage)
 	if err != nil {
 		return nil, err
 	}

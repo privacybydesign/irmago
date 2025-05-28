@@ -91,7 +91,7 @@ func NewEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
 		return nil
 	}
 
-	return &DefaultEcdsaJwtCreator{PrivateKey: key}
+	return &DefaultEcdsaJwtCreator{privateKey: key}
 }
 
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
@@ -115,7 +115,7 @@ func NewEcdsaJwtCreatorWithHolderTestKey() (*DefaultEcdsaJwtCreator, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DefaultEcdsaJwtCreator{PrivateKey: key}, nil
+	return &DefaultEcdsaJwtCreator{privateKey: key}, nil
 }
 
 func NewKbJwtCreatorWithHolderTestKey() (*DefaultKbJwtCreator, error) {
@@ -494,7 +494,7 @@ func addTestKbJwt(config testSdJwtVcConfig, sdjwtvc SdJwtVc) (SdJwtVc, error) {
 		header[Key_Typ] = *config.kbjwtTypHeader
 	}
 
-	jwtCreator := DefaultEcdsaJwtCreator{PrivateKey: config.holderPrivateKey}
+	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.holderPrivateKey}
 	jwt, err := jwtCreator.CreateSignedJwt(header, string(payloadJson))
 
 	return AddKeyBindingJwtToSdJwtVc(sdjwtvc, KeyBindingJwt(jwt)), err
@@ -534,7 +534,7 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 		issuerHeader[Key_Typ] = *config.typHeader
 	}
 
-	jwtCreator := DefaultEcdsaJwtCreator{PrivateKey: config.issuerPrivateKey}
+	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.issuerPrivateKey}
 
 	payloadJson, err := json.Marshal(issuerPayload)
 	if err != nil {

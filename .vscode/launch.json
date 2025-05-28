@@ -12,7 +12,7 @@
             ]
         },
         {
-            "name": "IRMA Server - OpenID4VCI ready",
+            "name": "IRMA Server - SD-JWT ready",
             "type": "go",
             "request": "launch",
             "mode": "auto",
@@ -20,7 +20,7 @@
             "cwd": "${workspaceFolder}",
             "args": [
                 "server",
-                "-c=${workspaceFolder}/testdata/configurations/irmaserver-openid4vci.yml"
+                "-c=${workspaceFolder}/testdata/configurations/irmaserver-sdjwt.yml"
             ]
         },
         {

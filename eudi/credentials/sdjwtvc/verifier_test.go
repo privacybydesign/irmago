@@ -13,7 +13,6 @@ import "testing"
 // - [x] iss link with wrong key in metadata
 // - [x] iss link with wrong issuer url in metadata
 // - [x] iss link is non-https, when it should be
-// - [x] iss link is non-https, but is accepted (for testing purposes)
 // - [x] clock.now is before nbf
 // - [x] clock.now is after exp
 // - [x] cnf missing while there is a kbjwt
@@ -34,6 +33,7 @@ import "testing"
 // - [x] no kbjwt for otherwise valid sdjwtvc without disclosures
 // - [x] no kbjwt and no cnf field
 // - [x] no iss value provided
+// - [x] iss link is non-https, but is accepted (for testing purposes)
 
 // =======================================================================
 

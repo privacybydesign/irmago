@@ -81,7 +81,7 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	payload := map[string]any{}
 	if b.issuerUrl != nil {
 		if !strings.HasPrefix(*b.issuerUrl, "https://") && !b.allowNonHttps {
-			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was %s)", *b.issuerUrl)
+			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", *b.issuerUrl)
 		}
 		payload[Key_Issuer] = *b.issuerUrl
 	}

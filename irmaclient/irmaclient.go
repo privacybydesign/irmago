@@ -73,8 +73,8 @@ type IrmaClient struct {
 	credMutex sync.Mutex
 }
 
-// NewIrmaClient creates a new IrmaClient that uses the directory
-// specified by storagePath for (de)serializing itself. irmaConfigurationPath
+// NewIrmaClient creates a new IrmaClient that uses the storage
+// for (de)serializing itself. irmaConfigurationPath
 // is the path to a (possibly readonly) folder containing irma_configuration;
 // and handler is used for informing the user of new stuff, and when a
 // enrollment to a keyshare server needs to happen.
@@ -82,15 +82,13 @@ type IrmaClient struct {
 // and is ready for use.
 //
 // NOTE: It is the responsibility of the caller that there exists a (properly
-// protected) directory at storagePath!
+// protected) directory at the path defined in the storage variable!
 func NewIrmaClient(
-	//storagePath string,
 	conf *irma.Configuration,
 	irmaConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
 	storage *storage,
-	aesKey [32]byte,
 ) (*IrmaClient, error) {
 	var err error
 

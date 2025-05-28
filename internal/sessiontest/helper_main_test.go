@@ -66,7 +66,6 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 		handler,
 		signer,
 		irmaclient.NewIrmaStorage(storagePath, conf, aesKey),
-		aesKey,
 	)
 	require.NoError(t, err)
 

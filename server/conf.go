@@ -102,8 +102,7 @@ type Configuration struct {
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
 
-	// TODO: move to requestorserver.Configuration?
-	OpenId4VciSettings *OpenId4VciSettings `json:"openid4vci" mapstructure:"openid4vci"`
+	SdJwtIssuanceSettings *SdJwtIssuanceSettings `json:"sdjwt_issuance" mapstructure:"sdjwt_issuance"`
 }
 
 type RedisClient struct {
@@ -140,7 +139,7 @@ type RedisSettings struct {
 	DisableTLS               bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
 }
 
-type OpenId4VciSettings struct {
+type SdJwtIssuanceSettings struct {
 	JwtPrivateKey     string `json:"jwt_privkey,omitempty" mapstructure:"jwt_privkey"`
 	JwtPrivateKeyFile string `json:"jwt_privkey_file,omitempty" mapstructure:"jwt_privkey_file"`
 
@@ -174,7 +173,7 @@ func (conf *Configuration) Check() error {
 		conf.verifyRevocation,
 		conf.verifyJwtPrivateKey,
 		conf.verifyStaticSessions,
-		conf.verifyOpenId4VciSettings,
+		conf.verifySdJwtIssuanceSettings,
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
@@ -565,29 +564,29 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func (conf *Configuration) verifyOpenId4VciSettings() error {
-	if conf.OpenId4VciSettings == nil {
-		conf.OpenId4VciSettings = &OpenId4VciSettings{
+func (conf *Configuration) verifySdJwtIssuanceSettings() error {
+	if conf.SdJwtIssuanceSettings == nil {
+		conf.SdJwtIssuanceSettings = &SdJwtIssuanceSettings{
 			Enabled: false,
 		}
 	}
 
-	if conf.OpenId4VciSettings.JwtPrivateKey == "" && conf.OpenId4VciSettings.JwtPrivateKeyFile == "" {
+	if conf.SdJwtIssuanceSettings.JwtPrivateKey == "" && conf.SdJwtIssuanceSettings.JwtPrivateKeyFile == "" {
 		return nil
 	}
 
-	keybytes, err := common.ReadKey(conf.OpenId4VciSettings.JwtPrivateKey, conf.OpenId4VciSettings.JwtPrivateKeyFile)
+	keybytes, err := common.ReadKey(conf.SdJwtIssuanceSettings.JwtPrivateKey, conf.SdJwtIssuanceSettings.JwtPrivateKeyFile)
 	if err != nil {
-		return errors.WrapPrefix(err, "failed to read OpenId4VCI private key", 0)
+		return errors.WrapPrefix(err, "failed to read SD-JWT private key", 0)
 	}
 
-	conf.OpenId4VciSettings.JwtEcdsaPrivateKey, err = jwt.ParseECPrivateKeyFromPEM(keybytes)
+	conf.SdJwtIssuanceSettings.JwtEcdsaPrivateKey, err = jwt.ParseECPrivateKeyFromPEM(keybytes)
 	if err != nil {
-		return errors.WrapPrefix(err, "failed to parse OpenId4VCI private key", 0)
+		return errors.WrapPrefix(err, "failed to parse SD-JWT private key", 0)
 	}
 
-	conf.Logger.Info("OpenId4VCI private key parsed, JWT endpoints enabled")
-	conf.OpenId4VciSettings.Enabled = true
+	conf.Logger.Info("SD-JWT private key parsed, JWT endpoints enabled")
+	conf.SdJwtIssuanceSettings.Enabled = true
 
 	return nil
 }

@@ -807,7 +807,7 @@ func (s *Server) newSession(
 	return ses, nil
 }
 
-func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl string, allowNonHttps bool) ([]*sdjwtvc.SdJwtVc, error) {
+func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl string, allowNonHttps bool) ([]sdjwtvc.SdJwtVc, error) {
 	// Check that the request is a valid issuance request
 	req, err := session.getRequest()
 	if err != nil {
@@ -819,44 +819,36 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 		return nil, errors.New("session request is not an issuance request; cannot generate SD-JWTs")
 	}
 
+	// No SD-JWTs requested, return nothing
 	if !issuanceReq.RequestSdJwts {
-		return nil, nil // No SD-JWTs requested, return nil
+		return nil, nil
 	}
 
-	creator := sdjwtvc.DefaultEcdsaJwtCreator{
-		PrivateKey: privKey,
-	}
+	creator := sdjwtvc.NewJwtCreator(privKey)
 
 	// An issuance request may contain multiple credentials, so we need to create a separate SD-JWT for each one
-	sdJwts := make([]*sdjwtvc.SdJwtVc, len(issuanceReq.Credentials))
+	sdJwts := []sdjwtvc.SdJwtVc{}
 
-	for c, cred := range issuanceReq.Credentials {
-		disclosures := make([]sdjwtvc.DisclosureContent, len(cred.Attributes))
-		i := 0
-		for attrKey, attrVal := range cred.Attributes {
-			disclosure, err := sdjwtvc.NewDisclosureContent(attrKey, attrVal)
-
-			if err != nil {
-				return nil, err
-			}
-
-			disclosures[i] = disclosure
-			i++
+	for _, cred := range issuanceReq.Credentials {
+		disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
+		if err != nil {
+			return nil, err
 		}
 
+		// TODO: add choice of signature scheme to the builder
 		b := sdjwtvc.NewSdJwtVcBuilder().
 			WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 			WithIssuerUrl(issuerUrl, allowNonHttps).
 			WithVerifiableCredentialType(cred.CredentialTypeID.String()).
 			WithDisclosures(disclosures)
 
-		sdJwt, err := b.Build(&creator)
+		sdJwt, err := b.Build(creator)
 
 		if err != nil {
-			return nil, errors.Errorf("failed to build SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
+			return nil, errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
 		}
 
-		sdJwts[c] = &sdJwt
+		sdJwts = append(sdJwts, sdJwt)
 	}
 
 	return sdJwts, nil

@@ -563,7 +563,7 @@ func (status ServerStatus) Finished() bool {
 type ServerSessionResponse struct {
 	ProofStatus     ProofStatus                   `json:"proofStatus"`
 	IssueSignatures []*gabi.IssueSignatureMessage `json:"sigs,omitempty"`
-	SdJwts          []*sdjwtvc.SdJwtVc            `json:"sdjwts,omitempty"`
+	SdJwts          []sdjwtvc.SdJwtVc             `json:"sdjwts,omitempty"`
 	NextSession     *Qr                           `json:"nextSession,omitempty"`
 
 	// needed for legacy (un)marshaling

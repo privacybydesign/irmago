@@ -84,7 +84,6 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 		handler,
 		signer,
 		storage,
-		aesKey,
 	)
 	require.NoError(t, err)
 

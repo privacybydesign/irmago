@@ -342,7 +342,7 @@ func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf := IrmaServerConfiguration()
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	irmaServerConf.DisableTLS = true
-	irmaServerConf.OpenId4VciSettings = &server.OpenId4VciSettings{
+	irmaServerConf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
 		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
 	}
 	return &requestorserver.Configuration{
