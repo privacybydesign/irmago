@@ -52,21 +52,21 @@ func handlerFailure(handler Handler, message string, fmtArgs ...any) {
 
 func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handler) {
 	go func() {
-		components, err := url.Parse(fullUrl)
+		parsedUrl, err := url.Parse(fullUrl)
 
 		if err != nil {
 			handlerFailure(handler, "openid4vp: failed to parse request: %v", err)
 			return
 		}
 
-		uri := components.Query().Get("request_uri")
-		if uri == "" {
+		requestUri := parsedUrl.Query().Get("request_uri")
+		if requestUri == "" {
 			handlerFailure(handler, "openid4vp: request missing required request_uri")
 			return
 		}
 
-		irma.Logger.Infof("starting openid4vp session: %v\n", uri)
-		response, err := http.Get(uri)
+		irma.Logger.Infof("starting openid4vp session: %v\n", requestUri)
+		response, err := http.Get(requestUri)
 		if err != nil {
 			handlerFailure(handler, "openid4vp: failed to get authorization request: %v", err)
 			return

@@ -397,7 +397,7 @@ func NewInMemorySdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
 	}
 
 	// ignoring all errors here, since it's not production code anyway
-	mobilephoneEntry, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+	mobilephoneEntry, _ := createSdJwtVc("pbdf.sidn-pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
 		map[string]any{
 			"mobilenumber": "+31612345678",
 		},
@@ -406,7 +406,7 @@ func NewInMemorySdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
 	info, _ := createCredentialInfoFromSdJwtVc(mobilephoneEntry)
 	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{mobilephoneEntry})
 
-	emailEntry, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	})
@@ -414,12 +414,12 @@ func NewInMemorySdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
 	info, _ = createCredentialInfoFromSdJwtVc(emailEntry)
 	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry})
 
-	emailEntry2, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry2, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	})
 
-	emailEntry3, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry3, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	})
