@@ -149,11 +149,13 @@ func createProductionVerificationContext() VerificationContext {
 	}
 }
 
-func createTestVerificationContext() VerificationContext {
+func createTestVerificationContext(allowNonHttpsIssuer bool, metadataUrl string) VerificationContext {
 	return VerificationContext{
 		Clock:                 &testClock{},
 		IssuerMetadataFetcher: &validTestMetadataFetcher{},
-		JwtVerifier:           &JwxJwtVerifier{},
+		JwtVerifier: &JwxJwtVerifier{
+			allowNonHttpsIssuer: allowNonHttpsIssuer,
+		},
 	}
 }
 
@@ -188,7 +190,7 @@ type validTestMetadataFetcher struct{}
 
 func (f *validTestMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
 	return IssuerMetadata{
-		Issuer: "https://openid4vc.staging.yivi.app",
+		Issuer: url, //"https://openid4vc.staging.yivi.app",
 		Jwks: []any{
 			// public key corresponding to the test issuer private key in the test files
 			map[string]string{

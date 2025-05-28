@@ -80,7 +80,6 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 
 	client, _ := NewIrmaClient(
 		conf,
-		irmaConfigurationPath,
 		handler,
 		signer,
 		storage,

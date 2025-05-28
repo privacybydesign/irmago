@@ -59,12 +59,11 @@ type IrmaClient struct {
 	maxVersion *irma.ProtocolVersion
 
 	// Other state
-	Preferences           Preferences
-	Configuration         *irma.Configuration
-	irmaConfigurationPath string
-	handler               ClientHandler
-	signer                Signer
-	sessions              sessions
+	Preferences   Preferences
+	Configuration *irma.Configuration
+	handler       ClientHandler
+	signer        Signer
+	sessions      sessions
 
 	jobs       chan func()   // queue of jobs to run
 	jobsPause  chan struct{} // sending pauses background jobs
@@ -85,7 +84,6 @@ type IrmaClient struct {
 // protected) directory at the path defined in the storage variable!
 func NewIrmaClient(
 	conf *irma.Configuration,
-	irmaConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
 	storage *storage,
@@ -93,13 +91,12 @@ func NewIrmaClient(
 	var err error
 
 	client := &IrmaClient{
-		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
-		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
-		irmaConfigurationPath: irmaConfigurationPath,
-		handler:               handler,
-		signer:                signer,
-		minVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
-		maxVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
+		keyshareServers: make(map[irma.SchemeManagerIdentifier]*keyshareServer),
+		attributes:      make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
+		handler:         handler,
+		signer:          signer,
+		minVersion:      &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
+		maxVersion:      &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
 	}
 
 	client.Configuration = conf

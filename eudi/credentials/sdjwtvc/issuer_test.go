@@ -29,7 +29,7 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_AllowNonHttps_Success(t *testing.T) {
 		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
 		WithIssuerUrl("http://openid4vc.staging.yivi.app", true)
 
-	requireBuildFailure(t, builder)
+	requireValidSdJwtVcWithNonHttpsIssuer(t, builder)
 }
 
 func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
@@ -76,7 +76,16 @@ func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	requireNoErr(t, err)
-	context := createTestVerificationContext()
+	context := createTestVerificationContext(false, builder.GetIssuerUrl())
+	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
+	requireNoErr(t, err)
+}
+
+func requireValidSdJwtVcWithNonHttpsIssuer(t *testing.T, builder *SdJwtVcBuilder) {
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	sdjwtvc, err := builder.Build(jwtCreator)
+	requireNoErr(t, err)
+	context := createTestVerificationContext(true, builder.GetIssuerUrl())
 	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
 	requireNoErr(t, err)
 }

@@ -39,7 +39,7 @@ import "testing"
 
 func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")
-	context := createTestVerificationContext()
+	context := createTestVerificationContext(false, "https://openid4vc.staging.yivi.app")
 
 	_, err := ParseAndVerifySdJwtVc(context, sdJwt)
 	requireErr(t, err)
@@ -273,7 +273,8 @@ func Test_IssMetadataCantBeFetched_Fails(t *testing.T) {
 }
 
 func Test_IssLinkNotHttps_Fails(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withIssuerUrl("http://openid4vc.staging.yivi.app", false)
+	url := "http://openid4vc.staging.yivi.app"
+	config := newWorkingSdJwtTestConfig().withIssuerUrl(url, false)
 	context := VerificationContext{
 		IssuerMetadataFetcher: &validTestMetadataFetcher{},
 		Clock:                 NewSystemClock(),
@@ -285,7 +286,8 @@ func Test_IssLinkNotHttps_Fails(t *testing.T) {
 }
 
 func Test_IssLinkNotSameAsInMetadata_Fails(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withIssuerUrl("https://not.openid4vc.staging.yivi.app", false)
+	url := "http://openid4vc.staging.yivi.app"
+	config := newWorkingSdJwtTestConfig().withIssuerUrl(url, false)
 	sdjwtvc := createTestSdJwtVc(t, config)
 	context := VerificationContext{
 		IssuerMetadataFetcher: &validTestMetadataFetcher{},

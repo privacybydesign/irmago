@@ -17,13 +17,18 @@ import (
 )
 
 type JwtVerifier interface {
+	AllowNonHttpsIssuer() bool
 	Verify(jwt string, key any) (payload []byte, err error)
 }
 
-type JwxJwtVerifier struct{}
+type JwxJwtVerifier struct {
+	allowNonHttpsIssuer bool
+}
 
 func NewJwxJwtVerifier() *JwxJwtVerifier {
-	return &JwxJwtVerifier{}
+	return &JwxJwtVerifier{
+		allowNonHttpsIssuer: false,
+	}
 }
 
 func (v *JwxJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err error) {
@@ -37,6 +42,10 @@ func (v *JwxJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err err
 	}
 
 	return jws.Verify([]byte(jwt), jws.WithKey(jwa.ES256(), key))
+}
+
+func (v *JwxJwtVerifier) AllowNonHttpsIssuer() bool {
+	return v.allowNonHttpsIssuer
 }
 
 type Clock interface {
@@ -277,7 +286,7 @@ func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSigned
 	}
 
 	if issuer != "" {
-		if !strings.HasPrefix(issuer, "https://") {
+		if !strings.HasPrefix(issuer, "https://") && !context.JwtVerifier.AllowNonHttpsIssuer() {
 			return IssuerSignedJwtPayload{}, fmt.Errorf("iss field should be https if it's included but is now %s", issuer)
 		}
 		err = verifyIssuerSignature(context, jwt, payload.Issuer)
