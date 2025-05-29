@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -68,10 +69,11 @@ func (h *testHandler) Cancelled() {
 }
 
 func (h *testHandler) Failure(err *irma.SessionError) {
+	fmt.Printf("\n\nerr: %v\n\n", err.Error())
 	h.sessionEndChannel <- false
 }
 
-func TestOpenId4VpClient(t *testing.T) {
+func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	jwtCreator, err := sdjwtvc.NewDefaultEcdsaJwtCreatorWithHolderPrivateKey()
 	require.NoError(t, err)
 
@@ -84,9 +86,19 @@ func TestOpenId4VpClient(t *testing.T) {
 
 	client, err := NewOpenID4VPClient(storage, kbjwtCreator)
 	require.NoError(t, err)
+	return client
+}
 
+func TestOpenID4VPClient(t *testing.T) {
+	t.Run("disclosing two credentials successfully", testDisclosingTwoCredentials_Success)
+}
+
+
+func testDisclosingTwoCredentials_Success(t *testing.T) {
 	url, err := startSessionAtEudiVerifier()
 	require.NoError(t, err)
+
+	client := createOpenID4VPClientForTesting(t)
 
 	handler := newTestHandler(t)
 	client.NewSession(url, handler)
