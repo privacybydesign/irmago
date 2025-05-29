@@ -4,13 +4,13 @@ import "testing"
 
 func Test_BuildSdJwtVc_BareMinimum_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
-		WithVerifiableCredentialType(DefaultVerifiableCredentialType)
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email")
 	requireValidSdJwtVc(t, builder)
 }
 
 func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
-		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("https://openid4vc.staging.yivi.app", false)
 
 	requireValidSdJwtVc(t, builder)
@@ -18,7 +18,7 @@ func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 
 func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
-		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("http://openid4vc.staging.yivi.app", false)
 
 	requireBuildFailure(t, builder)
@@ -26,7 +26,7 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 
 func Test_BuildSdJwtVc_InvalidIssuerUrl_AllowNonHttps_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
-		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("http://openid4vc.staging.yivi.app", true)
 
 	requireValidSdJwtVcWithNonHttpsIssuer(t, builder)
@@ -41,7 +41,7 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 
 	builder := NewSdJwtVcBuilder().
 		WithHashingAlgorithm(HashAlg_Sha256).
-		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithDisclosures(disclosures)
 
 	requireValidSdJwtVc(t, builder)
@@ -55,7 +55,7 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_Failure(t *testing.T) {
 	requireNoErr(t, err)
 
 	builder := NewSdJwtVcBuilder().
-		WithVerifiableCredentialType(DefaultVerifiableCredentialType).
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithDisclosures(disclosures)
 
 	requireBuildFailure(t, builder)
@@ -76,7 +76,7 @@ func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	requireNoErr(t, err)
-	context := createTestVerificationContext(false, builder.GetIssuerUrl())
+	context := createTestVerificationContext(false)
 	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
 	requireNoErr(t, err)
 }
@@ -85,7 +85,7 @@ func requireValidSdJwtVcWithNonHttpsIssuer(t *testing.T, builder *SdJwtVcBuilder
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	requireNoErr(t, err)
-	context := createTestVerificationContext(true, builder.GetIssuerUrl())
+	context := createTestVerificationContext(true)
 	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
 	requireNoErr(t, err)
 }

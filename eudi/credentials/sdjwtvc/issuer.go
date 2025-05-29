@@ -34,13 +34,6 @@ func (b *SdJwtVcBuilder) WithHaipCompatibility() *SdJwtVcBuilder {
 	return b
 }
 
-func (b *SdJwtVcBuilder) GetIssuerUrl() string {
-	if b.issuerUrl == nil {
-		return ""
-	}
-	return *b.issuerUrl
-}
-
 func (b *SdJwtVcBuilder) WithIssuerUrl(url string, allowNonHttps bool) *SdJwtVcBuilder {
 	b.issuerUrl = &url
 	b.allowNonHttps = allowNonHttps

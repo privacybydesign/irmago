@@ -17,18 +17,13 @@ import (
 )
 
 type JwtVerifier interface {
-	AllowNonHttpsIssuer() bool
 	Verify(jwt string, key any) (payload []byte, err error)
 }
 
-type JwxJwtVerifier struct {
-	allowNonHttpsIssuer bool
-}
+type JwxJwtVerifier struct{}
 
 func NewJwxJwtVerifier() *JwxJwtVerifier {
-	return &JwxJwtVerifier{
-		allowNonHttpsIssuer: false,
-	}
+	return &JwxJwtVerifier{}
 }
 
 func (v *JwxJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err error) {
@@ -42,10 +37,6 @@ func (v *JwxJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err err
 	}
 
 	return jws.Verify([]byte(jwt), jws.WithKey(jwa.ES256(), key))
-}
-
-func (v *JwxJwtVerifier) AllowNonHttpsIssuer() bool {
-	return v.allowNonHttpsIssuer
 }
 
 type Clock interface {
@@ -66,6 +57,7 @@ type VerificationContext struct {
 	IssuerMetadataFetcher IssuerMetadataFetcher
 	Clock                 Clock
 	JwtVerifier           JwtVerifier
+	AllowNonHttpsIssuer   bool
 }
 
 // VerifiedSdJwtVc is the decoded representation of an SD-JWT VC for the verifier
@@ -286,7 +278,7 @@ func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSigned
 	}
 
 	if issuer != "" {
-		if !strings.HasPrefix(issuer, "https://") && !context.JwtVerifier.AllowNonHttpsIssuer() {
+		if !strings.HasPrefix(issuer, "https://") && !context.AllowNonHttpsIssuer {
 			return IssuerSignedJwtPayload{}, fmt.Errorf("iss field should be https if it's included but is now %s", issuer)
 		}
 		err = verifyIssuerSignature(context, jwt, payload.Issuer)

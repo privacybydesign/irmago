@@ -39,7 +39,7 @@ import "testing"
 
 func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")
-	context := createTestVerificationContext(false, "https://openid4vc.staging.yivi.app")
+	context := createTestVerificationContext(false)
 
 	_, err := ParseAndVerifySdJwtVc(context, sdJwt)
 	requireErr(t, err)

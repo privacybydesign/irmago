@@ -149,13 +149,12 @@ func createProductionVerificationContext() VerificationContext {
 	}
 }
 
-func createTestVerificationContext(allowNonHttpsIssuer bool, metadataUrl string) VerificationContext {
+func createTestVerificationContext(allowNonHttpsIssuer bool) VerificationContext {
 	return VerificationContext{
 		Clock:                 &testClock{},
 		IssuerMetadataFetcher: &validTestMetadataFetcher{},
-		JwtVerifier: &JwxJwtVerifier{
-			allowNonHttpsIssuer: allowNonHttpsIssuer,
-		},
+		AllowNonHttpsIssuer:   allowNonHttpsIssuer,
+		JwtVerifier:           NewJwxJwtVerifier(),
 	}
 }
 
@@ -190,7 +189,7 @@ type validTestMetadataFetcher struct{}
 
 func (f *validTestMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
 	return IssuerMetadata{
-		Issuer: url, //"https://openid4vc.staging.yivi.app",
+		Issuer: url,
 		Jwks: []any{
 			// public key corresponding to the test issuer private key in the test files
 			map[string]string{
@@ -298,7 +297,7 @@ func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
 	return newEmptyTestConfig().
 		withHolderPrivateKey(holderKey).
 		withIssuerPrivateKey(issuerKey).
-		withVct(DefaultVerifiableCredentialType).
+		withVct("pbdf.sidn-pbdf.email").
 		withIssuerUrl("https://openid4vc.staging.yivi.app", false).
 		withIssuedAt(1745394126).
 		withExpiryTime(1945394126).
