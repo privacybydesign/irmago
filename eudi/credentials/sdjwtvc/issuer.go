@@ -24,6 +24,11 @@ func NewSdJwtVcBuilder() *SdJwtVcBuilder {
 	return &SdJwtVcBuilder{}
 }
 
+func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuer(allowNonHttps bool) *SdJwtVcBuilder {
+	b.allowNonHttps = allowNonHttps
+	return b
+}
+
 func (b *SdJwtVcBuilder) WithLifetime(lifetime int64) *SdJwtVcBuilder {
 	b.lifetime = &lifetime
 	return b
@@ -34,9 +39,8 @@ func (b *SdJwtVcBuilder) WithHaipCompatibility() *SdJwtVcBuilder {
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithIssuerUrl(url string, allowNonHttps bool) *SdJwtVcBuilder {
+func (b *SdJwtVcBuilder) WithIssuerUrl(url string) *SdJwtVcBuilder {
 	b.issuerUrl = &url
-	b.allowNonHttps = allowNonHttps
 	return b
 }
 

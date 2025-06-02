@@ -24,7 +24,8 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 
 	sdJwt, err := NewSdJwtVcBuilder().
 		WithHolderKey(testdata.ParseHolderPubJwk()).
-		WithIssuerUrl(issuer, false).
+		WithIssuerUrl(issuer).
+		WithAllowNonHttpsIssuer(false).
 		WithDisclosures(disclosures).
 		WithVerifiableCredentialType("pbdf.pbdf.email").
 		WithHashingAlgorithm(HashAlg_Sha256).

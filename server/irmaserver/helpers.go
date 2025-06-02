@@ -838,7 +838,8 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 		// TODO: add choice of signature scheme to the builder
 		b := sdjwtvc.NewSdJwtVcBuilder().
 			WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
-			WithIssuerUrl(issuerUrl, allowNonHttps).
+			WithIssuerUrl(issuerUrl).
+			WithAllowNonHttpsIssuer(allowNonHttps).
 			WithVerifiableCredentialType(cred.CredentialTypeID.String()).
 			WithDisclosures(disclosures)
 

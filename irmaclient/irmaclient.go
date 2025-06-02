@@ -73,8 +73,7 @@ type IrmaClient struct {
 }
 
 // NewIrmaClient creates a new IrmaClient that uses the storage
-// for (de)serializing itself. irmaConfigurationPath
-// is the path to a (possibly readonly) folder containing irma_configuration;
+// for (de)serializing itself. conf is the irma_configuration;
 // and handler is used for informing the user of new stuff, and when a
 // enrollment to a keyshare server needs to happen.
 // The client returned by this function has been fully deserialized

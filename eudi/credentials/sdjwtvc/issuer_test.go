@@ -11,7 +11,7 @@ func Test_BuildSdJwtVc_BareMinimum_Success(t *testing.T) {
 func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
-		WithIssuerUrl("https://openid4vc.staging.yivi.app", false)
+		WithIssuerUrl("https://openid4vc.staging.yivi.app")
 
 	requireValidSdJwtVc(t, builder)
 }
@@ -19,7 +19,7 @@ func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
-		WithIssuerUrl("http://openid4vc.staging.yivi.app", false)
+		WithIssuerUrl("http://openid4vc.staging.yivi.app")
 
 	requireBuildFailure(t, builder)
 }
@@ -27,7 +27,9 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 func Test_BuildSdJwtVc_InvalidIssuerUrl_AllowNonHttps_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
-		WithIssuerUrl("http://openid4vc.staging.yivi.app", true)
+		WithIssuerUrl("http://openid4vc.staging.yivi.app").
+		WithAllowNonHttpsIssuer(true)
+
 
 	requireValidSdJwtVcWithNonHttpsIssuer(t, builder)
 }
