@@ -140,8 +140,8 @@ type RedisSettings struct {
 }
 
 type SdJwtIssuanceSettings struct {
-	JwtPrivateKey     string `json:"jwt_privkey,omitempty" mapstructure:"jwt_privkey"`
-	JwtPrivateKeyFile string `json:"jwt_privkey_file,omitempty" mapstructure:"jwt_privkey_file"`
+	JwtPrivateKey     string `json:"sdjwt_privkey,omitempty" mapstructure:"sdjwt_privkey"`
+	JwtPrivateKeyFile string `json:"sdjwt_privkey_file,omitempty" mapstructure:"sdjwt_privkey_file"`
 
 	// Parsed JWT private key
 	Enabled            bool              `json:"-"`

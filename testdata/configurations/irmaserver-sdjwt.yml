@@ -7,7 +7,7 @@ no_email: true
 allow_unsigned_callbacks: true
 
 sdjwt_issuance:
-  jwt_privkey_file: "./testdata/eudi/issuer_ec_priv.pem"
+  sdjwt_privkey_file: "./testdata/eudi/issuer_ec_priv.pem"
 
 requestors:
   alice:
