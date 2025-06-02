@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -15,7 +14,6 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
 )
 
@@ -54,19 +52,18 @@ type IrmaClient struct {
 	lookup map[string]*credLookup
 
 	// Where we store/load it to/from
-	storage storage
+	storage *storage
 
 	// Versions the client supports
 	minVersion *irma.ProtocolVersion
 	maxVersion *irma.ProtocolVersion
 
 	// Other state
-	Preferences           Preferences
-	Configuration         *irma.Configuration
-	irmaConfigurationPath string
-	handler               ClientHandler
-	signer                Signer
-	sessions              sessions
+	Preferences   Preferences
+	Configuration *irma.Configuration
+	handler       ClientHandler
+	signer        Signer
+	sessions      sessions
 
 	jobs       chan func()   // queue of jobs to run
 	jobsPause  chan struct{} // sending pauses background jobs
@@ -75,48 +72,33 @@ type IrmaClient struct {
 	credMutex sync.Mutex
 }
 
-// NewIrmaClient creates a new IrmaClient that uses the directory
-// specified by storagePath for (de)serializing itself. irmaConfigurationPath
-// is the path to a (possibly readonly) folder containing irma_configuration;
+// NewIrmaClient creates a new IrmaClient that uses the storage
+// for (de)serializing itself. conf is the irma_configuration;
 // and handler is used for informing the user of new stuff, and when a
 // enrollment to a keyshare server needs to happen.
 // The client returned by this function has been fully deserialized
 // and is ready for use.
 //
 // NOTE: It is the responsibility of the caller that there exists a (properly
-// protected) directory at storagePath!
+// protected) directory at the path defined in the storage variable!
 func NewIrmaClient(
-	storagePath string,
-	irmaConfigurationPath string,
+	conf *irma.Configuration,
 	handler ClientHandler,
 	signer Signer,
-	aesKey [32]byte,
+	storage *storage,
 ) (*IrmaClient, error) {
 	var err error
-	if err = common.AssertPathExists(storagePath); err != nil {
-		return nil, err
-	}
-	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
-		return nil, err
-	}
 
 	client := &IrmaClient{
-		keyshareServers:       make(map[irma.SchemeManagerIdentifier]*keyshareServer),
-		attributes:            make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
-		irmaConfigurationPath: irmaConfigurationPath,
-		handler:               handler,
-		signer:                signer,
-		minVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
-		maxVersion:            &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
+		keyshareServers: make(map[irma.SchemeManagerIdentifier]*keyshareServer),
+		attributes:      make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
+		handler:         handler,
+		signer:          signer,
+		minVersion:      &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
+		maxVersion:      &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
 	}
 
-	client.Configuration, err = irma.NewConfiguration(
-		filepath.Join(storagePath, "irma_configuration"),
-		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
-	)
-	if err != nil {
-		return nil, err
-	}
+	client.Configuration = conf
 
 	schemeMgrErr := client.Configuration.ParseOrRestoreFolder()
 	// If schemMgrErr is of type SchemeManagerError, we continue and
@@ -127,7 +109,7 @@ func NewIrmaClient(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	client.storage = storage{storagePath: storagePath, Configuration: client.Configuration, aesKey: aesKey}
+	client.storage = storage
 	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}

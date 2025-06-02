@@ -9,7 +9,7 @@ import (
 func TestNoIssuerLinkIsErr(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
-		VerifiableCredentialType: DefaultVerifiableCredentialType,
+		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
 		Expiry:                   0,
 		IssuedAt:                 0,
 		Issuer:                   "",
@@ -26,7 +26,7 @@ func TestNoIssuerLinkIsErr(t *testing.T) {
 func TestNoHttpsIssuerIsErr(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
-		VerifiableCredentialType: DefaultVerifiableCredentialType,
+		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
 		Expiry:                   0,
 		IssuedAt:                 0,
 		Issuer:                   "http://invalid.com",
@@ -42,7 +42,7 @@ func TestNoHttpsIssuerIsErr(t *testing.T) {
 func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
-		VerifiableCredentialType: DefaultVerifiableCredentialType,
+		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
 		Expiry:                   0,
 		IssuedAt:                 0,
 		Issuer:                   "https://example.com",
@@ -55,7 +55,7 @@ func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 	values := jsonToMap(json)
 
 	requirePresentWithValue(t, values, Key_Subject, "subject")
-	requirePresentWithValue(t, values, Key_VerifiableCredentialType, DefaultVerifiableCredentialType)
+	requirePresentWithValue(t, values, Key_VerifiableCredentialType, "pbdf.sidn-pbdf.email")
 	requirePresentWithValue(t, values, Key_Issuer, "https://example.com")
 	requireNotPresent(t, values, Key_Sd)
 	requireNotPresent(t, values, Key_SdAlg)

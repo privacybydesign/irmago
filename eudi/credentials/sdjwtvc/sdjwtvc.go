@@ -191,8 +191,6 @@ func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, er
 const (
 	HashAlg_Sha256 HashingAlgorithm = "sha-256"
 
-	DefaultVerifiableCredentialType string = "https://credentials.example.com/identity_credential"
-
 	Key_Subject                  string = "sub"
 	Key_VerifiableCredentialType string = "vct"
 	Key_ExpiryTime               string = "exp"
@@ -410,7 +408,7 @@ func CreateTestSdJwtVc() (SdJwtVc, error) {
 		SdAlg:                    HashAlg_Sha256,
 		Issuer:                   "https://openid4vc.staging.yivi.app",
 		Confirm:                  holderKey,
-		VerifiableCredentialType: DefaultVerifiableCredentialType,
+		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
 		Expiry:                   1835689661,
 		IssuedAt:                 1516239022,
 	}

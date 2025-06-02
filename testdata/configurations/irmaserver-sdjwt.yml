@@ -1,0 +1,17 @@
+production: true
+url: "https://localhost:8088"
+tls_cert_file: "./testdata/configurations/certs/localhost.crt"
+tls_privkey_file: "./testdata/configurations/certs/localhost.key"
+no_auth: false
+no_email: true
+allow_unsigned_callbacks: true
+
+sdjwt_issuance:
+  sdjwt_privkey_file: "./testdata/eudi/issuer_ec_priv.pem"
+
+requestors:
+  alice:
+    auth_method: token
+    key: secret1
+    disclose_perms: ["irma-demo.*"]
+    issue_perms: ["irma-demo.RU.studentCard"]

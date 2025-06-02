@@ -9,6 +9,7 @@ import (
 type SdJwtVcBuilder struct {
 	lifetime             *int64
 	issuerUrl            *string
+	allowNonHttps        bool
 	cnfPubKey            *CnfField
 	status               *string
 	subject              *string
@@ -21,6 +22,11 @@ type SdJwtVcBuilder struct {
 
 func NewSdJwtVcBuilder() *SdJwtVcBuilder {
 	return &SdJwtVcBuilder{}
+}
+
+func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuerUrl(allowNonHttps bool) *SdJwtVcBuilder {
+	b.allowNonHttps = allowNonHttps
+	return b
 }
 
 func (b *SdJwtVcBuilder) WithLifetime(lifetime int64) *SdJwtVcBuilder {
@@ -78,7 +84,7 @@ func (b *SdJwtVcBuilder) WithHolderKey(jwk map[string]any) *SdJwtVcBuilder {
 func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	payload := map[string]any{}
 	if b.issuerUrl != nil {
-		if !strings.HasPrefix(*b.issuerUrl, "https://") {
+		if !strings.HasPrefix(*b.issuerUrl, "https://") && !b.allowNonHttps {
 			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", *b.issuerUrl)
 		}
 		payload[Key_Issuer] = *b.issuerUrl

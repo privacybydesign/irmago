@@ -12,7 +12,7 @@ import "testing"
 // - [x] iss link that can't be fetched
 // - [x] iss link with wrong key in metadata
 // - [x] iss link with wrong issuer url in metadata
-// - [x] iss link is non-https
+// - [x] iss link is non-https, when it should be
 // - [x] clock.now is before nbf
 // - [x] clock.now is after exp
 // - [x] cnf missing while there is a kbjwt
@@ -33,12 +33,13 @@ import "testing"
 // - [x] no kbjwt for otherwise valid sdjwtvc without disclosures
 // - [x] no kbjwt and no cnf field
 // - [x] no iss value provided
+// - [x] iss link is non-https, but is accepted (for testing purposes)
 
 // =======================================================================
 
 func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")
-	context := createTestVerificationContext()
+	context := createTestVerificationContext(false)
 
 	_, err := ParseAndVerifySdJwtVc(context, sdJwt)
 	requireErr(t, err)
@@ -172,7 +173,12 @@ func Test_MissingIssuerUrl_Success(t *testing.T) {
 }
 
 func Test_InvalidIssuerUrl_Fails(t *testing.T) {
-	invalidIssuerUrl := newWorkingSdJwtTestConfig().withIssuerUrl("http://openid4vc.staging.yivi.app/")
+	invalidIssuerUrl := newWorkingSdJwtTestConfig().withIssuerUrl("http://openid4vc.staging.yivi.app/", false)
+	errorTestCase(t, invalidIssuerUrl, "invalid issuer url should fail (no https)")
+}
+
+func Test_InvalidIssuerUrl_Succeeds(t *testing.T) {
+	invalidIssuerUrl := newWorkingSdJwtTestConfig().withIssuerUrl("http://openid4vc.staging.yivi.app/", true)
 	errorTestCase(t, invalidIssuerUrl, "invalid issuer url should fail (no https)")
 }
 
@@ -267,7 +273,8 @@ func Test_IssMetadataCantBeFetched_Fails(t *testing.T) {
 }
 
 func Test_IssLinkNotHttps_Fails(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withIssuerUrl("http://openid4vc.staging.yivi.app")
+	url := "http://openid4vc.staging.yivi.app"
+	config := newWorkingSdJwtTestConfig().withIssuerUrl(url, false)
 	context := VerificationContext{
 		IssuerMetadataFetcher: &validTestMetadataFetcher{},
 		Clock:                 NewSystemClock(),
@@ -279,7 +286,8 @@ func Test_IssLinkNotHttps_Fails(t *testing.T) {
 }
 
 func Test_IssLinkNotSameAsInMetadata_Fails(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withIssuerUrl("https://not.openid4vc.staging.yivi.app")
+	url := "http://openid4vc.staging.yivi.app"
+	config := newWorkingSdJwtTestConfig().withIssuerUrl(url, false)
 	sdjwtvc := createTestSdJwtVc(t, config)
 	context := VerificationContext{
 		IssuerMetadataFetcher: &validTestMetadataFetcher{},

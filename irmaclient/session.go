@@ -572,6 +572,8 @@ func (session *session) sendResponse(message interface{}) {
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 				return
 			}
+			// TODO: in case SD-JWTs are issued; also construct credentials for those as well
+			//if err = session.client.Construct
 		}
 	}
 

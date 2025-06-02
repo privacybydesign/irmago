@@ -3,6 +3,7 @@ package irmaserver
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
@@ -803,4 +805,52 @@ func (s *Server) newSession(
 	}
 
 	return ses, nil
+}
+
+func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl string, allowNonHttps bool) ([]sdjwtvc.SdJwtVc, error) {
+	// Check that the request is a valid issuance request
+	req, err := session.getRequest()
+	if err != nil {
+		return nil, err
+	}
+
+	issuanceReq, ok := req.(*irma.IssuanceRequest)
+	if !ok {
+		return nil, errors.New("session request is not an issuance request; cannot generate SD-JWTs")
+	}
+
+	// No SD-JWTs requested, return nothing
+	if !issuanceReq.RequestSdJwts {
+		return nil, nil
+	}
+
+	creator := sdjwtvc.NewJwtCreator(privKey)
+
+	// An issuance request may contain multiple credentials, so we need to create a separate SD-JWT for each one
+	sdJwts := []sdjwtvc.SdJwtVc{}
+
+	for _, cred := range issuanceReq.Credentials {
+		disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO: add choice of signature scheme to the builder
+		b := sdjwtvc.NewSdJwtVcBuilder().
+			WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
+			WithIssuerUrl(issuerUrl).
+			WithAllowNonHttpsIssuerUrl(allowNonHttps).
+			WithVerifiableCredentialType(cred.CredentialTypeID.String()).
+			WithDisclosures(disclosures)
+
+		sdJwt, err := b.Build(creator)
+
+		if err != nil {
+			return nil, errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
+		}
+
+		sdJwts = append(sdJwts, sdJwt)
+	}
+
+	return sdJwts, nil
 }
