@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
@@ -100,6 +101,8 @@ type Configuration struct {
 
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
+
+	SdJwtIssuanceSettings *SdJwtIssuanceSettings `json:"sdjwt_issuance" mapstructure:"sdjwt_issuance"`
 }
 
 type RedisClient struct {
@@ -136,6 +139,15 @@ type RedisSettings struct {
 	DisableTLS               bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
 }
 
+type SdJwtIssuanceSettings struct {
+	JwtPrivateKey     string `json:"sdjwt_privkey,omitempty" mapstructure:"sdjwt_privkey"`
+	JwtPrivateKeyFile string `json:"sdjwt_privkey_file,omitempty" mapstructure:"sdjwt_privkey_file"`
+
+	// Parsed JWT private key
+	Enabled            bool              `json:"-"`
+	JwtEcdsaPrivateKey *ecdsa.PrivateKey `json:"-"`
+}
+
 // Check ensures that the Configuration is loaded, usable and free of errors.
 func (conf *Configuration) Check() error {
 	if conf.Logger == nil {
@@ -161,6 +173,7 @@ func (conf *Configuration) Check() error {
 		conf.verifyRevocation,
 		conf.verifyJwtPrivateKey,
 		conf.verifyStaticSessions,
+		conf.verifySdJwtIssuanceSettings,
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
@@ -549,6 +562,33 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 		RootCAs: systemCerts,
 	}
 	return tlsConfig, nil
+}
+
+func (conf *Configuration) verifySdJwtIssuanceSettings() error {
+	if conf.SdJwtIssuanceSettings == nil {
+		conf.SdJwtIssuanceSettings = &SdJwtIssuanceSettings{
+			Enabled: false,
+		}
+	}
+
+	if conf.SdJwtIssuanceSettings.JwtPrivateKey == "" && conf.SdJwtIssuanceSettings.JwtPrivateKeyFile == "" {
+		return nil
+	}
+
+	keybytes, err := common.ReadKey(conf.SdJwtIssuanceSettings.JwtPrivateKey, conf.SdJwtIssuanceSettings.JwtPrivateKeyFile)
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to read SD-JWT private key", 0)
+	}
+
+	conf.SdJwtIssuanceSettings.JwtEcdsaPrivateKey, err = jwt.ParseECPrivateKeyFromPEM(keybytes)
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to parse SD-JWT private key", 0)
+	}
+
+	conf.Logger.Info("SD-JWT private key parsed, JWT endpoints enabled")
+	conf.SdJwtIssuanceSettings.Enabled = true
+
+	return nil
 }
 
 // ReplacePortString is a helper that returns a copy of the specified url of the form

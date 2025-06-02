@@ -42,12 +42,12 @@ func parseStorage(t *testing.T) (*IrmaClient, *TestClientHandler) {
 	return parseExistingStorage(t, storage)
 }
 
-func parseExistingStorage(t *testing.T, storage string) (*IrmaClient, *TestClientHandler) {
-	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
+func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *TestClientHandler) {
+	handler := &TestClientHandler{t: t, c: make(chan error), storage: storageFolder}
 	path := test.FindTestdataFolder(t)
 
 	var signer Signer
-	bts, err := os.ReadFile(filepath.Join(storage, "client", "ecdsa_sk.pem"))
+	bts, err := os.ReadFile(filepath.Join(storageFolder, "client", "ecdsa_sk.pem"))
 	if os.IsNotExist(err) {
 		signer = test.NewSigner(t)
 	} else {
@@ -60,12 +60,29 @@ func parseExistingStorage(t *testing.T, storage string) (*IrmaClient, *TestClien
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	client, err := NewIrmaClient(
-		filepath.Join(storage, "client"),
-		filepath.Join(path, "irma_configuration"),
+	storagePath := filepath.Join(storageFolder, "client")
+	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+
+	if err = common.AssertPathExists(storagePath); err != nil {
+		require.NoError(t, err)
+	}
+	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
+		require.NoError(t, err)
+	}
+
+	conf, err := irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+	)
+	require.NoError(t, err)
+
+	storage := NewIrmaStorage(storagePath, conf, aesKey)
+
+	client, _ := NewIrmaClient(
+		conf,
 		handler,
 		signer,
-		aesKey,
+		storage,
 	)
 	require.NoError(t, err)
 

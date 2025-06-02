@@ -33,12 +33,12 @@ func parseStorage(t *testing.T, opts ...option) (*irmaclient.IrmaClient, *TestCl
 	return parseExistingStorage(t, storage, opts...)
 }
 
-func parseExistingStorage(t *testing.T, storage string, options ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
-	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
+func parseExistingStorage(t *testing.T, storageFolder string, options ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
+	handler := &TestClientHandler{t: t, c: make(chan error), storage: storageFolder}
 	path := test.FindTestdataFolder(t)
 
 	var signer irmaclient.Signer
-	bts, err := os.ReadFile(filepath.Join(storage, "client", "ecdsa_sk.pem"))
+	bts, err := os.ReadFile(filepath.Join(storageFolder, "client", "ecdsa_sk.pem"))
 	if os.IsNotExist(err) {
 		signer = test.NewSigner(t)
 	} else {
@@ -51,12 +51,20 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
+	storagePath := filepath.Join(storageFolder, "client")
+	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+
+	conf, err := irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+	)
+	require.NoError(t, err)
+
 	client, err := irmaclient.NewIrmaClient(
-		filepath.Join(storage, "client"),
-		filepath.Join(path, "irma_configuration"),
+		conf,
 		handler,
 		signer,
-		aesKey,
+		irmaclient.NewIrmaStorage(storagePath, conf, aesKey),
 	)
 	require.NoError(t, err)
 
@@ -71,6 +79,7 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 		err = client.Configuration.ParseFolder()
 		require.NoError(t, err)
 	}
+
 	if opts.enabled(optionPrePairingClient) {
 		version := extractClientMaxVersion(client)
 		// set to largest protocol version that dos not support pairing

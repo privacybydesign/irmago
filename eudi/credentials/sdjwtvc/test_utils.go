@@ -91,7 +91,7 @@ func NewEcdsaJwtCreatorWithIssuerTestkey() *DefaultEcdsaJwtCreator {
 		return nil
 	}
 
-	return &DefaultEcdsaJwtCreator{key: key}
+	return &DefaultEcdsaJwtCreator{privateKey: key}
 }
 
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
@@ -115,7 +115,7 @@ func NewEcdsaJwtCreatorWithHolderTestKey() (*DefaultEcdsaJwtCreator, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DefaultEcdsaJwtCreator{key: key}, nil
+	return &DefaultEcdsaJwtCreator{privateKey: key}, nil
 }
 
 func NewKbJwtCreatorWithHolderTestKey() (*DefaultKbJwtCreator, error) {
@@ -149,11 +149,12 @@ func createProductionVerificationContext() VerificationContext {
 	}
 }
 
-func createTestVerificationContext() VerificationContext {
+func createTestVerificationContext(allowNonHttpsIssuer bool) VerificationContext {
 	return VerificationContext{
 		Clock:                 &testClock{},
 		IssuerMetadataFetcher: &validTestMetadataFetcher{},
-		JwtVerifier:           &JwxJwtVerifier{},
+		AllowNonHttpsIssuer:   allowNonHttpsIssuer,
+		JwtVerifier:           NewJwxJwtVerifier(),
 	}
 }
 
@@ -188,7 +189,7 @@ type validTestMetadataFetcher struct{}
 
 func (f *validTestMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
 	return IssuerMetadata{
-		Issuer: "https://openid4vc.staging.yivi.app",
+		Issuer: url,
 		Jwks: []any{
 			// public key corresponding to the test issuer private key in the test files
 			map[string]string{
@@ -296,8 +297,8 @@ func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
 	return newEmptyTestConfig().
 		withHolderPrivateKey(holderKey).
 		withIssuerPrivateKey(issuerKey).
-		withVct(DefaultVerifiableCredentialType).
-		withIssuerUrl("https://openid4vc.staging.yivi.app").
+		withVct("pbdf.sidn-pbdf.email").
+		withIssuerUrl("https://openid4vc.staging.yivi.app", false).
 		withIssuedAt(1745394126).
 		withExpiryTime(1945394126).
 		withNotBefore(50).
@@ -324,8 +325,9 @@ func (c testSdJwtVcConfig) withIssuerPrivateKey(key *ecdsa.PrivateKey) testSdJwt
 	return c
 }
 
-func (c testSdJwtVcConfig) withIssuerUrl(url string) testSdJwtVcConfig {
+func (c testSdJwtVcConfig) withIssuerUrl(url string, allowNonHttps bool) testSdJwtVcConfig {
 	c.issuerUrl = &url
+	c.allowNonHttps = allowNonHttps
 	return c
 }
 
@@ -427,14 +429,15 @@ func (c testSdJwtVcConfig) withDisclosures(disclosures []DisclosureContent) test
 
 type testSdJwtVcConfig struct {
 	// stuff inside the issuer signed payload
-	issuerUrl  *string
-	issuedAt   *int64
-	expiryTime *int64
-	notBefore  *int64
-	cnfPubKey  *CnfField
-	sdClaims   *[]HashedDisclosure
-	sdAlg      *HashingAlgorithm
-	vct        *string
+	issuerUrl     *string
+	allowNonHttps bool
+	issuedAt      *int64
+	expiryTime    *int64
+	notBefore     *int64
+	cnfPubKey     *CnfField
+	sdClaims      *[]HashedDisclosure
+	sdAlg         *HashingAlgorithm
+	vct           *string
 
 	// stuff inside the issuer signed header
 	typHeader *string
@@ -492,7 +495,7 @@ func addTestKbJwt(config testSdJwtVcConfig, sdjwtvc SdJwtVc) (SdJwtVc, error) {
 		header[Key_Typ] = *config.kbjwtTypHeader
 	}
 
-	jwtCreator := DefaultEcdsaJwtCreator{key: config.holderPrivateKey}
+	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.holderPrivateKey}
 	jwt, err := jwtCreator.CreateSignedJwt(header, string(payloadJson))
 
 	return AddKeyBindingJwtToSdJwtVc(sdjwtvc, KeyBindingJwt(jwt)), err
@@ -532,7 +535,7 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 		issuerHeader[Key_Typ] = *config.typHeader
 	}
 
-	jwtCreator := DefaultEcdsaJwtCreator{key: config.issuerPrivateKey}
+	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.issuerPrivateKey}
 
 	payloadJson, err := json.Marshal(issuerPayload)
 	if err != nil {

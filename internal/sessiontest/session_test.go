@@ -82,6 +82,8 @@ func TestIrmaServer(t *testing.T) {
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, IrmaServerConfiguration))
 	t.Run("SigningSession", apply(testSigningSession, IrmaServerConfiguration))
 	t.Run("IssuanceSession", apply(testIssuanceSession, IrmaServerConfiguration))
+	t.Run("IssuanceSessionWithSdJwt", apply(testSdJwtIssuanceSession, RequestorServerConfiguration))
+
 	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, IrmaServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, IrmaServerConfiguration))
 	t.Run("PairingRejected", apply(testPairingRejected, IrmaServerConfiguration))
@@ -655,6 +657,10 @@ func testIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	doIssuanceSession(t, false, nil, conf, opts...)
 }
 
+func testSdJwtIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
+	doIssuanceSession(t, false, nil, conf, append(opts, optionExpectSdJwts)...)
+}
+
 func testCombinedSessionMultipleAttributes(t *testing.T, conf interface{}, opts ...option) {
 	var ir irma.IssuanceRequest
 	require.NoError(t, irma.UnmarshalValidate([]byte(`{
@@ -686,7 +692,7 @@ func testCombinedSessionMultipleAttributes(t *testing.T, conf interface{}, opts 
 	require.Equal(t, irma.ServerStatusDone, doSession(t, &ir, nil, nil, nil, nil, nil, conf, opts...).Status)
 }
 
-func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClient, conf interface{}, opts ...option) {
+func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClient, conf interface{}, options ...option) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
@@ -711,12 +717,18 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClien
 		})
 	}
 
-	result := doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
+	opts := processOptions(options...)
+	if opts.enabled(optionExpectSdJwts) {
+		request.RequestSdJwts = true
+	}
+
+	result := doSession(t, request, client, nil, nil, nil, nil, conf, options...)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 	require.Equal(t, attrid, result.Disclosed[0][0].Identifier)
 	require.Equal(t, "456", result.Disclosed[0][0].Value["en"])
+
 }
 
 func testConDisCon(t *testing.T, conf interface{}, opts ...option) {

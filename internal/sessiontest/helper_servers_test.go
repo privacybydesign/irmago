@@ -39,7 +39,8 @@ var (
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
 
-	jwtPrivkeyPath = filepath.Join(testdata, "jwtkeys", "sk.pem")
+	jwtPrivkeyPath      = filepath.Join(testdata, "jwtkeys", "sk.pem")
+	jwtEcdsaPrivkeyPath = filepath.Join(testdata, "eudi", "issuer_ec_priv.pem")
 )
 
 const (
@@ -340,6 +341,10 @@ func IrmaServerConfiguration() *server.Configuration {
 func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf := IrmaServerConfiguration()
 	irmaServerConf.URL = requestorServerURL + "/irma"
+	irmaServerConf.DisableTLS = true
+	irmaServerConf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
+		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
+	}
 	return &requestorserver.Configuration{
 		Configuration:                  irmaServerConf,
 		DisableRequestorAuthentication: true,

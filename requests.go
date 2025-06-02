@@ -89,6 +89,9 @@ type IssuanceRequest struct {
 	DisclosureRequest
 	Credentials []*CredentialRequest `json:"credentials"`
 
+	// Flag to indicate whether the client should receive SD-JWTs next to the IRMA credentials
+	RequestSdJwts bool `json:"requestSdJwts,omitempty"`
+
 	// Derived data
 	CredentialInfoList        CredentialInfoList `json:",omitempty"`
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`

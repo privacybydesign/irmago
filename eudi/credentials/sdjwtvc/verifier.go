@@ -57,6 +57,7 @@ type VerificationContext struct {
 	IssuerMetadataFetcher IssuerMetadataFetcher
 	Clock                 Clock
 	JwtVerifier           JwtVerifier
+	AllowNonHttpsIssuer   bool
 }
 
 // VerifiedSdJwtVc is the decoded representation of an SD-JWT VC for the verifier
@@ -277,7 +278,7 @@ func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSigned
 	}
 
 	if issuer != "" {
-		if !strings.HasPrefix(issuer, "https://") {
+		if !strings.HasPrefix(issuer, "https://") && !context.AllowNonHttpsIssuer {
 			return IssuerSignedJwtPayload{}, fmt.Errorf("iss field should be https if it's included but is now %s", issuer)
 		}
 		err = verifyIssuerSignature(context, jwt, payload.Issuer)

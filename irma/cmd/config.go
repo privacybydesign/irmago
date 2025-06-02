@@ -69,6 +69,8 @@ func configureIRMAServer() (*server.Configuration, error) {
 		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
 		AllowUnsignedCallbacks: viper.GetBool("allow_unsigned_callbacks"),
 		AugmentClientReturnURL: viper.GetBool("augment_client_return_url"),
+
+		// TODO: add configuration for SD-JWT settings
 	}
 
 	// Parse session store configuration
