@@ -30,7 +30,6 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_AllowNonHttps_Success(t *testing.T) {
 		WithIssuerUrl("http://openid4vc.staging.yivi.app").
 		WithAllowNonHttpsIssuerUrl(true)
 
-
 	requireValidSdJwtVcWithNonHttpsIssuer(t, builder)
 }
 
