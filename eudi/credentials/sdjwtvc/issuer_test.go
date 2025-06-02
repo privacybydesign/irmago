@@ -28,7 +28,7 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_AllowNonHttps_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("http://openid4vc.staging.yivi.app").
-		WithAllowNonHttpsIssuer(true)
+		WithAllowNonHttpsIssuerUrl(true)
 
 
 	requireValidSdJwtVcWithNonHttpsIssuer(t, builder)

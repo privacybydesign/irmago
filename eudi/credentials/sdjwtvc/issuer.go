@@ -24,7 +24,7 @@ func NewSdJwtVcBuilder() *SdJwtVcBuilder {
 	return &SdJwtVcBuilder{}
 }
 
-func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuer(allowNonHttps bool) *SdJwtVcBuilder {
+func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuerUrl(allowNonHttps bool) *SdJwtVcBuilder {
 	b.allowNonHttps = allowNonHttps
 	return b
 }

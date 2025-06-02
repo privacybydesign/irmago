@@ -839,7 +839,7 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 		b := sdjwtvc.NewSdJwtVcBuilder().
 			WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 			WithIssuerUrl(issuerUrl).
-			WithAllowNonHttpsIssuer(allowNonHttps).
+			WithAllowNonHttpsIssuerUrl(allowNonHttps).
 			WithVerifiableCredentialType(cred.CredentialTypeID.String()).
 			WithDisclosures(disclosures)
 

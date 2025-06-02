@@ -386,7 +386,6 @@ func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.S
 		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 		WithVerifiableCredentialType(vct).
 		WithIssuerUrl(issuerUrl).
-		WithAllowNonHttpsIssuer(false).
 		WithClock(sdjwtvc.NewSystemClock()).
 		WithLifetime(1000000000).
 		Build(signer)
