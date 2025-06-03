@@ -10,6 +10,7 @@ import (
 
 	_ "embed"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/testdata"
 )
 
@@ -131,12 +132,8 @@ func NewKbJwtCreatorWithHolderTestKey() (*DefaultKbJwtCreator, error) {
 }
 
 func readHolderPublicJwk() (CnfField, error) {
-	var jwk map[string]interface{}
-	err := json.Unmarshal(testdata.HolderPubJwkBytes, &jwk)
-	if err != nil {
-		return CnfField{}, err
-	}
-	return CnfField{Jwk: jwk}, nil
+	key, err := jwk.ParseKey(testdata.HolderPubJwkBytes)
+	return CnfField{Jwk: key}, err
 }
 
 // =======================================================================
@@ -171,57 +168,37 @@ func (f *failingMetadataFetcherNetworkError) FetchIssuerMetadata(url string) (Is
 type failingMetadataFetcherWrongIssuerKeys struct{}
 
 func (f *failingMetadataFetcherWrongIssuerKeys) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
+	set := jwk.NewSet()
+	set.AddKey(testdata.ParseHolderPubJwk())
+
 	return IssuerMetadata{
 		Issuer: "https://openid4vc.staging.yivi.app",
-		Jwks: []any{
-			// public key corresponding to the test issuer private key in the test files
-			map[string]string{
-				"crv": "P-256",
-				"kty": "EC",
-				"x":   "r7bMrDTDe-R_HI1wywYtEYr-DJa5HdTnI8dsjZer6g",
-				"y":   "Kz8meL8U3jpnY1PcKdFpM3zjZspPMbD3j6J-AIcAivk",
-			},
-		},
+		Jwks:   set,
 	}, nil
 }
 
 type validTestMetadataFetcher struct{}
 
 func (f *validTestMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
+	set := jwk.NewSet()
+	set.AddKey(testdata.ParseIssuerPubJwk())
+
 	return IssuerMetadata{
 		Issuer: url,
-		Jwks: []any{
-			// public key corresponding to the test issuer private key in the test files
-			map[string]string{
-				"crv": "P-256",
-				"kty": "EC",
-				"x":   "Sr7bMrDTDe-R_HI1wywYtEYr-DJa5HdTnI8dsjZer6g",
-				"y":   "Kz8meL8U3jpnY1PcKdFpM3zjZspPMbD3j6J-AIcAivk",
-			},
-		},
+		Jwks:   set,
 	}, nil
 }
 
 type validTestMetadataFetcherMultipleKeys struct{}
 
 func (f *validTestMetadataFetcherMultipleKeys) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
+	set := jwk.NewSet()
+	set.AddKey(testdata.ParseHolderPubJwk())
+	set.AddKey(testdata.ParseIssuerPubJwk())
+
 	return IssuerMetadata{
 		Issuer: "https://openid4vc.staging.yivi.app",
-		Jwks: []any{
-			map[string]string{
-				"crv": "P-256",
-				"kty": "EC",
-				"x":   "-R_HI1wywYtEYr-DJa5HdTnI8dsjZer6g",
-				"y":   "meL8U3jpnY1PcKdFpM3zjZspPMbD3j6J-AIcAivk",
-			},
-			// public key corresponding to the test issuer private key in the test files
-			map[string]string{
-				"crv": "P-256",
-				"kty": "EC",
-				"x":   "Sr7bMrDTDe-R_HI1wywYtEYr-DJa5HdTnI8dsjZer6g",
-				"y":   "Kz8meL8U3jpnY1PcKdFpM3zjZspPMbD3j6J-AIcAivk",
-			},
-		},
+		Jwks:   set,
 	}, nil
 }
 
@@ -252,26 +229,14 @@ func newEmptyTestConfig() testSdJwtVcConfig {
 }
 
 func createIssuerCnfField() CnfField {
-	holderPubKey := map[string]any{
-		"crv": "P-256",
-		"kty": "EC",
-		"x":   "Sr7bMrDTDe-R_HI1wywYtEYr-DJa5HdTnI8dsjZer6g",
-		"y":   "Kz8meL8U3jpnY1PcKdFpM3zjZspPMbD3j6J-AIcAivk",
-	}
 	return CnfField{
-		Jwk: holderPubKey,
+		Jwk: testdata.ParseIssuerPubJwk(),
 	}
 }
 
 func createHolderCnfField() CnfField {
-	holderPubKey := map[string]any{
-		"crv": "P-256",
-		"kty": "EC",
-		"x":   "JD5EI6ijOi69WvYGjUWxJngbRDBwBwsOF7j1ERDWOJ4",
-		"y":   "64ugJiqHoqtotdJda9QUUUDsovVXOlSttxGCfKM1yqQ",
-	}
 	return CnfField{
-		Jwk: holderPubKey,
+		Jwk: testdata.ParseHolderPubJwk(),
 	}
 }
 
@@ -490,7 +455,7 @@ func addTestKbJwt(config testSdJwtVcConfig, sdjwtvc SdJwtVc) (SdJwtVc, error) {
 		return "", err
 	}
 
-	header := map[string]string{}
+	header := map[string]any{}
 	if config.kbjwtTypHeader != nil {
 		header[Key_Typ] = *config.kbjwtTypHeader
 	}
@@ -529,7 +494,7 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 		issuerPayload[Key_SdAlg] = *config.sdAlg
 	}
 
-	issuerHeader := map[string]string{}
+	issuerHeader := map[string]any{}
 
 	if config.typHeader != nil {
 		issuerHeader[Key_Typ] = *config.typHeader

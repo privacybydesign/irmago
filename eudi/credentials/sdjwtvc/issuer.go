@@ -4,24 +4,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
 type SdJwtVcBuilder struct {
-	lifetime             *int64
-	issuerUrl            *string
-	allowNonHttps        bool
-	cnfPubKey            *CnfField
-	status               *string
-	subject              *string
-	vct                  *string
-	sdAlg                *HashingAlgorithm
-	disclosures          []DisclosureContent
-	clock                *Clock
-	ensureHaipCompatible bool
+	issuerCertificateChain *[]string
+	lifetime               *int64
+	issuerUrl              *string
+	allowNonHttps          bool
+	cnfPubKey              *CnfField
+	status                 *string
+	subject                *string
+	vct                    *string
+	sdAlg                  *HashingAlgorithm
+	disclosures            []DisclosureContent
+	clock                  *Clock
+	ensureHaipCompatible   bool
 }
 
 func NewSdJwtVcBuilder() *SdJwtVcBuilder {
 	return &SdJwtVcBuilder{}
+}
+
+func (b *SdJwtVcBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtVcBuilder {
+	b.issuerCertificateChain = &certChain
+	return b
 }
 
 func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuerUrl(allowNonHttps bool) *SdJwtVcBuilder {
@@ -74,9 +82,9 @@ func (b *SdJwtVcBuilder) WithClock(clock Clock) *SdJwtVcBuilder {
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithHolderKey(jwk map[string]any) *SdJwtVcBuilder {
+func (b *SdJwtVcBuilder) WithHolderKey(key jwk.Key) *SdJwtVcBuilder {
 	b.cnfPubKey = &CnfField{
-		Jwk: jwk,
+		Jwk: key,
 	}
 	return b
 }
@@ -139,8 +147,12 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 		return "", fmt.Errorf("failed to serialize payload: %v", err)
 	}
 
-	headers := map[string]string{
+	headers := map[string]any{
 		"typ": SdJwtVcTyp,
+	}
+
+	if b.issuerCertificateChain != nil {
+		headers["x5c"] = b.issuerCertificateChain
 	}
 
 	jwt, err := jwtCreator.CreateSignedJwt(headers, string(payloadJson))

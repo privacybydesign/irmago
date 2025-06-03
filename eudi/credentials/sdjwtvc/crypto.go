@@ -13,7 +13,7 @@ import (
 )
 
 type JwtCreator interface {
-	CreateSignedJwt(customHeaderFields map[string]string, payload string) (string, error)
+	CreateSignedJwt(customHeaderFields map[string]any, payload string) (string, error)
 }
 
 type DefaultEcdsaJwtCreator struct {
@@ -33,7 +33,7 @@ func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (JwtCreator, error) {
 	}, err
 }
 
-func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]string, payload string) (string, error) {
+func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]any, payload string) (string, error) {
 	var claims jwt.MapClaims
 	err := json.Unmarshal([]byte(payload), &claims)
 

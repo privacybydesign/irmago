@@ -1,7 +1,9 @@
 package sdjwtvc
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -27,16 +29,7 @@ func NewJwxJwtVerifier() *JwxJwtVerifier {
 }
 
 func (v *JwxJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err error) {
-	keyJson, err := json.Marshal(keyAny)
-	if err != nil {
-		return []byte{}, err
-	}
-	key, err := jwk.ParseKey(keyJson)
-	if err != nil {
-		return []byte{}, fmt.Errorf("failed to parse key (%v) from json: %v", keyAny, err)
-	}
-
-	return jws.Verify([]byte(jwt), jws.WithKey(jwa.ES256(), key))
+	return jws.Verify([]byte(jwt), jws.WithKey(jwa.ES256(), keyAny))
 }
 
 type Clock interface {
@@ -219,15 +212,16 @@ func parseConfirmField(value any) (CnfField, error) {
 	if !ok {
 		return CnfField{}, fmt.Errorf("failed to parse as anymap: %v", value)
 	}
-	key, ok := anyMap["jwk"]
-	if !ok {
-		return CnfField{}, fmt.Errorf("cnf map doesn't contain a `jwk` field (%v)", anyMap)
+	keyAny, ok := anyMap["jwk"]
+	keyJson, err := json.Marshal(keyAny)
+	if err != nil {
+		return CnfField{}, err
 	}
-	anyMap, ok = key.(map[string]any)
-	if !ok {
-		return CnfField{}, fmt.Errorf("jwk field doens't contain an any map: %v", key)
+	key, err := jwk.ParseKey(keyJson)
+	if err != nil {
+		return CnfField{}, fmt.Errorf("failed to parse key (%v) from json: %v", value, err)
 	}
-	return CnfField{Jwk: anyMap}, nil
+	return CnfField{Jwk: key}, nil
 }
 
 func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSignedJwt, disclosures []EncodedDisclosure) (IssuerSignedJwtPayload, error) {
@@ -236,7 +230,7 @@ func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSigned
 		return IssuerSignedJwtPayload{}, err
 	}
 
-	err = verifyIssuerSignedJwtHeader(header)
+	err = verifyIssuerSignedJwtTyp(header)
 	if err != nil {
 		return IssuerSignedJwtPayload{}, err
 	}
@@ -256,11 +250,15 @@ func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSigned
 		return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse %s field: %v", Key_Confirmationkey, err)
 	}
 
+	issuer, err := utils.ExtractRequired[string](claims, Key_Issuer)
+	if err != nil {
+		return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse %s field: %v", Key_Issuer, err)
+	}
+
 	status := utils.ExtractOptional[string](claims, Key_Status)
 	subject := utils.ExtractOptional[string](claims, Key_Subject)
 	expiry := int64(utils.ExtractOptional[float64](claims, Key_ExpiryTime))
 	issuedAt := int64(utils.ExtractOptional[float64](claims, Key_IssuedAt))
-	issuer := utils.ExtractOptional[string](claims, Key_Issuer)
 	sdAlg := utils.ExtractOptional[string](claims, Key_SdAlg)
 	notBefore := int64(utils.ExtractOptional[float64](claims, Key_NotBefore))
 
@@ -277,14 +275,17 @@ func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSigned
 		NotBefore:                notBefore,
 	}
 
-	if issuer != "" {
-		if !strings.HasPrefix(issuer, "https://") && !context.AllowNonHttpsIssuer {
-			return IssuerSignedJwtPayload{}, fmt.Errorf("iss field should be https if it's included but is now %s", issuer)
-		}
-		err = verifyIssuerSignature(context, jwt, payload.Issuer)
-		if err != nil {
-			return IssuerSignedJwtPayload{}, err
-		}
+	if !strings.HasPrefix(issuer, "https://") && !context.AllowNonHttpsIssuer {
+		return IssuerSignedJwtPayload{}, fmt.Errorf("iss field should be https if it's included but is now %s", issuer)
+	}
+
+	if x509Chain, ok := header[Key_X5c]; ok {
+		err = verifyIssuerSignatureUsingX509Chain(x509Chain, jwt, payload.Issuer)
+	} else {
+		err = verifyIssuerSignatureUsingMetadata(context, jwt, payload.Issuer)
+	}
+	if err != nil {
+		return IssuerSignedJwtPayload{}, err
 	}
 
 	err = verifyPayloadContainsAllDisclosureHashes(payload, disclosures)
@@ -293,6 +294,52 @@ func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSigned
 	}
 
 	return payload, nil
+}
+
+func verifyIssuerSignatureUsingX509Chain(x509Chain any, jwt IssuerSignedJwt, issuerUrl string) error {
+	certs, ok := x509Chain.([]string)
+	if !ok {
+		return fmt.Errorf("failed to parse '%s' as []string", Key_X5c)
+	}
+
+	if len(certs) == 0 {
+		return fmt.Errorf("'%s' is not expected to be empty, but is", Key_X5c)
+	}
+
+	leafCert := []byte(certs[0])
+	fullCert := fmt.Sprintf("-----BEGIN CERTIFICATE-----\n%s\n-----END CERTIFICATE-----", leafCert)
+
+	block, _ := pem.Decode([]byte(fullCert))
+
+	if block == nil || block.Type != "CERTIFICATE" {
+		return fmt.Errorf("failed to parse end-entity certificate pem")
+	}
+
+	parsedCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return err
+	}
+
+	hostNameFound := false
+
+	for _, uri := range parsedCert.URIs {
+		if uri.Hostname() == issuerUrl {
+			hostNameFound = true
+		}
+	}
+
+	if !hostNameFound {
+		return fmt.Errorf("host name from '%s' (%s) not found in the certificate", Key_Issuer, issuerUrl)
+	}
+
+	// pubKey, ok := parsedCert.PublicKey.(ecdsa.PublicKey)
+	// // jwk, err := jwk.P
+	// if !ok {
+	// 	return fmt.Errorf("public key in certificate expected to be ECDSA but is not")
+	// }
+	//
+
+	return fmt.Errorf("failed to validate")
 }
 
 func verifyPayloadContainsAllDisclosureHashes(payload IssuerSignedJwtPayload, disclosures []EncodedDisclosure) error {
@@ -319,7 +366,7 @@ func Contains[T comparable](slice []T, value T) bool {
 	return false
 }
 
-func verifyIssuerSignature(context VerificationContext, issuerJwt IssuerSignedJwt, issuerUrl string) error {
+func verifyIssuerSignatureUsingMetadata(context VerificationContext, issuerJwt IssuerSignedJwt, issuerUrl string) error {
 	metadata, err := context.IssuerMetadataFetcher.FetchIssuerMetadata(issuerUrl)
 
 	if err != nil {
@@ -330,7 +377,16 @@ func verifyIssuerSignature(context VerificationContext, issuerJwt IssuerSignedJw
 		return fmt.Errorf("issuer url doens't match the one found in issuer metadata: jwt: %s != metadata: %s", issuerUrl, metadata.Issuer)
 	}
 
-	for _, key := range metadata.Jwks {
+	numKeys := metadata.Jwks.Len()
+	if numKeys == 0 {
+		return fmt.Errorf("metadata doesn't contain any keys")
+	}
+
+	for i := range numKeys {
+		key, ok := metadata.Jwks.Key(i)
+		if !ok {
+			continue
+		}
 		_, err := context.JwtVerifier.Verify(string(issuerJwt), key)
 
 		// no err, so valid signature
@@ -348,7 +404,7 @@ func verifyKeyBindingJwtHeader(header map[string]any) error {
 	return nil
 }
 
-func verifyIssuerSignedJwtHeader(header map[string]any) error {
+func verifyIssuerSignedJwtTyp(header map[string]any) error {
 	typ := header["typ"]
 	if typ != SdJwtVcTyp && typ != SdJwtVcTyp_Legacy {
 		return fmt.Errorf("issuer signed jwt header should have 'typ' of either %s or %s, but has %s", SdJwtVcTyp, SdJwtVcTyp_Legacy, typ)
@@ -361,7 +417,7 @@ type IssuerMetadata struct {
 	Issuer string
 
 	// Jwks pub keys of the issuer
-	Jwks []any
+	Jwks jwk.Set
 }
 
 type IssuerMetadataFetcher interface {
@@ -393,9 +449,9 @@ func (f *HttpIssuerMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetad
 	}
 
 	type specIssuerMetadata struct {
-		Issuer  string         `json:"issuer"`
-		Jwks    map[string]any `json:"jwks,omitempty"`
-		JwksUri string         `json:"jwks_uri,omitempty"`
+		Issuer  string          `json:"issuer"`
+		Jwks    json.RawMessage `json:"jwks,omitempty"`
+		JwksUri string          `json:"jwks_uri,omitempty"`
 	}
 	var result specIssuerMetadata
 	err = json.Unmarshal(body, &result)
@@ -404,9 +460,9 @@ func (f *HttpIssuerMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetad
 		return IssuerMetadata{}, err
 	}
 
-	jwks, ok := result.Jwks["keys"].([]any)
-	if !ok {
-		return IssuerMetadata{}, fmt.Errorf("jwks key is required, but not found in %v", result)
+	jwks, err := jwk.Parse(result.Jwks)
+	if err != nil {
+		return IssuerMetadata{}, err
 	}
 
 	return IssuerMetadata{

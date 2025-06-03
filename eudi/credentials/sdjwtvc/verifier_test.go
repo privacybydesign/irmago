@@ -21,6 +21,7 @@ import "testing"
 // - [x] unsupported _sd_alg
 // - [x] kbjwt doesn't contain the kb+jwt typ in header
 // - [x] failing to get issuer metadata fails the verifiction
+// - [x] no iss value provided
 //
 // success for
 // - [x] both vc+sd-jwt and dc+sd-jwt in typ header of issuer signed jwt
@@ -32,7 +33,6 @@ import "testing"
 // - [x] no kbjwt for otherwise valid sdjwtvc with disclosures
 // - [x] no kbjwt for otherwise valid sdjwtvc without disclosures
 // - [x] no kbjwt and no cnf field
-// - [x] no iss value provided
 // - [x] iss link is non-https, but is accepted (for testing purposes)
 
 // =======================================================================
@@ -166,10 +166,10 @@ func Test_NoSdHash_Fails(t *testing.T) {
 	errorTestCase(t, noHashConfig, "no sd_hash in kbjwt should fail")
 }
 
-func Test_MissingIssuerUrl_Success(t *testing.T) {
+func Test_MissingIssuerUrl_Fails(t *testing.T) {
 	missingIssuerUrl := newWorkingSdJwtTestConfig()
 	missingIssuerUrl.issuerUrl = nil
-	noErrorTestCase(t, missingIssuerUrl, "missing issuer url is valid")
+	errorTestCase(t, missingIssuerUrl, "missing issuer url is valid")
 }
 
 func Test_InvalidIssuerUrl_Fails(t *testing.T) {
