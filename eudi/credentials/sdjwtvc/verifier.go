@@ -364,6 +364,9 @@ func parseConfirmField(value any) (CnfField, error) {
 		return CnfField{}, fmt.Errorf("failed to parse as anymap: %v", value)
 	}
 	keyAny, ok := anyMap["jwk"]
+	if !ok {
+		return CnfField{}, errors.New("failed to get jwk field from cnf field")
+	}
 	keyJson, err := json.Marshal(keyAny)
 	if err != nil {
 		return CnfField{}, err
