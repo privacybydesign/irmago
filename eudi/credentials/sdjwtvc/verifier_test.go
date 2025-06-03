@@ -1,6 +1,11 @@
 package sdjwtvc
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/privacybydesign/irmago/testdata"
+	"github.com/stretchr/testify/require"
+)
 
 // fails for:
 // - [x] invalid jwt as the issuer signed jwt
@@ -22,6 +27,8 @@ import "testing"
 // - [x] kbjwt doesn't contain the kb+jwt typ in header
 // - [x] failing to get issuer metadata fails the verifiction
 // - [x] no iss value provided
+// - [x] valid self-signed x509 certificate with DNS/URI value that doesn't match `iss` value
+// - [x] valid self-signed x509 certificate that doesn't match a trusted certificate
 //
 // success for
 // - [x] both vc+sd-jwt and dc+sd-jwt in typ header of issuer signed jwt
@@ -34,8 +41,105 @@ import "testing"
 // - [x] no kbjwt for otherwise valid sdjwtvc without disclosures
 // - [x] no kbjwt and no cnf field
 // - [x] iss link is non-https, but is accepted (for testing purposes)
+// - [x] valid self-signed x509 certificate with DNS/URI value that matches `iss` value
 
 // =======================================================================
+
+func Test_Valid_SelfSigned_X509Cert_Success(t *testing.T) {
+	cert, err := ParseCertificateChain(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
+		"email": "test@mail.com",
+	})
+	require.NoError(t, err)
+
+	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	sdjwt, err := NewSdJwtVcBuilder().
+		WithIssuerCertificateChain(cert).
+		WithIssuerUrl("https://irma.app").
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithDisclosures(disclosures).
+		WithHashingAlgorithm(HashAlg_Sha256).
+		Build(creator)
+	require.NoError(t, err)
+
+	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+
+	context := VerificationContext{
+		Clock:                   NewSystemClock(),
+		JwtVerifier:             NewJwxJwtVerifier(),
+		X509VerificationOptions: verifyOpts,
+	}
+
+	_, err = ParseAndVerifySdJwtVc(context, sdjwt)
+	require.NoError(t, err)
+}
+
+func Test_X509_MismatchWithISS_Fails(t *testing.T) {
+	cert, err := ParseCertificateChain(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
+		"email": "test@mail.com",
+	})
+	require.NoError(t, err)
+
+	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	sdjwt, err := NewSdJwtVcBuilder().
+		WithIssuerCertificateChain(cert).
+		WithIssuerUrl("https://openid4vc.staging.yivi.app").
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithDisclosures(disclosures).
+		WithHashingAlgorithm(HashAlg_Sha256).
+		Build(creator)
+	require.NoError(t, err)
+
+	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+
+	context := VerificationContext{
+		Clock:                   NewSystemClock(),
+		JwtVerifier:             NewJwxJwtVerifier(),
+		X509VerificationOptions: verifyOpts,
+	}
+
+	_, err = ParseAndVerifySdJwtVc(context, sdjwt)
+	require.Error(t, err)
+}
+
+func Test_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {
+	cert, err := ParseCertificateChain(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
+		"email": "test@mail.com",
+	})
+	require.NoError(t, err)
+
+	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	sdjwt, err := NewSdJwtVcBuilder().
+		WithIssuerCertificateChain(cert).
+		WithIssuerUrl("https://irma.app").
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithDisclosures(disclosures).
+		WithHashingAlgorithm(HashAlg_Sha256).
+		Build(creator)
+	require.NoError(t, err)
+
+	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	require.NoError(t, err)
+
+	context := VerificationContext{
+		Clock:                   NewSystemClock(),
+		JwtVerifier:             NewJwxJwtVerifier(),
+		X509VerificationOptions: verifyOpts,
+	}
+
+	_, err = ParseAndVerifySdJwtVc(context, sdjwt)
+	require.Error(t, err)
+}
 
 func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")

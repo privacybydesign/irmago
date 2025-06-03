@@ -7,6 +7,8 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
+// For more details on these values check `testdata/eudi/readme.md`.
+
 //go:embed eudi/holder_ec_priv.pem
 var HolderPrivKeyBytes []byte
 
