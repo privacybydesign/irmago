@@ -93,7 +93,6 @@ func TestOpenID4VPClient(t *testing.T) {
 	t.Run("disclosing two credentials successfully", testDisclosingTwoCredentials_Success)
 }
 
-
 func testDisclosingTwoCredentials_Success(t *testing.T) {
 	url, err := startSessionAtEudiVerifier()
 	require.NoError(t, err)
@@ -161,7 +160,8 @@ const requestAuthorizationRequestRequest string = `
   },
   "nonce": "nonce",
   "jar_mode": "by_reference",
-  "request_uri_method": "post"
+  "request_uri_method": "post",
+  "issuer_chain": "-----BEGIN CERTIFICATE-----\nMIICIjCCAcigAwIBAgIUTcLOP9EE/e/TCb2cTG0tFfzL8+4wCgYIKoZIzj0EAwIw\nQTELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIzAhBgNVBAMMGm9wZW5pZDR2\nYy5zdGFnaW5nLnlpdmkuYXBwMB4XDTI1MDYwMjEzMDQxOFoXDTM1MDUzMTEzMDQx\nOFowQTELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIzAhBgNVBAMMGm9wZW5p\nZDR2Yy5zdGFnaW5nLnlpdmkuYXBwMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\nSr7bMrDTDe+R/HI1wywYtEYr+DJa5HdTnI8dsjZer6grPyZ4vxTeOmdjU9wp0Wkz\nfONmyk8xsPePon4AhwCK+aOBnTCBmjAMBgNVHRMBAf8EAjAAMAsGA1UdDwQEAwIF\noDATBgNVHSUEDDAKBggrgQICAAABBzBJBgNVHREEQjBAhiJodHRwczovL29wZW5p\nZDR2Yy5zdGFnaW5nLnlpdmkuYXBwghpvcGVuaWQ0dmMuc3RhZ2luZy55aXZpLmFw\ncDAdBgNVHQ4EFgQUNFp/ITlrNmraTYMsN3jijYUmLXswCgYIKoZIzj0EAwIDSAAw\nRQIgfOmEnTey2tleATASaE7iH22VFy3b1rrYGNhZkUNOLK4CIQD4pNqgAyvOsAMd\nkfM3veqe+fFWKPdlX4Nzj9QMGcXuBQ==\n-----END CERTIFICATE-----"
 }
 `
 
