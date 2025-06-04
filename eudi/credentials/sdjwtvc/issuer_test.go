@@ -8,7 +8,7 @@ import (
 )
 
 func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {
-	irmaAppCert, err := ParseCertificateChain(testdata.IssuerCert_irma_app_Bytes)
+	irmaAppCert, err := ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().

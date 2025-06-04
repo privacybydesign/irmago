@@ -37,10 +37,10 @@ func ParsePemCertificateChain(data []byte) ([]*x509.Certificate, error) {
 	return certs, nil
 }
 
-// ParseCertificateChain takes in the raw contents of a PEM formatted certificate
+// ParsePemCertificateChainToX5cFormat takes in the raw contents of a PEM formatted certificate
 // file and returns the contents of the chain in the format expected
 // as the `x5c` header parameter of a jwt.
-func ParseCertificateChain(data []byte) ([]string, error) {
+func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
 	certs, err := ParsePemCertificateChain(data)
 	if err != nil {
 		return nil, err

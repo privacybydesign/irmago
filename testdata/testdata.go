@@ -27,6 +27,9 @@ var IssuerCert_openid4vc_staging_yivi_app_Bytes []byte
 //go:embed eudi/issuer_cert_irma_app.pem
 var IssuerCert_irma_app_Bytes []byte
 
+//go:embed eudi/issuer_cert_chain_irma_app.pem
+var IssuerCertChain_irma_app_Bytes []byte
+
 func ParseHolderPubJwk() jwk.Key {
 	key, err := jwk.ParseKey(HolderPubJwkBytes)
 	if err != nil {

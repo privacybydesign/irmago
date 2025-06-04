@@ -42,11 +42,19 @@ import (
 // - [x] no kbjwt and no cnf field
 // - [x] iss link is non-https, but is accepted (for testing purposes)
 // - [x] valid self-signed x509 certificate with DNS/URI value that matches `iss` value
+// - [x] valid x509 certificate chain with DNS/URI value that matches `iss` value
 
 // =======================================================================
 
-func Test_Valid_SelfSigned_X509Cert_Success(t *testing.T) {
-	cert, err := ParseCertificateChain(testdata.IssuerCert_irma_app_Bytes)
+type x509TestConfig struct {
+	IssuerCertChain   []byte
+	VerifierCertChain []byte
+	IssUrl            string
+	ShouldFail        bool
+}
+
+func runCertChainTest(t *testing.T, config x509TestConfig) {
+	chain, err := ParsePemCertificateChainToX5cFormat(config.IssuerCertChain)
 	require.NoError(t, err)
 
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{
@@ -56,15 +64,15 @@ func Test_Valid_SelfSigned_X509Cert_Success(t *testing.T) {
 
 	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwt, err := NewSdJwtVcBuilder().
-		WithIssuerCertificateChain(cert).
-		WithIssuerUrl("https://irma.app").
+		WithIssuerCertificateChain(chain).
+		WithIssuerUrl(config.IssUrl).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithDisclosures(disclosures).
 		WithHashingAlgorithm(HashAlg_Sha256).
 		Build(creator)
 	require.NoError(t, err)
 
-	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_irma_app_Bytes)
+	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(config.VerifierCertChain)
 	require.NoError(t, err)
 
 	context := VerificationContext{
@@ -74,71 +82,65 @@ func Test_Valid_SelfSigned_X509Cert_Success(t *testing.T) {
 	}
 
 	_, err = ParseAndVerifySdJwtVc(context, sdjwt)
-	require.NoError(t, err)
+	if config.ShouldFail {
+		require.Error(t, err)
+	} else {
+		require.NoError(t, err)
+	}
+}
+
+func Test_ValidLeafCertOnly_Success(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCertChain_irma_app_Bytes,
+		IssUrl:            "https://irma.app",
+		ShouldFail:        false,
+	})
+}
+
+func Test_Valid_X509Chain_WrongISS_Failure(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCertChain_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCertChain_irma_app_Bytes,
+		IssUrl:            "https://openid4vc.staging.yivi.app",
+		ShouldFail:        true,
+	})
+}
+
+func Test_Valid_X509Chain_Success(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCertChain_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCertChain_irma_app_Bytes,
+		IssUrl:            "https://irma.app",
+		ShouldFail:        false,
+	})
+}
+
+func Test_Valid_SelfSigned_X509Cert_Success(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCert_irma_app_Bytes,
+		IssUrl:            "https://irma.app",
+		ShouldFail:        false,
+	})
 }
 
 func Test_X509_MismatchWithISS_Fails(t *testing.T) {
-	cert, err := ParseCertificateChain(testdata.IssuerCert_irma_app_Bytes)
-	require.NoError(t, err)
-
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"email": "test@mail.com",
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCert_irma_app_Bytes,
+		IssUrl:            "https://openid4vc.staging.yivi.app",
+		ShouldFail:        true,
 	})
-	require.NoError(t, err)
-
-	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdjwt, err := NewSdJwtVcBuilder().
-		WithIssuerCertificateChain(cert).
-		WithIssuerUrl("https://openid4vc.staging.yivi.app").
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
-		WithDisclosures(disclosures).
-		WithHashingAlgorithm(HashAlg_Sha256).
-		Build(creator)
-	require.NoError(t, err)
-
-	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_irma_app_Bytes)
-	require.NoError(t, err)
-
-	context := VerificationContext{
-		Clock:                   NewSystemClock(),
-		JwtVerifier:             NewJwxJwtVerifier(),
-		X509VerificationOptions: verifyOpts,
-	}
-
-	_, err = ParseAndVerifySdJwtVc(context, sdjwt)
-	require.Error(t, err)
 }
 
 func Test_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {
-	cert, err := ParseCertificateChain(testdata.IssuerCert_irma_app_Bytes)
-	require.NoError(t, err)
-
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"email": "test@mail.com",
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
+		IssUrl:            "https://irma.app",
+		ShouldFail:        true,
 	})
-	require.NoError(t, err)
-
-	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdjwt, err := NewSdJwtVcBuilder().
-		WithIssuerCertificateChain(cert).
-		WithIssuerUrl("https://irma.app").
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
-		WithDisclosures(disclosures).
-		WithHashingAlgorithm(HashAlg_Sha256).
-		Build(creator)
-	require.NoError(t, err)
-
-	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	require.NoError(t, err)
-
-	context := VerificationContext{
-		Clock:                   NewSystemClock(),
-		JwtVerifier:             NewJwxJwtVerifier(),
-		X509VerificationOptions: verifyOpts,
-	}
-
-	_, err = ParseAndVerifySdJwtVc(context, sdjwt)
-	require.Error(t, err)
 }
 
 func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
