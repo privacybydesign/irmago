@@ -1,12 +1,12 @@
 production: true
-url: "https://localhost:8088"
-tls_cert_file: "./testdata/configurations/certs/localhost.crt"
-tls_privkey_file: "./testdata/configurations/certs/localhost.key"
+url: "http://localhost:8088"
+no_tls: true
 no_auth: false
 no_email: true
 allow_unsigned_callbacks: true
 
 sdjwt_issuance:
+  issuer: "http://localhost:8088"
   sdjwt_privkey_file: "./testdata/eudi/issuer_ec_priv.pem"
 
 requestors:

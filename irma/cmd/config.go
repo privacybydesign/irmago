@@ -70,6 +70,7 @@ func configureIRMAServer() (*server.Configuration, error) {
 		AllowUnsignedCallbacks: viper.GetBool("allow_unsigned_callbacks"),
 		AugmentClientReturnURL: viper.GetBool("augment_client_return_url"),
 		SdJwtIssuanceSettings: &server.SdJwtIssuanceSettings{
+			Issuer:            viper.GetString("sdjwt_issuance.issuer"),
 			JwtPrivateKey:     viper.GetString("sdjwt_issuance.sdjwt_privkey"),
 			JwtPrivateKeyFile: viper.GetString("sdjwt_issuance.sdjwt_privkey_file"),
 		},

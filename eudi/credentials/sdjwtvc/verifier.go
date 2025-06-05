@@ -211,14 +211,6 @@ func (c *StaticClock) Now() int64 {
 
 // ========================================================================
 
-type IssuerMetadata struct {
-	// The issuer identifier, MUST be identical to the `iss` field in the issuer signed jwt
-	Issuer string
-
-	// Jwks pub keys of the issuer
-	Jwks jwk.Set
-}
-
 type IssuerMetadataFetcher interface {
 	FetchIssuerMetadata(url string) (IssuerMetadata, error)
 }

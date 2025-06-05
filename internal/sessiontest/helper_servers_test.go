@@ -343,6 +343,7 @@ func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	irmaServerConf.DisableTLS = true
 	irmaServerConf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
+		Issuer:            "https://example.app/yivi-issuer",
 		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
 	}
 	return &requestorserver.Configuration{
