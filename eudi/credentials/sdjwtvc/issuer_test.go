@@ -1,10 +1,28 @@
 package sdjwtvc
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/privacybydesign/irmago/testdata"
+	"github.com/stretchr/testify/require"
+)
+
+func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {
+	irmaAppCert, err := ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+
+	builder := NewSdJwtVcBuilder().
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithIssuerUrl("https://irma.app").
+		WithIssuerCertificateChain(irmaAppCert)
+
+	requireValidSdJwtVc(t, builder)
+}
 
 func Test_BuildSdJwtVc_BareMinimum_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email")
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithIssuerUrl("https://example.app")
 	requireValidSdJwtVc(t, builder)
 }
 
@@ -43,7 +61,8 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 	builder := NewSdJwtVcBuilder().
 		WithHashingAlgorithm(HashAlg_Sha256).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
-		WithDisclosures(disclosures)
+		WithDisclosures(disclosures).
+		WithIssuerUrl("https://openid4vc.staging.yivi.app")
 
 	requireValidSdJwtVc(t, builder)
 }

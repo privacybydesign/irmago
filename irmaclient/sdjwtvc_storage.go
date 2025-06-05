@@ -377,6 +377,11 @@ func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.S
 		return "", err
 	}
 
+	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
+	if err != nil {
+		return "", err
+	}
+
 	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
 	return sdjwtvc.NewSdJwtVcBuilder().
 		WithDisclosures(contents).
@@ -386,6 +391,7 @@ func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.S
 		WithIssuerUrl(issuerUrl).
 		WithClock(sdjwtvc.NewSystemClock()).
 		WithLifetime(1000000000).
+		WithIssuerCertificateChain(certChain).
 		Build(signer)
 }
 
@@ -393,7 +399,6 @@ func NewInMemorySdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
 	storage := &InMemorySdJwtVcStorage{
 		entries: []sdjwtvcStorageEntry{},
 	}
-
 	return storage, nil
 }
 

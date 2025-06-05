@@ -54,7 +54,7 @@ func (c *DefaultKbJwtCreator) CreateKbJwt(hash string, holderKey jwk.Key, nonce 
 	if err != nil {
 		return "", err
 	}
-	customHeaders := map[string]string{
+	customHeaders := map[string]any{
 		"typ": KbJwtTyp,
 	}
 

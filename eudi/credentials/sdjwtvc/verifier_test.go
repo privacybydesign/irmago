@@ -1,6 +1,11 @@
 package sdjwtvc
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/privacybydesign/irmago/testdata"
+	"github.com/stretchr/testify/require"
+)
 
 // fails for:
 // - [x] invalid jwt as the issuer signed jwt
@@ -21,6 +26,9 @@ import "testing"
 // - [x] unsupported _sd_alg
 // - [x] kbjwt doesn't contain the kb+jwt typ in header
 // - [x] failing to get issuer metadata fails the verifiction
+// - [x] no iss value provided
+// - [x] valid self-signed x509 certificate with DNS/URI value that doesn't match `iss` value
+// - [x] valid self-signed x509 certificate that doesn't match a trusted certificate
 //
 // success for
 // - [x] both vc+sd-jwt and dc+sd-jwt in typ header of issuer signed jwt
@@ -32,10 +40,108 @@ import "testing"
 // - [x] no kbjwt for otherwise valid sdjwtvc with disclosures
 // - [x] no kbjwt for otherwise valid sdjwtvc without disclosures
 // - [x] no kbjwt and no cnf field
-// - [x] no iss value provided
 // - [x] iss link is non-https, but is accepted (for testing purposes)
+// - [x] valid self-signed x509 certificate with DNS/URI value that matches `iss` value
+// - [x] valid x509 certificate chain with DNS/URI value that matches `iss` value
 
 // =======================================================================
+
+type x509TestConfig struct {
+	IssuerCertChain   []byte
+	VerifierCertChain []byte
+	IssUrl            string
+	ShouldFail        bool
+}
+
+func runCertChainTest(t *testing.T, config x509TestConfig) {
+	chain, err := ParsePemCertificateChainToX5cFormat(config.IssuerCertChain)
+	require.NoError(t, err)
+
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
+		"email": "test@mail.com",
+	})
+	require.NoError(t, err)
+
+	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	sdjwt, err := NewSdJwtVcBuilder().
+		WithIssuerCertificateChain(chain).
+		WithIssuerUrl(config.IssUrl).
+		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithDisclosures(disclosures).
+		WithHashingAlgorithm(HashAlg_Sha256).
+		Build(creator)
+	require.NoError(t, err)
+
+	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(config.VerifierCertChain)
+	require.NoError(t, err)
+
+	context := VerificationContext{
+		Clock:                   NewSystemClock(),
+		JwtVerifier:             NewJwxJwtVerifier(),
+		X509VerificationOptions: verifyOpts,
+	}
+
+	_, err = ParseAndVerifySdJwtVc(context, sdjwt)
+	if config.ShouldFail {
+		require.Error(t, err)
+	} else {
+		require.NoError(t, err)
+	}
+}
+
+func Test_ValidLeafCertOnly_Success(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCertChain_irma_app_Bytes,
+		IssUrl:            "https://irma.app",
+		ShouldFail:        false,
+	})
+}
+
+func Test_Valid_X509Chain_WrongISS_Failure(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCertChain_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCertChain_irma_app_Bytes,
+		IssUrl:            "https://openid4vc.staging.yivi.app",
+		ShouldFail:        true,
+	})
+}
+
+func Test_Valid_X509Chain_Success(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCertChain_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCertChain_irma_app_Bytes,
+		IssUrl:            "https://irma.app",
+		ShouldFail:        false,
+	})
+}
+
+func Test_Valid_SelfSigned_X509Cert_Success(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCert_irma_app_Bytes,
+		IssUrl:            "https://irma.app",
+		ShouldFail:        false,
+	})
+}
+
+func Test_X509_MismatchWithISS_Fails(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCert_irma_app_Bytes,
+		IssUrl:            "https://openid4vc.staging.yivi.app",
+		ShouldFail:        true,
+	})
+}
+
+func Test_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {
+	runCertChainTest(t, x509TestConfig{
+		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
+		VerifierCertChain: testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
+		IssUrl:            "https://irma.app",
+		ShouldFail:        true,
+	})
+}
 
 func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")
@@ -166,10 +272,10 @@ func Test_NoSdHash_Fails(t *testing.T) {
 	errorTestCase(t, noHashConfig, "no sd_hash in kbjwt should fail")
 }
 
-func Test_MissingIssuerUrl_Success(t *testing.T) {
+func Test_MissingIssuerUrl_Fails(t *testing.T) {
 	missingIssuerUrl := newWorkingSdJwtTestConfig()
 	missingIssuerUrl.issuerUrl = nil
-	noErrorTestCase(t, missingIssuerUrl, "missing issuer url is valid")
+	errorTestCase(t, missingIssuerUrl, "missing issuer url is valid")
 }
 
 func Test_InvalidIssuerUrl_Fails(t *testing.T) {

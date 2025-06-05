@@ -9,7 +9,7 @@ const request = {
         "id": "32f54163-7166-48f1-93d8-ff217bdb0653",
         "format": "dc+sd-jwt",
         "meta": {
-          "vct_values": ["pbdf.pbdf.email"]
+          "vct_values": ["pbdf.sidn-pbdf.email"]
         },
         "claims": [
           {
@@ -24,7 +24,7 @@ const request = {
         "id": "32f54163-7166-48f1-93d8-ff217bdb0654",
         "format": "dc+sd-jwt",
         "meta": {
-          "vct_values": ["pbdf.pbdf.mobilenumber"]
+          "vct_values": ["pbdf.sidn-pbdf.mobilenumber"]
         },
         "claims": [
           {

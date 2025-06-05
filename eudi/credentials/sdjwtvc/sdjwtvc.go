@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
 // The format of an SD-JWT VC:
@@ -128,7 +130,7 @@ type EncodedDisclosure string
 type HashedDisclosure string
 
 type CnfField struct {
-	Jwk map[string]any `json:"jwk"`
+	Jwk jwk.Key `json:"jwk"`
 }
 
 type HashingAlgorithm string
@@ -150,7 +152,7 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 		jsonValues[Key_SdAlg] = payload.SdAlg
 	}
 
-	if len(payload.Confirm.Jwk) != 0 {
+	if payload.Confirm.Jwk != nil {
 		jsonValues[Key_Confirmationkey] = payload.Confirm
 	}
 
@@ -202,6 +204,7 @@ const (
 	Key_Status                   string = "status"
 	Key_NotBefore                string = "nbf"
 	Key_Typ                      string = "typ"
+	Key_X5c                      string = "x5c"
 
 	SdJwtVcTyp        string = "dc+sd-jwt"
 	SdJwtVcTyp_Legacy string = "vc+sd-jwt"
@@ -224,7 +227,8 @@ type IssuerSignedJwtPayload struct {
 	// OPTIONAL: time of issuance
 	IssuedAt int64
 
-	// OPTIONAL: https url of the issuer. The verifier will look up a well-known based on this address
+	// REQUIRED: https url of the issuer. The verifier will look up a well-known based on this address
+	// or verify the credential via a x.509 certificate chain
 	Issuer string
 
 	// OPTIONAL: list of hashed -> base64url encoded disclosures
@@ -372,7 +376,7 @@ func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator
 		return "", err
 	}
 
-	customHeaders := map[string]string{
+	customHeaders := map[string]any{
 		"typ": SdJwtVcTyp,
 	}
 	jwt, err := jwtCreator.CreateSignedJwt(customHeaders, json)

@@ -1,27 +1,83 @@
 package sdjwtvc
 
 import (
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"strings"
+
+	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
+// ParsePemCertificateChain takes in the raw contents of a PEM formatted certificate
+// file and returns the contents as a list of x509 certificates.
+func ParsePemCertificateChain(data []byte) ([]*x509.Certificate, error) {
+	var certs []*x509.Certificate
+	rest := data
+
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+
+		certs = append(certs, cert)
+	}
+
+	return certs, nil
+}
+
+// ParsePemCertificateChainToX5cFormat takes in the raw contents of a PEM formatted certificate
+// file and returns the contents of the chain in the format expected
+// as the `x5c` header parameter of a jwt.
+func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
+	certs, err := ParsePemCertificateChain(data)
+	if err != nil {
+		return nil, err
+	}
+
+	x5c := []string{}
+
+	for _, cert := range certs {
+		encoded := base64.StdEncoding.EncodeToString(cert.Raw)
+		x5c = append(x5c, encoded)
+	}
+
+	return x5c, nil
+}
+
 type SdJwtVcBuilder struct {
-	lifetime             *int64
-	issuerUrl            *string
-	allowNonHttps        bool
-	cnfPubKey            *CnfField
-	status               *string
-	subject              *string
-	vct                  *string
-	sdAlg                *HashingAlgorithm
-	disclosures          []DisclosureContent
-	clock                *Clock
-	ensureHaipCompatible bool
+	issuerCertificateChain *[]string
+	lifetime               *int64
+	issuerUrl              *string
+	allowNonHttps          bool
+	cnfPubKey              *CnfField
+	status                 *string
+	subject                *string
+	vct                    *string
+	sdAlg                  *HashingAlgorithm
+	disclosures            []DisclosureContent
+	clock                  *Clock
+	ensureHaipCompatible   bool
 }
 
 func NewSdJwtVcBuilder() *SdJwtVcBuilder {
 	return &SdJwtVcBuilder{}
+}
+
+func (b *SdJwtVcBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtVcBuilder {
+	b.issuerCertificateChain = &certChain
+	return b
 }
 
 func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuerUrl(allowNonHttps bool) *SdJwtVcBuilder {
@@ -74,9 +130,9 @@ func (b *SdJwtVcBuilder) WithClock(clock Clock) *SdJwtVcBuilder {
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithHolderKey(jwk map[string]any) *SdJwtVcBuilder {
+func (b *SdJwtVcBuilder) WithHolderKey(key jwk.Key) *SdJwtVcBuilder {
 	b.cnfPubKey = &CnfField{
-		Jwk: jwk,
+		Jwk: key,
 	}
 	return b
 }
@@ -139,8 +195,12 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 		return "", fmt.Errorf("failed to serialize payload: %v", err)
 	}
 
-	headers := map[string]string{
+	headers := map[string]any{
 		"typ": SdJwtVcTyp,
+	}
+
+	if b.issuerCertificateChain != nil {
+		headers["x5c"] = b.issuerCertificateChain
 	}
 
 	jwt, err := jwtCreator.CreateSignedJwt(headers, string(payloadJson))
