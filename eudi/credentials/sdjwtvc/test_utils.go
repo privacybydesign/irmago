@@ -138,15 +138,7 @@ func readHolderPublicJwk() (CnfField, error) {
 
 // =======================================================================
 
-func createProductionVerificationContext() VerificationContext {
-	return VerificationContext{
-		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 NewSystemClock(),
-		JwtVerifier:           NewJwxJwtVerifier(),
-	}
-}
-
-func createTestVerificationContext(allowNonHttpsIssuer bool) VerificationContext {
+func CreateTestVerificationContext(allowNonHttpsIssuer bool) VerificationContext {
 	return VerificationContext{
 		Clock:                 &testClock{},
 		IssuerMetadataFetcher: &validTestMetadataFetcher{},

@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
@@ -289,6 +290,11 @@ func doSession(
 	}
 
 	opts := processOptions(options...)
+
+	if opts.enabled(optionExpectSdJwts) {
+		client.SetSdJwtVerificationContext(sdjwtvc.CreateTestVerificationContext(true))
+	}
+
 	serv, conf, shouldStop := startServer(t, opts, irmaServer, requestorServer, config)
 	if shouldStop {
 		defer serv.Stop()

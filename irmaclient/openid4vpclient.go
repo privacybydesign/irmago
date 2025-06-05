@@ -30,6 +30,38 @@ type OpenID4VPClient struct {
 }
 
 func NewOpenID4VPClient(storage SdJwtVcStorage, keybinder sdjwtvc.KbJwtCreator) (*OpenID4VPClient, error) {
+
+	// ignoring all errors here, since it's not production code anyway
+	mobilephoneEntry, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+		map[string]any{
+			"mobilenumber": "+31612345678",
+		},
+	)
+
+	info, _, _ := createCredentialInfoAndVerifiedSdJwtVc(mobilephoneEntry, sdjwtvc.CreateDefaultVerificationContext())
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{mobilephoneEntry})
+
+	emailEntry, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "test@gmail.com",
+		"domain": "gmail.com",
+	})
+
+	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry, sdjwtvc.CreateDefaultVerificationContext())
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry})
+
+	emailEntry2, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "yivi@gmail.com",
+		"domain": "gmail.com",
+	})
+
+	emailEntry3, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "yivi@gmail.com",
+		"domain": "gmail.com",
+	})
+
+	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry2, sdjwtvc.CreateDefaultVerificationContext())
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry2, emailEntry3})
+
 	return &OpenID4VPClient{
 		KeyBinder:     keybinder,
 		Compatibility: openid4vp.Compatibility_Draft24,

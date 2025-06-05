@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -77,12 +78,14 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 	require.NoError(t, err)
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
+	sdjwtStorage, err := NewInMemorySdJwtVcStorage()
 
 	client, _ := NewIrmaClient(
 		conf,
 		handler,
 		signer,
 		storage,
+		sdjwtStorage,
 	)
 	require.NoError(t, err)
 
@@ -493,6 +496,40 @@ func TestCredentialsConcurrency(t *testing.T) {
 
 		grp.Wait()
 	}
+}
+
+func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer client.Close()
+
+	sdjwt, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+		map[string]any{
+			"mobilenumber": "+31612345678",
+		},
+	)
+
+	cred := irma.CredentialRequest{}
+
+	err := client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+
+	require.NoError(t, err)
+}
+
+func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer client.Close()
+
+	sdjwt, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "http://openid4vc.staging.yivi.app",
+		map[string]any{
+			"mobilenumber": "+31612345678",
+		},
+	)
+
+	cred := irma.CredentialRequest{}
+
+	err := client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+
+	require.Error(t, err)
 }
 
 // ------
