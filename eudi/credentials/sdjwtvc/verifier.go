@@ -49,8 +49,6 @@ type VerifiedSdJwtVc struct {
 	KeyBindingJwt          *KeyBindingJwtPayload
 }
 
-// ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via
-// the context parameter.
 func CreateDefaultVerificationContext() VerificationContext {
 	return VerificationContext{
 		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
@@ -59,6 +57,8 @@ func CreateDefaultVerificationContext() VerificationContext {
 	}
 }
 
+// ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via
+// the context parameter.
 func ParseAndVerifySdJwtVc(context VerificationContext, sdjwtvc SdJwtVc) (VerifiedSdJwtVc, error) {
 	issuerSignedJwt, disclosures, keyBindingJwt, err := SplitSdJwtVc(sdjwtvc)
 	if err != nil {
@@ -210,6 +210,7 @@ func (c *StaticClock) Now() int64 {
 }
 
 // ========================================================================
+
 type IssuerMetadata struct {
 	// The issuer identifier, MUST be identical to the `iss` field in the issuer signed jwt
 	Issuer string
