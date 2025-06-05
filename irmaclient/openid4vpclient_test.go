@@ -11,6 +11,7 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,6 +85,8 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	storage, err := NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
+	addTestCredentialsToStorage(storage)
+
 	client, err := NewOpenID4VPClient(storage, kbjwtCreator)
 	require.NoError(t, err)
 	return client
@@ -109,7 +112,7 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 			{
 				&irma.AttributeIdentifier{
 					Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
-					CredentialHash: "kwlv0iugBeRMl9h5KBVatl4o5YWfu8lje6c9I90yFkI",
+					CredentialHash: "2gLLz0ZpYXXW6-I1jZ3wBEggQ5eR7KKbdIvJLm5O8y8",
 				},
 			},
 			{
@@ -127,7 +130,8 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 	require.True(t, success)
 }
 
-const requestAuthorizationRequestRequest string = `
+func createAuthorizationRequestRequest() string {
+	return fmt.Sprintf(`
 {
   "type": "vp_token",  
   "dcql_query": {
@@ -161,14 +165,17 @@ const requestAuthorizationRequestRequest string = `
   "nonce": "nonce",
   "jar_mode": "by_reference",
   "request_uri_method": "post",
-  "issuer_chain": "-----BEGIN CERTIFICATE-----\nMIICIjCCAcigAwIBAgIUTcLOP9EE/e/TCb2cTG0tFfzL8+4wCgYIKoZIzj0EAwIw\nQTELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIzAhBgNVBAMMGm9wZW5pZDR2\nYy5zdGFnaW5nLnlpdmkuYXBwMB4XDTI1MDYwMjEzMDQxOFoXDTM1MDUzMTEzMDQx\nOFowQTELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIzAhBgNVBAMMGm9wZW5p\nZDR2Yy5zdGFnaW5nLnlpdmkuYXBwMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\nSr7bMrDTDe+R/HI1wywYtEYr+DJa5HdTnI8dsjZer6grPyZ4vxTeOmdjU9wp0Wkz\nfONmyk8xsPePon4AhwCK+aOBnTCBmjAMBgNVHRMBAf8EAjAAMAsGA1UdDwQEAwIF\noDATBgNVHSUEDDAKBggrgQICAAABBzBJBgNVHREEQjBAhiJodHRwczovL29wZW5p\nZDR2Yy5zdGFnaW5nLnlpdmkuYXBwghpvcGVuaWQ0dmMuc3RhZ2luZy55aXZpLmFw\ncDAdBgNVHQ4EFgQUNFp/ITlrNmraTYMsN3jijYUmLXswCgYIKoZIzj0EAwIDSAAw\nRQIgfOmEnTey2tleATASaE7iH22VFy3b1rrYGNhZkUNOLK4CIQD4pNqgAyvOsAMd\nkfM3veqe+fFWKPdlX4Nzj9QMGcXuBQ==\n-----END CERTIFICATE-----"
+  "issuer_chain": "%s"
 }
-`
+`,
+		string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+	)
+}
 
 func startSessionAtEudiVerifier() (string, error) {
 	response, err := http.Post("http://0.0.0.0:8080/ui/presentations",
 		"application/json",
-		bytes.NewReader([]byte(requestAuthorizationRequestRequest)))
+		bytes.NewReader([]byte(createAuthorizationRequestRequest())))
 
 	if err != nil {
 		return "", err
