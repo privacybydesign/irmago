@@ -378,6 +378,9 @@ func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.S
 	}
 
 	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
+	if err != nil {
+		return "", err
+	}
 
 	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
 	return sdjwtvc.NewSdJwtVcBuilder().
