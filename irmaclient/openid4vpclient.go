@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/testdata"
 )
 
 // ========================================================================
@@ -360,50 +361,56 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResul
 	return <-choiceChan
 }
 
-func authVerifier(token *jwt.Token) (key any, err error) {
-	typ, ok := token.Header["typ"]
-	if !ok {
-		return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
-	}
-	if typ != openid4vp.AuthRequestJwtTyp {
-		return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", openid4vp.AuthRequestJwtTyp, typ)
-	}
+func createAuthRequestVerifier(trustedCertificates *x509.VerifyOptions) jwt.Keyfunc {
+	return func(token *jwt.Token) (any, error) {
+		typ, ok := token.Header["typ"]
+		if !ok {
+			return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
+		}
+		if typ != openid4vp.AuthRequestJwtTyp {
+			return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", openid4vp.AuthRequestJwtTyp, typ)
+		}
 
-	x5c, ok := token.Header["x5c"]
-	if !ok {
-		return nil, fmt.Errorf("auth request token doesn't contain x5c field in the header")
-	}
+		x5c, ok := token.Header["x5c"]
+		if !ok {
+			return nil, fmt.Errorf("auth request token doesn't contain x5c field in the header")
+		}
 
-	certs, ok := x5c.([]any)
-	if !ok {
-		return nil, fmt.Errorf("auth request token doesn't contain valid x5c field in the header")
-	}
+		certs, ok := x5c.([]any)
+		if !ok {
+			return nil, fmt.Errorf("auth request token doesn't contain valid x5c field in the header")
+		}
 
-	endEntityString, ok := certs[0].(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to convert end-entity to string: %v", certs[0])
-	}
+		endEntityString, ok := certs[0].(string)
+		if !ok {
+			return nil, fmt.Errorf("failed to convert end-entity to string: %v", certs[0])
+		}
 
-	der, err := base64.StdEncoding.DecodeString(endEntityString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
-	}
+		der, err := base64.StdEncoding.DecodeString(endEntityString)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
+		}
 
-	parsedCert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, err
-	}
+		parsedCert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
+		}
 
-	// _, err = parsedCert.Verify(*context.X509VerificationOptions)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains")
-	// }
-	return parsedCert.PublicKey, nil
-	// return nil, nil
+		_, err = parsedCert.Verify(*trustedCertificates)
+		if err != nil {
+			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains: %v", err)
+		}
+
+		return parsedCert.PublicKey, nil
+	}
 }
 
 func parseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRequest, error) {
-	token, err := jwt.ParseWithClaims(string(authReqJwt), &openid4vp.AuthorizationRequest{}, authVerifier)
+	trusted, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.VerifierCertChain_localhost_Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create trusted certificate verification options")
+	}
+	token, err := jwt.ParseWithClaims(string(authReqJwt), &openid4vp.AuthorizationRequest{}, createAuthRequestVerifier(trusted))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
