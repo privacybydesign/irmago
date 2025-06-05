@@ -1,6 +1,8 @@
 package irmaclient
 
 import (
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -130,7 +132,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 	}
 
 	logMarshalled("choice:", choice)
-	credentials, err := client.getCredentialsForChoices(candidates.queryIdMap, choice.Attributes, request.Nonce)
+	credentials, err := client.getCredentialsForChoices(candidates.queryIdMap, choice.Attributes, request.Nonce, request.ClientId)
 
 	if err != nil {
 		return err
@@ -169,6 +171,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	queryIdMap map[irma.AttributeIdentifier]string,
 	choices [][]*irma.AttributeIdentifier,
 	nonce string,
+	clientId string,
 ) ([]dcql.QueryResponse, error) {
 	// map of attribute identifiers by the dcql query id
 	attributesByQueryId := map[string][]*irma.AttributeIdentifier{}
@@ -209,7 +212,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to select disclosures: %v", err)
 		}
 
-		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.KeyBinder, nonce)
+		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.KeyBinder, nonce, clientId)
 		if err != nil {
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to create kbjwt: %v", err)
 		}
@@ -357,10 +360,7 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResul
 	return <-choiceChan
 }
 
-func parseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRequest, error) {
-	parser := jwt.NewParser()
-	token, _, err := parser.ParseUnverified(string(authReqJwt), &openid4vp.AuthorizationRequest{})
-
+func authVerifier(token *jwt.Token) (key any, err error) {
 	typ, ok := token.Header["typ"]
 	if !ok {
 		return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
@@ -369,8 +369,44 @@ func parseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRe
 		return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", openid4vp.AuthRequestJwtTyp, typ)
 	}
 
+	x5c, ok := token.Header["x5c"]
+	if !ok {
+		return nil, fmt.Errorf("auth request token doesn't contain x5c field in the header")
+	}
+
+	certs, ok := x5c.([]any)
+	if !ok {
+		return nil, fmt.Errorf("auth request token doesn't contain valid x5c field in the header")
+	}
+
+	endEntityString, ok := certs[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("failed to convert end-entity to string: %v", certs[0])
+	}
+
+	der, err := base64.StdEncoding.DecodeString(endEntityString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
+	}
+
+	parsedCert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, err
+	}
+
+	// _, err = parsedCert.Verify(*context.X509VerificationOptions)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains")
+	// }
+	return parsedCert.PublicKey, nil
+	// return nil, nil
+}
+
+func parseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRequest, error) {
+	token, err := jwt.ParseWithClaims(string(authReqJwt), &openid4vp.AuthorizationRequest{}, authVerifier)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
 	}
 
 	claims := token.Claims.(*openid4vp.AuthorizationRequest)
