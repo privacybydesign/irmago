@@ -377,6 +377,8 @@ func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.S
 		return "", err
 	}
 
+	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
+
 	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
 	return sdjwtvc.NewSdJwtVcBuilder().
 		WithDisclosures(contents).
@@ -386,9 +388,7 @@ func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.S
 		WithIssuerUrl(issuerUrl).
 		WithClock(sdjwtvc.NewSystemClock()).
 		WithLifetime(1000000000).
-		WithIssuerCertificateChain([]string{
-			"MIICIjCCAcigAwIBAgIUTcLOP9EE/e/TCb2cTG0tFfzL8+4wCgYIKoZIzj0EAwIwQTELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIzAhBgNVBAMMGm9wZW5pZDR2Yy5zdGFnaW5nLnlpdmkuYXBwMB4XDTI1MDYwMjEzMDQxOFoXDTM1MDUzMTEzMDQxOFowQTELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIzAhBgNVBAMMGm9wZW5pZDR2Yy5zdGFnaW5nLnlpdmkuYXBwMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESr7bMrDTDe+R/HI1wywYtEYr+DJa5HdTnI8dsjZer6grPyZ4vxTeOmdjU9wp0WkzfONmyk8xsPePon4AhwCK+aOBnTCBmjAMBgNVHRMBAf8EAjAAMAsGA1UdDwQEAwIFoDATBgNVHSUEDDAKBggrgQICAAABBzBJBgNVHREEQjBAhiJodHRwczovL29wZW5pZDR2Yy5zdGFnaW5nLnlpdmkuYXBwghpvcGVuaWQ0dmMuc3RhZ2luZy55aXZpLmFwcDAdBgNVHQ4EFgQUNFp/ITlrNmraTYMsN3jijYUmLXswCgYIKoZIzj0EAwIDSAAwRQIgfOmEnTey2tleATASaE7iH22VFy3b1rrYGNhZkUNOLK4CIQD4pNqgAyvOsAMdkfM3veqe+fFWKPdlX4Nzj9QMGcXuBQ==",
-		}).
+		WithIssuerCertificateChain(certChain).
 		Build(signer)
 }
 
