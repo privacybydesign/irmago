@@ -47,7 +47,9 @@ func New(
 		JwtCreator: jwtCreator,
 	}
 
-	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, &kbjwtCreator)
+	verifierValidator := NewRequestorSchemeVerifierValidator()
+
+	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, &kbjwtCreator)
 	if err != nil {
 		return nil, err
 	}

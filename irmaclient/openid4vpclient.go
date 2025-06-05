@@ -24,16 +24,22 @@ import (
 // ========================================================================
 
 type OpenID4VPClient struct {
-	KeyBinder     sdjwtvc.KbJwtCreator
-	Storage       SdJwtVcStorage
-	Compatibility openid4vp.CompatibilityMode
+	keyBinder         sdjwtvc.KbJwtCreator
+	storage           SdJwtVcStorage
+	verifierValidator VerifierValidator
+	compatibility     openid4vp.CompatibilityMode
 }
 
-func NewOpenID4VPClient(storage SdJwtVcStorage, keybinder sdjwtvc.KbJwtCreator) (*OpenID4VPClient, error) {
+func NewOpenID4VPClient(
+	storage SdJwtVcStorage,
+	verifierValidator VerifierValidator,
+	keybinder sdjwtvc.KbJwtCreator,
+) (*OpenID4VPClient, error) {
 	return &OpenID4VPClient{
-		KeyBinder:     keybinder,
-		Compatibility: openid4vp.Compatibility_Draft24,
-		Storage:       storage,
+		keyBinder:         keybinder,
+		compatibility:     openid4vp.Compatibility_Draft24,
+		storage:           storage,
+		verifierValidator: verifierValidator,
 	}, nil
 }
 
@@ -84,13 +90,13 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 			return
 		}
 
-		request, err := parseAuthorizationRequestJwt(string(jawd))
+		request, requestorInfo, err := client.verifierValidator.VerifyAuthorizationRequest(string(jawd))
 		if err != nil {
 			handlerFailure(handler, "openid4vp: failed to read authorization request jwt: %v", err)
 			return
 		}
 		irma.Logger.Infof("auth request: %#v\n", request)
-		err = client.handleAuthorizationRequest(request, handler)
+		err = client.handleAuthorizationRequest(request, requestorInfo, handler)
 
 		if err != nil {
 			handlerFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
@@ -118,14 +124,18 @@ func logMarshalled(message string, value any) {
 	}
 }
 
-func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.AuthorizationRequest, handler Handler) error {
+func (client *OpenID4VPClient) handleAuthorizationRequest(
+	request *openid4vp.AuthorizationRequest,
+	requestorInfo *irma.RequestorInfo,
+	handler Handler,
+) error {
 	candidates, err := client.getCandidates(request.DcqlQuery)
 
 	if err != nil {
 		return err
 	}
 
-	choice := client.requestAndAwaitPermission(candidates, handler)
+	choice := client.requestAndAwaitPermission(candidates, requestorInfo, handler)
 	if choice == nil {
 		irma.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
 		handler.Cancelled()
@@ -143,7 +153,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 
 	httpClient := http.Client{}
 	authResponse := AuthorizationResponseConfig{
-		CompatibilityMode: client.Compatibility,
+		CompatibilityMode: client.compatibility,
 		State:             request.State,
 		QueryResponses:    credentials,
 		ResponseUri:       request.ResponseUri,
@@ -198,7 +208,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 
 	queryResponses := []dcql.QueryResponse{}
 	for queryId, attributes := range attributesByQueryId {
-		sdjwt, err := client.Storage.GetCredentialByHash(attributes[0].CredentialHash)
+		sdjwt, err := client.storage.GetCredentialByHash(attributes[0].CredentialHash)
 		if err != nil {
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to get credential: %v", err)
 		}
@@ -213,7 +223,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to select disclosures: %v", err)
 		}
 
-		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.KeyBinder, nonce, clientId)
+		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.keyBinder, nonce, clientId)
 		if err != nil {
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to create kbjwt: %v", err)
 		}
@@ -284,7 +294,7 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 
 	credCandidates := []DisclosureCandidates{}
 
-	entries := client.Storage.GetCredentialsForId(credentialId)
+	entries := client.storage.GetCredentialsForId(credentialId)
 
 	// when no entries are found, the query is not satisfiable
 	if len(entries) == 0 {
@@ -321,10 +331,56 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 	}, nil
 }
 
-func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResult, handler Handler) *irma.DisclosureChoice {
+func (client *OpenID4VPClient) requestAndAwaitPermission(
+	queryResult *queryResult,
+	requestorInfo *irma.RequestorInfo,
+	handler Handler,
+) *irma.DisclosureChoice {
 	disclosureRequest := &irma.DisclosureRequest{}
 
-	requestorInfo := irma.RequestorInfo{
+	choiceChan := make(chan *irma.DisclosureChoice, 1)
+
+	handler.RequestVerificationPermission(
+		disclosureRequest,
+		queryResult.satisfiable,
+		queryResult.candidates,
+		requestorInfo,
+		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+			if proceed {
+				choiceChan <- choice
+			} else {
+				choiceChan <- nil
+			}
+		},
+		),
+	)
+
+	return <-choiceChan
+}
+
+// VerifierValidator is an interface to be used to verify verifiers by parsing and verifying the
+// authorization request and returning the requestor info for the verifier.
+type VerifierValidator interface {
+	VerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *irma.RequestorInfo, error)
+}
+
+type RequestorSchemeVerifierValidator struct{}
+
+func NewRequestorSchemeVerifierValidator() VerifierValidator {
+	return &RequestorSchemeVerifierValidator{}
+}
+
+func (v *RequestorSchemeVerifierValidator) VerifyAuthorizationRequest(requestJwt string) (
+	*openid4vp.AuthorizationRequest,
+	*irma.RequestorInfo,
+	error,
+) {
+	parsed, err := parseAuthorizationRequestJwt(requestJwt)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	requestorInfo := &irma.RequestorInfo{
 		ID:     irma.RequestorIdentifier{},
 		Scheme: irma.RequestorSchemeIdentifier{},
 		Name: map[string]string{
@@ -340,25 +396,7 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResul
 		Languages:  []string{},
 		Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
 	}
-
-	choiceChan := make(chan *irma.DisclosureChoice, 1)
-
-	handler.RequestVerificationPermission(
-		disclosureRequest,
-		queryResult.satisfiable,
-		queryResult.candidates,
-		&requestorInfo,
-		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
-			if proceed {
-				choiceChan <- choice
-			} else {
-				choiceChan <- nil
-			}
-		},
-		),
-	)
-
-	return <-choiceChan
+	return parsed, requestorInfo, nil
 }
 
 func createAuthRequestVerifier(trustedCertificates *x509.VerifyOptions) jwt.Keyfunc {

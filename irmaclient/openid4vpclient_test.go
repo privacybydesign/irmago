@@ -86,8 +86,8 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	require.NoError(t, err)
 
 	addTestCredentialsToStorage(storage)
-
-	client, err := NewOpenID4VPClient(storage, kbjwtCreator)
+	verifierValidator := NewRequestorSchemeVerifierValidator()
+	client, err := NewOpenID4VPClient(storage, verifierValidator, kbjwtCreator)
 	require.NoError(t, err)
 	return client
 }
