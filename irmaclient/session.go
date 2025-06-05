@@ -568,12 +568,20 @@ func (session *session) sendResponse(message interface{}) {
 			return
 		}
 		if session.Action == irma.ActionIssuing {
-			if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
+			issuanceRequest := session.request.(*irma.IssuanceRequest)
+			if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, issuanceRequest, session.builders); err != nil {
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 				return
 			}
-			// TODO: in case SD-JWTs are issued; also construct credentials for those as well
-			//if err = session.client.Construct
+
+			if issuanceRequest.RequestSdJwts && len(serverResponse.SdJwts) > 0 {
+				if err = session.client.VerifyAndStoreSdJwts(serverResponse.SdJwts, issuanceRequest.Credentials); err != nil {
+					// TODO: should we revert/remove all SD-JWTs and the stored IRMA credentials if this fails?
+					// TODO: add new error type for this; could be crypto related, but also verification/spec related
+					session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+					return
+				}
+			}
 		}
 	}
 

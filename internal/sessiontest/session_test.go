@@ -720,6 +720,7 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClien
 	opts := processOptions(options...)
 	if opts.enabled(optionExpectSdJwts) {
 		request.RequestSdJwts = true
+		// TODO: add assertion for resulting SD-JWTs
 	}
 
 	result := doSession(t, request, client, nil, nil, nil, nil, conf, options...)
