@@ -145,7 +145,7 @@ func Test_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {
 
 func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")
-	context := createTestVerificationContext(false)
+	context := CreateTestVerificationContext(false)
 
 	_, err := ParseAndVerifySdJwtVc(context, sdJwt)
 	requireErr(t, err)
@@ -180,13 +180,13 @@ func Test_FailingToFetchIssuerMetadata_Fails(t *testing.T) {
 }
 
 func Test_IssuerSignedJwt_WithInvalidTypHeader_Fails(t *testing.T) {
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, SdJwtVc(wrongIssuerSignedJwtTypHeader))
 	requireErr(t, err)
 }
 
 func Test_ValidSdJwtVc_NoDisclosures_NoKbJwt(t *testing.T) {
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoDisclosuresNoKbjwt)
 	requireNoErr(t, err)
 
@@ -200,13 +200,13 @@ func Test_ValidSdJwtVc_NoDisclosures_NoKbJwt(t *testing.T) {
 }
 
 func Test_ValidSdJwt_MismatchingHashInKbJwt_Fails(t *testing.T) {
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_MismatchingHashInKbJwt)
 	requireErr(t, err)
 }
 
 func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithKbJwt_Succeeds(t *testing.T) {
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_DcTypHeader)
 	requireNoErr(t, err)
 
@@ -220,7 +220,7 @@ func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithKbJwt_Succeeds(t *testi
 }
 
 func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_VcTypHeader)
 	requireNoErr(t, err)
 
@@ -234,7 +234,7 @@ func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
 }
 
 func Test_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoKbJwt)
 	requireNoErr(t, err)
 
@@ -249,13 +249,13 @@ func Test_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
 }
 
 func Test_InvalidSdJwtVc_MissingTrailingTilde_Fails(t *testing.T) {
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, invalidSdJwtVc_MissingTrailingTilde)
 	requireErr(t, err)
 }
 
 func Test_InvalidSdJwtVc_WrongKbJwtTypHeader_Fails(t *testing.T) {
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, invalidSdJwtVC_WrongKbTypHeader)
 	requireErr(t, err)
 }
@@ -477,7 +477,7 @@ func Test_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
 
 func errorTestCase(t *testing.T, config testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
 	if err == nil {
 		t.Fatalf("case '%s' failed: expected err, didn't get one", message)
@@ -486,7 +486,7 @@ func errorTestCase(t *testing.T, config testSdJwtVcConfig, message string) {
 
 func noErrorTestCase(t *testing.T, config testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
-	context := createProductionVerificationContext()
+	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
 	if err != nil {
 		t.Fatalf("case '%s' failed: expected no err, but got: %v", message, err)

@@ -51,6 +51,14 @@ type VerifiedSdJwtVc struct {
 
 // ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via
 // the context parameter.
+func CreateDefaultVerificationContext() VerificationContext {
+	return VerificationContext{
+		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
+		Clock:                 NewSystemClock(),
+		JwtVerifier:           NewJwxJwtVerifier(),
+	}
+}
+
 func ParseAndVerifySdJwtVc(context VerificationContext, sdjwtvc SdJwtVc) (VerifiedSdJwtVc, error) {
 	issuerSignedJwt, disclosures, keyBindingJwt, err := SplitSdJwtVc(sdjwtvc)
 	if err != nil {
@@ -193,8 +201,15 @@ func (c *SystemClock) Now() int64 {
 	return time.Now().Unix()
 }
 
-// ========================================================================
+type StaticClock struct {
+	CurrentTime int64
+}
 
+func (c *StaticClock) Now() int64 {
+	return c.CurrentTime
+}
+
+// ========================================================================
 type IssuerMetadata struct {
 	// The issuer identifier, MUST be identical to the `iss` field in the issuer signed jwt
 	Issuer string
@@ -214,9 +229,6 @@ func NewHttpIssuerMetadataFetcher() *HttpIssuerMetadataFetcher {
 }
 
 func (f *HttpIssuerMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
-	if !strings.HasPrefix(url, "https://") {
-		return IssuerMetadata{}, fmt.Errorf("issuer url needs to be https (%s)", url)
-	}
 	urlWithWellknown := fmt.Sprintf("%s/.well-known/jwt-vc-issuer", url)
 	response, err := http.Get(urlWithWellknown)
 

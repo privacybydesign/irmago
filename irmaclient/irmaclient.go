@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/concmap"
 )
 
@@ -51,8 +52,12 @@ type IrmaClient struct {
 
 	lookup map[string]*credLookup
 
-	// Where we store/load it to/from
+	// Where we store/load IRMA related data to/from
 	storage *storage
+
+	// Where we store/load SD-JWT-VC related data to/from
+	sdJwtVcStorage           SdJwtVcStorage
+	sdJwtVerificationContext sdjwtvc.VerificationContext
 
 	// Versions the client supports
 	minVersion *irma.ProtocolVersion
@@ -86,10 +91,14 @@ func NewIrmaClient(
 	handler ClientHandler,
 	signer Signer,
 	storage *storage,
+	sdJwtVcStorage SdJwtVcStorage,
 ) (*IrmaClient, error) {
 	var err error
 
 	client := &IrmaClient{
+		Configuration:   conf,
+		storage:         storage,
+		sdJwtVcStorage:  sdJwtVcStorage,
 		keyshareServers: make(map[irma.SchemeManagerIdentifier]*keyshareServer),
 		attributes:      make(map[irma.CredentialTypeIdentifier][]*irma.AttributeList),
 		handler:         handler,
@@ -97,8 +106,6 @@ func NewIrmaClient(
 		minVersion:      &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
 		maxVersion:      &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
 	}
-
-	client.Configuration = conf
 
 	schemeMgrErr := client.Configuration.ParseOrRestoreFolder()
 	// If schemMgrErr is of type SchemeManagerError, we continue and
@@ -109,7 +116,6 @@ func NewIrmaClient(
 	}
 
 	// Ensure storage path exists, and populate it with necessary files
-	client.storage = storage
 	if err = client.storage.Open(); err != nil {
 		return nil, err
 	}
@@ -146,6 +152,13 @@ func NewIrmaClient(
 	client.jobs = make(chan func(), 100)
 	client.initRevocation()
 	client.StartJobs()
+
+	client.sdJwtVerificationContext = sdjwtvc.VerificationContext{
+		IssuerMetadataFetcher: sdjwtvc.NewHttpIssuerMetadataFetcher(),
+		Clock:                 sdjwtvc.NewSystemClock(),
+		JwtVerifier:           sdjwtvc.NewJwxJwtVerifier(),
+		AllowNonHttpsIssuer:   false,
+	}
 
 	return client, schemeMgrErr
 }
@@ -1510,4 +1523,50 @@ func (dcs DisclosureCandidates) Choose() ([]*irma.AttributeIdentifier, error) {
 		ids = append(ids, attr.AttributeIdentifier)
 	}
 	return ids, nil
+}
+
+func (client *IrmaClient) SetSdJwtVerificationContext(context sdjwtvc.VerificationContext) {
+	client.sdJwtVerificationContext = context
+}
+
+// VerifyAndStoreSdJwts verifies the SD-JWTs and stores them in the SdJwtVcStorage.
+// SD-JWTs that are batch-issued should all have the exact same credential info (issuer, id, signedOn, expires, etc.), otherwise they cannot be stored together correctly.
+func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
+	// TODO: check if the correct amount of credentials has been issued for the requestedCredentials for batch requests
+	type credentialTuple struct {
+		credInfo *irma.CredentialInfo
+		sdjwt    sdjwtvc.SdJwtVc
+	}
+	credentialsMap := make(map[string][]credentialTuple)
+
+	for _, sdjwt := range sdjwts {
+		// TODO: check if the SD-JWT adheres to the requested credentials (e.g. if the credential ID and attributes etc match) ?
+		// If we don't check this, issuers might issue SD-JWTs that do not match the corresponding IRMA credential
+		credInfo, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwt, client.sdJwtVerificationContext)
+		if err != nil {
+			return err
+		}
+
+		// We use the credential info hash as the key to store the SD-JWTs in a map, NOT the credential info or credential ID.
+		// Because it is possible that multiple credentials with same credential ID, but different data (e.g. different attributes or minor differences in signedOn/expires)
+		// can be issued in a single request, we need to use the hash of the data itself to distinguish between them.
+		key := credInfo.Hash
+		tuple := credentialTuple{
+			credInfo: credInfo,
+			sdjwt:    sdjwt,
+		}
+		if _, exists := credentialsMap[key]; !exists {
+			credentialsMap[key] = []credentialTuple{tuple}
+		} else {
+			credentialsMap[key] = append(credentialsMap[key], tuple)
+		}
+	}
+
+	// Now that we've grouped the SD-JWTs by their credential info hash, we can store them
+	for _, v := range credentialsMap {
+		firstCredInfo := v[0].credInfo
+		client.sdJwtVcStorage.StoreCredential(*firstCredInfo, sdjwts)
+	}
+
+	return nil
 }

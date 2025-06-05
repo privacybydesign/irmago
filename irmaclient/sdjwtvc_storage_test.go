@@ -113,7 +113,7 @@ func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 		"domain": "gmail.com",
 	})
 	require.NoError(t, err)
-	info, err := createCredentialInfoFromSdJwtVc(sdjwt)
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwt, sdjwtvc.CreateDefaultVerificationContext())
 	require.NoError(t, err)
 	err = storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{sdjwt})
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func createMultipleSdJwtVcs(t *testing.T, vct string, issuer string, claims map[
 		require.NoError(t, err)
 		result = append(result, sdjwt)
 	}
-	info, err := createCredentialInfoFromSdJwtVc(result[0])
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext())
 	require.NoError(t, err)
 	return *info, result
 }
