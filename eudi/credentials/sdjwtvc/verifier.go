@@ -53,6 +53,14 @@ func (c *SystemClock) Now() int64 {
 	return time.Now().Unix()
 }
 
+type StaticClock struct {
+	CurrentTime int64
+}
+
+func (c *StaticClock) Now() int64 {
+	return c.CurrentTime
+}
+
 type VerificationContext struct {
 	IssuerMetadataFetcher IssuerMetadataFetcher
 	Clock                 Clock
@@ -65,6 +73,14 @@ type VerifiedSdJwtVc struct {
 	IssuerSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []DisclosureContent
 	KeyBindingJwt          *KeyBindingJwtPayload
+}
+
+func CreateDefaultVerificationContext() VerificationContext {
+	return VerificationContext{
+		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
+		Clock:                 NewSystemClock(),
+		JwtVerifier:           NewJwxJwtVerifier(),
+	}
 }
 
 func ParseAndVerifySdJwtVc(context VerificationContext, sdjwtvc SdJwtVc) (VerifiedSdJwtVc, error) {
@@ -375,9 +391,6 @@ func NewHttpIssuerMetadataFetcher() *HttpIssuerMetadataFetcher {
 }
 
 func (f *HttpIssuerMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
-	if !strings.HasPrefix(url, "https://") {
-		return IssuerMetadata{}, fmt.Errorf("issuer url needs to be https (%s)", url)
-	}
 	urlWithWellknown := fmt.Sprintf("%s/.well-known/jwt-vc-issuer", url)
 	response, err := http.Get(urlWithWellknown)
 

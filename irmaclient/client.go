@@ -61,7 +61,7 @@ func New(
 	}
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
-	irmaClient, err := NewIrmaClient(conf, handler, signer, storage)
+	irmaClient, err := NewIrmaClient(conf, handler, signer, storage, sdjwtvcStorage)
 	if err != nil {
 		return nil, err
 	}

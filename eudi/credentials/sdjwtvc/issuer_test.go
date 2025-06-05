@@ -77,7 +77,7 @@ func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	requireNoErr(t, err)
-	context := createTestVerificationContext(false)
+	context := CreateTestVerificationContext(false)
 	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
 	requireNoErr(t, err)
 }
@@ -86,7 +86,7 @@ func requireValidSdJwtVcWithNonHttpsIssuer(t *testing.T, builder *SdJwtVcBuilder
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	requireNoErr(t, err)
-	context := createTestVerificationContext(true)
+	context := CreateTestVerificationContext(true)
 	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
 	requireNoErr(t, err)
 }

@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"strings"
-	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -396,36 +394,6 @@ func NewInMemorySdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
 		entries: []sdjwtvcStorageEntry{},
 	}
 
-	// ignoring all errors here, since it's not production code anyway
-	mobilephoneEntry, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
-		map[string]any{
-			"mobilenumber": "+31612345678",
-		},
-	)
-
-	info, _ := createCredentialInfoFromSdJwtVc(mobilephoneEntry)
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{mobilephoneEntry})
-
-	emailEntry, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "test@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	info, _ = createCredentialInfoFromSdJwtVc(emailEntry)
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry})
-
-	emailEntry2, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "yivi@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	emailEntry3, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "yivi@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	info, _ = createCredentialInfoFromSdJwtVc(emailEntry2)
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry2, emailEntry3})
 	return storage, nil
 }
 
@@ -474,67 +442,4 @@ func (s *InMemorySdJwtVcStorage) StoreCredential(info irma.CredentialInfo, crede
 		rawRedentials: credentials,
 	})
 	return nil
-}
-
-func createCredentialInfoFromSdJwtVc(cred sdjwtvc.SdJwtVc) (*irma.CredentialInfo, error) {
-	ctx := sdjwtvc.VerificationContext{
-		IssuerMetadataFetcher: sdjwtvc.NewHttpIssuerMetadataFetcher(),
-		Clock:                 sdjwtvc.NewSystemClock(),
-		JwtVerifier:           sdjwtvc.NewJwxJwtVerifier(),
-	}
-	decoded, err := sdjwtvc.ParseAndVerifySdJwtVc(ctx, cred)
-
-	if err != nil {
-		return nil, err
-	}
-
-	attributes := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
-	for _, d := range decoded.Disclosures {
-		strValue, ok := d.Value.(string)
-		if !ok {
-			return nil, fmt.Errorf("failed to convert disclosure to string for attribute '%s'", d.Key)
-		}
-		schemeId := fmt.Sprintf("%s.%s", decoded.IssuerSignedJwtPayload.VerifiableCredentialType, d.Key)
-		id := irma.NewAttributeTypeIdentifier(schemeId)
-		attributes[id] = irma.TranslatedString{
-			"":   strValue,
-			"en": strValue,
-			"nl": strValue,
-		}
-	}
-
-	hashContent, err := json.Marshal(attributes)
-	if err != nil {
-		return nil, err
-	}
-
-	hash, err := sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, string(hashContent))
-	if err != nil {
-		return nil, err
-	}
-
-	idComponents := strings.Split(decoded.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
-	if num := len(idComponents); num != 3 {
-		return nil, fmt.Errorf(
-			"credential id expected to have exactly 3 components, separated by dots: %s",
-			decoded.IssuerSignedJwtPayload.VerifiableCredentialType,
-		)
-	}
-	info := irma.CredentialInfo{
-		ID:              idComponents[2],
-		IssuerID:        idComponents[1],
-		SchemeManagerID: idComponents[0],
-		SignedOn: irma.Timestamp(
-			time.Unix(decoded.IssuerSignedJwtPayload.IssuedAt, 0),
-		),
-		Expires: irma.Timestamp(
-			time.Unix(decoded.IssuerSignedJwtPayload.Expiry, 0),
-		),
-		Attributes:          attributes,
-		Hash:                hash,
-		Revoked:             false,
-		RevocationSupported: false,
-		CredentialFormat:    "dc+sd-jwt",
-	}
-	return &info, nil
 }

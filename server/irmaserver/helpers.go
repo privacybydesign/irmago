@@ -829,6 +829,9 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 	// An issuance request may contain multiple credentials, so we need to create a separate SD-JWT for each one
 	sdJwts := []sdjwtvc.SdJwtVc{}
 
+	systemClock := sdjwtvc.NewSystemClock()
+	staticClock := sdjwtvc.StaticClock{CurrentTime: systemClock.Now()}
+
 	for _, cred := range issuanceReq.Credentials {
 		disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
 		if err != nil {
@@ -842,6 +845,9 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 			WithAllowNonHttpsIssuerUrl(allowNonHttps).
 			WithVerifiableCredentialType(cred.CredentialTypeID.String()).
 			WithDisclosures(disclosures)
+
+		// Make sure all SD-JWTs have the same issuance and expiration dates; we therefor use a 'static' clock
+		b.WithClock(&staticClock)
 
 		sdJwt, err := b.Build(creator)
 
