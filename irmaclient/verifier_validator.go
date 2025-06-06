@@ -63,7 +63,7 @@ func (v *RequestorSchemeVerifierValidator) VerifyAuthorizationRequest(requestJwt
 		return nil, nil, fmt.Errorf("client_id expected to start with 'x509_san_dns:' but doesn't (%s)", parsed.ClientId)
 	}
 
-	hostname := strings.TrimLeft(parsed.ClientId, prefix)
+	hostname := strings.TrimPrefix(parsed.ClientId, prefix)
 	requestorInfo, ok := v.fakeScheme[hostname]
 	if !ok {
 		return nil, nil, fmt.Errorf("failed to get info for hostname: %s", hostname)
