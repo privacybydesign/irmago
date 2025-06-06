@@ -45,20 +45,21 @@ const request = {
       //     ]
       // }
     ],
-    "credential_sets": [
-      {
-        "options": [
-          [
-            "32f54163-7166-48f1-93d8-ff217bdb0653"
-          ]
-        ],
-        "purpose": "We need to verify your identity"
-      }
-    ]
+    // "credential_sets": [
+    //   {
+    //     "options": [
+    //       [
+    //         "32f54163-7166-48f1-93d8-ff217bdb0653"
+    //       ]
+    //     ],
+    //     "purpose": "We need to verify your identity"
+    //   }
+    // ]
   },
   "nonce": "nonce",
   "jar_mode": "by_reference",
-  "request_uri_method": "post"
+  "request_uri_method": "post",
+  "issuer_chain": "-----BEGIN CERTIFICATE-----\nMIICITCCAcigAwIBAgIUJmW4EIKWApJzMrgBjkLi8AnO3f8wCgYIKoZIzj0EAwIw\nQTELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIzAhBgNVBAMMGm9wZW5pZDR2\nYy5zdGFnaW5nLnlpdmkuYXBwMB4XDTI1MDYwMzA4MzQxNloXDTM1MDYwMTA4MzQx\nNlowQTELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIzAhBgNVBAMMGm9wZW5p\nZDR2Yy5zdGFnaW5nLnlpdmkuYXBwMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\nSr7bMrDTDe+R/HI1wywYtEYr+DJa5HdTnI8dsjZer6grPyZ4vxTeOmdjU9wp0Wkz\nfONmyk8xsPePon4AhwCK+aOBnTCBmjAMBgNVHRMBAf8EAjAAMAsGA1UdDwQEAwIF\noDATBgNVHSUEDDAKBggrgQICAAABBzBJBgNVHREEQjBAhiJodHRwczovL29wZW5p\nZDR2Yy5zdGFnaW5nLnlpdmkuYXBwghpvcGVuaWQ0dmMuc3RhZ2luZy55aXZpLmFw\ncDAdBgNVHQ4EFgQUNFp/ITlrNmraTYMsN3jijYUmLXswCgYIKoZIzj0EAwIDRwAw\nRAIgYDuyJIVAY/2XEoxU1802ztuawBc618Ygyz39PinWrk0CIH2kc3A3LsnYDWun\n6PY2x495dIntuwQAXq9ThYjvtOCE\n-----END CERTIFICATE-----",
 }
 
 function openApp(data: any) {

@@ -8,8 +8,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials"
@@ -21,48 +19,22 @@ import (
 // ========================================================================
 
 type OpenID4VPClient struct {
-	KeyBinder     sdjwtvc.KbJwtCreator
-	Storage       SdJwtVcStorage
-	Compatibility openid4vp.CompatibilityMode
+	keyBinder         sdjwtvc.KbJwtCreator
+	storage           SdJwtVcStorage
+	verifierValidator VerifierValidator
+	compatibility     openid4vp.CompatibilityMode
 }
 
-func NewOpenID4VPClient(storage SdJwtVcStorage, keybinder sdjwtvc.KbJwtCreator) (*OpenID4VPClient, error) {
-
-	// ignoring all errors here, since it's not production code anyway
-	mobilephoneEntry, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
-		map[string]any{
-			"mobilenumber": "+31612345678",
-		},
-	)
-
-	info, _, _ := createCredentialInfoAndVerifiedSdJwtVc(mobilephoneEntry, sdjwtvc.CreateDefaultVerificationContext())
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{mobilephoneEntry})
-
-	emailEntry, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "test@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry, sdjwtvc.CreateDefaultVerificationContext())
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry})
-
-	emailEntry2, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "yivi@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	emailEntry3, _ := createSdJwtVc("pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "yivi@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry2, sdjwtvc.CreateDefaultVerificationContext())
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry2, emailEntry3})
-
+func NewOpenID4VPClient(
+	storage SdJwtVcStorage,
+	verifierValidator VerifierValidator,
+	keybinder sdjwtvc.KbJwtCreator,
+) (*OpenID4VPClient, error) {
 	return &OpenID4VPClient{
-		KeyBinder:     keybinder,
-		Compatibility: openid4vp.Compatibility_Draft24,
-		Storage:       storage,
+		keyBinder:         keybinder,
+		compatibility:     openid4vp.Compatibility_Draft24,
+		storage:           storage,
+		verifierValidator: verifierValidator,
 	}, nil
 }
 
@@ -113,13 +85,13 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 			return
 		}
 
-		request, err := parseAuthorizationRequestJwt(string(jawd))
+		request, requestorInfo, err := client.verifierValidator.VerifyAuthorizationRequest(string(jawd))
 		if err != nil {
 			handlerFailure(handler, "openid4vp: failed to read authorization request jwt: %v", err)
 			return
 		}
 		irma.Logger.Infof("auth request: %#v\n", request)
-		err = client.handleAuthorizationRequest(request, handler)
+		err = client.handleAuthorizationRequest(request, requestorInfo, handler)
 
 		if err != nil {
 			handlerFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
@@ -147,14 +119,18 @@ func logMarshalled(message string, value any) {
 	}
 }
 
-func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.AuthorizationRequest, handler Handler) error {
+func (client *OpenID4VPClient) handleAuthorizationRequest(
+	request *openid4vp.AuthorizationRequest,
+	requestorInfo *irma.RequestorInfo,
+	handler Handler,
+) error {
 	candidates, err := client.getCandidates(request.DcqlQuery)
 
 	if err != nil {
 		return err
 	}
 
-	choice := client.requestAndAwaitPermission(candidates, handler)
+	choice := client.requestAndAwaitPermission(candidates, requestorInfo, handler)
 	if choice == nil {
 		irma.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
 		handler.Cancelled()
@@ -162,7 +138,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 	}
 
 	logMarshalled("choice:", choice)
-	credentials, err := client.getCredentialsForChoices(candidates.queryIdMap, choice.Attributes, request.Nonce)
+	credentials, err := client.getCredentialsForChoices(candidates.queryIdMap, choice.Attributes, request.Nonce, request.ClientId)
 
 	if err != nil {
 		return err
@@ -172,7 +148,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(request *openid4vp.Aut
 
 	httpClient := http.Client{}
 	authResponse := AuthorizationResponseConfig{
-		CompatibilityMode: client.Compatibility,
+		CompatibilityMode: client.compatibility,
 		State:             request.State,
 		QueryResponses:    credentials,
 		ResponseUri:       request.ResponseUri,
@@ -201,6 +177,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	queryIdMap map[irma.AttributeIdentifier]string,
 	choices [][]*irma.AttributeIdentifier,
 	nonce string,
+	clientId string,
 ) ([]dcql.QueryResponse, error) {
 	// map of attribute identifiers by the dcql query id
 	attributesByQueryId := map[string][]*irma.AttributeIdentifier{}
@@ -226,7 +203,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 
 	queryResponses := []dcql.QueryResponse{}
 	for queryId, attributes := range attributesByQueryId {
-		sdjwt, err := client.Storage.GetCredentialByHash(attributes[0].CredentialHash)
+		sdjwt, err := client.storage.GetCredentialByHash(attributes[0].CredentialHash)
 		if err != nil {
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to get credential: %v", err)
 		}
@@ -241,7 +218,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to select disclosures: %v", err)
 		}
 
-		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.KeyBinder, nonce)
+		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.keyBinder, nonce, clientId)
 		if err != nil {
 			return []dcql.QueryResponse{}, fmt.Errorf("failed to create kbjwt: %v", err)
 		}
@@ -312,7 +289,7 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 
 	credCandidates := []DisclosureCandidates{}
 
-	entries := client.Storage.GetCredentialsForId(credentialId)
+	entries := client.storage.GetCredentialsForId(credentialId)
 
 	// when no entries are found, the query is not satisfiable
 	if len(entries) == 0 {
@@ -349,25 +326,12 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 	}, nil
 }
 
-func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResult, handler Handler) *irma.DisclosureChoice {
+func (client *OpenID4VPClient) requestAndAwaitPermission(
+	queryResult *queryResult,
+	requestorInfo *irma.RequestorInfo,
+	handler Handler,
+) *irma.DisclosureChoice {
 	disclosureRequest := &irma.DisclosureRequest{}
-
-	requestorInfo := irma.RequestorInfo{
-		ID:     irma.RequestorIdentifier{},
-		Scheme: irma.RequestorSchemeIdentifier{},
-		Name: map[string]string{
-			"nl": "OpenID4VP Demo Verifier",
-			"en": "OpenID4VP Demo Verifier",
-		},
-		Industry:   &irma.TranslatedString{},
-		Hostnames:  []string{},
-		Logo:       new(string),
-		LogoPath:   new(string),
-		ValidUntil: &irma.Timestamp{},
-		Unverified: false,
-		Languages:  []string{},
-		Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
-	}
 
 	choiceChan := make(chan *irma.DisclosureChoice, 1)
 
@@ -375,7 +339,7 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResul
 		disclosureRequest,
 		queryResult.satisfiable,
 		queryResult.candidates,
-		&requestorInfo,
+		requestorInfo,
 		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 			if proceed {
 				choiceChan <- choice
@@ -387,27 +351,6 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(queryResult *queryResul
 	)
 
 	return <-choiceChan
-}
-
-func parseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRequest, error) {
-	parser := jwt.NewParser()
-	token, _, err := parser.ParseUnverified(string(authReqJwt), &openid4vp.AuthorizationRequest{})
-
-	typ, ok := token.Header["typ"]
-	if !ok {
-		return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
-	}
-	if typ != openid4vp.AuthRequestJwtTyp {
-		return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", openid4vp.AuthRequestJwtTyp, typ)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	claims := token.Claims.(*openid4vp.AuthorizationRequest)
-
-	return claims, nil
 }
 
 func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) (*http.Request, error) {

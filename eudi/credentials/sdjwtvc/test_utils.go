@@ -39,7 +39,7 @@ func createKbJwtWithTestHolderKey(t *testing.T, sdjwt SdJwtVc) KeyBindingJwt {
 	kbJwtCreator, err := NewKbJwtCreatorWithHolderTestKey()
 	requireNoErr(t, err)
 
-	kbjwt, err := CreateKbJwt(sdjwt, kbJwtCreator, "nonce")
+	kbjwt, err := CreateKbJwt(sdjwt, kbJwtCreator, "nonce", "Verifier")
 	requireNoErr(t, err)
 	return kbjwt
 }

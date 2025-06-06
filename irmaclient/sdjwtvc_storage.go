@@ -377,7 +377,7 @@ func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.S
 		return "", err
 	}
 
-	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
+	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	if err != nil {
 		return "", err
 	}
@@ -447,4 +447,38 @@ func (s *InMemorySdJwtVcStorage) StoreCredential(info irma.CredentialInfo, crede
 		rawRedentials: credentials,
 	})
 	return nil
+}
+
+func addTestCredentialsToStorage(storage SdJwtVcStorage) {
+	// ignoring all errors here, since it's not production code anyway
+	mobilephoneEntry, _ := createSdJwtVc("pbdf.sidn-pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+		map[string]any{
+			"mobilenumber": "+31612345678",
+		},
+	)
+
+	info, _, _ := createCredentialInfoAndVerifiedSdJwtVc(mobilephoneEntry, sdjwtvc.CreateDefaultVerificationContext())
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{mobilephoneEntry})
+
+	emailEntry, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "test@gmail.com",
+		"domain": "gmail.com",
+	})
+
+	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry, sdjwtvc.CreateDefaultVerificationContext())
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry})
+
+	emailEntry2, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "yivi@gmail.com",
+		"domain": "gmail.com",
+	})
+
+	emailEntry3, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "yivi@gmail.com",
+		"domain": "gmail.com",
+	})
+
+	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry2, sdjwtvc.CreateDefaultVerificationContext())
+	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry2, emailEntry3})
+
 }

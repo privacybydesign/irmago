@@ -23,12 +23,10 @@ func New(
 	signer Signer,
 	aesKey [32]byte,
 ) (*Client, error) {
-	var err error
-
-	if err = common.AssertPathExists(storagePath); err != nil {
+	if err := common.AssertPathExists(storagePath); err != nil {
 		return nil, err
 	}
-	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
+	if err := common.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
 	}
 
@@ -36,6 +34,8 @@ func New(
 	if err != nil {
 		return nil, err
 	}
+
+	addTestCredentialsToStorage(sdjwtvcStorage)
 
 	jwtCreator, err := sdjwtvc.NewDefaultEcdsaJwtCreatorWithHolderPrivateKey()
 	if err != nil {
@@ -47,7 +47,9 @@ func New(
 		JwtCreator: jwtCreator,
 	}
 
-	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, &kbjwtCreator)
+	verifierValidator := NewRequestorSchemeVerifierValidator()
+
+	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, &kbjwtCreator)
 	if err != nil {
 		return nil, err
 	}
