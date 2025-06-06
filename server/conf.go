@@ -140,6 +140,7 @@ type RedisSettings struct {
 }
 
 type SdJwtIssuanceSettings struct {
+	Issuer            string `json:"issuer,omitempty" mapstructure:"issuer"`
 	JwtPrivateKey     string `json:"sdjwt_privkey,omitempty" mapstructure:"sdjwt_privkey"`
 	JwtPrivateKeyFile string `json:"sdjwt_privkey_file,omitempty" mapstructure:"sdjwt_privkey_file"`
 
@@ -575,17 +576,23 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		return nil
 	}
 
-	keybytes, err := common.ReadKey(conf.SdJwtIssuanceSettings.JwtPrivateKey, conf.SdJwtIssuanceSettings.JwtPrivateKeyFile)
+	// Read the private key from the specified file or string
+	privKeyBytes, err := common.ReadKey(conf.SdJwtIssuanceSettings.JwtPrivateKey, conf.SdJwtIssuanceSettings.JwtPrivateKeyFile)
 	if err != nil {
 		return errors.WrapPrefix(err, "failed to read SD-JWT private key", 0)
 	}
-
-	conf.SdJwtIssuanceSettings.JwtEcdsaPrivateKey, err = jwt.ParseECPrivateKeyFromPEM(keybytes)
+	conf.SdJwtIssuanceSettings.JwtEcdsaPrivateKey, err = jwt.ParseECPrivateKeyFromPEM(privKeyBytes)
 	if err != nil {
 		return errors.WrapPrefix(err, "failed to parse SD-JWT private key", 0)
 	}
 
-	conf.Logger.Info("SD-JWT private key parsed, JWT endpoints enabled")
+	// We got a key-pair; this means SD-JWT issuance should be enabled
+	// Therefor, we need to check if this issuer is configured
+	if conf.SdJwtIssuanceSettings.Issuer == "" {
+		return errors.New("SD-JWT issuance enabled by configuring a key(file), but no issuer specified in configuration")
+	}
+
+	conf.Logger.Info("SD-JWT settings correctly configured; SD-JWT issuance enabled")
 	conf.SdJwtIssuanceSettings.Enabled = true
 
 	return nil

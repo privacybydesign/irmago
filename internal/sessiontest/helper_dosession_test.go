@@ -292,7 +292,9 @@ func doSession(
 	opts := processOptions(options...)
 
 	if opts.enabled(optionExpectSdJwts) {
-		client.SetSdJwtVerificationContext(sdjwtvc.CreateTestVerificationContext(true))
+		ctx := sdjwtvc.CreateTestVerificationContext(true)
+		ctx.Clock = &sdjwtvc.SystemClock{}
+		client.SetSdJwtVerificationContext(ctx)
 	}
 
 	serv, conf, shouldStop := startServer(t, opts, irmaServer, requestorServer, config)

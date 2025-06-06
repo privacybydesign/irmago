@@ -235,8 +235,9 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 
 	// Generate SD-JWT here if configured
 	var sdJwts []sdjwtvc.SdJwtVc
-	if conf.SdJwtIssuanceSettings.Enabled {
-		sdJwts, err = session.generateSdJwts(conf.SdJwtIssuanceSettings.JwtEcdsaPrivateKey, conf.URL, conf.DisableTLS)
+	settings := conf.SdJwtIssuanceSettings
+	if settings.Enabled {
+		sdJwts, err = session.generateSdJwts(settings.JwtEcdsaPrivateKey, settings.Issuer, conf.DisableTLS)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error(), conf)
 		}
