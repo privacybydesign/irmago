@@ -59,7 +59,7 @@ func (v *RequestorSchemeVerifierValidator) VerifyAuthorizationRequest(requestJwt
 
 	prefix := "x509_san_dns:"
 
-	if !strings.HasPrefix(parsed.ClientId, prefix)  {
+	if !strings.HasPrefix(parsed.ClientId, prefix) {
 		return nil, nil, fmt.Errorf("client_id expected to start with 'x509_san_dns:' but doesn't (%s)", parsed.ClientId)
 	}
 
