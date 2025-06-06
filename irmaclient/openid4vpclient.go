@@ -1,8 +1,6 @@
 package irmaclient
 
 import (
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,15 +8,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/go-errors/errors"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/testdata"
 )
 
 // ========================================================================
@@ -356,107 +351,6 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(
 	)
 
 	return <-choiceChan
-}
-
-// VerifierValidator is an interface to be used to verify verifiers by parsing and verifying the
-// authorization request and returning the requestor info for the verifier.
-type VerifierValidator interface {
-	VerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *irma.RequestorInfo, error)
-}
-
-type RequestorSchemeVerifierValidator struct{}
-
-func NewRequestorSchemeVerifierValidator() VerifierValidator {
-	return &RequestorSchemeVerifierValidator{}
-}
-
-func (v *RequestorSchemeVerifierValidator) VerifyAuthorizationRequest(requestJwt string) (
-	*openid4vp.AuthorizationRequest,
-	*irma.RequestorInfo,
-	error,
-) {
-	parsed, err := parseAuthorizationRequestJwt(requestJwt)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	requestorInfo := &irma.RequestorInfo{
-		ID:     irma.RequestorIdentifier{},
-		Scheme: irma.RequestorSchemeIdentifier{},
-		Name: map[string]string{
-			"nl": "OpenID4VP Demo Verifier",
-			"en": "OpenID4VP Demo Verifier",
-		},
-		Industry:   &irma.TranslatedString{},
-		Hostnames:  []string{},
-		Logo:       new(string),
-		LogoPath:   new(string),
-		ValidUntil: &irma.Timestamp{},
-		Unverified: false,
-		Languages:  []string{},
-		Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
-	}
-	return parsed, requestorInfo, nil
-}
-
-func createAuthRequestVerifier(trustedCertificates *x509.VerifyOptions) jwt.Keyfunc {
-	return func(token *jwt.Token) (any, error) {
-		typ, ok := token.Header["typ"]
-		if !ok {
-			return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
-		}
-		if typ != openid4vp.AuthRequestJwtTyp {
-			return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", openid4vp.AuthRequestJwtTyp, typ)
-		}
-
-		x5c, ok := token.Header["x5c"]
-		if !ok {
-			return nil, fmt.Errorf("auth request token doesn't contain x5c field in the header")
-		}
-
-		certs, ok := x5c.([]any)
-		if !ok {
-			return nil, fmt.Errorf("auth request token doesn't contain valid x5c field in the header")
-		}
-
-		endEntityString, ok := certs[0].(string)
-		if !ok {
-			return nil, fmt.Errorf("failed to convert end-entity to string: %v", certs[0])
-		}
-
-		der, err := base64.StdEncoding.DecodeString(endEntityString)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
-		}
-
-		parsedCert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
-		}
-
-		_, err = parsedCert.Verify(*trustedCertificates)
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains: %v", err)
-		}
-
-		return parsedCert.PublicKey, nil
-	}
-}
-
-func parseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRequest, error) {
-	trusted, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.VerifierCertChain_localhost_Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create trusted certificate verification options")
-	}
-	token, err := jwt.ParseWithClaims(string(authReqJwt), &openid4vp.AuthorizationRequest{}, createAuthRequestVerifier(trusted))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
-	}
-
-	claims := token.Claims.(*openid4vp.AuthorizationRequest)
-
-	return claims, nil
 }
 
 func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) (*http.Request, error) {
