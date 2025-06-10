@@ -107,6 +107,9 @@ type CredentialRequest struct {
 	RevocationKey               string                   `json:"revocationKey,omitempty"`
 	RevocationSupported         bool                     `json:"revocationSupported,omitempty"`
 	RandomBlindAttributeTypeIDs []string                 `json:"randomblindIDs,omitempty"`
+
+	// SD-JWT related fields
+	SdJwtBatchSize *uint `json:"sdJwtBatchSize,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
