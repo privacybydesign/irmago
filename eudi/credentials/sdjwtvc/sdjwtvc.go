@@ -253,7 +253,7 @@ type IssuerSignedJwtPayload struct {
 // IssuerSignedJwt is the issued signed jwt as a string (so only the section of the sd-jwt vc up to and NOT including the first ~)
 type IssuerSignedJwt string
 
-// SdJwtVc represents any full sd-jwt vc as a string, be it with or without disclosres or key binding jwt
+// SdJwtVc represents any full sd-jwt vc as a string, be it with or without disclosures or key binding jwt
 type SdJwtVc string
 
 // SdJwtVc_IssuerRepresentation is a representation of the SD-JWT VC that can be used by the issuer or holder to issue and disclose
