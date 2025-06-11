@@ -12,13 +12,167 @@ import (
 )
 
 func TestDcqlCandidateSelection(t *testing.T) {
-	t.Run("satisfiable single credential, single option", testDcqlSatisfiableSingleCredentialSingleOption)
-	t.Run("satisfiable single credential, multiple options", testDcqlSatisfiableSingleCredentialMultipleOptions)
+	t.Run("satisfiable single credential single option", testDcqlSatisfiableSingleCredentialSingleOption)
+	t.Run("satisfiable single credential multiple options", testDcqlSatisfiableSingleCredentialMultipleOptions)
 	t.Run("unsatisfiable single credential", testDcqlUnsatisfiableSingleCredential)
+	t.Run("satisfiable multiple credentials single option", testDcqlSatisfiableMultipleCredentialsSingleOption)
+	t.Run("unsatisfiable multiple credentials single available", testDcqlUnsatisfiableMultipleCredentialsSingleAvailable)
+	t.Run("unsatisfiable multiple crednetials none available", testDcqlUnSatisfiableMultipleCredentialsNoneAvailable)
+}
+
+func testDcqlUnSatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "123",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}]
+		}, {
+			"id": "789",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
+			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &queryResult{
+		Satisfiable: false,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+				},
+			},
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: "",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
+
+}
+
+func testDcqlUnsatisfiableMultipleCredentialsSingleAvailable(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "123",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}]
+		}, {
+			"id": "789",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
+			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+31612345678"})
+
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &queryResult{
+		Satisfiable: false,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+				},
+			},
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
+}
+
+func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "123",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}]
+		}, {
+			"id": "789",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
+			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "yivi@test.com"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+31612345678"})
+
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &queryResult{
+		Satisfiable: true,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: emailInfo.Hash,
+						},
+					},
+				},
+			},
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
 }
 
 func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
-	dcqlQuery := parseQuery(t, `{
+	dcqlQuery := parseTestQuery(t, `{
 		"credentials": [{
 			"id": "identifier",
 			"format": "dc+sd-jwt",
@@ -27,20 +181,15 @@ func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
 		}]
 	}`)
 
-	storage, err := NewInMemorySdJwtVcStorage()
-	require.NoError(t, err)
+	storage, _ := NewInMemorySdJwtVcStorage()
 
-	sdjwt1, info1 := createSdJwtAndInfo(t, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@email.com"})
-	err = storage.StoreCredential(*info1, []sdjwtvc.SdJwtVc{sdjwt1})
-	require.NoError(t, err)
-
-	sdjwt2, info2 := createSdJwtAndInfo(t, "pbdf.sidn-pbdf.email", map[string]string{"email": "test2@email.com"})
-	err = storage.StoreCredential(*info2, []sdjwtvc.SdJwtVc{sdjwt2})
+	info1 := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@email.com"})
+	info2 := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test2@email.com"})
 
 	candidates, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
 
-	requireSameCandidates(t, &queryResult{
+	expected := &queryResult{
 		Candidates: [][]DisclosureCandidates{
 			{
 				{
@@ -62,13 +211,13 @@ func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
 			},
 		},
 		Satisfiable: true,
-	},
-		candidates,
-	)
+	}
+
+	requireSameCandidates(t, expected, candidates)
 }
 
 func testDcqlUnsatisfiableSingleCredential(t *testing.T) {
-	dcqlQuery := parseQuery(t, `{
+	dcqlQuery := parseTestQuery(t, `{
 		"credentials": [{
 			"id": "12345",
 			"format": "dc+sd-jwt",
@@ -77,8 +226,7 @@ func testDcqlUnsatisfiableSingleCredential(t *testing.T) {
 		}]
 	}`)
 
-	storage, err := NewInMemorySdJwtVcStorage()
-	require.NoError(t, err)
+	storage, _ := NewInMemorySdJwtVcStorage()
 
 	candidates, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -102,7 +250,7 @@ func testDcqlUnsatisfiableSingleCredential(t *testing.T) {
 }
 
 func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
-	dcqlQuery := parseQuery(t, `{
+	dcqlQuery := parseTestQuery(t, `{
 		"credentials": [{
 			"id": "12345",
 			"format": "dc+sd-jwt",
@@ -111,12 +259,8 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 		}]
 	}`)
 
-	storage, err := NewInMemorySdJwtVcStorage()
-	require.NoError(t, err)
-
-	sdjwt, info := createSdJwtAndInfo(t, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@email.com"})
-	err = storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{sdjwt})
-	require.NoError(t, err)
+	storage, _ := NewInMemorySdJwtVcStorage()
+	info := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@email.com"})
 
 	candidates, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -139,6 +283,8 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 
 	requireSameCandidates(t, expected, candidates)
 }
+
+// ===========================================================================================
 
 func createSdJwtAndInfo(t *testing.T, credentialId string, attributes map[string]string) (sdjwtvc.SdJwtVc, *irma.CredentialInfo) {
 	sdjwt, err := createSdJwtVc(credentialId, "https://openid4vc.staging.yivi.app", attributes)
@@ -165,7 +311,15 @@ func requireSameCandidates(t *testing.T, expected *queryResult, result *queryRes
 	}
 }
 
-func parseQuery(t *testing.T, query string) (result dcql.DcqlQuery) {
+func parseTestQuery(t *testing.T, query string) (result dcql.DcqlQuery) {
 	require.NoError(t, json.Unmarshal([]byte(query), &result))
 	return
+}
+
+func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claims map[string]string) *irma.CredentialInfo {
+	sdjwt, info := createSdJwtAndInfo(t, vct, claims)
+	err := storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{sdjwt})
+	require.NoError(t, err)
+
+	return info
 }
