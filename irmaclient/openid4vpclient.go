@@ -258,6 +258,34 @@ func getCandidatesForDcqlQuery(storage SdJwtVcStorage, query dcql.DcqlQuery) (*q
 	return &result, nil
 }
 
+func attributesSatisfyClaims(attributes map[irma.AttributeTypeIdentifier]irma.TranslatedString, credentialId string, claims []dcql.Claim) bool {
+	attrs := []irma.AttributeTypeIdentifier{}
+
+	for _, c := range claims {
+		attrs = append(attrs, irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, c.Path[0])))
+	}
+
+	for _, a := range attrs {
+		_, ok := attributes[a]
+		if !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+func filterCredentialsWithClaims(entries []SdJwtVcAndInfo, claims []dcql.Claim) ([]SdJwtVcAndInfo, error) {
+	result := []SdJwtVcAndInfo{}
+	for _, e := range entries {
+		id := fmt.Sprintf("%s.%s.%s", e.Info.SchemeManagerID, e.Info.IssuerID, e.Info.ID)
+		if attributesSatisfyClaims(e.Info.Attributes, id, claims) {
+			result = append(result, e)
+		}
+	}
+	return result, nil
+}
+
 func findCandidatesForCredentialQuery(storage SdJwtVcStorage, query dcql.CredentialQuery) (*credentialQueryResult, error) {
 	if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
 		return nil, fmt.Errorf("format not supported: %v", query.Format)
@@ -272,7 +300,10 @@ func findCandidatesForCredentialQuery(storage SdJwtVcStorage, query dcql.Credent
 
 	credCandidates := []DisclosureCandidates{}
 
-	entries := storage.GetCredentialsForId(credentialId)
+	entries, err := filterCredentialsWithClaims(storage.GetCredentialsForId(credentialId), query.Claims)
+	if err != nil {
+		return nil, err
+	}
 
 	// when no entries are found, the query is not satisfiable
 	if len(entries) == 0 {
