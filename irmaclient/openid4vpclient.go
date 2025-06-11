@@ -124,7 +124,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	requestorInfo *irma.RequestorInfo,
 	handler Handler,
 ) error {
-	candidates, err := client.getCandidates(request.DcqlQuery)
+	candidates, err := getCandidatesForDcqlQuery(client.storage, request.DcqlQuery)
 
 	if err != nil {
 		return err
@@ -138,7 +138,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	}
 
 	logMarshalled("choice:", choice)
-	credentials, err := client.getCredentialsForChoices(candidates.queryIdMap, choice.Attributes, request.Nonce, request.ClientId)
+	credentials, err := client.getCredentialsForChoices(candidates.QueryIdMap, choice.Attributes, request.Nonce, request.ClientId)
 
 	if err != nil {
 		return err
@@ -233,49 +233,32 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	return queryResponses, nil
 }
 
-// assume for now that there are never two choices for the same set of attributes
-func (client *OpenID4VPClient) getCandidates(query dcql.DcqlQuery) (*queryResult, error) {
+func getCandidatesForDcqlQuery(storage SdJwtVcStorage, query dcql.DcqlQuery) (*queryResult, error) {
 	result := queryResult{
-		candidates:  [][]DisclosureCandidates{},
-		queryIdMap:  map[irma.AttributeIdentifier]string{},
-		satisfiable: true,
+		Candidates:  [][]DisclosureCandidates{},
+		QueryIdMap:  map[irma.AttributeIdentifier]string{},
+		Satisfiable: true,
 	}
 
 	for _, query := range query.Credentials {
-		singleQueryResult, err := client.findCandidatesForCredentialQuery(query)
+		singleQueryResult, err := findCandidatesForCredentialQuery(storage, query)
 		if err != nil {
 			return nil, err
 		}
 		for _, candidatesList := range singleQueryResult.candidates {
 			for _, attributes := range candidatesList {
-				result.queryIdMap[*attributes.AttributeIdentifier] = singleQueryResult.queryId
+				result.QueryIdMap[*attributes.AttributeIdentifier] = singleQueryResult.queryId
 			}
 		}
-		result.candidates = append(result.candidates, singleQueryResult.candidates)
+		result.Candidates = append(result.Candidates, singleQueryResult.candidates)
 		if !singleQueryResult.satisfiable {
-			result.satisfiable = false
+			result.Satisfiable = false
 		}
 	}
 	return &result, nil
 }
 
-type queryResult struct {
-	candidates  [][]DisclosureCandidates
-	queryIdMap  map[irma.AttributeIdentifier]string
-	satisfiable bool
-}
-
-type credentialQueryResult struct {
-	// the available candidates for this query
-	candidates  []DisclosureCandidates
-	queryId     string
-	satisfiable bool
-}
-
-// A credential query is searching only for claims within a single credential.
-// If attributes from multiple credentials are required at the same time, they'll
-// have separate CredentialQueries for each credential.
-func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.CredentialQuery) (*credentialQueryResult, error) {
+func findCandidatesForCredentialQuery(storage SdJwtVcStorage, query dcql.CredentialQuery) (*credentialQueryResult, error) {
 	if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
 		return nil, fmt.Errorf("format not supported: %v", query.Format)
 	}
@@ -289,7 +272,7 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 
 	credCandidates := []DisclosureCandidates{}
 
-	entries := client.storage.GetCredentialsForId(credentialId)
+	entries := storage.GetCredentialsForId(credentialId)
 
 	// when no entries are found, the query is not satisfiable
 	if len(entries) == 0 {
@@ -326,6 +309,19 @@ func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.Crede
 	}, nil
 }
 
+type queryResult struct {
+	Candidates  [][]DisclosureCandidates
+	QueryIdMap  map[irma.AttributeIdentifier]string
+	Satisfiable bool
+}
+
+type credentialQueryResult struct {
+	// the available candidates for this query
+	candidates  []DisclosureCandidates
+	queryId     string
+	satisfiable bool
+}
+
 func (client *OpenID4VPClient) requestAndAwaitPermission(
 	queryResult *queryResult,
 	requestorInfo *irma.RequestorInfo,
@@ -337,8 +333,8 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(
 
 	handler.RequestVerificationPermission(
 		disclosureRequest,
-		queryResult.satisfiable,
-		queryResult.candidates,
+		queryResult.Satisfiable,
+		queryResult.Candidates,
 		requestorInfo,
 		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 			if proceed {
