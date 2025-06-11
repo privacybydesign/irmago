@@ -13,21 +13,17 @@ type DcqlQuery struct {
 	CredentialSets []CredentialSetQuery `json:"credential_sets,omitempty"`
 }
 
+// A Credential Set Query is an object representing a request for one or more Credentials
+// to satisfy a particular use case with the Verifier.
 type CredentialSetQuery struct {
 	// REQUIRED: A non-empty array, where each value in the array is a list of Credential Query
 	// identifiers representing one set of credentials that satisfies the use case.
-	Options []CredentialIdList `json:"options"`
+	Options [][]string `json:"options"`
 
 	// OPTIONAL: Indicates whether this set of credentials is required to satisfy the particular use case at the verifier.
 	// If omitted, the default is true
 	Required *bool `json:"required,omitempty"` // TODO: write verification function that makes sure this value is true when not in the json
-
-	// OPTIONAL: A string, number or object specifying the purpose of the query.
-	// The OpenID4VP spec does not define a structure or specific values for this property.
-	Purpose any `json:"purpose,omitempty"`
 }
-
-type CredentialIdList = []string
 
 type Meta struct {
 	// REQUIRED for mdoc: String that specifies an allowed value for the doctype of the requested Verifiable Credential.
