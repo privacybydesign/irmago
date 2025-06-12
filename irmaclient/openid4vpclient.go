@@ -265,6 +265,8 @@ func constructCandidatesFromCredentialQueries(
 ) (*DcqlQueryCandidates, error) {
 	conDisCon := [][]DisclosureCandidates{}
 	satisfiable := true
+	queryIdMap := map[irma.AttributeIdentifier]string{}
+
 	for _, query := range queries {
 		candidates, ok := allAvailableCredentials[query.Id]
 		if !ok || len(candidates.SatisfyingCredentials) == 0 {
@@ -281,11 +283,14 @@ func constructCandidatesFromCredentialQueries(
 				con := DisclosureCandidates{}
 
 				for _, attribute := range candidates.RequestedAttributes {
+					id := irma.AttributeIdentifier{
+						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credId, attribute)),
+						CredentialHash: candidate.Info.Hash,
+					}
+
+					queryIdMap[id] = query.Id
 					con = append(con, &DisclosureCandidate{
-						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credId, attribute)),
-							CredentialHash: candidate.Info.Hash,
-						},
+						AttributeIdentifier: &id,
 					})
 				}
 				disCon = append(disCon, con)
@@ -297,6 +302,7 @@ func constructCandidatesFromCredentialQueries(
 	return &DcqlQueryCandidates{
 		Candidates:  conDisCon,
 		Satisfiable: satisfiable,
+		QueryIdMap:  queryIdMap,
 	}, nil
 }
 
@@ -306,6 +312,7 @@ func constructCandidatesForCredentialSets(
 ) (*DcqlQueryCandidates, error) {
 	conDisCon := [][]DisclosureCandidates{}
 	conDisConSatisfied := true
+	queryIdMap := map[irma.AttributeIdentifier]string{}
 
 	// each purpose (con)
 	for _, credentialSet := range credentialSets {
@@ -314,32 +321,35 @@ func constructCandidatesForCredentialSets(
 
 		// each option for this purpose (dis)
 		for _, option := range credentialSet.Options {
-			con := DisclosureCandidates{}
-			conSatisfied := true
-
-			// each requirement for this option (con)
-			for _, requiredCredentialQueryId := range option {
-				queryResult, ok := allAvailableCredentials[requiredCredentialQueryId]
-
-				if !ok || len(queryResult.SatisfyingCredentials) == 0 {
-					conSatisfied = false
-				}
-
-				// add an attribute instance for each of the requested attributes for each of the satisying credentials
-				for _, credential := range queryResult.SatisfyingCredentials {
-					credentialId := fmt.Sprintf("%s.%s.%s", credential.Info.SchemeManagerID, credential.Info.IssuerID, credential.Info.ID)
-					for _, attribute := range queryResult.RequestedAttributes {
-						attributeId := irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, attribute)),
-							CredentialHash: credential.Info.Hash,
-						}
-						con = append(con, &DisclosureCandidate{AttributeIdentifier: &attributeId})
-					}
-				}
+			if len(option) > 1 {
+				return nil, fmt.Errorf("credential set `options` field has inner option array that consists of multiple credential queries, which is not supported at the moment")
 			}
-			disCon = append(disCon, con)
-			if conSatisfied {
-				disConSatisfied = true
+
+			requiredCredentialQueryId := option[0]
+
+			// TODO: only allow attributes for a single credential unless all credentials marked are singletons in the scheme
+			// each requirement for this option (con)
+			queryResult, _ := allAvailableCredentials[requiredCredentialQueryId]
+
+			// add an attribute instance for each of the requested attributes for each of the satisying credentials
+			// each satisfying credential should become a dis
+			for _, credential := range queryResult.SatisfyingCredentials {
+				con := DisclosureCandidates{}
+				conSatisfied := true
+				credentialId := fmt.Sprintf("%s.%s.%s", credential.Info.SchemeManagerID, credential.Info.IssuerID, credential.Info.ID)
+
+				for _, attribute := range queryResult.RequestedAttributes {
+					attributeId := irma.AttributeIdentifier{
+						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, attribute)),
+						CredentialHash: credential.Info.Hash,
+					}
+					con = append(con, &DisclosureCandidate{AttributeIdentifier: &attributeId})
+					queryIdMap[attributeId] = requiredCredentialQueryId
+				}
+				disCon = append(disCon, con)
+				if conSatisfied {
+					disConSatisfied = true
+				}
 			}
 		}
 		conDisCon = append(conDisCon, disCon)
@@ -350,6 +360,7 @@ func constructCandidatesForCredentialSets(
 	return &DcqlQueryCandidates{
 		Candidates:  conDisCon,
 		Satisfiable: conDisConSatisfied,
+		QueryIdMap:  queryIdMap,
 	}, nil
 }
 

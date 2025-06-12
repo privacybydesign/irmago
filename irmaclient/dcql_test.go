@@ -132,8 +132,164 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("unsatisfiable multiple credentials none available", testDcqlUnSatisfiableMultipleCredentialsNoneAvailable)
 	t.Run("satisfiable multiple attributes single credential", testDcqlSatisfiableMultipleAttributesSingleCredential)
 	t.Run("multiple attributes single credential partially available", testDcqlMultpleAttributesSingleCredentialPartiallyAvailable)
-	t.Run("satisfiable claims sets all required different purpose", testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes)
-	t.Run("satisfiable claims set two options for same purpose", testDcqlSatisfiableTwoOptionsSamePurpose)
+	t.Run("satisfiable credential sets all required different purpose", testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes)
+	t.Run("satisfiable credential set two options for same purpose", testDcqlSatisfiableTwoOptionsSamePurpose)
+	t.Run("satisfiable credential set two options multiple claims single candidate each", testDcqlSatisfiableTwoOptionsMultipleClaims)
+	t.Run("satisfiable credential set two options multiple claims multiple candidates", testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates)
+
+	t.Run("multiple credential queries in option in credential set is unsupported", testDcqlMultipleCredentialQueriesInOptionIsUnsupported)
+}
+
+func testDcqlMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
+		}, {
+			"id": "phone",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
+			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+		}],
+		"credential_sets": [{
+			"options": [["email", "phone"]]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	_, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.Error(t, err)
+}
+
+func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
+		}, {
+			"id": "phone",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
+			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+		}],
+		"credential_sets": [{
+			"options": [["email"], ["phone"]]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
+	emailInfo2 := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "contact@yivi.app", "domain": "yivi.app"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+1234567"})
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &DcqlQueryCandidates{
+		Satisfiable: true,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: emailInfo.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: emailInfo.Hash,
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: emailInfo2.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: emailInfo2.Hash,
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
+}
+
+func testDcqlSatisfiableTwoOptionsMultipleClaims(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
+		}, {
+			"id": "phone",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
+			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+		}],
+		"credential_sets": [{
+			"options": [["email"], ["phone"]]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+1234567"})
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &DcqlQueryCandidates{
+		Satisfiable: true,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: emailInfo.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: emailInfo.Hash,
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
 }
 
 func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {

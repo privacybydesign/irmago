@@ -480,5 +480,4 @@ func addTestCredentialsToStorage(storage SdJwtVcStorage) {
 
 	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry2, sdjwtvc.CreateDefaultVerificationContext())
 	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry2, emailEntry3})
-
 }
