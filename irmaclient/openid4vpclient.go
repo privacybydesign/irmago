@@ -124,7 +124,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	requestorInfo *irma.RequestorInfo,
 	handler Handler,
 ) error {
-	candidates, err := client.getCandidates(request.DcqlQuery)
+	candidates, err := getCandidatesForDcqlQuery(client.storage, request.DcqlQuery)
 
 	if err != nil {
 		return err
@@ -138,7 +138,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	}
 
 	logMarshalled("choice:", choice)
-	credentials, err := client.getCredentialsForChoices(candidates.queryIdMap, choice.Attributes, request.Nonce, request.ClientId)
+	credentials, err := client.getCredentialsForChoices(candidates.QueryIdMap, choice.Attributes, request.Nonce, request.ClientId)
 
 	if err != nil {
 		return err
@@ -233,101 +233,221 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	return queryResponses, nil
 }
 
-// assume for now that there are never two choices for the same set of attributes
-func (client *OpenID4VPClient) getCandidates(query dcql.DcqlQuery) (*queryResult, error) {
-	result := queryResult{
-		candidates:  [][]DisclosureCandidates{},
-		queryIdMap:  map[irma.AttributeIdentifier]string{},
-		satisfiable: true,
+func getCandidatesForDcqlQuery(storage SdJwtVcStorage, query dcql.DcqlQuery) (*DcqlQueryCandidates, error) {
+	allAvailableCredentials, err := findAllCandidatesForAllCredentialQueries(storage, query.Credentials)
+	if err != nil {
+		return nil, err
 	}
 
-	for _, query := range query.Credentials {
-		singleQueryResult, err := client.findCandidatesForCredentialQuery(query)
-		if err != nil {
-			return nil, err
-		}
-		for _, candidatesList := range singleQueryResult.candidates {
-			for _, attributes := range candidatesList {
-				result.queryIdMap[*attributes.AttributeIdentifier] = singleQueryResult.queryId
+	if query.CredentialSets != nil {
+		return constructCandidatesForCredentialSets(allAvailableCredentials, query.CredentialSets)
+	}
+
+	return constructCandidatesFromCredentialQueries(query.Credentials, allAvailableCredentials)
+}
+
+func constructEmptyDisConForQuery(query dcql.CredentialQuery) ([]DisclosureCandidates, error) {
+	con := DisclosureCandidates{}
+	for _, claim := range query.Claims {
+		credId := query.Meta.VctValues[0]
+		attr := claim.Path[0]
+		con = append(con, &DisclosureCandidate{
+			AttributeIdentifier: &irma.AttributeIdentifier{
+				Type: irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credId, attr)),
+			},
+		})
+	}
+	return []DisclosureCandidates{con}, nil
+}
+
+func constructCandidatesFromCredentialQueries(
+	queries []dcql.CredentialQuery,
+	allAvailableCredentials map[string]SingleCredentialQueryCandidates,
+) (*DcqlQueryCandidates, error) {
+	conDisCon := [][]DisclosureCandidates{}
+	satisfiable := true
+	queryIdMap := map[irma.AttributeIdentifier]string{}
+
+	for _, query := range queries {
+		candidates, ok := allAvailableCredentials[query.Id]
+		if !ok || len(candidates.SatisfyingCredentials) == 0 {
+			satisfiable = false
+			disCon, err := constructEmptyDisConForQuery(query)
+			if err != nil {
+				return nil, err
 			}
-		}
-		result.candidates = append(result.candidates, singleQueryResult.candidates)
-		if !singleQueryResult.satisfiable {
-			result.satisfiable = false
-		}
-	}
-	return &result, nil
-}
+			conDisCon = append(conDisCon, disCon)
+		} else {
+			disCon := []DisclosureCandidates{}
+			for _, candidate := range candidates.SatisfyingCredentials {
+				credId := fmt.Sprintf("%s.%s.%s", candidate.Info.SchemeManagerID, candidate.Info.IssuerID, candidate.Info.ID)
+				con := DisclosureCandidates{}
 
-type queryResult struct {
-	candidates  [][]DisclosureCandidates
-	queryIdMap  map[irma.AttributeIdentifier]string
-	satisfiable bool
-}
+				for _, attribute := range candidates.RequestedAttributes {
+					id := irma.AttributeIdentifier{
+						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credId, attribute)),
+						CredentialHash: candidate.Info.Hash,
+					}
 
-type credentialQueryResult struct {
-	// the available candidates for this query
-	candidates  []DisclosureCandidates
-	queryId     string
-	satisfiable bool
-}
-
-// A credential query is searching only for claims within a single credential.
-// If attributes from multiple credentials are required at the same time, they'll
-// have separate CredentialQueries for each credential.
-func (client *OpenID4VPClient) findCandidatesForCredentialQuery(query dcql.CredentialQuery) (*credentialQueryResult, error) {
-	if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
-		return nil, fmt.Errorf("format not supported: %v", query.Format)
-	}
-
-	if len(query.Meta.VctValues) != 1 {
-		return nil, fmt.Errorf("the vct_values array must exactly contain one value: %v", query.Meta.VctValues)
-	}
-
-	// we're assuming the vct field in the sdjwtvc to be the full credential path, e.g. `pbdf.pbdf.email`
-	credentialId := query.Meta.VctValues[0]
-
-	credCandidates := []DisclosureCandidates{}
-
-	entries := client.storage.GetCredentialsForId(credentialId)
-
-	// when no entries are found, the query is not satisfiable
-	if len(entries) == 0 {
-		toAdd := DisclosureCandidates{}
-		for _, claim := range query.Claims {
-			candidate := DisclosureCandidate{
-				AttributeIdentifier: &irma.AttributeIdentifier{
-					Type: irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, claim.Path[0])),
-				},
-			}
-			toAdd = append(toAdd, &candidate)
-		}
-		credCandidates = append(credCandidates, toAdd)
-	} else {
-		for _, entry := range entries {
-			toAdd := DisclosureCandidates{}
-			for _, claim := range query.Claims {
-				candidate := DisclosureCandidate{
-					AttributeIdentifier: &irma.AttributeIdentifier{
-						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, claim.Path[0])),
-						CredentialHash: entry.Info.Hash,
-					},
+					queryIdMap[id] = query.Id
+					con = append(con, &DisclosureCandidate{
+						AttributeIdentifier: &id,
+					})
 				}
-				toAdd = append(toAdd, &candidate)
+				disCon = append(disCon, con)
 			}
-			credCandidates = append(credCandidates, toAdd)
+			conDisCon = append(conDisCon, disCon)
 		}
 	}
 
-	return &credentialQueryResult{
-		candidates:  credCandidates,
-		queryId:     query.Id,
-		satisfiable: len(entries) != 0,
+	return &DcqlQueryCandidates{
+		Candidates:  conDisCon,
+		Satisfiable: satisfiable,
+		QueryIdMap:  queryIdMap,
 	}, nil
 }
 
+func constructCandidatesForCredentialSets(
+	allAvailableCredentials map[string]SingleCredentialQueryCandidates,
+	credentialSets []dcql.CredentialSetQuery,
+) (*DcqlQueryCandidates, error) {
+	conDisCon := [][]DisclosureCandidates{}
+	conDisConSatisfied := true
+	queryIdMap := map[irma.AttributeIdentifier]string{}
+
+	// each purpose (con)
+	for _, credentialSet := range credentialSets {
+		disCon := []DisclosureCandidates{}
+		disConSatisfied := false
+
+		// each option for this purpose (dis)
+		for _, option := range credentialSet.Options {
+			if len(option) > 1 {
+				return nil, fmt.Errorf("credential set `options` field has inner option array that consists of multiple credential queries, which is not supported at the moment")
+			}
+
+			requiredCredentialQueryId := option[0]
+			queryResult := allAvailableCredentials[requiredCredentialQueryId]
+
+			// add an attribute instance for each of the requested attributes for each of the satisying credentials
+			// each satisfying credential should become a dis
+			for _, credential := range queryResult.SatisfyingCredentials {
+				con := DisclosureCandidates{}
+				conSatisfied := true
+				credentialId := fmt.Sprintf("%s.%s.%s", credential.Info.SchemeManagerID, credential.Info.IssuerID, credential.Info.ID)
+
+				for _, attribute := range queryResult.RequestedAttributes {
+					attributeId := irma.AttributeIdentifier{
+						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, attribute)),
+						CredentialHash: credential.Info.Hash,
+					}
+					con = append(con, &DisclosureCandidate{AttributeIdentifier: &attributeId})
+					queryIdMap[attributeId] = requiredCredentialQueryId
+				}
+				disCon = append(disCon, con)
+				if conSatisfied {
+					disConSatisfied = true
+				}
+			}
+		}
+		conDisCon = append(conDisCon, disCon)
+		if !disConSatisfied {
+			conDisConSatisfied = false
+		}
+	}
+	return &DcqlQueryCandidates{
+		Candidates:  conDisCon,
+		Satisfiable: conDisConSatisfied,
+		QueryIdMap:  queryIdMap,
+	}, nil
+}
+
+func attributesSatisfyClaims(
+	attributes map[irma.AttributeTypeIdentifier]irma.TranslatedString,
+	credentialId string,
+	claims []dcql.Claim,
+) bool {
+	attrs := []irma.AttributeTypeIdentifier{}
+
+	for _, c := range claims {
+		attrs = append(attrs, irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, c.Path[0])))
+	}
+
+	for _, a := range attrs {
+		_, ok := attributes[a]
+		if !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Only returns the credential instances that have ALL attributes required by the list of claims
+func filterCredentialsWithClaims(entries []SdJwtVcAndInfo, claims []dcql.Claim) ([]SdJwtVcAndInfo, error) {
+	result := []SdJwtVcAndInfo{}
+	for _, e := range entries {
+		id := fmt.Sprintf("%s.%s.%s", e.Info.SchemeManagerID, e.Info.IssuerID, e.Info.ID)
+		if attributesSatisfyClaims(e.Info.Attributes, id, claims) {
+			result = append(result, e)
+		}
+	}
+	return result, nil
+}
+
+func findAllCandidatesForCredQuery(storage SdJwtVcStorage, query dcql.CredentialQuery) ([]SdJwtVcAndInfo, error) {
+	return filterCredentialsWithClaims(storage.GetCredentialsForId(query.Meta.VctValues[0]), query.Claims)
+}
+
+type SingleCredentialQueryCandidates struct {
+	// The id for the dcql.CredentialQuery
+	CredentialQueryId string
+	// The names of the attributes requested in this credential query
+	RequestedAttributes []string
+	// A list of credential info and the instance that satisfy the requirements described by the query
+	SatisfyingCredentials []SdJwtVcAndInfo
+}
+
+func findAllCandidatesForAllCredentialQueries(
+	storage SdJwtVcStorage,
+	queries []dcql.CredentialQuery,
+) (map[string]SingleCredentialQueryCandidates, error) {
+	result := map[string]SingleCredentialQueryCandidates{}
+
+	for _, query := range queries {
+		if query.ClaimSets != nil {
+			return nil, fmt.Errorf("'claim_sets' was provided in credential query '%s' but is currently unsupported", query.Id)
+		}
+		if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
+			return nil, fmt.Errorf("credential query '%s' contains unsupported format '%s'", query.Id, query.Format)
+		}
+		candidates, err := findAllCandidatesForCredQuery(storage, query)
+		if err != nil {
+			return nil, err
+		}
+
+		attrs := []string{}
+		for _, c := range query.Claims {
+			attrs = append(attrs, c.Path[0])
+		}
+
+		result[query.Id] = SingleCredentialQueryCandidates{
+			CredentialQueryId:     query.Id,
+			SatisfyingCredentials: candidates,
+			RequestedAttributes:   attrs,
+		}
+	}
+	return result, nil
+}
+
+type DcqlQueryCandidates struct {
+	Candidates  [][]DisclosureCandidates
+	QueryIdMap  map[irma.AttributeIdentifier]string
+	Satisfiable bool
+}
+
 func (client *OpenID4VPClient) requestAndAwaitPermission(
-	queryResult *queryResult,
+	queryResult *DcqlQueryCandidates,
 	requestorInfo *irma.RequestorInfo,
 	handler Handler,
 ) *irma.DisclosureChoice {
@@ -337,8 +457,8 @@ func (client *OpenID4VPClient) requestAndAwaitPermission(
 
 	handler.RequestVerificationPermission(
 		disclosureRequest,
-		queryResult.satisfiable,
-		queryResult.candidates,
+		queryResult.Satisfiable,
+		queryResult.Candidates,
 		requestorInfo,
 		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
 			if proceed {
