@@ -10,6 +10,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -424,6 +425,12 @@ func findAllCandidatesForAllCredentialQueries(
 	result := map[string]SingleCredentialQueryCandidates{}
 
 	for _, query := range queries {
+		if query.ClaimSets != nil {
+			return nil, fmt.Errorf("'claim_sets' was provided in credential query '%s' but is currently unsupported", query.Id)
+		}
+		if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
+			return nil, fmt.Errorf("credential query '%s' contains unsupported format '%s'", query.Id, query.Format)
+		}
 		candidates, err := findAllCandidatesForCredQuery(storage, query)
 		if err != nil {
 			return nil, err

@@ -11,118 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//
-
-// {
-//   "@context": "https://irma.app/ld/request/disclosure/v2",
-//   "disclose": [
-//       [
-//           ["irma-demo.sidn-pbdf.email.email", "irma-demo.sidn-pbdf.email.domain"],
-//           ["irma-demo.sidn-pbdf.mobilenumber.mobilenumber"]
-//       ]
-//   ],
-//   "clientReturnUrl": "https://sidn.nl"
-// }
-// becomes
-// "DisclosuresCandidates": [
-//     [
-//         [
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.email.email",
-//                 "CredentialHash": "e4f6c56abd08d3c30fdc79e01a439e4c14bf9e95b3e67c6c954d9c666e7f3f25",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             },
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.email.domain",
-//                 "CredentialHash": "e4f6c56abd08d3c30fdc79e01a439e4c14bf9e95b3e67c6c954d9c666e7f3f25",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             }
-//         ],
-//         [
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.email.email",
-//                 "CredentialHash": "",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             },
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.email.domain",
-//                 "CredentialHash": "",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             }
-//         ],
-//         [
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.mobilenumber.mobilenumber",
-//                 "CredentialHash": "",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             }
-//         ]
-//     ]
-// ],
-
-// =================================================================
-
-// {
-//   "@context": "https://irma.app/ld/request/disclosure/v2",
-//   "disclose": [
-//       [
-//           [ "irma-demo.sidn-pbdf.email.email", "irma-demo.sidn-pbdf.email.domain"]
-//       ],
-//       [
-//           ["irma-demo.sidn-pbdf.mobilenumber.mobilenumber"]
-//       ]
-//   ],
-//   "clientReturnUrl": "https://sidn.nl"
-// }
-// becomes
-// "DisclosuresCandidates": [
-//     [
-//         [
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.email.email",
-//                 "CredentialHash": "e4f6c56abd08d3c30fdc79e01a439e4c14bf9e95b3e67c6c954d9c666e7f3f25",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             },
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.email.domain",
-//                 "CredentialHash": "e4f6c56abd08d3c30fdc79e01a439e4c14bf9e95b3e67c6c954d9c666e7f3f25",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             }
-//         ],
-//         [
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.email.email",
-//                 "CredentialHash": "",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             },
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.email.domain",
-//                 "CredentialHash": "",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             }
-//         ]
-//     ],
-//     [
-//         [
-//             {
-//                 "Type": "irma-demo.sidn-pbdf.mobilenumber.mobilenumber",
-//                 "CredentialHash": "",
-//                 "Value": {},
-//                 "NotRevokable": false
-//             }
-//         ]
-//     ]
-// ],
-
 func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("satisfiable single credential single option", testDcqlSatisfiableSingleCredentialSingleOption)
 	t.Run("satisfiable single credential multiple options", testDcqlSatisfiableSingleCredentialMultipleOptions)
@@ -138,6 +26,39 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("satisfiable credential set two options multiple claims multiple candidates", testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates)
 
 	t.Run("multiple credential queries in option in credential set is unsupported", testDcqlMultipleCredentialQueriesInOptionIsUnsupported)
+	t.Run("claim sets is unsupported", testDcqlClaimSetsIsUnsupported)
+	t.Run("invalid format in credential query is unsupported", testDcqlInvalidFormatInCredentialQueryIsUnsupported)
+}
+
+func testDcqlInvalidFormatInCredentialQueryIsUnsupported(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "idemix",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "em", "path": ["email"]}, {"id": "do", "path": ["domain"]}]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	_, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.Error(t, err)
+}
+
+func testDcqlClaimSetsIsUnsupported(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "em", "path": ["email"]}, {"id": "do", "path": ["domain"]}],
+			"claim_sets": [["em", "do"]]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	_, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.Error(t, err)
 }
 
 func testDcqlMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {

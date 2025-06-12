@@ -65,7 +65,7 @@ type CredentialQuery struct {
 
 	// OPTIONAL: A non-empty array containing arrays of identifiers for elements in `claims`
 	// that specifies which combinations of `claims` for the credential are requested.
-	ClaimSets []ClaimSet `json:"claim_sets,omitempty"`
+	ClaimSets [][]string `json:"claim_sets,omitempty"`
 
 	// OPTIONAL. A boolean which indicates whether the Verifier requires a Cryptographic Holder Binding proof.
 	// The default value is true, i.e., a Verifiable Presentation with Cryptographic Holder Binding is required.
@@ -98,8 +98,6 @@ type QueryResponse struct {
 //   - To address an element within an array, append the index to the array (as a non-negative, 0-based integer).
 //   - To address all elements within an array, append a null value to the array.
 type ClaimsPathPointer []string
-
-type ClaimSet struct{}
 
 type Claim struct {
 	// REQUIRED if claim_sets is present in the credential query, OPTIONAL otherwise.
