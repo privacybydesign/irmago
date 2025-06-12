@@ -89,6 +89,9 @@ type IssuanceRequest struct {
 	DisclosureRequest
 	Credentials []*CredentialRequest `json:"credentials"`
 
+	// Flag to indicate whether the client should receive SD-JWTs next to the IRMA credentials
+	RequestSdJwts bool `json:"requestSdJwts,omitempty"`
+
 	// Derived data
 	CredentialInfoList        CredentialInfoList `json:",omitempty"`
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
@@ -104,6 +107,9 @@ type CredentialRequest struct {
 	RevocationKey               string                   `json:"revocationKey,omitempty"`
 	RevocationSupported         bool                     `json:"revocationSupported,omitempty"`
 	RandomBlindAttributeTypeIDs []string                 `json:"randomblindIDs,omitempty"`
+
+	// SD-JWT related fields
+	SdJwtBatchSize *uint `json:"sdJwtBatchSize,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -886,7 +892,7 @@ func (t Timestamp) IsZero() bool {
 	return time.Time(t).IsZero()
 }
 
-func (t *Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+func (t Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	return e.EncodeElement(t.String(), start)
 }
 
@@ -900,7 +906,7 @@ func (t *Timestamp) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 }
 
 // MarshalJSON marshals a timestamp.
-func (t *Timestamp) MarshalJSON() ([]byte, error) {
+func (t Timestamp) MarshalJSON() ([]byte, error) {
 	return []byte(t.String()), nil
 }
 

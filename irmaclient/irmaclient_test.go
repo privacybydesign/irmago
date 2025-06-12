@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -37,17 +38,17 @@ func TestMain(m *testing.M) {
 	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T) (*Client, *TestClientHandler) {
+func parseStorage(t *testing.T) (*IrmaClient, *TestClientHandler) {
 	storage := test.SetupTestStorage(t)
 	return parseExistingStorage(t, storage)
 }
 
-func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHandler) {
-	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
+func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *TestClientHandler) {
+	handler := &TestClientHandler{t: t, c: make(chan error), storage: storageFolder}
 	path := test.FindTestdataFolder(t)
 
 	var signer Signer
-	bts, err := os.ReadFile(filepath.Join(storage, "client", "ecdsa_sk.pem"))
+	bts, err := os.ReadFile(filepath.Join(storageFolder, "client", "ecdsa_sk.pem"))
 	if os.IsNotExist(err) {
 		signer = test.NewSigner(t)
 	} else {
@@ -60,12 +61,31 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	client, err := New(
-		filepath.Join(storage, "client"),
-		filepath.Join(path, "irma_configuration"),
+	storagePath := filepath.Join(storageFolder, "client")
+	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+
+	if err = common.AssertPathExists(storagePath); err != nil {
+		require.NoError(t, err)
+	}
+	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
+		require.NoError(t, err)
+	}
+
+	conf, err := irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+	)
+	require.NoError(t, err)
+
+	storage := NewIrmaStorage(storagePath, conf, aesKey)
+	sdjwtStorage, err := NewInMemorySdJwtVcStorage()
+
+	client, _ := NewIrmaClient(
+		conf,
 		handler,
 		signer,
-		aesKey,
+		storage,
+		sdjwtStorage,
 	)
 	require.NoError(t, err)
 
@@ -73,7 +93,7 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 	return client, handler
 }
 
-func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
+func verifyClientIsUnmarshaled(t *testing.T, client *IrmaClient) {
 	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	require.NoError(t, err, "could not fetch credential")
 	require.NotNil(t, cred, "Credential should exist")
@@ -94,7 +114,7 @@ func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
 	)
 }
 
-func verifyCredentials(t *testing.T, client *Client) {
+func verifyCredentials(t *testing.T, client *IrmaClient) {
 	var pk *gabikeys.PublicKey
 	for credtype, credsmap := range client.attributes {
 		for index, attrs := range credsmap {
@@ -114,7 +134,7 @@ func verifyCredentials(t *testing.T, client *Client) {
 	}
 }
 
-func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
+func verifyKeyshareIsUnmarshaled(t *testing.T, client *IrmaClient) {
 	require.NotNil(t, client.keyshareServers)
 	testManager := irma.NewSchemeManagerIdentifier("test")
 	require.Contains(t, client.keyshareServers, testManager)
@@ -476,6 +496,40 @@ func TestCredentialsConcurrency(t *testing.T) {
 
 		grp.Wait()
 	}
+}
+
+func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer client.Close()
+
+	sdjwt, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+		map[string]any{
+			"mobilenumber": "+31612345678",
+		},
+	)
+
+	cred := irma.CredentialRequest{}
+
+	err := client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+
+	require.NoError(t, err)
+}
+
+func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer client.Close()
+
+	sdjwt, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "http://openid4vc.staging.yivi.app",
+		map[string]any{
+			"mobilenumber": "+31612345678",
+		},
+	)
+
+	cred := irma.CredentialRequest{}
+
+	err := client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+
+	require.Error(t, err)
 }
 
 // ------
