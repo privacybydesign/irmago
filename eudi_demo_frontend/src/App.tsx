@@ -6,7 +6,7 @@ const request = {
   "dcql_query": {
     "credentials": [
       {
-        "id": "32f54163-7166-48f1-93d8-ff217bdb0653",
+        "id": "email",
         "format": "dc+sd-jwt",
         "meta": {
           "vct_values": ["pbdf.sidn-pbdf.email"]
@@ -21,7 +21,7 @@ const request = {
         ]
       },
       {
-        "id": "32f54163-7166-48f1-93d8-ff217bdb0654",
+        "id": "mobilenumber",
         "format": "dc+sd-jwt",
         "meta": {
           "vct_values": ["pbdf.sidn-pbdf.mobilenumber"]
@@ -45,16 +45,11 @@ const request = {
       //     ]
       // }
     ],
-    // "credential_sets": [
-    //   {
-    //     "options": [
-    //       [
-    //         "32f54163-7166-48f1-93d8-ff217bdb0653"
-    //       ]
-    //     ],
-    //     "purpose": "We need to verify your identity"
-    //   }
-    // ]
+    "credential_sets": [
+      {
+        "options": [["email"], ["mobilenumber"]],
+      }
+    ]
   },
   "nonce": "nonce",
   "jar_mode": "by_reference",
@@ -93,7 +88,7 @@ function parseSdJwtVc(sdjwt: string): DisclosureContent[] {
 }
 
 interface WalletResponse {
-  vp_token: string[],
+  vp_token: Map<string, string>,
 }
 
 function App() {
@@ -121,13 +116,16 @@ function App() {
     const id = setInterval(() => {
       (async () => {
         const result = await fetch(`http://localhost:8080/ui/presentations/${transactionId}`)
-        console.log(`wallet response: ${result}`)
 
         if (result.status == 200) {
           setFrontendState(FrontendState.Done)
           clearInterval(id)
-          const response = await result.json() as WalletResponse
-          setWalletResponse(response.vp_token.map(parseSdJwtVc))
+          const response = await result.json()
+          const entries = new Map<string, string>(Object.entries(response["vp_token"]))
+          const parsed = Array.from(entries, ([_, value]) => {
+            return parseSdJwtVc(value)
+          })
+          setWalletResponse(parsed)
         }
       })()
 
@@ -166,7 +164,7 @@ const WalletResponseView = (disclosures: WalletResponseViewProps) => {
   return (
     <div className="max-w-md mx-auto mt-6 border border-gray-200 rounded-md shadow-sm">
       <dl className="divide-y divide-gray-200">
-        {discs.map(({key, value}) => (
+        {discs.map(({ key, value }) => (
           <div key={key} className="flex justify-between px-4 py-3 bg-white">
             <dt className="text-gray-600 font-medium">{key}</dt>
             <dd className="text-gray-900">{value}</dd>
