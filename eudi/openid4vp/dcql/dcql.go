@@ -13,7 +13,7 @@ type DcqlQuery struct {
 	CredentialSets []CredentialSetQuery `json:"credential_sets,omitempty"`
 }
 
-// A Credential Set Query is an object representing a request for one or more Credentials
+// CredentialSetQuery is an object representing a request for one or more Credentials
 // to satisfy a particular use case with the Verifier.
 type CredentialSetQuery struct {
 	// REQUIRED: A non-empty array, where each value in the array is a list of Credential Query

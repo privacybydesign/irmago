@@ -327,10 +327,7 @@ func constructCandidatesForCredentialSets(
 			}
 
 			requiredCredentialQueryId := option[0]
-
-			// TODO: only allow attributes for a single credential unless all credentials marked are singletons in the scheme
-			// each requirement for this option (con)
-			queryResult, _ := allAvailableCredentials[requiredCredentialQueryId]
+			queryResult := allAvailableCredentials[requiredCredentialQueryId]
 
 			// add an attribute instance for each of the requested attributes for each of the satisying credentials
 			// each satisfying credential should become a dis
@@ -396,13 +393,6 @@ func filterCredentialsWithClaims(entries []SdJwtVcAndInfo, claims []dcql.Claim) 
 		}
 	}
 	return result, nil
-}
-
-type credQueryResult struct {
-	// Match a single credential query object in the dcql query.
-	credentialQueryId string
-	// All candidates that satisfy the requirements in the dcql.CredentialQuery object.
-	candidates []SdJwtVcAndInfo
 }
 
 func findAllCandidatesForCredQuery(storage SdJwtVcStorage, query dcql.CredentialQuery) ([]SdJwtVcAndInfo, error) {
