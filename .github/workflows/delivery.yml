@@ -22,6 +22,7 @@ jobs:
     outputs:
       is-head-master: ${{ steps.is-head-master.outcome == 'success' }}
       is-latest-release: ${{ steps.is-latest-release.outcome == 'success' }}
+      safe-branch-name: ${{ steps.safe-branch-name.outputs.branch }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,6 +58,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release view --json tagName --jq .tagName | grep -x ${{ github.event.release.tag_name }}
+        shell: bash
+      
+      - name: Extract branch name for workflow_dispatch tagging
+        id: safe-branch-name
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "branch=${GITHUB_REF_NAME//\//-}" >> $GITHUB_OUTPUT
         shell: bash
   
   build-docker-image:
@@ -108,6 +115,16 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/irma:latest
+
+      - name: Push Docker image (branch)
+        if: github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/irma:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/irma:${{ needs.prepare.outputs.safe-branch-name }}
 
   build-release-artifact:
     needs: prepare
