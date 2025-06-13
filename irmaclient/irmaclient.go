@@ -93,6 +93,7 @@ func NewIrmaClient(
 	signer Signer,
 	storage *storage,
 	sdJwtVcStorage SdJwtVcStorage,
+	keyBinder sdjwtvc.KeyBinder,
 ) (*IrmaClient, error) {
 	var err error
 
@@ -106,6 +107,7 @@ func NewIrmaClient(
 		signer:          signer,
 		minVersion:      &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][0]},
 		maxVersion:      &irma.ProtocolVersion{Major: 2, Minor: supportedVersions[2][len(supportedVersions[2])-1]},
+		keyBinder:       keyBinder,
 	}
 
 	schemeMgrErr := client.Configuration.ParseOrRestoreFolder()
@@ -930,7 +932,9 @@ func (client *IrmaClient) IssuanceProofBuilders(
 
 // IssueCommitments computes issuance commitments, along with disclosure proofs specified by choice,
 // and also returns the credential builders which will become the new credentials upon combination with the issuer's signature.
-func (client *IrmaClient) IssueCommitments(request *irma.IssuanceRequest, choice *irma.DisclosureChoice,
+func (client *IrmaClient) IssueCommitments(
+	request *irma.IssuanceRequest,
+	choice *irma.DisclosureChoice,
 ) (*irma.IssueCommitmentMessage, gabi.ProofBuilderList, error) {
 	builders, choices, issuerProofNonce, err := client.IssuanceProofBuilders(request, choice, nil)
 	if err != nil {
@@ -940,12 +944,19 @@ func (client *IrmaClient) IssueCommitments(request *irma.IssuanceRequest, choice
 	if err != nil {
 		return nil, nil, err
 	}
+
+	keyBindingPubKeys, err := client.keyBinder.CreateKeyPairs(irma.CalculateAmountOfSdJwtsToIssue(request))
+	if err != nil {
+		return nil, nil, err
+	}
+
 	return &irma.IssueCommitmentMessage{
 		IssueCommitmentMessage: &gabi.IssueCommitmentMessage{
 			Proofs: proofs,
 			Nonce2: issuerProofNonce,
 		},
-		Indices: choices,
+		Indices:           choices,
+		KeyBindingPubKeys: keyBindingPubKeys,
 	}, builders, nil
 }
 

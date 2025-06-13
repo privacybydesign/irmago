@@ -79,6 +79,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
 	sdjwtStorage, err := NewInMemorySdJwtVcStorage()
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
 
 	client, _ := NewIrmaClient(
 		conf,
@@ -86,6 +87,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 		signer,
 		storage,
 		sdjwtStorage,
+		keyBinder,
 	)
 	require.NoError(t, err)
 

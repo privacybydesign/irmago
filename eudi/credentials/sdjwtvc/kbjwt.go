@@ -39,10 +39,10 @@ const (
 // Can be used to move creating the kbjwt to a server.
 type KeyBinder interface {
 	// Creates a batch of key pairs and returns the pub keys.
-	// These pub keys should be passed in when calling `CreateKbJwt()`.
+	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
 	CreateKeyPairs(num uint) ([]jwk.Key, error)
 	// takes in the hash over the issuer signed JWT and the selected disclosures
-	CreateKbJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
+	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
 }
 
 type DefaultKeyBinder struct {
@@ -89,7 +89,7 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	return result, nil
 }
 
-func (c *DefaultKeyBinder) CreateKbJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error) {
+func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error) {
 	payload := KeyBindingJwtPayload{
 		IssuerSignedJwtHash: hash,
 		Nonce:               nonce,
@@ -131,7 +131,7 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string
 		return "", nil
 	}
 
-	return creator.CreateKbJwt(hash, holderKey, nonce, audience)
+	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
 }
 
 func extractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {
