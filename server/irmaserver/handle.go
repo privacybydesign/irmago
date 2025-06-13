@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
@@ -233,13 +234,18 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 		sigs = append(sigs, sig)
 	}
 
+	keyBindingPubKeys, err := parseKeyBindingPubKeys(commitments.KeyBindingPubKeys)
+	if err != nil {
+		return nil, session.fail(server.ErrorIssuanceFailed, err.Error(), conf)
+	}
+
 	// Generate SD-JWT here if configured
 	var sdJwts []sdjwtvc.SdJwtVc
 	settings := conf.SdJwtIssuanceSettings
 	if settings.Enabled {
 		sdJwts, err = session.generateSdJwts(
 			settings.JwtEcdsaPrivateKey,
-			commitments.KeyBindingPubKeys,
+			keyBindingPubKeys,
 			settings.Issuer,
 			conf.DisableTLS,
 		)
@@ -255,6 +261,18 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 		IssueSignatures: sigs,
 		SdJwts:          sdJwts,
 	}, nil
+}
+
+func parseKeyBindingPubKeys(rawJsonKeys []json.RawMessage) ([]jwk.Key, error) {
+	keyBindingPubKeys := make([]jwk.Key, len(rawJsonKeys))
+	for i, rawJson := range rawJsonKeys {
+		parsed, err := jwk.ParseKey(rawJson)
+		if err != nil {
+			return nil, nil
+		}
+		keyBindingPubKeys[i] = parsed
+	}
+	return keyBindingPubKeys, nil
 }
 
 func (session *sessionData) nextSession(conf *server.Configuration) (irma.RequestorRequest, irma.AttributeConDisCon, error) {
