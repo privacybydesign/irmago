@@ -35,13 +35,8 @@ func New(
 		return nil, err
 	}
 
-	addTestCredentialsToStorage(sdjwtvcStorage)
-
-	if err != nil {
-		return nil, err
-	}
-
-	keyBinder := sdjwtvc.NewDefaultKbJwtCreator()
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	addTestCredentialsToStorage(sdjwtvcStorage, keyBinder)
 
 	verifierValidator := NewRequestorSchemeVerifierValidator()
 
