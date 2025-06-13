@@ -946,7 +946,7 @@ func (client *IrmaClient) IssueCommitments(
 		return nil, nil, err
 	}
 
-	keyBindingPubKeys, err := createKbJwtJson(client.keyBinder, irma.CalculateAmountOfSdJwtsToIssue(request))
+	keyBindingPubKeys, err := createKeyBindingPubKeysJson(client.keyBinder, irma.CalculateAmountOfSdJwtsToIssue(request))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -961,7 +961,7 @@ func (client *IrmaClient) IssueCommitments(
 	}, builders, nil
 }
 
-func createKbJwtJson(keyBinder sdjwtvc.KeyBinder, numKeys uint) ([]json.RawMessage, error) {
+func createKeyBindingPubKeysJson(keyBinder sdjwtvc.KeyBinder, numKeys uint) ([]json.RawMessage, error) {
 	keyBindingPubKeys, err := keyBinder.CreateKeyPairs(numKeys)
 	if err != nil {
 		return nil, err
