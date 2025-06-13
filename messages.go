@@ -306,7 +306,7 @@ type IssueCommitmentMessage struct {
 	KeyBindingPubKeys []jwk.Key                 `json:"keybinding_pub_keys,omitempty"`
 }
 
-func (m *IssueCommitmentMessage) UnmarshalJSON(data []byte) error {
+func (i *IssueCommitmentMessage) UnmarshalJSON(data []byte) error {
 	type issueCommitmentMessageAlias struct {
 		*gabi.IssueCommitmentMessage
 		Indices    DisclosedAttributeIndices `json:"indices,omitempty"`
@@ -318,15 +318,15 @@ func (m *IssueCommitmentMessage) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("failed to unmarshal base fields: %w", err)
 	}
 
-	m.IssueCommitmentMessage = alias.IssueCommitmentMessage
-	m.Indices = alias.Indices
+	i.IssueCommitmentMessage = alias.IssueCommitmentMessage
+	i.Indices = alias.Indices
 
 	for _, raw := range alias.RawPubKeys {
 		key, err := jwk.ParseKey(raw)
 		if err != nil {
 			return fmt.Errorf("failed to parse keybinding_pub_keys item: %w", err)
 		}
-		m.KeyBindingPubKeys = append(m.KeyBindingPubKeys, key)
+		i.KeyBindingPubKeys = append(i.KeyBindingPubKeys, key)
 	}
 
 	return nil
