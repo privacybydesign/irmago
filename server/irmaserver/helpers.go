@@ -827,8 +827,18 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys 
 
 	creator := sdjwtvc.NewJwtCreator(privKey)
 
+	numSdJwtsRequested := irma.CalculateAmountOfSdJwtsToIssue(issuanceReq)
+
+	if numPubKeys := uint(len(kbPubKeys)); numSdJwtsRequested != numPubKeys {
+		return nil, fmt.Errorf(
+			"number of requested SD-JWTs (%v) does not match the number of pub keys (%v)",
+			numSdJwtsRequested,
+			numPubKeys,
+		)
+	}
+
 	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
-	sdJwts := make([]sdjwtvc.SdJwtVc, irma.CalculateAmountOfSdJwtsToIssue(issuanceReq))
+	sdJwts := make([]sdjwtvc.SdJwtVc, numSdJwtsRequested)
 
 	var index uint = 0
 	for _, cred := range issuanceReq.Credentials {

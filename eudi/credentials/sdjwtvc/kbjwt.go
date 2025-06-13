@@ -46,14 +46,14 @@ type KeyBinder interface {
 }
 
 type DefaultKeyBinder struct {
-	Clock Clock
-	Keys  map[string]*ecdsa.PrivateKey
+	clock Clock
+	keys  map[string]*ecdsa.PrivateKey
 }
 
 func NewDefaultKeyBinder() *DefaultKeyBinder {
 	return &DefaultKeyBinder{
-		Clock: NewSystemClock(),
-		Keys:  map[string]*ecdsa.PrivateKey{},
+		clock: NewSystemClock(),
+		keys:  map[string]*ecdsa.PrivateKey{},
 	}
 }
 
@@ -81,7 +81,7 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 			return nil, fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
 		}
 
-		c.Keys[string(thumbprint)] = privKey
+		c.keys[string(thumbprint)] = privKey
 
 		result[i] = pubJwk
 	}
@@ -93,7 +93,7 @@ func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, n
 	payload := KeyBindingJwtPayload{
 		IssuerSignedJwtHash: hash,
 		Nonce:               nonce,
-		IssuedAt:            c.Clock.Now(),
+		IssuedAt:            c.clock.Now(),
 		Audience:            audience,
 	}
 	json, err := json.Marshal(payload)
@@ -109,7 +109,7 @@ func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, n
 		return "", fmt.Errorf("failed to create thumbprint for holder pub key: %v", err)
 	}
 
-	privKey, ok := c.Keys[string(thumbprint)]
+	privKey, ok := c.keys[string(thumbprint)]
 	if !ok {
 		return "", fmt.Errorf("failed to find private key for holder pub key")
 	}
