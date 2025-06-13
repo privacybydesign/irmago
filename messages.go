@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/privacybydesign/gabi/big"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -301,10 +302,34 @@ type DisclosedAttributeIndex struct {
 
 type IssueCommitmentMessage struct {
 	*gabi.IssueCommitmentMessage
-	Indices DisclosedAttributeIndices `json:"indices,omitempty"`
-	// Should be an instance of jwk.Key,
-	// but that was not possible because that can't be deserialized automatically.
-	KeyBindingPubKeys []json.RawMessage `json:"keybinding_pub_keys,omitempty"`
+	Indices           DisclosedAttributeIndices `json:"indices,omitempty"`
+	KeyBindingPubKeys []jwk.Key                 `json:"keybinding_pub_keys,omitempty"`
+}
+
+func (m *IssueCommitmentMessage) UnmarshalJSON(data []byte) error {
+	type issueCommitmentMessageAlias struct {
+		*gabi.IssueCommitmentMessage
+		Indices    DisclosedAttributeIndices `json:"indices,omitempty"`
+		RawPubKeys []json.RawMessage         `json:"keybinding_pub_keys,omitempty"`
+	}
+
+	var alias issueCommitmentMessageAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return fmt.Errorf("failed to unmarshal base fields: %w", err)
+	}
+
+	m.IssueCommitmentMessage = alias.IssueCommitmentMessage
+	m.Indices = alias.Indices
+
+	for _, raw := range alias.RawPubKeys {
+		key, err := jwk.ParseKey(raw)
+		if err != nil {
+			return fmt.Errorf("failed to parse keybinding_pub_keys item: %w", err)
+		}
+		m.KeyBindingPubKeys = append(m.KeyBindingPubKeys, key)
+	}
+
+	return nil
 }
 
 //

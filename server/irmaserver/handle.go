@@ -234,18 +234,13 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 		sigs = append(sigs, sig)
 	}
 
-	keyBindingPubKeys, err := parseKeyBindingPubKeys(commitments.KeyBindingPubKeys)
-	if err != nil {
-		return nil, session.fail(server.ErrorIssuanceFailed, err.Error(), conf)
-	}
-
 	// Generate SD-JWT here if configured
 	var sdJwts []sdjwtvc.SdJwtVc
 	settings := conf.SdJwtIssuanceSettings
 	if settings.Enabled {
 		sdJwts, err = session.generateSdJwts(
 			settings.JwtEcdsaPrivateKey,
-			keyBindingPubKeys,
+			commitments.KeyBindingPubKeys,
 			settings.Issuer,
 			conf.DisableTLS,
 		)
@@ -263,17 +258,17 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 	}, nil
 }
 
-func parseKeyBindingPubKeys(rawJsonKeys []json.RawMessage) ([]jwk.Key, error) {
-	keyBindingPubKeys := make([]jwk.Key, len(rawJsonKeys))
-	for i, rawJson := range rawJsonKeys {
-		parsed, err := jwk.ParseKey(rawJson)
-		if err != nil {
-			return nil, nil
-		}
-		keyBindingPubKeys[i] = parsed
-	}
-	return keyBindingPubKeys, nil
-}
+// func parseKeyBindingPubKeys(rawJsonKeys []json.RawMessage) ([]jwk.Key, error) {
+// 	keyBindingPubKeys := make([]jwk.Key, len(rawJsonKeys))
+// 	for i, rawJson := range rawJsonKeys {
+// 		parsed, err := jwk.ParseKey(rawJson)
+// 		if err != nil {
+// 			return nil, nil
+// 		}
+// 		keyBindingPubKeys[i] = parsed
+// 	}
+// 	return keyBindingPubKeys, nil
+// }
 
 func (session *sessionData) nextSession(conf *server.Configuration) (irma.RequestorRequest, irma.AttributeConDisCon, error) {
 	base := session.Rrequest.Base()
