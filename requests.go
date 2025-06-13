@@ -97,7 +97,7 @@ type IssuanceRequest struct {
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
 }
 
-// If the requestor does not specify how many SD-JWTs to issue in a batch, we default to this amount.
+// DefaultSdJwtIssueAmount is what you get when the requestor does not specify how many SD-JWTs to issue in a batch.
 const DefaultSdJwtIssueAmount uint = 50
 const MaxSdJwtIssueAmount uint = 200
 
