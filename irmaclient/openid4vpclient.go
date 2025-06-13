@@ -19,7 +19,7 @@ import (
 // ========================================================================
 
 type OpenID4VPClient struct {
-	keyBinder         sdjwtvc.KbJwtCreator
+	keyBinder         sdjwtvc.KeyBinder
 	storage           SdJwtVcStorage
 	verifierValidator VerifierValidator
 	compatibility     openid4vp.CompatibilityMode
@@ -28,7 +28,7 @@ type OpenID4VPClient struct {
 func NewOpenID4VPClient(
 	storage SdJwtVcStorage,
 	verifierValidator VerifierValidator,
-	keybinder sdjwtvc.KbJwtCreator,
+	keybinder sdjwtvc.KeyBinder,
 ) (*OpenID4VPClient, error) {
 	return &OpenID4VPClient{
 		keyBinder:         keybinder,

@@ -35,21 +35,12 @@ func New(
 		return nil, err
 	}
 
-	addTestCredentialsToStorage(sdjwtvcStorage)
-
-	jwtCreator, err := sdjwtvc.NewDefaultEcdsaJwtCreatorWithHolderPrivateKey()
-	if err != nil {
-		return nil, err
-	}
-
-	kbjwtCreator := sdjwtvc.DefaultKbJwtCreator{
-		Clock:      sdjwtvc.NewSystemClock(),
-		JwtCreator: jwtCreator,
-	}
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	addTestCredentialsToStorage(sdjwtvcStorage, keyBinder)
 
 	verifierValidator := NewRequestorSchemeVerifierValidator()
 
-	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, &kbjwtCreator)
+	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +54,7 @@ func New(
 	}
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
-	irmaClient, err := NewIrmaClient(conf, handler, signer, storage, sdjwtvcStorage)
+	irmaClient, err := NewIrmaClient(conf, handler, signer, storage, sdjwtvcStorage, keyBinder)
 	if err != nil {
 		return nil, err
 	}

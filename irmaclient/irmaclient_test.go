@@ -79,6 +79,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
 	sdjwtStorage, err := NewInMemorySdJwtVcStorage()
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
 
 	client, _ := NewIrmaClient(
 		conf,
@@ -86,6 +87,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 		signer,
 		storage,
 		sdjwtStorage,
+		keyBinder,
 	)
 	require.NoError(t, err)
 
@@ -502,7 +504,8 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer client.Close()
 
-	sdjwt, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	sdjwt, _ := createTestSdJwtVc(keyBinder, "pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
 		map[string]any{
 			"mobilenumber": "+31612345678",
 		},
@@ -519,7 +522,10 @@ func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer client.Close()
 
-	sdjwt, _ := createSdJwtVc("pbdf.pbdf.mobilenumber", "http://openid4vc.staging.yivi.app",
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	sdjwt, _ := createTestSdJwtVc(
+		keyBinder,
+		"pbdf.pbdf.mobilenumber", "http://openid4vc.staging.yivi.app",
 		map[string]any{
 			"mobilenumber": "+31612345678",
 		},

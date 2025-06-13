@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
@@ -31,10 +32,6 @@ import (
 )
 
 var one *big.Int = big.NewInt(1)
-
-// If the requestor does not specify how many SD-JWTs to issue in a batch, we default to this amount.
-const defaultSdJwtIssueAmount uint = 50
-const maxSdJwtIssueAmount uint = 200
 
 // Session helpers
 
@@ -811,7 +808,7 @@ func (s *Server) newSession(
 	return ses, nil
 }
 
-func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl string, allowNonHttps bool) ([]sdjwtvc.SdJwtVc, error) {
+func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys []jwk.Key, issuerUrl string, allowNonHttps bool) ([]sdjwtvc.SdJwtVc, error) {
 	// Check that the request is a valid issuance request
 	req, err := session.getRequest()
 	if err != nil {
@@ -830,8 +827,18 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 
 	creator := sdjwtvc.NewJwtCreator(privKey)
 
+	numSdJwtsRequested := irma.CalculateAmountOfSdJwtsToIssue(issuanceReq)
+
+	if numPubKeys := uint(len(kbPubKeys)); numSdJwtsRequested != numPubKeys {
+		return nil, fmt.Errorf(
+			"number of requested SD-JWTs (%v) does not match the number of pub keys (%v)",
+			numSdJwtsRequested,
+			numPubKeys,
+		)
+	}
+
 	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
-	sdJwts := make([]sdjwtvc.SdJwtVc, calculateAmountOfSdJwtsToIssue(issuanceReq))
+	sdJwts := make([]sdjwtvc.SdJwtVc, numSdJwtsRequested)
 
 	var index uint = 0
 	for _, cred := range issuanceReq.Credentials {
@@ -843,10 +850,10 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 
 		// Calculate how many SD-JWTs to issue for this credential
 		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
-		amount := defaultSdJwtIssueAmount
+		amount := irma.DefaultSdJwtIssueAmount
 		if cred.SdJwtBatchSize != nil {
 			// Don't issue more then the maximum allowed
-			amount = min(*cred.SdJwtBatchSize, maxSdJwtIssueAmount)
+			amount = min(*cred.SdJwtBatchSize, irma.MaxSdJwtIssueAmount)
 		}
 
 		for range amount {
@@ -856,17 +863,16 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 			}
 
 			// TODO: add choice of signature scheme to the builder
-			b := sdjwtvc.NewSdJwtVcBuilder().
+			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
 				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 				WithIssuerUrl(issuerUrl).
 				WithAllowNonHttpsIssuerUrl(allowNonHttps).
 				WithVerifiableCredentialType(credentialType).
-				WithDisclosures(disclosures)
-
-			// Make sure all SD-JWTs have the same issuance and expiration dates; we therefor use a 'static' clock
-			b.WithClock(&staticClock)
-
-			sdJwt, err := b.Build(creator)
+				WithDisclosures(disclosures).
+				WithHolderKey(kbPubKeys[index]).
+				// Make sure all SD-JWTs have the same issuance and expiration dates; we therefor use a 'static' clock
+				WithClock(&staticClock).
+				Build(creator)
 
 			if err != nil {
 				return nil, errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
@@ -878,17 +884,4 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, issuerUrl 
 	}
 
 	return sdJwts, nil
-}
-
-func calculateAmountOfSdJwtsToIssue(req *irma.IssuanceRequest) uint {
-	var amount uint = 0
-	for _, cred := range req.Credentials {
-		credAmount := defaultSdJwtIssueAmount
-		if cred.SdJwtBatchSize != nil {
-			// Don't issue more then the maximum allowed
-			amount = min(*cred.SdJwtBatchSize, maxSdJwtIssueAmount)
-		}
-		amount += credAmount
-	}
-	return amount
 }

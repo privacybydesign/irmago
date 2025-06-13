@@ -1,6 +1,10 @@
 package sdjwtvc
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 
@@ -31,23 +35,65 @@ const (
 	Key_Audience string = "aud"
 )
 
-// KbJwtCreator is an interface for creating a key binding jwt from a hash.
+// KeyBinder is an interface for creating a key binding jwt from a hash.
 // Can be used to move creating the kbjwt to a server.
-type KbJwtCreator interface {
+type KeyBinder interface {
+	// Creates a batch of key pairs and returns the pub keys.
+	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
+	CreateKeyPairs(num uint) ([]jwk.Key, error)
 	// takes in the hash over the issuer signed JWT and the selected disclosures
-	CreateKbJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
+	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
 }
 
-type DefaultKbJwtCreator struct {
-	Clock      Clock
-	JwtCreator JwtCreator
+type DefaultKeyBinder struct {
+	clock Clock
+	keys  map[string]*ecdsa.PrivateKey
 }
 
-func (c *DefaultKbJwtCreator) CreateKbJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error) {
+func NewDefaultKeyBinder() *DefaultKeyBinder {
+	return &DefaultKeyBinder{
+		clock: NewSystemClock(),
+		keys:  map[string]*ecdsa.PrivateKey{},
+	}
+}
+
+func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
+	result := make([]jwk.Key, num)
+
+	for i := range num {
+		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate ecdsa private key: %v", err)
+		}
+
+		privJwk, err := jwk.Import(privKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
+		}
+
+		pubJwk, err := privJwk.PublicKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to obtain pub key from jwk: %v", err)
+		}
+
+		thumbprint, err := pubJwk.Thumbprint(crypto.SHA256)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
+		}
+
+		c.keys[string(thumbprint)] = privKey
+
+		result[i] = pubJwk
+	}
+
+	return result, nil
+}
+
+func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error) {
 	payload := KeyBindingJwtPayload{
 		IssuerSignedJwtHash: hash,
 		Nonce:               nonce,
-		IssuedAt:            c.Clock.Now(),
+		IssuedAt:            c.clock.Now(),
 		Audience:            audience,
 	}
 	json, err := json.Marshal(payload)
@@ -58,11 +104,23 @@ func (c *DefaultKbJwtCreator) CreateKbJwt(hash string, holderKey jwk.Key, nonce 
 		"typ": KbJwtTyp,
 	}
 
-	jwt, err := c.JwtCreator.CreateSignedJwt(customHeaders, string(json))
+	thumbprint, err := holderKey.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return "", fmt.Errorf("failed to create thumbprint for holder pub key: %v", err)
+	}
+
+	privKey, ok := c.keys[string(thumbprint)]
+	if !ok {
+		return "", fmt.Errorf("failed to find private key for holder pub key")
+	}
+
+	jwtCreator := NewJwtCreator(privKey)
+
+	jwt, err := jwtCreator.CreateSignedJwt(customHeaders, string(json))
 	return KeyBindingJwt(jwt), err
 }
 
-func CreateKbJwt(sdJwt SdJwtVc, creator KbJwtCreator, nonce string, audience string) (KeyBindingJwt, error) {
+func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string) (KeyBindingJwt, error) {
 	alg, holderKey, err := extractHashingAlgorithmAndHolderPubKey(sdJwt)
 	if err != nil {
 		return "", err
@@ -73,7 +131,7 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KbJwtCreator, nonce string, audience str
 		return "", nil
 	}
 
-	return creator.CreateKbJwt(hash, holderKey, nonce, audience)
+	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
 }
 
 func extractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {
