@@ -2,7 +2,6 @@ package irmaclient
 
 import (
 	"encoding/json"
-	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -946,7 +945,7 @@ func (client *IrmaClient) IssueCommitments(
 		return nil, nil, err
 	}
 
-	keyBindingPubKeys, err := createKeyBindingPubKeysJson(client.keyBinder, irma.CalculateAmountOfSdJwtsToIssue(request))
+	keyBindingPubKeys, err := client.keyBinder.CreateKeyPairs(irma.CalculateAmountOfSdJwtsToIssue(request))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -959,22 +958,6 @@ func (client *IrmaClient) IssueCommitments(
 		Indices:           choices,
 		KeyBindingPubKeys: keyBindingPubKeys,
 	}, builders, nil
-}
-
-func createKeyBindingPubKeysJson(keyBinder sdjwtvc.KeyBinder, numKeys uint) ([]json.RawMessage, error) {
-	keyBindingPubKeys, err := keyBinder.CreateKeyPairs(numKeys)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]json.RawMessage, len(keyBindingPubKeys))
-	for i, key := range keyBindingPubKeys {
-		rawJson, err := json.Marshal(key)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal jwk.Key: %v", err)
-		}
-		result[i] = rawJson
-	}
-	return result, nil
 }
 
 // ConstructCredentials constructs and saves new credentials using the specified issuance signature messages

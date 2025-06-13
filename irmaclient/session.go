@@ -807,8 +807,7 @@ func (session *session) KeyshareDone(message interface{}) {
 		})
 	case irma.ActionIssuing:
 		request := session.request.(*irma.IssuanceRequest)
-		pubKeys, err := createKeyBindingPubKeysJson(
-			session.client.keyBinder,
+		pubKeys, err := session.client.keyBinder.CreateKeyPairs(
 			irma.CalculateAmountOfSdJwtsToIssue(request),
 		)
 

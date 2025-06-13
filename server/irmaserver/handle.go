@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
