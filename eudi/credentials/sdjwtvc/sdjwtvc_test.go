@@ -117,8 +117,9 @@ func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 }
 
 func TestCreateSdJwtVcWithDisclosuresAndKbJwt(t *testing.T) {
-	sdjwt := createDefaultTestingSdJwt(t)
-	kbjwt := createKbJwtWithTestHolderKey(t, sdjwt)
+	keyBinder := NewDefaultKeyBinder()
+	sdjwt := createDefaultTestingSdJwt(t, keyBinder)
+	kbjwt := createKbJwt(t, sdjwt, keyBinder)
 	fullSdjwt := AddKeyBindingJwtToSdJwtVc(sdjwt, kbjwt)
 
 	if numTildes := strings.Count(string(fullSdjwt), "~"); numTildes != 3 {

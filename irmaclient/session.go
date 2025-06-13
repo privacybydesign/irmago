@@ -10,9 +10,11 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -794,6 +796,17 @@ func (session *session) Dismiss() {
 	}
 }
 
+func createHolderBindingKeysForIssuanceRequest(
+	keybinder sdjwtvc.KeyBinder,
+	request *irma.IssuanceRequest,
+) ([]jwk.Key, error) {
+	if !request.RequestSdJwts {
+		return nil, nil
+	}
+	numPubKeys := irma.CalculateAmountOfSdJwtsToIssue(request)
+	return keybinder.CreateKeyPairs(numPubKeys)
+}
+
 // Keyshare session handler methods
 
 func (session *session) KeyshareDone(message interface{}) {
@@ -806,9 +819,20 @@ func (session *session) KeyshareDone(message interface{}) {
 			Indices: session.attrIndices,
 		})
 	case irma.ActionIssuing:
+		request := session.request.(*irma.IssuanceRequest)
+		pubKeys, err := createHolderBindingKeysForIssuanceRequest(
+			session.client.keyBinder,
+			request,
+		)
+
+		if err != nil {
+			session.fail(&irma.SessionError{Err: err})
+		}
+
 		session.sendResponse(&irma.IssueCommitmentMessage{
 			IssueCommitmentMessage: message.(*gabi.IssueCommitmentMessage),
 			Indices:                session.attrIndices,
+			KeyBindingPubKeys:      pubKeys,
 		})
 	}
 }

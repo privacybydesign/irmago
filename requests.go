@@ -97,6 +97,23 @@ type IssuanceRequest struct {
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
 }
 
+// If the requestor does not specify how many SD-JWTs to issue in a batch, we default to this amount.
+const DefaultSdJwtIssueAmount uint = 50
+const MaxSdJwtIssueAmount uint = 200
+
+func CalculateAmountOfSdJwtsToIssue(req *IssuanceRequest) uint {
+	var amount uint = 0
+	for _, cred := range req.Credentials {
+		credAmount := DefaultSdJwtIssueAmount
+		if cred.SdJwtBatchSize != nil {
+			// Don't issue more then the maximum allowed
+			amount = min(*cred.SdJwtBatchSize, MaxSdJwtIssueAmount)
+		}
+		amount += credAmount
+	}
+	return amount
+}
+
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {

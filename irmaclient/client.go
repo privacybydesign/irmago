@@ -37,19 +37,15 @@ func New(
 
 	addTestCredentialsToStorage(sdjwtvcStorage)
 
-	jwtCreator, err := sdjwtvc.NewDefaultEcdsaJwtCreatorWithHolderPrivateKey()
 	if err != nil {
 		return nil, err
 	}
 
-	kbjwtCreator := sdjwtvc.DefaultKbJwtCreator{
-		Clock:      sdjwtvc.NewSystemClock(),
-		JwtCreator: jwtCreator,
-	}
+	keyBinder := sdjwtvc.NewDefaultKbJwtCreator()
 
 	verifierValidator := NewRequestorSchemeVerifierValidator()
 
-	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, &kbjwtCreator)
+	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder)
 	if err != nil {
 		return nil, err
 	}

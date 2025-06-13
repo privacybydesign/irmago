@@ -14,7 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/testdata"
 )
 
-func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
+func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 	issuer := "https://example.com"
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"family_name": "Yivi",
@@ -23,8 +23,11 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 	requireNoErr(t, err)
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 
+	holderKey, err := keyBinder.CreateKeyPairs(1)
+	requireNoErr(t, err)
+
 	sdJwt, err := NewSdJwtVcBuilder().
-		WithHolderKey(testdata.ParseHolderPubJwk()).
+		WithHolderKey(holderKey[0]).
 		WithIssuerUrl(issuer).
 		WithDisclosures(disclosures).
 		WithVerifiableCredentialType("pbdf.pbdf.email").
@@ -35,11 +38,8 @@ func createDefaultTestingSdJwt(t *testing.T) SdJwtVc {
 	return sdJwt
 }
 
-func createKbJwtWithTestHolderKey(t *testing.T, sdjwt SdJwtVc) KeyBindingJwt {
-	kbJwtCreator, err := NewKbJwtCreatorWithHolderTestKey()
-	requireNoErr(t, err)
-
-	kbjwt, err := CreateKbJwt(sdjwt, kbJwtCreator, "nonce", "Verifier")
+func createKbJwt(t *testing.T, sdjwt SdJwtVc, keyBinder KeyBinder) KeyBindingJwt {
+	kbjwt, err := CreateKbJwt(sdjwt, keyBinder, "nonce", "Verifier")
 	requireNoErr(t, err)
 	return kbjwt
 }
@@ -117,18 +117,6 @@ func NewEcdsaJwtCreatorWithHolderTestKey() (*DefaultEcdsaJwtCreator, error) {
 		return nil, err
 	}
 	return &DefaultEcdsaJwtCreator{privateKey: key}, nil
-}
-
-func NewKbJwtCreatorWithHolderTestKey() (*DefaultKbJwtCreator, error) {
-	jwtCreator, err := NewEcdsaJwtCreatorWithHolderTestKey()
-	if err != nil {
-		return nil, err
-	}
-
-	return &DefaultKbJwtCreator{
-		Clock:      &SystemClock{},
-		JwtCreator: jwtCreator,
-	}, nil
 }
 
 func readHolderPublicJwk() (CnfField, error) {

@@ -58,6 +58,7 @@ type IrmaClient struct {
 	// Where we store/load SD-JWT-VC related data to/from
 	sdJwtVcStorage           SdJwtVcStorage
 	sdJwtVerificationContext sdjwtvc.VerificationContext
+	keyBinder                sdjwtvc.KeyBinder
 
 	// Versions the client supports
 	minVersion *irma.ProtocolVersion

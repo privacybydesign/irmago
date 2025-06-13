@@ -237,7 +237,12 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 	var sdJwts []sdjwtvc.SdJwtVc
 	settings := conf.SdJwtIssuanceSettings
 	if settings.Enabled {
-		sdJwts, err = session.generateSdJwts(settings.JwtEcdsaPrivateKey, settings.Issuer, conf.DisableTLS)
+		sdJwts, err = session.generateSdJwts(
+			settings.JwtEcdsaPrivateKey,
+			commitments.KeyBindingPubKeys,
+			settings.Issuer,
+			conf.DisableTLS,
+		)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error(), conf)
 		}

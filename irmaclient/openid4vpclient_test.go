@@ -75,19 +75,13 @@ func (h *testHandler) Failure(err *irma.SessionError) {
 }
 
 func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
-	jwtCreator, err := sdjwtvc.NewDefaultEcdsaJwtCreatorWithHolderPrivateKey()
-	require.NoError(t, err)
-
-	kbjwtCreator := &sdjwtvc.DefaultKbJwtCreator{
-		Clock:      sdjwtvc.NewSystemClock(),
-		JwtCreator: jwtCreator,
-	}
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
 	storage, err := NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
 	addTestCredentialsToStorage(storage)
 	verifierValidator := NewRequestorSchemeVerifierValidator()
-	client, err := NewOpenID4VPClient(storage, verifierValidator, kbjwtCreator)
+	client, err := NewOpenID4VPClient(storage, verifierValidator, keyBinder)
 	require.NoError(t, err)
 	return client
 }

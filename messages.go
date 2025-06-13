@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi/big"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -301,7 +302,8 @@ type DisclosedAttributeIndex struct {
 
 type IssueCommitmentMessage struct {
 	*gabi.IssueCommitmentMessage
-	Indices DisclosedAttributeIndices `json:"indices,omitempty"`
+	Indices           DisclosedAttributeIndices `json:"indices,omitempty"`
+	KeyBindingPubKeys []jwk.Key                 `json:"keybinding_pub_keys,omitempty"`
 }
 
 //
