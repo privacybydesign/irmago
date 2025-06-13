@@ -680,7 +680,7 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 // ===========================================================================================
 
 func createSdJwtAndInfo(t *testing.T, keyBinder sdjwtvc.KeyBinder, credentialId string, attributes map[string]string) (sdjwtvc.SdJwtVc, *irma.CredentialInfo) {
-	sdjwt, err := createSdJwtVc(keyBinder, credentialId, "https://openid4vc.staging.yivi.app", attributes)
+	sdjwt, err := createTestSdJwtVc(keyBinder, credentialId, "https://openid4vc.staging.yivi.app", attributes)
 	require.NoError(t, err)
 
 	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwt, sdjwtvc.CreateDefaultVerificationContext())

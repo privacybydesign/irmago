@@ -257,18 +257,6 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 	}, nil
 }
 
-// func parseKeyBindingPubKeys(rawJsonKeys []json.RawMessage) ([]jwk.Key, error) {
-// 	keyBindingPubKeys := make([]jwk.Key, len(rawJsonKeys))
-// 	for i, rawJson := range rawJsonKeys {
-// 		parsed, err := jwk.ParseKey(rawJson)
-// 		if err != nil {
-// 			return nil, nil
-// 		}
-// 		keyBindingPubKeys[i] = parsed
-// 	}
-// 	return keyBindingPubKeys, nil
-// }
-
 func (session *sessionData) nextSession(conf *server.Configuration) (irma.RequestorRequest, irma.AttributeConDisCon, error) {
 	base := session.Rrequest.Base()
 	if base.NextSession == nil {

@@ -109,7 +109,7 @@ func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
 
 func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinder()
-	sdjwt, err := createSdJwtVc(keyBinder, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	sdjwt, err := createTestSdJwtVc(keyBinder, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	})
@@ -189,7 +189,7 @@ func createMultipleSdJwtVcs(t *testing.T, vct string, issuer string, claims map[
 	keyBinder := sdjwtvc.NewDefaultKeyBinder()
 	result := []sdjwtvc.SdJwtVc{}
 	for range num {
-		sdjwt, err := createSdJwtVc(keyBinder, vct, issuer, claims)
+		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims)
 		require.NoError(t, err)
 		result = append(result, sdjwt)
 	}
