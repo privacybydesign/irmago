@@ -26,8 +26,8 @@ import (
 )
 
 var (
-	logger   = logrus.New()
-	testdata = test.FindTestdataFolder(nil)
+	logger         = logrus.New()
+	testdataFolder = test.FindTestdataFolder(nil)
 
 	revocationTestAttr        = irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
 	revocationTestCred        = revocationTestAttr.CredentialTypeIdentifier()
@@ -39,8 +39,8 @@ var (
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
 
-	jwtPrivkeyPath      = filepath.Join(testdata, "jwtkeys", "sk.pem")
-	jwtEcdsaPrivkeyPath = filepath.Join(testdata, "eudi", "issuer_ec_priv.pem")
+	jwtPrivkeyPath      = filepath.Join(testdataFolder, "jwtkeys", "sk.pem")
+	jwtEcdsaPrivkeyPath = filepath.Join(testdataFolder, "eudi", "issuer_ec_priv.pem")
 )
 
 const (
@@ -314,8 +314,8 @@ func IrmaServerConfiguration() *server.Configuration {
 		URL:                   fmt.Sprintf("http://localhost:%d", irmaServerPort),
 		Logger:                logger,
 		DisableSchemesUpdate:  true,
-		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
-		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		SchemesPath:           filepath.Join(testdataFolder, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdataFolder, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:        {RevocationServerURL: revocationServerURL, SSE: true},
 			revKeyshareTestCred:       {RevocationServerURL: revocationServerURL},
@@ -366,7 +366,7 @@ func RequestorServerAuthConfiguration() *requestorserver.Configuration {
 	conf.Requestors = map[string]requestorserver.Requestor{
 		"requestor1": {
 			AuthenticationMethod:  requestorserver.AuthenticationMethodPublicKey,
-			AuthenticationKeyFile: filepath.Join(testdata, "jwtkeys", "requestor1.pem"),
+			AuthenticationKeyFile: filepath.Join(testdataFolder, "jwtkeys", "requestor1.pem"),
 			Permissions: requestorserver.Permissions{
 				Hosts: []string{"localhost:48682"},
 			},

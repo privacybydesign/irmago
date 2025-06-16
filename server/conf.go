@@ -585,15 +585,6 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		return nil
 	}
 
-	if sdConf.IssuerCertificateChain == "" && sdConf.IssuerCertificateChainFile == "" {
-		return errors.New("SD-JWT VC issuance enabled but no private key was specified")
-	}
-
-	if sdConf.JwtPrivateKey == "" && sdConf.JwtPrivateKeyFile == "" {
-		return errors.New("SD-JWT VC issuance enabled but no certificate chain was specified")
-	}
-
-	// Read the private key from the specified file or string
 	privKeyBytes, err := common.ReadKey(sdConf.JwtPrivateKey, sdConf.JwtPrivateKeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to read private key from file: %v", err)
@@ -617,10 +608,8 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		return fmt.Errorf("SD-JWT VC x.509 issuer certificate chain is empty")
 	}
 
-	// We got a key-pair; this means SD-JWT issuance should be enabled
-	// Therefor, we need to check if this issuer is configured
 	if sdConf.Issuer == "" {
-		return errors.New("SD-JWT VC issuance enabled by configuring a key(file), but no issuer specified in configuration")
+		return errors.New("SD-JWT VC issuance enabled, but no issuer specified in configuration")
 	}
 
 	conf.Logger.Info("SD-JWT VC settings correctly configured; SD-JWT VC issuance enabled")
