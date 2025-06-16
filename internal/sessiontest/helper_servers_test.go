@@ -39,8 +39,9 @@ var (
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
 
-	jwtPrivkeyPath      = filepath.Join(testdataFolder, "jwtkeys", "sk.pem")
-	jwtEcdsaPrivkeyPath = filepath.Join(testdataFolder, "eudi", "issuer_ec_priv.pem")
+	jwtPrivkeyPath             = filepath.Join(testdataFolder, "jwtkeys", "sk.pem")
+	jwtEcdsaPrivkeyPath        = filepath.Join(testdataFolder, "eudi", "issuer_ec_priv.pem")
+	issuerCertificateChainPath = filepath.Join(testdataFolder, "eudi", "issuer_cert_openid4vc_staging_yivi_app.pem")
 )
 
 const (
@@ -343,8 +344,9 @@ func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	irmaServerConf.DisableTLS = true
 	irmaServerConf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
-		Issuer:            "https://example.app/yivi-issuer",
-		JwtPrivateKeyFile: jwtEcdsaPrivkeyPath,
+		Issuer:                     "https://openid4vc.staging.yivi.app",
+		JwtPrivateKeyFile:          jwtEcdsaPrivkeyPath,
+		IssuerCertificateChainFile: issuerCertificateChainPath,
 	}
 	return &requestorserver.Configuration{
 		Configuration:                  irmaServerConf,
