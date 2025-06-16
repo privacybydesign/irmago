@@ -808,7 +808,13 @@ func (s *Server) newSession(
 	return ses, nil
 }
 
-func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys []jwk.Key, issuerUrl string, allowNonHttps bool) ([]sdjwtvc.SdJwtVc, error) {
+func (session *sessionData) generateSdJwts(
+	issuerCertificateChain []string,
+	privKey *ecdsa.PrivateKey,
+	kbPubKeys []jwk.Key,
+	issuerUrl string,
+	allowNonHttps bool,
+) ([]sdjwtvc.SdJwtVc, error) {
 	// Check that the request is a valid issuance request
 	req, err := session.getRequest()
 	if err != nil {
@@ -843,7 +849,6 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys 
 	var index uint = 0
 	for _, cred := range issuanceReq.Credentials {
 		credentialType := cred.CredentialTypeID.String()
-
 		// We want each credential to have the same issuance and expiration dates, so we use a static clock
 		systemClock := sdjwtvc.NewSystemClock()
 		staticClock := sdjwtvc.StaticClock{CurrentTime: systemClock.Now()}
@@ -866,6 +871,7 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys 
 			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
 				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 				WithIssuerUrl(issuerUrl).
+				WithIssuerCertificateChain(issuerCertificateChain).
 				WithAllowNonHttpsIssuerUrl(allowNonHttps).
 				WithVerifiableCredentialType(credentialType).
 				WithDisclosures(disclosures).
