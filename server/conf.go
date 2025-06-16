@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -596,19 +595,18 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 
 	// Read the private key from the specified file or string
 	privKeyBytes, err := common.ReadKey(sdConf.JwtPrivateKey, sdConf.JwtPrivateKeyFile)
+	if err != nil {
+		return fmt.Errorf("failed to read private key from file: %v", err)
+	}
 
 	sdConf.JwtEcdsaPrivateKey, err = sdjwtvc.DecodeEcdsaPrivateKey(privKeyBytes)
 	if err != nil {
 		return errors.WrapPrefix(err, "failed to parse SD-JWT VC private key", 0)
 	}
 
-	certBytes := []byte(sdConf.IssuerCertificateChain)
-
-	if sdConf.IssuerCertificateChainFile != "" {
-		certBytes, err = os.ReadFile(sdConf.IssuerCertificateChainFile)
-		if err != nil {
-			return fmt.Errorf("failed to read SD-JWT VC issuer certificate chain file")
-		}
+	certBytes, err := common.ReadKey(sdConf.IssuerCertificateChain, sdConf.IssuerCertificateChainFile)
+	if err != nil {
+		return fmt.Errorf("failed to obtain SD-JWT VC issuer certificate chain: %v", err)
 	}
 
 	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(certBytes)
