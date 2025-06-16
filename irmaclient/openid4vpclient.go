@@ -280,18 +280,13 @@ func constructCandidatesFromCredentialQueries(
 		} else {
 			disCon := []DisclosureCandidates{}
 			for _, candidate := range candidates.SatisfyingCredentials {
-				credId := fmt.Sprintf("%s.%s.%s", candidate.Info.SchemeManagerID, candidate.Info.IssuerID, candidate.Info.ID)
 				con := DisclosureCandidates{}
 
-				for _, attribute := range candidates.RequestedAttributes {
-					id := irma.AttributeIdentifier{
-						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credId, attribute)),
-						CredentialHash: candidate.Info.Hash,
-					}
-
-					queryIdMap[id] = query.Id
+				for _, match := range candidate.ClaimMatches {
+					queryIdMap[match.Attribute] = query.Id
 					con = append(con, &DisclosureCandidate{
-						AttributeIdentifier: &id,
+						AttributeIdentifier: &match.Attribute,
+						Value:               match.Value,
 					})
 				}
 				disCon = append(disCon, con)
@@ -334,15 +329,10 @@ func constructCandidatesForCredentialSets(
 			for _, credential := range queryResult.SatisfyingCredentials {
 				con := DisclosureCandidates{}
 				conSatisfied := true
-				credentialId := fmt.Sprintf("%s.%s.%s", credential.Info.SchemeManagerID, credential.Info.IssuerID, credential.Info.ID)
 
-				for _, attribute := range queryResult.RequestedAttributes {
-					attributeId := irma.AttributeIdentifier{
-						Type:           irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, attribute)),
-						CredentialHash: credential.Info.Hash,
-					}
-					con = append(con, &DisclosureCandidate{AttributeIdentifier: &attributeId})
-					queryIdMap[attributeId] = requiredCredentialQueryId
+				for _, match := range credential.ClaimMatches {
+					con = append(con, &DisclosureCandidate{AttributeIdentifier: &match.Attribute, Value: match.Value})
+					queryIdMap[match.Attribute] = requiredCredentialQueryId
 				}
 				disCon = append(disCon, con)
 				if conSatisfied {
@@ -383,20 +373,105 @@ func attributesSatisfyClaims(
 	return true
 }
 
-// Only returns the credential instances that have ALL attributes required by the list of claims
-func filterCredentialsWithClaims(entries []SdJwtVcAndInfo, claims []dcql.Claim) ([]SdJwtVcAndInfo, error) {
-	result := []SdJwtVcAndInfo{}
-	for _, e := range entries {
-		id := fmt.Sprintf("%s.%s.%s", e.Info.SchemeManagerID, e.Info.IssuerID, e.Info.ID)
-		if attributesSatisfyClaims(e.Info.Attributes, id, claims) {
-			result = append(result, e)
+type CredentialCandidate struct {
+	RawCredential SdJwtVcAndInfo
+	ClaimMatches  []ClaimMatch
+}
+
+type ClaimMatch struct {
+	Attribute irma.AttributeIdentifier
+	Value     irma.TranslatedString
+}
+
+func sameTranslatedString(a irma.TranslatedString, b irma.TranslatedString) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, value := range a {
+		bVal, ok := b[key]
+		if !ok {
+			return false
+		}
+		if bVal != value {
+			return false
+		}
+	}
+	return true
+}
+
+func getClaimMatches(info irma.CredentialInfo, claims []dcql.Claim) (map[string]ClaimMatch, error) {
+	result := make(map[string]ClaimMatch)
+	for _, claim := range claims {
+		attrId := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", info.Identifier(), claim.Path[0]))
+		attributeValue, ok := info.Attributes[attrId]
+		if !ok {
+			continue
+		}
+		if len(claim.Values) != 0 {
+			for _, expectedValue := range claim.Values {
+				expectedString := expectedValue.(string)
+				value := irma.NewTranslatedString(&expectedString)
+				if sameTranslatedString(attributeValue, value) {
+					match := ClaimMatch{
+						Attribute: irma.AttributeIdentifier{
+							Type:           attrId,
+							CredentialHash: info.Hash,
+						},
+						Value: value,
+					}
+					result[claim.Id] = match
+					break
+				}
+			}
+		} else {
+			result[claim.Id] = ClaimMatch{
+				Attribute: irma.AttributeIdentifier{
+					Type:           attrId,
+					CredentialHash: info.Hash,
+				},
+			}
 		}
 	}
 	return result, nil
 }
 
-func findAllCandidatesForCredQuery(storage SdJwtVcStorage, query dcql.CredentialQuery) ([]SdJwtVcAndInfo, error) {
-	return filterCredentialsWithClaims(storage.GetCredentialsForId(query.Meta.VctValues[0]), query.Claims)
+func claimsSatisfied(query dcql.CredentialQuery, matches map[string]ClaimMatch) bool {
+	for _, c := range query.Claims {
+		_, ok := matches[c.Id]
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// Only returns the credential instances that have ALL attributes required by the list of claims
+func filterCredentialsWithClaims(entries []SdJwtVcAndInfo, query dcql.CredentialQuery) ([]CredentialCandidate, error) {
+	result := []CredentialCandidate{}
+	for _, e := range entries {
+		claimMatches, err := getClaimMatches(e.Info, query.Claims)
+		if err != nil {
+			return nil, err
+		}
+		if claimsSatisfied(query, claimMatches) {
+			result = append(result, CredentialCandidate{
+				RawCredential: e,
+				ClaimMatches:  mapToList(claimMatches),
+			})
+		}
+	}
+	return result, nil
+}
+
+func mapToList(claims map[string]ClaimMatch) (result []ClaimMatch) {
+	for _, value := range claims {
+		result = append(result, value)
+	}
+	return result
+}
+
+func findAllCandidatesForCredQuery(storage SdJwtVcStorage, query dcql.CredentialQuery) ([]CredentialCandidate, error) {
+	return filterCredentialsWithClaims(storage.GetCredentialsForId(query.Meta.VctValues[0]), query)
 }
 
 type SingleCredentialQueryCandidates struct {
@@ -405,7 +480,7 @@ type SingleCredentialQueryCandidates struct {
 	// The names of the attributes requested in this credential query
 	RequestedAttributes []string
 	// A list of credential info and the instance that satisfy the requirements described by the query
-	SatisfyingCredentials []SdJwtVcAndInfo
+	SatisfyingCredentials []CredentialCandidate
 }
 
 func findAllCandidatesForAllCredentialQueries(

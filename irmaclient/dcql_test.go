@@ -28,6 +28,52 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("multiple credential queries in option in credential set is unsupported", testDcqlMultipleCredentialQueriesInOptionIsUnsupported)
 	t.Run("claim sets is unsupported", testDcqlClaimSetsIsUnsupported)
 	t.Run("invalid format in credential query is unsupported", testDcqlInvalidFormatInCredentialQueryIsUnsupported)
+
+	t.Run("single satisfiable expected value for claim", testDcqlSingleSatisfiableExpectedValueForClaim)
+}
+
+func testDcqlSingleSatisfiableExpectedValueForClaim(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"], "values": ["gmail.com"]}]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
+	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expectedValue := "gmail.com"
+	expected := &DcqlQueryCandidates{
+		Satisfiable: true,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: emailInfo.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: emailInfo.Hash,
+						},
+						Value: irma.NewTranslatedString(&expectedValue),
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
 }
 
 func testDcqlInvalidFormatInCredentialQueryIsUnsupported(t *testing.T) {
