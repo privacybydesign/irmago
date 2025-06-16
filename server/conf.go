@@ -613,7 +613,7 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 
 	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(certBytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse x.509 certificate chain: %v", certChain)
+		return fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
 	}
 	if len(certChain) == 0 {
 		return fmt.Errorf("SD-JWT VC x.509 issuer certificate chain is empty")
