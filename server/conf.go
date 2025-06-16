@@ -596,10 +596,8 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 
 	// Read the private key from the specified file or string
 	privKeyBytes, err := common.ReadKey(sdConf.JwtPrivateKey, sdConf.JwtPrivateKeyFile)
-	if err != nil {
-		return errors.WrapPrefix(err, "failed to read SD-JWT VC private key", 0)
-	}
-	sdConf.JwtEcdsaPrivateKey, err = jwt.ParseECPrivateKeyFromPEM(privKeyBytes)
+
+	sdConf.JwtEcdsaPrivateKey, err = sdjwtvc.DecodeEcdsaPrivateKey(privKeyBytes)
 	if err != nil {
 		return errors.WrapPrefix(err, "failed to parse SD-JWT VC private key", 0)
 	}
