@@ -19,6 +19,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
@@ -581,7 +582,7 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 	if err != nil {
 		return errors.WrapPrefix(err, "failed to read SD-JWT private key", 0)
 	}
-	conf.SdJwtIssuanceSettings.JwtEcdsaPrivateKey, err = jwt.ParseECPrivateKeyFromPEM(privKeyBytes)
+	conf.SdJwtIssuanceSettings.JwtEcdsaPrivateKey, err = sdjwtvc.DecodeEcdsaPrivateKey(privKeyBytes)
 	if err != nil {
 		return errors.WrapPrefix(err, "failed to parse SD-JWT private key", 0)
 	}
