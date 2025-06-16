@@ -10,6 +10,7 @@ import (
 
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -63,12 +64,15 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 	sdjwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+
 	client, err := irmaclient.NewIrmaClient(
 		conf,
 		handler,
 		signer,
 		irmaclient.NewIrmaStorage(storagePath, conf, aesKey),
 		sdjwtStorage,
+		keyBinder,
 	)
 	require.NoError(t, err)
 

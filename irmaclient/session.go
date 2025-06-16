@@ -806,9 +806,19 @@ func (session *session) KeyshareDone(message interface{}) {
 			Indices: session.attrIndices,
 		})
 	case irma.ActionIssuing:
+		request := session.request.(*irma.IssuanceRequest)
+		pubKeys, err := session.client.keyBinder.CreateKeyPairs(
+			irma.CalculateAmountOfSdJwtsToIssue(request),
+		)
+
+		if err != nil {
+			session.fail(&irma.SessionError{Err: err})
+		}
+
 		session.sendResponse(&irma.IssueCommitmentMessage{
 			IssueCommitmentMessage: message.(*gabi.IssueCommitmentMessage),
 			Indices:                session.attrIndices,
+			KeyBindingPubKeys:      pubKeys,
 		})
 	}
 }

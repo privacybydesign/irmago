@@ -371,7 +371,7 @@ func (s *InMemorySdJwtVcStorage) GetCredentialByHash(hash string) (*SdJwtVcAndIn
 	return nil, fmt.Errorf("no entry found for hash '%s'", hash)
 }
 
-func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.SdJwtVc, error) {
+func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T) (sdjwtvc.SdJwtVc, error) {
 	contents, err := sdjwtvc.MultipleNewDisclosureContents(claims)
 	if err != nil {
 		return "", err
@@ -382,10 +382,15 @@ func createSdJwtVc[T any](vct, issuerUrl string, claims map[string]T) (sdjwtvc.S
 		return "", err
 	}
 
+	holderKey, err := keyBinder.CreateKeyPairs(1)
+	if err != nil {
+		return "", fmt.Errorf("failed to create holder keys: %v", err)
+	}
+
 	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
 	return sdjwtvc.NewSdJwtVcBuilder().
 		WithDisclosures(contents).
-		WithHolderKey(testdata.ParseHolderPubJwk()).
+		WithHolderKey(holderKey[0]).
 		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 		WithVerifiableCredentialType(vct).
 		WithIssuerUrl(issuerUrl).
@@ -449,9 +454,9 @@ func (s *InMemorySdJwtVcStorage) StoreCredential(info irma.CredentialInfo, crede
 	return nil
 }
 
-func addTestCredentialsToStorage(storage SdJwtVcStorage) {
+func addTestCredentialsToStorage(storage SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
 	// ignoring all errors here, since it's not production code anyway
-	mobilephoneEntry, _ := createSdJwtVc("pbdf.sidn-pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+	mobilephoneEntry, _ := createTestSdJwtVc(keyBinder, "pbdf.sidn-pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
 		map[string]any{
 			"mobilenumber": "+31612345678",
 		},
@@ -460,7 +465,7 @@ func addTestCredentialsToStorage(storage SdJwtVcStorage) {
 	info, _, _ := createCredentialInfoAndVerifiedSdJwtVc(mobilephoneEntry, sdjwtvc.CreateDefaultVerificationContext())
 	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{mobilephoneEntry})
 
-	emailEntry, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry, _ := createTestSdJwtVc(keyBinder, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	})
@@ -468,12 +473,12 @@ func addTestCredentialsToStorage(storage SdJwtVcStorage) {
 	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry, sdjwtvc.CreateDefaultVerificationContext())
 	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry})
 
-	emailEntry2, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry2, _ := createTestSdJwtVc(keyBinder, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	})
 
-	emailEntry3, _ := createSdJwtVc("pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailEntry3, _ := createTestSdJwtVc(keyBinder, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	})
