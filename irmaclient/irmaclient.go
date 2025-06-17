@@ -92,6 +92,7 @@ func NewIrmaClient(
 	handler ClientHandler,
 	signer Signer,
 	storage *storage,
+	sdJwtVerificationContext sdjwtvc.VerificationContext,
 	sdJwtVcStorage SdJwtVcStorage,
 	keyBinder sdjwtvc.KeyBinder,
 ) (*IrmaClient, error) {
@@ -156,12 +157,7 @@ func NewIrmaClient(
 	client.initRevocation()
 	client.StartJobs()
 
-	client.sdJwtVerificationContext = sdjwtvc.VerificationContext{
-		IssuerMetadataFetcher: sdjwtvc.NewHttpIssuerMetadataFetcher(),
-		Clock:                 sdjwtvc.NewSystemClock(),
-		JwtVerifier:           sdjwtvc.NewJwxJwtVerifier(),
-		AllowNonHttpsIssuer:   false,
-	}
+	client.sdJwtVerificationContext = sdJwtVerificationContext
 
 	return client, schemeMgrErr
 }

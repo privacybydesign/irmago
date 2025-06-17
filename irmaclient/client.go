@@ -8,6 +8,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/testdata"
 )
 
 type Client struct {
@@ -54,7 +55,21 @@ func New(
 	}
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
-	irmaClient, err := NewIrmaClient(conf, handler, signer, storage, sdjwtvcStorage, keyBinder)
+
+	x509Options, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	context := sdjwtvc.VerificationContext{
+		IssuerMetadataFetcher:   sdjwtvc.NewHttpIssuerMetadataFetcher(),
+		Clock:                   sdjwtvc.NewSystemClock(),
+		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		AllowNonHttpsIssuer:     false,
+		X509VerificationOptions: x509Options,
+	}
+
+	irmaClient, err := NewIrmaClient(conf, handler, signer, storage, context, sdjwtvcStorage, keyBinder)
 	if err != nil {
 		return nil, err
 	}

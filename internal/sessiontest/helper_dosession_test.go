@@ -146,7 +146,7 @@ func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request inte
 		}
 
 		if useJWTs {
-			skbts, err := os.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
+			skbts, err := os.ReadFile(filepath.Join(testdataFolder, "jwtkeys", "requestor1-sk.pem"))
 			require.NoError(t, err)
 			sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
 			require.NoError(t, err)
