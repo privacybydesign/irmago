@@ -33,6 +33,8 @@ import (
 
 var one *big.Int = big.NewInt(1)
 
+const defaultCredentialValidityInMonths = 6
+
 // Session helpers
 
 func (session *sessionData) markAlive(conf *server.Configuration) {
@@ -270,7 +272,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 
 		// Ensure the credential has an expiry date
-		defaultValidity := irma.Timestamp(time.Now().AddDate(0, 6, 0))
+		defaultValidity := irma.Timestamp(time.Now().AddDate(0, defaultCredentialValidityInMonths, 0))
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
@@ -876,7 +878,8 @@ func (session *sessionData) generateSdJwts(
 				WithVerifiableCredentialType(credentialType).
 				WithDisclosures(disclosures).
 				WithHolderKey(kbPubKeys[index]).
-				// Make sure all SD-JWTs have the same issuance and expiration dates; we therefor use a 'static' clock
+				WithValidity(time.Time(*cred.Validity)).
+				// Make sure all SD-JWTs have the same issuance dates; we therefor use a 'static' clock
 				WithClock(&staticClock).
 				Build(creator)
 
