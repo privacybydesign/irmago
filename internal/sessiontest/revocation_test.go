@@ -43,7 +43,7 @@ var (
 	revocationPkCounter uint = 2
 )
 
-func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.Client, handler irmaclient.ClientHandler, server *irmaserver.Server) {
+func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.IrmaClient, handler irmaclient.ClientHandler, server *irmaserver.Server) {
 	// issue first credential
 	credid := attr.CredentialTypeIdentifier()
 	result := doSession(t, revocationIssuanceRequest(t, credid), client, nil, nil, nil, nil, nil)
@@ -802,7 +802,7 @@ func revocationRequest(attr irma.AttributeTypeIdentifier) *irma.DisclosureReques
 	return req
 }
 
-func revocationSession(t *testing.T, client *irmaclient.Client, request irma.SessionRequest, irmaServer *IrmaServer, options ...option) *requestorSessionResult {
+func revocationSession(t *testing.T, client *irmaclient.IrmaClient, request irma.SessionRequest, irmaServer *IrmaServer, options ...option) *requestorSessionResult {
 	if request == nil {
 		request = revocationRequest(revocationTestAttr)
 	}
@@ -814,7 +814,7 @@ func revocationSession(t *testing.T, client *irmaclient.Client, request irma.Ses
 }
 
 // revocationSetup sets up an irmaclient with a revocation-enabled credential, constants, and revocation key material.
-func revocationSetup(t *testing.T, irmaServer *IrmaServer, dbType string) (*IrmaServer, *irmaclient.Client, *TestClientHandler) {
+func revocationSetup(t *testing.T, irmaServer *IrmaServer, dbType string) (*IrmaServer, *irmaclient.IrmaClient, *TestClientHandler) {
 	revServer := startRevocationServer(t, true, dbType)
 
 	// issue a MijnOverheid.root instance with revocation enabled
@@ -877,8 +877,8 @@ func revocationConf(_ *testing.T, dbType string) *server.Configuration {
 		Logger:                logger,
 		EnableSSE:             true,
 		DisableSchemesUpdate:  true,
-		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
-		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		SchemesPath:           filepath.Join(testdataFolder, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdataFolder, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:        {Authority: true},
 			revKeyshareTestCred:       {Authority: true},

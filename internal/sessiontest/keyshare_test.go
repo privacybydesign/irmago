@@ -109,7 +109,7 @@ func TestKeyshareSessions(t *testing.T) {
 	keyshareSessions(t, client, irmaServer)
 }
 
-func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer, options ...option) {
+func keyshareSessions(t *testing.T, client *irmaclient.IrmaClient, irmaServer *IrmaServer, options ...option) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	issuanceRequest := getCombinedIssuanceRequest(id)
@@ -204,7 +204,7 @@ func TestKeyshareEnrollIncorrectPin(t *testing.T) {
 	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"), 0)
 	defer keyshareServerTest2.Stop()
 
-	client, handler := parseStorage(t, optionNoSchemeAssets)
+	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
 
 	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")

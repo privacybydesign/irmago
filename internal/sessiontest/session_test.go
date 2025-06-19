@@ -82,6 +82,8 @@ func TestIrmaServer(t *testing.T) {
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, IrmaServerConfiguration))
 	t.Run("SigningSession", apply(testSigningSession, IrmaServerConfiguration))
 	t.Run("IssuanceSession", apply(testIssuanceSession, IrmaServerConfiguration))
+	t.Run("IssuanceSessionWithSdJwt", apply(testSdJwtIssuanceSession, RequestorServerConfiguration))
+
 	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, IrmaServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, IrmaServerConfiguration))
 	t.Run("PairingRejected", apply(testPairingRejected, IrmaServerConfiguration))
@@ -591,7 +593,7 @@ func testDisablePairing(t *testing.T, conf interface{}, opts ...option) {
 func updatedSchemeConfigDecorator(fn func() *server.Configuration) func() *server.Configuration {
 	return func() *server.Configuration {
 		c := fn()
-		c.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
+		c.SchemesPath = filepath.Join(testdataFolder, "irma_configuration_updated")
 		return c
 	}
 }
@@ -655,6 +657,10 @@ func testIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	doIssuanceSession(t, false, nil, conf, opts...)
 }
 
+func testSdJwtIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
+	doIssuanceSession(t, false, nil, conf, append(opts, optionExpectSdJwts)...)
+}
+
 func testCombinedSessionMultipleAttributes(t *testing.T, conf interface{}, opts ...option) {
 	var ir irma.IssuanceRequest
 	require.NoError(t, irma.UnmarshalValidate([]byte(`{
@@ -686,7 +692,7 @@ func testCombinedSessionMultipleAttributes(t *testing.T, conf interface{}, opts 
 	require.Equal(t, irma.ServerStatusDone, doSession(t, &ir, nil, nil, nil, nil, nil, conf, opts...).Status)
 }
 
-func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.Client, conf interface{}, opts ...option) {
+func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClient, conf interface{}, options ...option) {
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
 		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
@@ -711,12 +717,19 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.Client, c
 		})
 	}
 
-	result := doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
+	opts := processOptions(options...)
+	if opts.enabled(optionExpectSdJwts) {
+		request.RequestSdJwts = true
+		// TODO: add assertion for resulting SD-JWTs
+	}
+
+	result := doSession(t, request, client, nil, nil, nil, nil, conf, options...)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 	require.Equal(t, attrid, result.Disclosed[0][0].Identifier)
 	require.Equal(t, "456", result.Disclosed[0][0].Value["en"])
+
 }
 
 func testConDisCon(t *testing.T, conf interface{}, opts ...option) {
@@ -834,7 +847,7 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
 
 	conf := IrmaServerConfiguration()
-	conf.SchemesAssetsPath = filepath.Join(testdata, "irma_configuration")
+	conf.SchemesAssetsPath = filepath.Join(testdataFolder, "irma_configuration")
 	conf.SchemesPath = storage
 
 	irmaServer := StartIrmaServer(t, conf)
@@ -901,7 +914,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 
 	// Run a server with updated configuration (level is optional)
 	conf := IrmaServerConfiguration()
-	conf.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
+	conf.SchemesPath = filepath.Join(testdataFolder, "irma_configuration_updated")
 	irmaServer = StartIrmaServer(t, conf)
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
@@ -1370,7 +1383,7 @@ func TestRequestorHostPermissions(t *testing.T) {
 }
 
 func signSessionRequest(t *testing.T, req irma.SessionRequest) string {
-	skbts, err := os.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
+	skbts, err := os.ReadFile(filepath.Join(testdataFolder, "jwtkeys", "requestor1-sk.pem"))
 	require.NoError(t, err)
 	sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
 	require.NoError(t, err)

@@ -3,6 +3,7 @@ package irmaserver
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -18,17 +19,21 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
 
 var one *big.Int = big.NewInt(1)
+
+const defaultCredentialValidityInMonths = 6
 
 // Session helpers
 
@@ -267,7 +272,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 
 		// Ensure the credential has an expiry date
-		defaultValidity := irma.Timestamp(time.Now().AddDate(0, 6, 0))
+		defaultValidity := irma.Timestamp(time.Now().AddDate(0, defaultCredentialValidityInMonths, 0))
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
@@ -803,4 +808,89 @@ func (s *Server) newSession(
 	}
 
 	return ses, nil
+}
+
+func (session *sessionData) generateSdJwts(
+	issuerCertificateChain []string,
+	privKey *ecdsa.PrivateKey,
+	kbPubKeys []jwk.Key,
+	issuerUrl string,
+	allowNonHttps bool,
+) ([]sdjwtvc.SdJwtVc, error) {
+	// Check that the request is a valid issuance request
+	req, err := session.getRequest()
+	if err != nil {
+		return nil, err
+	}
+
+	issuanceReq, ok := req.(*irma.IssuanceRequest)
+	if !ok {
+		return nil, errors.New("session request is not an issuance request; cannot generate SD-JWTs")
+	}
+
+	// No SD-JWTs requested, return nothing
+	if !issuanceReq.RequestSdJwts {
+		return nil, nil
+	}
+
+	creator := sdjwtvc.NewJwtCreator(privKey)
+
+	numSdJwtsRequested := irma.CalculateAmountOfSdJwtsToIssue(issuanceReq)
+
+	if numPubKeys := uint(len(kbPubKeys)); numSdJwtsRequested != numPubKeys {
+		return nil, fmt.Errorf(
+			"number of requested SD-JWTs (%v) does not match the number of pub keys (%v)",
+			numSdJwtsRequested,
+			numPubKeys,
+		)
+	}
+
+	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
+	sdJwts := make([]sdjwtvc.SdJwtVc, numSdJwtsRequested)
+
+	var index uint = 0
+	for _, cred := range issuanceReq.Credentials {
+		credentialType := cred.CredentialTypeID.String()
+		// We want each credential to have the same issuance and expiration dates, so we use a static clock
+		systemClock := sdjwtvc.NewSystemClock()
+		staticClock := sdjwtvc.StaticClock{CurrentTime: systemClock.Now()}
+
+		// Calculate how many SD-JWTs to issue for this credential
+		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
+		amount := irma.DefaultSdJwtIssueAmount
+		if cred.SdJwtBatchSize != nil {
+			// Don't issue more then the maximum allowed
+			amount = min(*cred.SdJwtBatchSize, irma.MaxSdJwtIssueAmount)
+		}
+
+		for range amount {
+			disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
+			if err != nil {
+				return nil, err
+			}
+
+			// TODO: add choice of signature scheme to the builder
+			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
+				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
+				WithIssuerUrl(issuerUrl).
+				WithIssuerCertificateChain(issuerCertificateChain).
+				WithAllowNonHttpsIssuerUrl(allowNonHttps).
+				WithVerifiableCredentialType(credentialType).
+				WithDisclosures(disclosures).
+				WithHolderKey(kbPubKeys[index]).
+				WithValidity(time.Time(*cred.Validity)).
+				// Make sure all SD-JWTs have the same issuance dates; we therefor use a 'static' clock
+				WithClock(&staticClock).
+				Build(creator)
+
+			if err != nil {
+				return nil, errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
+			}
+
+			sdJwts[index] = sdJwt
+			index++
+		}
+	}
+
+	return sdJwts, nil
 }

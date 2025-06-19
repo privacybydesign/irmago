@@ -10,9 +10,11 @@ import (
 
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,17 +30,17 @@ func TestMain(m *testing.M) {
 	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T, opts ...option) (*irmaclient.Client, *TestClientHandler) {
+func parseStorage(t *testing.T, opts ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
 	storage := test.SetupTestStorage(t)
 	return parseExistingStorage(t, storage, opts...)
 }
 
-func parseExistingStorage(t *testing.T, storage string, options ...option) (*irmaclient.Client, *TestClientHandler) {
-	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
+func parseExistingStorage(t *testing.T, storageFolder string, options ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
+	handler := &TestClientHandler{t: t, c: make(chan error), storage: storageFolder}
 	path := test.FindTestdataFolder(t)
 
 	var signer irmaclient.Signer
-	bts, err := os.ReadFile(filepath.Join(storage, "client", "ecdsa_sk.pem"))
+	bts, err := os.ReadFile(filepath.Join(storageFolder, "client", "ecdsa_sk.pem"))
 	if os.IsNotExist(err) {
 		signer = test.NewSigner(t)
 	} else {
@@ -51,12 +53,40 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	client, err := irmaclient.New(
-		filepath.Join(storage, "client"),
-		filepath.Join(path, "irma_configuration"),
+	storagePath := filepath.Join(storageFolder, "client")
+	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+
+	conf, err := irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+	)
+	require.NoError(t, err)
+
+	sdjwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
+	require.NoError(t, err)
+
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+
+	x509Options, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(
+		testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
+	)
+	require.NoError(t, err)
+
+	context := sdjwtvc.VerificationContext{
+		IssuerMetadataFetcher:   sdjwtvc.NewHttpIssuerMetadataFetcher(),
+		Clock:                   sdjwtvc.NewSystemClock(),
+		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		AllowNonHttpsIssuer:     false,
+		X509VerificationOptions: x509Options,
+	}
+	client, err := irmaclient.NewIrmaClient(
+		conf,
 		handler,
 		signer,
-		aesKey,
+		irmaclient.NewIrmaStorage(storagePath, conf, aesKey),
+		context,
+		sdjwtStorage,
+		keyBinder,
 	)
 	require.NoError(t, err)
 
@@ -71,6 +101,7 @@ func parseExistingStorage(t *testing.T, storage string, options ...option) (*irm
 		err = client.Configuration.ParseFolder()
 		require.NoError(t, err)
 	}
+
 	if opts.enabled(optionPrePairingClient) {
 		version := extractClientMaxVersion(client)
 		// set to largest protocol version that dos not support pairing
@@ -155,7 +186,7 @@ func extractClientTransport(dismisser irmaclient.SessionDismisser) *irma.HTTPTra
 	return extractPrivateField(dismisser, "transport").(*irma.HTTPTransport)
 }
 
-func extractClientMaxVersion(client *irmaclient.Client) *irma.ProtocolVersion {
+func extractClientMaxVersion(client *irmaclient.IrmaClient) *irma.ProtocolVersion {
 	return extractPrivateField(client, "maxVersion").(*irma.ProtocolVersion)
 }
 

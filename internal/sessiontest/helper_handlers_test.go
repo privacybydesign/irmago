@@ -78,7 +78,7 @@ func (i *TestClientHandler) ReportError(err error) {
 type TestHandler struct {
 	t                  *testing.T
 	c                  chan *SessionResult
-	client             *irmaclient.Client
+	client             *irmaclient.IrmaClient
 	expectedServerName *irma.RequestorInfo
 	wait               time.Duration
 	result             string

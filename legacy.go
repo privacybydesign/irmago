@@ -290,6 +290,7 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 			Labels          map[int]TranslatedString   `json:"labels"`
 			SkipExpiryCheck []CredentialTypeIdentifier `json:"skipExpiryCheck,omitempty"`
 			Credentials     []*CredentialRequest       `json:"credentials"`
+			RequestSdJwts   bool                       `json:"requestSdJwts,omitempty"`
 		}
 		if err = json.Unmarshal(bts, &req); err != nil {
 			return err
@@ -297,6 +298,7 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 		*ir = IssuanceRequest{
 			DisclosureRequest: DisclosureRequest{req.BaseRequest, req.Disclose, req.Labels, req.SkipExpiryCheck},
 			Credentials:       req.Credentials,
+			RequestSdJwts:     req.RequestSdJwts,
 		}
 		return nil
 	}
@@ -343,6 +345,7 @@ func (s *ServerSessionResponse) UnmarshalJSON(bts []byte) error {
 	if err != nil {
 		return err
 	}
+
 	s.ProofStatus = ProofStatusValid
 	return nil
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
@@ -18,6 +19,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
@@ -100,6 +102,8 @@ type Configuration struct {
 
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
+
+	SdJwtIssuanceSettings *SdJwtIssuanceSettings `json:"sdjwtvc,omitempty" mapstructure:"sdjwtvc"`
 }
 
 type RedisClient struct {
@@ -136,6 +140,25 @@ type RedisSettings struct {
 	DisableTLS               bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
 }
 
+type SdJwtIssuanceSettings struct {
+	// The issuer url that ends up in the `iss` field of the sd-jwt vc
+	Issuer string `json:"issuer,omitempty" mapstructure:"issuer"`
+	// The private key that signs the sd-jwt vc (inline)
+	JwtPrivateKey string `json:"privkey,omitempty" mapstructure:"privkey"`
+	// The private key that signs the sd-jwt vc (file path)
+	JwtPrivateKeyFile string `json:"privkey_file,omitempty" mapstructure:"privkey_file"`
+	// The x.509 certificate chain that proves the issuer's trust relation (inline, PEM format)
+	IssuerCertificateChain string `json:"cert_chain,omitempty" mapstructure:"cert_chain"`
+	// The x.509 certificate chain that proves the issuer's trust relation (file path, PEM file)
+	IssuerCertificateChainFile string `json:"cert_chain_file,omitempty" mapstructure:"cert_chain_file"`
+
+	Enabled bool `json:"-"`
+	// Parsed JWT private key
+	JwtEcdsaPrivateKey *ecdsa.PrivateKey `json:"-"`
+	// x.509 certificate chain in the format the `x5c` header field of the sd-jwt vc expects
+	X509CertChain []string `json:"-"`
+}
+
 // Check ensures that the Configuration is loaded, usable and free of errors.
 func (conf *Configuration) Check() error {
 	if conf.Logger == nil {
@@ -161,6 +184,7 @@ func (conf *Configuration) Check() error {
 		conf.verifyRevocation,
 		conf.verifyJwtPrivateKey,
 		conf.verifyStaticSessions,
+		conf.verifySdJwtIssuanceSettings,
 	} {
 		if err := f(); err != nil {
 			_ = LogError(err)
@@ -549,6 +573,51 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 		RootCAs: systemCerts,
 	}
 	return tlsConfig, nil
+}
+
+func (conf *Configuration) verifySdJwtIssuanceSettings() error {
+	sdConf := conf.SdJwtIssuanceSettings
+
+	if sdConf == nil {
+		conf.SdJwtIssuanceSettings = &SdJwtIssuanceSettings{
+			Enabled: false,
+		}
+		return nil
+	}
+
+	privKeyBytes, err := common.ReadKey(sdConf.JwtPrivateKey, sdConf.JwtPrivateKeyFile)
+	if err != nil {
+		return fmt.Errorf("failed to read private key from file: %v", err)
+	}
+
+	sdConf.JwtEcdsaPrivateKey, err = sdjwtvc.DecodeEcdsaPrivateKey(privKeyBytes)
+	if err != nil {
+		return errors.WrapPrefix(err, "failed to parse SD-JWT VC private key", 0)
+	}
+
+	certBytes, err := common.ReadKey(sdConf.IssuerCertificateChain, sdConf.IssuerCertificateChainFile)
+	if err != nil {
+		return fmt.Errorf("failed to obtain SD-JWT VC issuer certificate chain: %v", err)
+	}
+
+	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(certBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
+	}
+	if len(certChain) == 0 {
+		return fmt.Errorf("SD-JWT VC x.509 issuer certificate chain is empty")
+	}
+
+	if sdConf.Issuer == "" {
+		return errors.New("SD-JWT VC issuance enabled, but no issuer specified in configuration")
+	}
+
+	sdConf.X509CertChain = certChain
+
+	conf.Logger.Info("SD-JWT VC settings correctly configured; SD-JWT VC issuance enabled")
+	sdConf.Enabled = true
+
+	return nil
 }
 
 // ReplacePortString is a helper that returns a copy of the specified url of the form

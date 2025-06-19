@@ -89,9 +89,29 @@ type IssuanceRequest struct {
 	DisclosureRequest
 	Credentials []*CredentialRequest `json:"credentials"`
 
+	// Flag to indicate whether the client should receive SD-JWTs next to the IRMA credentials
+	RequestSdJwts bool `json:"requestSdJwts,omitempty"`
+
 	// Derived data
 	CredentialInfoList        CredentialInfoList `json:",omitempty"`
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
+}
+
+// DefaultSdJwtIssueAmount is what you get when the requestor does not specify how many SD-JWTs to issue in a batch.
+const DefaultSdJwtIssueAmount uint = 50
+const MaxSdJwtIssueAmount uint = 200
+
+func CalculateAmountOfSdJwtsToIssue(req *IssuanceRequest) uint {
+	var amount uint = 0
+	for _, cred := range req.Credentials {
+		credAmount := DefaultSdJwtIssueAmount
+		if cred.SdJwtBatchSize != nil {
+			// Don't issue more then the maximum allowed
+			amount = min(*cred.SdJwtBatchSize, MaxSdJwtIssueAmount)
+		}
+		amount += credAmount
+	}
+	return amount
 }
 
 // A CredentialRequest contains the attributes and metadata of a credential
@@ -104,6 +124,9 @@ type CredentialRequest struct {
 	RevocationKey               string                   `json:"revocationKey,omitempty"`
 	RevocationSupported         bool                     `json:"revocationSupported,omitempty"`
 	RandomBlindAttributeTypeIDs []string                 `json:"randomblindIDs,omitempty"`
+
+	// SD-JWT related fields
+	SdJwtBatchSize *uint `json:"sdJwtBatchSize,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -886,7 +909,7 @@ func (t Timestamp) IsZero() bool {
 	return time.Time(t).IsZero()
 }
 
-func (t *Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+func (t Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	return e.EncodeElement(t.String(), start)
 }
 
@@ -900,7 +923,7 @@ func (t *Timestamp) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 }
 
 // MarshalJSON marshals a timestamp.
-func (t *Timestamp) MarshalJSON() ([]byte, error) {
+func (t Timestamp) MarshalJSON() ([]byte, error) {
 	return []byte(t.String()), nil
 }
 
