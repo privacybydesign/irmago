@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
@@ -58,7 +59,7 @@ func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
 
 type SdJwtVcBuilder struct {
 	issuerCertificateChain *[]string
-	lifetime               *int64
+	validity               time.Time
 	issuerUrl              *string
 	allowNonHttps          bool
 	cnfPubKey              *CnfField
@@ -85,8 +86,8 @@ func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuerUrl(allowNonHttps bool) *SdJwtVc
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithLifetime(lifetime int64) *SdJwtVcBuilder {
-	b.lifetime = &lifetime
+func (b *SdJwtVcBuilder) WithValidity(validity time.Time) *SdJwtVcBuilder {
+	b.validity = validity
 	return b
 }
 
@@ -139,6 +140,9 @@ func (b *SdJwtVcBuilder) WithHolderKey(key jwk.Key) *SdJwtVcBuilder {
 
 func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	payload := map[string]any{}
+
+	payload[Key_ExpiryTime] = b.validity.Unix()
+
 	if b.issuerUrl != nil {
 		if !strings.HasPrefix(*b.issuerUrl, "https://") && !b.allowNonHttps {
 			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", *b.issuerUrl)
@@ -162,9 +166,6 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	if b.clock != nil {
 		now := (*b.clock).Now()
 		payload[Key_IssuedAt] = now
-		if b.lifetime != nil {
-			payload[Key_ExpiryTime] = now + *b.lifetime
-		}
 	}
 
 	disclosures, err := EncodeDisclosures(b.disclosures)
