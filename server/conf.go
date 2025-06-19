@@ -612,6 +612,8 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		return errors.New("SD-JWT VC issuance enabled, but no issuer specified in configuration")
 	}
 
+	sdConf.X509CertChain = certChain
+
 	conf.Logger.Info("SD-JWT VC settings correctly configured; SD-JWT VC issuance enabled")
 	sdConf.Enabled = true
 
