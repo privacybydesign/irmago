@@ -10,7 +10,7 @@ require (
 	github.com/bwesterb/go-atum v1.1.5
 	github.com/eknkc/basex v1.0.1
 	github.com/fxamacker/cbor v1.5.1
-	github.com/go-chi/chi/v5 v5.0.7
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/go-chi/cors v1.2.1
 	github.com/go-co-op/gocron v1.28.3
 	github.com/go-errors/errors v1.4.2
