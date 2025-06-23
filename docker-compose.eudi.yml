@@ -1,7 +1,7 @@
 services:
   # eudi verifier using direct_post (no encryption) as the response_mode
   eudi_verifier:
-    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.4.0
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.5.1
     container_name: eudi_verifier
     ports:
       - "8080:8080"

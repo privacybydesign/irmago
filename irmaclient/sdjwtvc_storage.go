@@ -396,7 +396,7 @@ func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string
 		WithVerifiableCredentialType(vct).
 		WithIssuerUrl(issuerUrl).
 		WithClock(sdjwtvc.NewSystemClock()).
-		WithValidity(time.Now()).
+		WithValidity(time.Now().Add(time.Hour)).
 		WithIssuerCertificateChain(certChain).
 		Build(signer)
 }
