@@ -50,8 +50,8 @@ func NewRequestorSchemeVerifierValidator() VerifierValidator {
 					"nl": "Staging OpenID4VP Demo Verifier",
 					"en": "Staging OpenID4VP Demo Verifier",
 				},
-				Industry:   &irma.TranslatedString{},
-				Hostnames:  []string{
+				Industry: &irma.TranslatedString{},
+				Hostnames: []string{
 					"verifierapi.openid4vc.staging.yivi.app",
 				},
 				Logo:       new(string),

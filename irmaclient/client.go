@@ -2,6 +2,7 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 
 	"github.com/privacybydesign/gabi/big"
@@ -31,34 +32,36 @@ func New(
 		return nil, err
 	}
 
-	sdjwtvcStorage, err := NewInMemorySdJwtVcStorage()
-	if err != nil {
-		return nil, err
-	}
-
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
-	addTestCredentialsToStorage(sdjwtvcStorage, keyBinder)
-
-	verifierValidator := NewRequestorSchemeVerifierValidator()
-
-	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder)
-	if err != nil {
-		return nil, err
-	}
-
 	conf, err := irma.NewConfiguration(
 		filepath.Join(storagePath, "irma_configuration"),
 		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("instantiating configuration failed: %v", err)
 	}
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
 
+	// Ensure storage path exists, and populate it with necessary files
+	if err = storage.Open(); err != nil {
+		return nil, fmt.Errorf("failed to open irma storage: %v", err)
+	}
+
+	sdjwtvcStorage := NewBBoltSdJwtVcStorage(storage.db, storage.aesKey)
+
+	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	// addTestCredentialsToStorage(sdjwtvcStorage, keyBinder)
+
+	verifierValidator := NewRequestorSchemeVerifierValidator()
+
+	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
+	}
+
 	x509Options, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create verify options: %v", err)
 	}
 
 	context := sdjwtvc.VerificationContext{
@@ -71,7 +74,7 @@ func New(
 
 	irmaClient, err := NewIrmaClient(conf, handler, signer, storage, context, sdjwtvcStorage, keyBinder)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
 
 	return &Client{
