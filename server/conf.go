@@ -156,6 +156,7 @@ type SdJwtIssuanceSettings struct {
 	// Parsed JWT private key
 	JwtEcdsaPrivateKey *ecdsa.PrivateKey `json:"-"`
 	// x.509 certificate chain in the format the `x5c` header field of the sd-jwt vc expects
+	// Note: the public key from the leaf certificate should be the public part of the configured JwtPrivateKey (or JwtPrivateKeyFile).
 	X509CertChain []string `json:"-"`
 }
 
