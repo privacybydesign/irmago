@@ -848,12 +848,11 @@ func (session *sessionData) generateSdJwts(
 	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
 	sdJwts := make([]sdjwtvc.SdJwtVc, numSdJwtsRequested)
 
+	issuanceTime := sdjwtvc.NewSystemClock().Now()
+
 	var index uint = 0
 	for _, cred := range issuanceReq.Credentials {
 		credentialType := cred.CredentialTypeID.String()
-		// We want each credential to have the same issuance and expiration dates, so we use a static clock
-		systemClock := sdjwtvc.NewSystemClock()
-		staticClock := sdjwtvc.StaticClock{CurrentTime: systemClock.Now()}
 
 		// Calculate how many SD-JWTs to issue for this credential
 		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
@@ -862,6 +861,8 @@ func (session *sessionData) generateSdJwts(
 			// Don't issue more then the maximum allowed
 			amount = min(*cred.SdJwtBatchSize, irma.MaxSdJwtIssueAmount)
 		}
+
+		validUntil := time.Time(*cred.Validity).Unix()
 
 		for range amount {
 			disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
@@ -878,9 +879,9 @@ func (session *sessionData) generateSdJwts(
 				WithVerifiableCredentialType(credentialType).
 				WithDisclosures(disclosures).
 				WithHolderKey(kbPubKeys[index]).
-				WithValidity(time.Time(*cred.Validity)).
+				WithExpiresAt(validUntil).
 				// Make sure all SD-JWTs have the same issuance dates; we therefor use a 'static' clock
-				WithClock(&staticClock).
+				WithIssuedAt(issuanceTime).
 				Build(creator)
 
 			if err != nil {

@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -395,8 +394,8 @@ func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string
 		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 		WithVerifiableCredentialType(vct).
 		WithIssuerUrl(issuerUrl).
-		WithClock(sdjwtvc.NewSystemClock()).
-		WithValidity(time.Now().Add(time.Hour)).
+		WithIssuedAt(sdjwtvc.NewSystemClock().Now()).
+		WithExpiresAt(sdjwtvc.NewSystemClock().Now() + 10000).
 		WithIssuerCertificateChain(certChain).
 		Build(signer)
 }

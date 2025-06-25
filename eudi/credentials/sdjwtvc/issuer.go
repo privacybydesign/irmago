@@ -7,7 +7,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
@@ -59,7 +58,8 @@ func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
 
 type SdJwtVcBuilder struct {
 	issuerCertificateChain *[]string
-	validity               time.Time
+	expiry                 *int64
+	issuedAt               *int64
 	issuerUrl              *string
 	allowNonHttps          bool
 	cnfPubKey              *CnfField
@@ -68,7 +68,6 @@ type SdJwtVcBuilder struct {
 	vct                    *string
 	sdAlg                  *HashingAlgorithm
 	disclosures            []DisclosureContent
-	clock                  *Clock
 	ensureHaipCompatible   bool
 }
 
@@ -86,8 +85,8 @@ func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuerUrl(allowNonHttps bool) *SdJwtVc
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithValidity(validity time.Time) *SdJwtVcBuilder {
-	b.validity = validity
+func (b *SdJwtVcBuilder) WithExpiresAt(unixTime int64) *SdJwtVcBuilder {
+	b.expiry = &unixTime
 	return b
 }
 
@@ -126,8 +125,8 @@ func (b *SdJwtVcBuilder) WithDisclosures(disclosures []DisclosureContent) *SdJwt
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithClock(clock Clock) *SdJwtVcBuilder {
-	b.clock = &clock
+func (b *SdJwtVcBuilder) WithIssuedAt(unixTime int64) *SdJwtVcBuilder {
+	b.issuedAt = &unixTime
 	return b
 }
 
@@ -140,8 +139,6 @@ func (b *SdJwtVcBuilder) WithHolderKey(key jwk.Key) *SdJwtVcBuilder {
 
 func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	payload := map[string]any{}
-
-	payload[Key_ExpiryTime] = b.validity.Unix()
 
 	if b.issuerUrl != nil {
 		if !strings.HasPrefix(*b.issuerUrl, "https://") && !b.allowNonHttps {
@@ -163,9 +160,12 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 		payload[Key_Subject] = *b.subject
 	}
 
-	if b.clock != nil {
-		now := (*b.clock).Now()
-		payload[Key_IssuedAt] = now
+	if b.issuedAt != nil {
+		payload[Key_IssuedAt] = *b.issuedAt
+	}
+
+	if b.expiry != nil {
+		payload[Key_ExpiryTime] = *b.expiry
 	}
 
 	disclosures, err := EncodeDisclosures(b.disclosures)
