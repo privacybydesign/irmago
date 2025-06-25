@@ -167,7 +167,7 @@ func createAuthorizationRequestRequest() string {
 }
 
 func startSessionAtEudiVerifier() (string, error) {
-	response, err := http.Post("http://127.0.0.1:8080/ui/presentations",
+	response, err := http.Post("http://127.0.0.1:8089/ui/presentations",
 		"application/json",
 		bytes.NewReader([]byte(createAuthorizationRequestRequest())))
 

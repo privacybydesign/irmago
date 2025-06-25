@@ -120,12 +120,13 @@ services:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.5.1
     container_name: eudi_verifier
     ports:
-      - "8080:8080"
+      - "8089:8089"
     volumes:
       - ./testdata/eudi/verifier/keystore.p12:/keystore.p12
     environment:
+      - SERVER_PORT=8089
       - VERIFIER_RESPONSE_MODE="DirectPost"
-      - VERIFIER_PUBLIC_URL="0.0.0.0:8080"
+      - VERIFIER_PUBLIC_URL="0.0.0.0:8089"
       - VERIFIER_CLIENTIDSCHEME=x509_san_dns
       - VERIFIER_JAR_SIGNING_KEY=LoadFromKeystore
       - VERIFIER_JAR_SIGNING_KEY_ALIAS=verifier_cert
