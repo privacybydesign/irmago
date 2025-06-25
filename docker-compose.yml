@@ -87,6 +87,7 @@ services:
     volumes:
       - .:/irmago
     depends_on:
+      - eudi_verifier
       - postgres
       - mysql
       - sqlserver
