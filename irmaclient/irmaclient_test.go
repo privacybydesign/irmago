@@ -79,6 +79,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 	require.NoError(t, err)
 
 	storage := NewIrmaStorage(storagePath, conf, aesKey)
+	require.NoError(t, storage.Open())
 	sdjwtStorage, err := NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
