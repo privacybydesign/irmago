@@ -408,16 +408,16 @@ func getClaimMatches(info irma.CredentialInfo, claims []dcql.Claim) (map[string]
 			continue
 		}
 		if len(claim.Values) != 0 {
-			for _, expectedValue := range claim.Values {
-				expectedString := expectedValue.(string)
-				value := irma.NewTranslatedString(&expectedString)
-				if sameTranslatedString(attributeValue, value) {
+			for _, requestedValueAny := range claim.Values {
+				requestedValueString := requestedValueAny.(string)
+				requestedValue := irma.NewTranslatedString(&requestedValueString)
+				if sameTranslatedString(attributeValue, requestedValue) {
 					match := ClaimMatch{
 						Attribute: irma.AttributeIdentifier{
 							Type:           attrId,
 							CredentialHash: info.Hash,
 						},
-						Value: value,
+						Value: requestedValue,
 					}
 					result[claim.Id] = match
 					break

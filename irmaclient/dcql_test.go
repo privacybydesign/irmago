@@ -2,6 +2,8 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -30,6 +32,153 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("invalid format in credential query is unsupported", testDcqlInvalidFormatInCredentialQueryIsUnsupported)
 
 	t.Run("single satisfiable expected value for claim", testDcqlSingleSatisfiableExpectedValueForClaim)
+	t.Run("single unsatisfiable expected value for claim", testDcqlSingleUnsatisfiableExpectedValueForClaim)
+	t.Run("multple value options single claim satisfiable", testDcqlMultipleValueOptionsSingleClaimSatisfiable)
+	t.Run("multple value options single claim satisfiable multiple options", testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions)
+}
+
+func testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"], "values": ["gmail.com", "hotmail.com", "yahoo.com"]}]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	infoHotmail := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	infoGmail := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "user@gmail.com", "domain": "gmail.com"})
+
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &DcqlQueryCandidates{
+		Satisfiable: true,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: infoHotmail.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: infoHotmail.Hash,
+						},
+						Value: newTranslatedString("hotmail.com"),
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: infoGmail.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: infoGmail.Hash,
+						},
+						Value: newTranslatedString("gmail.com"),
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
+
+}
+
+func testDcqlMultipleValueOptionsSingleClaimSatisfiable(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"], "values": ["gmail.com", "hotmail.com", "yahoo.com"]}]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	info := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "user@live.com", "domain": "live.com"})
+
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &DcqlQueryCandidates{
+		Satisfiable: true,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: info.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: info.Hash,
+						},
+						Value: newTranslatedString("hotmail.com"),
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
+}
+
+func testDcqlSingleUnsatisfiableExpectedValueForClaim(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"], "values": ["gmail.com"]}]
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "user@live.com", "domain": "live.com"})
+
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &DcqlQueryCandidates{
+		Satisfiable: false,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: "",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
 }
 
 func testDcqlSingleSatisfiableExpectedValueForClaim(t *testing.T) {
@@ -735,10 +884,48 @@ func createSdJwtAndInfo(t *testing.T, keyBinder sdjwtvc.KeyBinder, credentialId 
 	return sdjwt, info
 }
 
+func sortCon(con DisclosureCandidates) DisclosureCandidates {
+	slices.SortStableFunc(con, func(a, b *DisclosureCandidate) int {
+		return strings.Compare(a.AttributeIdentifier.Type.String(), b.AttributeIdentifier.Type.String())
+	})
+	return con
+}
+
+func sortDisCon(disCon []DisclosureCandidates) []DisclosureCandidates {
+	for i := range disCon {
+		disCon[i] = sortCon(disCon[i])
+	}
+	slices.SortStableFunc(disCon, func(a, b DisclosureCandidates) int {
+		if len(a) != 0 && len(b) != 0 {
+			return strings.Compare(a[0].CredentialHash, b[0].CredentialHash)
+		}
+		return len(a) - len(b)
+	})
+	return disCon
+}
+
+func sortConDisCon(condiscon [][]DisclosureCandidates) [][]DisclosureCandidates {
+	for i := range condiscon {
+		condiscon[i] = sortDisCon(condiscon[i])
+	}
+	slices.SortStableFunc(condiscon, func(a, b []DisclosureCandidates) int {
+		return len(a) - len(b)
+	})
+	return condiscon
+}
+
+func sortCandidates(candidates *DcqlQueryCandidates) *DcqlQueryCandidates {
+	candidates.Candidates = sortConDisCon(candidates.Candidates)
+	return candidates
+}
+
 func requireSameCandidates(t *testing.T, expected *DcqlQueryCandidates, result *DcqlQueryCandidates) {
 	if expected.Satisfiable != result.Satisfiable {
 		t.Fatalf("'Satisfiable' field doesn't match, expected: %v, received: %v", expected.Satisfiable, result.Satisfiable)
 	}
+
+	expected = sortCandidates(expected)
+	result = sortCandidates(result)
 
 	if !assert.ObjectsAreEqualValues(expected.Candidates, result.Candidates) {
 		ex, err := json.MarshalIndent(expected.Candidates, "", "    ")
@@ -762,4 +949,8 @@ func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claim
 	require.NoError(t, err)
 
 	return info
+}
+
+func newTranslatedString(value string) irma.TranslatedString {
+	return irma.NewTranslatedString(&value)
 }
