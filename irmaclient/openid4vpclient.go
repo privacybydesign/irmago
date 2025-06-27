@@ -435,14 +435,36 @@ func getClaimMatches(info irma.CredentialInfo, claims []dcql.Claim) (map[string]
 	return result, nil
 }
 
-func claimsSatisfied(query dcql.CredentialQuery, matches map[string]ClaimMatch) bool {
-	for _, c := range query.Claims {
-		_, ok := matches[c.Id]
+func getAllMatchesForKeys(matches map[string]ClaimMatch, keys []string) []ClaimMatch {
+	result := []ClaimMatch{}
+	for _, key := range keys {
+		match, ok := matches[key]
 		if !ok {
-			return false
+			return nil
+		}
+		result = append(result, match)
+	}
+	return result
+}
+
+func filterClaimMatches(query dcql.CredentialQuery, matches map[string]ClaimMatch) []ClaimMatch {
+	if query.ClaimSets != nil && len(query.ClaimSets) != 0 {
+		for _, con := range query.ClaimSets {
+			// first fully satisfied con is enough
+			if result := getAllMatchesForKeys(matches, con); result != nil {
+				return result
+			}
+		}
+		return nil
+	}
+
+	for _, claim := range query.Claims {
+		if _, ok := matches[claim.Id]; !ok {
+			return nil
 		}
 	}
-	return true
+
+	return mapToList(matches)
 }
 
 // Only returns the credential instances that have ALL attributes required by the list of claims
@@ -453,10 +475,10 @@ func filterCredentialsWithClaims(entries []SdJwtVcAndInfo, query dcql.Credential
 		if err != nil {
 			return nil, err
 		}
-		if claimsSatisfied(query, claimMatches) {
+		if matches := filterClaimMatches(query, claimMatches); matches != nil {
 			result = append(result, CredentialCandidate{
 				RawCredential: e,
-				ClaimMatches:  mapToList(claimMatches),
+				ClaimMatches:  matches,
 			})
 		}
 	}
@@ -490,9 +512,6 @@ func findAllCandidatesForAllCredentialQueries(
 	result := map[string]SingleCredentialQueryCandidates{}
 
 	for _, query := range queries {
-		if query.ClaimSets != nil {
-			return nil, fmt.Errorf("'claim_sets' was provided in credential query '%s' but is currently unsupported", query.Id)
-		}
 		if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
 			return nil, fmt.Errorf("credential query '%s' contains unsupported format '%s'", query.Id, query.Format)
 		}
