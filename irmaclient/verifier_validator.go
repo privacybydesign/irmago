@@ -43,6 +43,24 @@ func NewRequestorSchemeVerifierValidator() VerifierValidator {
 				Languages:  []string{},
 				Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
 			},
+			"verifierapi.openid4vc.staging.yivi.app": {
+				ID:     irma.RequestorIdentifier{},
+				Scheme: irma.RequestorSchemeIdentifier{},
+				Name: map[string]string{
+					"nl": "Staging OpenID4VP Demo Verifier",
+					"en": "Staging OpenID4VP Demo Verifier",
+				},
+				Industry: &irma.TranslatedString{},
+				Hostnames: []string{
+					"verifierapi.openid4vc.staging.yivi.app",
+				},
+				Logo:       new(string),
+				LogoPath:   new(string),
+				ValidUntil: &irma.Timestamp{},
+				Unverified: false,
+				Languages:  []string{},
+				Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
+			},
 		},
 	}
 }

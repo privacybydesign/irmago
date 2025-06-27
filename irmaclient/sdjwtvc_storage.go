@@ -394,8 +394,8 @@ func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string
 		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 		WithVerifiableCredentialType(vct).
 		WithIssuerUrl(issuerUrl).
-		WithClock(sdjwtvc.NewSystemClock()).
-		WithLifetime(1000000000).
+		WithIssuedAt(sdjwtvc.NewSystemClock().Now()).
+		WithExpiresAt(sdjwtvc.NewSystemClock().Now() + 10000).
 		WithIssuerCertificateChain(certChain).
 		Build(signer)
 }

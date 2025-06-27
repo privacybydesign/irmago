@@ -33,6 +33,8 @@ import (
 
 var one *big.Int = big.NewInt(1)
 
+const defaultCredentialValidityInMonths = 6
+
 // Session helpers
 
 func (session *sessionData) markAlive(conf *server.Configuration) {
@@ -270,7 +272,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 
 		// Ensure the credential has an expiry date
-		defaultValidity := irma.Timestamp(time.Now().AddDate(0, 6, 0))
+		defaultValidity := irma.Timestamp(time.Now().AddDate(0, defaultCredentialValidityInMonths, 0))
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
@@ -808,7 +810,13 @@ func (s *Server) newSession(
 	return ses, nil
 }
 
-func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys []jwk.Key, issuerUrl string, allowNonHttps bool) ([]sdjwtvc.SdJwtVc, error) {
+func (session *sessionData) generateSdJwts(
+	issuerCertificateChain []string,
+	privKey *ecdsa.PrivateKey,
+	kbPubKeys []jwk.Key,
+	issuerUrl string,
+	allowNonHttps bool,
+) ([]sdjwtvc.SdJwtVc, error) {
 	// Check that the request is a valid issuance request
 	req, err := session.getRequest()
 	if err != nil {
@@ -840,13 +848,11 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys 
 	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
 	sdJwts := make([]sdjwtvc.SdJwtVc, numSdJwtsRequested)
 
+	issuanceTime := sdjwtvc.NewSystemClock().Now()
+
 	var index uint = 0
 	for _, cred := range issuanceReq.Credentials {
 		credentialType := cred.CredentialTypeID.String()
-
-		// We want each credential to have the same issuance and expiration dates, so we use a static clock
-		systemClock := sdjwtvc.NewSystemClock()
-		staticClock := sdjwtvc.StaticClock{CurrentTime: systemClock.Now()}
 
 		// Calculate how many SD-JWTs to issue for this credential
 		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
@@ -855,6 +861,8 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys 
 			// Don't issue more then the maximum allowed
 			amount = min(*cred.SdJwtBatchSize, irma.MaxSdJwtIssueAmount)
 		}
+
+		validUntil := time.Time(*cred.Validity).Unix()
 
 		for range amount {
 			disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
@@ -866,12 +874,14 @@ func (session *sessionData) generateSdJwts(privKey *ecdsa.PrivateKey, kbPubKeys 
 			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
 				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 				WithIssuerUrl(issuerUrl).
+				WithIssuerCertificateChain(issuerCertificateChain).
 				WithAllowNonHttpsIssuerUrl(allowNonHttps).
 				WithVerifiableCredentialType(credentialType).
 				WithDisclosures(disclosures).
 				WithHolderKey(kbPubKeys[index]).
-				// Make sure all SD-JWTs have the same issuance and expiration dates; we therefor use a 'static' clock
-				WithClock(&staticClock).
+				WithExpiresAt(validUntil).
+				// Make sure all SD-JWTs have the same issuance dates; we therefor use a 'static' clock
+				WithIssuedAt(issuanceTime).
 				Build(creator)
 
 			if err != nil {

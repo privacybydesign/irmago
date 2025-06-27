@@ -13,6 +13,12 @@ import (
 )
 
 func TestSdJwtVcStorage(t *testing.T) {
+	require.True(t, t.Run("old storage compatibility", testCompatibilityWithOldStorage))
+
+	RunTestWithTempBboltSdJwtVcStorage(t,
+		"get credential info list from empty storage",
+		testGetCredentialInfoListFromEmptyStorage,
+	)
 	RunTestWithTempBboltSdJwtVcStorage(t,
 		"store and retrieve single sdjwtvc",
 		testStoringSingleSdJwtVc,
@@ -37,6 +43,18 @@ func TestSdJwtVcStorage(t *testing.T) {
 		"adding multiple sets of same attributes should not affect info list",
 		testAddingMultipleInstancesWithSameAttributeSets,
 	)
+}
+
+func testCompatibilityWithOldStorage(t *testing.T) {
+	irmaClient, _ := parseStorage(t)
+	sdjwtStorage := NewBBoltSdJwtVcStorage(irmaClient.storage.db, irmaClient.storage.aesKey)
+	list := sdjwtStorage.GetCredentialInfoList()
+	require.Empty(t, list)
+}
+
+func testGetCredentialInfoListFromEmptyStorage(t *testing.T, storage SdJwtVcStorage) {
+	list := storage.GetCredentialInfoList()
+	require.Empty(t, list)
 }
 
 // Adding sets of sdjwts with the same attributes should add the sdjwts to the list of existing sdjwt instances.

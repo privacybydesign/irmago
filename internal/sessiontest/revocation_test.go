@@ -877,8 +877,8 @@ func revocationConf(_ *testing.T, dbType string) *server.Configuration {
 		Logger:                logger,
 		EnableSSE:             true,
 		DisableSchemesUpdate:  true,
-		SchemesPath:           filepath.Join(testdata, "irma_configuration"),
-		IssuerPrivateKeysPath: filepath.Join(testdata, "privatekeys"),
+		SchemesPath:           filepath.Join(testdataFolder, "irma_configuration"),
+		IssuerPrivateKeysPath: filepath.Join(testdataFolder, "privatekeys"),
 		RevocationSettings: irma.RevocationSettings{
 			revocationTestCred:        {Authority: true},
 			revKeyshareTestCred:       {Authority: true},

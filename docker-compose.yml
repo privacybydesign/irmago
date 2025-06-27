@@ -87,6 +87,7 @@ services:
     volumes:
       - .:/irmago
     depends_on:
+      - eudi_verifier
       - postgres
       - mysql
       - sqlserver
@@ -113,6 +114,37 @@ services:
       - mailhog
     networks:
       - irma-net
+
+  # Eudi openid4vp verifier service 
+  eudi_verifier:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.5.1
+    container_name: eudi_verifier
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./testdata/eudi/verifier/keystore.p12:/keystore.p12
+    environment:
+      - SERVER_PORT=8089
+      - VERIFIER_RESPONSE_MODE="DirectPost"
+      - VERIFIER_PUBLIC_URL="0.0.0.0:8089"
+      - VERIFIER_CLIENTIDSCHEME=x509_san_dns
+      - VERIFIER_JAR_SIGNING_KEY=LoadFromKeystore
+      - VERIFIER_JAR_SIGNING_KEY_ALIAS=verifier_cert
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE=file:///keystore.p12
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE_PASSWORD=changeit
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE_TYPE=pkcs12
+      - VERIFIER_JAR_SIGNING_KEY_PASSWORD=changeit
+      - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
+      - VERIFIER_ORIGINALCLIENTID=localhost
+
+  # Frontend for the verifier
+  custom_verifier_frontend:
+    build: ./eudi_demo_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./eudi_demo_frontend:/app
+      - /app/node_modules
 
 # Docker Desktop for MacOS does not support exposing ports when using host networking. Therefore,
 # we have to use bridge networking and expose the ports manually.

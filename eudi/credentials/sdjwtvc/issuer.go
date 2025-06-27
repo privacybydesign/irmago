@@ -58,7 +58,8 @@ func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
 
 type SdJwtVcBuilder struct {
 	issuerCertificateChain *[]string
-	lifetime               *int64
+	expiry                 *int64
+	issuedAt               *int64
 	issuerUrl              *string
 	allowNonHttps          bool
 	cnfPubKey              *CnfField
@@ -67,7 +68,6 @@ type SdJwtVcBuilder struct {
 	vct                    *string
 	sdAlg                  *HashingAlgorithm
 	disclosures            []DisclosureContent
-	clock                  *Clock
 	ensureHaipCompatible   bool
 }
 
@@ -85,8 +85,8 @@ func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuerUrl(allowNonHttps bool) *SdJwtVc
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithLifetime(lifetime int64) *SdJwtVcBuilder {
-	b.lifetime = &lifetime
+func (b *SdJwtVcBuilder) WithExpiresAt(unixTime int64) *SdJwtVcBuilder {
+	b.expiry = &unixTime
 	return b
 }
 
@@ -125,8 +125,8 @@ func (b *SdJwtVcBuilder) WithDisclosures(disclosures []DisclosureContent) *SdJwt
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithClock(clock Clock) *SdJwtVcBuilder {
-	b.clock = &clock
+func (b *SdJwtVcBuilder) WithIssuedAt(unixTime int64) *SdJwtVcBuilder {
+	b.issuedAt = &unixTime
 	return b
 }
 
@@ -139,6 +139,7 @@ func (b *SdJwtVcBuilder) WithHolderKey(key jwk.Key) *SdJwtVcBuilder {
 
 func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	payload := map[string]any{}
+
 	if b.issuerUrl != nil {
 		if !strings.HasPrefix(*b.issuerUrl, "https://") && !b.allowNonHttps {
 			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", *b.issuerUrl)
@@ -159,12 +160,12 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 		payload[Key_Subject] = *b.subject
 	}
 
-	if b.clock != nil {
-		now := (*b.clock).Now()
-		payload[Key_IssuedAt] = now
-		if b.lifetime != nil {
-			payload[Key_ExpiryTime] = now + *b.lifetime
-		}
+	if b.issuedAt != nil {
+		payload[Key_IssuedAt] = *b.issuedAt
+	}
+
+	if b.expiry != nil {
+		payload[Key_ExpiryTime] = *b.expiry
 	}
 
 	disclosures, err := EncodeDisclosures(b.disclosures)

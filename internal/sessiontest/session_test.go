@@ -593,7 +593,7 @@ func testDisablePairing(t *testing.T, conf interface{}, opts ...option) {
 func updatedSchemeConfigDecorator(fn func() *server.Configuration) func() *server.Configuration {
 	return func() *server.Configuration {
 		c := fn()
-		c.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
+		c.SchemesPath = filepath.Join(testdataFolder, "irma_configuration_updated")
 		return c
 	}
 }
@@ -847,7 +847,7 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 	defer func() { require.NoError(t, os.RemoveAll(storage)) }()
 
 	conf := IrmaServerConfiguration()
-	conf.SchemesAssetsPath = filepath.Join(testdata, "irma_configuration")
+	conf.SchemesAssetsPath = filepath.Join(testdataFolder, "irma_configuration")
 	conf.SchemesPath = storage
 
 	irmaServer := StartIrmaServer(t, conf)
@@ -914,7 +914,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 
 	// Run a server with updated configuration (level is optional)
 	conf := IrmaServerConfiguration()
-	conf.SchemesPath = filepath.Join(testdata, "irma_configuration_updated")
+	conf.SchemesPath = filepath.Join(testdataFolder, "irma_configuration_updated")
 	irmaServer = StartIrmaServer(t, conf)
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
@@ -1383,7 +1383,7 @@ func TestRequestorHostPermissions(t *testing.T) {
 }
 
 func signSessionRequest(t *testing.T, req irma.SessionRequest) string {
-	skbts, err := os.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
+	skbts, err := os.ReadFile(filepath.Join(testdataFolder, "jwtkeys", "requestor1-sk.pem"))
 	require.NoError(t, err)
 	sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
 	require.NoError(t, err)

@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,16 +62,32 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 	)
 	require.NoError(t, err)
 
+	irmaStorage := irmaclient.NewIrmaStorage(storagePath, conf, aesKey)
+	require.NoError(t, irmaStorage.Open())
+
 	sdjwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
 	keyBinder := sdjwtvc.NewDefaultKeyBinder()
 
+	x509Options, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(
+		testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
+	)
+	require.NoError(t, err)
+
+	context := sdjwtvc.VerificationContext{
+		IssuerMetadataFetcher:   sdjwtvc.NewHttpIssuerMetadataFetcher(),
+		Clock:                   sdjwtvc.NewSystemClock(),
+		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		AllowNonHttpsIssuer:     false,
+		X509VerificationOptions: x509Options,
+	}
 	client, err := irmaclient.NewIrmaClient(
 		conf,
 		handler,
 		signer,
-		irmaclient.NewIrmaStorage(storagePath, conf, aesKey),
+		irmaStorage,
+		context,
 		sdjwtStorage,
 		keyBinder,
 	)

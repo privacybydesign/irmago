@@ -2,6 +2,7 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -92,6 +93,7 @@ func NewIrmaClient(
 	handler ClientHandler,
 	signer Signer,
 	storage *storage,
+	sdJwtVerificationContext sdjwtvc.VerificationContext,
 	sdJwtVcStorage SdJwtVcStorage,
 	keyBinder sdjwtvc.KeyBinder,
 ) (*IrmaClient, error) {
@@ -115,28 +117,23 @@ func NewIrmaClient(
 	// return it at the end; otherwise bail out now
 	_, isSchemeMgrErr := schemeMgrErr.(*irma.SchemeManagerError)
 	if schemeMgrErr != nil && !isSchemeMgrErr {
-		return nil, schemeMgrErr
-	}
-
-	// Ensure storage path exists, and populate it with necessary files
-	if err = client.storage.Open(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("scheme manager error: %v", schemeMgrErr)
 	}
 
 	// Perform new update functions from clientUpdates, if any
 	if err = client.update(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("client update failed: %v", err)
 	}
 
 	// Load our stuff
 	if client.Preferences, err = client.storage.LoadPreferences(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load preferences: %v", err)
 	}
 	client.applyPreferences()
 
 	err = client.loadCredentialStorage()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load credential storage: %v", err)
 	}
 
 	client.sessions = sessions{client: client, sessions: map[string]*session{}}
@@ -156,12 +153,7 @@ func NewIrmaClient(
 	client.initRevocation()
 	client.StartJobs()
 
-	client.sdJwtVerificationContext = sdjwtvc.VerificationContext{
-		IssuerMetadataFetcher: sdjwtvc.NewHttpIssuerMetadataFetcher(),
-		Clock:                 sdjwtvc.NewSystemClock(),
-		JwtVerifier:           sdjwtvc.NewJwxJwtVerifier(),
-		AllowNonHttpsIssuer:   false,
-	}
+	client.sdJwtVerificationContext = sdJwtVerificationContext
 
 	return client, schemeMgrErr
 }
