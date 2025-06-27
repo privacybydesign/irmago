@@ -39,6 +39,82 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("claim sets two options both satisfiable pick first claim", testDcqlClaimSetsTwoOptionsBothSatisfiablePickFirstClaim)
 	t.Run("claim sets two options both satisfiable by different instances", testDcqlClaimSetsTwoOptionsBothSatisfiableByDifferentInstances)
 	t.Run("claim sets two options not satisfiable", testDcqlClaimSetsTwoOptionsNotSatisfiable)
+
+	t.Run("non-required credential set", testNonRequiredCredentialSet)
+}
+
+func testNonRequiredCredentialSet(t *testing.T) {
+	dcqlQuery := parseTestQuery(t, `{
+		"credentials": [{
+			"id": "email",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
+		}, {
+			"id": "phone",
+			"format": "dc+sd-jwt",
+			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
+			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+		}],
+		"credential_sets": [{
+			"options": [["email"], ["phone"]],
+			"required": false
+		}]
+	}`)
+
+	storage, _ := NewInMemorySdJwtVcStorage()
+	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
+	emailInfo2 := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "contact@yivi.app", "domain": "yivi.app"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+1234567"})
+	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
+	require.NoError(t, err)
+
+	expected := &DcqlQueryCandidates{
+		Satisfiable: true,
+		Candidates: [][]DisclosureCandidates{
+			{
+				{},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: emailInfo.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: emailInfo.Hash,
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: emailInfo2.Hash,
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: emailInfo2.Hash,
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	requireSameCandidates(t, expected, result)
 }
 
 func testDcqlClaimSetsTwoOptionsNotSatisfiable(t *testing.T) {

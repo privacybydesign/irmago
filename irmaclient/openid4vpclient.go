@@ -348,6 +348,11 @@ func constructCandidatesForCredentialSets(
 		disCon := []DisclosureCandidates{}
 		disConSatisfied := false
 
+		if credentialSet.Required != nil && !*credentialSet.Required {
+			disCon = append(disCon, DisclosureCandidates{})
+			disConSatisfied = true
+		}
+
 		// each option for this purpose (dis)
 		for _, option := range credentialSet.Options {
 			if len(option) > 1 {
