@@ -246,16 +246,49 @@ func getCandidatesForDcqlQuery(storage SdJwtVcStorage, query dcql.DcqlQuery) (*D
 	return constructCandidatesFromCredentialQueries(query.Credentials, allAvailableCredentials)
 }
 
+func constructClaimMap(claims []dcql.Claim) map[string]dcql.Claim {
+	result := map[string]dcql.Claim{}
+	for _, c := range claims {
+		result[c.Id] = c
+	}
+	return result
+}
+
 func constructEmptyDisConForQuery(query dcql.CredentialQuery) ([]DisclosureCandidates, error) {
 	con := DisclosureCandidates{}
-	for _, claim := range query.Claims {
-		credId := query.Meta.VctValues[0]
+	claimMap := constructClaimMap(query.Claims)
+	claimSet := []string{}
+
+	// if there are claim sets involved, construct an empty credential based on the first set only
+	// with the first requested value.
+	// this is an arbitrary choice.
+	if query.ClaimSets != nil && len(query.ClaimSets) != 0 {
+		claimSet = query.ClaimSets[0]
+	} else {
+		for _, c := range query.Claims {
+			claimSet = append(claimSet, c.Id)
+		}
+	}
+
+	credId := query.Meta.VctValues[0]
+	for _, claimId := range claimSet {
+		claim := claimMap[claimId]
 		attr := claim.Path[0]
-		con = append(con, &DisclosureCandidate{
+		candidate := &DisclosureCandidate{
 			AttributeIdentifier: &irma.AttributeIdentifier{
 				Type: irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credId, attr)),
 			},
-		})
+		}
+
+		if claim.Values != nil && len(claim.Values) != 0 {
+			firstValue, ok := claim.Values[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("claim value not a string while it was expected to be")
+			}
+			candidate.Value = irma.NewTranslatedString(&firstValue)
+		}
+
+		con = append(con, candidate)
 	}
 	return []DisclosureCandidates{con}, nil
 }
@@ -435,6 +468,8 @@ func getClaimMatches(info irma.CredentialInfo, claims []dcql.Claim) (map[string]
 	return result, nil
 }
 
+// Will return a list of all claim matches corresponding to the provided keys.
+// Will return nil when not all of the keys are present in the map.
 func getAllMatchesForKeys(matches map[string]ClaimMatch, keys []string) []ClaimMatch {
 	result := []ClaimMatch{}
 	for _, key := range keys {
