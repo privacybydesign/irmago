@@ -262,7 +262,7 @@ func constructEmptyDisConForQuery(query dcql.CredentialQuery) ([]DisclosureCandi
 	// if there are claim sets involved, construct an empty credential based on the first set only
 	// with the first requested value.
 	// this is an arbitrary choice.
-	if query.ClaimSets != nil && len(query.ClaimSets) != 0 {
+	if len(query.ClaimSets) != 0 {
 		claimSet = query.ClaimSets[0]
 	} else {
 		for _, c := range query.Claims {
@@ -280,7 +280,7 @@ func constructEmptyDisConForQuery(query dcql.CredentialQuery) ([]DisclosureCandi
 			},
 		}
 
-		if claim.Values != nil && len(claim.Values) != 0 {
+		if len(claim.Values) != 0 {
 			firstValue, ok := claim.Values[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("claim value not a string while it was expected to be")
@@ -385,27 +385,6 @@ func constructCandidatesForCredentialSets(
 	}, nil
 }
 
-func attributesSatisfyClaims(
-	attributes map[irma.AttributeTypeIdentifier]irma.TranslatedString,
-	credentialId string,
-	claims []dcql.Claim,
-) bool {
-	attrs := []irma.AttributeTypeIdentifier{}
-
-	for _, c := range claims {
-		attrs = append(attrs, irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", credentialId, c.Path[0])))
-	}
-
-	for _, a := range attrs {
-		_, ok := attributes[a]
-		if !ok {
-			return false
-		}
-	}
-
-	return true
-}
-
 type CredentialCandidate struct {
 	RawCredential SdJwtVcAndInfo
 	ClaimMatches  []ClaimMatch
@@ -483,7 +462,7 @@ func getAllMatchesForKeys(matches map[string]ClaimMatch, keys []string) []ClaimM
 }
 
 func filterClaimMatches(query dcql.CredentialQuery, matches map[string]ClaimMatch) []ClaimMatch {
-	if query.ClaimSets != nil && len(query.ClaimSets) != 0 {
+	if len(query.ClaimSets) != 0 {
 		for _, con := range query.ClaimSets {
 			// first fully satisfied con is enough
 			if result := getAllMatchesForKeys(matches, con); result != nil {
