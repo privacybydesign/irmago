@@ -1,3 +1,7 @@
+
+SCHEME=http://
+HOST=localhost
+
 # generate verifier priv key
 openssl ecparam -name prime256v1 -genkey -noout -out verifier_ec_priv.pem
 
@@ -17,8 +21,8 @@ extendedKeyUsage = 1.3.130.2.0.0.1.7
 subjectAltName = @alt_names
 
 [alt_names]
-URI.1 = http://localhost
-DNS.1 = localhost
+URI.1 = $SCHEME$HOST
+DNS.1 = $HOST
 " > "end-entity.ext"
 
 # create root/ca certificate
@@ -27,7 +31,7 @@ openssl req -x509 -new -key ca_ec_priv.pem -sha256 -days 3650 -out ca.crt \
 
 # create verifier certificate request
 openssl req -new -key verifier_ec_priv.pem -out verifier.csr \
-  -subj "/C=US/O=My Org/CN=localhost"
+  -subj "/C=US/O=My Org/CN=$HOST"
 
 # sign verifier certificate request
 openssl x509 -req -in verifier.csr -CA ca.crt -CAkey ca_ec_priv.pem -CAcreateserial \

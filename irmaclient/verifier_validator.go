@@ -91,7 +91,7 @@ func (v *RequestorSchemeVerifierValidator) VerifyAuthorizationRequest(requestJwt
 }
 
 func parseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRequest, error) {
-	trusted, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.VerifierCertChain_localhost_Bytes)
+	trusted, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.VerifierCertChain_staging_Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create trusted certificate verification options")
 	}
