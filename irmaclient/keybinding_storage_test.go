@@ -20,15 +20,19 @@ func TestKeyBindingStorage(t *testing.T) {
 	)
 }
 
+func getPubJwk(t *testing.T, priv *ecdsa.PrivateKey) jwk.Key {
+	privJwk, err := jwk.Import(priv)
+	require.NoError(t, err)
+	pubJwk, err := privJwk.PublicKey()
+	require.NoError(t, err)
+	return pubJwk
+}
+
 func testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
 	privateKeys := createPrivateKeys(t, 100)
 	require.NoError(t, storage.StorePrivateKeys(privateKeys))
 
-	privJwk, err := jwk.Import(privateKeys[0])
-	require.NoError(t, err)
-	pubJwk, err := privJwk.PublicKey()
-	require.NoError(t, err)
-
+	pubJwk := getPubJwk(t, privateKeys[0])
 	privKey, err := storage.GetAndRemovePrivateKey(pubJwk)
 	require.NoError(t, err)
 
@@ -36,6 +40,10 @@ func testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce(t *testing.T, storage sdjwtvc
 
 	privKey, err = storage.GetAndRemovePrivateKey(pubJwk)
 	require.Error(t, err)
+
+	pubJwk = getPubJwk(t, privateKeys[1])
+	privKey, err = storage.GetAndRemovePrivateKey(pubJwk)
+	require.NoError(t, err)
 }
 
 func testStoreManyPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStorage) {

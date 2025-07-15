@@ -129,6 +129,9 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 		}
 
 		pubJwk, err := privJwk.PublicKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to obtain pub key from priv key jwk: %v", err)
+		}
 		result[i] = pubJwk
 	}
 
