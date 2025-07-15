@@ -35,6 +35,58 @@ const (
 	Key_Audience string = "aud"
 )
 
+type KeyBindingStorage interface {
+	StorePrivateKeys(keys []*ecdsa.PrivateKey) error
+	GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error)
+}
+
+func NewInMemoryKeyBindingStorage() KeyBindingStorage {
+	return &InMemoryKeyBindingStorage{
+		keys: map[string]*ecdsa.PrivateKey{},
+	}
+}
+
+type InMemoryKeyBindingStorage struct {
+	keys map[string]*ecdsa.PrivateKey
+}
+
+func (s *InMemoryKeyBindingStorage) StorePrivateKeys(keys []*ecdsa.PrivateKey) error {
+	for _, privKey := range keys {
+		privJwk, err := jwk.Import(privKey)
+		if err != nil {
+			return fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
+		}
+
+		pubJwk, err := privJwk.PublicKey()
+		if err != nil {
+			return fmt.Errorf("failed to obtain pub key from jwk: %v", err)
+		}
+
+		thumbprint, err := pubJwk.Thumbprint(crypto.SHA256)
+		if err != nil {
+			return fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
+		}
+
+		s.keys[string(thumbprint)] = privKey
+	}
+	return nil
+}
+
+func (s *InMemoryKeyBindingStorage) GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error) {
+	thumbprint, err := pubKey.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create thumbprint for holder pub key: %v", err)
+	}
+
+	privKey, ok := s.keys[string(thumbprint)]
+	if !ok {
+		return nil, fmt.Errorf("failed to find private key for holder pub key")
+	}
+
+	delete(s.keys, string(thumbprint))
+	return privKey, nil
+}
+
 // KeyBinder is an interface for creating a key binding jwt from a hash.
 // Can be used to move creating the kbjwt to a server.
 type KeyBinder interface {
@@ -46,25 +98,31 @@ type KeyBinder interface {
 }
 
 type DefaultKeyBinder struct {
-	clock Clock
-	keys  map[string]*ecdsa.PrivateKey
+	clock   Clock
+	storage KeyBindingStorage
 }
 
-func NewDefaultKeyBinder() *DefaultKeyBinder {
+func NewDefaultKeyBinder(storage KeyBindingStorage) *DefaultKeyBinder {
 	return &DefaultKeyBinder{
-		clock: NewSystemClock(),
-		keys:  map[string]*ecdsa.PrivateKey{},
+		clock:   NewSystemClock(),
+		storage: storage,
 	}
+}
+
+func NewDefaultKeyBinderWithInMemoryStorage() *DefaultKeyBinder {
+	return NewDefaultKeyBinder(NewInMemoryKeyBindingStorage())
 }
 
 func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	result := make([]jwk.Key, num)
+	privKeys := make([]*ecdsa.PrivateKey, num)
 
 	for i := range num {
 		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ecdsa private key: %v", err)
 		}
+		privKeys[i] = privKey
 
 		privJwk, err := jwk.Import(privKey)
 		if err != nil {
@@ -73,17 +131,14 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 
 		pubJwk, err := privJwk.PublicKey()
 		if err != nil {
-			return nil, fmt.Errorf("failed to obtain pub key from jwk: %v", err)
+			return nil, fmt.Errorf("failed to obtain pub key from priv key jwk: %v", err)
 		}
-
-		thumbprint, err := pubJwk.Thumbprint(crypto.SHA256)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
-		}
-
-		c.keys[string(thumbprint)] = privKey
-
 		result[i] = pubJwk
+	}
+
+	err := c.storage.StorePrivateKeys(privKeys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to storage private keys: %v", err)
 	}
 
 	return result, nil
@@ -104,14 +159,9 @@ func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, n
 		"typ": KbJwtTyp,
 	}
 
-	thumbprint, err := holderKey.Thumbprint(crypto.SHA256)
+	privKey, err := c.storage.GetAndRemovePrivateKey(holderKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to create thumbprint for holder pub key: %v", err)
-	}
-
-	privKey, ok := c.keys[string(thumbprint)]
-	if !ok {
-		return "", fmt.Errorf("failed to find private key for holder pub key")
+		return "", fmt.Errorf("failed to retrieve private key: %v", err)
 	}
 
 	jwtCreator := NewJwtCreator(privKey)

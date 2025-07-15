@@ -47,7 +47,7 @@ func TestSdJwtVcStorage(t *testing.T) {
 
 func testCompatibilityWithOldStorage(t *testing.T) {
 	irmaClient, _ := parseStorage(t)
-	sdjwtStorage := NewBBoltSdJwtVcStorage(irmaClient.storage.db, irmaClient.storage.aesKey)
+	sdjwtStorage := NewBboltSdJwtVcStorage(irmaClient.storage.db, irmaClient.storage.aesKey)
 	list := sdjwtStorage.GetCredentialInfoList()
 	require.Empty(t, list)
 }
@@ -126,7 +126,7 @@ func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, err := createTestSdJwtVc(keyBinder, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
@@ -204,7 +204,7 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 }
 
 func createMultipleSdJwtVcs(t *testing.T, vct string, issuer string, claims map[string]any, num int) (irma.CredentialInfo, []sdjwtvc.SdJwtVc) {
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 	for range num {
 		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims)
@@ -218,22 +218,29 @@ func createMultipleSdJwtVcs(t *testing.T, vct string, issuer string, claims map[
 
 func RunTestWithTempBboltSdJwtVcStorage(t *testing.T, name string, test func(t *testing.T, storage SdJwtVcStorage)) {
 	success := t.Run(name, func(t *testing.T) {
-		dir, err := os.MkdirTemp("", "client-*")
-		require.NoError(t, err)
+		withTempBboltDb(t, "sdjwtvc.db", func(db *bbolt.DB) {
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-		dbFile := fmt.Sprintf("%s/sdjwtvc.db", dir)
-		db, err := bbolt.Open(dbFile, 0600, &bbolt.Options{Timeout: 1 * time.Second})
-		require.NoError(t, err)
-		var aesKey [32]byte
-		copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
-		storage := NewBBoltSdJwtVcStorage(db, aesKey)
-
-		defer db.Close()
-		defer os.Remove(dbFile)
-		defer os.Remove(dir)
-
-		test(t, storage)
+			storage := NewBboltSdJwtVcStorage(db, aesKey)
+			test(t, storage)
+		})
 	})
 	require.True(t, success)
+}
+
+func withTempBboltDb(t *testing.T, fileName string, closure func(db *bbolt.DB)) {
+	dir, err := os.MkdirTemp("", "client-*")
+	require.NoError(t, err)
+
+	dbFile := fmt.Sprintf("%s/%s", dir, fileName)
+	db, err := bbolt.Open(dbFile, 0600, &bbolt.Options{Timeout: 1 * time.Second})
+	require.NoError(t, err)
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+
+	defer db.Close()
+	defer os.Remove(dbFile)
+	defer os.Remove(dir)
+	closure(db)
 }

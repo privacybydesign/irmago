@@ -1165,7 +1165,7 @@ func parseTestQuery(t *testing.T, query string) (result dcql.DcqlQuery) {
 }
 
 func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claims map[string]string) *irma.CredentialInfo {
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, info := createSdJwtAndInfo(t, keyBinder, vct, claims)
 	err := storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{sdjwt})
 	require.NoError(t, err)

@@ -117,7 +117,7 @@ func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 }
 
 func TestCreateSdJwtVcWithDisclosuresAndKbJwt(t *testing.T) {
-	keyBinder := NewDefaultKeyBinder()
+	keyBinder := NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt := createDefaultTestingSdJwt(t, keyBinder)
 	kbjwt := createKbJwt(t, sdjwt, keyBinder)
 	fullSdjwt := AddKeyBindingJwtToSdJwtVc(sdjwt, kbjwt)
