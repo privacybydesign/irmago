@@ -68,7 +68,7 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 	sdjwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	keyBinder := sdjwtvc.NewDefaultKeyBinder(sdjwtvc.NewInMemoryKeyBindingStorage())
 
 	x509Options, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(
 		testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,

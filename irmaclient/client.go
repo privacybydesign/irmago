@@ -47,13 +47,12 @@ func New(
 		return nil, fmt.Errorf("failed to open irma storage: %v", err)
 	}
 
-	sdjwtvcStorage := NewBBoltSdJwtVcStorage(storage.db, storage.aesKey)
-
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
-	// addTestCredentialsToStorage(sdjwtvcStorage, keyBinder)
+	keybindingStorage := NewBboltKeybindingStorage(storage.db, aesKey)
+	keyBinder := sdjwtvc.NewDefaultKeyBinder(keybindingStorage)
 
 	verifierValidator := NewRequestorSchemeVerifierValidator()
 
+	sdjwtvcStorage := NewBboltSdJwtVcStorage(storage.db, aesKey)
 	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)

@@ -46,7 +46,7 @@ const (
 	credentialsKey    = "credentials"
 )
 
-func NewBBoltSdJwtVcStorage(db *bbolt.DB, aesKey [32]byte) *BboltSdJwtVcStorage {
+func NewBboltSdJwtVcStorage(db *bbolt.DB, aesKey [32]byte) *BboltSdJwtVcStorage {
 	return &BboltSdJwtVcStorage{db: db, aesKey: aesKey}
 }
 

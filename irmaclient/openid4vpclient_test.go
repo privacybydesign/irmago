@@ -75,7 +75,7 @@ func (h *testHandler) Failure(err *irma.SessionError) {
 }
 
 func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	storage, err := NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
