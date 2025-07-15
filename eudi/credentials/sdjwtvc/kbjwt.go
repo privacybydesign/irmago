@@ -83,6 +83,7 @@ func (s *InMemoryKeyBindingStorage) GetAndRemovePrivateKey(pubKey jwk.Key) (*ecd
 		return nil, fmt.Errorf("failed to find private key for holder pub key")
 	}
 
+	delete(s.keys, string(thumbprint))
 	return privKey, nil
 }
 
