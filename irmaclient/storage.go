@@ -586,6 +586,12 @@ func (s *storage) TxDeleteLogEntry(tx *transaction, entry *LogEntry) error {
 	return b.Delete(s.logEntryKeyToBytes(entry.ID))
 }
 
+func (s *storage) DeleteLogs() error {
+	return s.Transaction(func(tx *transaction) error {
+		return s.TxDeleteLogs(tx)
+	})
+}
+
 func (s *storage) TxDeleteLogs(tx *transaction) error {
 	return tx.DeleteBucket([]byte(logsBucket))
 }

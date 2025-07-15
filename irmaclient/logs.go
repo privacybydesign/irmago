@@ -9,6 +9,14 @@ import (
 	irma "github.com/privacybydesign/irmago"
 )
 
+type LogsStorage interface {
+	AddLogEntry(entry *LogEntry) error
+	DeleteLogEntry(entry *LogEntry) error
+	LoadNewestLogs(max int) ([]*LogEntry, error)
+	LoadLogsBefore(index uint64, max int) ([]*LogEntry, error)
+	DeleteLogs() error
+}
+
 // LogEntry is a log entry of a past event.
 type LogEntry struct {
 	// General info
@@ -33,6 +41,11 @@ type LogEntry struct {
 	Disclosure *irma.Disclosure      `json:",omitempty"`
 	Request    json.RawMessage       `json:",omitempty"` // Message that started the session
 	request    irma.SessionRequest   // cached parsed version of Request; get with LogEntry.SessionRequest()
+
+	// The credential format(s) used
+	CredentialFormats []string `json:",omitempty"`
+	// The protocol used when doing a session
+	Protocol string `json:",omitempty"`
 }
 
 const ActionRemoval = irma.Action("removal")

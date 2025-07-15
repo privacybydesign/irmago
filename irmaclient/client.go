@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -16,6 +15,7 @@ type Client struct {
 	sdjwtvcStorage  SdJwtVcStorage
 	openid4vpClient *OpenID4VPClient
 	irmaClient      *IrmaClient
+	logsStorage     LogsStorage
 }
 
 func New(
@@ -81,6 +81,7 @@ func New(
 		sdjwtvcStorage:  sdjwtvcStorage,
 		openid4vpClient: openid4vpClient,
 		irmaClient:      irmaClient,
+		logsStorage:     storage,
 	}, nil
 }
 
@@ -224,27 +225,4 @@ type ClientHandler interface {
 	UpdateAttributes()
 	Revoked(cred *irma.CredentialIdentifier)
 	ReportError(err error)
-}
-
-type credLookup struct {
-	id      irma.CredentialTypeIdentifier
-	counter int
-}
-
-type credCandidateSet [][]*credCandidate
-
-type credCandidate irma.CredentialIdentifier
-
-type DisclosureCandidate struct {
-	*irma.AttributeIdentifier
-	Value        irma.TranslatedString
-	Expired      bool
-	Revoked      bool
-	NotRevokable bool
-}
-
-type DisclosureCandidates []*DisclosureCandidate
-
-type secretKey struct {
-	Key *big.Int
 }

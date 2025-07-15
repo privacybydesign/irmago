@@ -1574,3 +1574,26 @@ func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, request
 
 	return nil
 }
+
+type credLookup struct {
+	id      irma.CredentialTypeIdentifier
+	counter int
+}
+
+type credCandidateSet [][]*credCandidate
+
+type credCandidate irma.CredentialIdentifier
+
+type DisclosureCandidate struct {
+	*irma.AttributeIdentifier
+	Value        irma.TranslatedString
+	Expired      bool
+	Revoked      bool
+	NotRevokable bool
+}
+
+type DisclosureCandidates []*DisclosureCandidate
+
+type secretKey struct {
+	Key *big.Int
+}
