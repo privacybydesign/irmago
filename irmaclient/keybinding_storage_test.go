@@ -38,12 +38,13 @@ func testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce(t *testing.T, storage sdjwtvc
 
 	require.Equal(t, privateKeys[0], privKey)
 
-	privKey, err = storage.GetAndRemovePrivateKey(pubJwk)
+	_, err = storage.GetAndRemovePrivateKey(pubJwk)
 	require.Error(t, err)
 
 	pubJwk = getPubJwk(t, privateKeys[1])
 	privKey, err = storage.GetAndRemovePrivateKey(pubJwk)
 	require.NoError(t, err)
+	require.Equal(t, privateKeys[1], privKey)
 }
 
 func testStoreManyPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
