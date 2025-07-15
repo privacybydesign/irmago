@@ -23,10 +23,10 @@ const kbPrivKeysBucketName = "kbPrivKeys"
 type BboltKeyBindingStorage struct {
 	// Layout for the kbPrivKeys bucket in this database:
 	// - kbPrivKeys: bucket
-	// ----- hash: encrypted privkey
-	// ----- hash: encrypted privkey
-	// ----- hash: encrypted privkey
-	// ----- hash: encrypted privkey
+	// ----- jwk-thumbprint: encrypted privkey
+	// ----- jwk-thumbprint: encrypted privkey
+	// ----- jwk-thumbprint: encrypted privkey
+	// ----- jwk-thumbprint: encrypted privkey
 	db     *bbolt.DB
 	aesKey [32]byte
 }
