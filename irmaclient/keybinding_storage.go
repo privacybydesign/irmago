@@ -113,3 +113,30 @@ func (s *BboltKeyBindingStorage) GetAndRemovePrivateKey(pubKey jwk.Key) (privKey
 	})
 	return
 }
+
+func (s *BboltKeyBindingStorage) RemovePrivateKeys(pubKeys []jwk.Key) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		keysBucket := tx.Bucket([]byte(kbPrivKeysBucketName))
+		if keysBucket == nil {
+			return fmt.Errorf("failed to delete private keys because the bucket doesn't exist")
+		}
+		for _, pk := range pubKeys {
+			thumbprint, err := pk.Thumbprint(crypto.SHA256)
+			if err != nil {
+				return fmt.Errorf("failed to create thumbprint: %v", err)
+			}
+			err = keysBucket.Delete(thumbprint)
+			if err != nil {
+				return fmt.Errorf("failed to delete private key corresponding to thumbprint %s: %v", string(thumbprint), err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func (s *BboltKeyBindingStorage) RemoveAllPrivateKeys() error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		return tx.DeleteBucket([]byte(kbPrivKeysBucketName))
+	})
+}

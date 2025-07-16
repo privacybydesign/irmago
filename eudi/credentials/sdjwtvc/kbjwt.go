@@ -38,6 +38,10 @@ const (
 type KeyBindingStorage interface {
 	StorePrivateKeys(keys []*ecdsa.PrivateKey) error
 	GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error)
+	// Takes in a list of pub keys for which it should delete the corresponding private keys
+	RemovePrivateKeys(pubKeys []jwk.Key) error
+	// Removes all holder binding private keys
+	RemoveAllPrivateKeys() error
 }
 
 func NewInMemoryKeyBindingStorage() KeyBindingStorage {
@@ -87,14 +91,33 @@ func (s *InMemoryKeyBindingStorage) GetAndRemovePrivateKey(pubKey jwk.Key) (*ecd
 	return privKey, nil
 }
 
+func (s *InMemoryKeyBindingStorage) RemovePrivateKeys(pubKeys []jwk.Key) error {
+	for _, pk := range pubKeys {
+		_, err := s.GetAndRemovePrivateKey(pk)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *InMemoryKeyBindingStorage) RemoveAllPrivateKeys() error {
+	s.keys = map[string]*ecdsa.PrivateKey{}
+	return nil
+}
+
 // KeyBinder is an interface for creating a key binding jwt from a hash.
 // Can be used to move creating the kbjwt to a server.
 type KeyBinder interface {
 	// Creates a batch of key pairs and returns the pub keys.
 	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
 	CreateKeyPairs(num uint) ([]jwk.Key, error)
-	// takes in the hash over the issuer signed JWT and the selected disclosures
+	// Takes in the hash over the issuer signed JWT and the selected disclosures
 	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
+	// Takes in a list of pub keys for which it should delete the corresponding private keys
+	RemovePrivateKeys(pubKeys []jwk.Key) error
+	// Removes all holder binding private keys
+	RemoveAllPrivateKeys() error
 }
 
 type DefaultKeyBinder struct {
@@ -102,14 +125,14 @@ type DefaultKeyBinder struct {
 	storage KeyBindingStorage
 }
 
-func NewDefaultKeyBinder(storage KeyBindingStorage) *DefaultKeyBinder {
+func NewDefaultKeyBinder(storage KeyBindingStorage) KeyBinder {
 	return &DefaultKeyBinder{
 		clock:   NewSystemClock(),
 		storage: storage,
 	}
 }
 
-func NewDefaultKeyBinderWithInMemoryStorage() *DefaultKeyBinder {
+func NewDefaultKeyBinderWithInMemoryStorage() KeyBinder {
 	return NewDefaultKeyBinder(NewInMemoryKeyBindingStorage())
 }
 
@@ -168,6 +191,14 @@ func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, n
 
 	jwt, err := jwtCreator.CreateSignedJwt(customHeaders, string(json))
 	return KeyBindingJwt(jwt), err
+}
+
+func (c *DefaultKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {
+	return c.storage.RemovePrivateKeys(pubKeys)
+}
+
+func (c *DefaultKeyBinder) RemoveAllPrivateKeys() error {
+	return c.storage.RemoveAllPrivateKeys()
 }
 
 func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string) (KeyBindingJwt, error) {

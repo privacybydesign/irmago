@@ -16,6 +16,7 @@ type Client struct {
 	sdjwtvcStorage  SdJwtVcStorage
 	openid4vpClient *OpenID4VPClient
 	irmaClient      *IrmaClient
+	keyBinder       sdjwtvc.KeyBinder
 }
 
 func New(
@@ -80,6 +81,7 @@ func New(
 		sdjwtvcStorage:  sdjwtvcStorage,
 		openid4vpClient: openid4vpClient,
 		irmaClient:      irmaClient,
+		keyBinder:       keyBinder,
 	}, nil
 }
 
@@ -144,9 +146,12 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 }
 
 func (client *Client) RemoveCredentialByHash(hash string) error {
-	err := client.sdjwtvcStorage.RemoveCredentialByHash(hash)
+	holderPubKeys, err := client.sdjwtvcStorage.RemoveCredentialByHash(hash)
 	if err != nil {
-		return err
+		return fmt.Errorf("error while deleting sdjwtvc credential: %v", err)
+	}
+	if err = client.keyBinder.RemovePrivateKeys(holderPubKeys); err != nil {
+		return fmt.Errorf("failed to remove holder private keys: %v", err)
 	}
 	return client.irmaClient.RemoveCredentialByHash(hash)
 }
