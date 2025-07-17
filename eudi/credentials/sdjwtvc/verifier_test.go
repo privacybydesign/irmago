@@ -3,6 +3,7 @@ package sdjwtvc
 import (
 	"testing"
 
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -54,7 +55,7 @@ type x509TestConfig struct {
 }
 
 func runCertChainTest(t *testing.T, config x509TestConfig) {
-	chain, err := ParsePemCertificateChainToX5cFormat(config.IssuerCertChain)
+	chain, err := eudi.ParsePemCertificateChainToX5cFormat(config.IssuerCertChain)
 	require.NoError(t, err)
 
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{

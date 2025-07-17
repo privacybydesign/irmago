@@ -3,12 +3,13 @@ package sdjwtvc
 import (
 	"testing"
 
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {
-	irmaAppCert, err := ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
+	irmaAppCert, err := eudi.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().

@@ -65,7 +65,19 @@ func NewRequestorSchemeVerifierValidator() VerifierValidator {
 	}
 }
 
-func (v *RequestorSchemeVerifierValidator) VerifyAuthorizationRequest(requestJwt string) (
+type RequestorCertificateStoreVerifierValidator struct {
+	trustedIntermediateCertificates *x509.CertPool
+	trustedRootCertificates         *x509.CertPool
+}
+
+func NewRequestorCertificateStoreVerifierValidator() VerifierValidator {
+	return &RequestorCertificateStoreVerifierValidator{
+		trustedIntermediateCertificates: x509.NewCertPool(),
+		trustedRootCertificates:         x509.NewCertPool(),
+	}
+}
+
+func (v *RequestorCertificateStoreVerifierValidator) VerifyAuthorizationRequest(requestJwt string) (
 	*openid4vp.AuthorizationRequest,
 	*irma.RequestorInfo,
 	error,
@@ -90,12 +102,32 @@ func (v *RequestorSchemeVerifierValidator) VerifyAuthorizationRequest(requestJwt
 	return parsed, requestorInfo, nil
 }
 
+func (v *RequestorSchemeVerifierValidator) VerifyAuthorizationRequest(requestJwt string) (
+	*openid4vp.AuthorizationRequest,
+	*irma.RequestorInfo,
+	error,
+) {
+	parsed, err := parseAuthorizationRequestJwt(requestJwt)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Add the hostname to the VerifyOptions, so that the hostname will be checked against the SAN DNS
+
+	//requestorInfo, ok := v.fakeScheme[hostname]
+	// if !ok {
+	// 	return nil, nil, fmt.Errorf("failed to get info for hostname: %s", hostname)
+	// }
+
+	return parsed, requestorInfo, nil
+}
+
 func parseAuthorizationRequestJwt(authReqJwt string) (*openid4vp.AuthorizationRequest, error) {
 	trusted, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.VerifierCertChain_staging_Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create trusted certificate verification options")
 	}
-	token, err := jwt.ParseWithClaims(string(authReqJwt), &openid4vp.AuthorizationRequest{}, createAuthRequestVerifier(trusted))
+	token, err := jwt.ParseWithClaims(authReqJwt, &openid4vp.AuthorizationRequest{}, createAuthRequestVerifier(trusted))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
@@ -140,6 +172,16 @@ func createAuthRequestVerifier(trustedCertificates *x509.VerifyOptions) jwt.Keyf
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
 		}
+
+		// Add hostname to the VerifyOptions to check against SAN DNS
+		request := token.Claims.(*openid4vp.AuthorizationRequest)
+		prefix := "x509_san_dns:"
+
+		if !strings.HasPrefix(request.ClientId, prefix) {
+			return nil, fmt.Errorf("client_id expected to start with 'x509_san_dns:' but doesn't (%s)", request.ClientId)
+		}
+
+		hostname := strings.TrimPrefix(request.ClientId, prefix)
 
 		_, err = parsedCert.Verify(*trustedCertificates)
 		if err != nil {

@@ -16,8 +16,9 @@ func TestInstantiateNewEmptyClient(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+	eudiConfigurationPath := filepath.Join(path, "eudi_configuration")
 
-	client, err := New(storagePath, irmaConfigurationPath, &TestClientHandler{}, test.NewSigner(t), aesKey)
+	client, err := New(storagePath, irmaConfigurationPath, eudiConfigurationPath, &TestClientHandler{}, test.NewSigner(t), aesKey)
 
 	require.NoError(t, err)
 
@@ -35,8 +36,9 @@ func TestInstantiateClientWithExistingIrmaStorage(t *testing.T) {
 	storageFolder := test.SetupTestStorage(t)
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+	eudiConfigurationPath := filepath.Join(path, "eudi_configuration")
 
-	client, err := New(storagePath, irmaConfigurationPath, &TestClientHandler{}, test.NewSigner(t), aesKey)
+	client, err := New(storagePath, irmaConfigurationPath, eudiConfigurationPath, &TestClientHandler{}, test.NewSigner(t), aesKey)
 
 	require.NoError(t, err)
 

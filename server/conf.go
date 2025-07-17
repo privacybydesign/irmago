@@ -19,6 +19,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -601,7 +602,7 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		return fmt.Errorf("failed to obtain SD-JWT VC issuer certificate chain: %v", err)
 	}
 
-	certChain, err := sdjwtvc.ParsePemCertificateChainToX5cFormat(certBytes)
+	certChain, err := eudi.ParsePemCertificateChainToX5cFormat(certBytes)
 	if err != nil {
 		return fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
 	}
