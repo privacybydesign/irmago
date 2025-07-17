@@ -15,21 +15,30 @@ import (
 )
 
 func TestIdemixAndSdJwtCombinedIssuance(t *testing.T) {
-	irmaServer := StartIrmaServer(t, IrmaServerConfWithSdJwtEnabled())
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client, clientHandler := createClient(t)
+	client := createClient(t)
 
-	require.NoError(t, clientHandler.AwaitEnrollmentResult())
+	sessionHandler := irmaclient.NewMockSessionHandler(t)
 
-	sessionHandler := irmaclient.NewTestHandler(t)
+	sessionRequestJson := startCombinedIssuanceSessionAtServer(t, irmaServer)
+	client.NewSession(sessionRequestJson, sessionHandler)
+	sessionHandler.AwaitPermissionRequest()
+	sessionHandler.ProceedIssuance()
 
+	require.True(t, sessionHandler.AwaitSessionEnd())
+
+	infoList := client.CredentialInfoList()
+	require.Equal(t, 3, len(infoList))
+}
+
+func startCombinedIssuanceSessionAtServer(t *testing.T, server *IrmaServer) string {
 	issuanceRequest := createIssuanceRequest()
-
-	qr, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil, "")
+	qr, _, _, err := server.irma.StartSession(issuanceRequest, nil, "")
 	require.NoError(t, err)
 
 	session := irmaclient.SessionRequestData{
@@ -38,14 +47,7 @@ func TestIdemixAndSdJwtCombinedIssuance(t *testing.T) {
 	}
 	sessionJson, err := json.Marshal(session)
 	require.NoError(t, err)
-
-	client.NewSession(string(sessionJson), sessionHandler)
-	sessionHandler.AwaitPermissionRequest()
-	sessionHandler.ProceedIssuance()
-	require.True(t, sessionHandler.AwaitSessionEnd())
-
-	infoList := client.CredentialInfoList()
-	require.Equal(t, 3, len(infoList))
+	return string(sessionJson)
 }
 
 func createIssuanceRequest() *irma.IssuanceRequest {
@@ -64,7 +66,7 @@ func createIssuanceRequest() *irma.IssuanceRequest {
 	return req
 }
 
-func createClient(t *testing.T) (*irmaclient.Client, *irmaclient.MockClientHandler) {
+func createClient(t *testing.T) *irmaclient.Client {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -80,10 +82,12 @@ func createClient(t *testing.T) (*irmaclient.Client, *irmaclient.MockClientHandl
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 
-	return client, clientHandler
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
+
+	return client
 }
 
-func IrmaServerConfWithSdJwtEnabled() *server.Configuration {
+func irmaServerConfWithSdJwtEnabled() *server.Configuration {
 	conf := IrmaServerConfiguration()
 	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
 		Issuer:                 "https://openid4vc.staging.yivi.app",

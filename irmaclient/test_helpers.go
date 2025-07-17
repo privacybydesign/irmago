@@ -50,12 +50,13 @@ type TestHandler struct {
 	log                                bool
 }
 
-func NewTestHandler(t *testing.T) *TestHandler {
+func NewMockSessionHandler(t *testing.T) *TestHandler {
 	return &TestHandler{
 		t:                 t,
 		permissionChannel: make(chan bool, 1),
 		sessionEndChannel: make(chan bool, 1),
 		pinRequestChannel: make(chan PinHandler, 1),
+		log:               true,
 	}
 }
 
@@ -123,6 +124,7 @@ func (h *TestHandler) Failure(err *irma.SessionError) {
 }
 
 // Some boiler plate functions to satisfy the Handler interface
+
 func (h *TestHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {
 	if h.log {
 		fmt.Printf("status update: %v, %v\n", action, status)

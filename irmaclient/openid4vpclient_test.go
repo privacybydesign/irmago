@@ -37,7 +37,7 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 
 	client := createOpenID4VPClientForTesting(t)
 
-	handler := NewTestHandler(t)
+	handler := NewMockSessionHandler(t)
 	client.NewSession(url, handler)
 
 	handler.AwaitPermissionRequest()
