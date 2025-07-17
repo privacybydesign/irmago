@@ -89,13 +89,13 @@ func (client *Client) Close() error {
 	return client.irmaClient.Close()
 }
 
-type sessionRequestData struct {
+type SessionRequestData struct {
 	irma.Qr
 	Protocol string `json:"protocol,omitempty"`
 }
 
 func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
-	var sessionReq sessionRequestData
+	var sessionReq SessionRequestData
 	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
 	if err != nil {
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
@@ -133,7 +133,10 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	return result
 }
 
-func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
+func (client *Client) KeyshareVerifyPin(
+	pin string,
+	schemeid irma.SchemeManagerIdentifier,
+) (success bool, triesRemaing int, blockedSecs int, err error) {
 	return client.irmaClient.KeyshareVerifyPin(pin, schemeid)
 }
 

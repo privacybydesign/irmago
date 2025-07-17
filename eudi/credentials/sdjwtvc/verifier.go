@@ -110,6 +110,9 @@ func ParseAndVerifySdJwtVc(context VerificationContext, sdjwtvc SdJwtVc) (Verifi
 // The KbJwt may be nil if there's no key binding jwt.
 // This function will do no verification whatsoever.
 func SplitSdJwtVc(sdjwtvc SdJwtVc) (IssuerSignedJwt, []EncodedDisclosure, *KeyBindingJwt, error) {
+	if sdjwtvc == "" {
+		return err("sdjwtvc is an empty string")
+	}
 	components := strings.Split(string(sdjwtvc), "~")
 	numComponents := len(components)
 	if numComponents == 0 {
@@ -124,7 +127,7 @@ func SplitSdJwtVc(sdjwtvc SdJwtVc) (IssuerSignedJwt, []EncodedDisclosure, *KeyBi
 
 	if hasKbJwt {
 		if numComponents < 2 {
-			return err("sdjwtvc expected to have kbjwt (since it doesn't end with ~), but has no kbjwt")
+			return err("sdjwtvc expected to have kbjwt (since it doesn't end with ~), but has no kbjwt ('%v')", sdjwtvc)
 		}
 
 		tmp := KeyBindingJwt(components[numComponents-1])
