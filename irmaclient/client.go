@@ -25,6 +25,7 @@ type Client struct {
 func New(
 	storagePath string,
 	irmaConfigurationPath string,
+	eudiConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
 	aesKey [32]byte,
