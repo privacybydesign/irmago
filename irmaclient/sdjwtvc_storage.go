@@ -90,7 +90,34 @@ func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (holderKeys []
 			return nil
 		}
 
-		err := sdjwtBucket.DeleteBucket([]byte(hash))
+		credentialBucket := sdjwtBucket.Bucket([]byte(hash))
+		if credentialBucket == nil {
+			return nil
+		}
+
+		instancesBucket := credentialBucket.Bucket([]byte(credentialsKey))
+		if credentialBucket == nil {
+			return fmt.Errorf("credential bucket exists but sdjwtvc instances are not there")
+		}
+
+		err := instancesBucket.ForEach(func(key, value []byte) error {
+			sdjwtBytes, err := decrypt(value, s.aesKey)
+			if err != nil {
+				return fmt.Errorf("failed to decrypt sdjwt while extracting holder key: %v", err)
+			}
+			sdjwt := sdjwtvc.SdJwtVc(sdjwtBytes)
+			_, holderKey, err := sdjwtvc.ExtractHashingAlgorithmAndHolderPubKey(sdjwt)
+			if err != nil {
+				return err
+			}
+			holderKeys = append(holderKeys, holderKey)
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to extract holder keys: %v", err)
+		}
+
+		err = sdjwtBucket.DeleteBucket([]byte(hash))
 
 		if err != nil && err != bbolt.ErrBucketNotFound {
 			return err

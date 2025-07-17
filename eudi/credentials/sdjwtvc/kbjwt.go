@@ -202,7 +202,7 @@ func (c *DefaultKeyBinder) RemoveAllPrivateKeys() error {
 }
 
 func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string) (KeyBindingJwt, error) {
-	alg, holderKey, err := extractHashingAlgorithmAndHolderPubKey(sdJwt)
+	alg, holderKey, err := ExtractHashingAlgorithmAndHolderPubKey(sdJwt)
 	if err != nil {
 		return "", err
 	}
@@ -215,7 +215,7 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string
 	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
 }
 
-func extractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {
+func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {
 	issuerSignedJwt, _, _, err := SplitSdJwtVc(sdJwt)
 	if err != nil {
 		return "", nil, err
