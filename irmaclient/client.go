@@ -173,7 +173,13 @@ func (client *Client) InstallScheme(url string, publickey []byte) error {
 }
 
 func (client *Client) RemoveStorage() error {
-	client.sdjwtvcStorage.RemoveAll()
+	if err := client.sdjwtvcStorage.RemoveAll(); err != nil {
+		return fmt.Errorf("failed to remove sdjwtvc storage: %v", err)
+	}
+	if err := client.keyBinder.RemoveAllPrivateKeys(); err != nil {
+		return fmt.Errorf("failed to remove all holder private keys: %v", err)
+	}
+
 	return client.irmaClient.RemoveStorage()
 }
 
