@@ -115,6 +115,9 @@ func (s *BboltKeyBindingStorage) GetAndRemovePrivateKey(pubKey jwk.Key) (privKey
 }
 
 func (s *BboltKeyBindingStorage) RemovePrivateKeys(pubKeys []jwk.Key) error {
+	if len(pubKeys) == 0 {
+		return nil
+	}
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		keysBucket := tx.Bucket([]byte(kbPrivKeysBucketName))
 		if keysBucket == nil {

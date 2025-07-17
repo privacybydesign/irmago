@@ -29,6 +29,24 @@ func TestKeyBindingStorage(t *testing.T) {
 		"remove specific private keys",
 		testRemoveSpecificPrivateKeys,
 	)
+	RunTestWithTempBboltKeyBindingStorage(t,
+		"delete no keys from empty storage should be fine",
+		testDeletingNoKeysFromEmptyStorageShouldBeFine,
+	)
+	RunTestWithTempBboltKeyBindingStorage(t,
+		"deleting keys from empty storage is error",
+		testDeletingNoKeysFromEmptyStorageShouldBeFine,
+	)
+}
+
+func testDeletingKeysFromEmptyStorageIsError(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+	privKeys := createPrivateKeys(t, 10)
+	pubKeys := getPubJwkMultiple(t, privKeys)
+	require.Error(t, storage.RemovePrivateKeys(pubKeys))
+}
+
+func testDeletingNoKeysFromEmptyStorageShouldBeFine(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+	require.NoError(t, storage.RemovePrivateKeys([]jwk.Key{}))
 }
 
 func getPubJwk(t *testing.T, priv *ecdsa.PrivateKey) jwk.Key {
