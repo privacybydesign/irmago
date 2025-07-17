@@ -35,7 +35,7 @@ func TestKeyBindingStorage(t *testing.T) {
 	)
 	RunTestWithTempBboltKeyBindingStorage(t,
 		"deleting keys from empty storage is error",
-		testDeletingNoKeysFromEmptyStorageShouldBeFine,
+		testDeletingKeysFromEmptyStorageIsError,
 	)
 }
 
