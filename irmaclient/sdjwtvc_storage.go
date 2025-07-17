@@ -96,7 +96,7 @@ func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (holderKeys []
 		}
 
 		instancesBucket := credentialBucket.Bucket([]byte(credentialsKey))
-		if credentialBucket == nil {
+		if instancesBucket == nil {
 			return fmt.Errorf("credential bucket exists but sdjwtvc instances are not there")
 		}
 
