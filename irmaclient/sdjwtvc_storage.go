@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/testdata"
@@ -17,8 +18,9 @@ type SdJwtVcStorage interface {
 	// RemoveAll should remove all instances for the credential with the given hash.
 	RemoveAll() error
 	// RemoveCredentialByHash should remove all instances for the credential with the given hash.
-	// Should _not_ return an error if the credential is not found.
-	RemoveCredentialByHash(hash string) error
+	// Returns a list of jwk holder pub keys that can be used to delete corresponding private keys
+	// Should _not_ return an error if the credential is not found, only when there's storage issues.
+	RemoveCredentialByHash(hash string) ([]jwk.Key, error)
 
 	// RemoveLastUsedInstanceOfCredentialByHash should remove a single instance
 	// (the last used one) of the credential for the given hash.
@@ -80,7 +82,7 @@ func (s *BboltSdJwtVcStorage) RemoveAll() (err error) {
 	return err
 }
 
-func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (err error) {
+func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (holderKeys []jwk.Key, err error) {
 	err = s.db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
 		// if the sdjwtvc bucket doesn't exist, the credential to remove obviously also doesn't...
@@ -88,14 +90,41 @@ func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (err error) {
 			return nil
 		}
 
-		err := sdjwtBucket.DeleteBucket([]byte(hash))
+		credentialBucket := sdjwtBucket.Bucket([]byte(hash))
+		if credentialBucket == nil {
+			return nil
+		}
+
+		instancesBucket := credentialBucket.Bucket([]byte(credentialsKey))
+		if instancesBucket == nil {
+			return fmt.Errorf("credential bucket exists but sdjwtvc instances are not there")
+		}
+
+		err := instancesBucket.ForEach(func(key, value []byte) error {
+			sdjwtBytes, err := decrypt(value, s.aesKey)
+			if err != nil {
+				return fmt.Errorf("failed to decrypt sdjwt while extracting holder key: %v", err)
+			}
+			sdjwt := sdjwtvc.SdJwtVc(sdjwtBytes)
+			_, holderKey, err := sdjwtvc.ExtractHashingAlgorithmAndHolderPubKey(sdjwt)
+			if err != nil {
+				return err
+			}
+			holderKeys = append(holderKeys, holderKey)
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to extract holder keys: %v", err)
+		}
+
+		err = sdjwtBucket.DeleteBucket([]byte(hash))
 
 		if err != nil && err != bbolt.ErrBucketNotFound {
 			return err
 		}
 		return nil
 	})
-	return err
+	return holderKeys, err
 }
 
 func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash string) error {
@@ -415,9 +444,8 @@ func (s *InMemorySdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(id str
 	return nil
 }
 
-func (s *InMemorySdJwtVcStorage) RemoveCredentialByHash(hash string) error {
-
-	return nil
+func (s *InMemorySdJwtVcStorage) RemoveCredentialByHash(hash string) ([]jwk.Key, error) {
+	return nil, nil
 }
 
 func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList {

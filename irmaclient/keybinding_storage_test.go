@@ -13,11 +13,40 @@ import (
 )
 
 func TestKeyBindingStorage(t *testing.T) {
-	RunTestWithTempBboltKeyBindingStorage(t, "store many private keys", testStoreManyPrivateKeys)
+	RunTestWithTempBboltKeyBindingStorage(t,
+		"store many private keys",
+		testStoreManyPrivateKeys,
+	)
 	RunTestWithTempBboltKeyBindingStorage(t,
 		"retrieve single private key can only be done once",
 		testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce,
 	)
+	RunTestWithTempBboltKeyBindingStorage(t,
+		"remove all private keys",
+		testRemoveAllPrivateKeys,
+	)
+	RunTestWithTempBboltKeyBindingStorage(t,
+		"remove specific private keys",
+		testRemoveSpecificPrivateKeys,
+	)
+	RunTestWithTempBboltKeyBindingStorage(t,
+		"delete no keys from empty storage should be fine",
+		testDeletingNoKeysFromEmptyStorageShouldBeFine,
+	)
+	RunTestWithTempBboltKeyBindingStorage(t,
+		"deleting keys from empty storage is error",
+		testDeletingKeysFromEmptyStorageIsError,
+	)
+}
+
+func testDeletingKeysFromEmptyStorageIsError(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+	privKeys := createPrivateKeys(t, 10)
+	pubKeys := getPubJwkMultiple(t, privKeys)
+	require.Error(t, storage.RemovePrivateKeys(pubKeys))
+}
+
+func testDeletingNoKeysFromEmptyStorageShouldBeFine(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+	require.NoError(t, storage.RemovePrivateKeys([]jwk.Key{}))
 }
 
 func getPubJwk(t *testing.T, priv *ecdsa.PrivateKey) jwk.Key {
@@ -26,6 +55,13 @@ func getPubJwk(t *testing.T, priv *ecdsa.PrivateKey) jwk.Key {
 	pubJwk, err := privJwk.PublicKey()
 	require.NoError(t, err)
 	return pubJwk
+}
+
+func getPubJwkMultiple(t *testing.T, privKeys []*ecdsa.PrivateKey) (result []jwk.Key) {
+	for _, key := range privKeys {
+		result = append(result, getPubJwk(t, key))
+	}
+	return
 }
 
 func testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
@@ -50,6 +86,35 @@ func testRetrieveSinglePrivateKeyCanOnlyBeDoneOnce(t *testing.T, storage sdjwtvc
 func testStoreManyPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
 	privateKeys := createPrivateKeys(t, 100)
 	require.NoError(t, storage.StorePrivateKeys(privateKeys))
+}
+
+func testRemoveSpecificPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+	privateKeys := createPrivateKeys(t, 10)
+	require.NoError(t, storage.StorePrivateKeys(privateKeys))
+
+	require.NoError(t, storage.RemovePrivateKeys(getPubJwkMultiple(t, privateKeys[:5])))
+
+	for _, key := range privateKeys[:5] {
+		_, err := storage.GetAndRemovePrivateKey(getPubJwk(t, key))
+		require.Error(t, err)
+	}
+
+	for _, key := range privateKeys[5:] {
+		privKey, err := storage.GetAndRemovePrivateKey(getPubJwk(t, key))
+		require.NoError(t, err)
+		require.Equal(t, key, privKey)
+	}
+}
+
+func testRemoveAllPrivateKeys(t *testing.T, storage sdjwtvc.KeyBindingStorage) {
+	privKeys := createPrivateKeys(t, 100)
+	require.NoError(t, storage.StorePrivateKeys(privKeys))
+	require.NoError(t, storage.RemoveAllPrivateKeys())
+
+	for _, key := range privKeys {
+		_, err := storage.GetAndRemovePrivateKey(getPubJwk(t, key))
+		require.Error(t, err)
+	}
 }
 
 func createPrivateKeys(t *testing.T, numKeys int) []*ecdsa.PrivateKey {

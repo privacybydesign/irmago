@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,22 @@ func TestSdJwtVcStorage(t *testing.T) {
 		"adding multiple sets of same attributes should not affect info list",
 		testAddingMultipleInstancesWithSameAttributeSets,
 	)
+	RunTestWithTempBboltSdJwtVcStorage(t,
+		"removing instance returns correct holder keys",
+		testRemovingInstanceReturnsCorrectHolderKeys,
+	)
+}
+
+func testRemovingInstanceReturnsCorrectHolderKeys(t *testing.T, storage SdJwtVcStorage) {
+	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, 10)
+	storage.StoreCredential(info, sdjwts)
+	holderKeys := extractHolderKeys(t, sdjwts)
+	deletedKeys, err := storage.RemoveCredentialByHash(info.Hash)
+	require.NoError(t, err)
+
+	require.Equal(t, holderKeys, deletedKeys)
 }
 
 func testCompatibilityWithOldStorage(t *testing.T) {
@@ -203,7 +220,7 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 	require.Equal(t, len(result), 1)
 }
 
-func createMultipleSdJwtVcs(t *testing.T, vct string, issuer string, claims map[string]any, num int) (irma.CredentialInfo, []sdjwtvc.SdJwtVc) {
+func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num int) (irma.CredentialInfo, []sdjwtvc.SdJwtVc) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 	for range num {
@@ -243,4 +260,13 @@ func withTempBboltDb(t *testing.T, fileName string, closure func(db *bbolt.DB)) 
 	defer os.Remove(dbFile)
 	defer os.Remove(dir)
 	closure(db)
+}
+
+func extractHolderKeys(t *testing.T, sdjwts []sdjwtvc.SdJwtVc) (result []jwk.Key) {
+	for _, cred := range sdjwts {
+		_, pubKey, err := sdjwtvc.ExtractHashingAlgorithmAndHolderPubKey(cred)
+		require.NoError(t, err)
+		result = append(result, pubKey)
+	}
+	return
 }
