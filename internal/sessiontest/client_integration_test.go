@@ -51,8 +51,7 @@ func startCombinedIssuanceSessionAtServer(t *testing.T, server *IrmaServer) stri
 }
 
 func createIssuanceRequest() *irma.IssuanceRequest {
-	var sdJwtBatchSize uint
-	sdJwtBatchSize = 10
+	var sdJwtBatchSize uint = 10
 	req := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.email"),
