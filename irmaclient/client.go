@@ -161,7 +161,7 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) string {
 	return string(hashBytes[:])
 }
 
-// Returns all credential info instances seperately per format
+// Returns all credential info instances separately per format
 func (client *Client) getAllCredentialInfosSeperately() irma.CredentialInfoList {
 	sdjwtvcs := client.sdjwtvcStorage.GetCredentialInfoList()
 	idemix := client.irmaClient.CredentialInfoList()
