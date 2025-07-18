@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -15,7 +16,57 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIdemixAndSdJwtCombinedIssuance(t *testing.T) {
+func TestEudiClient(t *testing.T) {
+	t.Run("idemix and sdjwtvc combined issuance over irma", testIdemixAndSdJwtCombinedIssuance)
+	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
+	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSingleCredentialInfo)
+	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	credentialInfoList := client.CredentialInfoList()
+	require.Len(t, credentialInfoList, 2)
+
+	sort.Stable(credentialInfoList)
+	emailCred := credentialInfoList[1]
+
+	require.NoError(t, client.RemoveCredentialByHash(emailCred.Hash))
+
+	credentialInfoList = client.CredentialInfoList()
+	require.Len(t, credentialInfoList, 1)
+}
+
+func testIdemixAndSdJwtShowUpAsSingleCredentialInfo(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	credentialInfoList := client.CredentialInfoList()
+	require.Len(t, credentialInfoList, 2)
+
+	sort.Stable(credentialInfoList)
+	emailCred := credentialInfoList[1]
+
+	require.Equal(t, emailCred.Identifier().String(), irma.NewCredentialTypeIdentifier("test.test.email").String())
+	require.Contains(t, emailCred.CredentialFormats, "idemix")
+	require.Contains(t, emailCred.CredentialFormats, "dc+sd-jwt")
+}
+
+func testIdemixAndSdJwtCombinedIssuance(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
 	defer irmaServer.Stop()
 
@@ -26,7 +77,7 @@ func TestIdemixAndSdJwtCombinedIssuance(t *testing.T) {
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 }
 
-func TestDiscloseOverOpenID4VP(t *testing.T) {
+func testDiscloseOverOpenID4VP(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
 	defer irmaServer.Stop()
 
@@ -77,9 +128,6 @@ func issueSdJwtAndIdemixToClient(t *testing.T, client *irmaclient.Client, irmaSe
 	details.PermissionHandler(true, nil)
 
 	require.True(t, sessionHandler.AwaitSessionEnd())
-
-	infoList := client.CredentialInfoList()
-	require.Equal(t, 3, len(infoList))
 }
 
 func startCombinedIssuanceSessionAtServer(t *testing.T, server *IrmaServer) string {

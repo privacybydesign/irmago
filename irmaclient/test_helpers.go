@@ -60,7 +60,7 @@ func NewMockSessionHandler(t *testing.T) *MockSessionHandler {
 		permissionChannel: make(chan *MockPermissionRequest, 1),
 		sessionEndChannel: make(chan bool, 1),
 		pinRequestChannel: make(chan PinHandler, 1),
-		log:               true,
+		log:               false,
 	}
 }
 

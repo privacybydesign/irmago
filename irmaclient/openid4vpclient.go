@@ -509,7 +509,7 @@ func filterCredentialsWithClaims(entries []SdJwtVcAndInfo, query dcql.Credential
 	return result, nil
 }
 
-func mapToList(claims map[string]ClaimMatch) (result []ClaimMatch) {
+func mapToList[T any](claims map[string]T) (result []T) {
 	for _, value := range claims {
 		result = append(result, value)
 	}
