@@ -1,12 +1,7 @@
 package irmaclient
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -32,7 +27,7 @@ func TestOpenID4VPClient(t *testing.T) {
 }
 
 func testDisclosingTwoCredentials_Success(t *testing.T) {
-	url, err := startSessionAtEudiVerifier()
+	url, err := StartTestSessionAtEudiVerifier(createAuthorizationRequestRequest())
 	require.NoError(t, err)
 
 	client := createOpenID4VPClientForTesting(t)
@@ -40,7 +35,7 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 	handler := NewMockSessionHandler(t)
 	client.NewSession(url, handler)
 
-	handler.AwaitPermissionRequest()
+	permissionRequest := handler.AwaitPermissionRequest()
 
 	choice := &irma.DisclosureChoice{
 		Attributes: [][]*irma.AttributeIdentifier{
@@ -59,7 +54,7 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 		},
 	}
 	proceed := true
-	handler.disclosurePermissionRequestDetails.callback(proceed, choice)
+	permissionRequest.PermissionHandler(proceed, choice)
 	success := handler.AwaitSessionEnd()
 
 	require.True(t, success)
@@ -105,42 +100,4 @@ func createAuthorizationRequestRequest() string {
 `,
 		string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
 	)
-}
-
-func startSessionAtEudiVerifier() (string, error) {
-	response, err := http.Post("http://127.0.0.1:8089/ui/presentations",
-		"application/json",
-		bytes.NewReader([]byte(createAuthorizationRequestRequest())))
-
-	if err != nil {
-		return "", err
-	}
-
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-
-	if err != nil {
-		return "", err
-	}
-
-	var requestRequest map[string]string
-
-	err = json.Unmarshal(body, &requestRequest)
-	if err != nil {
-		return "", err
-	}
-
-	queryParams := url.Values{}
-
-	for key, value := range requestRequest {
-		queryParams.Add(key, value)
-	}
-
-	url := url.URL{
-		Scheme:   "eudi-openid4vp://",
-		RawQuery: queryParams.Encode(),
-	}
-
-	return url.String(), nil
 }

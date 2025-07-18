@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -22,13 +23,58 @@ func TestIdemixAndSdJwtCombinedIssuance(t *testing.T) {
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+}
+
+func TestDiscloseOverOpenID4VP(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+	discloseOverOpenID4VP(t, client)
+}
+
+func discloseOverOpenID4VP(t *testing.T, client *irmaclient.Client) {
+	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(createAuthRequestRequest())
+	require.NoError(t, err)
+	session := irmaclient.SessionRequestData{
+		Qr: irma.Qr{
+			Type: irma.ActionDisclosing,
+			URL:  sessionLink,
+		},
+		Protocol: "openid4vp",
+	}
+	sessionJson, err := json.Marshal(session)
+	require.NoError(t, err)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
+	client.NewSession(string(sessionJson), sessionHandler)
 
+	permissionRequest := sessionHandler.AwaitPermissionRequest()
+
+	proceed := true
+	permissionRequest.PermissionHandler(proceed, &irma.DisclosureChoice{
+		Attributes: [][]*irma.AttributeIdentifier{
+			{
+				permissionRequest.Candidates[0][0][0].AttributeIdentifier,
+			},
+		},
+	})
+
+	require.True(t, sessionHandler.AwaitSessionEnd())
+}
+
+func issueSdJwtAndIdemixToClient(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
 	sessionRequestJson := startCombinedIssuanceSessionAtServer(t, irmaServer)
+
+	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionRequestJson, sessionHandler)
-	sessionHandler.AwaitPermissionRequest()
-	sessionHandler.ProceedIssuance()
+	details := sessionHandler.AwaitPermissionRequest()
+	details.PermissionHandler(true, nil)
 
 	require.True(t, sessionHandler.AwaitSessionEnd())
 
@@ -84,6 +130,36 @@ func createClient(t *testing.T) *irmaclient.Client {
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	return client
+}
+
+func createAuthRequestRequest() string {
+	return fmt.Sprintf(`
+		{
+		  "type": "vp_token",  
+		  "dcql_query": {
+			"credentials": [
+			  {
+				"id": "32f54163-7166-48f1-93d8-ff217bdb0653",
+				"format": "dc+sd-jwt",
+				"meta": {
+					"vct_values": ["test.test.email"]
+				},
+				"claims": [
+				  {
+					"path": ["email"]
+				  }
+				]
+			  }
+			]
+		  },
+		  "nonce": "nonce",
+		  "jar_mode": "by_reference",
+		  "request_uri_method": "post",
+		  "issuer_chain": "%s"
+		}
+		`,
+		string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+	)
 }
 
 func irmaServerConfWithSdJwtEnabled() *server.Configuration {
