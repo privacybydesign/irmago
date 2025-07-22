@@ -17,10 +17,75 @@ import (
 )
 
 func TestEudiClient(t *testing.T) {
+	t.Run("logs", testLogs)
+
 	t.Run("idemix and sdjwtvc combined issuance over irma", testIdemixAndSdJwtCombinedIssuance)
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSingleCredentialInfo)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testLogs(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	logs, err := client.LoadNewestLogs(100)
+
+	require.NoError(t, err)
+
+	// only keyshare enrollment log should be there
+	require.Len(t, logs, 1)
+
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	logs, err = client.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
+
+	// credential with sdjwt included
+	requireIrmaSdJwtIssuanceLog(t, logs[0])
+
+	// keyshare attribute (no sdjwt included)
+	requireRegularIrmaIssuanceLog(t, logs[1])
+
+	discloseOverOpenID4VP(t, client)
+	logs, err = client.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	require.Len(t, logs, 3)
+	requireOpenID4VPLog(t, logs[0])
+}
+
+func requireOpenID4VPLog(t *testing.T, log *irmaclient.LogEntry) {
+	require.NotNil(t, log.OpenID4VP)
+	credJson, err := json.MarshalIndent(log.OpenID4VP.DisclosedCredentials, "", "    ")
+	require.NoError(t, err)
+	fmt.Println(string(credJson))
+
+	require.Len(t, log.OpenID4VP.DisclosedCredentials, 1)
+	require.Equal(t, log.OpenID4VP.DisclosedCredentials[0].CredentialType, "test.test.email")
+}
+
+func requireRegularIrmaIssuanceLog(t *testing.T, log *irmaclient.LogEntry) {
+	req, err := log.SessionRequest()
+	require.NoError(t, err)
+	issReq, ok := req.(*irma.IssuanceRequest)
+
+	require.True(t, ok)
+	require.False(t, issReq.RequestSdJwts)
+}
+
+func requireIrmaSdJwtIssuanceLog(t *testing.T, log *irmaclient.LogEntry) {
+	req, err := log.SessionRequest()
+	require.NoError(t, err)
+	issReq, ok := req.(*irma.IssuanceRequest)
+
+	require.True(t, ok)
+	require.True(t, issReq.RequestSdJwts)
 }
 
 func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {

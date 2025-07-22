@@ -17,7 +17,7 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 
 	addTestCredentialsToStorage(storage, keyBinder)
 	verifierValidator := NewRequestorSchemeVerifierValidator()
-	client, err := NewOpenID4VPClient(storage, verifierValidator, keyBinder)
+	client, err := NewOpenID4VPClient(storage, verifierValidator, keyBinder, &InMemoryLogsStorage{})
 	require.NoError(t, err)
 	return client
 }

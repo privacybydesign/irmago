@@ -2,6 +2,7 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/bwesterb/go-atum"
@@ -11,10 +12,20 @@ import (
 
 type LogsStorage interface {
 	AddLogEntry(entry *LogEntry) error
-	DeleteLogEntry(entry *LogEntry) error
+	DeleteLogEntry(entryId uint64) error
 	LoadNewestLogs(max int) ([]*LogEntry, error)
 	LoadLogsBefore(index uint64, max int) ([]*LogEntry, error)
 	DeleteLogs() error
+}
+
+type EudiCredential struct {
+	Formats        []string
+	CredentialType string
+	Attributes     map[string]string
+}
+
+type OpenID4VPDisclosureLog struct {
+	DisclosedCredentials []EudiCredential
 }
 
 // LogEntry is a log entry of a past event.
@@ -42,10 +53,8 @@ type LogEntry struct {
 	Request    json.RawMessage       `json:",omitempty"` // Message that started the session
 	request    irma.SessionRequest   // cached parsed version of Request; get with LogEntry.SessionRequest()
 
-	// The credential format(s) used
-	CredentialFormats []string `json:",omitempty"`
-	// The protocol used when doing a session
-	Protocol string `json:",omitempty"`
+	// Eudi logs
+	OpenID4VP *OpenID4VPDisclosureLog `json:",omitempty"`
 }
 
 const ActionRemoval = irma.Action("removal")
@@ -168,4 +177,38 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	}
 
 	return entry, nil
+}
+
+// =====================================================================================
+
+type InMemoryLogsStorage struct {
+	logs []*LogEntry
+}
+
+func (s *InMemoryLogsStorage) AddLogEntry(entry *LogEntry) error {
+	s.logs = append(s.logs, entry)
+	return nil
+}
+
+func (s *InMemoryLogsStorage) DeleteLogEntry(entryId uint64) error {
+	for index, entry := range s.logs {
+		if entry.ID == entryId {
+			s.logs = append(s.logs[:index], s.logs[index+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("log entry with %v not found", entryId)
+}
+
+func (s *InMemoryLogsStorage) LoadNewestLogs(max int) ([]*LogEntry, error) {
+	return s.logs, nil
+}
+
+func (s *InMemoryLogsStorage) LoadLogsBefore(index uint64, max int) ([]*LogEntry, error) {
+	return s.logs, nil
+}
+
+func (s *InMemoryLogsStorage) DeleteLogs() error {
+	s.logs = []*LogEntry{}
+	return nil
 }

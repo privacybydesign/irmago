@@ -55,7 +55,7 @@ func New(
 	verifierValidator := NewRequestorSchemeVerifierValidator()
 
 	sdjwtvcStorage := NewBboltSdJwtVcStorage(storage.db, aesKey)
-	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder)
+	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder, storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}

@@ -572,18 +572,18 @@ func (s *storage) TxDeleteUserdata(tx *transaction) error {
 	return tx.DeleteBucket([]byte(userdataBucket))
 }
 
-func (s *storage) DeleteLogEntry(entry *LogEntry) error {
+func (s *storage) DeleteLogEntry(id uint64) error {
 	return s.Transaction(func(tx *transaction) error {
-		return s.TxDeleteLogEntry(tx, entry)
+		return s.TxDeleteLogEntry(tx, id)
 	})
 }
 
-func (s *storage) TxDeleteLogEntry(tx *transaction, entry *LogEntry) error {
+func (s *storage) TxDeleteLogEntry(tx *transaction, id uint64) error {
 	b := tx.Bucket([]byte(logsBucket))
 	if b == nil {
 		return nil
 	}
-	return b.Delete(s.logEntryKeyToBytes(entry.ID))
+	return b.Delete(s.logEntryKeyToBytes(id))
 }
 
 func (s *storage) DeleteLogs() error {
