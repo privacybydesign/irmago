@@ -17,7 +17,7 @@ type CredentialInfo struct {
 	Hash                string                                       // SHA256 hash over the attributes
 	Revoked             bool                                         // If the credential has been revoked
 	RevocationSupported bool                                         // If the credential supports creating nonrevocation proofs
-	CredentialFormat    string                                       // the credential format, e.g. "idemix" or "dc+sd-jwt"
+	CredentialFormats   []string                                     // the credential formats, e.g. "idemix" or "dc+sd-jwt"
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).

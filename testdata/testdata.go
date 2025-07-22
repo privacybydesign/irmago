@@ -33,6 +33,9 @@ var IssuerCertChain_irma_app_Bytes []byte
 //go:embed eudi/verifier/chain.pem
 var VerifierCertChain_localhost_Bytes []byte
 
+//go:embed eudi/verifier_staging_certs.pem
+var VerifierCertChain_staging_Bytes []byte
+
 func ParseHolderPubJwk() jwk.Key {
 	key, err := jwk.ParseKey(HolderPubJwkBytes)
 	if err != nil {

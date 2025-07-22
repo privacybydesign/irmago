@@ -1149,7 +1149,10 @@ func challengeResponseKeyName(scheme irma.SchemeManagerIdentifier) string {
 // KeyshareVerifyPin verifies the specified PIN at the keyshare server, returning if it succeeded;
 // if not, how many tries are left, or for how long the user is blocked. If an error is returned
 // it is of type *irma.SessionError.
-func (client *IrmaClient) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
+func (client *IrmaClient) KeyshareVerifyPin(
+	pin string,
+	schemeid irma.SchemeManagerIdentifier,
+) (success bool, triesRemaing int, blockedSecs int, err error) {
 	scheme := client.Configuration.SchemeManagers[schemeid]
 	if scheme == nil || !scheme.Distributed() {
 		return false, 0, 0, &irma.SessionError{

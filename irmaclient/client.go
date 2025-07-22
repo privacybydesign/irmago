@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -16,6 +17,7 @@ type Client struct {
 	openid4vpClient *OpenID4VPClient
 	irmaClient      *IrmaClient
 	logsStorage     LogsStorage
+	keyBinder       sdjwtvc.KeyBinder
 }
 
 func New(
@@ -47,13 +49,12 @@ func New(
 		return nil, fmt.Errorf("failed to open irma storage: %v", err)
 	}
 
-	sdjwtvcStorage := NewBBoltSdJwtVcStorage(storage.db, storage.aesKey)
-
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
-	// addTestCredentialsToStorage(sdjwtvcStorage, keyBinder)
+	keybindingStorage := NewBboltKeybindingStorage(storage.db, aesKey)
+	keyBinder := sdjwtvc.NewDefaultKeyBinder(keybindingStorage)
 
 	verifierValidator := NewRequestorSchemeVerifierValidator()
 
+	sdjwtvcStorage := NewBboltSdJwtVcStorage(storage.db, aesKey)
 	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
@@ -82,6 +83,7 @@ func New(
 		openid4vpClient: openid4vpClient,
 		irmaClient:      irmaClient,
 		logsStorage:     storage,
+		keyBinder:       keyBinder,
 	}, nil
 }
 
@@ -89,13 +91,13 @@ func (client *Client) Close() error {
 	return client.irmaClient.Close()
 }
 
-type sessionRequestData struct {
+type SessionRequestData struct {
 	irma.Qr
 	Protocol string `json:"protocol,omitempty"`
 }
 
 func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
-	var sessionReq sessionRequestData
+	var sessionReq SessionRequestData
 	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
 	if err != nil {
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
@@ -122,7 +124,46 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.irmaClient.EnrolledSchemeManagers()
 }
 
-func (client *Client) CredentialInfoList() irma.CredentialInfoList {
+type intermediateCredentialInfo struct {
+	info *irma.CredentialInfo
+	// map from format to instance hash, can be used for deleting
+	formatHashes map[string]string
+}
+
+// Combines credential infos when their attributes & credential type match (so when only the format differs)
+func constructCredentialMap(infoList irma.CredentialInfoList) map[string]intermediateCredentialInfo {
+	result := make(map[string]intermediateCredentialInfo)
+	for _, info := range infoList {
+		hash := hashAttributesAndCredType(info)
+		existingEntry, ok := result[hash]
+		if ok {
+			existingEntry.info.CredentialFormats = append(existingEntry.info.CredentialFormats, info.CredentialFormats...)
+			existingEntry.formatHashes[info.CredentialFormats[0]] = info.Hash
+		} else {
+			newEntry := intermediateCredentialInfo{
+				formatHashes: map[string]string{
+					info.CredentialFormats[0]: info.Hash,
+				},
+			}
+			info.Hash = hash
+			newEntry.info = info
+			result[hash] = newEntry
+		}
+	}
+	return result
+}
+
+func hashAttributesAndCredType(info *irma.CredentialInfo) string {
+	toHash := info.Identifier().String()
+	for attrType, attrValue := range info.Attributes {
+		toHash += attrType.String() + attrValue[""]
+	}
+	hashBytes := sha256.Sum256([]byte(toHash))
+	return string(hashBytes[:])
+}
+
+// Returns all credential info instances separately per format
+func (client *Client) getAllCredentialInfosSeperately() irma.CredentialInfoList {
 	sdjwtvcs := client.sdjwtvcStorage.GetCredentialInfoList()
 	idemix := client.irmaClient.CredentialInfoList()
 
@@ -133,7 +174,20 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	return result
 }
 
-func (client *Client) KeyshareVerifyPin(pin string, schemeid irma.SchemeManagerIdentifier) (bool, int, int, error) {
+func (client *Client) CredentialInfoList() irma.CredentialInfoList {
+	all := client.getAllCredentialInfosSeperately()
+	combined := constructCredentialMap(all)
+	result := irma.CredentialInfoList{}
+	for _, value := range combined {
+		result = append(result, value.info)
+	}
+	return result
+}
+
+func (client *Client) KeyshareVerifyPin(
+	pin string,
+	schemeid irma.SchemeManagerIdentifier,
+) (success bool, triesRemaing int, blockedSecs int, err error) {
 	return client.irmaClient.KeyshareVerifyPin(pin, schemeid)
 }
 
@@ -146,11 +200,28 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 }
 
 func (client *Client) RemoveCredentialByHash(hash string) error {
-	err := client.sdjwtvcStorage.RemoveCredentialByHash(hash)
-	if err != nil {
-		return err
+	allCredentials := client.getAllCredentialInfosSeperately()
+	combined := constructCredentialMap(allCredentials)
+
+	toDelete := combined[hash]
+
+	for format, credHash := range toDelete.formatHashes {
+		if format == "idemix" {
+			if err := client.irmaClient.RemoveCredentialByHash(credHash); err != nil {
+				return err
+			}
+		}
+		if format == "dc+sd-jwt" {
+			holderPubKeys, err := client.sdjwtvcStorage.RemoveCredentialByHash(credHash)
+			if err != nil {
+				return fmt.Errorf("error while deleting sdjwtvc credential: %v", err)
+			}
+			if err = client.keyBinder.RemovePrivateKeys(holderPubKeys); err != nil {
+				return fmt.Errorf("failed to remove holder private keys: %v", err)
+			}
+		}
 	}
-	return client.irmaClient.RemoveCredentialByHash(hash)
+	return nil
 }
 
 func (client *Client) UpdateSchemes() {
@@ -170,7 +241,13 @@ func (client *Client) InstallScheme(url string, publickey []byte) error {
 }
 
 func (client *Client) RemoveStorage() error {
-	client.sdjwtvcStorage.RemoveAll()
+	if err := client.sdjwtvcStorage.RemoveAll(); err != nil {
+		return fmt.Errorf("failed to remove sdjwtvc storage: %v", err)
+	}
+	if err := client.keyBinder.RemoveAllPrivateKeys(); err != nil {
+		return fmt.Errorf("failed to remove all holder private keys: %v", err)
+	}
+
 	return client.irmaClient.RemoveStorage()
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/stretchr/testify/require"
@@ -43,11 +44,27 @@ func TestSdJwtVcStorage(t *testing.T) {
 		"adding multiple sets of same attributes should not affect info list",
 		testAddingMultipleInstancesWithSameAttributeSets,
 	)
+	RunTestWithTempBboltSdJwtVcStorage(t,
+		"removing instance returns correct holder keys",
+		testRemovingInstanceReturnsCorrectHolderKeys,
+	)
+}
+
+func testRemovingInstanceReturnsCorrectHolderKeys(t *testing.T, storage SdJwtVcStorage) {
+	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, 10)
+	storage.StoreCredential(info, sdjwts)
+	holderKeys := extractHolderKeys(t, sdjwts)
+	deletedKeys, err := storage.RemoveCredentialByHash(info.Hash)
+	require.NoError(t, err)
+
+	require.Equal(t, holderKeys, deletedKeys)
 }
 
 func testCompatibilityWithOldStorage(t *testing.T) {
 	irmaClient, _ := parseStorage(t)
-	sdjwtStorage := NewBBoltSdJwtVcStorage(irmaClient.storage.db, irmaClient.storage.aesKey)
+	sdjwtStorage := NewBboltSdJwtVcStorage(irmaClient.storage.db, irmaClient.storage.aesKey)
 	list := sdjwtStorage.GetCredentialInfoList()
 	require.Empty(t, list)
 }
@@ -126,7 +143,7 @@ func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, err := createTestSdJwtVc(keyBinder, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
@@ -203,8 +220,8 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 	require.Equal(t, len(result), 1)
 }
 
-func createMultipleSdJwtVcs(t *testing.T, vct string, issuer string, claims map[string]any, num int) (irma.CredentialInfo, []sdjwtvc.SdJwtVc) {
-	keyBinder := sdjwtvc.NewDefaultKeyBinder()
+func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num int) (irma.CredentialInfo, []sdjwtvc.SdJwtVc) {
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 	for range num {
 		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims)
@@ -218,22 +235,38 @@ func createMultipleSdJwtVcs(t *testing.T, vct string, issuer string, claims map[
 
 func RunTestWithTempBboltSdJwtVcStorage(t *testing.T, name string, test func(t *testing.T, storage SdJwtVcStorage)) {
 	success := t.Run(name, func(t *testing.T) {
-		dir, err := os.MkdirTemp("", "client-*")
-		require.NoError(t, err)
+		withTempBboltDb(t, "sdjwtvc.db", func(db *bbolt.DB) {
+			var aesKey [32]byte
+			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-		dbFile := fmt.Sprintf("%s/sdjwtvc.db", dir)
-		db, err := bbolt.Open(dbFile, 0600, &bbolt.Options{Timeout: 1 * time.Second})
-		require.NoError(t, err)
-		var aesKey [32]byte
-		copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
-		storage := NewBBoltSdJwtVcStorage(db, aesKey)
-
-		defer db.Close()
-		defer os.Remove(dbFile)
-		defer os.Remove(dir)
-
-		test(t, storage)
+			storage := NewBboltSdJwtVcStorage(db, aesKey)
+			test(t, storage)
+		})
 	})
 	require.True(t, success)
+}
+
+func withTempBboltDb(t *testing.T, fileName string, closure func(db *bbolt.DB)) {
+	dir, err := os.MkdirTemp("", "client-*")
+	require.NoError(t, err)
+
+	dbFile := fmt.Sprintf("%s/%s", dir, fileName)
+	db, err := bbolt.Open(dbFile, 0600, &bbolt.Options{Timeout: 1 * time.Second})
+	require.NoError(t, err)
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+
+	defer db.Close()
+	defer os.Remove(dbFile)
+	defer os.Remove(dir)
+	closure(db)
+}
+
+func extractHolderKeys(t *testing.T, sdjwts []sdjwtvc.SdJwtVc) (result []jwk.Key) {
+	for _, cred := range sdjwts {
+		_, pubKey, err := sdjwtvc.ExtractHashingAlgorithmAndHolderPubKey(cred)
+		require.NoError(t, err)
+		result = append(result, pubKey)
+	}
+	return
 }

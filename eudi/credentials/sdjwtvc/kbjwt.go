@@ -35,36 +35,117 @@ const (
 	Key_Audience string = "aud"
 )
 
+type KeyBindingStorage interface {
+	StorePrivateKeys(keys []*ecdsa.PrivateKey) error
+	GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error)
+	// Takes in a list of pub keys for which it should delete the corresponding private keys
+	RemovePrivateKeys(pubKeys []jwk.Key) error
+	// Removes all holder binding private keys
+	RemoveAllPrivateKeys() error
+}
+
+func NewInMemoryKeyBindingStorage() KeyBindingStorage {
+	return &InMemoryKeyBindingStorage{
+		keys: map[string]*ecdsa.PrivateKey{},
+	}
+}
+
+type InMemoryKeyBindingStorage struct {
+	keys map[string]*ecdsa.PrivateKey
+}
+
+func (s *InMemoryKeyBindingStorage) StorePrivateKeys(keys []*ecdsa.PrivateKey) error {
+	for _, privKey := range keys {
+		privJwk, err := jwk.Import(privKey)
+		if err != nil {
+			return fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
+		}
+
+		pubJwk, err := privJwk.PublicKey()
+		if err != nil {
+			return fmt.Errorf("failed to obtain pub key from jwk: %v", err)
+		}
+
+		thumbprint, err := pubJwk.Thumbprint(crypto.SHA256)
+		if err != nil {
+			return fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
+		}
+
+		s.keys[string(thumbprint)] = privKey
+	}
+	return nil
+}
+
+func (s *InMemoryKeyBindingStorage) GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error) {
+	thumbprint, err := pubKey.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create thumbprint for holder pub key: %v", err)
+	}
+
+	privKey, ok := s.keys[string(thumbprint)]
+	if !ok {
+		return nil, fmt.Errorf("failed to find private key for holder pub key")
+	}
+
+	delete(s.keys, string(thumbprint))
+	return privKey, nil
+}
+
+func (s *InMemoryKeyBindingStorage) RemovePrivateKeys(pubKeys []jwk.Key) error {
+	for _, pk := range pubKeys {
+		_, err := s.GetAndRemovePrivateKey(pk)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *InMemoryKeyBindingStorage) RemoveAllPrivateKeys() error {
+	s.keys = map[string]*ecdsa.PrivateKey{}
+	return nil
+}
+
 // KeyBinder is an interface for creating a key binding jwt from a hash.
 // Can be used to move creating the kbjwt to a server.
 type KeyBinder interface {
 	// Creates a batch of key pairs and returns the pub keys.
 	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
 	CreateKeyPairs(num uint) ([]jwk.Key, error)
-	// takes in the hash over the issuer signed JWT and the selected disclosures
+	// Takes in the hash over the issuer signed JWT and the selected disclosures
 	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
+	// Takes in a list of pub keys for which it should delete the corresponding private keys
+	RemovePrivateKeys(pubKeys []jwk.Key) error
+	// Removes all holder binding private keys
+	RemoveAllPrivateKeys() error
 }
 
 type DefaultKeyBinder struct {
-	clock Clock
-	keys  map[string]*ecdsa.PrivateKey
+	clock   Clock
+	storage KeyBindingStorage
 }
 
-func NewDefaultKeyBinder() *DefaultKeyBinder {
+func NewDefaultKeyBinder(storage KeyBindingStorage) KeyBinder {
 	return &DefaultKeyBinder{
-		clock: NewSystemClock(),
-		keys:  map[string]*ecdsa.PrivateKey{},
+		clock:   NewSystemClock(),
+		storage: storage,
 	}
+}
+
+func NewDefaultKeyBinderWithInMemoryStorage() KeyBinder {
+	return NewDefaultKeyBinder(NewInMemoryKeyBindingStorage())
 }
 
 func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	result := make([]jwk.Key, num)
+	privKeys := make([]*ecdsa.PrivateKey, num)
 
 	for i := range num {
 		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ecdsa private key: %v", err)
 		}
+		privKeys[i] = privKey
 
 		privJwk, err := jwk.Import(privKey)
 		if err != nil {
@@ -73,17 +154,14 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 
 		pubJwk, err := privJwk.PublicKey()
 		if err != nil {
-			return nil, fmt.Errorf("failed to obtain pub key from jwk: %v", err)
+			return nil, fmt.Errorf("failed to obtain pub key from priv key jwk: %v", err)
 		}
-
-		thumbprint, err := pubJwk.Thumbprint(crypto.SHA256)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
-		}
-
-		c.keys[string(thumbprint)] = privKey
-
 		result[i] = pubJwk
+	}
+
+	err := c.storage.StorePrivateKeys(privKeys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to storage private keys: %v", err)
 	}
 
 	return result, nil
@@ -104,14 +182,9 @@ func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, n
 		"typ": KbJwtTyp,
 	}
 
-	thumbprint, err := holderKey.Thumbprint(crypto.SHA256)
+	privKey, err := c.storage.GetAndRemovePrivateKey(holderKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to create thumbprint for holder pub key: %v", err)
-	}
-
-	privKey, ok := c.keys[string(thumbprint)]
-	if !ok {
-		return "", fmt.Errorf("failed to find private key for holder pub key")
+		return "", fmt.Errorf("failed to retrieve private key: %v", err)
 	}
 
 	jwtCreator := NewJwtCreator(privKey)
@@ -120,8 +193,16 @@ func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, n
 	return KeyBindingJwt(jwt), err
 }
 
+func (c *DefaultKeyBinder) RemovePrivateKeys(pubKeys []jwk.Key) error {
+	return c.storage.RemovePrivateKeys(pubKeys)
+}
+
+func (c *DefaultKeyBinder) RemoveAllPrivateKeys() error {
+	return c.storage.RemoveAllPrivateKeys()
+}
+
 func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string) (KeyBindingJwt, error) {
-	alg, holderKey, err := extractHashingAlgorithmAndHolderPubKey(sdJwt)
+	alg, holderKey, err := ExtractHashingAlgorithmAndHolderPubKey(sdJwt)
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +215,7 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string
 	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
 }
 
-func extractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {
+func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {
 	issuerSignedJwt, _, _, err := SplitSdJwtVc(sdJwt)
 	if err != nil {
 		return "", nil, err

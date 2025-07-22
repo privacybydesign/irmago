@@ -107,7 +107,7 @@ func CalculateAmountOfSdJwtsToIssue(req *IssuanceRequest) uint {
 		credAmount := DefaultSdJwtIssueAmount
 		if cred.SdJwtBatchSize != nil {
 			// Don't issue more then the maximum allowed
-			amount = min(*cred.SdJwtBatchSize, MaxSdJwtIssueAmount)
+			credAmount = min(*cred.SdJwtBatchSize, MaxSdJwtIssueAmount)
 		}
 		amount += credAmount
 	}

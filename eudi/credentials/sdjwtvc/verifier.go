@@ -110,6 +110,9 @@ func ParseAndVerifySdJwtVc(context VerificationContext, sdjwtvc SdJwtVc) (Verifi
 // The KbJwt may be nil if there's no key binding jwt.
 // This function will do no verification whatsoever.
 func SplitSdJwtVc(sdjwtvc SdJwtVc) (IssuerSignedJwt, []EncodedDisclosure, *KeyBindingJwt, error) {
+	if sdjwtvc == "" {
+		return err("sdjwtvc is an empty string")
+	}
 	components := strings.Split(string(sdjwtvc), "~")
 	numComponents := len(components)
 	if numComponents == 0 {
@@ -124,7 +127,7 @@ func SplitSdJwtVc(sdjwtvc SdJwtVc) (IssuerSignedJwt, []EncodedDisclosure, *KeyBi
 
 	if hasKbJwt {
 		if numComponents < 2 {
-			return err("sdjwtvc expected to have kbjwt (since it doesn't end with ~), but has no kbjwt")
+			return err("sdjwtvc expected to have kbjwt (since it doesn't end with ~), but has no kbjwt ('%v')", sdjwtvc)
 		}
 
 		tmp := KeyBindingJwt(components[numComponents-1])
@@ -142,6 +145,36 @@ func SplitSdJwtVc(sdjwtvc SdJwtVc) (IssuerSignedJwt, []EncodedDisclosure, *KeyBi
 	}
 
 	return issuer, encdiscs, kbJwt, nil
+}
+
+func CreateX509VerifyOptionsFromMultiplePemChains(pemChains [][]byte) (*x509.VerifyOptions, error) {
+	rootPool := x509.NewCertPool()
+	intermediatePool := x509.NewCertPool()
+
+	for i, pemChainData := range pemChains {
+		certs, err := ParsePemCertificateChain(pemChainData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse cert chain %d: %w", i, err)
+		}
+
+		if len(certs) == 0 {
+			return nil, fmt.Errorf("cert chain %d is empty", i)
+		}
+
+		// First cert is assumed to be the root (or self-signed root CA)
+		rootPool.AddCert(certs[0])
+
+		// Remaining certs are intermediates
+		for _, cert := range certs[1:] {
+			intermediatePool.AddCert(cert)
+		}
+	}
+
+	return &x509.VerifyOptions{
+		Roots:         rootPool,
+		Intermediates: intermediatePool,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}, nil
 }
 
 // CreateX509VerifyOptionsFromCertChain creates x509.VerifyOptions that can be added
