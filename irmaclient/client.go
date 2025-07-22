@@ -251,12 +251,152 @@ func (client *Client) RemoveStorage() error {
 	return client.irmaClient.RemoveStorage()
 }
 
-func (client *Client) LoadNewestLogs(max int) ([]*LogEntry, error) {
-	return client.irmaClient.LoadNewestLogs(max)
+func (client *Client) LoadNewestLogs(max int) ([]LogInfo, error) {
+	rawLogs, err := client.irmaClient.LoadNewestLogs(max)
+	if err != nil {
+		return nil, err
+	}
+	return client.rawLogEntriesToLogInfo(rawLogs)
 }
 
-func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, error) {
-	return client.irmaClient.LoadLogsBefore(beforeIndex, max)
+func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]LogInfo, error) {
+	rawLogs, err := client.irmaClient.LoadLogsBefore(beforeIndex, max)
+	if err != nil {
+		return nil, err
+	}
+	return client.rawLogEntriesToLogInfo(rawLogs)
+}
+
+func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
+	if entry.OpenID4VP != nil {
+		return LogInfo{
+			Type: irma.ActionDisclosing,
+			Time: entry.Time,
+			DisclosureLog: &DisclosureLog{
+				Protocol:    "openid4vp",
+				Credentials: entry.OpenID4VP.DisclosedCredentials,
+				Verifier:    entry.ServerName,
+			},
+		}, nil
+	}
+
+	switch entry.Type {
+	case irma.ActionDisclosing:
+		attributes, err := entry.GetDisclosedCredentials(client.GetIrmaConfiguration())
+		if err != nil {
+			return LogInfo{}, err
+		}
+		credLog, err := disclosedAttributesToCredentialLogs(attributes)
+		if err != nil {
+			return LogInfo{}, err
+		}
+		return LogInfo{
+			Type: irma.ActionDisclosing,
+			Time: entry.Time,
+			DisclosureLog: &DisclosureLog{
+				Protocol:    "irma",
+				Credentials: credLog,
+				Verifier:    entry.ServerName,
+			},
+		}, nil
+	case irma.ActionIssuing:
+		attributes, err := entry.GetDisclosedCredentials(client.GetIrmaConfiguration())
+		if err != nil {
+			return LogInfo{}, err
+		}
+		credLog, err := disclosedAttributesToCredentialLogs(attributes)
+		if err != nil {
+			return LogInfo{}, err
+		}
+		issued, err := entry.GetIssuedCredentials(client.GetIrmaConfiguration())
+		if err != nil {
+			return LogInfo{}, err
+		}
+		session, err := entry.SessionRequest()
+		if err != nil {
+			return LogInfo{}, err
+		}
+		issReq, ok := session.(*irma.IssuanceRequest)
+		if !ok {
+			return LogInfo{}, fmt.Errorf("failed to get issuance request")
+		}
+		issuedLog, err := issuedCredentialsToCredentialLog(issued, issReq.RequestSdJwts)
+		if err != nil {
+			return LogInfo{}, err
+		}
+		return LogInfo{
+			Time: entry.Time,
+			Type: irma.ActionIssuing,
+			IssuanceLog: &IssuanceLog{
+				Protocol:             "irma",
+				Credentials:          issuedLog,
+				DisclosedCredentials: credLog,
+			},
+		}, nil
+	case ActionRemoval:
+		return LogInfo{
+			Time:       entry.Time,
+			Type:       ActionRemoval,
+			RemovalLog: &RemovalLog{},
+		}, nil
+	}
+
+	return LogInfo{}, nil
+}
+
+func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList, issuedSdJwts bool) ([]CredentialLog, error) {
+	result := []CredentialLog{}
+	for _, cred := range creds {
+		if cred == nil {
+			continue
+		}
+		entry := CredentialLog{
+			// this function is only used for idemix credentials
+			Formats:        []string{"idemix"},
+			CredentialType: cred.Identifier().String(),
+			Attributes:     map[string]string{},
+		}
+		if issuedSdJwts {
+			entry.Formats = append(entry.Formats, "dc+sd-jwt")
+		}
+		for key, attr := range cred.Attributes {
+			entry.Attributes[key.Name()] = attr[""]
+		}
+		result = append(result, entry)
+	}
+	return result, nil
+}
+
+func disclosedAttributesToCredentialLogs(attributes [][]*irma.DisclosedAttribute) ([]CredentialLog, error) {
+	result := []CredentialLog{}
+	for _, creds := range attributes {
+		if creds == nil {
+			continue
+		}
+		entry := CredentialLog{
+			// this function is only used for idemix credentials
+			Formats:        []string{"idemix"},
+			CredentialType: creds[0].Identifier.Parent(),
+			Attributes:     map[string]string{},
+		}
+		for _, attr := range creds {
+			entry.Attributes[attr.Identifier.Name()] = attr.Value[""]
+		}
+		result = append(result, entry)
+	}
+	return result, nil
+}
+
+func (client *Client) rawLogEntriesToLogInfo(entries []*LogEntry) ([]LogInfo, error) {
+	result := []LogInfo{}
+	for _, e := range entries {
+		info, err := client.rawLogEntryToLogInfo(e)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert log entry to info: %v", err)
+		}
+		result = append(result, info)
+	}
+	return result, nil
 }
 
 func (client *Client) SetPreferences(prefs Preferences) {

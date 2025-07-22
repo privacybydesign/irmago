@@ -17,7 +17,7 @@ import (
 )
 
 func TestEudiClient(t *testing.T) {
-	t.Run("logs", testLogs)
+	t.Run("session logs", testSessionLogs)
 
 	t.Run("idemix and sdjwtvc combined issuance over irma", testIdemixAndSdJwtCombinedIssuance)
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
@@ -25,7 +25,7 @@ func TestEudiClient(t *testing.T) {
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
 }
 
-func testLogs(t *testing.T) {
+func testSessionLogs(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
 	defer irmaServer.Stop()
 
@@ -60,32 +60,30 @@ func testLogs(t *testing.T) {
 	requireOpenID4VPLog(t, logs[0])
 }
 
-func requireOpenID4VPLog(t *testing.T, log *irmaclient.LogEntry) {
-	require.NotNil(t, log.OpenID4VP)
-	credJson, err := json.MarshalIndent(log.OpenID4VP.DisclosedCredentials, "", "    ")
-	require.NoError(t, err)
-	fmt.Println(string(credJson))
+func requireOpenID4VPLog(t *testing.T, log irmaclient.LogInfo) {
+	require.Equal(t, log.Type, irma.ActionDisclosing)
+	require.NotNil(t, log.DisclosureLog)
+	require.Len(t, log.DisclosureLog.Credentials, 1)
+	require.Equal(t, log.DisclosureLog.Protocol, "openid4vp")
 
-	require.Len(t, log.OpenID4VP.DisclosedCredentials, 1)
-	require.Equal(t, log.OpenID4VP.DisclosedCredentials[0].CredentialType, "test.test.email")
+	cred := log.DisclosureLog.Credentials[0]
+	require.Equal(t, cred.Formats, []string{"dc+sd-jwt"})
 }
 
-func requireRegularIrmaIssuanceLog(t *testing.T, log *irmaclient.LogEntry) {
-	req, err := log.SessionRequest()
-	require.NoError(t, err)
-	issReq, ok := req.(*irma.IssuanceRequest)
-
-	require.True(t, ok)
-	require.False(t, issReq.RequestSdJwts)
+func requireRegularIrmaIssuanceLog(t *testing.T, log irmaclient.LogInfo) {
+	require.Equal(t, log.Type, irma.ActionIssuing)
+	require.Equal(t, log.IssuanceLog.Protocol, "irma")
 }
 
-func requireIrmaSdJwtIssuanceLog(t *testing.T, log *irmaclient.LogEntry) {
-	req, err := log.SessionRequest()
-	require.NoError(t, err)
-	issReq, ok := req.(*irma.IssuanceRequest)
+func requireIrmaSdJwtIssuanceLog(t *testing.T, log irmaclient.LogInfo) {
+	require.Equal(t, log.Type, irma.ActionIssuing)
+	require.Equal(t, log.IssuanceLog.Protocol, "irma")
 
-	require.True(t, ok)
-	require.True(t, issReq.RequestSdJwts)
+	require.Len(t, log.IssuanceLog.Credentials, 1)
+
+	cred := log.IssuanceLog.Credentials[0]
+	require.Contains(t, cred.Formats, "dc+sd-jwt")
+	require.Contains(t, cred.Formats, "idemix")
 }
 
 func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {

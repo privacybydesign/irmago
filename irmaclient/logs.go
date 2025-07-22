@@ -10,6 +10,46 @@ import (
 	irma "github.com/privacybydesign/irmago"
 )
 
+// Credential format & protocol agnostic logs
+type LogInfo struct {
+	Type             irma.Action       // The type of action
+	Time             irma.Timestamp    // Time at which the action occured
+	RemovalLog       *RemovalLog       // when Type==ActionRemoval
+	IssuanceLog      *IssuanceLog      // when Type==ActionIssuing
+	DisclosureLog    *DisclosureLog    // when Type==ActionDisclosing
+	SignedMessageLog *SignedMessageLog // when Type==ActionSigning
+}
+
+type SignedMessageLog struct {
+	Protocol string
+	Message  string
+	Verifier *irma.RequestorInfo
+}
+
+type IssuanceLog struct {
+	Protocol             string
+	Credentials          []CredentialLog
+	DisclosedCredentials []CredentialLog
+}
+
+type DisclosureLog struct {
+	Protocol    string
+	Credentials []CredentialLog
+	Verifier    *irma.RequestorInfo
+}
+
+type RemovalLog struct {
+	Credentials []CredentialLog
+}
+
+type CredentialLog struct {
+	Formats        []string
+	CredentialType string
+	Attributes     map[string]string
+}
+
+// ===========================================================================
+
 type LogsStorage interface {
 	AddLogEntry(entry *LogEntry) error
 	DeleteLogEntry(entryId uint64) error
@@ -18,14 +58,8 @@ type LogsStorage interface {
 	DeleteLogs() error
 }
 
-type EudiCredential struct {
-	Formats        []string
-	CredentialType string
-	Attributes     map[string]string
-}
-
 type OpenID4VPDisclosureLog struct {
-	DisclosedCredentials []EudiCredential
+	DisclosedCredentials []CredentialLog
 }
 
 // LogEntry is a log entry of a past event.

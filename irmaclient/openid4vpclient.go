@@ -198,7 +198,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	choices [][]*irma.AttributeIdentifier,
 	nonce string,
 	clientId string,
-) ([]dcql.QueryResponse, []EudiCredential, error) {
+) ([]dcql.QueryResponse, []CredentialLog, error) {
 	// map of attribute identifiers by the dcql query id
 	attributesByQueryId := map[string][]*irma.AttributeIdentifier{}
 
@@ -222,7 +222,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	}
 
 	queryResponses := []dcql.QueryResponse{}
-	credentialInfos := []EudiCredential{}
+	credentialInfos := []CredentialLog{}
 
 	for queryId, attributes := range attributesByQueryId {
 		sdjwt, err := client.storage.GetCredentialByHash(attributes[0].CredentialHash)
@@ -261,8 +261,8 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	return queryResponses, credentialInfos, nil
 }
 
-func createCredLog(info irma.CredentialInfo, disclosures []*irma.AttributeIdentifier) EudiCredential {
-	result := EudiCredential{
+func createCredLog(info irma.CredentialInfo, disclosures []*irma.AttributeIdentifier) CredentialLog {
+	result := CredentialLog{
 		CredentialType: info.Identifier().String(),
 		Formats:        []string{"dc+sd-jwt"},
 		Attributes:     map[string]string{},
