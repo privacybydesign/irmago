@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -209,7 +210,7 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 
 	for format, credHash := range toDelete.formatHashes {
 		if format == "idemix" {
-			if err := client.irmaClient.RemoveCredentialByHash(credHash); err != nil {
+			if err := client.irmaClient.RemoveCredentialByHash(credHash, false); err != nil {
 				return err
 			}
 		}
@@ -223,7 +224,32 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 			}
 		}
 	}
-	return nil
+	logEntry, err := createRemovalLog(toDelete.info)
+	if err != nil {
+		return fmt.Errorf("failed to create delete log: %v", err)
+	}
+	return client.logsStorage.AddLogEntry(logEntry)
+}
+
+func createRemovalLog(info *irma.CredentialInfo) (*LogEntry, error) {
+	attrs := []irma.TranslatedString{}
+	for _, attr := range info.Attributes {
+		attrs = append(attrs, attr)
+	}
+	formats := make([]CredentialFormat, len(info.CredentialFormats))
+
+	for index, format := range info.CredentialFormats {
+		formats[index] = CredentialFormat(format)
+	}
+
+	return &LogEntry{
+		Time: irma.Timestamp(time.Now()),
+		Type: ActionRemoval,
+		Removed: map[irma.CredentialTypeIdentifier][]irma.TranslatedString{
+			info.Identifier(): attrs,
+		},
+		RemovedFormats: formats,
+	}, nil
 }
 
 func (client *Client) UpdateSchemes() {
@@ -352,12 +378,11 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 
 		for credentialTypeId, attributeValues := range entry.Removed {
 			removed := CredentialLog{
-				Formats:        []CredentialFormat{Format_Idemix},
+				Formats:        entry.RemovedFormats,
 				CredentialType: credentialTypeId.String(),
 				Attributes:     map[string]string{},
 			}
 
-			// var removedCredential = make(map[irma.AttributeTypeIdentifier]irma.TranslatedString)
 			attributeTypes := client.GetIrmaConfiguration().CredentialTypes[credentialTypeId].AttributeTypes
 			for index, attributeValue := range attributeValues {
 				typ := attributeTypes[index]

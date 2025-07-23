@@ -86,7 +86,8 @@ type LogEntry struct {
 	Time irma.Timestamp // Time at which the session was completed
 
 	// Credential removal
-	Removed map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"`
+	Removed        map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"`
+	RemovedFormats []CredentialFormat                                        `json:",omitempty"`
 
 	// Signature sessions
 	SignedMessage          []byte          `json:",omitempty"`

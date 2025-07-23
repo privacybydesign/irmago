@@ -23,11 +23,36 @@ func TestEudiClient(t *testing.T) {
 	t.Run("eudi session logs", testEudiSessionLogs)
 
 	t.Run("idemix only credential removal log", testIdemixOnlyCredentialRemovalLog)
+	t.Run("idemix and sdjwt combined credential removal log", testIdemixAndSdJwtCombinedRemovalLog)
 
 	t.Run("idemix and sdjwtvc combined issuance over irma", testIdemixAndSdJwtCombinedIssuance)
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSingleCredentialInfo)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	credentials := client.CredentialInfoList()
+
+	emailCred := credentials[slices.IndexFunc(credentials, func(info *irma.CredentialInfo) bool {
+		return info.Identifier() == irma.NewCredentialTypeIdentifier("test.test.email")
+	})]
+
+	require.NoError(t, client.RemoveCredentialByHash(emailCred.Hash))
+
+	logs, err := client.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	requireIdemixAndSdJwtCredentialRemovalLog(t, logs[0])
 }
 
 func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
@@ -52,6 +77,19 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 	require.NoError(t, err)
 
 	requireIdemixOnlyCredentialRemovalLog(t, logs[0])
+}
+
+func requireIdemixAndSdJwtCredentialRemovalLog(t *testing.T, log irmaclient.LogInfo) {
+	require.Equal(t, log.Type, irmaclient.LogType_CredentialRemoval)
+
+	credLog := log.RemovalLog.Credentials[0]
+
+	require.Equal(t, credLog.CredentialType, "test.test.email")
+	require.Contains(t, credLog.Formats, irmaclient.Format_Idemix)
+	require.Contains(t, credLog.Formats, irmaclient.Format_SdJwtVc)
+	require.Equal(t, credLog.Attributes, map[string]string{
+		"email": "test@gmail.com",
+	})
 }
 
 func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log irmaclient.LogInfo) {
