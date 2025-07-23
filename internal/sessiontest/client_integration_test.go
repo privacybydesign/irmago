@@ -47,6 +47,24 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 	})]
 
 	require.NoError(t, client.RemoveCredentialByHash(emailCred.Hash))
+
+	logs, err := client.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	requireIdemixOnlyCredentialRemovalLog(t, logs[0])
+}
+
+func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log irmaclient.LogInfo) {
+	require.Equal(t, log.Type, irmaclient.LogType_CredentialRemoval)
+	require.Equal(t, log.RemovalLog.Credentials, []irmaclient.CredentialLog{
+		{
+			Formats:        []irmaclient.CredentialFormat{irmaclient.Format_Idemix},
+			CredentialType: "test.test.email",
+			Attributes: map[string]string{
+				"email": "test@gmail.com",
+			},
+		},
+	})
 }
 
 func testIrmaDisclosureSessionLogs(t *testing.T) {
