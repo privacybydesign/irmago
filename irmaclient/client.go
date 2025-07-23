@@ -133,6 +133,7 @@ type intermediateCredentialInfo struct {
 // Combines credential infos when their attributes & credential type match (so when only the format differs)
 func constructCredentialMap(infoList irma.CredentialInfoList) map[string]intermediateCredentialInfo {
 	result := make(map[string]intermediateCredentialInfo)
+
 	for _, info := range infoList {
 		hash := hashAttributesAndCredType(info)
 		existingEntry, ok := result[hash]
@@ -145,8 +146,9 @@ func constructCredentialMap(infoList irma.CredentialInfoList) map[string]interme
 					info.CredentialFormats[0]: info.Hash,
 				},
 			}
-			info.Hash = hash
-			newEntry.info = info
+			infoCopy := *info
+			infoCopy.Hash = hash
+			newEntry.info = &infoCopy
 			result[hash] = newEntry
 		}
 	}

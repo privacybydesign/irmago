@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
@@ -21,10 +22,31 @@ func TestEudiClient(t *testing.T) {
 	t.Run("signature session logs", testIrmaSignatureSessionLogs)
 	t.Run("eudi session logs", testEudiSessionLogs)
 
+	t.Run("idemix only credential removal log", testIdemixOnlyCredentialRemovalLog)
+
 	t.Run("idemix and sdjwtvc combined issuance over irma", testIdemixAndSdJwtCombinedIssuance)
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSingleCredentialInfo)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
+	irmaServer := StartIrmaServer(t, IrmaServerConfiguration())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+
+	issueIdemixOnlyToClient(t, client, irmaServer)
+
+	credentials := client.CredentialInfoList()
+	emailCred := credentials[slices.IndexFunc(credentials, func(info *irma.CredentialInfo) bool {
+		return info.Identifier() == irma.NewCredentialTypeIdentifier("test.test.email")
+	})]
+
+	require.NoError(t, client.RemoveCredentialByHash(emailCred.Hash))
 }
 
 func testIrmaDisclosureSessionLogs(t *testing.T) {
