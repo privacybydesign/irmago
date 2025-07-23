@@ -38,9 +38,8 @@ type LogInfo struct {
 }
 
 type SignedMessageLog struct {
-	Protocol Protocol
-	Message  string
-	Verifier *irma.RequestorInfo
+	DisclosureLog
+	Message string
 }
 
 type IssuanceLog struct {

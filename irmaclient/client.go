@@ -93,7 +93,7 @@ func (client *Client) Close() error {
 
 type SessionRequestData struct {
 	irma.Qr
-	Protocol string `json:"protocol,omitempty"`
+	Protocol Protocol `json:"protocol,omitempty"`
 }
 
 func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
@@ -281,7 +281,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 	}
 
 	switch entry.Type {
-	case irma.ActionDisclosing:
+	case irma.ActionDisclosing, irma.ActionSigning:
 		attributes, err := entry.GetDisclosedCredentials(client.GetIrmaConfiguration())
 		if err != nil {
 			return LogInfo{}, err
@@ -290,14 +290,26 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 		if err != nil {
 			return LogInfo{}, err
 		}
+		disclosureLog := &DisclosureLog{
+			Protocol:    Protocol_Irma,
+			Credentials: credLog,
+			Verifier:    entry.ServerName,
+		}
+
+		if entry.Type == irma.ActionSigning {
+			return LogInfo{
+				Type: LogType_Signature,
+				Time: entry.Time,
+				SignedMessageLog: &SignedMessageLog{
+					Message:       string(entry.SignedMessage),
+					DisclosureLog: *disclosureLog,
+				},
+			}, nil
+		}
 		return LogInfo{
-			Type: LogType_Disclosure,
-			Time: entry.Time,
-			DisclosureLog: &DisclosureLog{
-				Protocol:    Protocol_Irma,
-				Credentials: credLog,
-				Verifier:    entry.ServerName,
-			},
+			Type:          LogType_Disclosure,
+			Time:          entry.Time,
+			DisclosureLog: disclosureLog,
 		}, nil
 	case irma.ActionIssuing:
 		attributes, err := entry.GetDisclosedCredentials(client.GetIrmaConfiguration())
@@ -375,7 +387,6 @@ func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList, issuedSdJwt
 			continue
 		}
 		entry := CredentialLog{
-			// this function is only used for idemix credentials
 			Formats:        []CredentialFormat{Format_Idemix},
 			CredentialType: cred.Identifier().String(),
 			Attributes:     map[string]string{},
