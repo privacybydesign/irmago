@@ -266,7 +266,7 @@ func (client *IrmaClient) addCredential(cred *credential) (err error) {
 		}
 	}
 	if index != -1 {
-		if err = client.remove(id, index, false); err != nil {
+		if err = client.remove(id, index); err != nil {
 			return err
 		}
 	}
@@ -276,7 +276,7 @@ func (client *IrmaClient) addCredential(cred *credential) (err error) {
 	if !id.Empty() {
 		if cred.CredentialType().IsSingleton {
 			for len(client.attrs(id)) != 0 {
-				if err = client.remove(id, 0, false); err != nil {
+				if err = client.remove(id, 0); err != nil {
 					return
 				}
 			}
@@ -284,7 +284,7 @@ func (client *IrmaClient) addCredential(cred *credential) (err error) {
 
 		for i := len(client.attrs(id)) - 1; i >= 0; i-- { // Go backwards through array because remove manipulates it
 			if client.attrs(id)[i].EqualsExceptMetadata(cred.attrs) {
-				if err = client.remove(id, i, false); err != nil {
+				if err = client.remove(id, i); err != nil {
 					return
 				}
 			}
@@ -318,7 +318,7 @@ func generateSecretKey() (*secretKey, error) {
 
 // Removal methods
 
-func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int, storeLog bool) error {
+func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int) error {
 	// Remove attributes
 	list, exists := client.attributes[id]
 	if !exists || index >= len(list) {
@@ -337,13 +337,6 @@ func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int, st
 		if err := client.storage.TxStoreAttributes(tx, id, client.attributes[id]); err != nil {
 			return err
 		}
-		if storeLog {
-			return client.storage.TxAddLogEntry(tx, &LogEntry{
-				Type:    ActionRemoval,
-				Time:    irma.Timestamp(time.Now()),
-				Removed: removed,
-			})
-		}
 		return nil
 	})
 	if err != nil {
@@ -360,20 +353,20 @@ func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int, st
 }
 
 // RemoveCredential removes the specified credential if that is allowed.
-func (client *IrmaClient) RemoveCredential(id irma.CredentialTypeIdentifier, index int, storeLog bool) error {
+func (client *IrmaClient) RemoveCredential(id irma.CredentialTypeIdentifier, index int) error {
 	if client.Configuration.CredentialTypes[id].DisallowDelete {
 		return errors.Errorf("configuration does not allow removal of credential type %s", id.String())
 	}
-	return client.remove(id, index, storeLog)
+	return client.remove(id, index)
 }
 
 // RemoveCredentialByHash removes the specified credential.
-func (client *IrmaClient) RemoveCredentialByHash(hash string, storeLog bool) error {
+func (client *IrmaClient) RemoveCredentialByHash(hash string) error {
 	cred, index, err := client.credentialByHash(hash)
 	if err != nil {
 		return err
 	}
-	return client.RemoveCredential(cred.CredentialType().Identifier(), index, storeLog)
+	return client.RemoveCredential(cred.CredentialType().Identifier(), index)
 }
 
 // RemoveStorage removes all attributes, signatures, logs and userdata.

@@ -210,7 +210,7 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 
 	for format, credHash := range toDelete.formatHashes {
 		if format == "idemix" {
-			if err := client.irmaClient.RemoveCredentialByHash(credHash, false); err != nil {
+			if err := client.irmaClient.RemoveCredentialByHash(credHash); err != nil {
 				return err
 			}
 		}
