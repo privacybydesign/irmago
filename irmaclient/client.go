@@ -270,10 +270,10 @@ func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]LogInfo, er
 func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 	if entry.OpenID4VP != nil {
 		return LogInfo{
-			Type: irma.ActionDisclosing,
+			Type: LogType_Disclosure,
 			Time: entry.Time,
 			DisclosureLog: &DisclosureLog{
-				Protocol:    "openid4vp",
+				Protocol:    Protocol_OpenID4VP,
 				Credentials: entry.OpenID4VP.DisclosedCredentials,
 				Verifier:    entry.ServerName,
 			},
@@ -291,10 +291,10 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 			return LogInfo{}, err
 		}
 		return LogInfo{
-			Type: irma.ActionDisclosing,
+			Type: LogType_Disclosure,
 			Time: entry.Time,
 			DisclosureLog: &DisclosureLog{
-				Protocol:    "irma",
+				Protocol:    Protocol_Irma,
 				Credentials: credLog,
 				Verifier:    entry.ServerName,
 			},
@@ -326,18 +326,42 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 		}
 		return LogInfo{
 			Time: entry.Time,
-			Type: irma.ActionIssuing,
+			Type: LogType_Issuance,
 			IssuanceLog: &IssuanceLog{
-				Protocol:             "irma",
+				Protocol:             Protocol_Irma,
 				Credentials:          issuedLog,
 				DisclosedCredentials: credLog,
 			},
 		}, nil
 	case ActionRemoval:
+		removedCreds := []CredentialLog{}
+
+		for credentialTypeId, attributeValues := range entry.Removed {
+			removed := CredentialLog{
+				Formats:        []CredentialFormat{Format_Idemix},
+				CredentialType: credentialTypeId.String(),
+				Attributes:     map[string]string{},
+			}
+
+			// var removedCredential = make(map[irma.AttributeTypeIdentifier]irma.TranslatedString)
+			attributeTypes := client.GetIrmaConfiguration().CredentialTypes[credentialTypeId].AttributeTypes
+			for index, attributeValue := range attributeValues {
+				typ := attributeTypes[index]
+				if typ.RevocationAttribute {
+					continue
+				}
+
+				removed.Attributes[typ.ID] = attributeValue[""]
+			}
+
+			removedCreds = append(removedCreds, removed)
+		}
 		return LogInfo{
-			Time:       entry.Time,
-			Type:       ActionRemoval,
-			RemovalLog: &RemovalLog{},
+			Time: entry.Time,
+			Type: LogType_CredentialRemoval,
+			RemovalLog: &RemovalLog{
+				Credentials: removedCreds,
+			},
 		}, nil
 	}
 
@@ -352,12 +376,12 @@ func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList, issuedSdJwt
 		}
 		entry := CredentialLog{
 			// this function is only used for idemix credentials
-			Formats:        []string{"idemix"},
+			Formats:        []CredentialFormat{Format_Idemix},
 			CredentialType: cred.Identifier().String(),
 			Attributes:     map[string]string{},
 		}
 		if issuedSdJwts {
-			entry.Formats = append(entry.Formats, "dc+sd-jwt")
+			entry.Formats = append(entry.Formats, Format_SdJwtVc)
 		}
 		for key, attr := range cred.Attributes {
 			entry.Attributes[key.Name()] = attr[""]
@@ -375,7 +399,7 @@ func disclosedAttributesToCredentialLogs(attributes [][]*irma.DisclosedAttribute
 		}
 		entry := CredentialLog{
 			// this function is only used for idemix credentials
-			Formats:        []string{"idemix"},
+			Formats:        []CredentialFormat{Format_Idemix},
 			CredentialType: creds[0].Identifier.Parent(),
 			Attributes:     map[string]string{},
 		}

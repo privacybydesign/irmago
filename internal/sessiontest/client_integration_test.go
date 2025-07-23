@@ -61,29 +61,30 @@ func testSessionLogs(t *testing.T) {
 }
 
 func requireOpenID4VPLog(t *testing.T, log irmaclient.LogInfo) {
-	require.Equal(t, log.Type, irma.ActionDisclosing)
+	require.Equal(t, log.Type, irmaclient.LogType_Disclosure)
 	require.NotNil(t, log.DisclosureLog)
 	require.Len(t, log.DisclosureLog.Credentials, 1)
-	require.Equal(t, log.DisclosureLog.Protocol, "openid4vp")
+	require.Equal(t, log.DisclosureLog.Protocol, irmaclient.Protocol_OpenID4VP)
 
 	cred := log.DisclosureLog.Credentials[0]
-	require.Equal(t, cred.Formats, []string{"dc+sd-jwt"})
+	require.Equal(t, cred.Formats, []irmaclient.CredentialFormat{irmaclient.Format_SdJwtVc})
 }
 
 func requireRegularIrmaIssuanceLog(t *testing.T, log irmaclient.LogInfo) {
-	require.Equal(t, log.Type, irma.ActionIssuing)
-	require.Equal(t, log.IssuanceLog.Protocol, "irma")
+	require.Equal(t, log.Type, irmaclient.LogType_Issuance)
+	require.Equal(t, log.IssuanceLog.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, log.IssuanceLog.Credentials[0].Formats, []irmaclient.CredentialFormat{irmaclient.Format_Idemix})
 }
 
 func requireIrmaSdJwtIssuanceLog(t *testing.T, log irmaclient.LogInfo) {
-	require.Equal(t, log.Type, irma.ActionIssuing)
-	require.Equal(t, log.IssuanceLog.Protocol, "irma")
+	require.Equal(t, log.Type, irmaclient.LogType_Issuance)
+	require.Equal(t, log.IssuanceLog.Protocol, irmaclient.Protocol_Irma)
 
 	require.Len(t, log.IssuanceLog.Credentials, 1)
 
 	cred := log.IssuanceLog.Credentials[0]
-	require.Contains(t, cred.Formats, "dc+sd-jwt")
-	require.Contains(t, cred.Formats, "idemix")
+	require.Contains(t, cred.Formats, irmaclient.Format_SdJwtVc)
+	require.Contains(t, cred.Formats, irmaclient.Format_Idemix)
 }
 
 func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {

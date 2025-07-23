@@ -1,9 +1,5 @@
 package dcql
 
-import (
-	"github.com/privacybydesign/irmago/eudi/credentials"
-)
-
 type DcqlQuery struct {
 	// REQUIRED: A non-empty array of credential queries that specify the requested verifiable credentials.
 	Credentials []CredentialQuery `json:"credentials"`
@@ -42,7 +38,7 @@ type CredentialQuery struct {
 	Id string `json:"id"`
 
 	// REQUIRED: Specifies the format of the requested verifiable credential.
-	Format credentials.CredentialFormat `json:"format"`
+	Format string `json:"format"`
 
 	// OPTIONAL: Indicates whether multiple credentials can be returned for this credential query.
 	// The default is false.

@@ -11,7 +11,6 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/eudi/credentials"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -256,15 +255,15 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			QueryId:     queryId,
 			Credentials: []string{string(sdjwtWithKb)},
 		})
-		credentialInfos = append(credentialInfos, createCredLog(sdjwt.Info, attributes))
+		credentialInfos = append(credentialInfos, createSdJwtCredendtialLog(sdjwt.Info, attributes))
 	}
 	return queryResponses, credentialInfos, nil
 }
 
-func createCredLog(info irma.CredentialInfo, disclosures []*irma.AttributeIdentifier) CredentialLog {
+func createSdJwtCredendtialLog(info irma.CredentialInfo, disclosures []*irma.AttributeIdentifier) CredentialLog {
 	result := CredentialLog{
 		CredentialType: info.Identifier().String(),
-		Formats:        []string{"dc+sd-jwt"},
+		Formats:        []CredentialFormat{Format_SdJwtVc},
 		Attributes:     map[string]string{},
 	}
 
@@ -573,7 +572,7 @@ func findAllCandidatesForAllCredentialQueries(
 	result := map[string]SingleCredentialQueryCandidates{}
 
 	for _, query := range queries {
-		if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
+		if CredentialFormat(query.Format) != Format_SdJwtVc {
 			return nil, fmt.Errorf("credential query '%s' contains unsupported format '%s'", query.Id, query.Format)
 		}
 		candidates, err := findAllCandidatesForCredQuery(storage, query)

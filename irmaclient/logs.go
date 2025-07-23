@@ -10,30 +10,47 @@ import (
 	irma "github.com/privacybydesign/irmago"
 )
 
+type LogType string
+type Protocol string
+type CredentialFormat string
+
+const (
+	LogType_Disclosure        LogType = "disclosure"
+	LogType_Issuance          LogType = "issuance"
+	LogType_Signature         LogType = "signature"
+	LogType_CredentialRemoval LogType = "removal"
+
+	Protocol_Irma      Protocol = "irma"
+	Protocol_OpenID4VP Protocol = "openid4vp"
+
+	Format_SdJwtVc CredentialFormat = "dc+sd-jwt"
+	Format_Idemix  CredentialFormat = "idemix"
+)
+
 // Credential format & protocol agnostic logs
 type LogInfo struct {
-	Type             irma.Action       // The type of action
-	Time             irma.Timestamp    // Time at which the action occured
-	RemovalLog       *RemovalLog       // when Type==ActionRemoval
-	IssuanceLog      *IssuanceLog      // when Type==ActionIssuing
-	DisclosureLog    *DisclosureLog    // when Type==ActionDisclosing
-	SignedMessageLog *SignedMessageLog // when Type==ActionSigning
+	Type             LogType           // The type of action
+	Time             irma.Timestamp    // Time at which the action occurred
+	RemovalLog       *RemovalLog       `json:",omitempty"` // when Type==LogType_CredentialRemoval
+	IssuanceLog      *IssuanceLog      `json:",omitempty"` // when Type==LogType_Issuance
+	DisclosureLog    *DisclosureLog    `json:",omitempty"` // when Type==LogType_Disclosure
+	SignedMessageLog *SignedMessageLog `json:",omitempty"` // when Type==LogType_Signature
 }
 
 type SignedMessageLog struct {
-	Protocol string
+	Protocol Protocol
 	Message  string
 	Verifier *irma.RequestorInfo
 }
 
 type IssuanceLog struct {
-	Protocol             string
+	Protocol             Protocol
 	Credentials          []CredentialLog
 	DisclosedCredentials []CredentialLog
 }
 
 type DisclosureLog struct {
-	Protocol    string
+	Protocol    Protocol
 	Credentials []CredentialLog
 	Verifier    *irma.RequestorInfo
 }
@@ -43,7 +60,7 @@ type RemovalLog struct {
 }
 
 type CredentialLog struct {
-	Formats        []string
+	Formats        []CredentialFormat
 	CredentialType string
 	Attributes     map[string]string
 }
