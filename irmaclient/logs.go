@@ -27,7 +27,7 @@ const (
 	Format_Idemix  CredentialFormat = "idemix"
 )
 
-// Credential format & protocol agnostic logs
+// LogInfo is meant for credential format & protocol agnostic logs
 type LogInfo struct {
 	Type             LogType           // The type of action
 	Time             irma.Timestamp    // Time at which the action occurred
