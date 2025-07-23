@@ -11,6 +11,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -19,6 +20,7 @@ import (
 // ========================================================================
 
 type OpenID4VPClient struct {
+	eudiConf          *eudi.Configuration
 	keyBinder         sdjwtvc.KeyBinder
 	storage           SdJwtVcStorage
 	verifierValidator VerifierValidator
@@ -27,12 +29,14 @@ type OpenID4VPClient struct {
 }
 
 func NewOpenID4VPClient(
+	eudiConf *eudi.Configuration,
 	storage SdJwtVcStorage,
 	verifierValidator VerifierValidator,
 	keybinder sdjwtvc.KeyBinder,
 	logsStorage LogsStorage,
 ) (*OpenID4VPClient, error) {
 	return &OpenID4VPClient{
+		eudiConf:          eudiConf,
 		keyBinder:         keybinder,
 		compatibility:     openid4vp.Compatibility_Draft24,
 		storage:           storage,
@@ -88,7 +92,37 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 			return
 		}
 
-		request, requestorInfo, err := client.verifierValidator.VerifyAuthorizationRequest(string(authRequestJwt))
+		request, endEntityCert, requestorSchemeData, err := client.verifierValidator.ParseAndVerifyAuthorizationRequest(string(authRequestJwt))
+		if err != nil {
+			handleFailure(handler, "openid4vp: failed to verify authorization request: %v", err)
+			return
+		}
+
+		// Store the verifier logo in the cache
+		filename, path, err := client.eudiConf.CacheVerifierLogo(endEntityCert.Subject.SerialNumber, &requestorSchemeData.Logo)
+		if err != nil {
+			handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
+			return
+		}
+
+		// Construct IRMA RequestorInfo from the requestorSchemeData
+		requestorInfo := &irma.RequestorInfo{
+			//ID:     irma.NewRequestorIdentifier(endEntityCert.Subject.CommonName), // TODO: use the CN, cert thumbprint or something else?
+			//Scheme: irma.NewRequestorSchemeIdentifier("eudi"),                     // TODO: do we need/want this for cert-based trust model?
+			Name: map[string]string{
+				"nl": requestorSchemeData.Organisation.DisplayName,
+				"en": requestorSchemeData.Organisation.DisplayName,
+			},
+			Industry:   &irma.TranslatedString{},
+			Hostnames:  endEntityCert.DNSNames,
+			Logo:       &filename,
+			LogoPath:   &path,
+			ValidUntil: (*irma.Timestamp)(&endEntityCert.NotAfter),
+			Unverified: false,
+			Languages:  []string{"nl", "en"}, // TODO: get languages based on the data in the certificate
+			Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
+		}
+
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to read authorization request jwt: %v", err)
 			return

@@ -2,10 +2,14 @@ package irmaclient
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -16,8 +20,21 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	require.NoError(t, err)
 
 	addTestCredentialsToStorage(storage, keyBinder)
-	verifierValidator := NewRequestorSchemeVerifierValidator()
-	client, err := NewOpenID4VPClient(storage, verifierValidator, keyBinder, &InMemoryLogsStorage{})
+
+	storageFolder := test.SetupTestStorage(t)
+	testStoragePath := test.FindTestdataFolder(t)
+	err = common.CopyDirectory(filepath.Join(testStoragePath, "eudi_configuration"), filepath.Join(storageFolder, "eudi_configuration"))
+	require.NoError(t, err)
+
+	conf, err := eudi.NewConfiguration(
+		filepath.Join(storageFolder, "eudi_configuration"),
+	)
+	require.NoError(t, err)
+	err = conf.ParseFolder()
+	require.NoError(t, err)
+
+	verifierValidator := NewRequestorCertificateStoreVerifierValidator(conf.Verifiers.GetRootCerts(), conf.Verifiers.GetIntermediateCerts())
+	client, err := NewOpenID4VPClient(conf, storage, verifierValidator, keyBinder, &InMemoryLogsStorage{})
 	require.NoError(t, err)
 	return client
 }
@@ -31,6 +48,7 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	client := createOpenID4VPClientForTesting(t)
+	defer test.ClearAllTestStorage()
 
 	handler := NewMockSessionHandler(t)
 	client.NewSession(url, handler)
