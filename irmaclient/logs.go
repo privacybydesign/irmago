@@ -29,6 +29,7 @@ const (
 
 // LogInfo is meant for credential format & protocol agnostic logs
 type LogInfo struct {
+	ID               uint64
 	Type             LogType           // The type of action
 	Time             irma.Timestamp    // Time at which the action occurred
 	RemovalLog       *RemovalLog       `json:",omitempty"` // when Type==LogType_CredentialRemoval

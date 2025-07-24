@@ -298,6 +298,7 @@ func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]LogInfo, er
 func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 	if entry.OpenID4VP != nil {
 		return LogInfo{
+			ID:   entry.ID,
 			Type: LogType_Disclosure,
 			Time: entry.Time,
 			DisclosureLog: &DisclosureLog{
@@ -326,6 +327,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 
 		if entry.Type == irma.ActionSigning {
 			return LogInfo{
+				ID:   entry.ID,
 				Type: LogType_Signature,
 				Time: entry.Time,
 				SignedMessageLog: &SignedMessageLog{
@@ -335,6 +337,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 			}, nil
 		}
 		return LogInfo{
+			ID:            entry.ID,
 			Type:          LogType_Disclosure,
 			Time:          entry.Time,
 			DisclosureLog: disclosureLog,
@@ -365,6 +368,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 			return LogInfo{}, err
 		}
 		return LogInfo{
+			ID:   entry.ID,
 			Time: entry.Time,
 			Type: LogType_Issuance,
 			IssuanceLog: &IssuanceLog{
@@ -396,6 +400,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 			removedCreds = append(removedCreds, removed)
 		}
 		return LogInfo{
+			ID:   entry.ID,
 			Time: entry.Time,
 			Type: LogType_CredentialRemoval,
 			RemovalLog: &RemovalLog{
