@@ -16,6 +16,8 @@ import (
 )
 
 func TestEudiClient(t *testing.T) {
+	t.Run("remove storage empty client", testRemoveStorageEmptyClient)
+
 	t.Run("irma disclosure session logs", testIrmaDisclosureSessionLogs)
 	t.Run("signature session logs", testIrmaSignatureSessionLogs)
 	t.Run("eudi session logs", testEudiSessionLogs)
@@ -27,6 +29,17 @@ func TestEudiClient(t *testing.T) {
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testRemoveStorageEmptyClient(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	require.NoError(t, client.RemoveStorage())
 }
 
 func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {

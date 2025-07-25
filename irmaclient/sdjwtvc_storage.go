@@ -73,6 +73,10 @@ type BboltSdJwtVcStorage struct {
 
 func (s *BboltSdJwtVcStorage) RemoveAll() (err error) {
 	err = s.db.Update(func(tx *bbolt.Tx) error {
+		// if bucket doesn't exist, abort
+		if tx.Bucket([]byte(sdjwtvcBucketName)) == nil {
+			return nil
+		}
 		err := tx.DeleteBucket([]byte(sdjwtvcBucketName))
 		if err != nil {
 			return err
