@@ -359,6 +359,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 				Protocol:             Protocol_Irma,
 				Credentials:          issuedLog,
 				DisclosedCredentials: credLog,
+				Issuer:               entry.ServerName,
 			},
 		}, nil
 	case ActionRemoval:
