@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"slices"
-	"sort"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -27,7 +25,7 @@ func TestEudiClient(t *testing.T) {
 
 	t.Run("idemix and sdjwtvc combined issuance over irma", testIdemixAndSdJwtCombinedIssuance)
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
-	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSingleCredentialInfo)
+	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
 }
 
@@ -43,11 +41,9 @@ func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
 
 	credentials := client.CredentialInfoList()
 
-	emailCred := credentials[slices.IndexFunc(credentials, func(info *irma.CredentialInfo) bool {
-		return info.Identifier() == irma.NewCredentialTypeIdentifier("test.test.email")
-	})]
+	emailCreds := collectCredentialsWithId(credentials, "test.test.email")
 
-	require.NoError(t, client.RemoveCredentialByHash(emailCred.Hash))
+	require.NoError(t, client.RemoveCredentialsByHash(hashByFormat(emailCreds)))
 
 	logs, err := client.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -67,11 +63,9 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 	issueIdemixOnlyToClient(t, client, irmaServer)
 
 	credentials := client.CredentialInfoList()
-	emailCred := credentials[slices.IndexFunc(credentials, func(info *irma.CredentialInfo) bool {
-		return info.Identifier() == irma.NewCredentialTypeIdentifier("test.test.email")
-	})]
+	emailCreds := collectCredentialsWithId(credentials, "test.test.email")
 
-	require.NoError(t, client.RemoveCredentialByHash(emailCred.Hash))
+	require.NoError(t, client.RemoveCredentialsByHash(hashByFormat(emailCreds)))
 
 	logs, err := client.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -257,18 +251,18 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 
 	credentialInfoList := client.CredentialInfoList()
-	require.Len(t, credentialInfoList, 2)
+	require.Len(t, credentialInfoList, 3)
 
-	sort.Stable(credentialInfoList)
-	emailCred := credentialInfoList[1]
+	emailCreds := collectCredentialsWithId(credentialInfoList, "test.test.email")
+	require.Len(t, emailCreds, 2)
 
-	require.NoError(t, client.RemoveCredentialByHash(emailCred.Hash))
+	require.NoError(t, client.RemoveCredentialsByHash(hashByFormat(emailCreds)))
 
 	credentialInfoList = client.CredentialInfoList()
 	require.Len(t, credentialInfoList, 1)
 }
 
-func testIdemixAndSdJwtShowUpAsSingleCredentialInfo(t *testing.T) {
+func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
 	defer irmaServer.Stop()
 
@@ -279,14 +273,10 @@ func testIdemixAndSdJwtShowUpAsSingleCredentialInfo(t *testing.T) {
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 
 	credentialInfoList := client.CredentialInfoList()
-	require.Len(t, credentialInfoList, 2)
+	require.Len(t, credentialInfoList, 3)
 
-	sort.Stable(credentialInfoList)
-	emailCred := credentialInfoList[1]
-
-	require.Equal(t, emailCred.Identifier().String(), irma.NewCredentialTypeIdentifier("test.test.email").String())
-	require.Contains(t, emailCred.CredentialFormats, "idemix")
-	require.Contains(t, emailCred.CredentialFormats, "dc+sd-jwt")
+	emailCreds := collectCredentialsWithId(credentialInfoList, "test.test.email")
+	require.Len(t, emailCreds, 2)
 }
 
 func testIdemixAndSdJwtCombinedIssuance(t *testing.T) {
@@ -550,4 +540,22 @@ func irmaServerConfWithSdJwtEnabled() *server.Configuration {
 		JwtPrivateKey:          string(testdata.IssuerPrivKeyBytes),
 	}
 	return conf
+}
+
+func collectCredentialsWithId(credentials irma.CredentialInfoList, id string) []*irma.CredentialInfo {
+	result := []*irma.CredentialInfo{}
+	for _, cred := range credentials {
+		if cred.Identifier() == irma.NewCredentialTypeIdentifier(id) {
+			result = append(result, cred)
+		}
+	}
+	return result
+}
+
+func hashByFormat(credentials []*irma.CredentialInfo) map[irmaclient.CredentialFormat]string {
+	result := map[irmaclient.CredentialFormat]string{}
+	for _, cred := range credentials {
+		result[irmaclient.CredentialFormat(cred.CredentialFormats[0])] = cred.Hash
+	}
+	return result
 }

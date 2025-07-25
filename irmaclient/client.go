@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
@@ -125,48 +126,7 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.irmaClient.EnrolledSchemeManagers()
 }
 
-type intermediateCredentialInfo struct {
-	info *irma.CredentialInfo
-	// map from format to instance hash, can be used for deleting
-	formatHashes map[string]string
-}
-
-// Combines credential infos when their attributes & credential type match (so when only the format differs)
-func constructCredentialMap(infoList irma.CredentialInfoList) map[string]intermediateCredentialInfo {
-	result := make(map[string]intermediateCredentialInfo)
-
-	for _, info := range infoList {
-		hash := hashAttributesAndCredType(info)
-		existingEntry, ok := result[hash]
-		if ok {
-			existingEntry.info.CredentialFormats = append(existingEntry.info.CredentialFormats, info.CredentialFormats...)
-			existingEntry.formatHashes[info.CredentialFormats[0]] = info.Hash
-		} else {
-			newEntry := intermediateCredentialInfo{
-				formatHashes: map[string]string{
-					info.CredentialFormats[0]: info.Hash,
-				},
-			}
-			infoCopy := *info
-			infoCopy.Hash = hash
-			newEntry.info = &infoCopy
-			result[hash] = newEntry
-		}
-	}
-	return result
-}
-
-func hashAttributesAndCredType(info *irma.CredentialInfo) string {
-	toHash := info.Identifier().String()
-	for attrType, attrValue := range info.Attributes {
-		toHash += attrType.String() + attrValue[""]
-	}
-	hashBytes := sha256.Sum256([]byte(toHash))
-	return string(hashBytes[:])
-}
-
-// Returns all credential info instances separately per format
-func (client *Client) getAllCredentialInfosSeperately() irma.CredentialInfoList {
+func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	sdjwtvcs := client.sdjwtvcStorage.GetCredentialInfoList()
 	idemix := client.irmaClient.CredentialInfoList()
 
@@ -174,16 +134,6 @@ func (client *Client) getAllCredentialInfosSeperately() irma.CredentialInfoList 
 	result = append(result, sdjwtvcs...)
 	result = append(result, idemix...)
 
-	return result
-}
-
-func (client *Client) CredentialInfoList() irma.CredentialInfoList {
-	all := client.getAllCredentialInfosSeperately()
-	combined := constructCredentialMap(all)
-	result := irma.CredentialInfoList{}
-	for _, value := range combined {
-		result = append(result, value.info)
-	}
 	return result
 }
 
@@ -202,20 +152,52 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 	client.irmaClient.KeyshareEnroll(manager, email, pin, lang)
 }
 
-func (client *Client) RemoveCredentialByHash(hash string) error {
-	allCredentials := client.getAllCredentialInfosSeperately()
-	combined := constructCredentialMap(allCredentials)
+func hashAttributesAndCredType(info *irma.CredentialInfo) string {
+	toHash := info.Identifier().String()
+	for attrType, attrValue := range info.Attributes {
+		toHash += attrType.String() + attrValue[""]
+	}
+	hashBytes := sha256.Sum256([]byte(toHash))
+	return string(hashBytes[:])
+}
 
-	toDelete := combined[hash]
+func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) bool {
+	typeAndAttrsHashes := map[string]struct{}{}
 
-	for format, credHash := range toDelete.formatHashes {
-		if format == "idemix" {
-			if err := client.irmaClient.RemoveCredentialByHash(credHash); err != nil {
+	for _, c := range creds {
+		hash := hashAttributesAndCredType(c)
+		typeAndAttrsHashes[hash] = struct{}{}
+	}
+	return len(typeAndAttrsHashes) == 1
+}
+
+func (client *Client) RemoveCredentialsByHash(hashByFormat map[CredentialFormat]string) error {
+	allCreds := client.CredentialInfoList()
+	relevantCreds := []*irma.CredentialInfo{}
+	for _, hash := range hashByFormat {
+		relevantCreds = append(relevantCreds, allCreds[slices.IndexFunc(allCreds, func(info *irma.CredentialInfo) bool {
+			return info.Hash == hash
+		})])
+	}
+
+	if len(relevantCreds) == 0 {
+		return fmt.Errorf("trying to delete credential that doesn't exist")
+	}
+
+	if !sameCredentialAndAttributesCombi(relevantCreds) {
+		return fmt.Errorf("deleting two different credential instances at once is not supported")
+	}
+
+	formats := []CredentialFormat{}
+	for format, hash := range hashByFormat {
+		formats = append(formats, format)
+		if format == Format_Idemix {
+			if err := client.irmaClient.RemoveCredentialByHash(hash); err != nil {
 				return err
 			}
 		}
-		if format == "dc+sd-jwt" {
-			holderPubKeys, err := client.sdjwtvcStorage.RemoveCredentialByHash(credHash)
+		if format == Format_SdJwtVc {
+			holderPubKeys, err := client.sdjwtvcStorage.RemoveCredentialByHash(hash)
 			if err != nil {
 				return fmt.Errorf("error while deleting sdjwtvc credential: %v", err)
 			}
@@ -224,29 +206,31 @@ func (client *Client) RemoveCredentialByHash(hash string) error {
 			}
 		}
 	}
-	logEntry, err := createRemovalLog(toDelete.info)
+
+	info := relevantCreds[0]
+	logEntry, err := createRemovalLog(info.Identifier(), info.Attributes, formats)
 	if err != nil {
 		return fmt.Errorf("failed to create delete log: %v", err)
 	}
+
 	return client.logsStorage.AddLogEntry(logEntry)
 }
 
-func createRemovalLog(info *irma.CredentialInfo) (*LogEntry, error) {
+func createRemovalLog(
+	credentialType irma.CredentialTypeIdentifier,
+	attributes map[irma.AttributeTypeIdentifier]irma.TranslatedString,
+	formats []CredentialFormat,
+) (*LogEntry, error) {
 	attrs := []irma.TranslatedString{}
-	for _, attr := range info.Attributes {
+	for _, attr := range attributes {
 		attrs = append(attrs, attr)
-	}
-	formats := make([]CredentialFormat, len(info.CredentialFormats))
-
-	for index, format := range info.CredentialFormats {
-		formats[index] = CredentialFormat(format)
 	}
 
 	return &LogEntry{
 		Time: irma.Timestamp(time.Now()),
 		Type: ActionRemoval,
 		Removed: map[irma.CredentialTypeIdentifier][]irma.TranslatedString{
-			info.Identifier(): attrs,
+			credentialType: attrs,
 		},
 		RemovedFormats: formats,
 	}, nil
