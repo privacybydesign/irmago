@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/eudi/credentials"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -23,18 +23,21 @@ type OpenID4VPClient struct {
 	storage           SdJwtVcStorage
 	verifierValidator VerifierValidator
 	compatibility     openid4vp.CompatibilityMode
+	logsStorage       LogsStorage
 }
 
 func NewOpenID4VPClient(
 	storage SdJwtVcStorage,
 	verifierValidator VerifierValidator,
 	keybinder sdjwtvc.KeyBinder,
+	logsStorage LogsStorage,
 ) (*OpenID4VPClient, error) {
 	return &OpenID4VPClient{
 		keyBinder:         keybinder,
 		compatibility:     openid4vp.Compatibility_Draft24,
 		storage:           storage,
 		verifierValidator: verifierValidator,
+		logsStorage:       logsStorage,
 	}, nil
 }
 
@@ -138,7 +141,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	}
 
 	logMarshalled("choice:", choice)
-	credentials, err := client.getCredentialsForChoices(candidates.QueryIdMap, choice.Attributes, request.Nonce, request.ClientId)
+	credentials, credLog, err := client.getCredentialsForChoices(candidates.QueryIdMap, choice.Attributes, request.Nonce, request.ClientId)
 
 	if err != nil {
 		return err
@@ -168,6 +171,22 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("response status was not ok: %v", response)
 	}
+
+	// note: we don't add irma.ActionDisclosing, as that's for the irma protocol
+	// and will cause problems when deserializing.
+	// instead we can just assume a log containing OpenID4VP info to be for disclosure
+	logEntry := &LogEntry{
+		Time:       irma.Timestamp(time.Now()),
+		ServerName: requestorInfo,
+		OpenID4VP: &OpenID4VPDisclosureLog{
+			DisclosedCredentials: credLog,
+		},
+	}
+	err = client.logsStorage.AddLogEntry(logEntry)
+	if err != nil {
+		return fmt.Errorf("failed to add log entry: %v", err)
+	}
+
 	handler.Success("managed to complete openid4vp session")
 	return nil
 }
@@ -178,7 +197,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	choices [][]*irma.AttributeIdentifier,
 	nonce string,
 	clientId string,
-) ([]dcql.QueryResponse, error) {
+) ([]dcql.QueryResponse, []CredentialLog, error) {
 	// map of attribute identifiers by the dcql query id
 	attributesByQueryId := map[string][]*irma.AttributeIdentifier{}
 
@@ -189,7 +208,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			queryId, ok := queryIdMap[*attribute]
 
 			if !ok {
-				return []dcql.QueryResponse{}, fmt.Errorf("query id map doesn't contain '%v'", *attribute)
+				return []dcql.QueryResponse{}, nil, fmt.Errorf("query id map doesn't contain '%v'", *attribute)
 			}
 
 			_, ok = attributesByQueryId[queryId]
@@ -202,15 +221,17 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	}
 
 	queryResponses := []dcql.QueryResponse{}
+	credentialInfos := []CredentialLog{}
+
 	for queryId, attributes := range attributesByQueryId {
 		sdjwt, err := client.storage.GetCredentialByHash(attributes[0].CredentialHash)
 		if err != nil {
-			return []dcql.QueryResponse{}, fmt.Errorf("failed to get credential: %v", err)
+			return []dcql.QueryResponse{}, nil, fmt.Errorf("failed to get credential: %v", err)
 		}
 
 		err = client.storage.RemoveLastUsedInstanceOfCredentialByHash(attributes[0].CredentialHash)
 		if err != nil {
-			return []dcql.QueryResponse{}, fmt.Errorf("failed to remove instance of sdjwtvc credential: %v", err)
+			return []dcql.QueryResponse{}, nil, fmt.Errorf("failed to remove instance of sdjwtvc credential: %v", err)
 		}
 
 		disclosureNames := []string{}
@@ -220,12 +241,12 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 
 		sdjwtSelected, err := sdjwtvc.SelectDisclosures(sdjwt.SdJwtVc, disclosureNames)
 		if err != nil {
-			return []dcql.QueryResponse{}, fmt.Errorf("failed to select disclosures: %v", err)
+			return []dcql.QueryResponse{}, nil, fmt.Errorf("failed to select disclosures: %v", err)
 		}
 
 		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, client.keyBinder, nonce, clientId)
 		if err != nil {
-			return []dcql.QueryResponse{}, fmt.Errorf("failed to create kbjwt: %v", err)
+			return []dcql.QueryResponse{}, nil, fmt.Errorf("failed to create kbjwt: %v", err)
 		}
 
 		sdjwtWithKb := sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt)
@@ -234,8 +255,23 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			QueryId:     queryId,
 			Credentials: []string{string(sdjwtWithKb)},
 		})
+		credentialInfos = append(credentialInfos, createSdJwtCredendtialLog(sdjwt.Info, attributes))
 	}
-	return queryResponses, nil
+	return queryResponses, credentialInfos, nil
+}
+
+func createSdJwtCredendtialLog(info irma.CredentialInfo, disclosures []*irma.AttributeIdentifier) CredentialLog {
+	result := CredentialLog{
+		CredentialType: info.Identifier().String(),
+		Formats:        []CredentialFormat{Format_SdJwtVc},
+		Attributes:     map[string]string{},
+	}
+
+	for _, attr := range disclosures {
+		result.Attributes[attr.Type.Name()] = info.Attributes[attr.Type][""]
+	}
+
+	return result
 }
 
 func getCandidatesForDcqlQuery(storage SdJwtVcStorage, query dcql.DcqlQuery) (*DcqlQueryCandidates, error) {
@@ -536,7 +572,7 @@ func findAllCandidatesForAllCredentialQueries(
 	result := map[string]SingleCredentialQueryCandidates{}
 
 	for _, query := range queries {
-		if query.Format != credentials.Format_SdJwtVc && query.Format != credentials.Format_SdJwtVc_Legacy {
+		if CredentialFormat(query.Format) != Format_SdJwtVc {
 			return nil, fmt.Errorf("credential query '%s' contains unsupported format '%s'", query.Id, query.Format)
 		}
 		candidates, err := findAllCandidatesForCredQuery(storage, query)

@@ -19,11 +19,11 @@ import (
 	"github.com/privacybydesign/irmago/internal/concmap"
 )
 
-// This file contains most methods of the Client (c.f. session.go
+// This file contains most methods of the IrmaClient (c.f. session.go
 // and updates.go).
 //
 // Clients are the main entry point into this package for the user of this package.
-// The Client struct:
+// The IrmaClient struct:
 // - (De)serializes credentials and keyshare server information
 // from storage, as well as logs of earlier IRMA sessions
 // - it provides access to the attributes and all related information of its credentials,
@@ -266,7 +266,7 @@ func (client *IrmaClient) addCredential(cred *credential) (err error) {
 		}
 	}
 	if index != -1 {
-		if err = client.remove(id, index, false); err != nil {
+		if err = client.remove(id, index); err != nil {
 			return err
 		}
 	}
@@ -276,7 +276,7 @@ func (client *IrmaClient) addCredential(cred *credential) (err error) {
 	if !id.Empty() {
 		if cred.CredentialType().IsSingleton {
 			for len(client.attrs(id)) != 0 {
-				if err = client.remove(id, 0, false); err != nil {
+				if err = client.remove(id, 0); err != nil {
 					return
 				}
 			}
@@ -284,7 +284,7 @@ func (client *IrmaClient) addCredential(cred *credential) (err error) {
 
 		for i := len(client.attrs(id)) - 1; i >= 0; i-- { // Go backwards through array because remove manipulates it
 			if client.attrs(id)[i].EqualsExceptMetadata(cred.attrs) {
-				if err = client.remove(id, i, false); err != nil {
+				if err = client.remove(id, i); err != nil {
 					return
 				}
 			}
@@ -318,7 +318,7 @@ func generateSecretKey() (*secretKey, error) {
 
 // Removal methods
 
-func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int, storeLog bool) error {
+func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int) error {
 	// Remove attributes
 	list, exists := client.attributes[id]
 	if !exists || index >= len(list) {
@@ -336,13 +336,6 @@ func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int, st
 		}
 		if err := client.storage.TxStoreAttributes(tx, id, client.attributes[id]); err != nil {
 			return err
-		}
-		if storeLog {
-			return client.storage.TxAddLogEntry(tx, &LogEntry{
-				Type:    ActionRemoval,
-				Time:    irma.Timestamp(time.Now()),
-				Removed: removed,
-			})
 		}
 		return nil
 	})
@@ -364,7 +357,7 @@ func (client *IrmaClient) RemoveCredential(id irma.CredentialTypeIdentifier, ind
 	if client.Configuration.CredentialTypes[id].DisallowDelete {
 		return errors.Errorf("configuration does not allow removal of credential type %s", id.String())
 	}
-	return client.remove(id, index, true)
+	return client.remove(id, index)
 }
 
 // RemoveCredentialByHash removes the specified credential.
@@ -1361,7 +1354,7 @@ func (client *IrmaClient) stripStorage(schemeIDs []irma.SchemeManagerIdentifier,
 				}
 
 				if shouldDelete {
-					return client.storage.TxDeleteLogEntry(tx, log)
+					return client.storage.TxDeleteLogEntry(tx, log.ID)
 				}
 				return nil
 			})
@@ -1576,4 +1569,27 @@ func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, request
 	}
 
 	return nil
+}
+
+type credLookup struct {
+	id      irma.CredentialTypeIdentifier
+	counter int
+}
+
+type credCandidateSet [][]*credCandidate
+
+type credCandidate irma.CredentialIdentifier
+
+type DisclosureCandidate struct {
+	*irma.AttributeIdentifier
+	Value        irma.TranslatedString
+	Expired      bool
+	Revoked      bool
+	NotRevokable bool
+}
+
+type DisclosureCandidates []*DisclosureCandidate
+
+type secretKey struct {
+	Key *big.Int
 }

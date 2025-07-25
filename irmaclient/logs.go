@@ -2,12 +2,82 @@ package irmaclient
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
 )
+
+type LogType string
+type Protocol string
+type CredentialFormat string
+
+const (
+	LogType_Disclosure        LogType = "disclosure"
+	LogType_Issuance          LogType = "issuance"
+	LogType_Signature         LogType = "signature"
+	LogType_CredentialRemoval LogType = "removal"
+
+	Protocol_Irma      Protocol = "irma"
+	Protocol_OpenID4VP Protocol = "openid4vp"
+
+	Format_SdJwtVc CredentialFormat = "dc+sd-jwt"
+	Format_Idemix  CredentialFormat = "idemix"
+)
+
+// LogInfo is meant for credential format & protocol agnostic logs
+type LogInfo struct {
+	ID               uint64
+	Type             LogType           // The type of action
+	Time             irma.Timestamp    // Time at which the action occurred
+	RemovalLog       *RemovalLog       `json:",omitempty"` // when Type==LogType_CredentialRemoval
+	IssuanceLog      *IssuanceLog      `json:",omitempty"` // when Type==LogType_Issuance
+	DisclosureLog    *DisclosureLog    `json:",omitempty"` // when Type==LogType_Disclosure
+	SignedMessageLog *SignedMessageLog `json:",omitempty"` // when Type==LogType_Signature
+}
+
+type SignedMessageLog struct {
+	DisclosureLog
+	Message string
+}
+
+type IssuanceLog struct {
+	Protocol             Protocol
+	Credentials          []CredentialLog
+	DisclosedCredentials []CredentialLog
+}
+
+type DisclosureLog struct {
+	Protocol    Protocol
+	Credentials []CredentialLog
+	Verifier    *irma.RequestorInfo
+}
+
+type RemovalLog struct {
+	Credentials []CredentialLog
+}
+
+type CredentialLog struct {
+	Formats        []CredentialFormat
+	CredentialType string
+	Attributes     map[string]string
+}
+
+// ===========================================================================
+
+type LogsStorage interface {
+	AddLogEntry(entry *LogEntry) error
+	DeleteLogEntry(entryId uint64) error
+	LoadNewestLogs(max int) ([]*LogEntry, error)
+	LoadLogsBefore(index uint64, max int) ([]*LogEntry, error)
+	DeleteLogs() error
+}
+
+type OpenID4VPDisclosureLog struct {
+	DisclosedCredentials []CredentialLog
+}
 
 // LogEntry is a log entry of a past event.
 type LogEntry struct {
@@ -17,7 +87,8 @@ type LogEntry struct {
 	Time irma.Timestamp // Time at which the session was completed
 
 	// Credential removal
-	Removed map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"`
+	Removed        map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"`
+	RemovedFormats []CredentialFormat                                        `json:",omitempty"`
 
 	// Signature sessions
 	SignedMessage          []byte          `json:",omitempty"`
@@ -33,6 +104,9 @@ type LogEntry struct {
 	Disclosure *irma.Disclosure      `json:",omitempty"`
 	Request    json.RawMessage       `json:",omitempty"` // Message that started the session
 	request    irma.SessionRequest   // cached parsed version of Request; get with LogEntry.SessionRequest()
+
+	// Eudi logs
+	OpenID4VP *OpenID4VPDisclosureLog `json:",omitempty"`
 }
 
 const ActionRemoval = irma.Action("removal")
@@ -155,4 +229,38 @@ func (session *session) createLogEntry(response interface{}) (*LogEntry, error) 
 	}
 
 	return entry, nil
+}
+
+// =====================================================================================
+
+type InMemoryLogsStorage struct {
+	logs []*LogEntry
+}
+
+func (s *InMemoryLogsStorage) AddLogEntry(entry *LogEntry) error {
+	s.logs = append(s.logs, entry)
+	return nil
+}
+
+func (s *InMemoryLogsStorage) DeleteLogEntry(entryId uint64) error {
+	for index, entry := range s.logs {
+		if entry.ID == entryId {
+			s.logs = append(s.logs[:index], s.logs[index+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("log entry with %v not found", entryId)
+}
+
+func (s *InMemoryLogsStorage) LoadNewestLogs(max int) ([]*LogEntry, error) {
+	return s.logs, nil
+}
+
+func (s *InMemoryLogsStorage) LoadLogsBefore(index uint64, max int) ([]*LogEntry, error) {
+	return s.logs, nil
+}
+
+func (s *InMemoryLogsStorage) DeleteLogs() error {
+	s.logs = []*LogEntry{}
+	return nil
 }

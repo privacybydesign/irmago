@@ -81,6 +81,7 @@ type MockPermissionRequest struct {
 	Candidates        [][]DisclosureCandidates
 	RequestorInfo     *irma.RequestorInfo
 	PermissionHandler PermissionHandler
+	SignedMessage     string
 }
 
 func (h *MockSessionHandler) RequestVerificationPermission(request *irma.DisclosureRequest,
@@ -186,6 +187,16 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	candidates [][]DisclosureCandidates,
 	requestorInfo *irma.RequestorInfo,
 	callback PermissionHandler) {
+	if h.log {
+		fmt.Printf("request signature permission: candidates: %v\n", candidates)
+	}
+	h.permissionChannel <- &MockPermissionRequest{
+		Satisfiable:       satisfiable,
+		Candidates:        candidates,
+		RequestorInfo:     requestorInfo,
+		PermissionHandler: callback,
+		SignedMessage:     request.Message,
+	}
 }
 
 func StartTestSessionAtEudiVerifier(startSessionRequest string) (string, error) {
