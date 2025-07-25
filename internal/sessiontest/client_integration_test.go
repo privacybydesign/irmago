@@ -555,7 +555,7 @@ func collectCredentialsWithId(credentials irma.CredentialInfoList, id string) []
 func hashByFormat(credentials []*irma.CredentialInfo) map[irmaclient.CredentialFormat]string {
 	result := map[irmaclient.CredentialFormat]string{}
 	for _, cred := range credentials {
-		result[irmaclient.CredentialFormat(cred.CredentialFormats[0])] = cred.Hash
+		result[irmaclient.CredentialFormat(cred.CredentialFormat)] = cred.Hash
 	}
 	return result
 }

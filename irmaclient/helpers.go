@@ -63,7 +63,7 @@ func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationCo
 		Hash:                hash,
 		Revoked:             false,
 		RevocationSupported: false,
-		CredentialFormats:   []string{"dc+sd-jwt"},
+		CredentialFormat:    "dc+sd-jwt",
 	}
 	return &info, &decoded, nil
 }
