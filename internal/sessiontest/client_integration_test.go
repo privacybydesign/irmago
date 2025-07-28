@@ -16,7 +16,9 @@ import (
 )
 
 func TestEudiClient(t *testing.T) {
+	t.Run("test logs for completely optional disclosure", testLogsForCompletelyOptionalDisclosure)
 	t.Run("remove storage empty client", testRemoveStorageEmptyClient)
+	t.Run("remove storage with only idemix credentials", testRemoveStorageWithOnlyIdemixCredentials)
 
 	t.Run("irma disclosure session logs", testIrmaDisclosureSessionLogs)
 	t.Run("signature session logs", testIrmaSignatureSessionLogs)
@@ -29,6 +31,67 @@ func TestEudiClient(t *testing.T) {
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	performCompletelyOptionalDisclosure(t, client, irmaServer)
+
+	logs, err := client.LoadNewestLogs(10)
+	require.NoError(t, err)
+
+	latestLog := logs[0]
+	
+	require.Equal(t, latestLog.Type, irmaclient.LogType_Disclosure)
+	require.Empty(t, latestLog.DisclosureLog.Credentials)
+	require.Equal(t, latestLog.DisclosureLog.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, latestLog.DisclosureLog.Verifier.ID, irma.NewRequestorIdentifier("test-requestors.test-requestor"))
+}
+
+func performCompletelyOptionalDisclosure(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+	req := irma.NewDisclosureRequest()
+	req.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+			irma.AttributeCon {
+			},
+		},
+	}
+	sessionReqJson := startDisclosureSessionAtServer(t, irmaServer, req)
+	sessionHandler := irmaclient.NewMockSessionHandler(t)
+	client.NewSession(sessionReqJson, sessionHandler)
+
+	permissionRequest := sessionHandler.AwaitPermissionRequest()
+
+	choice := [][]*irma.AttributeIdentifier{
+		{
+		},
+	}
+
+	permissionRequest.PermissionHandler(true, &irma.DisclosureChoice{Attributes: choice})
+	require.True(t, sessionHandler.AwaitSessionEnd())
+}
+
+func testRemoveStorageWithOnlyIdemixCredentials(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+
+	issueIdemixOnlyToClient(t, client, irmaServer)
+
+	require.NoError(t, client.RemoveStorage())
 }
 
 func testRemoveStorageEmptyClient(t *testing.T) {
@@ -402,7 +465,15 @@ func startCombinedIssuanceSessionAtServer(t *testing.T, server *IrmaServer) stri
 }
 
 func performIrmaDisclosureSession(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
-	sessionReqJson := startDisclosureSessionAtServer(t, irmaServer)
+	req := irma.NewDisclosureRequest()
+	req.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+		},
+	}
+	sessionReqJson := startDisclosureSessionAtServer(t, irmaServer, req)
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionReqJson, sessionHandler)
 
@@ -438,15 +509,7 @@ func performIrmaSignatureSession(t *testing.T, client *irmaclient.Client, irmaSe
 	require.True(t, sessionHandler.AwaitSessionEnd())
 }
 
-func startDisclosureSessionAtServer(t *testing.T, server *IrmaServer) string {
-	req := irma.NewDisclosureRequest()
-	req.Disclose = irma.AttributeConDisCon{
-		irma.AttributeDisCon{
-			irma.AttributeCon{
-				irma.NewAttributeRequest("test.test.email.email"),
-			},
-		},
-	}
+func startDisclosureSessionAtServer(t *testing.T, server *IrmaServer, req *irma.DisclosureRequest) string {
 	qr, _, _, err := server.irma.StartSession(req, nil, "")
 	require.NoError(t, err)
 	session := irmaclient.SessionRequestData{

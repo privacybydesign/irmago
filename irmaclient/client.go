@@ -422,7 +422,7 @@ func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList, issuedSdJwt
 func disclosedAttributesToCredentialLogs(attributes [][]*irma.DisclosedAttribute) ([]CredentialLog, error) {
 	result := []CredentialLog{}
 	for _, creds := range attributes {
-		if creds == nil {
+		if len(creds) == 0 {
 			continue
 		}
 		entry := CredentialLog{
