@@ -47,7 +47,7 @@ func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
 	require.NoError(t, err)
 
 	latestLog := logs[0]
-	
+
 	require.Equal(t, latestLog.Type, irmaclient.LogType_Disclosure)
 	require.Empty(t, latestLog.DisclosureLog.Credentials)
 	require.Equal(t, latestLog.DisclosureLog.Protocol, irmaclient.Protocol_Irma)
@@ -61,8 +61,7 @@ func performCompletelyOptionalDisclosure(t *testing.T, client *irmaclient.Client
 			irma.AttributeCon{
 				irma.NewAttributeRequest("test.test.email.email"),
 			},
-			irma.AttributeCon {
-			},
+			irma.AttributeCon{},
 		},
 	}
 	sessionReqJson := startDisclosureSessionAtServer(t, irmaServer, req)
@@ -72,8 +71,7 @@ func performCompletelyOptionalDisclosure(t *testing.T, client *irmaclient.Client
 	permissionRequest := sessionHandler.AwaitPermissionRequest()
 
 	choice := [][]*irma.AttributeIdentifier{
-		{
-		},
+		{},
 	}
 
 	permissionRequest.PermissionHandler(true, &irma.DisclosureChoice{Attributes: choice})
