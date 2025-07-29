@@ -10,6 +10,7 @@ import (
 	"github.com/bwesterb/go-atum"
 	"github.com/go-co-op/gocron"
 	"github.com/go-errors/errors"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
@@ -930,9 +931,13 @@ func (client *IrmaClient) IssueCommitments(
 		return nil, nil, err
 	}
 
-	keyBindingPubKeys, err := client.keyBinder.CreateKeyPairs(irma.CalculateAmountOfSdJwtsToIssue(request))
-	if err != nil {
-		return nil, nil, err
+	var keyBindingPubKeys []jwk.Key = nil
+
+	if request.RequestSdJwts {
+		keyBindingPubKeys, err = client.keyBinder.CreateKeyPairs(irma.CalculateAmountOfSdJwtsToIssue(request))
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	return &irma.IssueCommitmentMessage{
