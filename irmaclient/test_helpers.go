@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/stretchr/testify/require"
 )
 
 type MockClientHandler struct {
@@ -172,7 +173,9 @@ func (h *MockSessionHandler) RequestIssuancePermission(request *irma.IssuanceReq
 	callback PermissionHandler,
 ) {
 	if h.log {
-		fmt.Printf("candidates: %v, satisfiable: %v\n", candidates, satisfiable)
+		candidatesJson, err := json.MarshalIndent(candidates, "", "    ")
+		require.NoError(h.t, err)
+		fmt.Printf("candidates: %v, satisfiable: %v\n", string(candidatesJson), satisfiable)
 	}
 
 	h.permissionChannel <- &MockPermissionRequest{

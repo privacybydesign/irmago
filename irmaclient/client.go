@@ -420,23 +420,27 @@ func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList, issuedSdJwt
 }
 
 func disclosedAttributesToCredentialLogs(attributes [][]*irma.DisclosedAttribute) ([]CredentialLog, error) {
-	result := []CredentialLog{}
-	for _, creds := range attributes {
-		if len(creds) == 0 {
-			continue
+	result := map[string]CredentialLog{}
+	for _, con := range attributes {
+		for _, attr := range con {
+			credId := attr.Identifier.Parent()
+
+			_, exists := result[credId]
+			if exists {
+				result[credId].Attributes[attr.Identifier.Name()] = *attr.RawValue
+			} else {
+				result[credId] = CredentialLog{
+					// this function is only used for idemix credentials
+					Formats:        []CredentialFormat{Format_Idemix},
+					CredentialType: credId,
+					Attributes: map[string]string{
+						attr.Identifier.Name(): *attr.RawValue,
+					},
+				}
+			}
 		}
-		entry := CredentialLog{
-			// this function is only used for idemix credentials
-			Formats:        []CredentialFormat{Format_Idemix},
-			CredentialType: creds[0].Identifier.Parent(),
-			Attributes:     map[string]string{},
-		}
-		for _, attr := range creds {
-			entry.Attributes[attr.Identifier.Name()] = attr.Value[""]
-		}
-		result = append(result, entry)
 	}
-	return result, nil
+	return mapToList(result), nil
 }
 
 func (client *Client) rawLogEntriesToLogInfo(entries []*LogEntry) ([]LogInfo, error) {
