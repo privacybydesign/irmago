@@ -140,6 +140,10 @@ func (s *BboltKeyBindingStorage) RemovePrivateKeys(pubKeys []jwk.Key) error {
 
 func (s *BboltKeyBindingStorage) RemoveAllPrivateKeys() error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
+		// can't delete what doesn't exist yet...
+		if tx.Bucket([]byte(kbPrivKeysBucketName)) == nil {
+			return nil
+		}
 		return tx.DeleteBucket([]byte(kbPrivKeysBucketName))
 	})
 }

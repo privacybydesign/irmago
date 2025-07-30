@@ -47,6 +47,7 @@ type IssuanceLog struct {
 	Protocol             Protocol
 	Credentials          []CredentialLog
 	DisclosedCredentials []CredentialLog
+	Issuer               *irma.RequestorInfo
 }
 
 type DisclosureLog struct {

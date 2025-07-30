@@ -490,13 +490,6 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 	})
 }
 
-// IterateLogs iterates over all logs sorted by time, starting with the newest one.
-func (s *storage) IterateLogs(handler func(log *LogEntry) error) error {
-	return s.db.View(func(tx *bbolt.Tx) error {
-		return s.TxIterateLogs(&transaction{tx}, handler)
-	})
-}
-
 // TxIterateLogs iterates over all logs sorted by time, starting with the newest one.
 func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) error) error {
 	bucket := tx.Bucket([]byte(logsBucket))

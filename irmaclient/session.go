@@ -10,6 +10,7 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
@@ -807,18 +808,23 @@ func (session *session) KeyshareDone(message interface{}) {
 		})
 	case irma.ActionIssuing:
 		request := session.request.(*irma.IssuanceRequest)
-		pubKeys, err := session.client.keyBinder.CreateKeyPairs(
-			irma.CalculateAmountOfSdJwtsToIssue(request),
-		)
 
-		if err != nil {
-			session.fail(&irma.SessionError{Err: err})
+		var keyBindingPubKeys []jwk.Key = nil
+
+		if request.RequestSdJwts {
+			var err error
+			keyBindingPubKeys, err = session.client.keyBinder.CreateKeyPairs(
+				irma.CalculateAmountOfSdJwtsToIssue(request),
+			)
+			if err != nil {
+				session.fail(&irma.SessionError{Err: err})
+			}
 		}
 
 		session.sendResponse(&irma.IssueCommitmentMessage{
 			IssueCommitmentMessage: message.(*gabi.IssueCommitmentMessage),
 			Indices:                session.attrIndices,
-			KeyBindingPubKeys:      pubKeys,
+			KeyBindingPubKeys:      keyBindingPubKeys,
 		})
 	}
 }
