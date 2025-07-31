@@ -94,10 +94,10 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 		filepath.Join(storageFolder, "eudi_configuration"),
 	)
 	require.NoError(t, err)
-	err = conf.ParseFolder()
+	err = conf.Reload()
 	require.NoError(t, err)
 
-	verifierValidator := NewRequestorCertificateStoreVerifierValidator(conf.Verifiers.GetRootCerts(), conf.Verifiers.GetIntermediateCerts())
+	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&conf.Verifiers)
 	client, err := NewOpenID4VPClient(conf, storage, verifierValidator, keyBinder)
 	require.NoError(t, err)
 	return client
@@ -142,52 +142,10 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 	require.True(t, success)
 }
 
-func createAuthorizationRequestRequest() string {
-	return fmt.Sprintf(`
-{
-  "type": "vp_token",  
-  "dcql_query": {
-    "credentials": [
-      {
-        "id": "32f54163-7166-48f1-93d8-ff217bdb0653",
-        "format": "dc+sd-jwt",
-        "meta": {
-			"vct_values": ["pbdf.sidn-pbdf.email"]
-        },
-        "claims": [
-          {
-			"path": ["email"]
-          }
-        ]
-      },
-      {
-        "id": "32f54163-7166-48f1-93d8-ff217bdb0654",
-        "format": "dc+sd-jwt",
-        "meta": {
-			"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]
-        },
-        "claims": [
-          {
-			"path": ["mobilenumber"]
-          }
-        ]
-      }
-    ]
-  },
-  "nonce": "nonce",
-  "jar_mode": "by_reference",
-  "request_uri_method": "post",
-  "issuer_chain": "%s"
-}
-`,
-		string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
-	)
-}
-
 func startSessionAtEudiVerifier() (string, error) {
 	response, err := http.Post("http://127.0.0.1:8089/ui/presentations",
 		"application/json",
-		bytes.NewReader([]byte(createAuthorizationRequestRequest())))
+		bytes.NewReader([]byte(testdata.CreateTestAuthorizationRequestRequest(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))))
 
 	if err != nil {
 		return "", err
