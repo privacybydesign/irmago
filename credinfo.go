@@ -18,6 +18,7 @@ type CredentialInfo struct {
 	Revoked             bool                                         // If the credential has been revoked
 	RevocationSupported bool                                         // If the credential supports creating nonrevocation proofs
 	CredentialFormat    string                                       // the credential format, e.g. "idemix" or "dc+sd-jwt"
+	InstanceCount       int                                          // number of instances left (only relevant for eudi formats)
 }
 
 // A CredentialInfoList is a list of credentials (implements sort.Interface).

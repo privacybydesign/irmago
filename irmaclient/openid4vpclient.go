@@ -441,22 +441,6 @@ type ClaimMatch struct {
 	Value     irma.TranslatedString
 }
 
-func sameTranslatedString(a irma.TranslatedString, b irma.TranslatedString) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for key, value := range a {
-		bVal, ok := b[key]
-		if !ok {
-			return false
-		}
-		if bVal != value {
-			return false
-		}
-	}
-	return true
-}
-
 func getClaimMatches(info SdJwtMetadata, claims []dcql.Claim) (map[string]ClaimMatch, error) {
 	result := make(map[string]ClaimMatch)
 	for _, claim := range claims {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -16,6 +17,7 @@ import (
 )
 
 func TestEudiClient(t *testing.T) {
+	t.Run("credential instance count", testCredentialInstanceCount)
 	t.Run("test logs for combined issuance and disclosure", testLogsForCombinedIssuanceAndDisclosure)
 
 	t.Run("test logs for completely optional disclosure", testLogsForCompletelyOptionalDisclosure)
@@ -33,6 +35,48 @@ func TestEudiClient(t *testing.T) {
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testCredentialInstanceCount(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	info := client.CredentialInfoList()
+	require.Len(t, info, 3)
+
+	creds := collectCredentialsWithId(info, "test.test.email")
+	require.Len(t, creds, 2)
+
+	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+
+	numInstances := 10
+
+	require.Equal(t, numInstances, cred.InstanceCount)
+
+	for i := range numInstances {
+		discloseOverOpenID4VP(t, client)
+
+		info = client.CredentialInfoList()
+		require.Len(t, info, 3)
+
+		creds = collectCredentialsWithId(info, "test.test.email")
+		require.Len(t, creds, 2)
+
+		cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+		require.Equal(t, numInstances-1-i, cred.InstanceCount)
+	}
+}
+
+func getCredWithFormat(creds []*irma.CredentialInfo, format irmaclient.CredentialFormat) *irma.CredentialInfo {
+	return creds[slices.IndexFunc(creds, func(c *irma.CredentialInfo) bool {
+		return irmaclient.CredentialFormat(c.CredentialFormat) == format
+	})]
 }
 
 func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
