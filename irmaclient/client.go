@@ -63,7 +63,7 @@ func New(
 	keybindingStorage := NewBboltKeybindingStorage(storage.db, aesKey)
 	keyBinder := sdjwtvc.NewDefaultKeyBinder(keybindingStorage)
 
-	verifierValidator := NewRequestorCertificateStoreVerifierValidator(eudiConf.Verifiers.GetRootCerts(), eudiConf.Verifiers.GetIntermediateCerts())
+	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers)
 	sdjwtvcStorage := NewBboltSdJwtVcStorage(storage.db, aesKey)
 
 	openid4vpClient, err := NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, keyBinder, storage)

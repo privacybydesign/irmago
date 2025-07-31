@@ -1,4 +1,4 @@
-package irmaclient
+package eudi
 
 import (
 	"crypto/x509"
@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 )
 
@@ -20,26 +19,24 @@ const SchemeExtensionOID = "2.1.123.1"
 // VerifierValidator is an interface to be used to verify verifiers by parsing and verifying the
 // authorization request and returning the requestor info for the verifier.
 type VerifierValidator interface {
-	ParseAndVerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *x509.Certificate, *eudi.RequestorSchemeData, error)
+	ParseAndVerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *x509.Certificate, *RelyingPartyRequestor, error)
 }
 
 type RequestorCertificateStoreVerifierValidator struct {
-	trustedIntermediateCertificates *x509.CertPool
-	trustedRootCertificates         *x509.CertPool
+	model *TrustModel
 }
 
-func NewRequestorCertificateStoreVerifierValidator(rootCerts *x509.CertPool, intermediateCerts *x509.CertPool) VerifierValidator {
+func NewRequestorCertificateStoreVerifierValidator(tm *TrustModel) VerifierValidator {
 	return &RequestorCertificateStoreVerifierValidator{
-		trustedRootCertificates:         rootCerts,
-		trustedIntermediateCertificates: intermediateCerts,
+		model: tm,
 	}
 }
 
-// VerifyAuthorizationRequest should be followed by a way to store the requestor logo in the cache
+// ParseAndVerifyAuthorizationRequest should be followed by a way to store the requestor logo in the cache
 func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*openid4vp.AuthorizationRequest,
 	*x509.Certificate,
-	*eudi.RequestorSchemeData,
+	*RelyingPartyRequestor,
 	error,
 ) {
 	token, err := jwt.ParseWithClaims(requestJwt, &openid4vp.AuthorizationRequest{}, v.createAuthRequestVerifier())
@@ -75,7 +72,7 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	}
 
 	// Unmarshal the scheme JSON data to a RequestorInfo struct
-	var requestorSchemeData eudi.RequestorSchemeData
+	var requestorSchemeData RelyingPartyRequestor
 	err = json.Unmarshal([]byte(schemeData), &requestorSchemeData)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to unmarshal scheme data to requestor object: %v", err)
@@ -107,9 +104,9 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 		hostname := strings.TrimPrefix(request.ClientId, prefix)
 
 		certVerifyOpts := x509.VerifyOptions{
-			Roots:         v.trustedRootCertificates,
-			Intermediates: v.trustedIntermediateCertificates,
-			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+			Roots:         v.model.GetRootCerts(),
+			Intermediates: v.model.GetIntermediateCerts(),
+			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny, x509.ExtKeyUsageServerAuth},
 			DNSName:       hostname,
 		}
 
@@ -118,11 +115,18 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
+		// Check the end-entity cert against all revocation lists from the issuing cert
+		if err := v.model.VerifyCertificateAgainstIssuerRevocationLists(parsedCert); err != nil {
+			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against revocation lists: %v", err)
+		}
+
+		// Verify the end-entity cert against the trusted chains
 		_, err = parsedCert.Verify(certVerifyOpts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains: %v", err)
 		}
 
+		// Validation succesful, return the public key
 		return parsedCert.PublicKey, nil
 	}
 }

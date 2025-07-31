@@ -39,3 +39,11 @@ func ExtractOptional[T any](claims map[string]any, key string) T {
 	value, _ := claims[key].(T)
 	return value
 }
+
+func GetMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}

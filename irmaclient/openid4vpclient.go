@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 // ========================================================================
@@ -23,7 +24,7 @@ type OpenID4VPClient struct {
 	eudiConf          *eudi.Configuration
 	keyBinder         sdjwtvc.KeyBinder
 	storage           SdJwtVcStorage
-	verifierValidator VerifierValidator
+	verifierValidator eudi.VerifierValidator
 	compatibility     openid4vp.CompatibilityMode
 	logsStorage       LogsStorage
 }
@@ -31,7 +32,7 @@ type OpenID4VPClient struct {
 func NewOpenID4VPClient(
 	eudiConf *eudi.Configuration,
 	storage SdJwtVcStorage,
-	verifierValidator VerifierValidator,
+	verifierValidator eudi.VerifierValidator,
 	keybinder sdjwtvc.KeyBinder,
 	logsStorage LogsStorage,
 ) (*OpenID4VPClient, error) {
@@ -99,7 +100,7 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 		}
 
 		// Store the verifier logo in the cache
-		filename, path, err := client.eudiConf.CacheVerifierLogo(endEntityCert.Subject.SerialNumber, &requestorSchemeData.Logo)
+		filename, path, err := client.eudiConf.CacheVerifierLogo(endEntityCert.Subject.SerialNumber, &requestorSchemeData.Organization.Logo)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
 			return
@@ -109,17 +110,14 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 		requestorInfo := &irma.RequestorInfo{
 			//ID:     irma.NewRequestorIdentifier(endEntityCert.Subject.CommonName), // TODO: use the CN, cert thumbprint or something else?
 			//Scheme: irma.NewRequestorSchemeIdentifier("eudi"),                     // TODO: do we need/want this for cert-based trust model?
-			Name: map[string]string{
-				"nl": requestorSchemeData.Organisation.DisplayName,
-				"en": requestorSchemeData.Organisation.DisplayName,
-			},
+			Name:       requestorSchemeData.Organization.LegalName,
 			Industry:   &irma.TranslatedString{},
 			Hostnames:  endEntityCert.DNSNames,
 			Logo:       &filename,
 			LogoPath:   &path,
 			ValidUntil: (*irma.Timestamp)(&endEntityCert.NotAfter),
 			Unverified: false,
-			Languages:  []string{"nl", "en"}, // TODO: get languages based on the data in the certificate
+			Languages:  utils.GetMapKeys(requestorSchemeData.Organization.LegalName),
 			Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
 		}
 
