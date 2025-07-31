@@ -255,20 +255,20 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 			QueryId:     queryId,
 			Credentials: []string{string(sdjwtWithKb)},
 		})
-		credentialInfos = append(credentialInfos, createSdJwtCredendtialLog(sdjwt.Info, attributes))
+		credentialInfos = append(credentialInfos, createSdJwtCredendtialLog(sdjwt.Metadata, attributes))
 	}
 	return queryResponses, credentialInfos, nil
 }
 
-func createSdJwtCredendtialLog(info irma.CredentialInfo, disclosures []*irma.AttributeIdentifier) CredentialLog {
+func createSdJwtCredendtialLog(info SdJwtMetadata, disclosures []*irma.AttributeIdentifier) CredentialLog {
 	result := CredentialLog{
-		CredentialType: info.Identifier().String(),
+		CredentialType: info.CredentialType,
 		Formats:        []CredentialFormat{Format_SdJwtVc},
 		Attributes:     map[string]string{},
 	}
 
 	for _, attr := range disclosures {
-		result.Attributes[attr.Type.Name()] = info.Attributes[attr.Type][""]
+		result.Attributes[attr.Type.Name()] = info.Attributes[attr.Type.Name()].(string)
 	}
 
 	return result
@@ -457,25 +457,25 @@ func sameTranslatedString(a irma.TranslatedString, b irma.TranslatedString) bool
 	return true
 }
 
-func getClaimMatches(info irma.CredentialInfo, claims []dcql.Claim) (map[string]ClaimMatch, error) {
+func getClaimMatches(info SdJwtMetadata, claims []dcql.Claim) (map[string]ClaimMatch, error) {
 	result := make(map[string]ClaimMatch)
 	for _, claim := range claims {
-		attrId := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", info.Identifier(), claim.Path[0]))
-		attributeValue, ok := info.Attributes[attrId]
+		attributeValue, ok := info.Attributes[claim.Path[0]]
 		if !ok {
 			continue
 		}
+		attributeValueString := attributeValue.(string)
+		attributeType := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", info.CredentialType, claim.Path[0]))
 		if len(claim.Values) != 0 {
 			for _, requestedValueAny := range claim.Values {
 				requestedValueString := requestedValueAny.(string)
-				requestedValue := irma.NewTranslatedString(&requestedValueString)
-				if sameTranslatedString(attributeValue, requestedValue) {
+				if attributeValueString == requestedValueString {
 					match := ClaimMatch{
 						Attribute: irma.AttributeIdentifier{
-							Type:           attrId,
+							Type:           attributeType,
 							CredentialHash: info.Hash,
 						},
-						Value: requestedValue,
+						Value: irma.NewTranslatedString(&requestedValueString),
 					}
 					result[claim.Id] = match
 					break
@@ -484,7 +484,7 @@ func getClaimMatches(info irma.CredentialInfo, claims []dcql.Claim) (map[string]
 		} else {
 			result[claim.Id] = ClaimMatch{
 				Attribute: irma.AttributeIdentifier{
-					Type:           attrId,
+					Type:           attributeType,
 					CredentialHash: info.Hash,
 				},
 			}
@@ -531,7 +531,7 @@ func filterClaimMatches(query dcql.CredentialQuery, matches map[string]ClaimMatc
 func filterCredentialsWithClaims(entries []SdJwtVcAndInfo, query dcql.CredentialQuery) ([]CredentialCandidate, error) {
 	result := []CredentialCandidate{}
 	for _, e := range entries {
-		claimMatches, err := getClaimMatches(e.Info, query.Claims)
+		claimMatches, err := getClaimMatches(e.Metadata, query.Claims)
 		if err != nil {
 			return nil, err
 		}

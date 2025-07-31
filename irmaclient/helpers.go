@@ -10,26 +10,16 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 )
 
-func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationContext sdjwtvc.VerificationContext) (*irma.CredentialInfo, *sdjwtvc.VerifiedSdJwtVc, error) {
+func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationContext sdjwtvc.VerificationContext) (*SdJwtMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
 	decoded, err := sdjwtvc.ParseAndVerifySdJwtVc(verificationContext, cred)
 
 	if err != nil {
 		return nil, nil, err
 	}
 
-	attributes := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
+	attributes := map[string]any{}
 	for _, d := range decoded.Disclosures {
-		strValue, ok := d.Value.(string)
-		if !ok {
-			return nil, nil, fmt.Errorf("failed to convert disclosure to string for attribute '%s'", d.Key)
-		}
-		schemeId := fmt.Sprintf("%s.%s", decoded.IssuerSignedJwtPayload.VerifiableCredentialType, d.Key)
-		id := irma.NewAttributeTypeIdentifier(schemeId)
-		attributes[id] = irma.TranslatedString{
-			"":   strValue,
-			"en": strValue,
-			"nl": strValue,
-		}
+		attributes[d.Key] = d.Value
 	}
 
 	hashContent, err := json.Marshal(attributes)
@@ -49,21 +39,18 @@ func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationCo
 			decoded.IssuerSignedJwtPayload.VerifiableCredentialType,
 		)
 	}
-	info := irma.CredentialInfo{
-		ID:              idComponents[2],
-		IssuerID:        idComponents[1],
-		SchemeManagerID: idComponents[0],
+
+	info := SdJwtMetadata{
+		InstanceCount:  1,
+		Hash:           hash,
+		CredentialType: decoded.IssuerSignedJwtPayload.VerifiableCredentialType,
 		SignedOn: irma.Timestamp(
 			time.Unix(decoded.IssuerSignedJwtPayload.IssuedAt, 0),
 		),
 		Expires: irma.Timestamp(
 			time.Unix(decoded.IssuerSignedJwtPayload.Expiry, 0),
 		),
-		Attributes:          attributes,
-		Hash:                hash,
-		Revoked:             false,
-		RevocationSupported: false,
-		CredentialFormat:    "dc+sd-jwt",
+		Attributes: attributes,
 	}
 	return &info, &decoded, nil
 }

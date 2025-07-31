@@ -1096,7 +1096,7 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 
 // ===========================================================================================
 
-func createSdJwtAndInfo(t *testing.T, keyBinder sdjwtvc.KeyBinder, credentialId string, attributes map[string]string) (sdjwtvc.SdJwtVc, *irma.CredentialInfo) {
+func createSdJwtAndInfo(t *testing.T, keyBinder sdjwtvc.KeyBinder, credentialId string, attributes map[string]string) (sdjwtvc.SdJwtVc, *SdJwtMetadata) {
 	sdjwt, err := createTestSdJwtVc(keyBinder, credentialId, "https://openid4vc.staging.yivi.app", attributes)
 	require.NoError(t, err)
 
@@ -1164,7 +1164,7 @@ func parseTestQuery(t *testing.T, query string) (result dcql.DcqlQuery) {
 	return
 }
 
-func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claims map[string]string) *irma.CredentialInfo {
+func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claims map[string]string) *SdJwtMetadata {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, info := createSdJwtAndInfo(t, keyBinder, vct, claims)
 	err := storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{sdjwt})

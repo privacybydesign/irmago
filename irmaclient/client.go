@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
@@ -126,12 +127,41 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.irmaClient.EnrolledSchemeManagers()
 }
 
+func sdjwtMetadataToIrmaCredentialInfo(metadata SdJwtMetadata) *irma.CredentialInfo {
+	credIdSegments := strings.Split(metadata.CredentialType, ".")
+
+	attrs := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
+	for name, value := range metadata.Attributes {
+		id := irma.NewAttributeTypeIdentifier(fmt.Sprintf("%s.%s", metadata.CredentialType, name))
+		valueStr := value.(string)
+		translatedValue := irma.NewTranslatedString(&valueStr)
+		attrs[id] = translatedValue
+	}
+
+	return &irma.CredentialInfo{
+		ID:                  credIdSegments[2],
+		IssuerID:            credIdSegments[1],
+		SchemeManagerID:     credIdSegments[0],
+		SignedOn:            metadata.SignedOn,
+		Expires:             metadata.Expires,
+		Attributes:          attrs,
+		Hash:                metadata.Hash,
+		Revoked:             false,
+		RevocationSupported: false,
+		CredentialFormat:    string(Format_SdJwtVc),
+	}
+}
+
 func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	sdjwtvcs := client.sdjwtvcStorage.GetCredentialInfoList()
 	idemix := client.irmaClient.CredentialInfoList()
 
 	result := irma.CredentialInfoList{}
-	result = append(result, sdjwtvcs...)
+
+	for _, sdjwt := range sdjwtvcs {
+		result = append(result, sdjwtMetadataToIrmaCredentialInfo(sdjwt))
+	}
+
 	result = append(result, idemix...)
 
 	return result

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
@@ -15,6 +14,8 @@ import (
 
 func TestSdJwtVcStorage(t *testing.T) {
 	require.True(t, t.Run("old storage compatibility", testCompatibilityWithOldStorage))
+
+	RunTestWithTempBboltSdJwtVcStorage(t, "num instances left", testNumInstanceLeft)
 
 	RunTestWithTempBboltSdJwtVcStorage(t,
 		"get credential info list from empty storage",
@@ -48,6 +49,31 @@ func TestSdJwtVcStorage(t *testing.T) {
 		"removing instance returns correct holder keys",
 		testRemovingInstanceReturnsCorrectHolderKeys,
 	)
+}
+
+func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {
+	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, 2)
+
+	require.NoError(t, storage.StoreCredential(info, sdjwts))
+
+	creds := storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+
+	require.Len(t, creds, 1)
+	require.Equal(t, creds[0].Metadata.InstanceCount, 2)
+
+	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
+
+	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+
+	require.Len(t, creds, 1)
+	require.Equal(t, creds[0].Metadata.InstanceCount, 1)
+
+	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
+
+	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+	require.Equal(t, creds[0].Metadata.InstanceCount, 0)
 }
 
 func testRemovingInstanceReturnsCorrectHolderKeys(t *testing.T, storage SdJwtVcStorage) {
@@ -158,7 +184,7 @@ func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 	require.Equal(t, len(result), 1)
 
 	first := result[0]
-	require.Equal(t, first.Info, *info)
+	require.Equal(t, first.Metadata, *info)
 }
 
 func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
@@ -166,13 +192,13 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 		"email": "test@gmail.com",
 	}, 2)
 
-	require.Equal(t, len(sdjwts), 2)
+	require.Len(t, sdjwts, 2)
 	err := storage.StoreCredential(info, sdjwts)
 	require.NoError(t, err)
 
 	// there should be one credential showing up in the info list
 	infoList := storage.GetCredentialInfoList()
-	require.Equal(t, len(infoList), 1)
+	require.Len(t, infoList, 1)
 
 	// first one, it should be available
 	result, err := storage.GetCredentialByHash(info.Hash)
@@ -197,9 +223,11 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 	require.Error(t, err)
 	require.Nil(t, result)
 
-	// the whole credential should now also not show up in the info list
+	// the whole credential should still show up in the info list
+	// but with a count of 0
 	infoList = storage.GetCredentialInfoList()
-	require.Empty(t, infoList)
+	require.Len(t, infoList, 1)
+	require.Equal(t, infoList[0].InstanceCount, 0)
 }
 
 func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
@@ -214,13 +242,13 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 	require.NoError(t, err)
 	require.NotNil(t, cred)
 
-	require.Equal(t, cred.Info, info)
+	require.Equal(t, cred.Metadata, info)
 
 	result := storage.GetCredentialsForId("pbdf.pbdf.mobilenumber")
 	require.Equal(t, len(result), 1)
 }
 
-func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num int) (irma.CredentialInfo, []sdjwtvc.SdJwtVc) {
+func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num int) (SdJwtMetadata, []sdjwtvc.SdJwtVc) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 	for range num {
@@ -229,6 +257,7 @@ func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, clai
 		result = append(result, sdjwt)
 	}
 	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext())
+	info.InstanceCount = num
 	require.NoError(t, err)
 	return *info, result
 }

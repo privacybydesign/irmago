@@ -1539,7 +1539,7 @@ func (client *IrmaClient) SetSdJwtVerificationContext(context sdjwtvc.Verificati
 func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
 	// TODO: check if the correct amount of credentials has been issued for the requestedCredentials for batch requests
 	type credentialTuple struct {
-		credInfo *irma.CredentialInfo
+		credInfo *SdJwtMetadata
 		sdjwt    sdjwtvc.SdJwtVc
 	}
 	credentialsMap := make(map[string][]credentialTuple)

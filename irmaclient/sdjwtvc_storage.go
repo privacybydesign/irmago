@@ -14,6 +14,23 @@ import (
 
 // ========================================================================
 
+type SdJwtMetadata struct {
+	InstanceCount  int            // number of instances left
+	SignedOn       irma.Timestamp // Unix timestamp
+	Expires        irma.Timestamp // Unix timestamp
+	Attributes     map[string]any // Human-readable rendered attributes
+	Hash           string         // SHA256 hash over the attributes and credential type
+	CredentialType string         // corresponds to 'vct' field in jwt
+}
+
+type sdjwtStoredMetadata struct {
+	SignedOn       irma.Timestamp // Unix timestamp
+	Expires        irma.Timestamp // Unix timestamp
+	Attributes     map[string]any // Human-readable rendered attributes
+	Hash           string         // SHA256 hash over the attributes and credential type
+	CredentialType string         // corresponds to 'vct' field in jwt
+}
+
 type SdJwtVcStorage interface {
 	// RemoveAll should remove all instances for the credential with the given hash.
 	RemoveAll() error
@@ -27,17 +44,17 @@ type SdJwtVcStorage interface {
 	RemoveLastUsedInstanceOfCredentialByHash(hash string) error
 
 	// StoreCredential assumes each of the provided sdjwts to be linked to the credential info
-	StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error
+	StoreCredential(info SdJwtMetadata, credentials []sdjwtvc.SdJwtVc) error
 
 	// GetCredentialsForId gets all instances for a credential id from the scheme
 	GetCredentialsForId(id string) []SdJwtVcAndInfo
 	GetCredentialByHash(hash string) (*SdJwtVcAndInfo, error)
-	GetCredentialInfoList() irma.CredentialInfoList
+	GetCredentialInfoList() []SdJwtMetadata
 }
 
 type SdJwtVcAndInfo struct {
-	SdJwtVc sdjwtvc.SdJwtVc
-	Info    irma.CredentialInfo
+	SdJwtVc  sdjwtvc.SdJwtVc
+	Metadata SdJwtMetadata
 }
 
 // ========================================================================
@@ -136,7 +153,7 @@ func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash stri
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
 		// if the sdjwtvc bucket doesn't exist, the credential to remove obviously also doesn't...
 		if sdjwtBucket == nil {
-			return nil
+			return fmt.Errorf("tried to remove sdjwt instance while there's no sdjwt bucket yet")
 		}
 
 		credBucket := sdjwtBucket.Bucket([]byte(hash))
@@ -161,35 +178,36 @@ func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash stri
 	if err != nil {
 		return err
 	}
+	return nil
 
 	// delete the whole credential + info bucket if there are no more sdjwtvc instances left
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
-		if sdjwtBucket == nil {
-			return nil
-		}
-
-		credBucket := sdjwtBucket.Bucket([]byte(hash))
-		if credBucket == nil {
-			return fmt.Errorf("no credential bucket found for %s", string(hash))
-		}
-
-		credentialsBucket := credBucket.Bucket([]byte(credentialsKey))
-		if credentialsBucket == nil {
-			return fmt.Errorf("no credential instances found for %s", string(hash))
-		}
-
-		// if there are no more sdjwtvc instances anymore
-		if credentialsBucket.Stats().KeyN == 0 {
-			// delete the bucket
-			return sdjwtBucket.DeleteBucket([]byte(hash))
-		}
-
-		return nil
-	})
+	// return s.db.Update(func(tx *bbolt.Tx) error {
+	// 	sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
+	// 	if sdjwtBucket == nil {
+	// 		return nil
+	// 	}
+	//
+	// 	credBucket := sdjwtBucket.Bucket([]byte(hash))
+	// 	if credBucket == nil {
+	// 		return fmt.Errorf("no credential bucket found for %s", string(hash))
+	// 	}
+	//
+	// 	credentialsBucket := credBucket.Bucket([]byte(credentialsKey))
+	// 	if credentialsBucket == nil {
+	// 		return fmt.Errorf("no credential instances found for %s", string(hash))
+	// 	}
+	//
+	// 	// if there are no more sdjwtvc instances anymore
+	// 	if credentialsBucket.Stats().KeyN == 0 {
+	// 		// delete the bucket
+	// 		return sdjwtBucket.DeleteBucket([]byte(hash))
+	// 	}
+	//
+	// 	return nil
+	// })
 }
 
-func (s *BboltSdJwtVcStorage) StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error {
+func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtMetadata, credentials []sdjwtvc.SdJwtVc) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket, err := tx.CreateBucketIfNotExists([]byte(sdjwtvcBucketName))
 
@@ -251,15 +269,11 @@ func (s *BboltSdJwtVcStorage) GetCredentialsForId(id string) (result []SdJwtVcAn
 				if err != nil {
 					return fmt.Errorf("failed to get credential info from bucket: %v", err)
 				}
-				infoId := fmt.Sprintf("%s.%s.%s", info.SchemeManagerID, info.IssuerID, info.ID)
-				if infoId == id {
-					sdjwt, err := getFirstCredentialInstanceFromBucket(bucket, s.aesKey)
-					if err != nil {
-						return err
-					}
+				if info.CredentialType == id {
+					sdjwt, _ := getFirstCredentialInstanceFromBucket(bucket, s.aesKey)
 					result = append(result, SdJwtVcAndInfo{
-						SdJwtVc: sdjwt,
-						Info:    *info,
+						SdJwtVc:  sdjwt,
+						Metadata: *info,
 					})
 				}
 			}
@@ -270,6 +284,14 @@ func (s *BboltSdJwtVcStorage) GetCredentialsForId(id string) (result []SdJwtVcAn
 		irma.Logger.Errorf("bbolt GetCredentialsForId: %v", err)
 	}
 	return result
+}
+
+func getCredentialInstanceCount(bucket *bbolt.Bucket) (int, error) {
+	creds := bucket.Bucket([]byte(credentialsKey))
+	if creds == nil {
+		return 0, fmt.Errorf("no credentials bucket found")
+	}
+	return creds.Stats().KeyN, nil
 }
 
 func (s *BboltSdJwtVcStorage) GetCredentialByHash(hash string) (result *SdJwtVcAndInfo, err error) {
@@ -292,7 +314,8 @@ func (s *BboltSdJwtVcStorage) GetCredentialByHash(hash string) (result *SdJwtVcA
 	return result, err
 }
 
-func (s *BboltSdJwtVcStorage) GetCredentialInfoList() (result irma.CredentialInfoList) {
+func (s *BboltSdJwtVcStorage) GetCredentialInfoList() []SdJwtMetadata {
+	result := []SdJwtMetadata{}
 	s.db.View(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
 
@@ -308,7 +331,7 @@ func (s *BboltSdJwtVcStorage) GetCredentialInfoList() (result irma.CredentialInf
 				return err
 			}
 
-			result = append(result, info)
+			result = append(result, *info)
 			return nil
 		})
 	})
@@ -327,8 +350,8 @@ func getCredential(credentialBucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtVcAnd
 	}
 
 	return &SdJwtVcAndInfo{
-		Info:    *info,
-		SdJwtVc: sdjwt,
+		Metadata: *info,
+		SdJwtVc:  sdjwt,
 	}, nil
 }
 
@@ -339,7 +362,7 @@ func itob(v uint64) []byte {
 	return b
 }
 
-func marshalAndEncryptInfo(info irma.CredentialInfo, aesKey [32]byte) ([]byte, error) {
+func marshalAndEncryptInfo(info SdJwtMetadata, aesKey [32]byte) ([]byte, error) {
 	marshalled, err := json.Marshal(info)
 	if err != nil {
 		return nil, err
@@ -364,20 +387,33 @@ func getFirstCredentialInstanceFromBucket(bucket *bbolt.Bucket, aesKey [32]byte)
 	return sdjwtvc.SdJwtVc(decrypted), nil
 }
 
-func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*irma.CredentialInfo, error) {
+func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtMetadata, error) {
 	encrypted := bucket.Get([]byte(infoKey))
 	decrypted, err := decrypt(encrypted, aesKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %v", err)
 	}
 
-	var info irma.CredentialInfo
+	var info sdjwtStoredMetadata
 	err = json.Unmarshal(decrypted, &info)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal: %v (%v)", err, string(decrypted))
 	}
 
-	return &info, nil
+	instanceCount, err := getCredentialInstanceCount(bucket)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance count: %v", err)
+	}
+
+	return &SdJwtMetadata{
+		InstanceCount:  instanceCount,
+		SignedOn:       info.SignedOn,
+		Expires:        info.Expires,
+		Attributes:     info.Attributes,
+		Hash:           info.Hash,
+		CredentialType: info.CredentialType,
+	}, nil
 }
 
 // ==================================================================================
@@ -385,7 +421,7 @@ func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*irma.C
 type sdjwtvcStorageEntry struct {
 	// A list of strings containing sdjwtvc's (with all disclosures & without kbjwt)
 	rawRedentials []sdjwtvc.SdJwtVc
-	info          irma.CredentialInfo
+	info          SdJwtMetadata
 }
 
 type InMemorySdJwtVcStorage struct {
@@ -396,8 +432,8 @@ func (s *InMemorySdJwtVcStorage) GetCredentialByHash(hash string) (*SdJwtVcAndIn
 	for _, entry := range s.entries {
 		if entry.info.Hash == hash {
 			return &SdJwtVcAndInfo{
-				Info:    entry.info,
-				SdJwtVc: entry.rawRedentials[0],
+				Metadata: entry.info,
+				SdJwtVc:  entry.rawRedentials[0],
 			}, nil
 		}
 	}
@@ -452,11 +488,11 @@ func (s *InMemorySdJwtVcStorage) RemoveCredentialByHash(hash string) ([]jwk.Key,
 	return nil, nil
 }
 
-func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList {
-	result := irma.CredentialInfoList{}
+func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() []SdJwtMetadata {
+	result := []SdJwtMetadata{}
 
 	for _, entry := range s.entries {
-		result = append(result, &entry.info)
+		result = append(result, entry.info)
 	}
 
 	return result
@@ -465,20 +501,18 @@ func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() irma.CredentialInfoList
 func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []SdJwtVcAndInfo {
 	result := []SdJwtVcAndInfo{}
 	for _, entry := range s.entries {
-		credId := fmt.Sprintf("%s.%s.%s", entry.info.SchemeManagerID, entry.info.IssuerID, entry.info.ID)
-
 		// we have an instance of the requested credential type
-		if id == credId {
+		if id == entry.info.CredentialType {
 			result = append(result, SdJwtVcAndInfo{
-				Info:    entry.info,
-				SdJwtVc: entry.rawRedentials[0],
+				Metadata: entry.info,
+				SdJwtVc:  entry.rawRedentials[0],
 			})
 		}
 	}
 	return result
 }
 
-func (s *InMemorySdJwtVcStorage) StoreCredential(info irma.CredentialInfo, credentials []sdjwtvc.SdJwtVc) error {
+func (s *InMemorySdJwtVcStorage) StoreCredential(info SdJwtMetadata, credentials []sdjwtvc.SdJwtVc) error {
 	s.entries = append(s.entries, sdjwtvcStorageEntry{
 		info:          info,
 		rawRedentials: credentials,

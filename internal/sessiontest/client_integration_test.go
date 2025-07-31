@@ -53,6 +53,7 @@ func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
 	require.Equal(t, latestLog.Type, irmaclient.LogType_Issuance)
 	require.Equal(t, latestLog.IssuanceLog.Protocol, irmaclient.Protocol_Irma)
 	require.Len(t, latestLog.IssuanceLog.DisclosedCredentials, 2)
+	require.Len(t, latestLog.IssuanceLog.Credentials, 1)
 }
 
 func performCombinedIssuanceAndDisclosureSession(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
