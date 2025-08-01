@@ -15,7 +15,7 @@ import (
 // ========================================================================
 
 type SdJwtMetadata struct {
-	InstanceCount  int            // number of instances left
+	InstanceCount  uint           // number of instances left
 	SignedOn       irma.Timestamp // Unix timestamp
 	Expires        irma.Timestamp // Unix timestamp
 	Attributes     map[string]any // Human-readable rendered attributes
@@ -286,12 +286,12 @@ func (s *BboltSdJwtVcStorage) GetCredentialsForId(id string) (result []SdJwtVcAn
 	return result
 }
 
-func getCredentialInstanceCount(bucket *bbolt.Bucket) (int, error) {
+func getCredentialInstanceCount(bucket *bbolt.Bucket) (uint, error) {
 	creds := bucket.Bucket([]byte(credentialsKey))
 	if creds == nil {
 		return 0, fmt.Errorf("no credentials bucket found")
 	}
-	return creds.Stats().KeyN, nil
+	return uint(creds.Stats().KeyN), nil
 }
 
 func (s *BboltSdJwtVcStorage) GetCredentialByHash(hash string) (result *SdJwtVcAndInfo, err error) {

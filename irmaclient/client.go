@@ -149,7 +149,7 @@ func sdjwtMetadataToIrmaCredentialInfo(metadata SdJwtMetadata) *irma.CredentialI
 		Revoked:             false,
 		RevocationSupported: false,
 		CredentialFormat:    string(Format_SdJwtVc),
-		InstanceCount:       metadata.InstanceCount,
+		InstanceCount:       &metadata.InstanceCount,
 	}
 }
 
