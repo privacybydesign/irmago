@@ -153,7 +153,7 @@ func CreateX509VerifyOptionsFromMultiplePemChains(pemChains [][]byte) (*x509.Ver
 	intermediatePool := x509.NewCertPool()
 
 	for i, pemChainData := range pemChains {
-		certs, err := ParsePemCertificateChain(pemChainData)
+		certs, err := eudi.ParsePemCertificateChain(pemChainData)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse cert chain %d: %w", i, err)
 		}

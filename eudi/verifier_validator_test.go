@@ -24,9 +24,9 @@ func TestVerifierValidator(t *testing.T) {
 	t.Run("ParseAndVerifyAuthorizationRequest fails with missing x5c header", testParseAndVerifyAuthorizationRequestFailureMissingX5C)
 	t.Run("ParseAndVerifyAuthorizationRequest fails with expired x5c certificate", testParseAndVerifyAuthorizationRequestFailureExpiredX5C)
 	t.Run("ParseAndVerifyAuthorizationRequest fails with revoked x5c certificate", testParseAndVerifyAuthorizationRequestFailureRevokedX5C)
-	// t.Run("ParseAndVerifyAuthorizationRequest fails with invalid key-usage(s) in x5c certificate", testParseAndVerifyAuthorizationRequestFailureRevokedX5C)
-	// t.Run("ParseAndVerifyAuthorizationRequest fails for missing scheme data in x5c certificate", testParseAndVerifyAuthorizationRequestFailureMissingSchemeData)
-	// t.Run("ParseAndVerifyAuthorizationRequest fails for invalid scheme data in x5c certificate", testParseAndVerifyAuthorizationRequestFailureInvalidSchemeData)
+	t.Run("ParseAndVerifyAuthorizationRequest fails for missing scheme data in x5c certificate", testParseAndVerifyAuthorizationRequestFailureMissingSchemeData)
+	t.Run("ParseAndVerifyAuthorizationRequest fails for invalid ASN scheme data in x5c certificate", testParseAndVerifyAuthorizationRequestFailureInvalidAsnSchemeData)
+	t.Run("ParseAndVerifyAuthorizationRequest fails for invalid JSON scheme data in x5c certificate", testParseAndVerifyAuthorizationRequestFailureInvalidJsonSchemeData)
 
 	// Unhappy flow tests for x5c related CHAIN errors
 	t.Run("ParseAndVerifyAuthorizationRequest fails with valid cert but missing root certificate", testParseAndVerifyAuthorizationRequestFailureMissingRoot)
@@ -117,6 +117,39 @@ func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
+}
+
+func testParseAndVerifyAuthorizationRequestFailureMissingSchemeData(t *testing.T) {
+	// Setup test data
+	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_MissingSchemeData)
+
+	// Parse and verify the authorization request
+	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to verify end-entity certificate: it does not contain the required custom scheme extension with OID 2.1.123.1")
+}
+
+func testParseAndVerifyAuthorizationRequestFailureInvalidAsnSchemeData(t *testing.T) {
+	// Setup test data
+	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_InvalidAsnSchemeData)
+
+	// Parse and verify the authorization request
+	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to verify end-entity certificate: failed to unmarshal scheme extension data:")
+}
+
+func testParseAndVerifyAuthorizationRequestFailureInvalidJsonSchemeData(t *testing.T) {
+	// Setup test data
+	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_InvalidJsonSchemeData)
+
+	// Parse and verify the authorization request
+	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to verify end-entity certificate: failed to unmarshal scheme data to requestor object:")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {

@@ -61,21 +61,21 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	}
 
 	if schemeExtensionData == nil {
-		return nil, nil, nil, fmt.Errorf("end-entity certificate does not contain the required custom scheme extension with OID %s", SchemeExtensionOID)
+		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: it does not contain the required custom scheme extension with OID %s", SchemeExtensionOID)
 	}
 
 	// The scheme extension data is expected to be a DERUTF8STRING, so we need to unmarshal it
 	var schemeData string
 	_, err = asn1.Unmarshal(schemeExtensionData.Value, &schemeData)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to unmarshal scheme extension data: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: failed to unmarshal scheme extension data: %v", err)
 	}
 
 	// Unmarshal the scheme JSON data to a RequestorInfo struct
 	var requestorSchemeData RelyingPartyRequestor
 	err = json.Unmarshal([]byte(schemeData), &requestorSchemeData)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to unmarshal scheme data to requestor object: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: failed to unmarshal scheme data to requestor object: %v", err)
 	}
 
 	claims := token.Claims.(*openid4vp.AuthorizationRequest)

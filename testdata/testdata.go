@@ -58,12 +58,15 @@ var VerifierCertSchemeData string
 type PkiGenerationOptions int
 
 const (
-	PkiOption_None                 PkiGenerationOptions = iota
-	PkiOption_ExpiredEndEntity                          = 2
-	PkiOption_RevokedEndEntity                          = 4
-	PkiOption_ExpiredIntermediate                       = 8
-	PkiOption_RevokedIntermediates                      = 16
-	PkiOption_ExpiredRoot                               = 32
+	PkiOption_None                  PkiGenerationOptions = iota
+	PkiOption_ExpiredEndEntity                           = 2
+	PkiOption_RevokedEndEntity                           = 4
+	PkiOption_ExpiredIntermediate                        = 8
+	PkiOption_RevokedIntermediates                       = 16
+	PkiOption_ExpiredRoot                                = 32
+	PkiOption_MissingSchemeData                          = 64
+	PkiOption_InvalidAsnSchemeData                       = 128
+	PkiOption_InvalidJsonSchemeData                      = 256
 )
 
 func ParseHolderPubJwk() jwk.Key {
@@ -298,6 +301,20 @@ func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string
 			},
 		},
 	}
+
+	if opts&PkiOption_InvalidAsnSchemeData != 0 {
+		certTemplate.ExtraExtensions[0].Value = []byte("invalid ASN scheme data")
+	}
+
+	if opts&PkiOption_InvalidJsonSchemeData != 0 {
+		asn1SchemeData, _ := asn1.Marshal("invalid JSON scheme data")
+		certTemplate.ExtraExtensions[0].Value = asn1SchemeData
+	}
+
+	if opts&PkiOption_MissingSchemeData != 0 {
+		certTemplate.ExtraExtensions = []pkix.Extension{}
+	}
+
 	certDerBytes, err = x509.CreateCertificate(rand.Reader, certTemplate, caCert, key.Public(), caKey)
 	require.NoError(t, err)
 	cert, err = x509.ParseCertificate(certDerBytes)
