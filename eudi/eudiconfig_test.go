@@ -24,7 +24,6 @@ func TestConfig(t *testing.T) {
 
 func testNewConfigurationSuccessfulInitialization(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
-	defer os.RemoveAll(storageFolder)
 
 	err := common.EnsureDirectoryExists(filepath.Join(storageFolder, "eudi_configuration"))
 	require.NoError(t, err)
@@ -54,7 +53,6 @@ func testNewConfigurationSuccessfulInitialization(t *testing.T) {
 
 func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
-	defer os.RemoveAll(storageFolder)
 
 	err := common.EnsureDirectoryExists(filepath.Join(storageFolder, "eudi_configuration"))
 	require.NoError(t, err)
@@ -72,7 +70,6 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 
 func testCacheVerifierLogoCachesLogoSuccessfully(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
-	defer os.RemoveAll(storageFolder)
 
 	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
 
@@ -99,7 +96,6 @@ func testCacheVerifierLogoCachesLogoSuccessfully(t *testing.T) {
 
 func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
-	defer os.RemoveAll(storageFolder)
 
 	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
 
@@ -137,7 +133,6 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 
 func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
-	defer os.RemoveAll(storageFolder)
 
 	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
 
@@ -154,7 +149,6 @@ func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
 
 func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
-	defer os.RemoveAll(storageFolder)
 
 	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
 
@@ -181,7 +175,6 @@ func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 
 func testCacheVerifierLogoReturnsErrorOnUnknownMimeType(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
-	defer os.RemoveAll(storageFolder)
 
 	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
 

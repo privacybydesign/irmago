@@ -84,16 +84,21 @@ func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullF
 	// If file exists, overwrite it, as it might have updated between certificate issuances
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		file.Close()
 		return "", "", fmt.Errorf("failed to open file %s: %w", path, err)
 	}
+
+	defer func() {
+		if file != nil {
+			if cerr := file.Close(); err == nil && cerr != nil {
+				err = cerr
+			}
+		}
+	}()
 
 	_, err = file.Write(logo.Data)
 	if err != nil {
 		return "", "", err
 	}
-
-	err = file.Close()
 
 	return
 }
