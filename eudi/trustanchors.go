@@ -1,7 +1,6 @@
 package eudi
 
-// TODO: Replace the staging trust anchor with the actual trust anchors for Yivi production
-// Currently the default trust anchor is the Yivi staging trust anchor.
+// DefaultIssuerTrustAnchor_YiviStaging is the default issuer trust anchor for Yivi staging and will be replaced with the actual trust anchor for Yivi production (TODO)
 const DefaultIssuerTrustAnchor_YiviStaging = `
 Subject: CN=Yivi Requestors RootCA,O=Yivi,C=NL
 Issuer: CN=Yivi Requestors RootCA,O=Yivi,C=NL
@@ -41,8 +40,7 @@ SAAwRQIhAOGr5oI72XKrw51MxGf60Z6fBJskxvnBKDtBOAyqGF3IAiA7RHnTMnM+
 HlY1fmz1gEdQ5OQhwWn9AsMlhMvSDlZKBg==
 -----END CERTIFICATE-----`
 
-// TODO: Replace the staging trust anchor with the actual trust anchors for Yivi production
-// Currently the default trust anchor is the Yivi staging trust anchor.
+// DefaultVerifierTrustAnchor_YiviStaging is the default issuer trust anchor for Yivi staging and will be replaced with the actual trust anchor for Yivi production (TODO)
 const DefaultVerifierTrustAnchor_YiviStaging = `
 Subject: CN=Yivi Requestors RootCA,O=Yivi,C=NL
 Issuer: CN=Yivi Requestors RootCA,O=Yivi,C=NL
