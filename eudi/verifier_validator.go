@@ -126,7 +126,7 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains: %v", err)
 		}
 
-		// Validation succesful, return the public key
+		// Validation successful, return the public key
 		return parsedCert.PublicKey, nil
 	}
 }
