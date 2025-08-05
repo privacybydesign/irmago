@@ -83,14 +83,6 @@ func FindTestdataFolder(t *testing.T) string {
 	return ""
 }
 
-// ClearTestStorage removes any output from previously run tests.
-// func ClearTestStorage(t *testing.T, client io.Closer, storage string) {
-// 	if client != nil {
-// 		checkError(t, client.Close())
-// 	}
-// 	checkError(t, os.RemoveAll(storage))
-// }
-
 func CreateTestStorage(t *testing.T) string {
 	tmp := t.TempDir()
 	checkError(t, common.EnsureDirectoryExists(filepath.Join(tmp, "client")))
