@@ -121,10 +121,6 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 			Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
 		}
 
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to read authorization request jwt: %v", err)
-			return
-		}
 		irma.Logger.Infof("auth request: %#v\n", request)
 		err = client.handleAuthorizationRequest(request, requestorInfo, handler)
 

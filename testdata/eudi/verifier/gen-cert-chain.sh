@@ -20,7 +20,7 @@ openssl req -x509 -new -key ca_ec_priv.pem -sha256 -days 3650 -out ca.crt \
 
 # create verifier certificate request
 openssl req -new -key verifier_ec_priv.pem -out verifier.csr \
-  -subj "/C=NL/O=Yivi/CN=localhost"
+  -subj "/C=NL/O=Yivi/CN=localhost/serialNumber=1234"
 
 # sign verifier certificate request
 openssl x509 -req -in verifier.csr -CA ca.crt -CAkey ca_ec_priv.pem -CAcreateserial \

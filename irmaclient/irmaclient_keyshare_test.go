@@ -8,7 +8,6 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 )
 
@@ -23,7 +22,7 @@ func TestKeyshareChangePin(t *testing.T) {
 	defer ks2.Stop()
 
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	client.KeyshareEnroll(test2SchemeID, nil, "12345", "en")
 	require.NoError(t, <-handler.c)
@@ -56,7 +55,7 @@ func TestKeyshareChangePinFailed(t *testing.T) {
 	defer ks2.Stop()
 
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test2"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)
@@ -78,8 +77,8 @@ func TestKeyshareChangePinFailed(t *testing.T) {
 func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer ks.Stop()
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
 
@@ -108,8 +107,8 @@ func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 func TestKeyshareAuthentication(t *testing.T) {
 	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer ks.Stop()
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
 

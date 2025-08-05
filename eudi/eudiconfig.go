@@ -64,8 +64,8 @@ func (conf *Configuration) Reload() error {
 }
 
 func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullFilename string, path string, err error) {
-	if logo == nil || logo.Data == nil {
-		return "", "", fmt.Errorf("cannot cache nil logo")
+	if logo == nil || logo.Data == nil || len(logo.Data) == 0 {
+		return "", "", fmt.Errorf("invalid logo")
 	}
 
 	// Find a file-extension for the logo based on its MIME type
@@ -74,23 +74,26 @@ func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullF
 		return "", "", err
 	}
 
+	if len(extensions) == 0 {
+		return "", "", fmt.Errorf("unknown mime type %q", logo.MimeType)
+	}
+
 	fullFilename = filename + extensions[0]
 	path = filepath.Join(conf.Verifiers.GetLogosPath(), fullFilename)
 
 	// If file exists, overwrite it, as it might have updated between certificate issuances
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if file != nil {
-		defer file.Close()
-	}
-
 	if err != nil {
-		return "", "", err
+		file.Close()
+		return "", "", fmt.Errorf("failed to open file %s: %w", path, err)
 	}
 
 	_, err = file.Write(logo.Data)
 	if err != nil {
 		return "", "", err
 	}
+
+	err = file.Close()
 
 	return
 }

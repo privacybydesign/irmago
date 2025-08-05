@@ -58,15 +58,15 @@ var VerifierCertSchemeData string
 type PkiGenerationOptions int
 
 const (
-	PkiOption_None                  PkiGenerationOptions = iota
-	PkiOption_ExpiredEndEntity                           = 2
-	PkiOption_RevokedEndEntity                           = 4
-	PkiOption_ExpiredIntermediate                        = 8
-	PkiOption_RevokedIntermediates                       = 16
-	PkiOption_ExpiredRoot                                = 32
-	PkiOption_MissingSchemeData                          = 64
-	PkiOption_InvalidAsnSchemeData                       = 128
-	PkiOption_InvalidJsonSchemeData                      = 256
+	PkiOption_None                  PkiGenerationOptions = 1
+	PkiOption_ExpiredEndEntity      PkiGenerationOptions = 2
+	PkiOption_RevokedEndEntity      PkiGenerationOptions = 4
+	PkiOption_ExpiredIntermediate   PkiGenerationOptions = 8
+	PkiOption_RevokedIntermediates  PkiGenerationOptions = 16
+	PkiOption_ExpiredRoot           PkiGenerationOptions = 32
+	PkiOption_MissingSchemeData     PkiGenerationOptions = 64
+	PkiOption_InvalidAsnSchemeData  PkiGenerationOptions = 128
+	PkiOption_InvalidJsonSchemeData PkiGenerationOptions = 256
 )
 
 func ParseHolderPubJwk() jwk.Key {

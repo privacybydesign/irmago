@@ -25,7 +25,6 @@ func TestMain(m *testing.M) {
 	retval := m.Run()
 
 	test.StopSchemeManagerHttpServer()
-	test.ClearAllTestStorage()
 
 	os.Exit(retval)
 }

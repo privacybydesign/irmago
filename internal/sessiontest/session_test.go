@@ -18,7 +18,6 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -124,15 +123,15 @@ func testMultipleIssuanceSession(t *testing.T, conf interface{}, opts ...option)
 }
 
 func testDefaultCredentialValidity(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 	request := getIssuanceRequest(true)
 	doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
 }
 
 func testIssuanceDisclosureEmptyAttributes(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 
 	req := getNameIssuanceRequest()
 	doSession(t, req, client, nil, nil, nil, nil, conf, opts...)
@@ -158,7 +157,7 @@ func testIssuanceOptionalSetAttributes(t *testing.T, conf interface{}, opts ...o
 
 func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts ...option) {
 	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	prevLen := len(client.CredentialInfoList())
 
@@ -240,8 +239,8 @@ func testPairingRejected(t *testing.T, conf interface{}, opts ...option) {
 }
 
 func testLargeAttribute(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
@@ -255,7 +254,7 @@ func testLargeAttribute(t *testing.T, conf interface{}, opts ...option) {
 
 func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...option) {
 	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton")
 	request := getIssuanceRequest(false)
@@ -287,8 +286,8 @@ func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...opt
 }
 
 func testUnsatisfiableDisclosureSession(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 
 	request := irma.NewDisclosureRequest()
 	request.Disclose = irma.AttributeConDisCon{
@@ -328,8 +327,8 @@ signatures being issued in the issuance protocol in two distinct ways, of which 
 that they have been fixed.
 */
 func testAttributeByteEncoding(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
 
@@ -355,8 +354,7 @@ func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ..
 	require.IsType(t, IrmaServerConfiguration, conf)
 	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
 
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
 	defer client.Close()
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
@@ -375,8 +373,7 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 	require.IsType(t, IrmaServerConfiguration, conf)
 	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
 
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
 	defer client.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
@@ -414,8 +411,8 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 }
 
 func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
 	defer rs.Stop()
 
@@ -452,7 +449,7 @@ func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 
 func testIssuedCredentialIsStored(t *testing.T, conf interface{}, opts ...option) {
 	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	issuanceRequest := getNameIssuanceRequest()
 	doSession(t, issuanceRequest, client, nil, nil, nil, nil, conf, opts...)
@@ -470,8 +467,8 @@ func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	attrID1 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.election")
 	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
 
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 
 	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
@@ -520,8 +517,8 @@ func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf in
 	attrID1 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.election")
 	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
 
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 
 	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
@@ -599,8 +596,8 @@ func updatedSchemeConfigDecorator(fn func() *server.Configuration) func() *serve
 }
 
 func testSigningSession(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	var serverResult *requestorSessionResult
@@ -733,8 +730,8 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClien
 }
 
 func testConDisCon(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 	ir := getMultipleIssuanceRequest()
 	ir.Credentials = append(ir.Credentials, &irma.CredentialRequest{
 		Validity:         ir.Credentials[0].Validity,
@@ -767,8 +764,8 @@ func testConDisCon(t *testing.T, conf interface{}, opts ...option) {
 }
 
 func testOptionalDisclosure(t *testing.T, conf interface{}, opts ...option) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 	university := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university")
 	studentid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
@@ -825,8 +822,8 @@ func testOptionalDisclosure(t *testing.T, conf interface{}, opts ...option) {
 // The following tests are currently not reused with different server/configuration types.
 
 func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -883,8 +880,8 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 }
 
 func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -925,8 +922,8 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 
@@ -942,8 +939,8 @@ func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
@@ -959,8 +956,8 @@ func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 }
 
 func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	request := irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),        // non-existing issuer
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),         // non-existing credential
@@ -1039,8 +1036,8 @@ func TestStatusEventsSSE(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Make a client, and let it perform the session
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	h := &TestHandler{
 		t:                  t,
 		c:                  make(chan *SessionResult),
@@ -1165,8 +1162,8 @@ func TestInsecureProtocolVersion(t *testing.T) {
 func TestClientDeveloperMode(t *testing.T) {
 	common.ForceHTTPS = true
 	defer func() { common.ForceHTTPS = false }()
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
@@ -1201,8 +1198,8 @@ func TestClientDeveloperMode(t *testing.T) {
 }
 
 func TestParallelSessions(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
@@ -1248,8 +1245,8 @@ func TestParallelSessions(t *testing.T) {
 }
 
 func TestParallelSessionsWithPairing(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
@@ -1282,8 +1279,8 @@ func expireKey(t *testing.T, conf *irma.Configuration) {
 }
 
 func TestIssueExpiredKey(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
@@ -1310,8 +1307,8 @@ func TestExpiredCredential(t *testing.T) {
 		irmaserver.AllowIssuingExpiredCredentials = false
 	}()
 
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
@@ -1344,8 +1341,8 @@ func TestExpiredCredential(t *testing.T) {
 }
 
 func TestRequestorHostPermissions(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
 	defer rs.Stop()
 

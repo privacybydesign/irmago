@@ -25,7 +25,7 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 
 	addTestCredentialsToStorage(storage, keyBinder)
 
-	storageFolder := test.SetupTestStorage(t)
+	storageFolder := test.CreateTestStorage(t)
 	testStoragePath := test.FindTestdataFolder(t)
 	err = common.CopyDirectory(filepath.Join(testStoragePath, "eudi_configuration"), filepath.Join(storageFolder, "eudi_configuration"))
 	require.NoError(t, err)
@@ -33,8 +33,6 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	conf, err := eudi.NewConfiguration(
 		filepath.Join(storageFolder, "eudi_configuration"),
 	)
-	require.NoError(t, err)
-	err = conf.Reload()
 	require.NoError(t, err)
 
 	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&conf.Verifiers)
@@ -52,7 +50,6 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	client := createOpenID4VPClientForTesting(t)
-	defer test.ClearAllTestStorage()
 
 	handler := NewMockSessionHandler(t)
 	client.NewSession(url, handler)
