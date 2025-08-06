@@ -248,7 +248,7 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 	require.Equal(t, len(result), 1)
 }
 
-func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num int) (SdJwtMetadata, []sdjwtvc.SdJwtVc) {
+func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num uint) (SdJwtMetadata, []sdjwtvc.SdJwtVc) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 	for range num {
