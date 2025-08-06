@@ -805,15 +805,15 @@ func (ir *IssuanceRequest) GetCredentialInfoList(
 	if ir.CredentialInfoList == nil {
 		for _, credreq := range ir.Credentials {
 			info, err := credreq.Info(conf, GetMetadataVersion(version), issuedAt)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get info from credential: %v", err)
+			}
 
 			// in this case we'll assume the server is capable to build this
 			// so we just put in the usual default amount
 			if info.InstanceCount == nil && ir.RequestSdJwts {
 				defaultAmount := DefaultSdJwtIssueAmount
 				info.InstanceCount = &defaultAmount
-			}
-			if err != nil {
-				return nil, err
 			}
 			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
 		}
