@@ -44,7 +44,7 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 		return nil, fmt.Errorf("failed to ensure verifier directories exist: %w", err)
 	}
 
-	conf.Reload()
+	err = conf.Reload()
 
 	return
 }
@@ -66,12 +66,7 @@ func (conf *Configuration) Reload() error {
 		return err
 	}
 
-	err = conf.Verifiers.readTrustModel()
-	if err != nil {
-		return err
-	}
-
-	return err
+	return conf.Verifiers.readTrustModel()
 }
 
 func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullFilename string, path string, err error) {
