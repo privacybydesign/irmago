@@ -10,6 +10,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -280,6 +281,7 @@ func testTrustModelGetRevocationListsForIssuerReturnsCorrectCRLs(t *testing.T) {
 	tm := &TrustModel{
 		// Add all CRLs except the one for ROOT CERT 1 > CA CERT 2
 		revocationLists: []*x509.RevocationList{rootCrl, rootCrl2, caCrls[0], caCrls2[0]},
+		logger:          logrus.New(),
 	}
 
 	// Root certificate 1 has 1 CRL
@@ -308,6 +310,7 @@ func testTrustModelVerifyRevocationListSignaturesReturnsNoErrorOnValidSignatures
 
 	tm := &TrustModel{
 		revocationLists: []*x509.RevocationList{rootCrl, caCrls[0], caCrls[1]},
+		logger:          logrus.New(),
 	}
 
 	err := tm.verifyRevocationListsSignatures(caCerts[0])
@@ -320,6 +323,7 @@ func testTrustModelVerifyRevocationListSignaturesReturnsNilOnNoRevocationLists(t
 
 	tm := &TrustModel{
 		revocationLists: []*x509.RevocationList{rootCrl},
+		logger:          logrus.New(),
 	}
 
 	err := tm.verifyRevocationListsSignatures(caCerts[0])
@@ -331,6 +335,7 @@ func setupTrustModelWithStoragePath(t *testing.T) *TrustModel {
 
 	tm := &TrustModel{
 		basePath: filepath.Join(storageFolder, "eudi_configuration", "issuers"),
+		logger:   logrus.New(),
 	}
 	tm.clear()
 

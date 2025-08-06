@@ -5,6 +5,8 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // Configuration keeps track of issuer and requestor trusted chains and certificate revocation lists,
@@ -24,14 +26,23 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 		path: path,
 		Issuers: TrustModel{
 			basePath: filepath.Join(path, "issuers"),
+			logger:   common.Logger,
 		},
 		Verifiers: TrustModel{
 			basePath: filepath.Join(path, "verifiers"),
+			logger:   common.Logger,
 		},
 	}
 
-	conf.Issuers.ensureDirectoryExists()
-	conf.Verifiers.ensureDirectoryExists()
+	err = conf.Issuers.ensureDirectoryExists()
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure issuer directories exist: %w", err)
+	}
+
+	err = conf.Verifiers.ensureDirectoryExists()
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure verifier directories exist: %w", err)
+	}
 
 	conf.Reload()
 

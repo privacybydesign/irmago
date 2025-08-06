@@ -11,25 +11,15 @@ import (
 
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
-	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
-
-var logger *logrus.Logger
-
-func init() {
-	logger = logrus.New()
-	logger.SetFormatter(&prefixed.TextFormatter{
-		DisableColors:   true,
-		FullTimestamp:   true,
-		TimestampFormat: "15:04:05.000000",
-	})
-}
 
 type TrustModel struct {
 	basePath                        string
 	trustedRootCertificates         *x509.CertPool
 	trustedIntermediateCertificates *x509.CertPool
 	revocationLists                 []*x509.RevocationList
+
+	logger *logrus.Logger
 }
 
 func (tm *TrustModel) GetCertificatePath() string {
@@ -72,9 +62,6 @@ func (tm *TrustModel) clear() {
 // In case of a revocation list for the root certificate, this will verify for the root certificate itself.
 func (tm *TrustModel) verifyRevocationListsSignatures(parentCert *x509.Certificate) error {
 	revocationLists := tm.GetRevocationListsForIssuer(parentCert.SubjectKeyId, parentCert.Subject)
-	if len(revocationLists) == 0 {
-		return nil
-	}
 	for _, crl := range revocationLists {
 		if err := crl.CheckSignatureFrom(parentCert); err != nil {
 			return err
@@ -89,12 +76,8 @@ func (tm *TrustModel) readRevocationLists() error {
 		return err
 	}
 
-	var crls []*x509.RevocationList
-	if len(crlFiles) == 0 {
-		return nil // No CRLs found
-	}
-
-	for _, crlFile := range crlFiles {
+	crls := make([]*x509.RevocationList, len(crlFiles))
+	for i, crlFile := range crlFiles {
 		crlBytes, err := os.ReadFile(crlFile)
 		if err != nil {
 			return err
@@ -105,7 +88,7 @@ func (tm *TrustModel) readRevocationLists() error {
 			return err
 		}
 
-		crls = append(crls, crl)
+		crls[i] = crl
 	}
 
 	tm.revocationLists = crls
@@ -179,7 +162,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			// For now, we only accept the root certs that are self-signed (no system CA certs)
 			// Verify if the root is self-signed, otherwise this is not a valid root cert
 			if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
-				logger.Infof("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
+				tm.logger.Infof("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
 				continue
 			}
 
@@ -191,7 +174,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			_, err = rootCert.Verify(rootValidationOptions)
 			if err != nil {
 				// If the root cert is not valid, skip the rest of the chain
-				logger.Infof("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
+				tm.logger.Infof("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
 				continue
 			}
 
@@ -213,7 +196,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 					// Verify the certificate against the root pools
 					if _, err := caCert.Verify(validationOptions); err != nil {
 						// Skip this intermediate cert, as it is not valid
-						logger.Infof("Intermediate certificate %s is not valid: %v, skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), err)
+						tm.logger.Infof("Intermediate certificate %s is not valid: %v, skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), err)
 						continue
 					}
 
@@ -229,7 +212,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 						for _, revoked := range crl.RevokedCertificateEntries {
 							if revoked.SerialNumber.Cmp(caCert.SerialNumber) == 0 {
 								isRevoked = true
-								logger.Infof("Intermediate certificate %s is revoked by CRL %s (number %s), skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String(), crl.Number.String())
+								tm.logger.Infof("Intermediate certificate %s is revoked by CRL %s (number %s), skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String(), crl.Number.String())
 								break
 							}
 						}
