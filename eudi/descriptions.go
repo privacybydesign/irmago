@@ -12,7 +12,7 @@ type Requestor struct {
 
 type Organization struct {
 	Logo      Logo              `json:"logo"`
-	LegalName map[string]string `json:"legalName"` // TODO: current cert contains 'display_name' instead of 'legalName', so we need to change this
+	LegalName map[string]string `json:"legalName"`
 }
 
 type Logo struct {
@@ -21,11 +21,12 @@ type Logo struct {
 }
 
 type RelyingParty struct {
-	AuthorizedAttributes []CredentialDescriptor `json:"authorized"`
-	RequestPurpose       map[string]string      `json:"purpose"`
+	// AuthorizedQueryableAttributeSets contains the sets of attributes that the relying party is allowed to query. In the future, this will be checked by the app to authorize disclosure queries.
+	AuthorizedQueryableAttributeSets []QueryableAttributeSet `json:"authorized"`
+	RequestPurpose                   map[string]string       `json:"purpose"`
 }
 
-type CredentialDescriptor struct {
+type QueryableAttributeSet struct {
 	Credential string   `json:"credential"`
 	Attributes []string `json:"attributes"`
 }

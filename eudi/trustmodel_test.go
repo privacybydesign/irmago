@@ -40,8 +40,7 @@ func TestTrustModel(t *testing.T) {
 }
 
 func testReadTrustModelReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -58,8 +57,7 @@ func testReadTrustModelReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
 }
 
 func testReadTrustModelReadsSingleChainRootOnlyWithCrlSuccessfully(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -80,8 +78,7 @@ func testReadTrustModelReadsSingleChainRootOnlyWithCrlSuccessfully(t *testing.T)
 }
 
 func testReadTrustModelReadsMultipleChainsWithCrlsRootOnlySuccessfully(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -107,8 +104,7 @@ func testReadTrustModelReadsMultipleChainsWithCrlsRootOnlySuccessfully(t *testin
 }
 
 func testReadTrustModelReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -131,8 +127,7 @@ func testReadTrustModelReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t 
 }
 
 func testReadTrustModelReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a (root > CA1) and (root > CA2) chains and write to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -158,8 +153,7 @@ func testReadTrustModelReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfu
 }
 
 func testReadTrustModelReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a (root > CA > CA) chain and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -185,8 +179,7 @@ func testReadTrustModelReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessf
 }
 
 func testReadTrustModelReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a 2 roots certs (1 revoked, 1 valid) and write it to storage
 	rootDN1 := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -209,8 +202,7 @@ func testReadTrustModelReadsMultipleChainsValidRootWithValidAndRevokedSubCaShoul
 }
 
 func testReadTrustModelReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a 2 roots certs (1 expired, 1 valid) and write it to storage
 	rootDN1 := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -232,8 +224,7 @@ func testReadTrustModelReadsMultipleChainsValidRootAndExpiredRootWithSubCasShoul
 }
 
 func testReadTrustModelReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root cert and an expired sub-CA cert
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -255,8 +246,7 @@ func testReadTrustModelReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t
 }
 
 func testReadTrustModelReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
-	tm, storageFolder := setupTrustModelWithStoragePath(t)
-	defer os.RemoveAll(storageFolder)
+	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root cert and a CA cert, but write them in reversed order
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -266,7 +256,7 @@ func testReadTrustModelReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertifi
 
 	// Read the trust model
 	err := tm.readTrustModel()
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	// No certificates should be added to the pools
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 0)
@@ -336,7 +326,7 @@ func testTrustModelVerifyRevocationListSignaturesReturnsNilOnNoRevocationLists(t
 	require.NoError(t, err)
 }
 
-func setupTrustModelWithStoragePath(t *testing.T) (*TrustModel, string) {
+func setupTrustModelWithStoragePath(t *testing.T) *TrustModel {
 	storageFolder := test.CreateTestStorage(t)
 
 	tm := &TrustModel{
@@ -347,7 +337,7 @@ func setupTrustModelWithStoragePath(t *testing.T) (*TrustModel, string) {
 	_ = common.EnsureDirectoryExists(tm.GetCertificatePath())
 	_ = common.EnsureDirectoryExists(tm.GetCrlPath())
 
-	return tm, storageFolder
+	return tm
 }
 
 func writeCertAsPemFile(t *testing.T, path string, certs ...*x509.Certificate) {

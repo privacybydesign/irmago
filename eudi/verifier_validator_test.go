@@ -57,10 +57,10 @@ func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
 	require.Equal(t, "image/png", requestorSchemeData.Organization.Logo.MimeType)
 	require.NotEmpty(t, requestorSchemeData.Organization.Logo.Data)
 
-	require.NotEmpty(t, requestorSchemeData.RelyingParty.AuthorizedAttributes)
-	require.Equal(t, "pbdf.gemeente.personalData", requestorSchemeData.RelyingParty.AuthorizedAttributes[0].Credential)
-	require.NotEmpty(t, requestorSchemeData.RelyingParty.AuthorizedAttributes[0].Attributes)
-	require.Equal(t, "over18", requestorSchemeData.RelyingParty.AuthorizedAttributes[0].Attributes[0])
+	require.NotEmpty(t, requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets)
+	require.Equal(t, "pbdf.gemeente.personalData", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Credential)
+	require.NotEmpty(t, requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes)
+	require.Equal(t, "over18", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes[0])
 
 	require.NotEmpty(t, requestorSchemeData.RelyingParty.RequestPurpose)
 	require.Equal(t, "Age verification", requestorSchemeData.RelyingParty.RequestPurpose["en"])
@@ -204,10 +204,8 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 }
 
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
-	// Setup test data
-	hostname := "example.com"
-
 	// Setup PKI
+	hostname := "example.com"
 	_, rootCert, _, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts)
 	verifierKey, verifierCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), hostname, caCerts[0], caKeys[0], opts)
 

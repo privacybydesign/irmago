@@ -10,7 +10,20 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/sirupsen/logrus"
+	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
+
+var logger *logrus.Logger
+
+func init() {
+	logger = logrus.New()
+	logger.SetFormatter(&prefixed.TextFormatter{
+		DisableColors:   true,
+		FullTimestamp:   true,
+		TimestampFormat: "15:04:05.000000",
+	})
+}
 
 type TrustModel struct {
 	basePath                        string
@@ -147,7 +160,10 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 	rootValidationOptions := x509.VerifyOptions{
 		CurrentTime: time.Now(),
 		Roots:       tm.trustedRootCertificates,
-		// TODO: add KeyUsages validation ?
+		KeyUsages: []x509.ExtKeyUsage{
+			x509.ExtKeyUsage(x509.KeyUsageCertSign),
+			x509.ExtKeyUsage(x509.KeyUsageCRLSign),
+		},
 	}
 
 	for _, bts := range trustAnchors {
@@ -160,19 +176,22 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 		if len(chain) >= 1 {
 			rootCert := chain[0]
 
+			// For now, we only accept the root certs that are self-signed (no system CA certs)
 			// Verify if the root is self-signed, otherwise this is not a valid root cert
-			if rootCert.Subject.ToRDNSequence().String() != rootCert.Issuer.ToRDNSequence().String() {
-				return fmt.Errorf("certificate %s is not self-signed, and thus not a valid root certificate", rootCert.Subject.ToRDNSequence().String())
+			if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
+				logger.Infof("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
+				continue
 			}
 
-			// Valid root cert, add to the root pool and continue with intermediate certs
+			// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
 			// Note: duplicates are filtered out by the call to .AddCert()
+			// Note: if the root cert is not valid, the cert will still be in the trustedRootCertificates pool, but the verification will fail later on
 			tm.trustedRootCertificates.AddCert(rootCert)
 
 			_, err = rootCert.Verify(rootValidationOptions)
 			if err != nil {
 				// If the root cert is not valid, skip the rest of the chain
-				// TODO: log ?
+				logger.Infof("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
 				continue
 			}
 
@@ -183,7 +202,10 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 					CurrentTime:   time.Now(),
 					Roots:         tm.trustedRootCertificates,
 					Intermediates: tm.trustedIntermediateCertificates,
-					// TODO: add KeyUsages validation ?
+					KeyUsages: []x509.ExtKeyUsage{
+						x509.ExtKeyUsage(x509.KeyUsageCertSign),
+						x509.ExtKeyUsage(x509.KeyUsageCRLSign),
+					},
 				}
 
 				parentCert := rootCert
@@ -191,8 +213,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 					// Verify the certificate against the root pools
 					if _, err := caCert.Verify(validationOptions); err != nil {
 						// Skip this intermediate cert, as it is not valid
-
-						// TODO: log ?
+						logger.Infof("Intermediate certificate %s is not valid: %v, skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), err)
 						continue
 					}
 
@@ -208,7 +229,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 						for _, revoked := range crl.RevokedCertificateEntries {
 							if revoked.SerialNumber.Cmp(caCert.SerialNumber) == 0 {
 								isRevoked = true
-								// TODO: log ?
+								logger.Infof("Intermediate certificate %s is revoked by CRL %s (number %s), skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String(), crl.Number.String())
 								break
 							}
 						}
