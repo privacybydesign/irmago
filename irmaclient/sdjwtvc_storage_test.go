@@ -228,7 +228,7 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 	// but with a count of 0
 	infoList = storage.GetCredentialInfoList()
 	require.Len(t, infoList, 1)
-	require.Equal(t, infoList[0].InstanceCount, 0)
+	require.Equal(t, infoList[0].InstanceCount, uint(0))
 }
 
 func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
