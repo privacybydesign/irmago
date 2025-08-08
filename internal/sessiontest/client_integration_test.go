@@ -56,9 +56,9 @@ func testCredentialInstanceCount(t *testing.T) {
 
 	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
 
-	numInstances := 10
+	numInstances := uint(10)
 
-	require.Equal(t, uint(numInstances), *cred.InstanceCount)
+	require.Equal(t, numInstances, *cred.InstanceCount)
 
 	for i := range numInstances {
 		discloseOverOpenID4VP(t, client)
@@ -70,7 +70,7 @@ func testCredentialInstanceCount(t *testing.T) {
 		require.Len(t, creds, 2)
 
 		cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
-		require.Equal(t, numInstances-1-i, cred.InstanceCount)
+		require.Equal(t, numInstances-1-i, *cred.InstanceCount)
 	}
 }
 
