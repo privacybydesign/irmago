@@ -58,7 +58,7 @@ func testCredentialInstanceCount(t *testing.T) {
 
 	numInstances := 10
 
-	require.Equal(t, numInstances, cred.InstanceCount)
+	require.Equal(t, uint(numInstances), *cred.InstanceCount)
 
 	for i := range numInstances {
 		discloseOverOpenID4VP(t, client)
