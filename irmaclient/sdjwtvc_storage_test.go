@@ -73,7 +73,7 @@ func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {
 	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
 
 	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
-	require.Equal(t, creds[0].Metadata.InstanceCount, 0)
+	require.Equal(t, creds[0].Metadata.InstanceCount, uint(0))
 }
 
 func testRemovingInstanceReturnsCorrectHolderKeys(t *testing.T, storage SdJwtVcStorage) {
