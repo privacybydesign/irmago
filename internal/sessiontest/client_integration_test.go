@@ -39,7 +39,7 @@ func TestEudiClient(t *testing.T) {
 }
 
 func testCredentialInstanceCount(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
