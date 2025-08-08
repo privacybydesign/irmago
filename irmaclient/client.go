@@ -27,7 +27,6 @@ type Client struct {
 func New(
 	storagePath string,
 	irmaConfigurationPath string,
-	eudiConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
 	aesKey [32]byte,
@@ -36,6 +35,12 @@ func New(
 		return nil, err
 	}
 	if err := common.AssertPathExists(irmaConfigurationPath); err != nil {
+		return nil, err
+	}
+
+	eudiConfigurationPath := filepath.Join(storagePath, "eudi_configuration")
+
+	if err := common.EnsureDirectoryExists(eudiConfigurationPath); err != nil {
 		return nil, err
 	}
 

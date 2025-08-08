@@ -697,14 +697,13 @@ func createClient(t *testing.T) *irmaclient.Client {
 	storageFolder := test.CreateTestStorage(t)
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
-	eudiConfigurationPath := filepath.Join(storagePath, "eudi_configuration")
 
 	// Copy files to storage folder
 	_ = common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration"))
 	_ = common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration"))
 
 	clientHandler := irmaclient.NewMockClientHandler()
-	client, err := irmaclient.New(storagePath, irmaConfigurationPath, eudiConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
+	client, err := irmaclient.New(storagePath, irmaConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
 
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
