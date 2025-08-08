@@ -176,36 +176,8 @@ func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash stri
 
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	return nil
 
-	// delete the whole credential + info bucket if there are no more sdjwtvc instances left
-	// return s.db.Update(func(tx *bbolt.Tx) error {
-	// 	sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
-	// 	if sdjwtBucket == nil {
-	// 		return nil
-	// 	}
-	//
-	// 	credBucket := sdjwtBucket.Bucket([]byte(hash))
-	// 	if credBucket == nil {
-	// 		return fmt.Errorf("no credential bucket found for %s", string(hash))
-	// 	}
-	//
-	// 	credentialsBucket := credBucket.Bucket([]byte(credentialsKey))
-	// 	if credentialsBucket == nil {
-	// 		return fmt.Errorf("no credential instances found for %s", string(hash))
-	// 	}
-	//
-	// 	// if there are no more sdjwtvc instances anymore
-	// 	if credentialsBucket.Stats().KeyN == 0 {
-	// 		// delete the bucket
-	// 		return sdjwtBucket.DeleteBucket([]byte(hash))
-	// 	}
-	//
-	// 	return nil
-	// })
+	return err
 }
 
 func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtMetadata, credentials []sdjwtvc.SdJwtVc) error {
