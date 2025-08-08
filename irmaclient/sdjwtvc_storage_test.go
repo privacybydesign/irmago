@@ -61,14 +61,14 @@ func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {
 	creds := storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
 
 	require.Len(t, creds, 1)
-	require.Equal(t, creds[0].Metadata.InstanceCount, 2)
+	require.Equal(t, creds[0].Metadata.InstanceCount, uint(2))
 
 	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
 
 	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
 
 	require.Len(t, creds, 1)
-	require.Equal(t, creds[0].Metadata.InstanceCount, 1)
+	require.Equal(t, creds[0].Metadata.InstanceCount, uint(1))
 
 	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
 

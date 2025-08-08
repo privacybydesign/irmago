@@ -56,20 +56,15 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 
 	permissionRequest := handler.AwaitPermissionRequest()
 
+	email, err := permissionRequest.Candidates[0][0].Choose()
+	require.NoError(t, err)
+
+	phone, err := permissionRequest.Candidates[1][0].Choose()
+	require.NoError(t, err)
+
 	choice := &irma.DisclosureChoice{
 		Attributes: [][]*irma.AttributeIdentifier{
-			{
-				&irma.AttributeIdentifier{
-					Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
-					CredentialHash: "2gLLz0ZpYXXW6-I1jZ3wBEggQ5eR7KKbdIvJLm5O8y8",
-				},
-			},
-			{
-				&irma.AttributeIdentifier{
-					Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
-					CredentialHash: "igACXd9kCRN7ypJ8iUS2c3UQ62S-Opjz0LCariGhQ_w",
-				},
-			},
+			email, phone,
 		},
 	}
 	proceed := true
