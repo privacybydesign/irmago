@@ -4,13 +4,12 @@ import (
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
 )
 
 func TestLogging(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	logs, err := client.LoadNewestLogs(100)
 	oldLogLength := len(logs)

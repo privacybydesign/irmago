@@ -15,6 +15,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
@@ -152,7 +153,7 @@ func CreateX509VerifyOptionsFromMultiplePemChains(pemChains [][]byte) (*x509.Ver
 	intermediatePool := x509.NewCertPool()
 
 	for i, pemChainData := range pemChains {
-		certs, err := ParsePemCertificateChain(pemChainData)
+		certs, err := eudi.ParsePemCertificateChain(pemChainData)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse cert chain %d: %w", i, err)
 		}
@@ -180,7 +181,7 @@ func CreateX509VerifyOptionsFromMultiplePemChains(pemChains [][]byte) (*x509.Ver
 // CreateX509VerifyOptionsFromCertChain creates x509.VerifyOptions that can be added
 // to the `VerificationContext` as the trusted certificate chain.
 func CreateX509VerifyOptionsFromCertChain(pemChainData []byte) (*x509.VerifyOptions, error) {
-	certs, err := ParsePemCertificateChain(pemChainData)
+	certs, err := eudi.ParsePemCertificateChain(pemChainData)
 	if err != nil {
 		return nil, err
 	}

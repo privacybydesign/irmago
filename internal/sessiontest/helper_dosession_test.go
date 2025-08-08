@@ -11,7 +11,6 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
@@ -284,9 +283,8 @@ func doSession(
 	options ...option,
 ) *requestorSessionResult {
 	if client == nil {
-		var handler *TestClientHandler
-		client, handler = parseStorage(t, options...)
-		defer test.ClearTestStorage(t, client, handler.storage)
+		client, _ = parseStorage(t, options...)
+		defer client.Close()
 	}
 
 	opts := processOptions(options...)
@@ -353,8 +351,7 @@ func doSession(
 func doChainedSessions(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
 	defer client.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
@@ -388,8 +385,7 @@ func doChainedSessions(
 func doUnauthorizedChainedSession(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
 	defer client.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
@@ -426,8 +422,8 @@ func doUnauthorizedChainedSession(
 func doNonRequestorChainedSessions(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 
 	require.IsType(t, IrmaServerConfiguration, conf)
 	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())

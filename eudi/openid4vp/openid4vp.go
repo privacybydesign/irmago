@@ -125,7 +125,7 @@ type AuthorizationRequest struct {
 	DcqlQuery dcql.DcqlQuery `json:"dcql_query"`
 	IssuedAt  int64          `json:"iat"`
 
-	// REQUIRED: a case-sensitie string representing a value to securely bind verifiable
+	// REQUIRED: a case-sensitive string representing a value to securely bind verifiable
 	// presentations provided by the wallet to the particular transaction.
 	// The verifier MUST create a fresh, cryptographically random for every Authorization Request.
 	// MUST only contain ASCII URL safe characters.

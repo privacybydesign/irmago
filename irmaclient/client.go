@@ -9,6 +9,7 @@ import (
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/testdata"
@@ -25,6 +26,7 @@ type Client struct {
 func New(
 	storagePath string,
 	irmaConfigurationPath string,
+	eudiConfigurationPath string,
 	handler ClientHandler,
 	signer Signer,
 	aesKey [32]byte,
@@ -36,7 +38,8 @@ func New(
 		return nil, err
 	}
 
-	conf, err := irma.NewConfiguration(
+	// Load IRMA + EUDI configuration
+	irmaConf, err := irma.NewConfiguration(
 		filepath.Join(storagePath, "irma_configuration"),
 		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
 	)
@@ -44,7 +47,13 @@ func New(
 		return nil, fmt.Errorf("instantiating configuration failed: %v", err)
 	}
 
-	storage := NewIrmaStorage(storagePath, conf, aesKey)
+	eudiConf, err := eudi.NewConfiguration(eudiConfigurationPath)
+	if err != nil {
+		return nil, fmt.Errorf("instantiating eudi configuration failed: %v", err)
+	}
+
+	// Initialize DB storage
+	storage := NewIrmaStorage(storagePath, irmaConf, aesKey)
 
 	// Ensure storage path exists, and populate it with necessary files
 	if err = storage.Open(); err != nil {
@@ -54,10 +63,10 @@ func New(
 	keybindingStorage := NewBboltKeybindingStorage(storage.db, aesKey)
 	keyBinder := sdjwtvc.NewDefaultKeyBinder(keybindingStorage)
 
-	verifierValidator := NewRequestorSchemeVerifierValidator()
-
+	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers)
 	sdjwtvcStorage := NewBboltSdJwtVcStorage(storage.db, aesKey)
-	openid4vpClient, err := NewOpenID4VPClient(sdjwtvcStorage, verifierValidator, keyBinder, storage)
+
+	openid4vpClient, err := NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, keyBinder, storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -75,7 +84,7 @@ func New(
 		X509VerificationOptions: x509Options,
 	}
 
-	irmaClient, err := NewIrmaClient(conf, handler, signer, storage, context, sdjwtvcStorage, keyBinder)
+	irmaClient, err := NewIrmaClient(irmaConf, handler, signer, storage, context, sdjwtvcStorage, keyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
