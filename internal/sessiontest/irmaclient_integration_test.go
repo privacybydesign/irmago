@@ -63,8 +63,7 @@ func TestClientIntegration(t *testing.T) {
 	// Test with keyshare server.
 	t.Run("KeyshareSessions", func(t *testing.T) {
 		storage := test.CreateTestStorage(t)
-		client, handler := parseExistingStorage(t, storage)
-		defer test.ClearTestStorage(t, client, handler.storage)
+		client, _ := parseExistingStorage(t, storage)
 
 		// Fresh irmaclient storage was used, so we need to do some initialization.
 		client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")

@@ -90,6 +90,7 @@ func testRemovingInstanceReturnsCorrectHolderKeys(t *testing.T, storage SdJwtVcS
 
 func testCompatibilityWithOldStorage(t *testing.T) {
 	irmaClient, _ := parseStorage(t)
+	defer irmaClient.Close()
 	sdjwtStorage := NewBboltSdJwtVcStorage(irmaClient.storage.db, irmaClient.storage.aesKey)
 	list := sdjwtStorage.GetCredentialInfoList()
 	require.Empty(t, list)

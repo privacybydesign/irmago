@@ -34,7 +34,6 @@ func TestMain(m *testing.M) {
 	retval := m.Run()
 
 	test.StopSchemeManagerHttpServer()
-	test.ClearAllTestStorage()
 
 	os.Exit(retval)
 }
@@ -162,8 +161,8 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *IrmaClient) {
 }
 
 func TestStorageDeserialization(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
@@ -174,8 +173,8 @@ func TestStorageDeserialization(t *testing.T) {
 // requested by the verifier, calculates a list of candidate attributes contained by the client that would
 // satisfy the attribute disjunction.
 func TestCandidates(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	// client contains one instance of the studentCard credential, whose studentID attribute is 456.
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -272,8 +271,8 @@ func TestCandidates(t *testing.T) {
 }
 
 func TestCandidateConjunctionOrder(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	j := `[
 	  [
@@ -306,7 +305,7 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 
 func TestCredentialRemoval(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	id := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	id2 := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
@@ -340,8 +339,8 @@ func TestCredentialRemoval(t *testing.T) {
 }
 
 func TestRemoveSchemes(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	// Unset configuration assets to enable removal of schemes
 	var err error
@@ -386,7 +385,7 @@ func TestRemoveSchemes(t *testing.T) {
 
 func TestWrongSchemeManager(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
@@ -405,8 +404,8 @@ func TestWrongSchemeManager(t *testing.T) {
 }
 
 func TestCredentialInfoListNewAttribute(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -431,15 +430,14 @@ func TestCredentialInfoListNewAttribute(t *testing.T) {
 
 func TestFreshStorage(t *testing.T) {
 	storage := test.CreateTestStorage(t)
-	client, handler := parseExistingStorage(t, storage)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseExistingStorage(t, storage)
 	defer client.Close()
 	require.NotNil(t, client)
 }
 
 func TestKeyshareEnrollmentRemoval(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	err := client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
@@ -454,8 +452,7 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 }
 
 func TestUpdatingStorage(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
 	defer client.Close()
 	require.NotNil(t, client)
 
@@ -466,8 +463,7 @@ func TestUpdatingStorage(t *testing.T) {
 }
 
 func TestRemoveStorage(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
 	defer client.Close()
 
 	// Check whether we have logs in storage to know whether the logs bucket is there

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -80,13 +81,16 @@ func getCredWithFormat(creds []*irma.CredentialInfo, format irmaclient.Credentia
 }
 
 func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
-	irmaServer := StartIrmaServer(t, IrmaServerConfiguration())
+	conf := IrmaServerConfigurationWithTempStorage(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	performCombinedIssuanceAndDisclosureSession(t, client, irmaServer)
 
 	logs, err := client.LoadNewestLogs(20)
@@ -157,13 +161,16 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, client *irmaclien
 }
 
 func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	performCompletelyOptionalDisclosure(t, client, irmaServer)
 
 	logs, err := client.LoadNewestLogs(10)
@@ -202,13 +209,15 @@ func performCompletelyOptionalDisclosure(t *testing.T, client *irmaclient.Client
 }
 
 func testRemoveStorageWithOnlyIdemixCredentials(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
 
 	issueIdemixOnlyToClient(t, client, irmaServer)
 
@@ -216,28 +225,33 @@ func testRemoveStorageWithOnlyIdemixCredentials(t *testing.T) {
 }
 
 func testRemoveStorageEmptyClient(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	require.NoError(t, client.RemoveStorage())
 }
 
 func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 
 	credentials := client.CredentialInfoList()
-
 	emailCreds := collectCredentialsWithId(credentials, "test.test.email")
 
 	require.NoError(t, client.RemoveCredentialsByHash(hashByFormat(emailCreds)))
@@ -249,13 +263,15 @@ func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
 }
 
 func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
-	irmaServer := StartIrmaServer(t, IrmaServerConfiguration())
+	conf := IrmaServerConfigurationWithTempStorage(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
 
 	issueIdemixOnlyToClient(t, client, irmaServer)
 
@@ -297,13 +313,15 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log irmaclient.LogInfo)
 }
 
 func testIrmaDisclosureSessionLogs(t *testing.T) {
-	irmaServer := StartIrmaServer(t, IrmaServerConfiguration())
+	conf := IrmaServerConfigurationWithTempStorage(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
 
 	issueIdemixOnlyToClient(t, client, irmaServer)
 	performIrmaDisclosureSession(t, client, irmaServer)
@@ -316,13 +334,15 @@ func testIrmaDisclosureSessionLogs(t *testing.T) {
 }
 
 func testIrmaSignatureSessionLogs(t *testing.T) {
-	irmaServer := StartIrmaServer(t, IrmaServerConfiguration())
+	conf := IrmaServerConfigurationWithTempStorage(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
 
 	issueIdemixOnlyToClient(t, client, irmaServer)
 	performIrmaSignatureSession(t, client, irmaServer)
@@ -364,13 +384,16 @@ func requireSignatureLog(t *testing.T, log irmaclient.LogInfo) {
 }
 
 func testEudiSessionLogs(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	logs, err := client.LoadNewestLogs(100)
 
 	require.NoError(t, err)
@@ -439,13 +462,16 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log irmaclient.LogInfo) {
 }
 
 func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 
 	credentialInfoList := client.CredentialInfoList()
@@ -461,13 +487,16 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 }
 
 func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 
 	credentialInfoList := client.CredentialInfoList()
@@ -478,24 +507,30 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 }
 
 func testIdemixAndSdJwtCombinedIssuance(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 }
 
 func testDiscloseOverOpenID4VP(t *testing.T) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled())
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
 
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 	discloseOverOpenID4VP(t, client)
 }
@@ -661,10 +696,15 @@ func createClient(t *testing.T) *irmaclient.Client {
 	path := test.FindTestdataFolder(t)
 	storageFolder := test.CreateTestStorage(t)
 	storagePath := filepath.Join(storageFolder, "client")
-	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
+	eudiConfigurationPath := filepath.Join(storagePath, "eudi_configuration")
+
+	// Copy files to storage folder
+	_ = common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration"))
+	_ = common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration"))
 
 	clientHandler := irmaclient.NewMockClientHandler()
-	client, err := irmaclient.New(storagePath, irmaConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
+	client, err := irmaclient.New(storagePath, irmaConfigurationPath, eudiConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
 
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
@@ -705,8 +745,8 @@ func createAuthRequestRequest() string {
 	)
 }
 
-func irmaServerConfWithSdJwtEnabled() *server.Configuration {
-	conf := IrmaServerConfiguration()
+func irmaServerConfWithSdJwtEnabled(t *testing.T) *server.Configuration {
+	conf := IrmaServerConfigurationWithTempStorage(t)
 	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
 		Issuer:                 "https://openid4vc.staging.yivi.app",
 		IssuerCertificateChain: string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
@@ -731,4 +771,19 @@ func hashByFormat(credentials []*irma.CredentialInfo) map[irmaclient.CredentialF
 		result[irmaclient.CredentialFormat(cred.CredentialFormat)] = cred.Hash
 	}
 	return result
+}
+
+func IrmaServerConfigurationWithTempStorage(t *testing.T) *server.Configuration {
+	storageFolder := test.SetupTestStorage(t)
+	testdataFolder := test.FindTestdataFolder(t)
+
+	// Copy files to storage folder
+	_ = common.CopyDirectory(filepath.Join(testdataFolder, "irma_configuration"), filepath.Join(storageFolder, "irma_configuration"))
+	_ = common.CopyDirectory(filepath.Join(testdataFolder, "privatekeys"), filepath.Join(storageFolder, "privatekeys"))
+
+	conf := IrmaServerConfiguration()
+	conf.SchemesPath = filepath.Join(storageFolder, "irma_configuration")
+	conf.IssuerPrivateKeysPath = filepath.Join(storageFolder, "privatekeys")
+
+	return conf
 }
