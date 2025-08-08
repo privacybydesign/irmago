@@ -806,7 +806,7 @@ func (ir *IssuanceRequest) GetCredentialInfoList(
 		for _, credreq := range ir.Credentials {
 			info, err := credreq.Info(conf, GetMetadataVersion(version), issuedAt)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get info from credential: %v", err)
+				return nil, err
 			}
 
 			// in this case we'll assume the server is capable to build this
