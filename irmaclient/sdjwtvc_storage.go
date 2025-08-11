@@ -24,14 +24,6 @@ type SdJwtMetadata struct {
 	CredentialType string         // corresponds to 'vct' field in jwt
 }
 
-type sdjwtStoredMetadata struct {
-	SignedOn       irma.Timestamp // Unix timestamp
-	Expires        irma.Timestamp // Unix timestamp
-	Attributes     map[string]any // Human-readable rendered attributes
-	Hash           string         // SHA256 hash over the attributes and credential type
-	CredentialType string         // corresponds to 'vct' field in jwt
-}
-
 type SdJwtVcStorage interface {
 	// RemoveAll should remove all instances for the credential with the given hash.
 	RemoveAll() error
@@ -367,7 +359,7 @@ func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtM
 		return nil, fmt.Errorf("failed to decrypt: %v", err)
 	}
 
-	var info sdjwtStoredMetadata
+	var info SdJwtMetadata
 	err = json.Unmarshal(decrypted, &info)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal: %v (%v)", err, string(decrypted))
