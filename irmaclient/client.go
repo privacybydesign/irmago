@@ -141,7 +141,7 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.irmaClient.EnrolledSchemeManagers()
 }
 
-func sdjwtMetadataToIrmaCredentialInfo(metadata SdJwtMetadata) *irma.CredentialInfo {
+func sdjwtBatchMetadataToIrmaCredentialInfo(metadata SdJwtVcBatchMetadata) *irma.CredentialInfo {
 	credIdSegments := strings.Split(metadata.CredentialType, ".")
 
 	attrs := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
@@ -163,7 +163,7 @@ func sdjwtMetadataToIrmaCredentialInfo(metadata SdJwtMetadata) *irma.CredentialI
 		Revoked:             false,
 		RevocationSupported: false,
 		CredentialFormat:    string(Format_SdJwtVc),
-		InstanceCount:       &metadata.InstanceCount,
+		InstanceCount:       &metadata.RemainingInstanceCount,
 	}
 }
 
@@ -174,7 +174,7 @@ func (client *Client) CredentialInfoList() irma.CredentialInfoList {
 	result := irma.CredentialInfoList{}
 
 	for _, sdjwt := range sdjwtvcs {
-		result = append(result, sdjwtMetadataToIrmaCredentialInfo(sdjwt))
+		result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwt))
 	}
 
 	result = append(result, idemix...)

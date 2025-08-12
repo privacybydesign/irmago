@@ -1096,16 +1096,6 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 
 // ===========================================================================================
 
-func createSdJwtAndInfo(t *testing.T, keyBinder sdjwtvc.KeyBinder, credentialId string, attributes map[string]string) (sdjwtvc.SdJwtVc, *SdJwtMetadata) {
-	sdjwt, err := createTestSdJwtVc(keyBinder, credentialId, "https://openid4vc.staging.yivi.app", attributes)
-	require.NoError(t, err)
-
-	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwt, sdjwtvc.CreateDefaultVerificationContext())
-	require.NoError(t, err)
-
-	return sdjwt, info
-}
-
 func sortCon(con DisclosureCandidates) DisclosureCandidates {
 	slices.SortStableFunc(con, func(a, b *DisclosureCandidate) int {
 		return strings.Compare(a.AttributeIdentifier.Type.String(), b.AttributeIdentifier.Type.String())
@@ -1164,10 +1154,10 @@ func parseTestQuery(t *testing.T, query string) (result dcql.DcqlQuery) {
 	return
 }
 
-func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claims map[string]string) *SdJwtMetadata {
+func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claims map[string]string) SdJwtVcBatchMetadata {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	sdjwt, info := createSdJwtAndInfo(t, keyBinder, vct, claims)
-	err := storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{sdjwt})
+	info, sdjwts := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, vct, "https://openid4vc.staging.yivi.app", claims, 1)
+	err := storage.StoreCredential(info, sdjwts)
 	require.NoError(t, err)
 
 	return info

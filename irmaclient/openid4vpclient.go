@@ -288,7 +288,7 @@ func (client *OpenID4VPClient) getCredentialsForChoices(
 	return queryResponses, credentialInfos, nil
 }
 
-func createSdJwtCredendtialLog(info SdJwtMetadata, disclosures []*irma.AttributeIdentifier) CredentialLog {
+func createSdJwtCredendtialLog(info SdJwtVcBatchMetadata, disclosures []*irma.AttributeIdentifier) CredentialLog {
 	result := CredentialLog{
 		CredentialType: info.CredentialType,
 		Formats:        []CredentialFormat{Format_SdJwtVc},
@@ -469,7 +469,7 @@ type ClaimMatch struct {
 	Value     irma.TranslatedString
 }
 
-func getClaimMatches(info SdJwtMetadata, claims []dcql.Claim) (map[string]ClaimMatch, error) {
+func getClaimMatches(info SdJwtVcBatchMetadata, claims []dcql.Claim) (map[string]ClaimMatch, error) {
 	result := make(map[string]ClaimMatch)
 	for _, claim := range claims {
 		attributeValue, ok := info.Attributes[claim.Path[0]]

@@ -7,16 +7,26 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/testdata"
 	"go.etcd.io/bbolt"
 )
 
 // ========================================================================
 
-type SdJwtMetadata struct {
-	InstanceCount  uint           // number of instances left
+// SdJwtVcBatchMetadata corresponds to a batch of SdJwtVcs that are the same in everything
+// except for the keybinding pub keys and disclosure salts/hashes
+type SdJwtVcBatchMetadata struct {
+	BatchSize              uint           // number of instances originally issued
+	RemainingInstanceCount uint           // number of instances left
+	SignedOn               irma.Timestamp // Unix timestamp
+	Expires                irma.Timestamp // Unix timestamp
+	Attributes             map[string]any // Human-readable rendered attributes
+	Hash                   string         // SHA256 hash over the attributes and credential type
+	CredentialType         string         // corresponds to 'vct' field in jwt
+}
+
+// SdJwtVcMetadata corresponds to a single instance of and SdJwtVc
+type SdJwtVcMetadata struct {
 	SignedOn       irma.Timestamp // Unix timestamp
 	Expires        irma.Timestamp // Unix timestamp
 	Attributes     map[string]any // Human-readable rendered attributes
@@ -37,17 +47,17 @@ type SdJwtVcStorage interface {
 	RemoveLastUsedInstanceOfCredentialByHash(hash string) error
 
 	// StoreCredential assumes each of the provided sdjwts to be linked to the credential info
-	StoreCredential(info SdJwtMetadata, credentials []sdjwtvc.SdJwtVc) error
+	StoreCredential(info SdJwtVcBatchMetadata, credentials []sdjwtvc.SdJwtVc) error
 
 	// GetCredentialsForId gets all instances for a credential id from the scheme
 	GetCredentialsForId(id string) []SdJwtVcAndInfo
 	GetCredentialByHash(hash string) (*SdJwtVcAndInfo, error)
-	GetCredentialInfoList() []SdJwtMetadata
+	GetCredentialInfoList() []SdJwtVcBatchMetadata
 }
 
 type SdJwtVcAndInfo struct {
 	SdJwtVc  sdjwtvc.SdJwtVc
-	Metadata SdJwtMetadata
+	Metadata SdJwtVcBatchMetadata
 }
 
 // ========================================================================
@@ -172,7 +182,7 @@ func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash stri
 	return err
 }
 
-func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtMetadata, credentials []sdjwtvc.SdJwtVc) error {
+func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtVcBatchMetadata, credentials []sdjwtvc.SdJwtVc) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket, err := tx.CreateBucketIfNotExists([]byte(sdjwtvcBucketName))
 
@@ -285,8 +295,8 @@ func (s *BboltSdJwtVcStorage) GetCredentialByHash(hash string) (result *SdJwtVcA
 	return result, err
 }
 
-func (s *BboltSdJwtVcStorage) GetCredentialInfoList() []SdJwtMetadata {
-	result := []SdJwtMetadata{}
+func (s *BboltSdJwtVcStorage) GetCredentialInfoList() []SdJwtVcBatchMetadata {
+	result := []SdJwtVcBatchMetadata{}
 	s.db.View(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
 
@@ -333,7 +343,7 @@ func itob(v uint64) []byte {
 	return b
 }
 
-func marshalAndEncryptInfo(info SdJwtMetadata, aesKey [32]byte) ([]byte, error) {
+func marshalAndEncryptInfo(info SdJwtVcBatchMetadata, aesKey [32]byte) ([]byte, error) {
 	marshalled, err := json.Marshal(info)
 	if err != nil {
 		return nil, err
@@ -358,14 +368,14 @@ func getFirstCredentialInstanceFromBucket(bucket *bbolt.Bucket, aesKey [32]byte)
 	return sdjwtvc.SdJwtVc(decrypted), nil
 }
 
-func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtMetadata, error) {
+func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtVcBatchMetadata, error) {
 	encrypted := bucket.Get([]byte(infoKey))
 	decrypted, err := decrypt(encrypted, aesKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %v", err)
 	}
 
-	var info SdJwtMetadata
+	var info SdJwtVcBatchMetadata
 	err = json.Unmarshal(decrypted, &info)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal: %v (%v)", err, string(decrypted))
@@ -377,13 +387,14 @@ func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtM
 		return nil, fmt.Errorf("failed to get instance count: %v", err)
 	}
 
-	return &SdJwtMetadata{
-		InstanceCount:  instanceCount,
-		SignedOn:       info.SignedOn,
-		Expires:        info.Expires,
-		Attributes:     info.Attributes,
-		Hash:           info.Hash,
-		CredentialType: info.CredentialType,
+	return &SdJwtVcBatchMetadata{
+		RemainingInstanceCount: instanceCount,
+		BatchSize:              info.BatchSize,
+		SignedOn:               info.SignedOn,
+		Expires:                info.Expires,
+		Attributes:             info.Attributes,
+		Hash:                   info.Hash,
+		CredentialType:         info.CredentialType,
 	}, nil
 }
 
@@ -392,7 +403,7 @@ func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtM
 type sdjwtvcStorageEntry struct {
 	// A list of strings containing sdjwtvc's (with all disclosures & without kbjwt)
 	rawRedentials []sdjwtvc.SdJwtVc
-	info          SdJwtMetadata
+	info          SdJwtVcBatchMetadata
 }
 
 type InMemorySdJwtVcStorage struct {
@@ -409,35 +420,6 @@ func (s *InMemorySdJwtVcStorage) GetCredentialByHash(hash string) (*SdJwtVcAndIn
 		}
 	}
 	return nil, fmt.Errorf("no entry found for hash '%s'", hash)
-}
-
-func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T) (sdjwtvc.SdJwtVc, error) {
-	contents, err := sdjwtvc.MultipleNewDisclosureContents(claims)
-	if err != nil {
-		return "", err
-	}
-
-	certChain, err := eudi.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	if err != nil {
-		return "", err
-	}
-
-	holderKey, err := keyBinder.CreateKeyPairs(1)
-	if err != nil {
-		return "", fmt.Errorf("failed to create holder keys: %v", err)
-	}
-
-	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
-	return sdjwtvc.NewSdJwtVcBuilder().
-		WithDisclosures(contents).
-		WithHolderKey(holderKey[0]).
-		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
-		WithVerifiableCredentialType(vct).
-		WithIssuerUrl(issuerUrl).
-		WithIssuedAt(sdjwtvc.NewSystemClock().Now()).
-		WithExpiresAt(sdjwtvc.NewSystemClock().Now() + 10000).
-		WithIssuerCertificateChain(certChain).
-		Build(signer)
 }
 
 func NewInMemorySdJwtVcStorage() (*InMemorySdJwtVcStorage, error) {
@@ -459,8 +441,8 @@ func (s *InMemorySdJwtVcStorage) RemoveCredentialByHash(hash string) ([]jwk.Key,
 	return nil, nil
 }
 
-func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() []SdJwtMetadata {
-	result := []SdJwtMetadata{}
+func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() []SdJwtVcBatchMetadata {
+	result := []SdJwtVcBatchMetadata{}
 
 	for _, entry := range s.entries {
 		result = append(result, entry.info)
@@ -483,43 +465,10 @@ func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []SdJwtVcAndInfo
 	return result
 }
 
-func (s *InMemorySdJwtVcStorage) StoreCredential(info SdJwtMetadata, credentials []sdjwtvc.SdJwtVc) error {
+func (s *InMemorySdJwtVcStorage) StoreCredential(info SdJwtVcBatchMetadata, credentials []sdjwtvc.SdJwtVc) error {
 	s.entries = append(s.entries, sdjwtvcStorageEntry{
 		info:          info,
 		rawRedentials: credentials,
 	})
 	return nil
-}
-
-func addTestCredentialsToStorage(storage SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
-	// ignoring all errors here, since it's not production code anyway
-	mobilephoneEntry, _ := createTestSdJwtVc(keyBinder, "pbdf.sidn-pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
-		map[string]any{
-			"mobilenumber": "+31612345678",
-		},
-	)
-
-	info, _, _ := createCredentialInfoAndVerifiedSdJwtVc(mobilephoneEntry, sdjwtvc.CreateDefaultVerificationContext())
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{mobilephoneEntry})
-
-	emailEntry, _ := createTestSdJwtVc(keyBinder, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "test@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry, sdjwtvc.CreateDefaultVerificationContext())
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry})
-
-	emailEntry2, _ := createTestSdJwtVc(keyBinder, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "yivi@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	emailEntry3, _ := createTestSdJwtVc(keyBinder, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
-		"email":  "yivi@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	info, _, _ = createCredentialInfoAndVerifiedSdJwtVc(emailEntry2, sdjwtvc.CreateDefaultVerificationContext())
-	storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{emailEntry2, emailEntry3})
 }

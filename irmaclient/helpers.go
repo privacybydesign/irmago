@@ -10,7 +10,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 )
 
-func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationContext sdjwtvc.VerificationContext) (*SdJwtMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
+func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationContext sdjwtvc.VerificationContext) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
 	decoded, err := sdjwtvc.ParseAndVerifySdJwtVc(verificationContext, cred)
 
 	if err != nil {
@@ -40,8 +40,7 @@ func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationCo
 		)
 	}
 
-	info := SdJwtMetadata{
-		InstanceCount:  1,
+	info := SdJwtVcMetadata{
 		Hash:           hash,
 		CredentialType: decoded.IssuerSignedJwtPayload.VerifiableCredentialType,
 		SignedOn: irma.Timestamp(
