@@ -148,36 +148,6 @@ func SplitSdJwtVc(sdjwtvc SdJwtVc) (IssuerSignedJwt, []EncodedDisclosure, *KeyBi
 	return issuer, encdiscs, kbJwt, nil
 }
 
-func CreateX509VerifyOptionsFromMultiplePemChains(pemChains [][]byte) (*x509.VerifyOptions, error) {
-	rootPool := x509.NewCertPool()
-	intermediatePool := x509.NewCertPool()
-
-	for i, pemChainData := range pemChains {
-		certs, err := eudi.ParsePemCertificateChain(pemChainData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse cert chain %d: %w", i, err)
-		}
-
-		if len(certs) == 0 {
-			return nil, fmt.Errorf("cert chain %d is empty", i)
-		}
-
-		// First cert is assumed to be the root (or self-signed root CA)
-		rootPool.AddCert(certs[0])
-
-		// Remaining certs are intermediates
-		for _, cert := range certs[1:] {
-			intermediatePool.AddCert(cert)
-		}
-	}
-
-	return &x509.VerifyOptions{
-		Roots:         rootPool,
-		Intermediates: intermediatePool,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-	}, nil
-}
-
 // CreateX509VerifyOptionsFromCertChain creates x509.VerifyOptions that can be added
 // to the `VerificationContext` as the trusted certificate chain.
 func CreateX509VerifyOptionsFromCertChain(pemChainData []byte) (*x509.VerifyOptions, error) {

@@ -106,7 +106,7 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 		certVerifyOpts := x509.VerifyOptions{
 			Roots:         v.model.GetRootCerts(),
 			Intermediates: v.model.GetIntermediateCerts(),
-			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 			DNSName:       hostname,
 		}
 
