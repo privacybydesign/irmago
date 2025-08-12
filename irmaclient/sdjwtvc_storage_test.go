@@ -18,6 +18,11 @@ func TestSdJwtVcStorage(t *testing.T) {
 	RunTestWithTempBboltSdJwtVcStorage(t, "num instances left", testNumInstanceLeft)
 
 	RunTestWithTempBboltSdJwtVcStorage(t,
+		"storing same attributes replaces instances",
+		testStoringSameAttributesReplacesInstances,
+	)
+
+	RunTestWithTempBboltSdJwtVcStorage(t,
 		"get credential info list from empty storage",
 		testGetCredentialInfoListFromEmptyStorage,
 	)
@@ -49,6 +54,31 @@ func TestSdJwtVcStorage(t *testing.T) {
 		"removing instance returns correct holder keys",
 		testRemovingInstanceReturnsCorrectHolderKeys,
 	)
+}
+
+func testStoringSameAttributesReplacesInstances(t *testing.T, storage SdJwtVcStorage) {
+	instanceCount := 10
+	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, uint(instanceCount))
+
+	require.NoError(t, storage.StoreCredential(info, sdjwts))
+
+	creds := storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+
+	require.Len(t, creds, 1)
+	require.Equal(t, 10, int(creds[0].Metadata.InstanceCount))
+
+	info, sdjwts = createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, uint(instanceCount))
+
+	require.NoError(t, storage.StoreCredential(info, sdjwts))
+
+	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+
+	require.Len(t, creds, 1)
+	require.Equal(t, 10, int(creds[0].Metadata.InstanceCount))
 }
 
 func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {

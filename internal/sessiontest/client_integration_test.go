@@ -18,6 +18,7 @@ import (
 )
 
 func TestEudiClient(t *testing.T) {
+	t.Run("double sdjwt issuance replaces instances", testDoubleSdJwtIssuanceReplacesInstances)
 	t.Run("credential instance count", testCredentialInstanceCount)
 	t.Run("test logs for combined issuance and disclosure", testLogsForCombinedIssuanceAndDisclosure)
 
@@ -36,6 +37,39 @@ func TestEudiClient(t *testing.T) {
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	info := client.CredentialInfoList()
+	require.Len(t, info, 3)
+
+	creds := collectCredentialsWithId(info, "test.test.email")
+	require.Len(t, creds, 2)
+
+	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+
+	require.Equal(t, 10, int(*cred.InstanceCount))
+
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	info = client.CredentialInfoList()
+	require.Len(t, info, 3)
+
+	creds = collectCredentialsWithId(info, "test.test.email")
+	require.Len(t, creds, 2)
+
+	cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+
+	require.Equal(t, 10, int(*cred.InstanceCount))
 }
 
 func testCredentialInstanceCount(t *testing.T) {

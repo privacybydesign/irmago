@@ -195,6 +195,12 @@ func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtMetadata, credentials []
 			credBucket.Put([]byte(infoKey), encryptedInfo)
 		}
 
+		if credBucket.Bucket([]byte(credentialsKey)) != nil {
+			if err = credBucket.DeleteBucket([]byte(credentialsKey)); err != nil {
+				return fmt.Errorf("failed to delete bucket: %v", err)
+			}
+		}
+
 		rawCredentialsBucket, err := credBucket.CreateBucketIfNotExists([]byte(credentialsKey))
 		if err != nil {
 			return err
