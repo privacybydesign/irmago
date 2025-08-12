@@ -168,7 +168,7 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata SdJwtVcBatchMetadata) *irma
 }
 
 func (client *Client) CredentialInfoList() irma.CredentialInfoList {
-	sdjwtvcs := client.sdjwtvcStorage.GetCredentialInfoList()
+	sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
 	idemix := client.irmaClient.CredentialInfoList()
 
 	result := irma.CredentialInfoList{}

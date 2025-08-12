@@ -129,12 +129,12 @@ func testCompatibilityWithOldStorage(t *testing.T) {
 	irmaClient, _ := parseStorage(t)
 	defer irmaClient.Close()
 	sdjwtStorage := NewBboltSdJwtVcStorage(irmaClient.storage.db, irmaClient.storage.aesKey)
-	list := sdjwtStorage.GetCredentialInfoList()
+	list := sdjwtStorage.GetCredentialMetdataList()
 	require.Empty(t, list)
 }
 
 func testGetCredentialInfoListFromEmptyStorage(t *testing.T, storage SdJwtVcStorage) {
-	list := storage.GetCredentialInfoList()
+	list := storage.GetCredentialMetdataList()
 	require.Empty(t, list)
 }
 
@@ -152,13 +152,13 @@ func testAddingMultipleInstancesWithSameAttributeSets(t *testing.T, storage SdJw
 	err := storage.StoreCredential(emailInfo1, emailSdJwts1)
 	require.NoError(t, err)
 
-	infoList := storage.GetCredentialInfoList()
+	infoList := storage.GetCredentialMetdataList()
 	require.Equal(t, len(infoList), 1)
 
 	err = storage.StoreCredential(emailInfo2, emailSdJwts2)
 	require.NoError(t, err)
 
-	infoList = storage.GetCredentialInfoList()
+	infoList = storage.GetCredentialMetdataList()
 	require.Equal(t, len(infoList), 1)
 }
 
@@ -178,7 +178,7 @@ func testAddingMultipleAttributePairs(t *testing.T, storage SdJwtVcStorage) {
 	err = storage.StoreCredential(emailInfo2, emailSdJwts2)
 	require.NoError(t, err)
 
-	infoList := storage.GetCredentialInfoList()
+	infoList := storage.GetCredentialMetdataList()
 	require.Equal(t, len(infoList), 2)
 }
 
@@ -196,13 +196,13 @@ func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
 	err = storage.StoreCredential(mobileInfo, mobileSdJwts)
 	require.NoError(t, err)
 
-	infoList := storage.GetCredentialInfoList()
+	infoList := storage.GetCredentialMetdataList()
 	require.Equal(t, len(infoList), 2)
 
 	err = storage.RemoveAll()
 	require.NoError(t, err)
 
-	infoList = storage.GetCredentialInfoList()
+	infoList = storage.GetCredentialMetdataList()
 	require.Empty(t, infoList)
 }
 
@@ -231,7 +231,7 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 	require.NoError(t, err)
 
 	// there should be one credential showing up in the info list
-	infoList := storage.GetCredentialInfoList()
+	infoList := storage.GetCredentialMetdataList()
 	require.Len(t, infoList, 1)
 
 	// first one, it should be available
@@ -259,7 +259,7 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 
 	// the whole credential should still show up in the info list
 	// but with a count of 0
-	infoList = storage.GetCredentialInfoList()
+	infoList = storage.GetCredentialMetdataList()
 	require.Len(t, infoList, 1)
 	require.Equal(t, 0, int(infoList[0].RemainingInstanceCount))
 }
