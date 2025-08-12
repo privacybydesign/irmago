@@ -52,7 +52,7 @@ type SdJwtVcStorage interface {
 	// GetCredentialsForId gets all instances for a credential id from the scheme
 	GetCredentialsForId(id string) []SdJwtVcAndInfo
 	GetCredentialByHash(hash string) (*SdJwtVcAndInfo, error)
-	GetCredentialInfoList() []SdJwtVcBatchMetadata
+	GetCredentialMetdataList() []SdJwtVcBatchMetadata
 }
 
 type SdJwtVcAndInfo struct {
@@ -295,7 +295,7 @@ func (s *BboltSdJwtVcStorage) GetCredentialByHash(hash string) (result *SdJwtVcA
 	return result, err
 }
 
-func (s *BboltSdJwtVcStorage) GetCredentialInfoList() []SdJwtVcBatchMetadata {
+func (s *BboltSdJwtVcStorage) GetCredentialMetdataList() []SdJwtVcBatchMetadata {
 	result := []SdJwtVcBatchMetadata{}
 	s.db.View(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
@@ -387,15 +387,8 @@ func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtV
 		return nil, fmt.Errorf("failed to get instance count: %v", err)
 	}
 
-	return &SdJwtVcBatchMetadata{
-		RemainingInstanceCount: instanceCount,
-		BatchSize:              info.BatchSize,
-		SignedOn:               info.SignedOn,
-		Expires:                info.Expires,
-		Attributes:             info.Attributes,
-		Hash:                   info.Hash,
-		CredentialType:         info.CredentialType,
-	}, nil
+	info.RemainingInstanceCount = instanceCount
+	return &info, nil
 }
 
 // ==================================================================================
@@ -441,7 +434,7 @@ func (s *InMemorySdJwtVcStorage) RemoveCredentialByHash(hash string) ([]jwk.Key,
 	return nil, nil
 }
 
-func (s *InMemorySdJwtVcStorage) GetCredentialInfoList() []SdJwtVcBatchMetadata {
+func (s *InMemorySdJwtVcStorage) GetCredentialMetdataList() []SdJwtVcBatchMetadata {
 	result := []SdJwtVcBatchMetadata{}
 
 	for _, entry := range s.entries {
