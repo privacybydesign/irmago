@@ -1578,7 +1578,10 @@ func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, request
 			CredentialType:         v.credInfo.CredentialType,
 		}
 
-		client.sdJwtVcStorage.StoreCredential(batchInfo, v.sdjwtvcInstances)
+		err := client.sdJwtVcStorage.StoreCredential(batchInfo, v.sdjwtvcInstances)
+		if err != nil {
+			return fmt.Errorf("failed to store sdjwtvc batch: %v", err)
+		}
 	}
 
 	return nil
