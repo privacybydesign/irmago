@@ -168,6 +168,7 @@ func CreateX509VerifyOptionsFromCertChain(pemChainData []byte) (*x509.VerifyOpti
 		Roots:         rootPool,
 		Intermediates: intermediatePool,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		CurrentTime:   time.Now().Add(-5 * time.Minute), // Adjust to account for skew
 	}
 
 	return &certVerifyOpts, nil
