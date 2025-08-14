@@ -52,9 +52,9 @@ func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 
 	values := jsonToMap(json)
 
-	requirePresentWithValue(t, values, Key_Subject, "subject")
-	requirePresentWithValue(t, values, Key_VerifiableCredentialType, "pbdf.sidn-pbdf.email")
-	requirePresentWithValue(t, values, Key_Issuer, "https://example.com")
+	require.Equal(t, values[Key_Subject], "subject")
+	require.Equal(t, values[Key_VerifiableCredentialType], "pbdf.sidn-pbdf.email")
+	require.Equal(t, values[Key_Issuer], "https://example.com")
 
 	require.NotContains(t, values, Key_Sd)
 	require.NotContains(t, values, Key_SdAlg)

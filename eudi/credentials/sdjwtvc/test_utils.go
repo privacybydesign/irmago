@@ -45,21 +45,6 @@ func createKbJwt(t *testing.T, sdjwt SdJwtVc, keyBinder KeyBinder) KeyBindingJwt
 	return kbjwt
 }
 
-func requirePresentWithValue[T comparable](t *testing.T, values map[string]any, key string, expectedValue T) {
-	val, ok := values[key]
-	if !ok {
-		t.Fatalf("map should contain value for '%s', but doesn't", key)
-	} else {
-		casted, ok := val.(T)
-		if !ok {
-			t.Fatalf("value for '%s' in map not of expected type", key)
-		}
-		if casted != expectedValue {
-			t.Fatalf("value for '%s' in map doesn't have the expected value (%v != %v)", key, casted, expectedValue)
-		}
-	}
-}
-
 func jsonToMap(js string) map[string]interface{} {
 	var result map[string]interface{}
 	err := json.Unmarshal([]byte(js), &result)
