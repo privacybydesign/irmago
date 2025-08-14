@@ -187,7 +187,6 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 		ResponseMode:      request.ResponseMode,
 	}
 	responseReq, err := createAuthorizationResponseHttpRequest(authResponse)
-	logMarshalled("responsereq:", responseReq)
 	if err != nil {
 		return err
 	}
