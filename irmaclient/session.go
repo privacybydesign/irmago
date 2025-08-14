@@ -815,7 +815,7 @@ func (session *session) KeyshareDone(message interface{}) {
 				Err: err,
 			})
 		}
-		if numSdJwtsToIssue != 0 {
+		if numSdJwtsToIssue > 0 {
 			var err error
 			keyBindingPubKeys, err = session.client.keyBinder.CreateKeyPairs(numSdJwtsToIssue)
 			if err != nil {

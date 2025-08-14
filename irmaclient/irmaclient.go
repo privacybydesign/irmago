@@ -938,7 +938,7 @@ func (client *IrmaClient) IssueCommitments(
 		return nil, nil, err
 	}
 
-	if numSdJwts != 0 {
+	if numSdJwts > 0 {
 		keyBindingPubKeys, err = client.keyBinder.CreateKeyPairs(numSdJwts)
 		if err != nil {
 			return nil, nil, err

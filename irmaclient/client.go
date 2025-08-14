@@ -448,7 +448,7 @@ func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList) ([]Credenti
 			CredentialType: cred.Identifier().String(),
 			Attributes:     map[string]string{},
 		}
-		if cred.InstanceCount != nil && *cred.InstanceCount != 0 {
+		if cred.InstanceCount != nil && *cred.InstanceCount > 0 {
 			entry.Formats = append(entry.Formats, Format_SdJwtVc)
 		}
 		for key, attr := range cred.Attributes {
