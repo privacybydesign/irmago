@@ -98,9 +98,7 @@ func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 
 	require.NoError(t, err)
 
-	if !strings.HasSuffix(string(sdjwt), "~") {
-		t.Fatalf("sdjwt expected to end with ~ but doesn't: %v", sdjwt)
-	}
+	require.True(t, strings.HasSuffix(string(sdjwt), "~"), "sdjwt expected to end with ~ but doesn't: %v", sdjwt)
 
 	if num := strings.Count(string(sdjwt), "~"); num != 2 {
 		t.Fatalf("sdjwt expected have 2 ~ but has: %v (%v)", num, sdjwt)

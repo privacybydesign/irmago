@@ -3,6 +3,8 @@ package dcql
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseValidDcqlQuery(t *testing.T) {
@@ -36,16 +38,9 @@ func TestParseValidDcqlQuery(t *testing.T) {
 
 	dcqlQuery, err := parseDcqlQuery(queryJson)
 
-	if err != nil {
-		t.Fatalf("failed to parse valid dcql query")
-	}
-
-	if len(dcqlQuery.Credentials) != 1 {
-		t.Fatalf("credentials in dcql query not parsed correctly")
-	}
-	if len(dcqlQuery.Credentials[0].Claims) != 1 {
-		t.Fatalf("credential claim not parsed correctly")
-	}
+	require.NoError(t, err)
+	require.Len(t, dcqlQuery.Credentials, 1)
+	require.Len(t, dcqlQuery.Credentials[0].Claims, 1)
 }
 
 func parseDcqlQuery(query string) (DcqlQuery, error) {
