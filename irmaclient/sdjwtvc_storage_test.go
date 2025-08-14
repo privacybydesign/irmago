@@ -7,14 +7,22 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
 )
 
 func TestSdJwtVcStorage(t *testing.T) {
 	require.True(t, t.Run("old storage compatibility", testCompatibilityWithOldStorage))
+
+	RunTestWithTempBboltSdJwtVcStorage(t, "num instances left", testNumInstanceLeft)
+
+	RunTestWithTempBboltSdJwtVcStorage(t,
+		"storing same attributes replaces instances",
+		testStoringSameAttributesReplacesInstances,
+	)
 
 	RunTestWithTempBboltSdJwtVcStorage(t,
 		"get credential info list from empty storage",
@@ -50,6 +58,61 @@ func TestSdJwtVcStorage(t *testing.T) {
 	)
 }
 
+func testStoringSameAttributesReplacesInstances(t *testing.T, storage SdJwtVcStorage) {
+	instanceCount := 10
+	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, uint(instanceCount))
+
+	require.NoError(t, storage.StoreCredential(info, sdjwts))
+
+	creds := storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+
+	require.Len(t, creds, 1)
+	require.Equal(t, 10, int(creds[0].Metadata.BatchSize))
+	require.Equal(t, 10, int(creds[0].Metadata.RemainingInstanceCount))
+
+	info, sdjwts = createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, uint(instanceCount))
+
+	require.NoError(t, storage.StoreCredential(info, sdjwts))
+
+	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+
+	require.Len(t, creds, 1)
+	require.Equal(t, 10, int(creds[0].Metadata.BatchSize))
+	require.Equal(t, 10, int(creds[0].Metadata.RemainingInstanceCount))
+}
+
+func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {
+	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, 2)
+
+	require.NoError(t, storage.StoreCredential(info, sdjwts))
+
+	creds := storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+
+	require.Len(t, creds, 1)
+	require.Equal(t, 2, int(creds[0].Metadata.BatchSize))
+	require.Equal(t, 2, int(creds[0].Metadata.RemainingInstanceCount))
+
+	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
+
+	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+
+	require.Len(t, creds, 1)
+	require.Equal(t, 2, int(creds[0].Metadata.BatchSize))
+	require.Equal(t, 1, int(creds[0].Metadata.RemainingInstanceCount))
+
+	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
+
+	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+	require.Equal(t, 2, int(creds[0].Metadata.BatchSize))
+	require.Equal(t, 0, int(creds[0].Metadata.RemainingInstanceCount))
+}
+
 func testRemovingInstanceReturnsCorrectHolderKeys(t *testing.T, storage SdJwtVcStorage) {
 	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
@@ -66,12 +129,12 @@ func testCompatibilityWithOldStorage(t *testing.T) {
 	irmaClient, _ := parseStorage(t)
 	defer irmaClient.Close()
 	sdjwtStorage := NewBboltSdJwtVcStorage(irmaClient.storage.db, irmaClient.storage.aesKey)
-	list := sdjwtStorage.GetCredentialInfoList()
+	list := sdjwtStorage.GetCredentialMetdataList()
 	require.Empty(t, list)
 }
 
 func testGetCredentialInfoListFromEmptyStorage(t *testing.T, storage SdJwtVcStorage) {
-	list := storage.GetCredentialInfoList()
+	list := storage.GetCredentialMetdataList()
 	require.Empty(t, list)
 }
 
@@ -89,13 +152,13 @@ func testAddingMultipleInstancesWithSameAttributeSets(t *testing.T, storage SdJw
 	err := storage.StoreCredential(emailInfo1, emailSdJwts1)
 	require.NoError(t, err)
 
-	infoList := storage.GetCredentialInfoList()
+	infoList := storage.GetCredentialMetdataList()
 	require.Equal(t, len(infoList), 1)
 
 	err = storage.StoreCredential(emailInfo2, emailSdJwts2)
 	require.NoError(t, err)
 
-	infoList = storage.GetCredentialInfoList()
+	infoList = storage.GetCredentialMetdataList()
 	require.Equal(t, len(infoList), 1)
 }
 
@@ -115,7 +178,7 @@ func testAddingMultipleAttributePairs(t *testing.T, storage SdJwtVcStorage) {
 	err = storage.StoreCredential(emailInfo2, emailSdJwts2)
 	require.NoError(t, err)
 
-	infoList := storage.GetCredentialInfoList()
+	infoList := storage.GetCredentialMetdataList()
 	require.Equal(t, len(infoList), 2)
 }
 
@@ -133,33 +196,29 @@ func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
 	err = storage.StoreCredential(mobileInfo, mobileSdJwts)
 	require.NoError(t, err)
 
-	infoList := storage.GetCredentialInfoList()
+	infoList := storage.GetCredentialMetdataList()
 	require.Equal(t, len(infoList), 2)
 
 	err = storage.RemoveAll()
 	require.NoError(t, err)
 
-	infoList = storage.GetCredentialInfoList()
+	infoList = storage.GetCredentialMetdataList()
 	require.Empty(t, infoList)
 }
 
 func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	sdjwt, err := createTestSdJwtVc(keyBinder, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
-	})
-	require.NoError(t, err)
-	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwt, sdjwtvc.CreateDefaultVerificationContext())
-	require.NoError(t, err)
-	err = storage.StoreCredential(*info, []sdjwtvc.SdJwtVc{sdjwt})
+	}, 1)
+	err := storage.StoreCredential(info, sdjwts)
 	require.NoError(t, err)
 
 	result := storage.GetCredentialsForId("pbdf.pbdf.email")
 	require.Equal(t, len(result), 1)
 
 	first := result[0]
-	require.Equal(t, first.Info, *info)
+	require.Equal(t, first.Metadata, info)
 }
 
 func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
@@ -167,13 +226,13 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 		"email": "test@gmail.com",
 	}, 2)
 
-	require.Equal(t, len(sdjwts), 2)
+	require.Len(t, sdjwts, 2)
 	err := storage.StoreCredential(info, sdjwts)
 	require.NoError(t, err)
 
 	// there should be one credential showing up in the info list
-	infoList := storage.GetCredentialInfoList()
-	require.Equal(t, len(infoList), 1)
+	infoList := storage.GetCredentialMetdataList()
+	require.Len(t, infoList, 1)
 
 	// first one, it should be available
 	result, err := storage.GetCredentialByHash(info.Hash)
@@ -198,9 +257,11 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 	require.Error(t, err)
 	require.Nil(t, result)
 
-	// the whole credential should now also not show up in the info list
-	infoList = storage.GetCredentialInfoList()
-	require.Empty(t, infoList)
+	// the whole credential should still show up in the info list
+	// but with a count of 0
+	infoList = storage.GetCredentialMetdataList()
+	require.Len(t, infoList, 1)
+	require.Equal(t, 0, int(infoList[0].RemainingInstanceCount))
 }
 
 func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
@@ -215,13 +276,64 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 	require.NoError(t, err)
 	require.NotNil(t, cred)
 
-	require.Equal(t, cred.Info, info)
+	require.Equal(t, cred.Metadata, info)
 
 	result := storage.GetCredentialsForId("pbdf.pbdf.mobilenumber")
 	require.Equal(t, len(result), 1)
 }
 
-func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num int) (irma.CredentialInfo, []sdjwtvc.SdJwtVc) {
+func createMultipleSdJwtVcsWithCustomKeyBinder[T any](
+	t *testing.T, keyBinder sdjwtvc.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
+) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
+	result := []sdjwtvc.SdJwtVc{}
+	for range num {
+		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims)
+		require.NoError(t, err)
+		result = append(result, sdjwt)
+	}
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext())
+	require.NoError(t, err)
+	return SdJwtVcBatchMetadata{
+		BatchSize:              num,
+		RemainingInstanceCount: num,
+		SignedOn:               info.SignedOn,
+		Expires:                info.Expires,
+		Attributes:             info.Attributes,
+		Hash:                   info.Hash,
+		CredentialType:         info.CredentialType,
+	}, result
+}
+
+func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T) (sdjwtvc.SdJwtVc, error) {
+	contents, err := sdjwtvc.MultipleNewDisclosureContents(claims)
+	if err != nil {
+		return "", err
+	}
+
+	certChain, err := eudi.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	if err != nil {
+		return "", err
+	}
+
+	holderKey, err := keyBinder.CreateKeyPairs(1)
+	if err != nil {
+		return "", fmt.Errorf("failed to create holder keys: %v", err)
+	}
+
+	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
+	return sdjwtvc.NewSdJwtVcBuilder().
+		WithDisclosures(contents).
+		WithHolderKey(holderKey[0]).
+		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
+		WithVerifiableCredentialType(vct).
+		WithIssuerUrl(issuerUrl).
+		WithIssuedAt(sdjwtvc.NewSystemClock().Now()).
+		WithExpiresAt(sdjwtvc.NewSystemClock().Now() + 10000).
+		WithIssuerCertificateChain(certChain).
+		Build(signer)
+}
+
+func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num uint) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 	for range num {
@@ -231,7 +343,15 @@ func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, clai
 	}
 	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext())
 	require.NoError(t, err)
-	return *info, result
+	return SdJwtVcBatchMetadata{
+		BatchSize:              num,
+		RemainingInstanceCount: num,
+		SignedOn:               info.SignedOn,
+		Expires:                info.Expires,
+		Attributes:             info.Attributes,
+		Hash:                   info.Hash,
+		CredentialType:         info.CredentialType,
+	}, result
 }
 
 func RunTestWithTempBboltSdJwtVcStorage(t *testing.T, name string, test func(t *testing.T, storage SdJwtVcStorage)) {

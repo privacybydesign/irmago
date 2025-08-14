@@ -23,7 +23,7 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	storage, err := NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
-	addTestCredentialsToStorage(storage, keyBinder)
+	addTestCredentialsToStorage(t, storage, keyBinder)
 
 	storageFolder := test.CreateTestStorage(t)
 	testStoragePath := test.FindTestdataFolder(t)
@@ -56,20 +56,15 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 
 	permissionRequest := handler.AwaitPermissionRequest()
 
+	email, err := permissionRequest.Candidates[0][0].Choose()
+	require.NoError(t, err)
+
+	phone, err := permissionRequest.Candidates[1][0].Choose()
+	require.NoError(t, err)
+
 	choice := &irma.DisclosureChoice{
 		Attributes: [][]*irma.AttributeIdentifier{
-			{
-				&irma.AttributeIdentifier{
-					Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
-					CredentialHash: "2gLLz0ZpYXXW6-I1jZ3wBEggQ5eR7KKbdIvJLm5O8y8",
-				},
-			},
-			{
-				&irma.AttributeIdentifier{
-					Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
-					CredentialHash: "igACXd9kCRN7ypJ8iUS2c3UQ62S-Opjz0LCariGhQ_w",
-				},
-			},
+			email, phone,
 		},
 	}
 	proceed := true
@@ -115,4 +110,26 @@ func startSessionAtEudiVerifier() (string, error) {
 	}
 
 	return url.String(), nil
+}
+
+func addTestCredentialsToStorage(t *testing.T, storage SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
+	// ignoring all errors here, since it's not production code anyway
+	mobilephoneInfo, mobilephoneEntry := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "pbdf.sidn-pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
+		map[string]any{
+			"mobilenumber": "+31612345678",
+		}, 1,
+	)
+	require.NoError(t, storage.StoreCredential(mobilephoneInfo, mobilephoneEntry))
+
+	emailInfo, emailSdjwts := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "test@gmail.com",
+		"domain": "gmail.com",
+	}, 1)
+	require.NoError(t, storage.StoreCredential(emailInfo, emailSdjwts))
+
+	emailInfo2, emailSdjwt2 := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+		"email":  "yivi@gmail.com",
+		"domain": "gmail.com",
+	}, 2)
+	require.NoError(t, storage.StoreCredential(emailInfo2, emailSdjwt2))
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
@@ -17,6 +18,8 @@ import (
 )
 
 func TestEudiClient(t *testing.T) {
+	t.Run("double sdjwt issuance replaces instances", testDoubleSdJwtIssuanceReplacesInstances)
+	t.Run("credential instance count", testCredentialInstanceCount)
 	t.Run("test logs for combined issuance and disclosure", testLogsForCombinedIssuanceAndDisclosure)
 
 	t.Run("test logs for completely optional disclosure", testLogsForCompletelyOptionalDisclosure)
@@ -34,6 +37,81 @@ func TestEudiClient(t *testing.T) {
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+}
+
+func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	info := client.CredentialInfoList()
+	require.Len(t, info, 3)
+
+	creds := collectCredentialsWithId(info, "test.test.email")
+	require.Len(t, creds, 2)
+
+	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+
+	require.Equal(t, 10, int(*cred.InstanceCount))
+
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	info = client.CredentialInfoList()
+	require.Len(t, info, 3)
+
+	creds = collectCredentialsWithId(info, "test.test.email")
+	require.Len(t, creds, 2)
+
+	cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+
+	require.Equal(t, 10, int(*cred.InstanceCount))
+}
+
+func testCredentialInstanceCount(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClient(t)
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	info := client.CredentialInfoList()
+	require.Len(t, info, 3)
+
+	creds := collectCredentialsWithId(info, "test.test.email")
+	require.Len(t, creds, 2)
+
+	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+
+	numInstances := uint(10)
+
+	require.Equal(t, numInstances, *cred.InstanceCount)
+
+	for i := range numInstances {
+		discloseOverOpenID4VP(t, client)
+
+		info = client.CredentialInfoList()
+		require.Len(t, info, 3)
+
+		creds = collectCredentialsWithId(info, "test.test.email")
+		require.Len(t, creds, 2)
+
+		cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+		require.Equal(t, numInstances-1-i, *cred.InstanceCount)
+	}
+}
+
+func getCredWithFormat(creds []*irma.CredentialInfo, format irmaclient.CredentialFormat) *irma.CredentialInfo {
+	return creds[slices.IndexFunc(creds, func(c *irma.CredentialInfo) bool {
+		return irmaclient.CredentialFormat(c.CredentialFormat) == format
+	})]
 }
 
 func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
@@ -57,6 +135,7 @@ func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
 	require.Equal(t, latestLog.Type, irmaclient.LogType_Issuance)
 	require.Equal(t, latestLog.IssuanceLog.Protocol, irmaclient.Protocol_Irma)
 	require.Len(t, latestLog.IssuanceLog.DisclosedCredentials, 2)
+	require.Len(t, latestLog.IssuanceLog.Credentials, 1)
 }
 
 func performCombinedIssuanceAndDisclosureSession(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
@@ -652,14 +731,13 @@ func createClient(t *testing.T) *irmaclient.Client {
 	storageFolder := test.CreateTestStorage(t)
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
-	eudiConfigurationPath := filepath.Join(storagePath, "eudi_configuration")
 
 	// Copy files to storage folder
 	_ = common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration"))
 	_ = common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration"))
 
 	clientHandler := irmaclient.NewMockClientHandler()
-	client, err := irmaclient.New(storagePath, irmaConfigurationPath, eudiConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
+	client, err := irmaclient.New(storagePath, irmaConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
 
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})

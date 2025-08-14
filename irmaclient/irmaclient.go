@@ -1539,10 +1539,10 @@ func (client *IrmaClient) SetSdJwtVerificationContext(context sdjwtvc.Verificati
 func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
 	// TODO: check if the correct amount of credentials has been issued for the requestedCredentials for batch requests
 	type credentialTuple struct {
-		credInfo *irma.CredentialInfo
-		sdjwt    sdjwtvc.SdJwtVc
+		credInfo         SdJwtVcMetadata
+		sdjwtvcInstances []sdjwtvc.SdJwtVc
 	}
-	credentialsMap := make(map[string][]credentialTuple)
+	credentialsMap := make(map[string]*credentialTuple)
 
 	for _, sdjwt := range sdjwts {
 		// TODO: check if the SD-JWT adheres to the requested credentials (e.g. if the credential ID and attributes etc match) ?
@@ -1556,21 +1556,32 @@ func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, request
 		// Because it is possible that multiple credentials with same credential ID, but different data (e.g. different attributes or minor differences in signedOn/expires)
 		// can be issued in a single request, we need to use the hash of the data itself to distinguish between them.
 		key := credInfo.Hash
-		tuple := credentialTuple{
-			credInfo: credInfo,
-			sdjwt:    sdjwt,
-		}
 		if _, exists := credentialsMap[key]; !exists {
-			credentialsMap[key] = []credentialTuple{tuple}
+			credentialsMap[key] = &credentialTuple{
+				credInfo:         *credInfo,
+				sdjwtvcInstances: []sdjwtvc.SdJwtVc{sdjwt},
+			}
 		} else {
-			credentialsMap[key] = append(credentialsMap[key], tuple)
+			credentialsMap[key].sdjwtvcInstances = append(credentialsMap[key].sdjwtvcInstances, sdjwt)
 		}
 	}
 
 	// Now that we've grouped the SD-JWTs by their credential info hash, we can store them
 	for _, v := range credentialsMap {
-		firstCredInfo := v[0].credInfo
-		client.sdJwtVcStorage.StoreCredential(*firstCredInfo, sdjwts)
+		batchInfo := SdJwtVcBatchMetadata{
+			BatchSize:              uint(len(v.sdjwtvcInstances)),
+			RemainingInstanceCount: uint(len(v.sdjwtvcInstances)),
+			SignedOn:               v.credInfo.SignedOn,
+			Expires:                v.credInfo.Expires,
+			Attributes:             v.credInfo.Attributes,
+			Hash:                   v.credInfo.Hash,
+			CredentialType:         v.credInfo.CredentialType,
+		}
+
+		err := client.sdJwtVcStorage.StoreCredential(batchInfo, v.sdjwtvcInstances)
+		if err != nil {
+			return fmt.Errorf("failed to store sdjwtvc batch: %v", err)
+		}
 	}
 
 	return nil

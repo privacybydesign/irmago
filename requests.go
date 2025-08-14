@@ -654,7 +654,9 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, iss
 	if err != nil {
 		return nil, err
 	}
-	return list.CredentialInfo(), nil
+	info := list.CredentialInfo()
+	info.InstanceCount = cr.SdJwtBatchSize
+	return info, nil
 }
 
 // Validate checks that this credential request is consistent with the specified Configuration:
@@ -805,6 +807,13 @@ func (ir *IssuanceRequest) GetCredentialInfoList(
 			info, err := credreq.Info(conf, GetMetadataVersion(version), issuedAt)
 			if err != nil {
 				return nil, err
+			}
+
+			// in this case we'll assume the server is capable to build this
+			// so we just put in the usual default amount
+			if info.InstanceCount == nil && ir.RequestSdJwts {
+				defaultAmount := DefaultSdJwtIssueAmount
+				info.InstanceCount = &defaultAmount
 			}
 			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
 		}
