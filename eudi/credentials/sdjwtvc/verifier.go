@@ -278,21 +278,21 @@ func verifyTime(context VerificationContext, issuerSignedJwtPayload IssuerSigned
 	nbf := issuerSignedJwtPayload.NotBefore
 
 	if nbf != 0 && maxSkewNow < nbf {
-		return fmt.Errorf("verification before nbf: now: %v < nbf: %v", maxSkewNow, nbf)
+		return fmt.Errorf("verification before nbf: now: %v + skew: %v < nbf: %v", now, ClockSkewInSeconds, nbf)
 	}
 
 	if maxSkewNow < iat {
-		return fmt.Errorf("verification before issued at: %v < %v", maxSkewNow, iat)
+		return fmt.Errorf("verification before issued at: %v + skew: %v < %v", now, ClockSkewInSeconds, iat)
 	}
 
 	if exp != 0 && minSkewNow > exp {
-		return fmt.Errorf("verification after expiry of issuer signed jwt: %v > %v", minSkewNow, exp)
+		return fmt.Errorf("verification after expiry of issuer signed jwt: %v - skew: %v > %v", now, ClockSkewInSeconds, exp)
 	}
 
 	if kbjwtPayload != nil {
 		kbiat := kbjwtPayload.IssuedAt
 		if maxSkewNow < kbiat {
-			return fmt.Errorf("verification before issued at of kbjwt: %v < %v", maxSkewNow, kbiat)
+			return fmt.Errorf("verification before issued at of kbjwt: %v + skew %v < %v", now, ClockSkewInSeconds, kbiat)
 		}
 	}
 
@@ -346,9 +346,10 @@ func parseAndVerifyKeyBindingJwt(
 	}
 
 	now := context.Clock.Now()
+	maxSkewNow := now + ClockSkewInSeconds
 
-	if payload.IssuedAt >= now {
-		return KeyBindingJwtPayload{}, fmt.Errorf("iat value (%v) was after current time (%v)", payload.IssuedAt, now)
+	if payload.IssuedAt >= maxSkewNow {
+		return KeyBindingJwtPayload{}, fmt.Errorf("kbjwt iat value (%v) was after current time (%v)", payload.IssuedAt, now)
 	}
 
 	return KeyBindingJwtPayload{}, nil

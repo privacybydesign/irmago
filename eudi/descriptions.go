@@ -77,7 +77,7 @@ func isQueryAuthorized(query dcql.CredentialQuery, authorizedAttributeSets []Que
 
 				// Credential is authorized, validate the query claims against the attributes
 				for _, claim := range query.Claims {
-					if err := isSubset(vctValue, []string(claim.Path), &authorizedSet.Attributes); err != nil {
+					if err := isSubset(vctValue, []string(claim.Path), authorizedSet.Attributes); err != nil {
 						return fmt.Errorf("credential query %v is not authorized: %v", query, err)
 					}
 				}
@@ -93,9 +93,9 @@ func isQueryAuthorized(query dcql.CredentialQuery, authorizedAttributeSets []Que
 	return nil
 }
 
-func isSubset(vctValue string, subset []string, superset *[]string) error {
+func isSubset(vctValue string, subset []string, superset []string) error {
 	for _, s := range subset {
-		if !slices.Contains(*superset, s) {
+		if !slices.Contains(superset, s) {
 			return fmt.Errorf("requested attribute %s.%v is not in the authorized set", vctValue, s)
 		}
 	}
