@@ -3,6 +3,8 @@ package sdjwtvc
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // is `iss` field is required
@@ -17,9 +19,7 @@ func TestNoIssuerLinkIsErr(t *testing.T) {
 
 	_, err := IssuerSignedJwtPayload_ToJson(payload)
 
-	if err == nil {
-		t.Fatalf("expected error, but didn't get one")
-	}
+	require.Error(t, err)
 }
 
 // the `iss` field of the issuer signed jwt is required to have a valid https link
@@ -34,9 +34,7 @@ func TestNoHttpsIssuerIsErr(t *testing.T) {
 
 	_, err := IssuerSignedJwtPayload_ToJson(payload)
 
-	if err == nil {
-		t.Fatalf("expected error, but didn't get one")
-	}
+	require.Error(t, err)
 }
 
 func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
@@ -50,16 +48,17 @@ func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 
 	json, err := IssuerSignedJwtPayload_ToJson(payload)
 
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	values := jsonToMap(json)
 
 	requirePresentWithValue(t, values, Key_Subject, "subject")
 	requirePresentWithValue(t, values, Key_VerifiableCredentialType, "pbdf.sidn-pbdf.email")
 	requirePresentWithValue(t, values, Key_Issuer, "https://example.com")
-	requireNotPresent(t, values, Key_Sd)
-	requireNotPresent(t, values, Key_SdAlg)
-	requireNotPresent(t, values, Key_Confirmationkey)
+
+	require.NotContains(t, values, Key_Sd)
+	require.NotContains(t, values, Key_SdAlg)
+	require.NotContains(t, values, Key_Confirmationkey)
 }
 
 func TestDisclosuresSaltBasicRequirements(t *testing.T) {
@@ -69,7 +68,7 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 
 	for range numDisclosures {
 		disc, err := NewDisclosureContent("name", "Bert")
-		requireNoErr(t, err)
+		require.NoError(t, err)
 
 		if len(disc.Salt) != expectedSaltLen {
 			t.Fatalf("expected salt to be of len %v, but got %v (%s)", expectedSaltLen, len(disc.Salt), disc.Salt)
@@ -84,7 +83,7 @@ func TestCreateMultipleDisclosures(t *testing.T) {
 		"country":  "Netherlands",
 	})
 
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	if num := len(disclosures); num != 3 {
 		t.Fatalf("expected 3 disclosures, but got %v (%v)", num, disclosures)
@@ -94,7 +93,7 @@ func TestCreateMultipleDisclosures(t *testing.T) {
 func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 	issuer := "https://example.com"
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{"family": "Yivi"})
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 
@@ -105,7 +104,7 @@ func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 		WithHashingAlgorithm(HashAlg_Sha256).
 		Build(jwtCreator)
 
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	if !strings.HasSuffix(string(sdjwt), "~") {
 		t.Fatalf("sdjwt expected to end with ~ but doesn't: %v", sdjwt)

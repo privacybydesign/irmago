@@ -57,7 +57,7 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 		"name":     "Yivi",
 		"location": "Utrecht",
 	})
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
 		WithHashingAlgorithm(HashAlg_Sha256).
@@ -73,7 +73,7 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_Failure(t *testing.T) {
 		"name":     "Yivi",
 		"location": "Utrecht",
 	})
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
@@ -90,23 +90,23 @@ func Test_BuildSdJwtVc_NoVct_BuildFailure(t *testing.T) {
 func requireBuildFailure(t *testing.T, builder *SdJwtVcBuilder) {
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	_, err := builder.Build(jwtCreator)
-	requireErr(t, err)
+	require.NoError(t, err)
 }
 
 func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 	context := CreateTestVerificationContext(false)
 	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 }
 
 func requireValidSdJwtVcWithNonHttpsIssuer(t *testing.T, builder *SdJwtVcBuilder) {
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 	context := CreateTestVerificationContext(true)
 	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 }
