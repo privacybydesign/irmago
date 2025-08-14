@@ -127,7 +127,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingSchemeData(t *testing.T
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to verify end-entity certificate: it does not contain the required custom scheme extension with OID 2.1.123.1")
+	require.Contains(t, err.Error(), "failed to verify end-entity certificate: it does not contain the required custom certificate extension with OID 2.1.123.1")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureInvalidAsnSchemeData(t *testing.T) {
@@ -248,7 +248,7 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 		logger:                          logrus.New(),
 	}
 
-	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel)
+	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, &MockQueryValidatorFactory{})
 
 	// Create an authorization request JWT
 	authRequestJwt = testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, verifierCert, tokenModifier)

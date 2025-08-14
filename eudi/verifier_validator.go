@@ -16,21 +16,23 @@ import (
 )
 
 const SchemeExtensionOID = "2.1.123.1"
-const ClockSkew = 300 * time.Second
+const ClockSkew = 60 * time.Second
 
-// VerifierValidator is an interface to be used to verify verifiers by parsing and verifying the
+// VerifierValidator is an interface to be used to validate verifiers by parsing and verifying the
 // authorization request and returning the requestor info for the verifier.
 type VerifierValidator interface {
 	ParseAndVerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *x509.Certificate, *RelyingPartyRequestor, error)
 }
 
 type RequestorCertificateStoreVerifierValidator struct {
-	model *TrustModel
+	model          *TrustModel
+	queryValidator QueryValidatorFactory
 }
 
-func NewRequestorCertificateStoreVerifierValidator(tm *TrustModel) VerifierValidator {
+func NewRequestorCertificateStoreVerifierValidator(tm *TrustModel, queryValidatorFactory QueryValidatorFactory) VerifierValidator {
 	return &RequestorCertificateStoreVerifierValidator{
-		model: tm,
+		model:          tm,
+		queryValidator: queryValidatorFactory,
 	}
 }
 
@@ -63,7 +65,7 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	}
 
 	if schemeExtensionData == nil {
-		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: it does not contain the required custom scheme extension with OID %s", SchemeExtensionOID)
+		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: it does not contain the required custom certificate extension with OID %s", SchemeExtensionOID)
 	}
 
 	// The scheme extension data is expected to be a DERUTF8STRING, so we need to unmarshal it
@@ -80,9 +82,15 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: failed to unmarshal scheme data to requestor object: %v", err)
 	}
 
-	claims := token.Claims.(*openid4vp.AuthorizationRequest)
+	authRequest := token.Claims.(*openid4vp.AuthorizationRequest)
 
-	return claims, endEntityCert, &requestorSchemeData, nil
+	// Now we have a valid request, we can evaluate the query against the RP authorized attributes
+	queryValidator := v.queryValidator.CreateQueryValidator(&requestorSchemeData.RelyingParty)
+	if err := queryValidator.ValidateQuery(&authRequest.DcqlQuery); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
+	}
+
+	return authRequest, endEntityCert, &requestorSchemeData, nil
 }
 
 func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier() jwt.Keyfunc {

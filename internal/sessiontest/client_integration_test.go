@@ -47,6 +47,8 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 
 	info := client.CredentialInfoList()
@@ -80,6 +82,8 @@ func testCredentialInstanceCount(t *testing.T) {
 	defer keyshareServer.Stop()
 
 	client := createClient(t)
+	defer client.Close()
+
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
 
 	info := client.CredentialInfoList()
