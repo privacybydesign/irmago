@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
@@ -15,6 +16,7 @@ import (
 )
 
 const SchemeExtensionOID = "2.1.123.1"
+const ClockSkew = 300 * time.Second
 
 // VerifierValidator is an interface to be used to verify verifiers by parsing and verifying the
 // authorization request and returning the requestor info for the verifier.
@@ -106,8 +108,9 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 		certVerifyOpts := x509.VerifyOptions{
 			Roots:         v.model.GetRootCerts(),
 			Intermediates: v.model.GetIntermediateCerts(),
-			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 			DNSName:       hostname,
+			CurrentTime:   time.Now().Add(-ClockSkew), // Adjust to account for skew
 		}
 
 		parsedCert, err := getEndEntityCertFromX5cHeader(token)
