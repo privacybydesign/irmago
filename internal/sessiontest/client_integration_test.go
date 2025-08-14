@@ -716,10 +716,9 @@ func createIrmaIssuanceRequestWithSdJwts() *irma.IssuanceRequest {
 			Attributes: map[string]string{
 				"email": "test@gmail.com",
 			},
-			SdJwtBatchSize: &sdJwtBatchSize,
+			SdJwtBatchSize: sdJwtBatchSize,
 		},
 	})
-	req.RequestSdJwts = true
 	return req
 }
 

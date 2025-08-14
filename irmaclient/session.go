@@ -575,13 +575,11 @@ func (session *session) sendResponse(message interface{}) {
 				return
 			}
 
-			if issuanceRequest.RequestSdJwts && len(serverResponse.SdJwts) > 0 {
-				if err = session.client.VerifyAndStoreSdJwts(serverResponse.SdJwts, issuanceRequest.Credentials); err != nil {
-					// TODO: should we revert/remove all SD-JWTs and the stored IRMA credentials if this fails?
-					// TODO: add new error type for this; could be crypto related, but also verification/spec related
-					session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
-					return
-				}
+			if err = session.client.VerifyAndStoreSdJwts(serverResponse.SdJwts, issuanceRequest.Credentials); err != nil {
+				// TODO: should we revert/remove all SD-JWTs and the stored IRMA credentials if this fails?
+				// TODO: add new error type for this; could be crypto related, but also verification/spec related
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+				return
 			}
 		}
 	}
@@ -811,11 +809,15 @@ func (session *session) KeyshareDone(message interface{}) {
 
 		var keyBindingPubKeys []jwk.Key = nil
 
-		if request.RequestSdJwts {
+		numSdJwtsToIssue, err := irma.CalculateAmountOfSdJwtsToIssue(request)
+		if err != nil {
+			session.fail(&irma.SessionError{
+				Err: err,
+			})
+		}
+		if numSdJwtsToIssue != 0 {
 			var err error
-			keyBindingPubKeys, err = session.client.keyBinder.CreateKeyPairs(
-				irma.CalculateAmountOfSdJwtsToIssue(request),
-			)
+			keyBindingPubKeys, err = session.client.keyBinder.CreateKeyPairs(numSdJwtsToIssue)
 			if err != nil {
 				session.fail(&irma.SessionError{Err: err})
 			}
