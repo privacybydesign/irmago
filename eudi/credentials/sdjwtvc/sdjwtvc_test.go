@@ -18,7 +18,6 @@ func TestNoIssuerLinkIsErr(t *testing.T) {
 	}
 
 	_, err := IssuerSignedJwtPayload_ToJson(payload)
-
 	require.Error(t, err)
 }
 
@@ -33,7 +32,6 @@ func TestNoHttpsIssuerIsErr(t *testing.T) {
 	}
 
 	_, err := IssuerSignedJwtPayload_ToJson(payload)
-
 	require.Error(t, err)
 }
 
@@ -50,7 +48,7 @@ func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 
 	require.NoError(t, err)
 
-	values := jsonToMap(json)
+	values := jsonToMap(t, json)
 
 	require.Equal(t, values[Key_Subject], "subject")
 	require.Equal(t, values[Key_VerifiableCredentialType], "pbdf.sidn-pbdf.email")
@@ -69,10 +67,7 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 	for range numDisclosures {
 		disc, err := NewDisclosureContent("name", "Bert")
 		require.NoError(t, err)
-
-		if len(disc.Salt) != expectedSaltLen {
-			t.Fatalf("expected salt to be of len %v, but got %v (%s)", expectedSaltLen, len(disc.Salt), disc.Salt)
-		}
+		require.Len(t, disc.Salt, expectedSaltLen)
 	}
 }
 
@@ -84,10 +79,7 @@ func TestCreateMultipleDisclosures(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-
-	if num := len(disclosures); num != 3 {
-		t.Fatalf("expected 3 disclosures, but got %v (%v)", num, disclosures)
-	}
+	require.Len(t, disclosures, 3)
 }
 
 func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {

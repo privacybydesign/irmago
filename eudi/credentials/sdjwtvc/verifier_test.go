@@ -161,13 +161,8 @@ func TestDecodingDisclosure(t *testing.T) {
 	decoded, err := DecodeDisclosure(d)
 	require.NoError(t, err)
 
-	if decoded.Key != "name" {
-		t.Fatalf("keys don't match: %s != %s", content.Key, decoded.Key)
-	}
-
-	if decoded.Value != "Yivi" {
-		t.Fatalf("values don't match: %s != %s", content.Value, decoded.Value)
-	}
+	require.Equal(t, "name", decoded.Key)
+	require.Equal(t, "Yivi", decoded.Value)
 }
 
 func Test_FailingToFetchIssuerMetadata_Fails(t *testing.T) {
@@ -191,13 +186,8 @@ func Test_ValidSdJwtVc_NoDisclosures_NoKbJwt(t *testing.T) {
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoDisclosuresNoKbjwt)
 	require.NoError(t, err)
 
-	if num := len(verifiedSdJwtVc.Disclosures); num != 0 {
-		t.Fatalf("expected 0 disclosures, but got %v", num)
-	}
-
-	if verifiedSdJwtVc.KeyBindingJwt != nil {
-		t.Fatalf("expected no kbjwt but got %v", verifiedSdJwtVc.KeyBindingJwt)
-	}
+	require.Len(t, verifiedSdJwtVc.Disclosures, 0)
+	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_ValidSdJwt_MismatchingHashInKbJwt_Fails(t *testing.T) {
@@ -211,13 +201,8 @@ func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithKbJwt_Succeeds(t *testi
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_DcTypHeader)
 	require.NoError(t, err)
 
-	if num := len(verifiedSdJwtVc.Disclosures); num != 2 {
-		t.Fatalf("expected 2 disclosures but got %d", num)
-	}
-
-	if verifiedSdJwtVc.KeyBindingJwt == nil {
-		t.Fatal("expected kbjwt but it is nil")
-	}
+	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	require.NotNil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
@@ -225,13 +210,8 @@ func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_VcTypHeader)
 	require.NoError(t, err)
 
-	if num := len(verifiedSdJwtVc.Disclosures); num != 2 {
-		t.Fatalf("expected 2 disclosures but got %d", num)
-	}
-
-	if verifiedSdJwtVc.KeyBindingJwt == nil {
-		t.Fatal("expected kbjwt but it is nil")
-	}
+	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	require.NotNil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
@@ -239,14 +219,8 @@ func Test_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoKbJwt)
 	require.NoError(t, err)
 
-	if num := len(verifiedSdJwtVc.Disclosures); num != 2 {
-		t.Fatalf("expected 2 disclosures but got %d", num)
-	}
-
-	if verifiedSdJwtVc.KeyBindingJwt != nil {
-		t.Fatalf("expected no kbjwt but it is not nil (%v)", *verifiedSdJwtVc.KeyBindingJwt)
-	}
-
+	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_InvalidSdJwtVc_MissingTrailingTilde_Fails(t *testing.T) {

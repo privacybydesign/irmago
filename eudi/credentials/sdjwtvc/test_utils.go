@@ -45,12 +45,10 @@ func createKbJwt(t *testing.T, sdjwt SdJwtVc, keyBinder KeyBinder) KeyBindingJwt
 	return kbjwt
 }
 
-func jsonToMap(js string) map[string]interface{} {
+func jsonToMap(t *testing.T, js string) map[string]interface{} {
 	var result map[string]interface{}
 	err := json.Unmarshal([]byte(js), &result)
-	if err != nil {
-		log.Fatalf("failed to parse json to map: %v", err)
-	}
+	require.NoError(t, err)
 	return result
 }
 
