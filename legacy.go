@@ -298,7 +298,6 @@ func (ir *IssuanceRequest) UnmarshalJSON(bts []byte) (err error) {
 		*ir = IssuanceRequest{
 			DisclosureRequest: DisclosureRequest{req.BaseRequest, req.Disclose, req.Labels, req.SkipExpiryCheck},
 			Credentials:       req.Credentials,
-			RequestSdJwts:     req.RequestSdJwts,
 		}
 		return nil
 	}

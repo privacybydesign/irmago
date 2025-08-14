@@ -933,8 +933,13 @@ func (client *IrmaClient) IssueCommitments(
 
 	var keyBindingPubKeys []jwk.Key = nil
 
-	if request.RequestSdJwts {
-		keyBindingPubKeys, err = client.keyBinder.CreateKeyPairs(irma.CalculateAmountOfSdJwtsToIssue(request))
+	numSdJwts, err := irma.CalculateAmountOfSdJwtsToIssue(request)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if numSdJwts > 0 {
+		keyBindingPubKeys, err = client.keyBinder.CreateKeyPairs(numSdJwts)
 		if err != nil {
 			return nil, nil, err
 		}

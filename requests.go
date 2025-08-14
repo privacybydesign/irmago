@@ -89,9 +89,6 @@ type IssuanceRequest struct {
 	DisclosureRequest
 	Credentials []*CredentialRequest `json:"credentials"`
 
-	// Flag to indicate whether the client should receive SD-JWTs next to the IRMA credentials
-	RequestSdJwts bool `json:"requestSdJwts,omitempty"`
-
 	// Derived data
 	CredentialInfoList        CredentialInfoList `json:",omitempty"`
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
@@ -101,17 +98,19 @@ type IssuanceRequest struct {
 const DefaultSdJwtIssueAmount uint = 50
 const MaxSdJwtIssueAmount uint = 200
 
-func CalculateAmountOfSdJwtsToIssue(req *IssuanceRequest) uint {
+func CalculateAmountOfSdJwtsToIssue(req *IssuanceRequest) (uint, error) {
 	var amount uint = 0
 	for _, cred := range req.Credentials {
-		credAmount := DefaultSdJwtIssueAmount
-		if cred.SdJwtBatchSize != nil {
-			// Don't issue more then the maximum allowed
-			credAmount = min(*cred.SdJwtBatchSize, MaxSdJwtIssueAmount)
+		if cred.SdJwtBatchSize > MaxSdJwtIssueAmount {
+			return 0, fmt.Errorf("requested number of sdjwts (%v) is higher than maximum allowed amount (%v) for %v",
+				cred.SdJwtBatchSize,
+				MaxSdJwtIssueAmount,
+				cred.CredentialTypeID.String(),
+			)
 		}
-		amount += credAmount
+		amount += cred.SdJwtBatchSize
 	}
-	return amount
+	return amount, nil
 }
 
 // A CredentialRequest contains the attributes and metadata of a credential
@@ -126,7 +125,8 @@ type CredentialRequest struct {
 	RandomBlindAttributeTypeIDs []string                 `json:"randomblindIDs,omitempty"`
 
 	// SD-JWT related fields
-	SdJwtBatchSize *uint `json:"sdJwtBatchSize,omitempty"`
+	// The number of SD-JWT insances to issue for this credential.
+	SdJwtBatchSize uint `json:"sdJwtBatchSize,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -655,7 +655,9 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, iss
 		return nil, err
 	}
 	info := list.CredentialInfo()
-	info.InstanceCount = cr.SdJwtBatchSize
+	if cr.SdJwtBatchSize != 0 {
+		info.InstanceCount = &cr.SdJwtBatchSize
+	}
 	return info, nil
 }
 
@@ -809,12 +811,6 @@ func (ir *IssuanceRequest) GetCredentialInfoList(
 				return nil, err
 			}
 
-			// in this case we'll assume the server is capable to build this
-			// so we just put in the usual default amount
-			if info.InstanceCount == nil && ir.RequestSdJwts {
-				defaultAmount := DefaultSdJwtIssueAmount
-				info.InstanceCount = &defaultAmount
-			}
 			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
 		}
 	}

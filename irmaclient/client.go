@@ -384,15 +384,10 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 		if err != nil {
 			return LogInfo{}, err
 		}
-		session, err := entry.SessionRequest()
 		if err != nil {
 			return LogInfo{}, err
 		}
-		issReq, ok := session.(*irma.IssuanceRequest)
-		if !ok {
-			return LogInfo{}, fmt.Errorf("failed to get issuance request")
-		}
-		issuedLog, err := issuedCredentialsToCredentialLog(issued, issReq.RequestSdJwts)
+		issuedLog, err := issuedCredentialsToCredentialLog(issued)
 		if err != nil {
 			return LogInfo{}, err
 		}
@@ -442,7 +437,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 	return LogInfo{}, nil
 }
 
-func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList, issuedSdJwts bool) ([]CredentialLog, error) {
+func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList) ([]CredentialLog, error) {
 	result := []CredentialLog{}
 	for _, cred := range creds {
 		if cred == nil {
@@ -453,7 +448,7 @@ func issuedCredentialsToCredentialLog(creds irma.CredentialInfoList, issuedSdJwt
 			CredentialType: cred.Identifier().String(),
 			Attributes:     map[string]string{},
 		}
-		if issuedSdJwts {
+		if cred.InstanceCount != nil && *cred.InstanceCount > 0 {
 			entry.Formats = append(entry.Formats, Format_SdJwtVc)
 		}
 		for key, attr := range cred.Attributes {

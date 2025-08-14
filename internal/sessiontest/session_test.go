@@ -716,7 +716,9 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClien
 
 	opts := processOptions(options...)
 	if opts.enabled(optionExpectSdJwts) {
-		request.RequestSdJwts = true
+		for _, credReq := range request.Credentials {
+			credReq.SdJwtBatchSize = irma.DefaultSdJwtIssueAmount
+		}
 		// TODO: add assertion for resulting SD-JWTs
 	}
 

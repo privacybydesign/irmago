@@ -829,13 +829,15 @@ func (session *sessionData) generateSdJwts(
 	}
 
 	// No SD-JWTs requested, return nothing
-	if !issuanceReq.RequestSdJwts {
-		return nil, nil
-	}
-
 	creator := sdjwtvc.NewJwtCreator(privKey)
 
-	numSdJwtsRequested := irma.CalculateAmountOfSdJwtsToIssue(issuanceReq)
+	numSdJwtsRequested, err := irma.CalculateAmountOfSdJwtsToIssue(issuanceReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate sdjwts: %v", err)
+	}
+	if numSdJwtsRequested == 0 {
+		return nil, nil
+	}
 
 	if numPubKeys := uint(len(kbPubKeys)); numSdJwtsRequested != numPubKeys {
 		return nil, fmt.Errorf(
@@ -856,15 +858,9 @@ func (session *sessionData) generateSdJwts(
 
 		// Calculate how many SD-JWTs to issue for this credential
 		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
-		amount := irma.DefaultSdJwtIssueAmount
-		if cred.SdJwtBatchSize != nil {
-			// Don't issue more then the maximum allowed
-			amount = min(*cred.SdJwtBatchSize, irma.MaxSdJwtIssueAmount)
-		}
-
 		validUntil := time.Time(*cred.Validity).Unix()
 
-		for range amount {
+		for range cred.SdJwtBatchSize {
 			disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
 			if err != nil {
 				return nil, err
