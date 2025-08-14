@@ -12,6 +12,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/testdata"
+	"github.com/stretchr/testify/require"
 )
 
 func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
@@ -20,11 +21,11 @@ func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 		"family_name": "Yivi",
 		"location":    "Utrecht",
 	})
-	requireNoErr(t, err)
+	require.NoError(t, err)
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 
 	holderKey, err := keyBinder.CreateKeyPairs(1)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	sdJwt, err := NewSdJwtVcBuilder().
 		WithHolderKey(holderKey[0]).
@@ -34,55 +35,20 @@ func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 		WithHashingAlgorithm(HashAlg_Sha256).
 		Build(jwtCreator)
 
-	requireNoErr(t, err)
+	require.NoError(t, err)
 	return sdJwt
 }
 
 func createKbJwt(t *testing.T, sdjwt SdJwtVc, keyBinder KeyBinder) KeyBindingJwt {
 	kbjwt, err := CreateKbJwt(sdjwt, keyBinder, "nonce", "Verifier")
-	requireNoErr(t, err)
+	require.NoError(t, err)
 	return kbjwt
 }
 
-func requirePresentWithValue[T comparable](t *testing.T, values map[string]any, key string, expectedValue T) {
-	val, ok := values[key]
-	if !ok {
-		t.Fatalf("map should contain value for '%s', but doesn't", key)
-	} else {
-		casted, ok := val.(T)
-		if !ok {
-			t.Fatalf("value for '%s' in map not of expected type", key)
-		}
-		if casted != expectedValue {
-			t.Fatalf("value for '%s' in map doesn't have the expected value (%v != %v)", key, casted, expectedValue)
-		}
-	}
-}
-
-func requireNotPresent(t *testing.T, values map[string]any, key string) {
-	if _, ok := values[key]; ok {
-		t.Fatalf("map may not contain '%v' field, but does", key)
-	}
-}
-
-func requireNoErr(t *testing.T, err error) {
-	if err != nil {
-		t.Fatalf("expected no err, but got: %v", err)
-	}
-}
-
-func requireErr(t *testing.T, err error) {
-	if err == nil {
-		t.Fatal("expected err, but didn't get one")
-	}
-}
-
-func jsonToMap(js string) map[string]interface{} {
+func jsonToMap(t *testing.T, js string) map[string]interface{} {
 	var result map[string]interface{}
 	err := json.Unmarshal([]byte(js), &result)
-	if err != nil {
-		log.Fatalf("failed to parse json to map: %v", err)
-	}
+	require.NoError(t, err)
 	return result
 }
 
@@ -492,15 +458,15 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 
 func createTestSdJwtVc(t *testing.T, config testSdJwtVcConfig) SdJwtVc {
 	issuerJwt, err := createTestIssuerSignedJwt(config)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	encodedDisclosures, err := EncodeDisclosures(config.disclosures)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 	sdjwt := CreateSdJwtVc(issuerJwt, encodedDisclosures)
 
 	if config.addKbJwt {
 		sdjwt, err = addTestKbJwt(config, sdjwt)
-		requireNoErr(t, err)
+		require.NoError(t, err)
 	}
 
 	return sdjwt

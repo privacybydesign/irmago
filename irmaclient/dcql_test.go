@@ -1132,9 +1132,7 @@ func sortCandidates(candidates *DcqlQueryCandidates) *DcqlQueryCandidates {
 }
 
 func requireSameCandidates(t *testing.T, expected *DcqlQueryCandidates, result *DcqlQueryCandidates) {
-	if expected.Satisfiable != result.Satisfiable {
-		t.Fatalf("'Satisfiable' field doesn't match, expected: %v, received: %v", expected.Satisfiable, result.Satisfiable)
-	}
+	require.Equal(t, result.Satisfiable, expected.Satisfiable)
 
 	expected = sortCandidates(expected)
 	result = sortCandidates(result)

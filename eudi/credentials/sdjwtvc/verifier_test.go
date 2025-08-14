@@ -149,25 +149,20 @@ func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	context := CreateTestVerificationContext(false)
 
 	_, err := ParseAndVerifySdJwtVc(context, sdJwt)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func TestDecodingDisclosure(t *testing.T) {
 	content, err := NewDisclosureContent("name", "Yivi")
-	requireNoErr(t, err)
+	require.NoError(t, err)
 	d, err := EncodeDisclosure(content)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
 	decoded, err := DecodeDisclosure(d)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
-	if decoded.Key != "name" {
-		t.Fatalf("keys don't match: %s != %s", content.Key, decoded.Key)
-	}
-
-	if decoded.Value != "Yivi" {
-		t.Fatalf("values don't match: %s != %s", content.Value, decoded.Value)
-	}
+	require.Equal(t, "name", decoded.Key)
+	require.Equal(t, "Yivi", decoded.Value)
 }
 
 func Test_FailingToFetchIssuerMetadata_Fails(t *testing.T) {
@@ -177,88 +172,67 @@ func Test_FailingToFetchIssuerMetadata_Fails(t *testing.T) {
 		JwtVerifier:           NewJwxJwtVerifier(),
 	}
 	_, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_DcTypHeader)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_IssuerSignedJwt_WithInvalidTypHeader_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, SdJwtVc(wrongIssuerSignedJwtTypHeader))
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_ValidSdJwtVc_NoDisclosures_NoKbJwt(t *testing.T) {
 	context := CreateDefaultVerificationContext()
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoDisclosuresNoKbjwt)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
-	if num := len(verifiedSdJwtVc.Disclosures); num != 0 {
-		t.Fatalf("expected 0 disclosures, but got %v", num)
-	}
-
-	if verifiedSdJwtVc.KeyBindingJwt != nil {
-		t.Fatalf("expected no kbjwt but got %v", verifiedSdJwtVc.KeyBindingJwt)
-	}
+	require.Len(t, verifiedSdJwtVc.Disclosures, 0)
+	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_ValidSdJwt_MismatchingHashInKbJwt_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_MismatchingHashInKbJwt)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithKbJwt_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext()
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_DcTypHeader)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
-	if num := len(verifiedSdJwtVc.Disclosures); num != 2 {
-		t.Fatalf("expected 2 disclosures but got %d", num)
-	}
-
-	if verifiedSdJwtVc.KeyBindingJwt == nil {
-		t.Fatal("expected kbjwt but it is nil")
-	}
+	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	require.NotNil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext()
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_VcTypHeader)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
-	if num := len(verifiedSdJwtVc.Disclosures); num != 2 {
-		t.Fatalf("expected 2 disclosures but got %d", num)
-	}
-
-	if verifiedSdJwtVc.KeyBindingJwt == nil {
-		t.Fatal("expected kbjwt but it is nil")
-	}
+	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	require.NotNil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext()
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoKbJwt)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 
-	if num := len(verifiedSdJwtVc.Disclosures); num != 2 {
-		t.Fatalf("expected 2 disclosures but got %d", num)
-	}
-
-	if verifiedSdJwtVc.KeyBindingJwt != nil {
-		t.Fatalf("expected no kbjwt but it is not nil (%v)", *verifiedSdJwtVc.KeyBindingJwt)
-	}
-
+	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_InvalidSdJwtVc_MissingTrailingTilde_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, invalidSdJwtVc_MissingTrailingTilde)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_InvalidSdJwtVc_WrongKbJwtTypHeader_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, invalidSdJwtVC_WrongKbTypHeader)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 // ==============================================================================
@@ -329,7 +303,7 @@ func Test_DisclosuresThatAreNotInSdField_Fails(t *testing.T) {
 		"name":     "IRMA",
 		"location": "Nijmegen",
 	})
-	requireNoErr(t, err)
+	require.NoError(t, err)
 	config := newWorkingSdJwtTestConfig().withDisclosures(otherDisclosures)
 	errorTestCase(t, config, "different disclosures than are in the _sd field should fail")
 }
@@ -376,7 +350,7 @@ func Test_IssMetadataCantBeFetched_Fails(t *testing.T) {
 
 	sdjwtvc := createTestSdJwtVc(t, config)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_IssLinkNotHttps_Fails(t *testing.T) {
@@ -389,7 +363,7 @@ func Test_IssLinkNotHttps_Fails(t *testing.T) {
 	}
 	sdjwtvc := createTestSdJwtVc(t, config)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_IssLinkNotSameAsInMetadata_Fails(t *testing.T) {
@@ -402,7 +376,7 @@ func Test_IssLinkNotSameAsInMetadata_Fails(t *testing.T) {
 		JwtVerifier:           NewJwxJwtVerifier(),
 	}
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_MultipleJwksInMetadata_SecondCorrect_Succeeds(t *testing.T) {
@@ -413,7 +387,7 @@ func Test_MultipleJwksInMetadata_SecondCorrect_Succeeds(t *testing.T) {
 	}
 	sdjwtvc := createTestSdJwtVc(t, newWorkingSdJwtTestConfig())
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireNoErr(t, err)
+	require.NoError(t, err)
 }
 
 func Test_NoSdsAtAll_Succeeds(t *testing.T) {
@@ -432,7 +406,7 @@ func Test_WrongKeyInIssuerMetadata_Fails(t *testing.T) {
 		JwtVerifier:           NewJwxJwtVerifier(),
 	}
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_IatIsAfterVerification_Fails(t *testing.T) {
@@ -445,7 +419,7 @@ func Test_IatIsAfterVerification_Fails(t *testing.T) {
 
 	sdjwtvc := createTestSdJwtVc(t, config)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_VerificationIsAfterExp_Fails(t *testing.T) {
@@ -458,7 +432,7 @@ func Test_VerificationIsAfterExp_Fails(t *testing.T) {
 
 	sdjwtvc := createTestSdJwtVc(t, config)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 func Test_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
@@ -471,7 +445,7 @@ func Test_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
 
 	sdjwtvc := createTestSdJwtVc(t, config)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	requireErr(t, err)
+	require.Error(t, err)
 }
 
 // ==============================================================================
@@ -480,16 +454,12 @@ func errorTestCase(t *testing.T, config testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
 	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	if err == nil {
-		t.Fatalf("case '%s' failed: expected err, didn't get one", message)
-	}
+	require.Error(t, err, message)
 }
 
 func noErrorTestCase(t *testing.T, config testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
 	context := CreateDefaultVerificationContext()
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	if err != nil {
-		t.Fatalf("case '%s' failed: expected no err, but got: %v", message, err)
-	}
+	require.NoError(t, err, message)
 }

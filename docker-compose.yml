@@ -137,15 +137,6 @@ services:
       - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
       - VERIFIER_ORIGINALCLIENTID=localhost
 
-  # Frontend for the verifier
-  custom_verifier_frontend:
-    build: ./eudi_demo_frontend
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./eudi_demo_frontend:/app
-      - /app/node_modules
-
 # Docker Desktop for MacOS does not support exposing ports when using host networking. Therefore,
 # we have to use bridge networking and expose the ports manually.
 # https://github.com/docker/for-mac/issues/1031
