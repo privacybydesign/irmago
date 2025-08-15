@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
@@ -130,12 +132,12 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 }
 
 type AuthorizationResponseConfig struct {
-	State             string
-	QueryResponses    []dcql.QueryResponse
-	ResponseUri       string
-	ResponseType      string
-	ResponseMode      openid4vp.ResponseMode
-	EncryptionKey     *jwk.Key
+	State          string
+	QueryResponses []dcql.QueryResponse
+	ResponseUri    string
+	ResponseType   string
+	ResponseMode   openid4vp.ResponseMode
+	EncryptionKeys *jwk.Set
 }
 
 func logMarshalled(message string, value any) {
@@ -176,12 +178,14 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 
 	httpClient := http.Client{}
 	authResponse := AuthorizationResponseConfig{
-		State:             request.State,
-		QueryResponses:    credentials,
-		ResponseUri:       request.ResponseUri,
-		ResponseType:      request.ResponseType,
-		ResponseMode:      request.ResponseMode,
+		State:          request.State,
+		QueryResponses: credentials,
+		ResponseUri:    request.ResponseUri,
+		ResponseType:   request.ResponseType,
+		ResponseMode:   request.ResponseMode,
+		EncryptionKeys: &request.ClientMetadata.Jwks.Set,
 	}
+
 	responseReq, err := createAuthorizationResponseHttpRequest(authResponse)
 	logMarshalled("responsereq:", responseReq)
 	if err != nil {
@@ -645,20 +649,19 @@ func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) 
 			return nil, err
 		}
 		values.Add("vp_token", vpToken)
+		values.Add("state", config.State)
 	}
 
 	if config.ResponseMode == openid4vp.ResponseMode_DirectPostJwt {
-		if config.EncryptionKey == nil {
+		if config.EncryptionKeys == nil {
 			return nil, fmt.Errorf("using response mode %v, but the encryption key is nil", openid4vp.ResponseMode_DirectPostJwt)
 		}
-		jwe, err := createDirectPostJwtEncryptedResponse(config.QueryResponses, *config.EncryptionKey)
+		jwe, err := createDirectPostJwtEncryptedResponse(config.QueryResponses, config.State, *config.EncryptionKeys)
 		if err != nil {
 			return nil, err
 		}
 		values.Add("response", jwe)
 	}
-
-	values.Add("state", config.State)
 
 	req, err := http.NewRequest(http.MethodPost, config.ResponseUri, strings.NewReader(values.Encode()))
 	if err != nil {
@@ -670,16 +673,45 @@ func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) 
 	return req, nil
 }
 
-func createDirectPostJwtEncryptedResponse(queryResponses []dcql.QueryResponse, encryptionKey jwk.Key) (string, error) {
+func createDirectPostJwtEncryptedResponse(queryResponses []dcql.QueryResponse, state string, encryptionKeys jwk.Set) (string, error) {
 	vpToken := createVpToken(queryResponses)
 	payload := map[string]any{
 		"vp_token": vpToken,
+		"state":    state,
 	}
-	return encryptJwe(payload, encryptionKey)
+	return encryptJwe(payload, encryptionKeys)
 }
 
-func encryptJwe(payload map[string]any, key jwk.Key) (string, error) {
-	return "", nil
+func encryptJwe(payload map[string]any, keys jwk.Set) (string, error) {
+	payloadJson, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize payload for direct_post.jwt: %v", err)
+	}
+	jwkKey, ok := keys.Key(0)
+	if !ok {
+		return "", fmt.Errorf("couldn't find key")
+	}
+
+	kid, ok := jwkKey.KeyID()
+	if !ok {
+		return "", fmt.Errorf("missing key id")
+	}
+	h := jwe.NewHeaders()
+	if kid != "" {
+		h.Set(jwe.KeyIDKey, kid)
+	}
+
+	alg, ok := jwkKey.Algorithm()
+	if !ok {
+		return "", fmt.Errorf("key doesn't have alg")
+	}
+	encrypted, err := jwe.Encrypt(
+		payloadJson,
+		jwe.WithKey(alg, jwkKey),
+		jwe.WithContentEncryption(jwa.A128GCM()),
+		jwe.WithProtectedHeaders(h),
+	)
+	return string(encrypted), err
 }
 
 func createVpToken(queryResponses []dcql.QueryResponse) map[string][]string {

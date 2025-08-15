@@ -1,7 +1,10 @@
 package openid4vp
 
 import (
+	"encoding/json"
+
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -38,7 +41,20 @@ func GetSdJwtVcFromClientMedataVpFormats(vpFormats map[string]interface{}) *SdJw
 }
 
 type Jwks struct {
-	Keys []Jwk `json:"keys"`
+	jwk.Set `json:"-"`
+}
+
+func (s *Jwks) UnmarshalJSON(content []byte) error {
+	set, err := jwk.Parse(content)
+	if err != nil {
+		return err
+	}
+	s.Set = set
+	return nil
+}
+
+func (s Jwks) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Set)
 }
 
 type ClientMetadata struct {

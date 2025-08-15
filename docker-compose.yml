@@ -135,6 +135,28 @@ services:
       - VERIFIER_ORIGINALCLIENTID=localhost
       - VERIFIER_CLIENTIDPREFIX=x509_san_dns
 
+  # Eudi openid4vp verifier service with direct_post.jwt enabled
+  eudi_verifier_jwt:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.6.0
+    container_name: eudi_verifier_jwt
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./testdata/eudi/verifier/keystore.p12:/keystore.p12
+    environment:
+      - SERVER_PORT=8090
+      - VERIFIER_RESPONSE_MODE="DirectPost.jwt"
+      - VERIFIER_PUBLIC_URL="0.0.0.0:8090"
+      - VERIFIER_JAR_SIGNING_KEY=LoadFromKeystore
+      - VERIFIER_JAR_SIGNING_KEY_ALIAS=verifier_cert
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE=file:///keystore.p12
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE_PASSWORD=changeit
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE_TYPE=pkcs12
+      - VERIFIER_JAR_SIGNING_KEY_PASSWORD=changeit
+      - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
+      - VERIFIER_ORIGINALCLIENTID=localhost
+      - VERIFIER_CLIENTIDPREFIX=x509_san_dns
+
 # Docker Desktop for MacOS does not support exposing ports when using host networking. Therefore,
 # we have to use bridge networking and expose the ports manually.
 # https://github.com/docker/for-mac/issues/1031
