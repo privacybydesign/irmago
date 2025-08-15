@@ -86,6 +86,7 @@ services:
       - .:/irmago
     depends_on:
       - eudi_verifier
+      - eudi_verifier_jwt
       - postgres
       - mysql
       - sqlserver
