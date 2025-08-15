@@ -25,7 +25,6 @@ type OpenID4VPClient struct {
 	keyBinder         sdjwtvc.KeyBinder
 	storage           SdJwtVcStorage
 	verifierValidator eudi.VerifierValidator
-	compatibility     openid4vp.CompatibilityMode
 	logsStorage       LogsStorage
 }
 
@@ -39,7 +38,6 @@ func NewOpenID4VPClient(
 	return &OpenID4VPClient{
 		eudiConf:          eudiConf,
 		keyBinder:         keybinder,
-		compatibility:     openid4vp.Compatibility_Draft24,
 		storage:           storage,
 		verifierValidator: verifierValidator,
 		logsStorage:       logsStorage,
@@ -137,7 +135,6 @@ type AuthorizationResponseConfig struct {
 	ResponseUri       string
 	ResponseType      string
 	ResponseMode      openid4vp.ResponseMode
-	CompatibilityMode openid4vp.CompatibilityMode
 	EncryptionKey     *jwk.Key
 }
 
@@ -179,7 +176,6 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 
 	httpClient := http.Client{}
 	authResponse := AuthorizationResponseConfig{
-		CompatibilityMode: client.compatibility,
 		State:             request.State,
 		QueryResponses:    credentials,
 		ResponseUri:       request.ResponseUri,
@@ -644,7 +640,7 @@ func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) 
 	values := url.Values{}
 
 	if config.ResponseMode == openid4vp.ResponseMode_DirectPost {
-		vpToken, err := createDirectPostVpToken(config.CompatibilityMode, config.QueryResponses)
+		vpToken, err := createDirectPostVpToken(config.QueryResponses)
 		if err != nil {
 			return nil, err
 		}
@@ -655,7 +651,7 @@ func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) 
 		if config.EncryptionKey == nil {
 			return nil, fmt.Errorf("using response mode %v, but the encryption key is nil", openid4vp.ResponseMode_DirectPostJwt)
 		}
-		jwe, err := createDirectPostJwtEncryptedResponse(config.CompatibilityMode, config.QueryResponses, *config.EncryptionKey)
+		jwe, err := createDirectPostJwtEncryptedResponse(config.QueryResponses, *config.EncryptionKey)
 		if err != nil {
 			return nil, err
 		}
@@ -674,11 +670,8 @@ func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) 
 	return req, nil
 }
 
-func createDirectPostJwtEncryptedResponse(compatibility openid4vp.CompatibilityMode, queryResponses []dcql.QueryResponse, encryptionKey jwk.Key) (string, error) {
-	vpToken, err := createVpToken(compatibility, queryResponses)
-	if err != nil {
-		return "", err
-	}
+func createDirectPostJwtEncryptedResponse(queryResponses []dcql.QueryResponse, encryptionKey jwk.Key) (string, error) {
+	vpToken := createVpToken(queryResponses)
 	payload := map[string]any{
 		"vp_token": vpToken,
 	}
@@ -689,30 +682,17 @@ func encryptJwe(payload map[string]any, key jwk.Key) (string, error) {
 	return "", nil
 }
 
-func createVpToken(compatibility openid4vp.CompatibilityMode, queryResponses []dcql.QueryResponse) (any, error) {
-	if compatibility == openid4vp.Compatibility_LatestDraft {
-		content := map[string][]string{}
-		for _, resp := range queryResponses {
-			content[resp.QueryId] = resp.Credentials
-		}
+func createVpToken(queryResponses []dcql.QueryResponse) map[string][]string {
+	content := map[string][]string{}
+	for _, resp := range queryResponses {
+		content[resp.QueryId] = resp.Credentials
+	}
 
-		return content, nil
-	}
-	if compatibility == openid4vp.Compatibility_Draft24 {
-		content := map[string]string{}
-		for _, resp := range queryResponses {
-			content[resp.QueryId] = resp.Credentials[0]
-		}
-		return content, nil
-	}
-	return nil, fmt.Errorf("%v is not a supported value for compatibility mode", compatibility)
+	return content
 }
 
-func createDirectPostVpToken(compatibility openid4vp.CompatibilityMode, queryResponses []dcql.QueryResponse) (string, error) {
-	content, err := createVpToken(compatibility, queryResponses)
-	if err != nil {
-		return "", err
-	}
+func createDirectPostVpToken(queryResponses []dcql.QueryResponse) (string, error) {
+	content := createVpToken(queryResponses)
 	result, err := json.Marshal(content)
 	return string(result), err
 }

@@ -176,10 +176,3 @@ func (ar *AuthorizationRequest) GetSubject() (string, error)                  { 
 func (ar *AuthorizationRequest) GetAudience() (jwt.ClaimStrings, error)       { return nil, nil }
 
 const AuthRequestJwtTyp string = "oauth-authz-req+jwt"
-
-type CompatibilityMode string
-
-const (
-	Compatibility_LatestDraft CompatibilityMode = "latest"
-	Compatibility_Draft24     CompatibilityMode = "draft24"
-)
