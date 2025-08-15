@@ -19,6 +19,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
+const ClockSkewInSeconds = 180
+
 // VerificationContext contains some options and configuration for verifying SD-JWT VCs.
 type VerificationContext struct {
 	// Used to fetch the issuer metadata found at the `iss` field.
@@ -268,26 +270,29 @@ func (f *HttpIssuerMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetad
 
 func verifyTime(context VerificationContext, issuerSignedJwtPayload IssuerSignedJwtPayload, kbjwtPayload *KeyBindingJwtPayload) error {
 	now := context.Clock.Now()
+	minSkewNow := now - ClockSkewInSeconds
+	maxSkewNow := now + ClockSkewInSeconds
+
 	iat := issuerSignedJwtPayload.IssuedAt
 	exp := issuerSignedJwtPayload.Expiry
 	nbf := issuerSignedJwtPayload.NotBefore
 
-	if nbf != 0 && now < nbf {
-		return fmt.Errorf("verification before nbf: now: %v < nbf: %v", now, nbf)
+	if nbf != 0 && maxSkewNow < nbf {
+		return fmt.Errorf("verification before nbf: now: %v + skew: %v < nbf: %v", now, ClockSkewInSeconds, nbf)
 	}
 
-	if now < iat {
-		return fmt.Errorf("verification before issued at: %v < %v", now, iat)
+	if maxSkewNow < iat {
+		return fmt.Errorf("verification before issued at: %v + skew: %v < %v", now, ClockSkewInSeconds, iat)
 	}
 
-	if exp != 0 && now > exp {
-		return fmt.Errorf("verification after expiry of issuer signed jwt: %v > %v", now, exp)
+	if exp != 0 && minSkewNow > exp {
+		return fmt.Errorf("verification after expiry of issuer signed jwt: %v - skew: %v > %v", now, ClockSkewInSeconds, exp)
 	}
 
 	if kbjwtPayload != nil {
 		kbiat := kbjwtPayload.IssuedAt
-		if now < kbiat {
-			return fmt.Errorf("verification before issued at of kbjwt: %v < %v", now, iat)
+		if maxSkewNow < kbiat {
+			return fmt.Errorf("verification before issued at of kbjwt: %v + skew %v < %v", now, ClockSkewInSeconds, kbiat)
 		}
 	}
 
@@ -341,9 +346,10 @@ func parseAndVerifyKeyBindingJwt(
 	}
 
 	now := context.Clock.Now()
+	maxSkewNow := now + ClockSkewInSeconds
 
-	if payload.IssuedAt >= now {
-		return KeyBindingJwtPayload{}, fmt.Errorf("iat value (%v) was after current time (%v)", payload.IssuedAt, now)
+	if payload.IssuedAt >= maxSkewNow {
+		return KeyBindingJwtPayload{}, fmt.Errorf("kbjwt iat value (%v) was after current time (%v)", payload.IssuedAt, now)
 	}
 
 	return KeyBindingJwtPayload{}, nil

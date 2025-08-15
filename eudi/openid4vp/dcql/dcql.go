@@ -121,3 +121,7 @@ type TrustedAuthority struct {
 	Type   TrustedAuthorityType `json:"type"`   // required
 	Values []string             `json:"values"` // required
 }
+
+type QueryValidator interface {
+	ValidateQuery(query *DcqlQuery) error
+}

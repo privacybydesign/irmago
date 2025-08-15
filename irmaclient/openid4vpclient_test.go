@@ -36,7 +36,7 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	)
 	require.NoError(t, err)
 
-	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&conf.Verifiers)
+	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&conf.Verifiers, &eudi.MockQueryValidatorFactory{})
 	client, err := NewOpenID4VPClient(conf, storage, verifierValidator, keyBinder, &InMemoryLogsStorage{})
 	require.NoError(t, err)
 	return client

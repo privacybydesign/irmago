@@ -187,7 +187,6 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	}
 
 	responseReq, err := createAuthorizationResponseHttpRequest(authResponse)
-	logMarshalled("responsereq:", responseReq)
 	if err != nil {
 		return err
 	}
@@ -339,6 +338,7 @@ func constructEmptyDisConForQuery(query dcql.CredentialQuery) ([]DisclosureCandi
 		}
 	}
 
+	// TODO: support for multiple VctValues ?
 	credId := query.Meta.VctValues[0]
 	for _, claimId := range claimSet {
 		claim := claimMap[claimId]
@@ -566,6 +566,7 @@ func mapToList[T any](claims map[string]T) []T {
 }
 
 func findAllCandidatesForCredQuery(storage SdJwtVcStorage, query dcql.CredentialQuery) ([]CredentialCandidate, error) {
+	// TODO: get credentials for ALL VctValues
 	return filterCredentialsWithClaims(storage.GetCredentialsForId(query.Meta.VctValues[0]), query)
 }
 
