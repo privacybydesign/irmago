@@ -2,6 +2,7 @@ package sdjwtvc
 
 import (
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/testdata"
@@ -19,8 +20,9 @@ import (
 // - [x] iss link with wrong key in metadata
 // - [x] iss link with wrong issuer url in metadata
 // - [x] iss link is non-https, when it should be
-// - [x] clock.now is before nbf
-// - [x] clock.now is after exp
+// - [x] clock.now + skew is before iat
+// - [x] clock.now + skew is before nbf
+// - [x] clock.now - skew is after exp
 // - [x] cnf missing while there is a kbjwt
 // - [x] cnf contains wrong key to verify kbjwt
 // - [x] mismatch for sd_hash field in kbjwt
@@ -44,6 +46,9 @@ import (
 // - [x] iss link is non-https, but is accepted (for testing purposes)
 // - [x] valid self-signed x509 certificate with DNS/URI value that matches `iss` value
 // - [x] valid x509 certificate chain with DNS/URI value that matches `iss` value
+// - [x] clock.now - 1 minute is before iat (valid because of skew)
+// - [x] clock.now - 1 minute is before nbf (valid because of skew)
+// - [x] clock.now + 1 minute is after exp (valid because of skew)
 
 // =======================================================================
 
@@ -410,10 +415,13 @@ func Test_WrongKeyInIssuerMetadata_Fails(t *testing.T) {
 }
 
 func Test_IatIsAfterVerification_Fails(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withIssuedAt(100).withKbIssuedAt(101)
+	now := time.Now().Unix()
+	iat := now + ClockSkewInSeconds + 100
+	kbIat := now
+	config := newWorkingSdJwtTestConfig().withIssuedAt(iat).withKbIssuedAt(kbIat)
 	context := VerificationContext{
 		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: 90},
+		Clock:                 &testClock{time: now},
 		JwtVerifier:           NewJwxJwtVerifier(),
 	}
 
@@ -423,10 +431,12 @@ func Test_IatIsAfterVerification_Fails(t *testing.T) {
 }
 
 func Test_VerificationIsAfterExp_Fails(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withIssuedAt(50).withKbIssuedAt(70).withExpiryTime(100)
+	now := time.Now().Unix()
+	exp := now - ClockSkewInSeconds - 100
+	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now).withExpiryTime(exp)
 	context := VerificationContext{
 		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: 200},
+		Clock:                 &testClock{time: now},
 		JwtVerifier:           NewJwxJwtVerifier(),
 	}
 
@@ -436,16 +446,60 @@ func Test_VerificationIsAfterExp_Fails(t *testing.T) {
 }
 
 func Test_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withIssuedAt(40).withKbIssuedAt(40).withExpiryTime(100).withNotBefore(50)
+	now := time.Now().Unix()
+	nbf := now + ClockSkewInSeconds + 50
+	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now).withExpiryTime(100).withNotBefore(nbf)
 	context := VerificationContext{
 		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: 45},
+		Clock:                 &testClock{time: now},
 		JwtVerifier:           NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
 	require.Error(t, err)
+}
+
+func Test_VerificationMinusOneMinuteIsBeforeIat_GivenClockSkew_Success(t *testing.T) {
+	now := time.Now().Unix()
+	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now)
+	context := VerificationContext{
+		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
+		Clock:                 &testClock{time: now - 60},
+		JwtVerifier:           NewJwxJwtVerifier(),
+	}
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
+	require.NoError(t, err)
+}
+
+func Test_VerificationPlusOneMinuteIsAfterExp_GivenClockSkew_Success(t *testing.T) {
+	now := time.Now().Unix()
+	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now).withExpiryTime(now)
+	context := VerificationContext{
+		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
+		Clock:                 &testClock{time: now + 60},
+		JwtVerifier:           NewJwxJwtVerifier(),
+	}
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
+	require.NoError(t, err)
+}
+
+func Test_VerificationMinusOneMinuteIsBeforeNotBefore_GivenClockSkew_Success(t *testing.T) {
+	now := time.Now().Unix()
+	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now).withNotBefore(now)
+	context := VerificationContext{
+		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
+		Clock:                 &testClock{time: now - 60},
+		JwtVerifier:           NewJwxJwtVerifier(),
+	}
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
+	require.NoError(t, err)
 }
 
 // ==============================================================================
