@@ -721,6 +721,9 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 	}
 
 	encAlg, err := pickEncryptionAlgorithm(encSupported)
+	if err != nil {
+		return "", err
+	}
 
 	encrypted, err := jwe.Encrypt(
 		payloadJson,
