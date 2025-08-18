@@ -739,6 +739,7 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 			jwe.WithProtectedHeaders(h),
 		)
 		if err != nil {
+			errors = append(errors, err)
 			continue
 		}
 		return string(encrypted), err
