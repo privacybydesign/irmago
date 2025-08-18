@@ -202,8 +202,9 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	}
 }
 
-func StartTestSessionAtEudiVerifier(startSessionRequest string) (string, error) {
-	response, err := http.Post("http://127.0.0.1:8089/ui/presentations",
+func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (string, error) {
+	apiUrl := fmt.Sprintf("%s/ui/presentations", openid4vpHost)
+	response, err := http.Post(apiUrl,
 		"application/json",
 		bytes.NewReader([]byte(startSessionRequest)))
 

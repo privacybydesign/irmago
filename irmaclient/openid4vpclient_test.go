@@ -44,8 +44,8 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 
 func TestOpenID4VPClient(t *testing.T) {
 	t.Run("disclosing two credentials successfully", func(t *testing.T) {
-		testDisclosingTwoCredentials_Success(t, "http://127.0.0.1:8089")
-		testDisclosingTwoCredentials_Success(t, "http://127.0.0.1:8090")
+		testDisclosingTwoCredentials_Success(t, testdata.OpenID4VP_DirectPost_Host)
+		testDisclosingTwoCredentials_Success(t, testdata.OpenID4VP_DirectPostJwt_Host)
 	})
 }
 

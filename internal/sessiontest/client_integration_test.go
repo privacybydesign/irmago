@@ -99,7 +99,7 @@ func testCredentialInstanceCount(t *testing.T) {
 	require.Equal(t, numInstances, *cred.InstanceCount)
 
 	for i := range numInstances {
-		discloseOverOpenID4VP(t, client)
+		discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPost_Host)
 
 		info = client.CredentialInfoList()
 		require.Len(t, info, 3)
@@ -451,7 +451,7 @@ func testEudiSessionLogs(t *testing.T) {
 	// keyshare attribute (no sdjwt included)
 	requireRegularIrmaIssuanceLog(t, logs[1])
 
-	discloseOverOpenID4VP(t, client)
+	discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPostJwt_Host)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 
@@ -570,11 +570,12 @@ func testDiscloseOverOpenID4VP(t *testing.T) {
 	defer client.Close()
 
 	issueSdJwtAndIdemixToClient(t, client, irmaServer)
-	discloseOverOpenID4VP(t, client)
+	discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPost_Host)
+	discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPostJwt_Host)
 }
 
-func discloseOverOpenID4VP(t *testing.T, client *irmaclient.Client) {
-	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(createAuthRequestRequest())
+func discloseOverOpenID4VP(t *testing.T, client *irmaclient.Client, openid4vpHost string) {
+	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(openid4vpHost, createAuthRequestRequest())
 	require.NoError(t, err)
 	session := irmaclient.SessionRequestData{
 		Qr: irma.Qr{

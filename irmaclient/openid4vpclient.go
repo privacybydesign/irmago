@@ -188,7 +188,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 
 	if request.ResponseMode == openid4vp.ResponseMode_DirectPostJwt {
 		if request.ClientMetadata.Jwks == nil {
-			return fmt.Errorf("client metadata jwks was nil while response_mode direct_post.jwt was used")
+			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", openid4vp.ResponseMode_DirectPostJwt)
 		}
 		responseConfig.EncryptionKeys = &request.ClientMetadata.Jwks.Set
 		responseConfig.EncryptedResponseEncValuesSupported = request.ClientMetadata.EncryptedResponseEncValuesSupported
@@ -710,13 +710,13 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 	errors := []error{}
 
 	for i := range keys.Len() {
-		jwkKey, ok := keys.Key(i)
+		key, ok := keys.Key(i)
 		if !ok {
 			errors = append(errors, fmt.Errorf("couldn't find key at index %v", i))
 			continue
 		}
 
-		kid, ok := jwkKey.KeyID()
+		kid, ok := key.KeyID()
 		if !ok {
 			errors = append(errors, fmt.Errorf("missing key id"))
 			continue
@@ -726,7 +726,7 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 			h.Set(jwe.KeyIDKey, kid)
 		}
 
-		alg, ok := jwkKey.Algorithm()
+		keyAlg, ok := key.Algorithm()
 		if !ok {
 			errors = append(errors, fmt.Errorf("key doesn't have alg"))
 			continue
@@ -734,7 +734,7 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 
 		encrypted, err := jwe.Encrypt(
 			payloadJson,
-			jwe.WithKey(alg, jwkKey),
+			jwe.WithKey(keyAlg, key),
 			jwe.WithContentEncryption(encAlg),
 			jwe.WithProtectedHeaders(h),
 		)
@@ -742,7 +742,7 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 			errors = append(errors, err)
 			continue
 		}
-		return string(encrypted), err
+		return string(encrypted), nil
 	}
 
 	return "", fmt.Errorf("failed to encrypt response: %v", errors)
