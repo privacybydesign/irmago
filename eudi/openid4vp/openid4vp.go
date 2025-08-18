@@ -73,9 +73,6 @@ type ClientMetadata struct {
 	// this MUST be present for anything other than the default single value of A128GCM. Otherwise, this SHOULD be absent.
 	EncryptedResponseEncValuesSupported []string `json:"encrypted_response_enc_values_supported"`
 
-	// Legacy
-	AuthorizationEncryptedResponseEnc string `json:"authorization_encrypted_response_enc,omitempty"`
-
 	// vp_formats contains some metadata per credential format, which is specific for each credential format.
 	// it's therefore modeled with an interface here, and each type of credential can be attempted to be retrieved
 	// using a function returning a pointer to the requested credential type

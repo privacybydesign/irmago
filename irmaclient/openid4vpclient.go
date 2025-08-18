@@ -132,12 +132,13 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 }
 
 type AuthorizationResponseConfig struct {
-	State          string
-	QueryResponses []dcql.QueryResponse
-	ResponseUri    string
-	ResponseType   string
-	ResponseMode   openid4vp.ResponseMode
-	EncryptionKeys *jwk.Set
+	State                               string
+	QueryResponses                      []dcql.QueryResponse
+	ResponseUri                         string
+	ResponseType                        string
+	ResponseMode                        openid4vp.ResponseMode
+	EncryptionKeys                      *jwk.Set
+	EncryptedResponseEncValuesSupported []string
 }
 
 func logMarshalled(message string, value any) {
@@ -177,7 +178,7 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	logMarshalled("credentials for choice:", credentials)
 
 	httpClient := http.Client{}
-	authResponse := AuthorizationResponseConfig{
+	responseConfig := AuthorizationResponseConfig{
 		State:          request.State,
 		QueryResponses: credentials,
 		ResponseUri:    request.ResponseUri,
@@ -186,10 +187,14 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 	}
 
 	if request.ResponseMode == openid4vp.ResponseMode_DirectPostJwt {
-		authResponse.EncryptionKeys = &request.ClientMetadata.Jwks.Set
+		if request.ClientMetadata.Jwks == nil {
+			return fmt.Errorf("client metadata jwks was nil while response_mode direct_post.jwt was used")
+		}
+		responseConfig.EncryptionKeys = &request.ClientMetadata.Jwks.Set
+		responseConfig.EncryptedResponseEncValuesSupported = request.ClientMetadata.EncryptedResponseEncValuesSupported
 	}
 
-	responseReq, err := createAuthorizationResponseHttpRequest(authResponse)
+	responseReq, err := createAuthorizationResponseHttpRequest(responseConfig)
 	if err != nil {
 		return err
 	}
@@ -660,7 +665,12 @@ func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) 
 		if config.EncryptionKeys == nil {
 			return nil, fmt.Errorf("using response mode %v, but the encryption key is nil", openid4vp.ResponseMode_DirectPostJwt)
 		}
-		jwe, err := createDirectPostJwtEncryptedResponse(config.QueryResponses, config.State, *config.EncryptionKeys)
+		jwe, err := createDirectPostJwtEncryptedResponse(
+			config.QueryResponses,
+			config.State,
+			*config.EncryptionKeys,
+			config.EncryptedResponseEncValuesSupported,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -677,16 +687,16 @@ func createAuthorizationResponseHttpRequest(config AuthorizationResponseConfig) 
 	return req, nil
 }
 
-func createDirectPostJwtEncryptedResponse(queryResponses []dcql.QueryResponse, state string, encryptionKeys jwk.Set) (string, error) {
+func createDirectPostJwtEncryptedResponse(queryResponses []dcql.QueryResponse, state string, encryptionKeys jwk.Set, encSupported []string) (string, error) {
 	vpToken := createVpToken(queryResponses)
 	payload := map[string]any{
 		"vp_token": vpToken,
 		"state":    state,
 	}
-	return encryptJwe(payload, encryptionKeys)
+	return encryptJwe(payload, encryptionKeys, encSupported)
 }
 
-func encryptJwe(payload map[string]any, keys jwk.Set) (string, error) {
+func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (string, error) {
 	payloadJson, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize payload for direct_post.jwt: %v", err)
@@ -709,13 +719,33 @@ func encryptJwe(payload map[string]any, keys jwk.Set) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("key doesn't have alg")
 	}
+
+	encAlg, err := pickEncryptionAlgorithm(encSupported)
+
 	encrypted, err := jwe.Encrypt(
 		payloadJson,
 		jwe.WithKey(alg, jwkKey),
-		jwe.WithContentEncryption(jwa.A128GCM()),
+		jwe.WithContentEncryption(encAlg),
 		jwe.WithProtectedHeaders(h),
 	)
 	return string(encrypted), err
+}
+
+func pickEncryptionAlgorithm(options []string) (jwa.ContentEncryptionAlgorithm, error) {
+	// according to openid4vp spec: when no algorithms are specified A128GCM is the default
+	if len(options) == 0 {
+		return jwa.A128GCM(), nil
+	}
+
+	// we'll just pick the first algorithm we support
+	for _, opt := range options {
+		alg, ok := jwa.LookupContentEncryptionAlgorithm(opt)
+		if ok {
+			return alg, nil
+		}
+	}
+
+	return jwa.EmptyContentEncryptionAlgorithm(), fmt.Errorf("no supported encryption algorithm provided (%v)", options)
 }
 
 func createVpToken(queryResponses []dcql.QueryResponse) map[string][]string {
