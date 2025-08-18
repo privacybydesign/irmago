@@ -183,7 +183,10 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 		ResponseUri:    request.ResponseUri,
 		ResponseType:   request.ResponseType,
 		ResponseMode:   request.ResponseMode,
-		EncryptionKeys: &request.ClientMetadata.Jwks.Set,
+	}
+
+	if request.ResponseMode == openid4vp.ResponseMode_DirectPostJwt {
+		authResponse.EncryptionKeys = &request.ClientMetadata.Jwks.Set
 	}
 
 	responseReq, err := createAuthorizationResponseHttpRequest(authResponse)

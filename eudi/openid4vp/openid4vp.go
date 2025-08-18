@@ -65,7 +65,7 @@ type ClientMetadata struct {
 	// This allows the Verifier to pass ephemeral keys specific to this Authorization Request.
 	// Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
 	// Each JWK in the set MUST have a kid (Key ID) parameter that uniquely identifies the key within the context of the request.
-	Jwks Jwks `json:"jwks,omitempty"`
+	Jwks *Jwks `json:"jwks,omitempty"`
 
 	// OPTIONAL. Array of strings, where each string is a JWE [RFC7516] enc algorithm that can be used
 	// as the content encryption algorithm for encrypting the Response.
