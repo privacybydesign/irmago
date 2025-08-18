@@ -701,37 +701,50 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize payload for direct_post.jwt: %v", err)
 	}
-	jwkKey, ok := keys.Key(0)
-	if !ok {
-		return "", fmt.Errorf("couldn't find key")
-	}
-
-	kid, ok := jwkKey.KeyID()
-	if !ok {
-		return "", fmt.Errorf("missing key id")
-	}
-	h := jwe.NewHeaders()
-	if kid != "" {
-		h.Set(jwe.KeyIDKey, kid)
-	}
-
-	alg, ok := jwkKey.Algorithm()
-	if !ok {
-		return "", fmt.Errorf("key doesn't have alg")
-	}
 
 	encAlg, err := pickEncryptionAlgorithm(encSupported)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("no supported encryption algorithm: %v", err)
 	}
 
-	encrypted, err := jwe.Encrypt(
-		payloadJson,
-		jwe.WithKey(alg, jwkKey),
-		jwe.WithContentEncryption(encAlg),
-		jwe.WithProtectedHeaders(h),
-	)
-	return string(encrypted), err
+	errors := []error{}
+
+	for i := range keys.Len() {
+		jwkKey, ok := keys.Key(i)
+		if !ok {
+			errors = append(errors, fmt.Errorf("couldn't find key at index %v", i))
+			continue
+		}
+
+		kid, ok := jwkKey.KeyID()
+		if !ok {
+			errors = append(errors, fmt.Errorf("missing key id"))
+			continue
+		}
+		h := jwe.NewHeaders()
+		if kid != "" {
+			h.Set(jwe.KeyIDKey, kid)
+		}
+
+		alg, ok := jwkKey.Algorithm()
+		if !ok {
+			errors = append(errors, fmt.Errorf("key doesn't have alg"))
+			continue
+		}
+
+		encrypted, err := jwe.Encrypt(
+			payloadJson,
+			jwe.WithKey(alg, jwkKey),
+			jwe.WithContentEncryption(encAlg),
+			jwe.WithProtectedHeaders(h),
+		)
+		if err != nil {
+			continue
+		}
+		return string(encrypted), err
+	}
+
+	return "", fmt.Errorf("failed to encrypt response: %v", errors)
 }
 
 func pickEncryptionAlgorithm(options []string) (jwa.ContentEncryptionAlgorithm, error) {
