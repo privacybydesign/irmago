@@ -1,7 +1,10 @@
 package openid4vp
 
 import (
+	"encoding/json"
+
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -38,7 +41,20 @@ func GetSdJwtVcFromClientMedataVpFormats(vpFormats map[string]interface{}) *SdJw
 }
 
 type Jwks struct {
-	Keys []Jwk `json:"keys"`
+	jwk.Set `json:"-"`
+}
+
+func (s *Jwks) UnmarshalJSON(content []byte) error {
+	set, err := jwk.Parse(content)
+	if err != nil {
+		return err
+	}
+	s.Set = set
+	return nil
+}
+
+func (s Jwks) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Set)
 }
 
 type ClientMetadata struct {
@@ -49,16 +65,13 @@ type ClientMetadata struct {
 	// This allows the Verifier to pass ephemeral keys specific to this Authorization Request.
 	// Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
 	// Each JWK in the set MUST have a kid (Key ID) parameter that uniquely identifies the key within the context of the request.
-	Jwks Jwks `json:"jwks,omitempty"`
+	Jwks *Jwks `json:"jwks,omitempty"`
 
 	// OPTIONAL. Array of strings, where each string is a JWE [RFC7516] enc algorithm that can be used
 	// as the content encryption algorithm for encrypting the Response.
 	// When a response_mode requiring encryption of the Response (such as dc_api.jwt or direct_post.jwt) is specified,
 	// this MUST be present for anything other than the default single value of A128GCM. Otherwise, this SHOULD be absent.
 	EncryptedResponseEncValuesSupported []string `json:"encrypted_response_enc_values_supported"`
-
-	// Legacy
-	AuthorizationEncryptedResponseEnc string `json:"authorization_encrypted_response_enc,omitempty"`
 
 	// vp_formats contains some metadata per credential format, which is specific for each credential format.
 	// it's therefore modeled with an interface here, and each type of credential can be attempted to be retrieved
@@ -176,10 +189,3 @@ func (ar *AuthorizationRequest) GetSubject() (string, error)                  { 
 func (ar *AuthorizationRequest) GetAudience() (jwt.ClaimStrings, error)       { return nil, nil }
 
 const AuthRequestJwtTyp string = "oauth-authz-req+jwt"
-
-type CompatibilityMode string
-
-const (
-	Compatibility_LatestDraft CompatibilityMode = "latest"
-	Compatibility_Draft24     CompatibilityMode = "draft24"
-)

@@ -370,3 +370,11 @@ func stringToObjectIdentifier(oidStr string) asn1.ObjectIdentifier {
 
 	return oid
 }
+
+const (
+	// Eudi verifier server with direct_post as the response_mode
+	OpenID4VP_DirectPost_Host = "http://127.0.0.1:8089"
+
+	// Eudi verifier server with direct_post.jwt as the response_mode
+	OpenID4VP_DirectPostJwt_Host = "http://127.0.0.1:8090"
+)

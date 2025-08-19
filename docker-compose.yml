@@ -1,5 +1,3 @@
-version: '3.1'
-
 services:
   # Dependencies for running unit tests and for running the 'irma' command line tool using one of the test configurations.
   postgres:
@@ -88,6 +86,7 @@ services:
       - .:/irmago
     depends_on:
       - eudi_verifier
+      - eudi_verifier_jwt
       - postgres
       - mysql
       - sqlserver
@@ -117,7 +116,7 @@ services:
 
   # Eudi openid4vp verifier service 
   eudi_verifier:
-    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.5.1
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.6.0
     container_name: eudi_verifier
     ports:
       - "8089:8089"
@@ -127,7 +126,6 @@ services:
       - SERVER_PORT=8089
       - VERIFIER_RESPONSE_MODE="DirectPost"
       - VERIFIER_PUBLIC_URL="0.0.0.0:8089"
-      - VERIFIER_CLIENTIDSCHEME=x509_san_dns
       - VERIFIER_JAR_SIGNING_KEY=LoadFromKeystore
       - VERIFIER_JAR_SIGNING_KEY_ALIAS=verifier_cert
       - VERIFIER_JAR_SIGNING_KEY_KEYSTORE=file:///keystore.p12
@@ -136,6 +134,29 @@ services:
       - VERIFIER_JAR_SIGNING_KEY_PASSWORD=changeit
       - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
       - VERIFIER_ORIGINALCLIENTID=localhost
+      - VERIFIER_CLIENTIDPREFIX=x509_san_dns
+
+  # Eudi openid4vp verifier service with direct_post.jwt enabled
+  eudi_verifier_jwt:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.6.0
+    container_name: eudi_verifier_jwt
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./testdata/eudi/verifier/keystore.p12:/keystore.p12
+    environment:
+      - SERVER_PORT=8090
+      - VERIFIER_RESPONSE_MODE="DirectPost.jwt"
+      - VERIFIER_PUBLIC_URL="0.0.0.0:8090"
+      - VERIFIER_JAR_SIGNING_KEY=LoadFromKeystore
+      - VERIFIER_JAR_SIGNING_KEY_ALIAS=verifier_cert
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE=file:///keystore.p12
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE_PASSWORD=changeit
+      - VERIFIER_JAR_SIGNING_KEY_KEYSTORE_TYPE=pkcs12
+      - VERIFIER_JAR_SIGNING_KEY_PASSWORD=changeit
+      - VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED=false
+      - VERIFIER_ORIGINALCLIENTID=localhost
+      - VERIFIER_CLIENTIDPREFIX=x509_san_dns
 
 # Docker Desktop for MacOS does not support exposing ports when using host networking. Therefore,
 # we have to use bridge networking and expose the ports manually.

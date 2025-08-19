@@ -384,9 +384,6 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 		if err != nil {
 			return LogInfo{}, err
 		}
-		if err != nil {
-			return LogInfo{}, err
-		}
 		issuedLog, err := issuedCredentialsToCredentialLog(issued)
 		if err != nil {
 			return LogInfo{}, err

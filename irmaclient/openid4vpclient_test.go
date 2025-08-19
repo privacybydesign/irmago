@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -42,11 +43,14 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 }
 
 func TestOpenID4VPClient(t *testing.T) {
-	t.Run("disclosing two credentials successfully", testDisclosingTwoCredentials_Success)
+	t.Run("disclosing two credentials successfully", func(t *testing.T) {
+		testDisclosingTwoCredentials_Success(t, testdata.OpenID4VP_DirectPost_Host)
+		testDisclosingTwoCredentials_Success(t, testdata.OpenID4VP_DirectPostJwt_Host)
+	})
 }
 
-func testDisclosingTwoCredentials_Success(t *testing.T) {
-	url, err := startSessionAtEudiVerifier()
+func testDisclosingTwoCredentials_Success(t *testing.T, verifierHost string) {
+	url, err := startSessionAtEudiVerifier(verifierHost)
 	require.NoError(t, err)
 
 	client := createOpenID4VPClientForTesting(t)
@@ -74,8 +78,9 @@ func testDisclosingTwoCredentials_Success(t *testing.T) {
 	require.True(t, success)
 }
 
-func startSessionAtEudiVerifier() (string, error) {
-	response, err := http.Post("http://127.0.0.1:8089/ui/presentations",
+func startSessionAtEudiVerifier(verifierHost string) (string, error) {
+	apiUrl := fmt.Sprintf("%s/ui/presentations", verifierHost)
+	response, err := http.Post(apiUrl,
 		"application/json",
 		bytes.NewReader([]byte(testdata.CreateTestAuthorizationRequestRequest(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))))
 
