@@ -1,35 +1,34 @@
 package sdjwtvc
 
 import (
+	"context"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	jwtOld "github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
-	"github.com/privacybydesign/irmago/eudi"
+	"github.com/lestrrat-go/jwx/v3/jwt"
+
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 const ClockSkewInSeconds = 180
 
-// VerificationContext contains some options and configuration for verifying SD-JWT VCs.
-type VerificationContext struct {
-	// Used to fetch the issuer metadata found at the `iss` field.
-	// If this field is set to nil, it will skip verification using the metadata.
-	IssuerMetadataFetcher IssuerMetadataFetcher
+// SdJwtVcVerificationContext contains some options and configuration for verifying SD-JWT VCs.
+type SdJwtVcVerificationContext struct {
+	eudi_jwt.VerificationContext
 
 	// Used to obtain the current time in order to verify things like
 	// the `iat` and `nbf` fields.
-	Clock Clock
+	Clock jwt.Clock
 
 	// Used to verify both JWT components of an SD-JWT VC (issuer signed jwt and kbjwt).
 	JwtVerifier JwtVerifier
@@ -37,11 +36,6 @@ type VerificationContext struct {
 	// Whether the `iss` field should be allowed to contain non-https link.
 	// According to the spec this is never allowed, but for testing purposes it can come in handy.
 	AllowNonHttpsIssuer bool
-
-	// All trusted certificates and settings for verifying the `x5c` header field of the
-	// issuer signed jwt when when provided.
-	// When this field is nil it will ignore the `x5c` field in the jwt.
-	X509VerificationOptions *x509.VerifyOptions
 }
 
 // VerifiedSdJwtVc is the decoded & verified representation of an SD-JWT VC.
@@ -52,17 +46,22 @@ type VerifiedSdJwtVc struct {
 	KeyBindingJwt          *KeyBindingJwtPayload
 }
 
-func CreateDefaultVerificationContext() VerificationContext {
-	return VerificationContext{
-		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 NewSystemClock(),
-		JwtVerifier:           NewJwxJwtVerifier(),
+func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationContext {
+	opts, err := utils.CreateX509VerifyOptionsFromCertChain(trustedChain)
+	if err != nil {
+		panic(fmt.Errorf("failed to create X509 verification options: %v", err))
+	}
+	return SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: *opts,
+		},
+		Clock:       NewSystemClock(),
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 }
 
-// ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via
-// the context parameter.
-func ParseAndVerifySdJwtVc(context VerificationContext, sdjwtvc SdJwtVc) (VerifiedSdJwtVc, error) {
+// ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via the context parameter.
+func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) (VerifiedSdJwtVc, error) {
 	issuerSignedJwt, disclosures, keyBindingJwt, err := SplitSdJwtVc(sdjwtvc)
 	if err != nil {
 		return VerifiedSdJwtVc{}, err
@@ -150,32 +149,6 @@ func SplitSdJwtVc(sdjwtvc SdJwtVc) (IssuerSignedJwt, []EncodedDisclosure, *KeyBi
 	return issuer, encdiscs, kbJwt, nil
 }
 
-// CreateX509VerifyOptionsFromCertChain creates x509.VerifyOptions that can be added
-// to the `VerificationContext` as the trusted certificate chain.
-func CreateX509VerifyOptionsFromCertChain(pemChainData []byte) (*x509.VerifyOptions, error) {
-	certs, err := eudi.ParsePemCertificateChain(pemChainData)
-	if err != nil {
-		return nil, err
-	}
-
-	rootPool := x509.NewCertPool()
-	rootPool.AddCert(certs[0])
-
-	intermediatePool := x509.NewCertPool()
-	for _, cert := range certs[1:] {
-		intermediatePool.AddCert(cert)
-	}
-
-	certVerifyOpts := x509.VerifyOptions{
-		Roots:         rootPool,
-		Intermediates: intermediatePool,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-		CurrentTime:   time.Now().Add(-5 * time.Minute), // Adjust to account for skew
-	}
-
-	return &certVerifyOpts, nil
-}
-
 // ========================================================================
 
 type JwtVerifier interface {
@@ -194,82 +167,28 @@ func (v *JwxJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err err
 
 // ========================================================================
 
-type Clock interface {
-	Now() int64
-}
-
 type SystemClock struct{}
 
-func NewSystemClock() *SystemClock {
+func NewSystemClock() jwt.Clock {
 	return &SystemClock{}
 }
 
-func (c *SystemClock) Now() int64 {
-	return time.Now().Unix()
+func (c *SystemClock) Now() time.Time {
+	return time.Now()
 }
 
 type StaticClock struct {
 	CurrentTime int64
 }
 
-func (c *StaticClock) Now() int64 {
-	return c.CurrentTime
+func (c *StaticClock) Now() time.Time {
+	return time.Unix(c.CurrentTime, 0)
 }
 
 // ========================================================================
 
-type IssuerMetadataFetcher interface {
-	FetchIssuerMetadata(url string) (IssuerMetadata, error)
-}
-
-type HttpIssuerMetadataFetcher struct{}
-
-func NewHttpIssuerMetadataFetcher() *HttpIssuerMetadataFetcher {
-	return &HttpIssuerMetadataFetcher{}
-}
-
-func (f *HttpIssuerMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
-	urlWithWellknown := fmt.Sprintf("%s/.well-known/jwt-vc-issuer", url)
-	response, err := http.Get(urlWithWellknown)
-
-	if err != nil {
-		return IssuerMetadata{}, err
-	}
-
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-
-	if err != nil {
-		return IssuerMetadata{}, err
-	}
-
-	type specIssuerMetadata struct {
-		Issuer  string          `json:"issuer"`
-		Jwks    json.RawMessage `json:"jwks,omitempty"`
-		JwksUri string          `json:"jwks_uri,omitempty"`
-	}
-	var result specIssuerMetadata
-	err = json.Unmarshal(body, &result)
-
-	if err != nil {
-		return IssuerMetadata{}, err
-	}
-
-	jwks, err := jwk.Parse(result.Jwks)
-	if err != nil {
-		return IssuerMetadata{}, err
-	}
-
-	return IssuerMetadata{
-		Issuer: result.Issuer,
-		Jwks:   jwks,
-	}, nil
-}
-
-// ========================================================================
-
-func verifyTime(context VerificationContext, issuerSignedJwtPayload IssuerSignedJwtPayload, kbjwtPayload *KeyBindingJwtPayload) error {
-	now := context.Clock.Now()
+func verifyTime(context SdJwtVcVerificationContext, issuerSignedJwtPayload IssuerSignedJwtPayload, kbjwtPayload *KeyBindingJwtPayload) error {
+	now := context.Clock.Now().Unix()
 	minSkewNow := now - ClockSkewInSeconds
 	maxSkewNow := now + ClockSkewInSeconds
 
@@ -300,7 +219,7 @@ func verifyTime(context VerificationContext, issuerSignedJwtPayload IssuerSigned
 }
 
 func parseAndVerifyKeyBindingJwt(
-	context VerificationContext,
+	context SdJwtVcVerificationContext,
 	issuerSignedJwt IssuerSignedJwt,
 	disclosures []EncodedDisclosure,
 	issuerSignedJwtPayload IssuerSignedJwtPayload,
@@ -346,7 +265,7 @@ func parseAndVerifyKeyBindingJwt(
 	}
 
 	now := context.Clock.Now()
-	maxSkewNow := now + ClockSkewInSeconds
+	maxSkewNow := now.Unix() + ClockSkewInSeconds
 
 	if payload.IssuedAt >= maxSkewNow {
 		return KeyBindingJwtPayload{}, fmt.Errorf("kbjwt iat value (%v) was after current time (%v)", payload.IssuedAt, now)
@@ -394,125 +313,90 @@ func parseConfirmField(value any) (CnfField, error) {
 	return CnfField{Jwk: key}, nil
 }
 
-func parseAndVerifyIssuerSignedJwt(context VerificationContext, jwt IssuerSignedJwt, disclosures []EncodedDisclosure) (IssuerSignedJwtPayload, error) {
-	header, claims, err := decodeJwtWithoutCheckingSignature(string(jwt))
+func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (IssuerSignedJwtPayload, error) {
+	token, cert, err := decodeJwt([]byte(signedJwt), context)
 	if err != nil {
 		return IssuerSignedJwtPayload{}, err
 	}
 
-	err = verifyIssuerSignedJwtTyp(header)
-	if err != nil {
-		return IssuerSignedJwtPayload{}, err
+	// Get required fields
+	iss, issPresent := token.Issuer()
+	if !issPresent {
+		return IssuerSignedJwtPayload{}, errors.New("missing iss field")
 	}
 
-	sd, err := utils.ExtractOptionalWith(claims, Key_Sd, parseSdField)
+	// Use the `iss` claim to verify the issuer signed JWT
+	err = context.VerificationContext.VerifyCertificate(cert, nil, &iss)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, err
+		return IssuerSignedJwtPayload{}, fmt.Errorf("failed to verify certificate: %v", err)
 	}
 
-	vct, err := utils.ExtractRequired[string](claims, Key_VerifiableCredentialType)
+	var vct string
+	err = token.Get(Key_VerifiableCredentialType, &vct)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, err
+		return IssuerSignedJwtPayload{}, errors.New("missing vct field")
 	}
 
-	confirm, err := utils.ExtractOptionalWith(claims, Key_Confirmationkey, parseConfirmField)
-	if err != nil {
-		return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse %s field: %v", Key_Confirmationkey, err)
+	// Get optional fields
+	sub, _ := token.Subject()
+	exp, _ := utils.GetOptionalWithDefault[int64](token, Key_ExpiryTime, 0)
+	iat, _ := utils.GetOptionalWithDefault[int64](token, Key_IssuedAt, 0)
+	nbf, _ := utils.GetOptionalWithDefault[int64](token, Key_NotBefore, 0)
+
+	sdAlg := utils.GetOptional[string](token, Key_SdAlg)
+	status := utils.GetOptional[string](token, Key_Status)
+
+	var sdRaw, cnfRaw any
+
+	var sd []HashedDisclosure
+	err = token.Get(Key_Sd, &sdRaw)
+	if err == nil {
+		sd, err = parseSdField(sdRaw)
+		if err != nil {
+			return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse sd field: %v", err)
+		}
 	}
 
-	issuer, err := utils.ExtractRequired[string](claims, Key_Issuer)
-	if err != nil {
-		return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse %s field: %v", Key_Issuer, err)
+	var cnf CnfField
+	err = token.Get(Key_Confirmationkey, &cnfRaw)
+	if err == nil {
+		cnf, err = parseConfirmField(cnfRaw)
+		if err != nil {
+			return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse cnf field: %v", err)
+		}
 	}
 
-	status := utils.ExtractOptional[string](claims, Key_Status)
-	subject := utils.ExtractOptional[string](claims, Key_Subject)
-	expiry := int64(utils.ExtractOptional[float64](claims, Key_ExpiryTime))
-	issuedAt := int64(utils.ExtractOptional[float64](claims, Key_IssuedAt))
-	sdAlg := utils.ExtractOptional[string](claims, Key_SdAlg)
-	notBefore := int64(utils.ExtractOptional[float64](claims, Key_NotBefore))
+	// Apply custom verifications
+	if issPresent && !strings.HasPrefix(iss, "https://") && !context.AllowNonHttpsIssuer {
+		return IssuerSignedJwtPayload{}, fmt.Errorf("iss field should be https if it's included but is now %s", iss)
+	}
 
+	// TODO: create Yivi Issuer Requestor from cert data
+	if cert == nil {
+		return IssuerSignedJwtPayload{}, errors.New("missing x509 certificate")
+	}
+
+	// Construct payload
 	payload := IssuerSignedJwtPayload{
-		Subject:                  subject,
+		Subject:                  sub,
+		Expiry:                   exp,
+		IssuedAt:                 iat,
+		NotBefore:                nbf,
+		Issuer:                   iss,
 		VerifiableCredentialType: vct,
-		Expiry:                   expiry,
-		IssuedAt:                 issuedAt,
-		Issuer:                   issuer,
 		Sd:                       sd,
 		SdAlg:                    HashingAlgorithm(sdAlg),
-		Confirm:                  confirm,
+		Confirm:                  cnf,
 		Status:                   status,
-		NotBefore:                notBefore,
 	}
 
-	if !strings.HasPrefix(issuer, "https://") && !context.AllowNonHttpsIssuer {
-		return IssuerSignedJwtPayload{}, fmt.Errorf("iss field should be https if it's included but is now %s", issuer)
-	}
-
-	if x509Chain, ok := header[Key_X5c]; ok && context.X509VerificationOptions != nil {
-		err = verifyIssuerSignatureUsingX509Chain(context, x509Chain, jwt, payload.Issuer)
-	}
-	if context.IssuerMetadataFetcher != nil {
-		err = verifyIssuerSignatureUsingMetadata(context, jwt, payload.Issuer)
-	}
-	if err != nil {
-		return IssuerSignedJwtPayload{}, err
-	}
-
+	// Verify disclosures
 	err = verifyPayloadContainsAllDisclosureHashes(payload, disclosures)
 	if err != nil {
 		return IssuerSignedJwtPayload{}, err
 	}
 
 	return payload, nil
-}
-
-func verifyIssuerSignatureUsingX509Chain(context VerificationContext, x509Chain any, jwt IssuerSignedJwt, issuerUrl string) error {
-	certs, ok := x509Chain.([]any)
-	if !ok {
-		return fmt.Errorf("failed to convert '%s' to []any (%v)", Key_X5c, x509Chain)
-	}
-
-	if len(certs) == 0 {
-		return fmt.Errorf("'%s' is not expected to be empty, but is", Key_X5c)
-	}
-
-	endEntityString, ok := certs[0].(string)
-	if !ok {
-		return fmt.Errorf("failed to convert end-entity to string: %v", certs[0])
-	}
-
-	der, err := base64.StdEncoding.DecodeString(endEntityString)
-	if err != nil {
-		return fmt.Errorf("failed to decode end-entity base64 encoded der: %v", err)
-	}
-
-	parsedCert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return err
-	}
-
-	_, err = parsedCert.Verify(*context.X509VerificationOptions)
-	if err != nil {
-		return fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains")
-	}
-
-	hostNameFound := false
-	hostNamesCert := []string{}
-
-	for _, uri := range parsedCert.URIs {
-		hostNamesCert = append(hostNamesCert, uri.String())
-		if uri.String() == issuerUrl {
-			hostNameFound = true
-		}
-	}
-
-	if !hostNameFound {
-		return fmt.Errorf("host name from '%s' (%s) not found in the certificate (%v)", Key_Issuer, issuerUrl, hostNamesCert)
-	}
-
-	_, err = context.JwtVerifier.Verify(string(jwt), parsedCert.PublicKey)
-	return err
 }
 
 func verifyPayloadContainsAllDisclosureHashes(payload IssuerSignedJwtPayload, disclosures []EncodedDisclosure) error {
@@ -539,48 +423,9 @@ func Contains[T comparable](slice []T, value T) bool {
 	return false
 }
 
-func verifyIssuerSignatureUsingMetadata(context VerificationContext, issuerJwt IssuerSignedJwt, issuerUrl string) error {
-	metadata, err := context.IssuerMetadataFetcher.FetchIssuerMetadata(issuerUrl)
-
-	if err != nil {
-		return err
-	}
-
-	if metadata.Issuer != issuerUrl {
-		return fmt.Errorf("issuer url doens't match the one found in issuer metadata: jwt: %s != metadata: %s", issuerUrl, metadata.Issuer)
-	}
-
-	numKeys := metadata.Jwks.Len()
-	if numKeys == 0 {
-		return fmt.Errorf("metadata doesn't contain any keys")
-	}
-
-	for i := range numKeys {
-		key, ok := metadata.Jwks.Key(i)
-		if !ok {
-			continue
-		}
-		_, err := context.JwtVerifier.Verify(string(issuerJwt), key)
-
-		// no err, so valid signature
-		if err == nil {
-			return nil
-		}
-	}
-	return errors.New("no valid issuer signature")
-}
-
 func verifyKeyBindingJwtHeader(header map[string]any) error {
 	if typ := header["typ"]; typ != KbJwtTyp {
 		return fmt.Errorf("key binding jwt header is expected to have 'typ' of '%s', but has %s (header: %v)", KbJwtTyp, typ, header)
-	}
-	return nil
-}
-
-func verifyIssuerSignedJwtTyp(header map[string]any) error {
-	typ := header["typ"]
-	if typ != SdJwtVcTyp && typ != SdJwtVcTyp_Legacy {
-		return fmt.Errorf("issuer signed jwt header should have 'typ' of either %s or %s, but has %s", SdJwtVcTyp, SdJwtVcTyp_Legacy, typ)
 	}
 	return nil
 }
@@ -590,8 +435,45 @@ func err(message string, args ...any) (IssuerSignedJwt, []EncodedDisclosure, *Ke
 }
 
 func decodeJwtWithoutCheckingSignature(jwtString string) (header map[string]any, claims map[string]any, err error) {
-	parser := jwt.NewParser()
-	var claimsResult jwt.MapClaims
+	parser := jwtOld.NewParser()
+	var claimsResult jwtOld.MapClaims
 	token, _, err := parser.ParseUnverified(jwtString, &claimsResult)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
+	}
 	return token.Header, claimsResult, err
+}
+
+// TODO: export cert data for Yivi Requestor
+// Note: if found, the decodeJwt returns the certificate with which the JWTs signature can be validated.
+// The cert itself however is NOT yet verified (against CRLs and other checks).
+func decodeJwt(signedJwt []byte, verificationContext SdJwtVcVerificationContext) (jwt.Token, *x509.Certificate, error) {
+	keyProvider := &SdJwtKeyProvider{
+		X509KeyProvider: eudi_jwt.X509KeyProvider{},
+	}
+
+	// Create a context for the JWS verification where we can retrieve the requestor info back
+	token, err := jwt.Parse(signedJwt,
+		jwt.WithKeyProvider(keyProvider),
+		jwt.WithClock(verificationContext.Clock),
+		jwt.WithAcceptableSkew(ClockSkewInSeconds*time.Second),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
+	}
+
+	return token, keyProvider.X509KeyProvider.GetCert(), nil
+}
+
+type SdJwtKeyProvider struct {
+	eudi_jwt.X509KeyProvider
+}
+
+func (p *SdJwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
+	// Validate 'typ' header first
+	if typ, ok := sig.ProtectedHeaders().Type(); !ok || !slices.Contains([]string{SdJwtVcTyp, SdJwtVcTyp_Legacy}, typ) {
+		return fmt.Errorf("invalid 'typ' header: %v", typ)
+	}
+
+	return p.X509KeyProvider.FetchKeys(ctx, sink, sig, msg)
 }

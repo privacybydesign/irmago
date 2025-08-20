@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
@@ -121,7 +122,7 @@ type KeyBinder interface {
 }
 
 type DefaultKeyBinder struct {
-	clock   Clock
+	clock   jwt.Clock
 	storage KeyBindingStorage
 }
 
@@ -171,7 +172,7 @@ func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, n
 	payload := KeyBindingJwtPayload{
 		IssuerSignedJwtHash: hash,
 		Nonce:               nonce,
-		IssuedAt:            c.clock.Now(),
+		IssuedAt:            c.clock.Now().Unix(),
 		Audience:            audience,
 	}
 	json, err := json.Marshal(payload)

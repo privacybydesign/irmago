@@ -11,6 +11,8 @@ import (
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
@@ -69,17 +71,18 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 
 	keyBinder := sdjwtvc.NewDefaultKeyBinder(sdjwtvc.NewInMemoryKeyBindingStorage())
 
-	x509Options, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(
+	x509Options, err := utils.CreateX509VerifyOptionsFromCertChain(
 		testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
 	)
 	require.NoError(t, err)
 
-	context := sdjwtvc.VerificationContext{
-		IssuerMetadataFetcher:   sdjwtvc.NewHttpIssuerMetadataFetcher(),
-		Clock:                   sdjwtvc.NewSystemClock(),
-		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
-		AllowNonHttpsIssuer:     false,
-		X509VerificationOptions: x509Options,
+	context := sdjwtvc.SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: *x509Options,
+		},
+		Clock:               sdjwtvc.NewSystemClock(),
+		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		AllowNonHttpsIssuer: false,
 	}
 	client, err := irmaclient.NewIrmaClient(
 		conf,
