@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -157,7 +158,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
 
 	// Remove the root certificate from the trusted roots, to simulate a missing cert
-	verifierValidator.(*RequestorCertificateStoreVerifierValidator).model.trustedRootCertificates = x509.NewCertPool()
+	verifierValidator.(*RequestorCertificateStoreVerifierValidator).verificationContext.X509VerificationOptionsTemplate.Roots = x509.NewCertPool()
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -184,7 +185,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingIntermediate(t *testing
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
 
 	// Remove the intermediate certificate from the trusted intermediates, to simulate a missing cert
-	verifierValidator.(*RequestorCertificateStoreVerifierValidator).model.trustedIntermediateCertificates = x509.NewCertPool()
+	verifierValidator.(*RequestorCertificateStoreVerifierValidator).verificationContext.X509VerificationOptionsTemplate.Intermediates = x509.NewCertPool()
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -248,7 +249,12 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 		logger:                          logrus.New(),
 	}
 
-	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, &MockQueryValidatorFactory{})
+	verifierValidatorContext := eudi_jwt.VerificationContext{
+		X509VerificationOptionsTemplate: trustModel.CreateVerifyOptionsTemplate(),
+		X509RevocationLists:             trustModel.GetRevocationLists(),
+	}
+
+	verifierValidator = NewRequestorCertificateStoreVerifierValidator(&verifierValidatorContext, &MockQueryValidatorFactory{})
 
 	// Create an authorization request JWT
 	authRequestJwt = testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, verifierCert, tokenModifier)

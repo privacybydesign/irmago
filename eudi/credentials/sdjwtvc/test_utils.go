@@ -2,21 +2,27 @@ package sdjwtvc
 
 import (
 	"crypto/ecdsa"
+	"crypto/x509"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"testing"
+	"time"
 
 	_ "embed"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
 func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
-	issuer := "https://example.com"
+	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+
+	issuer := "https://irma.app"
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"family_name": "Yivi",
 		"location":    "Utrecht",
@@ -33,9 +39,11 @@ func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 		WithDisclosures(disclosures).
 		WithVerifiableCredentialType("pbdf.pbdf.email").
 		WithHashingAlgorithm(HashAlg_Sha256).
+		WithIssuerCertificateChain(irmaAppCert).
 		Build(jwtCreator)
 
 	require.NoError(t, err)
+
 	return sdJwt
 }
 
@@ -92,61 +100,35 @@ func readHolderPublicJwk() (CnfField, error) {
 
 // =======================================================================
 
-func CreateTestVerificationContext(allowNonHttpsIssuer bool) VerificationContext {
-	return VerificationContext{
-		Clock:                 &testClock{},
-		IssuerMetadataFetcher: &validTestMetadataFetcher{},
-		AllowNonHttpsIssuer:   allowNonHttpsIssuer,
-		JwtVerifier:           NewJwxJwtVerifier(),
+func CreateTestVerificationContext(allowNonHttpsIssuer bool) SdJwtVcVerificationContext {
+	irmaAppCertChain, err := utils.ParsePemCertificateChain(testdata.IssuerCertChain_irma_app_Bytes)
+	if err != nil {
+		log.Fatalf("failed to parse issuer cert chain: %v", err)
+	}
+
+	roots := x509.NewCertPool()
+	im := x509.NewCertPool()
+
+	roots.AddCert(irmaAppCertChain[0])
+	im.AddCert(irmaAppCertChain[1])
+
+	return SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: x509.VerifyOptions{
+				Roots:         roots,
+				Intermediates: im,
+				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			},
+		},
+		Clock:               &testClock{},
+		AllowNonHttpsIssuer: allowNonHttpsIssuer,
+		JwtVerifier:         NewJwxJwtVerifier(),
 	}
 }
 
 type testClock struct{ time int64 }
 
-func (c *testClock) Now() int64 { return c.time }
-
-type failingMetadataFetcherNetworkError struct{}
-
-func (f *failingMetadataFetcherNetworkError) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
-	return IssuerMetadata{}, errors.New("some error")
-}
-
-type failingMetadataFetcherWrongIssuerKeys struct{}
-
-func (f *failingMetadataFetcherWrongIssuerKeys) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
-	set := jwk.NewSet()
-	set.AddKey(testdata.ParseHolderPubJwk())
-
-	return IssuerMetadata{
-		Issuer: "https://openid4vc.staging.yivi.app",
-		Jwks:   set,
-	}, nil
-}
-
-type validTestMetadataFetcher struct{}
-
-func (f *validTestMetadataFetcher) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
-	set := jwk.NewSet()
-	set.AddKey(testdata.ParseIssuerPubJwk())
-
-	return IssuerMetadata{
-		Issuer: url,
-		Jwks:   set,
-	}, nil
-}
-
-type validTestMetadataFetcherMultipleKeys struct{}
-
-func (f *validTestMetadataFetcherMultipleKeys) FetchIssuerMetadata(url string) (IssuerMetadata, error) {
-	set := jwk.NewSet()
-	set.AddKey(testdata.ParseHolderPubJwk())
-	set.AddKey(testdata.ParseIssuerPubJwk())
-
-	return IssuerMetadata{
-		Issuer: "https://openid4vc.staging.yivi.app",
-		Jwks:   set,
-	}, nil
-}
+func (c *testClock) Now() time.Time { return time.Unix(c.time, 0) }
 
 // =======================================================================
 
@@ -183,6 +165,39 @@ func createIssuerCnfField() CnfField {
 func createHolderCnfField() CnfField {
 	return CnfField{
 		Jwk: testdata.ParseHolderPubJwk(),
+	}
+}
+
+func newWorkingVerifyOptions(trustedChains ...[]byte) x509.VerifyOptions {
+	roots := x509.NewCertPool()
+	im := x509.NewCertPool()
+
+	for _, trustedChain := range trustedChains {
+		appCert, _ := utils.ParsePemCertificateChain(trustedChain)
+
+		if len(appCert) > 0 {
+			roots.AddCert(appCert[0])
+		}
+
+		for _, cert := range appCert[1:] {
+			im.AddCert(cert)
+		}
+	}
+
+	return x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: im,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+}
+
+func newWorkingSdJwtVcVerificationContext(trustedChains ...[]byte) SdJwtVcVerificationContext {
+	return SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: newWorkingVerifyOptions(trustedChains...),
+		},
+		Clock:       NewSystemClock(),
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 }
 
@@ -323,6 +338,17 @@ func (c testSdJwtVcConfig) withKbTypHeader(value string) testSdJwtVcConfig {
 	return c
 }
 
+func (c testSdJwtVcConfig) withIssuerCertificateChainBytes(value []byte) testSdJwtVcConfig {
+	appCert, err := utils.ParsePemCertificateChainToX5cFormat(value)
+	if err != nil {
+		panic(err)
+	}
+
+	c.x5cHeader = appCert
+
+	return c
+}
+
 func (c testSdJwtVcConfig) withKbJwt() testSdJwtVcConfig {
 	c.addKbJwt = true
 	return c
@@ -352,6 +378,7 @@ type testSdJwtVcConfig struct {
 
 	// stuff inside the issuer signed header
 	typHeader *string
+	x5cHeader []string
 
 	// stuff inside the kbjwt payload
 	nonce           *string
@@ -444,6 +471,10 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 
 	if config.typHeader != nil {
 		issuerHeader[Key_Typ] = *config.typHeader
+	}
+
+	if config.x5cHeader != nil {
+		issuerHeader[Key_X5c] = config.x5cHeader
 	}
 
 	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.issuerPrivateKey}

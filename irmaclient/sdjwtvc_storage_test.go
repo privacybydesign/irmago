@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
@@ -286,12 +286,19 @@ func createMultipleSdJwtVcsWithCustomKeyBinder[T any](
 	t *testing.T, keyBinder sdjwtvc.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
 ) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
 	result := []sdjwtvc.SdJwtVc{}
+
+	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(chain)
+	if err != nil {
+		panic(err)
+	}
+
 	for range num {
-		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims)
+		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims, certChain)
 		require.NoError(t, err)
 		result = append(result, sdjwt)
 	}
-	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext())
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext(chain))
 	require.NoError(t, err)
 	return SdJwtVcBatchMetadata{
 		BatchSize:              num,
@@ -304,13 +311,8 @@ func createMultipleSdJwtVcsWithCustomKeyBinder[T any](
 	}, result
 }
 
-func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T) (sdjwtvc.SdJwtVc, error) {
+func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T, x5c []string) (sdjwtvc.SdJwtVc, error) {
 	contents, err := sdjwtvc.MultipleNewDisclosureContents(claims)
-	if err != nil {
-		return "", err
-	}
-
-	certChain, err := eudi.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	if err != nil {
 		return "", err
 	}
@@ -327,21 +329,28 @@ func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string
 		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 		WithVerifiableCredentialType(vct).
 		WithIssuerUrl(issuerUrl).
-		WithIssuedAt(sdjwtvc.NewSystemClock().Now()).
-		WithExpiresAt(sdjwtvc.NewSystemClock().Now() + 10000).
-		WithIssuerCertificateChain(certChain).
+		WithIssuedAt(sdjwtvc.NewSystemClock().Now().Unix()).
+		WithExpiresAt(sdjwtvc.NewSystemClock().Now().Unix() + 10000).
+		WithIssuerCertificateChain(x5c).
 		Build(signer)
 }
 
 func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num uint) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
+
+	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(chain)
+	if err != nil {
+		panic(err)
+	}
+
 	for range num {
-		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims)
+		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims, certChain)
 		require.NoError(t, err)
 		result = append(result, sdjwt)
 	}
-	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext())
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext(chain))
 	require.NoError(t, err)
 	return SdJwtVcBatchMetadata{
 		BatchSize:              num,

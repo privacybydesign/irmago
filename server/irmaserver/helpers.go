@@ -850,7 +850,7 @@ func (session *sessionData) generateSdJwts(
 	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
 	sdJwts := make([]sdjwtvc.SdJwtVc, numSdJwtsRequested)
 
-	issuanceTime := sdjwtvc.NewSystemClock().Now()
+	issuanceTime := sdjwtvc.NewSystemClock().Now().Unix()
 
 	var index uint = 0
 	for _, cred := range issuanceReq.Credentials {

@@ -12,8 +12,8 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/testdata"
 )
 
 type Client struct {
@@ -69,7 +69,12 @@ func New(
 	keybindingStorage := NewBboltKeybindingStorage(storage.db, aesKey)
 	keyBinder := sdjwtvc.NewDefaultKeyBinder(keybindingStorage)
 
-	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &eudi.DefaultQueryValidatorFactory{})
+	verifierVerificationContext := eudi_jwt.VerificationContext{
+		X509VerificationOptionsTemplate: eudiConf.Verifiers.CreateVerifyOptionsTemplate(),
+		X509RevocationLists:             eudiConf.Verifiers.GetRevocationLists(),
+	}
+
+	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&verifierVerificationContext, &eudi.DefaultQueryValidatorFactory{})
 	sdjwtvcStorage := NewBboltSdJwtVcStorage(storage.db, aesKey)
 
 	openid4vpClient, err := NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, keyBinder, storage)
@@ -77,20 +82,17 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
 
-	x509Options, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create verify options: %v", err)
+	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: eudiConf.Issuers.CreateVerifyOptionsTemplate(),
+			X509RevocationLists:             eudiConf.Issuers.GetRevocationLists(),
+		},
+		Clock:               sdjwtvc.NewSystemClock(),
+		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		AllowNonHttpsIssuer: false,
 	}
 
-	context := sdjwtvc.VerificationContext{
-		IssuerMetadataFetcher:   sdjwtvc.NewHttpIssuerMetadataFetcher(),
-		Clock:                   sdjwtvc.NewSystemClock(),
-		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
-		AllowNonHttpsIssuer:     false,
-		X509VerificationOptions: x509Options,
-	}
-
-	irmaClient, err := NewIrmaClient(irmaConf, handler, signer, storage, context, sdjwtvcStorage, keyBinder)
+	irmaClient, err := NewIrmaClient(irmaConf, handler, signer, storage, sdJwtVcVerificationContext, sdjwtvcStorage, keyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}

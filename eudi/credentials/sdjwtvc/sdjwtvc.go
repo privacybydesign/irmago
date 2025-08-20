@@ -227,8 +227,8 @@ type IssuerSignedJwtPayload struct {
 	// OPTIONAL: time of issuance
 	IssuedAt int64
 
-	// REQUIRED: https url of the issuer. The verifier will look up a well-known based on this address
-	// or verify the credential via a x.509 certificate chain
+	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the Verifiable Credential
+	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
 	Issuer string
 
 	// OPTIONAL: list of hashed -> base64url encoded disclosures
