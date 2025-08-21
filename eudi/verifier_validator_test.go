@@ -117,7 +117,7 @@ func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureMissingSchemeData(t *testing.T) {
@@ -164,7 +164,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against trusted chains: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
@@ -175,7 +175,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against trusted chains: x509: certificate has expired or is not yet valid: current time ")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: current time ")
 }
 
 // This function implicitly also tests the case where an intermediate certificate is revoked, because it will be 'missing'
@@ -191,7 +191,7 @@ func testParseAndVerifyAuthorizationRequestFailureMissingIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against trusted chains: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing.T) {
@@ -202,7 +202,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against trusted chains: x509: certificate has expired or is not yet valid: ")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: ")
 }
 
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
