@@ -29,7 +29,7 @@ type Logo struct {
 }
 
 type RelyingParty struct {
-	// AuthorizedQueryableAttributeSets contains the sets of attributes that the relying party is allowed to query. In the future, this will be checked by the app to authorize disclosure queries.
+	// AuthorizedQueryableAttributeSets contains the sets of attributes that the relying party is allowed to query.
 	AuthorizedQueryableAttributeSets []QueryableAttributeSet `json:"authorized"`
 	RequestPurpose                   map[string]string       `json:"purpose"`
 }
