@@ -24,6 +24,7 @@ type VerificationContext struct {
 
 func (context VerificationContext) GetX509VerificationOptionsFromTemplate(hostname string) x509.VerifyOptions {
 	return x509.VerifyOptions{
+		// TODO: take clock skew into consideration?
 		//CurrentTime:   context.Clock.Now(),
 		Roots:         context.X509VerificationOptionsTemplate.Roots,
 		Intermediates: context.X509VerificationOptionsTemplate.Intermediates,

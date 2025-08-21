@@ -14,7 +14,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
-	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
 const SchemeExtensionOID = "2.1.123.1"
@@ -115,23 +114,13 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 
 		hostname := strings.TrimPrefix(request.ClientId, prefix)
 
-		// TODO: take clock skew into consideration?
-		certVerifyOpts := v.verificationContext.GetX509VerificationOptionsFromTemplate(hostname)
-
 		parsedCert, err := getEndEntityCertFromX5cHeader(token)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
-		// Check the end-entity cert against all revocation lists from the issuing cert
-		if err := utils.VerifyCertificateAgainstIssuerRevocationLists(parsedCert, v.verificationContext.X509RevocationLists); err != nil {
-			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against revocation lists: %v", err)
-		}
-
-		// Verify the end-entity cert against the trusted chains
-		_, err = parsedCert.Verify(certVerifyOpts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains: %v", err)
+		if err := v.verificationContext.VerifyCertificate(parsedCert, &hostname, nil); err != nil {
+			return nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
 		}
 
 		// Validation successful, return the public key
