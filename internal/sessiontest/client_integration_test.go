@@ -737,11 +737,13 @@ func createClient(t *testing.T) *irmaclient.Client {
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
 
 	// Copy files to storage folder
-	_ = common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration"))
-	_ = common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration"))
+	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
+	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration")))
 
 	// Add test issuer certificates as trusted chain
-	_ = common.SaveFile(filepath.Join(storagePath, "eudi_configuration", "issuers", "certs", "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	certsPath := filepath.Join(storagePath, "eudi_configuration", "issuers", "certs")
+	require.NoError(t, common.EnsureDirectoryExists(certsPath))
+	require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	client, err := irmaclient.New(storagePath, irmaConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
