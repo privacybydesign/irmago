@@ -1,8 +1,12 @@
 package sessiontest
 
 import (
-	"github.com/privacybydesign/irmago/server/irmaserver"
 	"testing"
+
+	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/internal/testkeyshare"
+	"github.com/privacybydesign/irmago/server/irmaserver"
 )
 
 func TestWithoutPairingSupport(t *testing.T) {
@@ -32,4 +36,14 @@ func TestWithoutPairingSupport(t *testing.T) {
 	t.Run("DisclosureNewAttributeUpdateSchemeManager", apply(testDisclosureNewAttributeUpdateSchemeManager, IrmaServerConfiguration, optionPrePairingClient))
 
 	t.Run("StaticQRSession", apply(testStaticQRSession, nil, optionPrePairingClient))
+}
+
+func TestLinkableKeyshareResponse(t *testing.T) {
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+	client, handler := parseStorage(t, optionLinkableKeyshareResponse)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	keyshareSessions(t, client, irmaServer)
 }

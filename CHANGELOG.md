@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Changed
+- Make irmaclient do new keyshare protocol by using the /api/v2 endpoints of the keyshare server
 - Remove legacy storage from irmaclient
 
 ### Security
