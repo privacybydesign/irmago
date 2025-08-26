@@ -31,6 +31,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check whether the release is merged to master
+        if: github.event_name != 'workflow_dispatch'
         run: git branch --contains ${{ github.sha }} | grep -x "* master"
         shell: bash
 
