@@ -64,7 +64,7 @@ func TestCanIssue(t *testing.T) {
 		result, message := conf.CanIssue("yourapp", credentialRequest)
 
 		require.False(t, result)
-		require.Empty(t, message)
+		require.Equal(t, "No issuer permissions configured", message)
 	})
 
 	t.Run("allowed credential request wrong credential identifier", func(t *testing.T) {
@@ -75,7 +75,7 @@ func TestCanIssue(t *testing.T) {
 		result, message := conf.CanIssue("myapp", credentialRequest)
 
 		require.False(t, result)
-		require.Equal(t, "irma-demo.MijnOverheid.ageUpper", message)
+		require.Equal(t, "No issuer permissions configured for credential 'irma-demo.MijnOverheid.ageUpper'", message)
 	})
 
 	t.Run("allowed credential request attribute wildcard", func(t *testing.T) {

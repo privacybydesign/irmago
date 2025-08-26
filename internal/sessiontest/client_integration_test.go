@@ -69,7 +69,7 @@ func TestClientIntegration(t *testing.T) {
 		// Fresh irmaclient storage was used, so we need to do some initialization.
 		client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 		req := getIssuanceRequest(false)
-		doSession(t, req, client, nil, nil, nil, nil, optionReuseServer, optionForceNoAuth)
+		doSession(t, req, client, nil, nil, nil, nil, nil, optionReuseServer, optionForceNoAuth)
 
 		keyshareSessions(t, client, nil, optionReuseServer, optionForceNoAuth)
 	})

@@ -7,10 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Changed
 - Make irmaclient do new keyshare protocol by using the /api/v2 endpoints of the keyshare server
+- Remove legacy storage from irmaclient
 
-## [0.17.1] - 2025-03-14
+### Security
+ - Fix for [CVE GHSA-pv8v-c99h-c5q4](https://github.com/privacybydesign/irmago/security/advisories/GHSA-pv8v-c99h-c5q4) (Next session functionality can be used to do sessions on irma server without proper permissions)
+
+## [0.18.1] - 2025-04-10
+### Fix
+- Bug in `irmaclient` that caused the pin challenge to always be called (at least) twice
+
+## [0.18.0] - 2025-04-09
+### Changed
+- Download schemes from `https://schemes.yivi.app/` instead of `https://privacybydesign.foundation/schememanager/`
+
+  Note: if the scheme auto-update mechanism is enabled in your `irma server` (enabled by default), please make sure outgoing
+  network traffic is allowed from your `irma server` to schemes.yivi.app (51.158.130.42) and privacybydesign.foundation (37.97.206.70)
+
+## [0.17.1] - 2025-04-01
 ### Changed
 - Make keyshare pin challenge more resilient by retrying when `pin_challengeresponse` fails due to a server conflict
+
+### Security
+- Update github.com/golang-jwt/jwt/v4 from 4.5.1 to 4.5.2
 
 ## [0.17.0] - 2025-03-14
 ### Added
@@ -546,6 +564,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.18.1]: https://github.com/privacybydesign/irmago/compare/v0.18.0...v0.18.1
+[0.18.0]: https://github.com/privacybydesign/irmago/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/privacybydesign/irmago/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/privacybydesign/irmago/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/privacybydesign/irmago/compare/v0.15.2...v0.16.0

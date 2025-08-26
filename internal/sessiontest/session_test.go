@@ -41,6 +41,8 @@ import (
 //   *testing.T, using the apply() function.
 
 func TestRequestorServer(t *testing.T) {
+	t.Run("ChainedSessions", apply(testRequestorChainedSessions, RequestorServerAuthConfiguration))
+	t.Run("UnauthorizedChainedSession", apply(testUnauthorizedRequestorChainedSession, RequestorServerPermissionsConfiguration))
 	t.Run("DisclosureSession", apply(testDisclosureSession, RequestorServerConfiguration))
 	t.Run("NoAttributeDisclosureSession", apply(testNoAttributeDisclosureSession, RequestorServerConfiguration))
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, RequestorServerConfiguration))
@@ -69,7 +71,6 @@ func TestRequestorServer(t *testing.T) {
 
 func TestIrmaServer(t *testing.T) {
 	// Tests supporting only the IRMA server (library)
-	t.Run("ChainedSessions", apply(testChainedSessions, IrmaServerConfiguration))
 	t.Run("UnknownRequestorToken", apply(testUnknownRequestorToken, IrmaServerConfiguration))
 	t.Run("DisclosureNewAttributeUpdateSchemeManager", apply(testDisclosureNewAttributeUpdateSchemeManager, IrmaServerConfiguration))
 	t.Run("BlindIssuanceSessionDifferentAmountOfRandomBlinds", apply(testBlindIssuanceSessionDifferentAmountOfRandomBlinds, IrmaServerConfiguration))
@@ -93,7 +94,7 @@ func TestIrmaServer(t *testing.T) {
 func testNoAttributeDisclosureSession(t *testing.T, conf interface{}, opts ...option) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard")
 	request := getDisclosureRequest(id)
-	doSession(t, request, nil, nil, nil, nil, conf, opts...)
+	doSession(t, request, nil, nil, nil, nil, nil, conf, opts...)
 }
 
 func testEmptyDisclosure(t *testing.T, conf interface{}, opts ...option) {
@@ -108,7 +109,7 @@ func testEmptyDisclosure(t *testing.T, conf interface{}, opts ...option) {
 		},
 	}
 
-	res := doSession(t, request, nil, nil, nil, nil, conf, opts...)
+	res := doSession(t, request, nil, nil, nil, nil, nil, conf, opts...)
 	require.Nil(t, res.Err)
 	require.NotNil(t, res.SessionResult)
 	require.NotEmpty(t, res.SessionResult.Disclosed) // The outer conjunction was satisfied
@@ -117,14 +118,14 @@ func testEmptyDisclosure(t *testing.T, conf interface{}, opts ...option) {
 
 func testMultipleIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	request := getMultipleIssuanceRequest()
-	doSession(t, request, nil, nil, nil, nil, conf, opts...)
+	doSession(t, request, nil, nil, nil, nil, nil, conf, opts...)
 }
 
 func testDefaultCredentialValidity(t *testing.T, conf interface{}, opts ...option) {
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
 	request := getIssuanceRequest(true)
-	doSession(t, request, client, nil, nil, nil, conf, opts...)
+	doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
 }
 
 func testIssuanceDisclosureEmptyAttributes(t *testing.T, conf interface{}, opts ...option) {
@@ -132,11 +133,11 @@ func testIssuanceDisclosureEmptyAttributes(t *testing.T, conf interface{}, opts 
 	defer test.ClearTestStorage(t, client, handler.storage)
 
 	req := getNameIssuanceRequest()
-	doSession(t, req, client, nil, nil, nil, conf, opts...)
+	doSession(t, req, client, nil, nil, nil, nil, conf, opts...)
 
 	// Test disclosing our null attribute
 	req2 := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.prefix"))
-	res := doSession(t, req2, client, nil, nil, nil, conf, opts...)
+	res := doSession(t, req2, client, nil, nil, nil, nil, conf, opts...)
 	require.Nil(t, res.Err)
 	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
@@ -144,13 +145,13 @@ func testIssuanceDisclosureEmptyAttributes(t *testing.T, conf interface{}, opts 
 func testIssuanceOptionalZeroLengthAttributes(t *testing.T, conf interface{}, opts ...option) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = ""
-	doSession(t, req, nil, nil, nil, nil, conf, opts...)
+	doSession(t, req, nil, nil, nil, nil, nil, conf, opts...)
 }
 
 func testIssuanceOptionalSetAttributes(t *testing.T, conf interface{}, opts ...option) {
 	req := getNameIssuanceRequest()
 	req.Credentials[0].Attributes["prefix"] = "van"
-	doSession(t, req, nil, nil, nil, nil, conf, opts...)
+	doSession(t, req, nil, nil, nil, nil, nil, conf, opts...)
 }
 
 func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts ...option) {
@@ -160,15 +161,17 @@ func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts
 	prevLen := len(client.CredentialInfoList())
 
 	req := getIssuanceRequest(true)
-	doSession(t, req, client, nil, nil, nil, conf, opts...)
+	doSession(t, req, client, nil, nil, nil, nil, conf, opts...)
 
 	req = getIssuanceRequest(false)
-	doSession(t, req, client, nil, nil, nil, conf, opts...)
+	doSession(t, req, client, nil, nil, nil, nil, conf, opts...)
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 
 	// Also check whether this is actually stored
 	require.NoError(t, client.Close())
 	client, _ = parseExistingStorage(t, handler.storage)
+	defer client.Close()
+
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
 
@@ -209,7 +212,7 @@ func testIssuancePairing(t *testing.T, conf interface{}, opts ...option) {
 		err = handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
 		require.NoError(t, err)
 	}
-	doSession(t, request, nil, nil, frontendOptionsHandler, pairingHandler, conf, opts...)
+	doSession(t, request, nil, nil, nil, frontendOptionsHandler, pairingHandler, conf, opts...)
 }
 
 func testPairingRejected(t *testing.T, conf interface{}, opts ...option) {
@@ -226,7 +229,7 @@ func testPairingRejected(t *testing.T, conf interface{}, opts ...option) {
 		require.NoError(t, err)
 	}
 	sessionOpts := append(opts, optionIgnoreError)
-	result := doSession(t, request, nil, nil, frontendOptionsHandler, pairingHandler, conf, sessionOpts...)
+	result := doSession(t, request, nil, nil, nil, frontendOptionsHandler, pairingHandler, conf, sessionOpts...)
 	err, ok := result.clientResult.Err.(*irma.SessionError)
 	require.True(t, ok)
 	require.Equal(t, irma.ErrorPairingRejected, err.ErrorType)
@@ -242,10 +245,10 @@ func testLargeAttribute(t *testing.T, conf interface{}, opts ...option) {
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
 
 	issuanceRequest := getSpecialIssuanceRequest(false, "1234567890123456789012345678901234567890") // 40 chars
-	doSession(t, issuanceRequest, client, nil, nil, nil, conf, opts...)
+	doSession(t, issuanceRequest, client, nil, nil, nil, nil, conf, opts...)
 
 	disclosureRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
-	doSession(t, disclosureRequest, client, nil, nil, nil, conf, opts...)
+	doSession(t, disclosureRequest, client, nil, nil, nil, nil, conf, opts...)
 }
 
 func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...option) {
@@ -264,17 +267,19 @@ func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...opt
 
 	require.Nil(t, client.Attributes(credid, 0))
 
-	doSession(t, request, client, nil, nil, nil, conf, opts...)
+	doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 
-	doSession(t, request, client, nil, nil, nil, conf, opts...)
+	doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 
 	// Also check whether this is actually stored
 	require.NoError(t, client.Close())
 	client, _ = parseExistingStorage(t, handler.storage)
+	defer client.Close()
+
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 }
@@ -307,7 +312,7 @@ func testUnsatisfiableDisclosureSession(t *testing.T, conf interface{}, opts ...
 	require.NoError(t, json.Unmarshal([]byte(`[[[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"test.test.mijnirma.email","CredentialHash":"dc8d5f252ae0e87db6136ba74598682158bfe8d0d2e2fc4ee61dbf24aa2746d4","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.firstname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.familyname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]],[[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]]]`), &missing))
 	require.True(t, reflect.DeepEqual(
 		missing,
-		doSession(t, request, client, nil, nil, nil, nil, append(opts, optionUnsatisfiableRequest)...).Missing),
+		doSession(t, request, client, nil, nil, nil, nil, nil, append(opts, optionUnsatisfiableRequest)...).Missing),
 	)
 
 }
@@ -332,7 +337,7 @@ func testAttributeByteEncoding(t *testing.T, conf interface{}, opts ...option) {
 	significant (sign) bit. We test that the Java implementation correctly removes the extraneous
 	0 byte. */
 	request := getSpecialIssuanceRequest(false, "a23456789012345678901234567890")
-	doSession(t, request, client, nil, nil, nil, conf, opts...)
+	doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
 
 	/* After converting the attribute below to bytes (using UTF8, on which Java and Go do agree),
 	the most significant bit of the byte version of this attribute is 1. In the []byte->bigint
@@ -341,7 +346,7 @@ func testAttributeByteEncoding(t *testing.T, conf interface{}, opts ...option) {
 	here that the Java correctly prepends a 0 byte just before this conversion in order to get
 	the same positive bigint. */
 	request = getSpecialIssuanceRequest(false, "é")
-	doSession(t, request, client, nil, nil, nil, conf, opts...)
+	doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
 }
 
 func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ...option) {
@@ -350,17 +355,18 @@ func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ..
 
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
-	require.Nil(t, doSession(t, getIssuanceRequest(true), client, nil, nil, nil, conf, opts...).Err)
+	require.Nil(t, doSession(t, getIssuanceRequest(true), client, nil, nil, nil, nil, conf, opts...).Err)
 
 	// client does not have updated irma_configuration with new attribute irma-demo.RU.studentCard.newAttribute,
 	// and the server does. Disclose an attribute from this credential. The client implicitly discloses value 0
 	// for the new attribute, and the server accepts.
 	req := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
-	require.Nil(t, doSession(t, req, client, nil, nil, nil, irmaServerConf, opts...).Err)
+	require.Nil(t, doSession(t, req, client, nil, nil, nil, nil, irmaServerConf, opts...).Err)
 }
 
 func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{}, opts ...option) {
@@ -369,6 +375,7 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 
 	client, handler := parseStorage(t, opts...)
 	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -378,7 +385,7 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
-	require.Nil(t, doSession(t, getIssuanceRequest(true), client, nil, nil, nil, conf, opts...).Err)
+	require.Nil(t, doSession(t, getIssuanceRequest(true), client, nil, nil, nil, nil, conf, opts...).Err)
 
 	// Trigger downloading the updated irma_configuration using a disclosure request containing the
 	// new attribute, and inform the client
@@ -395,11 +402,11 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 	// Since our client has a new configuration it hides the new attribute that is not yet in the
 	// server's configuration. All proofs are however valid as they should be and the server accepts.
 	levelRequest := getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"))
-	require.Nil(t, doSession(t, levelRequest, client, nil, nil, nil, conf, opts...).Err)
+	require.Nil(t, doSession(t, levelRequest, client, nil, nil, nil, nil, conf, opts...).Err)
 
 	// Disclose newAttribute to a server with a new configuration. This attribute was added
 	// after we received a credential without it, so its value in this credential is 0.
-	res := doSession(t, newAttrRequest, client, nil, nil, nil, irmaServerConf, opts...)
+	res := doSession(t, newAttrRequest, client, nil, nil, nil, nil, irmaServerConf, opts...)
 	require.Nil(t, res.Err)
 	require.Nil(t, res.Disclosed[0][0].RawValue)
 }
@@ -446,12 +453,14 @@ func testIssuedCredentialIsStored(t *testing.T, conf interface{}, opts ...option
 	defer test.ClearTestStorage(t, client, handler.storage)
 
 	issuanceRequest := getNameIssuanceRequest()
-	doSession(t, issuanceRequest, client, nil, nil, nil, conf, opts...)
+	doSession(t, issuanceRequest, client, nil, nil, nil, nil, conf, opts...)
 	require.NoError(t, client.Close())
 
 	client, _ = parseExistingStorage(t, handler.storage)
+	defer client.Close()
+
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
-	doSession(t, getDisclosureRequest(id), client, nil, nil, nil, conf, opts...)
+	doSession(t, getDisclosureRequest(id), client, nil, nil, nil, nil, conf, opts...)
 }
 
 func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
@@ -479,14 +488,14 @@ func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	})
 
 	irmaServer := StartIrmaServer(t, nil)
-	_, _, _, err := irmaServer.irma.StartSession(request, nil)
+	_, _, _, err := irmaServer.irma.StartSession(request, nil, "")
 	irmaServer.Stop()
 	require.EqualError(t, err, "Error type: randomblind\nDescription: randomblind attribute cannot be set in credential request\nStatus code: 0")
 
 	// Make the request valid
 	delete(request.Credentials[0].Attributes, "votingnumber")
 
-	doSession(t, request, client, nil, nil, nil, conf, opts...)
+	doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
 	attrList := client.Attributes(credID, 0)
 
 	// Since attrList.Ints does not include the secret key,
@@ -526,16 +535,32 @@ func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf in
 		},
 	})
 
-	res := doSession(t, request, client, nil, nil, nil, irmaServerConf, append(opts, optionIgnoreError)...)
+	res := doSession(t, request, client, nil, nil, nil, nil, irmaServerConf, append(opts, optionIgnoreError)...)
 	require.NotNil(t, res.clientResult)
 	require.EqualError(t, res.clientResult.Err, "Error type: randomblind\nDescription: mismatch in randomblind attributes between server/client\nStatus code: 0")
 }
 
-func testChainedSessions(t *testing.T, conf interface{}, opts ...option) {
+func testNonRequestorChainedSessions(t *testing.T, conf interface{}, opts ...option) {
+	doNonRequestorChainedSessions(t, conf,
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+		append(opts, optionIgnoreError)...,
+	)
+}
+
+func testRequestorChainedSessions(t *testing.T, conf interface{}, opts ...option) {
 	doChainedSessions(t, conf,
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
 		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
 		opts...,
+	)
+}
+
+func testUnauthorizedRequestorChainedSession(t *testing.T, conf interface{}, opts ...option) {
+	doUnauthorizedChainedSession(t, conf,
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+		irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+		append(opts, optionIgnoreError)...,
 	)
 }
 
@@ -560,7 +585,7 @@ func testDisablePairing(t *testing.T, conf interface{}, opts ...option) {
 		_ = setPairingMethod(irma.PairingMethodPin, handler)
 		_ = setPairingMethod(irma.PairingMethodNone, handler)
 	}
-	doSession(t, request, nil, nil, frontendOptionsHandler, nil, conf, opts...)
+	doSession(t, request, nil, nil, nil, frontendOptionsHandler, nil, conf, opts...)
 }
 
 func updatedSchemeConfigDecorator(fn func() *server.Configuration) func() *server.Configuration {
@@ -578,7 +603,7 @@ func testSigningSession(t *testing.T, conf interface{}, opts ...option) {
 
 	var serverResult *requestorSessionResult
 	for _, opt := range []option{0, optionRetryPost} {
-		serverResult = doSession(t, getSigningRequest(id), client, nil, nil, nil, conf, append(opts, opt)...)
+		serverResult = doSession(t, getSigningRequest(id), client, nil, nil, nil, nil, conf, append(opts, opt)...)
 
 		require.Nil(t, serverResult.Err)
 		require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
@@ -604,7 +629,7 @@ func testDisclosureSession(t *testing.T, conf interface{}, opts ...option) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 	for _, opt := range []option{0, optionRetryPost} {
-		serverResult := doSession(t, request, nil, nil, nil, nil, conf, append(opts, opt)...)
+		serverResult := doSession(t, request, nil, nil, nil, nil, nil, conf, append(opts, opt)...)
 		require.Nil(t, serverResult.Err)
 		require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
 		require.Len(t, serverResult.Disclosed, 1)
@@ -619,7 +644,7 @@ func testDisclosureMultipleAttrs(t *testing.T, conf interface{}, opts ...option)
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"),
 	)
 
-	serverResult := doSession(t, request, nil, nil, nil, nil, conf, opts...)
+	serverResult := doSession(t, request, nil, nil, nil, nil, nil, conf, opts...)
 	require.Nil(t, serverResult.Err)
 	require.Equal(t, irma.ProofStatusValid, serverResult.ProofStatus)
 
@@ -658,7 +683,7 @@ func testCombinedSessionMultipleAttributes(t *testing.T, conf interface{}, opts 
 		]
 	}`), &ir))
 
-	require.Equal(t, irma.ServerStatusDone, doSession(t, &ir, nil, nil, nil, nil, conf, opts...).Status)
+	require.Equal(t, irma.ServerStatusDone, doSession(t, &ir, nil, nil, nil, nil, nil, conf, opts...).Status)
 }
 
 func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.Client, conf interface{}, opts ...option) {
@@ -686,7 +711,7 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.Client, c
 		})
 	}
 
-	result := doSession(t, request, client, nil, nil, nil, conf, opts...)
+	result := doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
@@ -708,7 +733,7 @@ func testConDisCon(t *testing.T, conf interface{}, opts ...option) {
 			"prefix":     "van",
 		},
 	})
-	doSession(t, ir, client, nil, nil, nil, conf, opts...)
+	doSession(t, ir, client, nil, nil, nil, nil, conf, opts...)
 
 	dr := irma.NewDisclosureRequest()
 	dr.Disclose = irma.AttributeConDisCon{
@@ -725,7 +750,7 @@ func testConDisCon(t *testing.T, conf interface{}, opts ...option) {
 		},
 	}
 
-	doSession(t, dr, client, nil, nil, nil, conf, opts...)
+	doSession(t, dr, client, nil, nil, nil, nil, conf, opts...)
 }
 
 func testOptionalDisclosure(t *testing.T, conf interface{}, opts ...option) {
@@ -779,7 +804,7 @@ func testOptionalDisclosure(t *testing.T, conf interface{}, opts ...option) {
 		args.request.Disclosure().Disclose = args.attrs
 
 		// TestHandler always prefers the first option when given any choice, so it will not disclose the optional attribute
-		result := doSession(t, args.request, client, nil, nil, nil, conf, opts...)
+		result := doSession(t, args.request, client, nil, nil, nil, nil, conf, opts...)
 		require.True(t, reflect.DeepEqual(args.disclosed, result.Disclosed))
 	}
 }
@@ -857,7 +882,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	delete(issuanceRequest.Credentials[0].Attributes, "level")
 
 	irmaServer := StartIrmaServer(t, nil) // Run a server with old configuration (level is non-optional)
-	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil)
+	_, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil, "")
 	expectedError := &irma.RequiredAttributeMissingError{
 		ErrorType: irma.ErrorRequiredAttributeMissing,
 		Missing: &irma.IrmaIdentifierSet{
@@ -881,7 +906,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	_, err = client.Configuration.Download(issuanceRequest)
 	require.NoError(t, err)
 	require.True(t, client.Configuration.CredentialTypes[credid].AttributeType(attrid).IsOptional())
-	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, nil)
+	_, _, _, err = irmaServer.irma.StartSession(issuanceRequest, nil, "")
 	require.NoError(t, err)
 	irmaServer.Stop()
 }
@@ -1079,7 +1104,7 @@ func TestInvalidRequest(t *testing.T) {
 	_, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),
 		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),
-	), nil)
+	), nil, "")
 	require.Error(t, err)
 }
 
@@ -1088,7 +1113,7 @@ func TestDoubleGET(t *testing.T) {
 	defer irmaServer.Stop()
 	qr, _, _, err := irmaServer.irma.StartSession(irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
-	), nil)
+	), nil, "")
 	require.NoError(t, err)
 
 	// Simulate the first GET by the client in the session protocol, twice
@@ -1108,7 +1133,7 @@ func TestInsecureProtocolVersion(t *testing.T) {
 	// Test whether the server accepts a request with an insecure protocol version
 	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 
-	qr, _, _, err := irmaServer.irma.StartSession(request, func(result *server.SessionResult) {})
+	qr, _, _, err := irmaServer.irma.StartSession(request, func(result *server.SessionResult) {}, "")
 	require.NoError(t, err)
 
 	var o interface{}
@@ -1135,7 +1160,7 @@ func TestClientDeveloperMode(t *testing.T) {
 	// parseStorage returns a client with developer mode already enabled.
 	// Do a session with our local testserver (without https)
 	issuanceRequest := getNameIssuanceRequest()
-	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil, nil)
 	require.True(t, issuanceRequest.DevelopmentMode) // set to true by server
 
 	// RemoveStorage resets developer mode preference back to its default (disabled)
@@ -1144,7 +1169,7 @@ func TestClientDeveloperMode(t *testing.T) {
 
 	// Try to start another session with our non-https server
 	issuanceRequest = getNameIssuanceRequest()
-	qr, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil)
+	qr, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil, "")
 	require.NoError(t, err)
 	c := make(chan *SessionResult, 1)
 	j, err := json.Marshal(qr)
@@ -1180,7 +1205,7 @@ func TestParallelSessions(t *testing.T) {
 			getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")),
 			client,
 			irmaServer,
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			optionUnsatisfiableRequest, optionWait,
 		)
 		require.Equal(t, result.Status, irma.ServerStatusDone)
@@ -1194,7 +1219,7 @@ func TestParallelSessions(t *testing.T) {
 	require.Zero(t, len(logs))
 
 	// Issue credential containing above attribute
-	doSession(t, getIssuanceRequest(false), client, irmaServer, nil, nil, nil)
+	doSession(t, getIssuanceRequest(false), client, irmaServer, nil, nil, nil, nil)
 
 	// Running disclosure session should now finish using the new credential
 	result := <-disclosure
@@ -1226,7 +1251,7 @@ func TestParallelSessionsWithPairing(t *testing.T) {
 		<-handler.pairingCodeChan
 
 		// Do a second session while the first session is pairing.
-		doSession(t, request, client, irmaServer, nil, nil, nil)
+		doSession(t, request, client, irmaServer, nil, nil, nil, nil)
 
 		// After the second session has been completed, we complete pairing of the first session.
 		err := handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
@@ -1234,7 +1259,7 @@ func TestParallelSessionsWithPairing(t *testing.T) {
 	}
 
 	// Initiate the first session with pairing being enabled.
-	doSession(t, request, client, irmaServer, frontendOptionsHandler, pairingHandler, nil)
+	doSession(t, request, client, irmaServer, nil, frontendOptionsHandler, pairingHandler, nil)
 }
 
 func expireKey(t *testing.T, conf *irma.Configuration) {
@@ -1250,19 +1275,19 @@ func TestIssueExpiredKey(t *testing.T) {
 	defer irmaServer.Stop()
 
 	// issuance sessions using valid, nonexpired public keys work
-	result := doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil)
+	result := doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil, nil)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 
 	// client aborts issuance sessions in case of expired public keys
 	expireKey(t, client.Configuration)
-	result = doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil, optionIgnoreError)
+	result = doSession(t, getIssuanceRequest(true), client, irmaServer, nil, nil, nil, nil, optionIgnoreError)
 	require.Nil(t, result.Err)
 	require.Equal(t, irma.ServerStatusCancelled, result.Status)
 
 	// server aborts issuance sessions in case of expired public keys
 	expireKey(t, irmaServer.conf.IrmaConfiguration)
-	_, _, _, err := irmaServer.irma.StartSession(getIssuanceRequest(true), nil)
+	_, _, _, err := irmaServer.irma.StartSession(getIssuanceRequest(true), nil, "")
 	require.Error(t, err)
 }
 
@@ -1293,16 +1318,16 @@ func TestExpiredCredential(t *testing.T) {
 			},
 		},
 	})
-	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, issuanceRequest, client, irmaServer, nil, nil, nil, nil)
 
 	// Try to disclose it and check that it fails.
 	disclosureRequest := irma.NewDisclosureRequest()
 	disclosureRequest.AddSingle(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentCardNumber"), &value, nil)
-	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, optionUnsatisfiableRequest)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, nil, optionUnsatisfiableRequest)
 
 	// Try to disclose it when allowing expired credentials and check that it succeeds.
 	disclosureRequest.SkipExpiryCheck = []irma.CredentialTypeIdentifier{issuanceRequest.Credentials[0].CredentialTypeID}
-	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil)
+	doSession(t, disclosureRequest, client, irmaServer, nil, nil, nil, nil)
 }
 
 func TestRequestorHostPermissions(t *testing.T) {

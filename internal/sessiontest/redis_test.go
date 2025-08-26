@@ -135,7 +135,7 @@ func TestRedis(t *testing.T) {
 	t.Run("IssuanceSession", apply(testIssuanceSession, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
 	t.Run("IssuedCredentialIsStored", apply(testIssuedCredentialIsStored, redisRequestorConfigDecorator(mr, cert, "", RequestorServerConfiguration)))
 
-	t.Run("ChainedSessions", apply(testChainedSessions, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
+	t.Run("ChainedSessions", apply(testNonRequestorChainedSessions, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
 	t.Run("UnknownRequestorToken", apply(testUnknownRequestorToken, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)))
 }
 
@@ -177,6 +177,7 @@ func TestRedisWithTLSCertFile(t *testing.T) {
 	require.NoError(t, err)
 	certfile := file.Name()
 	defer func() {
+		file.Close()
 		require.NoError(t, os.Remove(certfile))
 	}()
 
@@ -224,7 +225,7 @@ func TestRedisRedundancy(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getDisclosureRequest(id)
 
-	doSession(t, request, nil, nil, nil, nil, nil, optionReuseServer)
+	doSession(t, request, nil, nil, nil, nil, nil, nil, optionReuseServer)
 }
 
 // Tests whether the right error is returned by the client's Failure handler
@@ -239,7 +240,7 @@ func TestRedisSessionFailure(t *testing.T) {
 	client, handler := parseStorage(t)
 	defer test.ClearTestStorage(t, client, handler.storage)
 
-	qr, _, _, err := irmaServer.irma.StartSession(request, nil)
+	qr, _, _, err := irmaServer.irma.StartSession(request, nil, "")
 	require.NoError(t, err)
 	qrjson, err := json.Marshal(qr)
 	require.NoError(t, err)
@@ -273,7 +274,7 @@ func TestRedisLibraryErrors(t *testing.T) {
 
 	token := irma.RequestorToken("Sxqcpng37mAdBKgoAJXl")
 
-	_, _, _, err := irmaServer.irma.StartSession(request, nil)
+	_, _, _, err := irmaServer.irma.StartSession(request, nil, "")
 	require.Error(t, err)
 	_, err = irmaServer.irma.GetSessionResult(token)
 	require.Error(t, err)

@@ -34,6 +34,7 @@ type sessionData struct {
 	ImplicitDisclosure irma.AttributeConDisCon
 	Options            irma.SessionOptions
 	ClientAuth         irma.ClientAuthorization
+	Requestor          string
 }
 
 type responseCache struct {

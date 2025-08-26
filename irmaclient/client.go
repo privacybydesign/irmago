@@ -460,20 +460,6 @@ func (client *Client) RemoveStorage() error {
 	if err = client.storage.DeleteAll(); err != nil {
 		return err
 	}
-	fileStorage := fileStorage{storagePath: client.storage.storagePath, Configuration: client.Configuration}
-	if err = fileStorage.DeleteAll(); err != nil {
-		return err
-	}
-	storageOld := storageOld{storageOldPath: client.storage.storagePath, Configuration: client.Configuration}
-	if err = storageOld.Open(); err != nil {
-		return err
-	}
-	if err = storageOld.DeleteAll(); err != nil {
-		return err
-	}
-	if err = storageOld.Close(); err != nil {
-		return err
-	}
 
 	// Client assumes there is always a secret key, so we have to load a new one
 	client.secretkey, err = client.storage.LoadSecretKey()

@@ -4,13 +4,14 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/pflag"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/spf13/pflag"
 
 	"github.com/go-errors/errors"
 	irma "github.com/privacybydesign/irmago"
@@ -138,7 +139,7 @@ func libraryRequest(
 	resultchan := make(chan *server.SessionResult)
 	qr, requestorToken, _, err := irmaServer.StartSession(request, func(r *server.SessionResult) {
 		resultchan <- r
-	})
+	}, "")
 	if err != nil {
 		return nil, errors.WrapPrefix(err, "IRMA session failed", 0)
 	}

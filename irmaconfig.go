@@ -927,3 +927,5 @@ func (conf *Configuration) CallListeners() {
 		listener(conf)
 	}
 }
+
+type SessionAuthorizationFunc func(requestor string, request SessionRequest) (bool, string)
