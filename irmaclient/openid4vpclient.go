@@ -212,6 +212,10 @@ func (session *openid4vpSession) perform() error {
 	session.pendingPermissionRequest = &permissionRequest{
 		channel: make(chan *permissionResponse, 1),
 	}
+	defer func() {
+		session.pendingPermissionRequest = nil
+	}()
+
 	err := session.requestPermission()
 	if err != nil {
 		return fmt.Errorf("failed to request permission: %v", err)
