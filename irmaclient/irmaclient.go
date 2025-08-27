@@ -45,7 +45,7 @@ import (
 // in multiple places would be bad).
 
 type IrmaClient struct {
-	onSessionDoneCallback func(irma.Action)
+	onSessionDoneCallback func()
 	// Stuff we manage on disk
 	secretkey        *secretKey
 	attributes       map[irma.CredentialTypeIdentifier][]*irma.AttributeList
@@ -160,7 +160,7 @@ func NewIrmaClient(
 	return client, schemeMgrErr
 }
 
-func (client *IrmaClient) SetOnSessionDoneCallback(callback func(irma.Action)) {
+func (client *IrmaClient) SetOnSessionDoneCallback(callback func()) {
 	client.onSessionDoneCallback = callback
 }
 
