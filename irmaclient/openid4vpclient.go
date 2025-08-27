@@ -31,7 +31,7 @@ type OpenID4VPClient struct {
 	currentSession    *openid4vpSession
 }
 
-// Sends another, updated verification request if there's an active session
+// RefreshPendingPermissionRequest sends another, updated verification request if there's an active session
 func (client *OpenID4VPClient) RefreshPendingPermissionRequest() {
 	if client.currentSession != nil {
 		client.currentSession.requestPermission()
