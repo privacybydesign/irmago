@@ -30,7 +30,7 @@ func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, e
 		hashContent += key + string(valueStr)
 	}
 
-	return sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, string(hashContent))
+	return sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, hashContent)
 }
 
 func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationContext sdjwtvc.VerificationContext) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
