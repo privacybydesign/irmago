@@ -306,12 +306,10 @@ func (client *OpenID4VPClient) handleAuthorizationRequest(
 		keyBinder:      client.keyBinder,
 		logsStorage:    client.logsStorage,
 	}
-
-	err := client.currentSession.perform()
-
-	client.currentSession = nil
-
-	return err
+	defer func() {
+		client.currentSession = nil
+	}()
+	return client.currentSession.perform()
 }
 
 // will return the SdJwtVc instances to be sent as the response to the complete DcqlQuery, based on the users choices.

@@ -11,7 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 )
 
-// this is the hash used for SD-JWTs, it's kept this simple so it can also be constructed from
+// CreateHashForSdJwtVc creates the hash used for SD-JWTs, it's kept this simple so it can also be constructed from
 // an issuance request before the actual credential is issued
 func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, error) {
 	hashContent := credType
