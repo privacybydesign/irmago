@@ -45,6 +45,7 @@ import (
 // in multiple places would be bad).
 
 type IrmaClient struct {
+	onSessionDoneCallback func(irma.Action)
 	// Stuff we manage on disk
 	secretkey        *secretKey
 	attributes       map[irma.CredentialTypeIdentifier][]*irma.AttributeList
@@ -157,6 +158,10 @@ func NewIrmaClient(
 	client.sdJwtVerificationContext = sdJwtVerificationContext
 
 	return client, schemeMgrErr
+}
+
+func (client *IrmaClient) SetOnSessionDoneCallback(callback func(irma.Action)) {
+	client.onSessionDoneCallback = callback
 }
 
 func (client *IrmaClient) Close() error {

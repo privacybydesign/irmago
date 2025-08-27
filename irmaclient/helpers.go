@@ -3,12 +3,35 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 )
+
+// this is the hash used for SD-JWTs, it's kept this simple so it can also be constructed from
+// an issuance request before the actual credential is issued
+func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, error) {
+	hashContent := credType
+
+	sortedKeys := []string{}
+	for key := range attributes {
+		sortedKeys = append(sortedKeys, key)
+	}
+	sort.Strings(sortedKeys)
+
+	for _, key := range sortedKeys {
+		valueStr, err := json.Marshal(attributes[key])
+		if err != nil {
+			return "", err
+		}
+		hashContent += key + string(valueStr)
+	}
+
+	return sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, string(hashContent))
+}
 
 func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationContext sdjwtvc.VerificationContext) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
 	decoded, err := sdjwtvc.ParseAndVerifySdJwtVc(verificationContext, cred)
@@ -22,12 +45,7 @@ func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationCo
 		attributes[d.Key] = d.Value
 	}
 
-	hashContent, err := json.Marshal(attributes)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	hash, err := sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, string(hashContent))
+	hash, err := CreateHashForSdJwtVc(decoded.IssuerSignedJwtPayload.VerifiableCredentialType, attributes)
 	if err != nil {
 		return nil, nil, err
 	}
