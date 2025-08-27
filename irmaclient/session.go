@@ -73,7 +73,7 @@ type session struct {
 	RequestorInfo *irma.RequestorInfo
 
 	// Callback for when the session is over to notify other systems
-	onDoneCallback func(irma.Action)
+	onDoneCallback func()
 
 	token          string
 	choice         *irma.DisclosureChoice
@@ -884,7 +884,7 @@ func (s sessions) remove(token string) {
 	}
 
 	if last.onDoneCallback != nil {
-		last.onDoneCallback(last.Action)
+		last.onDoneCallback()
 	}
 
 	if len(s.sessions) == 0 {

@@ -98,9 +98,7 @@ func New(
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
 	// so we do this by listening for session-done events
-	irmaClient.SetOnSessionDoneCallback(func(action irma.Action) {
-		openid4vpClient.RefreshPendingPermissionRequest()
-	})
+	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	return &Client{
 		sdjwtvcStorage:  sdjwtvcStorage,
