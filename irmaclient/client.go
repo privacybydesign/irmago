@@ -95,6 +95,11 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
 
+	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
+	// should again ask for verification permission,
+	// so we do this by listening for session-done events
+	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
+
 	return &Client{
 		sdjwtvcStorage:  sdjwtvcStorage,
 		openid4vpClient: openid4vpClient,

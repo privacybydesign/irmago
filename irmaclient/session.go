@@ -72,6 +72,9 @@ type session struct {
 	Version       *irma.ProtocolVersion
 	RequestorInfo *irma.RequestorInfo
 
+	// Callback for when the session is over to notify other systems
+	onDoneCallback func()
+
 	token          string
 	choice         *irma.DisclosureChoice
 	attrIndices    irma.DisclosedAttributeIndices
@@ -202,6 +205,7 @@ func (client *IrmaClient) newQrSession(qr *irma.Qr, handler Handler) *session {
 	doneChannel <- struct{}{}
 	close(doneChannel)
 	session := &session{
+		onDoneCallback: client.onSessionDoneCallback,
 		ServerURL:      qr.URL,
 		Hostname:       u.Hostname(),
 		RequestorInfo:  requestorInfo(qr.URL, client.Configuration),
@@ -877,6 +881,10 @@ func (s sessions) remove(token string) {
 				session.requestPermission()
 			}
 		}
+	}
+
+	if last.onDoneCallback != nil {
+		last.onDoneCallback()
 	}
 
 	if len(s.sessions) == 0 {
