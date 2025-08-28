@@ -162,29 +162,6 @@ func Test_IssuerSignedJwt_WithInvalidTypHeader_Fails(t *testing.T) {
 }
 
 func Test_ValidSdJwtVc_NoDisclosures_NoKbJwt(t *testing.T) {
-	// TEMP: generate SDJWT voor testdata.wrongIssuerSignedJwtTypHeader
-	// now := time.Now().Unix()
-	// iat := now + ClockSkewInSeconds + 100
-	// kbIat := now
-
-	// config := newWorkingSdJwtTestConfig().
-	// 	withIssuedAt(iat).
-	// 	withKbIssuedAt(kbIat).
-	// 	withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
-	// 	withKbTypHeader("invalid")
-	// 	//withSdHash("1234567890")
-
-	// 	//withDisclosures([]DisclosureContent{})
-	// 	//withTypHeader("jwt")
-	// 	//withSdHash("123456789").
-	// 	//withKbTypHeader("invalid").
-
-	// 	//withIssuerUrl("https://openid4vc.staging.yivi.app/", false)
-
-	// sdjwtvc := createTestSdJwtVc(t, config)
-
-	// require.NotNil(t, sdjwtvc)
-
 	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoDisclosuresNoKbjwt)
 	require.NoError(t, err)
