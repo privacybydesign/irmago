@@ -100,7 +100,7 @@ services:
   # Service to run the 'irma' command line tool
   irma:
     build: .
-    image: privacybydesign/irma:edge
+    image: privacybydesign/irma:latest
     # Add a run profile to prevent this service to be included when running docker-compose up.
     profiles:
       - run
