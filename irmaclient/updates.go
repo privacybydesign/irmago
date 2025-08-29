@@ -16,7 +16,7 @@ type update struct {
 	Error   *string
 }
 
-var clientUpdates = []func(client *Client) error{
+var clientUpdates = []func(client *IrmaClient) error{
 	// 0: Convert old cardemu.xml Android storage to our own storage format
 	nil, // No longer necessary as the Android app was deprecated long ago
 
@@ -61,7 +61,7 @@ var clientUpdates = []func(client *Client) error{
 // update performs any function from clientUpdates that has not
 // already been executed in the past, keeping track of previously executed updates
 // in the file at updatesFile.
-func (client *Client) update() error {
+func (client *IrmaClient) update() error {
 	// Load and parse file containing info about already performed updates
 	var err error
 	if client.updates, err = client.storage.LoadUpdates(); err != nil {

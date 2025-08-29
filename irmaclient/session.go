@@ -10,6 +10,7 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
@@ -56,8 +57,6 @@ type Handler interface {
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
-	RequestSchemeManagerPermission(manager *irma.SchemeManager,
-		callback func(proceed bool))
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }
@@ -73,10 +72,13 @@ type session struct {
 	Version       *irma.ProtocolVersion
 	RequestorInfo *irma.RequestorInfo
 
+	// Callback for when the session is over to notify other systems
+	onDoneCallback func()
+
 	token          string
 	choice         *irma.DisclosureChoice
 	attrIndices    irma.DisclosedAttributeIndices
-	client         *Client
+	client         *IrmaClient
 	request        irma.SessionRequest
 	done           <-chan struct{}
 	prepRevocation chan error // used when nonrevocation preprocessing is done
@@ -100,7 +102,7 @@ type session struct {
 }
 
 type sessions struct {
-	client   *Client
+	client   *IrmaClient
 	sessions map[string]*session
 }
 
@@ -123,7 +125,7 @@ var supportedVersions = map[int][]int{
 
 // NewSession starts a new IRMA session, given (along with a handler to pass feedback to) a session request.
 // When the request is not suitable to start an IRMA session from, it calls the Failure method of the specified Handler.
-func (client *Client) NewSession(sessionrequest string, handler Handler) SessionDismisser {
+func (client *IrmaClient) NewSession(sessionrequest string, handler Handler) SessionDismisser {
 	bts := []byte(sessionrequest)
 
 	qr := &irma.Qr{}
@@ -158,7 +160,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 }
 
 // newManualSession starts a manual session, given a signature request in JSON and a handler to pass messages to
-func (client *Client) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
+func (client *IrmaClient) newManualSession(request irma.SessionRequest, handler Handler, action irma.Action) SessionDismisser {
 	client.PauseJobs()
 
 	doneChannel := make(chan struct{}, 1)
@@ -181,7 +183,7 @@ func (client *Client) newManualSession(request irma.SessionRequest, handler Hand
 }
 
 // newQrSession creates and starts a new interactive IRMA session
-func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
+func (client *IrmaClient) newQrSession(qr *irma.Qr, handler Handler) *session {
 	if qr.Type == irma.ActionRedirect {
 		newqr := &irma.Qr{}
 		transport := irma.NewHTTPTransport("", !client.Preferences.DeveloperMode)
@@ -203,6 +205,7 @@ func (client *Client) newQrSession(qr *irma.Qr, handler Handler) *session {
 	doneChannel <- struct{}{}
 	close(doneChannel)
 	session := &session{
+		onDoneCallback: client.onSessionDoneCallback,
 		ServerURL:      qr.URL,
 		Hostname:       u.Hostname(),
 		RequestorInfo:  requestorInfo(qr.URL, client.Configuration),
@@ -570,7 +573,15 @@ func (session *session) sendResponse(message interface{}) {
 			return
 		}
 		if session.Action == irma.ActionIssuing {
-			if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, session.request.(*irma.IssuanceRequest), session.builders); err != nil {
+			issuanceRequest := session.request.(*irma.IssuanceRequest)
+			if err = session.client.ConstructCredentials(serverResponse.IssueSignatures, issuanceRequest, session.builders); err != nil {
+				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
+				return
+			}
+
+			if err = session.client.VerifyAndStoreSdJwts(serverResponse.SdJwts, issuanceRequest.Credentials); err != nil {
+				// TODO: should we revert/remove all SD-JWTs and the stored IRMA credentials if this fails?
+				// TODO: add new error type for this; could be crypto related, but also verification/spec related
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
 				return
 			}
@@ -798,9 +809,28 @@ func (session *session) KeyshareDone(message interface{}) {
 			Indices: session.attrIndices,
 		})
 	case irma.ActionIssuing:
+		request := session.request.(*irma.IssuanceRequest)
+
+		var keyBindingPubKeys []jwk.Key = nil
+
+		numSdJwtsToIssue, err := irma.CalculateAmountOfSdJwtsToIssue(request)
+		if err != nil {
+			session.fail(&irma.SessionError{
+				Err: err,
+			})
+		}
+		if numSdJwtsToIssue > 0 {
+			var err error
+			keyBindingPubKeys, err = session.client.keyBinder.CreateKeyPairs(numSdJwtsToIssue)
+			if err != nil {
+				session.fail(&irma.SessionError{Err: err})
+			}
+		}
+
 		session.sendResponse(&irma.IssueCommitmentMessage{
 			IssueCommitmentMessage: message.(*gabi.IssueCommitmentMessage),
 			Indices:                session.attrIndices,
+			KeyBindingPubKeys:      keyBindingPubKeys,
 		})
 	}
 }
@@ -851,6 +881,10 @@ func (s sessions) remove(token string) {
 				session.requestPermission()
 			}
 		}
+	}
+
+	if last.onDoneCallback != nil {
+		last.onDoneCallback()
 	}
 
 	if len(s.sessions) == 0 {

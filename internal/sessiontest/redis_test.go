@@ -23,7 +23,6 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
 	"github.com/stretchr/testify/require"
@@ -237,8 +236,8 @@ func TestRedisSessionFailure(t *testing.T) {
 
 	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)())
 	defer irmaServer.Stop()
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	qr, _, _, err := irmaServer.irma.StartSession(request, nil, "")
 	require.NoError(t, err)
