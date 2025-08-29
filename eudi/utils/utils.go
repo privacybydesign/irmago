@@ -29,17 +29,3 @@ func GetOptional[T any](token jwt.Token, key string) T {
 	}
 	return value
 }
-
-func GetOptionalWithDefault[T any](token jwt.Token, key string, defaultValue T) (T, error) {
-	var value T
-	err := token.Get(key, &value)
-	if err != nil {
-		switch err {
-		case jwt.ClaimNotFoundError():
-			return defaultValue, nil
-		default:
-			return *new(T), err
-		}
-	}
-	return value, nil
-}

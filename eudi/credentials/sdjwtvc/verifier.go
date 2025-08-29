@@ -339,9 +339,9 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 
 	// Get optional fields
 	sub, _ := token.Subject()
-	exp, _ := utils.GetOptionalWithDefault[int64](token, Key_ExpiryTime, 0)
-	iat, _ := utils.GetOptionalWithDefault[int64](token, Key_IssuedAt, 0)
-	nbf, _ := utils.GetOptionalWithDefault[int64](token, Key_NotBefore, 0)
+	exp, _ := token.Expiration()
+	iat, _ := token.IssuedAt()
+	nbf, _ := token.NotBefore()
 
 	sdAlg := utils.GetOptional[string](token, Key_SdAlg)
 	status := utils.GetOptional[string](token, Key_Status)
@@ -379,9 +379,9 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	// Construct payload
 	payload := IssuerSignedJwtPayload{
 		Subject:                  sub,
-		Expiry:                   exp,
-		IssuedAt:                 iat,
-		NotBefore:                nbf,
+		Expiry:                   exp.Unix(),
+		IssuedAt:                 iat.Unix(),
+		NotBefore:                nbf.Unix(),
 		Issuer:                   iss,
 		VerifiableCredentialType: vct,
 		Sd:                       sd,
