@@ -92,6 +92,20 @@ func testNonRequiredCredentialSet(t *testing.T) {
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: "",
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
 							CredentialHash: emailInfo2.Hash,
 						},
 					},
@@ -107,6 +121,14 @@ func testNonRequiredCredentialSet(t *testing.T) {
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
 							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: "",
 						},
 					},
 				},
@@ -186,6 +208,15 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiableByDifferentInstances(t *testing.T
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+						Value: newTranslatedString("hello@gmail.com"),
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
 							CredentialHash: infoHotmail.Hash,
 						},
@@ -230,6 +261,16 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiablePickFirstClaim(t *testing.T) {
 						Value: newTranslatedString("hello@gmail.com"),
 					},
 				},
+				// TODO: improve support for claim_sets?
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+						Value: newTranslatedString("hello@gmail.com"),
+					},
+				},
 			},
 		},
 	}
@@ -266,6 +307,25 @@ func testDcqlClaimSetsTwoOptionsOneSatisfiable(t *testing.T) {
 							CredentialHash: infoGmail.Hash,
 						},
 						Value: newTranslatedString("gmail.com"),
+					},
+				},
+				// TODO: Make this egde case also work
+				// {
+				// 	{
+				// 		AttributeIdentifier: &irma.AttributeIdentifier{
+				// 			Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+				// 			CredentialHash: "",
+				// 		},
+				// 		Value: newTranslatedString("gmail.com"),
+				// 	},
+				// },
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+						Value: newTranslatedString("not@available.com"),
 					},
 				},
 			},
@@ -326,6 +386,22 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions(t *testin
 						Value: newTranslatedString("gmail.com"),
 					},
 				},
+				// also allows issuing new one (only first value in values array)
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: "",
+						},
+						Value: newTranslatedString("gmail.com"),
+					},
+				},
 			},
 		},
 	}
@@ -367,6 +443,21 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiable(t *testing.T) {
 							CredentialHash: info.Hash,
 						},
 						Value: newTranslatedString("hotmail.com"),
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: "",
+						},
+						Value: newTranslatedString("gmail.com"),
 					},
 				},
 			},
@@ -452,6 +543,21 @@ func testDcqlSingleSatisfiableExpectedValueForClaim(t *testing.T) {
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
 							CredentialHash: emailInfo.Hash,
+						},
+						Value: irma.NewTranslatedString(&expectedValue),
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: "",
 						},
 						Value: irma.NewTranslatedString(&expectedValue),
 					},
@@ -558,11 +664,35 @@ func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T)
 						},
 					},
 				},
+				// allow for issuing new email
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: "",
+						},
+					},
+				},
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
 							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+				// allow for issuing new mobilenumber
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: "",
 						},
 					},
 				},
@@ -615,11 +745,35 @@ func testDcqlSatisfiableTwoOptionsMultipleClaims(t *testing.T) {
 						},
 					},
 				},
+				// allow to add new email
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: "",
+						},
+					},
+				},
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
 							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+				// allow to add new mobilenumber
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: "",
 						},
 					},
 				},
@@ -666,11 +820,29 @@ func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
 						},
 					},
 				},
+				// allow to add new one
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+				},
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
 							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+				// allow to add new one
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: "",
 						},
 					},
 				},
@@ -719,6 +891,15 @@ func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
 						},
 					},
 				},
+				// also allow to add new one
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+				},
 			},
 			{
 				{
@@ -726,6 +907,15 @@ func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
 							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+				// also allow to add new one
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: "",
 						},
 					},
 				},
@@ -820,6 +1010,20 @@ func testDcqlSatisfiableMultipleAttributesSingleCredential(t *testing.T) {
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
 							CredentialHash: info.Hash,
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							CredentialHash: "",
 						},
 					},
 				},
@@ -923,6 +1127,14 @@ func testDcqlUnsatisfiableMultipleCredentialsSingleAvailable(t *testing.T) {
 						},
 					},
 				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: "",
+						},
+					},
+				},
 			},
 		},
 	}
@@ -964,6 +1176,15 @@ func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
 						},
 					},
 				},
+				// also allow issuing new one
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+				},
 			},
 			{
 				{
@@ -971,6 +1192,15 @@ func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
 							CredentialHash: mobileInfo.Hash,
+						},
+					},
+				},
+				// also allow issuing new one
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							CredentialHash: "",
 						},
 					},
 				},
@@ -1015,6 +1245,14 @@ func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
 						AttributeIdentifier: &irma.AttributeIdentifier{
 							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
 							CredentialHash: info2.Hash,
+						},
+					},
+				},
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
 						},
 					},
 				},
@@ -1086,6 +1324,15 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 						},
 					},
 				},
+				// also allow for issuing new one
+				{
+					{
+						AttributeIdentifier: &irma.AttributeIdentifier{
+							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							CredentialHash: "",
+						},
+					},
+				},
 			},
 		},
 		Satisfiable: true,
@@ -1109,7 +1356,7 @@ func sortDisCon(disCon []DisclosureCandidates) []DisclosureCandidates {
 	}
 	slices.SortStableFunc(disCon, func(a, b DisclosureCandidates) int {
 		if len(a) != 0 && len(b) != 0 {
-			return strings.Compare(a[0].CredentialHash, b[0].CredentialHash)
+			return strings.Compare(a[0].Type.String()+a[0].CredentialHash, b[0].Type.String()+b[0].CredentialHash)
 		}
 		return len(a) - len(b)
 	})
@@ -1121,6 +1368,12 @@ func sortConDisCon(condiscon [][]DisclosureCandidates) [][]DisclosureCandidates 
 		condiscon[i] = sortDisCon(condiscon[i])
 	}
 	slices.SortStableFunc(condiscon, func(a, b []DisclosureCandidates) int {
+		if len(a) != 0 {
+			if len(b) != 0 {
+				return strings.Compare(a[0][0].Type.String()+a[0][0].CredentialHash, b[0][0].Type.String()+b[0][0].CredentialHash)
+			}
+			return 1
+		}
 		return len(a) - len(b)
 	})
 	return condiscon
