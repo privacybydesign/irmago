@@ -71,6 +71,7 @@ func runCertChainTest(t *testing.T, config x509TestConfig) {
 
 	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwt, err := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix()).
 		WithIssuerCertificateChain(chain).
 		WithIssuerUrl(config.IssUrl).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").

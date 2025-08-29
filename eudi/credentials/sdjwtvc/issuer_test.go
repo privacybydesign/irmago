@@ -2,6 +2,7 @@ package sdjwtvc
 
 import (
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
@@ -13,6 +14,7 @@ func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix()).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("https://irma.app").
 		WithIssuerCertificateChain(irmaAppCert)
@@ -25,6 +27,7 @@ func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix()).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("https://irma.app").
 		WithIssuerCertificateChain(irmaAppCert)
@@ -37,6 +40,7 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix()).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("http://irma.app").
 		WithIssuerCertificateChain(irmaAppCert)
@@ -49,6 +53,7 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_AllowNonHttps_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix()).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("http://irma.app").
 		WithAllowNonHttpsIssuerUrl(true).
@@ -68,6 +73,7 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix()).
 		WithHashingAlgorithm(HashAlg_Sha256).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithDisclosures(disclosures).
@@ -88,6 +94,7 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix()).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithDisclosures(disclosures).
 		WithIssuerCertificateChain(irmaAppCert)
@@ -96,7 +103,8 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_Failure(t *testing.T) {
 }
 
 func Test_BuildSdJwtVc_NoVct_BuildFailure(t *testing.T) {
-	builder := NewSdJwtVcBuilder()
+	builder := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix())
 	requireBuildFailure(t, builder)
 }
 
