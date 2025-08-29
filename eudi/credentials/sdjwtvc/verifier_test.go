@@ -4,7 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/privacybydesign/irmago/eudi"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +61,7 @@ type x509TestConfig struct {
 }
 
 func runCertChainTest(t *testing.T, config x509TestConfig) {
-	chain, err := eudi.ParsePemCertificateChainToX5cFormat(config.IssuerCertChain)
+	chain, err := utils.ParsePemCertificateChainToX5cFormat(config.IssuerCertChain)
 	require.NoError(t, err)
 
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{
@@ -70,6 +71,7 @@ func runCertChainTest(t *testing.T, config x509TestConfig) {
 
 	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwt, err := NewSdJwtVcBuilder().
+		WithExpiresAt(time.Now().Unix()).
 		WithIssuerCertificateChain(chain).
 		WithIssuerUrl(config.IssUrl).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
@@ -78,13 +80,15 @@ func runCertChainTest(t *testing.T, config x509TestConfig) {
 		Build(creator)
 	require.NoError(t, err)
 
-	verifyOpts, err := CreateX509VerifyOptionsFromCertChain(config.VerifierCertChain)
+	verifyOpts, err := utils.CreateX509VerifyOptionsFromCertChain(config.VerifierCertChain)
 	require.NoError(t, err)
 
-	context := VerificationContext{
-		Clock:                   NewSystemClock(),
-		JwtVerifier:             NewJwxJwtVerifier(),
-		X509VerificationOptions: verifyOpts,
+	context := SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: *verifyOpts,
+		},
+		Clock:       NewSystemClock(),
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 
 	_, err = ParseAndVerifySdJwtVc(context, sdjwt)
@@ -104,15 +108,6 @@ func Test_ValidLeafCertOnly_Success(t *testing.T) {
 	})
 }
 
-func Test_Valid_X509Chain_WrongISS_Failure(t *testing.T) {
-	runCertChainTest(t, x509TestConfig{
-		IssuerCertChain:   testdata.IssuerCertChain_irma_app_Bytes,
-		VerifierCertChain: testdata.IssuerCertChain_irma_app_Bytes,
-		IssUrl:            "https://openid4vc.staging.yivi.app",
-		ShouldFail:        true,
-	})
-}
-
 func Test_Valid_X509Chain_Success(t *testing.T) {
 	runCertChainTest(t, x509TestConfig{
 		IssuerCertChain:   testdata.IssuerCertChain_irma_app_Bytes,
@@ -128,15 +123,6 @@ func Test_Valid_SelfSigned_X509Cert_Success(t *testing.T) {
 		VerifierCertChain: testdata.IssuerCert_irma_app_Bytes,
 		IssUrl:            "https://irma.app",
 		ShouldFail:        false,
-	})
-}
-
-func Test_X509_MismatchWithISS_Fails(t *testing.T) {
-	runCertChainTest(t, x509TestConfig{
-		IssuerCertChain:   testdata.IssuerCert_irma_app_Bytes,
-		VerifierCertChain: testdata.IssuerCert_irma_app_Bytes,
-		IssUrl:            "https://openid4vc.staging.yivi.app",
-		ShouldFail:        true,
 	})
 }
 
@@ -170,24 +156,14 @@ func TestDecodingDisclosure(t *testing.T) {
 	require.Equal(t, "Yivi", decoded.Value)
 }
 
-func Test_FailingToFetchIssuerMetadata_Fails(t *testing.T) {
-	context := VerificationContext{
-		IssuerMetadataFetcher: &failingMetadataFetcherNetworkError{},
-		Clock:                 NewSystemClock(),
-		JwtVerifier:           NewJwxJwtVerifier(),
-	}
-	_, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_DcTypHeader)
-	require.Error(t, err)
-}
-
 func Test_IssuerSignedJwt_WithInvalidTypHeader_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	_, err := ParseAndVerifySdJwtVc(context, SdJwtVc(wrongIssuerSignedJwtTypHeader))
-	require.Error(t, err)
+	require.Error(t, err, "failed to parse JWT: jwt.Parse: failed to parse token: jws.Verify: key provider 0 failed: invalid 'typ' header: jwt")
 }
 
 func Test_ValidSdJwtVc_NoDisclosures_NoKbJwt(t *testing.T) {
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoDisclosuresNoKbjwt)
 	require.NoError(t, err)
 
@@ -196,13 +172,13 @@ func Test_ValidSdJwtVc_NoDisclosures_NoKbJwt(t *testing.T) {
 }
 
 func Test_ValidSdJwt_MismatchingHashInKbJwt_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	_, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_MismatchingHashInKbJwt)
 	require.Error(t, err)
 }
 
 func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithKbJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_DcTypHeader)
 	require.NoError(t, err)
 
@@ -211,7 +187,7 @@ func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithKbJwt_Succeeds(t *testi
 }
 
 func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_VcTypHeader)
 	require.NoError(t, err)
 
@@ -220,7 +196,7 @@ func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
 }
 
 func Test_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifiedSdJwtVc, err := ParseAndVerifySdJwtVc(context, validSdJwtVc_NoKbJwt)
 	require.NoError(t, err)
 
@@ -229,13 +205,13 @@ func Test_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
 }
 
 func Test_InvalidSdJwtVc_MissingTrailingTilde_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	_, err := ParseAndVerifySdJwtVc(context, invalidSdJwtVc_MissingTrailingTilde)
 	require.Error(t, err)
 }
 
 func Test_InvalidSdJwtVc_WrongKbJwtTypHeader_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	_, err := ParseAndVerifySdJwtVc(context, invalidSdJwtVC_WrongKbTypHeader)
 	require.Error(t, err)
 }
@@ -243,7 +219,8 @@ func Test_InvalidSdJwtVc_WrongKbJwtTypHeader_Fails(t *testing.T) {
 // ==============================================================================
 
 func Test_MismatchingSdHash_Fails(t *testing.T) {
-	mismatchingSdHashConfig := newWorkingSdJwtTestConfig().withSdHash("lkasjgdlksajglskjg")
+	mismatchingSdHashConfig := newWorkingSdJwtTestConfig().
+		withSdHash("lkasjgdlksajglskjg")
 	errorTestCase(t, mismatchingSdHashConfig, "mismatching sd hash should fail")
 }
 
@@ -314,11 +291,14 @@ func Test_DisclosuresThatAreNotInSdField_Fails(t *testing.T) {
 }
 
 func Test_BaselineGeneratedSdJwtVc_Succeeds(t *testing.T) {
-	noErrorTestCase(t, newWorkingSdJwtTestConfig(), "default working test sdjwtvc creator is valid")
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	noErrorTestCase(t, config, "default working test sdjwtvc creator is valid")
 }
 
 func Test_FewerDisclosuresThanSdHashes_Succeeds(t *testing.T) {
-	config := newWorkingSdJwtTestConfig()
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	config.disclosures = []DisclosureContent{
 		config.disclosures[1],
 	}
@@ -326,7 +306,8 @@ func Test_FewerDisclosuresThanSdHashes_Succeeds(t *testing.T) {
 }
 
 func Test_DifferentOrderDisclosures_Succeeds(t *testing.T) {
-	config := newWorkingSdJwtTestConfig()
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	config.disclosures = []DisclosureContent{
 		config.disclosures[1],
 		config.disclosures[0],
@@ -335,94 +316,54 @@ func Test_DifferentOrderDisclosures_Succeeds(t *testing.T) {
 }
 
 func Test_NoCnfFieldAndNoKbJwt_Succeeds(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withoutKbJwt()
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withoutKbJwt()
 	config.cnfPubKey = nil
 	noErrorTestCase(t, config, "no cnf pub key and no kbjwt is valid")
 }
 
 func Test_NoDisclosuresWithKbJwt_Succeeds(t *testing.T) {
-	config := newWorkingSdJwtTestConfig().withDisclosures([]DisclosureContent{}).withKbJwt()
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withDisclosures([]DisclosureContent{}).withKbJwt()
 	noErrorTestCase(t, config, "no disclosures but with a kbjwt is valid")
 }
 
-func Test_IssMetadataCantBeFetched_Fails(t *testing.T) {
-	config := newWorkingSdJwtTestConfig()
-	context := VerificationContext{
-		IssuerMetadataFetcher: &failingMetadataFetcherNetworkError{},
-		Clock:                 NewSystemClock(),
-		JwtVerifier:           NewJwxJwtVerifier(),
-	}
-
+func Test_IssLinkNotInCertificateSAN_Fails(t *testing.T) {
+	url := "http://invalid.domain"
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuerUrl(url, false)
+	context := newWorkingSdJwtVcVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	sdjwtvc := createTestSdJwtVc(t, config)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
 	require.Error(t, err)
-}
-
-func Test_IssLinkNotHttps_Fails(t *testing.T) {
-	url := "http://openid4vc.staging.yivi.app"
-	config := newWorkingSdJwtTestConfig().withIssuerUrl(url, false)
-	context := VerificationContext{
-		IssuerMetadataFetcher: &validTestMetadataFetcher{},
-		Clock:                 NewSystemClock(),
-		JwtVerifier:           NewJwxJwtVerifier(),
-	}
-	sdjwtvc := createTestSdJwtVc(t, config)
-	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	require.Error(t, err)
-}
-
-func Test_IssLinkNotSameAsInMetadata_Fails(t *testing.T) {
-	url := "http://openid4vc.staging.yivi.app"
-	config := newWorkingSdJwtTestConfig().withIssuerUrl(url, false)
-	sdjwtvc := createTestSdJwtVc(t, config)
-	context := VerificationContext{
-		IssuerMetadataFetcher: &validTestMetadataFetcher{},
-		Clock:                 NewSystemClock(),
-		JwtVerifier:           NewJwxJwtVerifier(),
-	}
-	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	require.Error(t, err)
-}
-
-func Test_MultipleJwksInMetadata_SecondCorrect_Succeeds(t *testing.T) {
-	context := VerificationContext{
-		IssuerMetadataFetcher: &validTestMetadataFetcherMultipleKeys{},
-		Clock:                 NewSystemClock(),
-		JwtVerifier:           NewJwxJwtVerifier(),
-	}
-	sdjwtvc := createTestSdJwtVc(t, newWorkingSdJwtTestConfig())
-	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	require.NoError(t, err)
 }
 
 func Test_NoSdsAtAll_Succeeds(t *testing.T) {
-	config := newWorkingSdJwtTestConfig()
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
 	config.sdClaims = nil
 	config.disclosures = []DisclosureContent{}
 
 	noErrorTestCase(t, config, "no _sd claims at all is valid (if no disclosures either)")
 }
 
-func Test_WrongKeyInIssuerMetadata_Fails(t *testing.T) {
-	sdjwtvc := createTestSdJwtVc(t, newWorkingSdJwtTestConfig())
-	context := VerificationContext{
-		IssuerMetadataFetcher: &failingMetadataFetcherWrongIssuerKeys{},
-		Clock:                 NewSystemClock(),
-		JwtVerifier:           NewJwxJwtVerifier(),
-	}
-	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	require.Error(t, err)
-}
-
 func Test_IatIsAfterVerification_Fails(t *testing.T) {
 	now := time.Now().Unix()
 	iat := now + ClockSkewInSeconds + 100
 	kbIat := now
-	config := newWorkingSdJwtTestConfig().withIssuedAt(iat).withKbIssuedAt(kbIat)
-	context := VerificationContext{
-		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: now},
-		JwtVerifier:           NewJwxJwtVerifier(),
+
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuedAt(iat).
+		withKbIssuedAt(kbIat)
+
+	context := SdJwtVcVerificationContext{
+		Clock:       &testClock{time: now},
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -433,11 +374,16 @@ func Test_IatIsAfterVerification_Fails(t *testing.T) {
 func Test_VerificationIsAfterExp_Fails(t *testing.T) {
 	now := time.Now().Unix()
 	exp := now - ClockSkewInSeconds - 100
-	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now).withExpiryTime(exp)
-	context := VerificationContext{
-		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: now},
-		JwtVerifier:           NewJwxJwtVerifier(),
+
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuedAt(now).
+		withKbIssuedAt(now).
+		withExpiryTime(exp)
+
+	context := SdJwtVcVerificationContext{
+		Clock:       &testClock{time: now},
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -448,11 +394,20 @@ func Test_VerificationIsAfterExp_Fails(t *testing.T) {
 func Test_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
 	now := time.Now().Unix()
 	nbf := now + ClockSkewInSeconds + 50
-	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now).withExpiryTime(100).withNotBefore(nbf)
-	context := VerificationContext{
-		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: now},
-		JwtVerifier:           NewJwxJwtVerifier(),
+
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuedAt(now).
+		withKbIssuedAt(now).
+		withExpiryTime(100).
+		withNotBefore(nbf)
+
+	context := SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: newWorkingVerifyOptions(),
+		},
+		Clock:       &testClock{time: now},
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -462,11 +417,18 @@ func Test_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
 
 func Test_VerificationMinusOneMinuteIsBeforeIat_GivenClockSkew_Success(t *testing.T) {
 	now := time.Now().Unix()
-	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now)
-	context := VerificationContext{
-		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: now - 60},
-		JwtVerifier:           NewJwxJwtVerifier(),
+
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuedAt(now).
+		withKbIssuedAt(now)
+
+	context := SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		},
+		Clock:       &testClock{time: now - 60},
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -476,11 +438,19 @@ func Test_VerificationMinusOneMinuteIsBeforeIat_GivenClockSkew_Success(t *testin
 
 func Test_VerificationPlusOneMinuteIsAfterExp_GivenClockSkew_Success(t *testing.T) {
 	now := time.Now().Unix()
-	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now).withExpiryTime(now)
-	context := VerificationContext{
-		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: now + 60},
-		JwtVerifier:           NewJwxJwtVerifier(),
+
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuedAt(now).
+		withKbIssuedAt(now).
+		withExpiryTime(now)
+
+	context := SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		},
+		Clock:       &testClock{time: now + 60},
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -490,11 +460,19 @@ func Test_VerificationPlusOneMinuteIsAfterExp_GivenClockSkew_Success(t *testing.
 
 func Test_VerificationMinusOneMinuteIsBeforeNotBefore_GivenClockSkew_Success(t *testing.T) {
 	now := time.Now().Unix()
-	config := newWorkingSdJwtTestConfig().withIssuedAt(now).withKbIssuedAt(now).withNotBefore(now)
-	context := VerificationContext{
-		IssuerMetadataFetcher: NewHttpIssuerMetadataFetcher(),
-		Clock:                 &testClock{time: now - 60},
-		JwtVerifier:           NewJwxJwtVerifier(),
+
+	config := newWorkingSdJwtTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuedAt(now).
+		withKbIssuedAt(now).
+		withNotBefore(now)
+
+	context := SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		},
+		Clock:       &testClock{time: now - 60},
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -506,14 +484,14 @@ func Test_VerificationMinusOneMinuteIsBeforeNotBefore_GivenClockSkew_Success(t *
 
 func errorTestCase(t *testing.T, config testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
 	require.Error(t, err, message)
 }
 
 func noErrorTestCase(t *testing.T, config testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
-	context := CreateDefaultVerificationContext()
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
 	require.NoError(t, err, message)
 }

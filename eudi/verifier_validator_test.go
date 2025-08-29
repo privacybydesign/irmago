@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -116,7 +117,7 @@ func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate against revocation lists: certificate is revoked by issuer CN=CA CERT 0,OU=Test Unit,O=Test Organization,C=NL in revocation list with number 1")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureMissingSchemeData(t *testing.T) {
@@ -157,13 +158,13 @@ func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
 
 	// Remove the root certificate from the trusted roots, to simulate a missing cert
-	verifierValidator.(*RequestorCertificateStoreVerifierValidator).model.trustedRootCertificates = x509.NewCertPool()
+	verifierValidator.(*RequestorCertificateStoreVerifierValidator).verificationContext.X509VerificationOptionsTemplate.Roots = x509.NewCertPool()
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against trusted chains: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
@@ -174,7 +175,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredRoot(t *testing.T) {
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against trusted chains: x509: certificate has expired or is not yet valid: current time ")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: current time ")
 }
 
 // This function implicitly also tests the case where an intermediate certificate is revoked, because it will be 'missing'
@@ -184,13 +185,13 @@ func testParseAndVerifyAuthorizationRequestFailureMissingIntermediate(t *testing
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
 
 	// Remove the intermediate certificate from the trusted intermediates, to simulate a missing cert
-	verifierValidator.(*RequestorCertificateStoreVerifierValidator).model.trustedIntermediateCertificates = x509.NewCertPool()
+	verifierValidator.(*RequestorCertificateStoreVerifierValidator).verificationContext.X509VerificationOptionsTemplate.Intermediates = x509.NewCertPool()
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against trusted chains: x509: certificate signed by unknown authority")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate signed by unknown authority")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing.T) {
@@ -201,7 +202,7 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify x5c end-entity certificate against trusted chains: x509: certificate has expired or is not yet valid: ")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid: ")
 }
 
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
@@ -248,7 +249,12 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 		logger:                          logrus.New(),
 	}
 
-	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, &MockQueryValidatorFactory{})
+	verifierValidatorContext := eudi_jwt.VerificationContext{
+		X509VerificationOptionsTemplate: trustModel.CreateVerifyOptionsTemplate(),
+		X509RevocationLists:             trustModel.GetRevocationLists(),
+	}
+
+	verifierValidator = NewRequestorCertificateStoreVerifierValidator(&verifierValidatorContext, &MockQueryValidatorFactory{})
 
 	// Create an authorization request JWT
 	authRequestJwt = testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, verifierCert, tokenModifier)

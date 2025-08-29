@@ -60,7 +60,7 @@ type IrmaClient struct {
 
 	// Where we store/load SD-JWT-VC related data to/from
 	sdJwtVcStorage           SdJwtVcStorage
-	sdJwtVerificationContext sdjwtvc.VerificationContext
+	sdJwtVerificationContext sdjwtvc.SdJwtVcVerificationContext
 	keyBinder                sdjwtvc.KeyBinder
 
 	// Versions the client supports
@@ -95,7 +95,7 @@ func NewIrmaClient(
 	handler ClientHandler,
 	signer Signer,
 	storage *storage,
-	sdJwtVerificationContext sdjwtvc.VerificationContext,
+	sdJwtVerificationContext sdjwtvc.SdJwtVcVerificationContext,
 	sdJwtVcStorage SdJwtVcStorage,
 	keyBinder sdjwtvc.KeyBinder,
 ) (*IrmaClient, error) {
@@ -1538,10 +1538,6 @@ func (dcs DisclosureCandidates) Choose() ([]*irma.AttributeIdentifier, error) {
 		ids = append(ids, attr.AttributeIdentifier)
 	}
 	return ids, nil
-}
-
-func (client *IrmaClient) SetSdJwtVerificationContext(context sdjwtvc.VerificationContext) {
-	client.sdJwtVerificationContext = context
 }
 
 // VerifyAndStoreSdJwts verifies the SD-JWTs and stores them in the SdJwtVcStorage.

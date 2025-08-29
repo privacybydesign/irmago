@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 )
 
@@ -25,14 +26,14 @@ type VerifierValidator interface {
 }
 
 type RequestorCertificateStoreVerifierValidator struct {
-	model          *TrustModel
-	queryValidator QueryValidatorFactory
+	verificationContext *eudi_jwt.VerificationContext
+	queryValidator      QueryValidatorFactory
 }
 
-func NewRequestorCertificateStoreVerifierValidator(tm *TrustModel, queryValidatorFactory QueryValidatorFactory) VerifierValidator {
+func NewRequestorCertificateStoreVerifierValidator(verificationContext *eudi_jwt.VerificationContext, queryValidatorFactory QueryValidatorFactory) VerifierValidator {
 	return &RequestorCertificateStoreVerifierValidator{
-		model:          tm,
-		queryValidator: queryValidatorFactory,
+		verificationContext: verificationContext,
+		queryValidator:      queryValidatorFactory,
 	}
 }
 
@@ -43,7 +44,9 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	*RelyingPartyRequestor,
 	error,
 ) {
-	token, err := jwt.ParseWithClaims(requestJwt, &openid4vp.AuthorizationRequest{}, v.createAuthRequestVerifier())
+	// Parse the JWT and verify it using the verifier
+	var authRequest openid4vp.AuthorizationRequest
+	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier())
 
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
@@ -82,15 +85,13 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: failed to unmarshal scheme data to requestor object: %v", err)
 	}
 
-	authRequest := token.Claims.(*openid4vp.AuthorizationRequest)
-
 	// Now we have a valid request, we can evaluate the query against the RP authorized attributes
 	queryValidator := v.queryValidator.CreateQueryValidator(&requestorSchemeData.RelyingParty)
 	if err := queryValidator.ValidateQuery(&authRequest.DcqlQuery); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
 	}
 
-	return authRequest, endEntityCert, &requestorSchemeData, nil
+	return &authRequest, endEntityCert, &requestorSchemeData, nil
 }
 
 func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier() jwt.Keyfunc {
@@ -113,28 +114,13 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 
 		hostname := strings.TrimPrefix(request.ClientId, prefix)
 
-		certVerifyOpts := x509.VerifyOptions{
-			Roots:         v.model.GetRootCerts(),
-			Intermediates: v.model.GetIntermediateCerts(),
-			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-			DNSName:       hostname,
-			CurrentTime:   time.Now().Add(-ClockSkew), // Adjust to account for skew
-		}
-
 		parsedCert, err := getEndEntityCertFromX5cHeader(token)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
-		// Check the end-entity cert against all revocation lists from the issuing cert
-		if err := v.model.VerifyCertificateAgainstIssuerRevocationLists(parsedCert); err != nil {
-			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against revocation lists: %v", err)
-		}
-
-		// Verify the end-entity cert against the trusted chains
-		_, err = parsedCert.Verify(certVerifyOpts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify x5c end-entity certificate against trusted chains: %v", err)
+		if err := v.verificationContext.VerifyCertificate(parsedCert, &hostname, nil); err != nil {
+			return nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
 		}
 
 		// Validation successful, return the public key

@@ -3,12 +3,11 @@ package eudi
 import (
 	"bytes"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
@@ -37,7 +36,7 @@ func (tm *TrustModel) GetRootCerts() *x509.CertPool {
 func (tm *TrustModel) GetIntermediateCerts() *x509.CertPool {
 	return tm.trustedIntermediateCertificates
 }
-func (tm *TrustModel) GetRevocationLists(authorityKeyId []byte, issuer pkix.Name) []*x509.RevocationList {
+func (tm *TrustModel) GetRevocationLists() []*x509.RevocationList {
 	return tm.revocationLists
 }
 func (tm *TrustModel) ensureDirectoryExists() error {
@@ -56,18 +55,6 @@ func (tm *TrustModel) clear() {
 	tm.trustedRootCertificates = x509.NewCertPool()
 	tm.trustedIntermediateCertificates = x509.NewCertPool()
 	tm.revocationLists = []*x509.RevocationList{}
-}
-
-// Verify the signatures of the revocation lists for a given parent certificate
-// In case of a revocation list for the root certificate, this will verify for the root certificate itself.
-func (tm *TrustModel) verifyRevocationListsSignatures(parentCert *x509.Certificate) error {
-	revocationLists := tm.GetRevocationListsForIssuer(parentCert.SubjectKeyId, parentCert.Subject)
-	for _, crl := range revocationLists {
-		if err := crl.CheckSignatureFrom(parentCert); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (tm *TrustModel) readRevocationLists() error {
@@ -93,16 +80,6 @@ func (tm *TrustModel) readRevocationLists() error {
 
 	tm.revocationLists = crls
 	return nil
-}
-
-func (tm *TrustModel) GetRevocationListsForIssuer(authorityKeyId []byte, issuer pkix.Name) []*x509.RevocationList {
-	var clrs []*x509.RevocationList
-	for _, rl := range tm.revocationLists {
-		if bytes.Equal(rl.AuthorityKeyId, authorityKeyId) && rl.Issuer.ToRDNSequence().String() == issuer.ToRDNSequence().String() {
-			clrs = append(clrs, rl)
-		}
-	}
-	return clrs
 }
 
 func (tm *TrustModel) readTrustModel() error {
@@ -150,7 +127,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 	}
 
 	for _, bts := range trustAnchors {
-		chain, err := ParsePemCertificateChain(bts)
+		chain, err := utils.ParsePemCertificateChain(bts)
 		if err != nil {
 			return err
 		}
@@ -201,13 +178,13 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 					}
 
 					// Check if the available CLR(s) for this cert are signed correctly
-					if err := tm.verifyRevocationListsSignatures(parentCert); err != nil {
+					if err := utils.VerifyRevocationListsSignatures(parentCert, tm.revocationLists); err != nil {
 						return err
 					}
 
 					// Validate intermediate cert against parent CRL(s)
 					isRevoked := false
-					parentRevocationLists := tm.GetRevocationListsForIssuer(caCert.AuthorityKeyId, caCert.Issuer)
+					parentRevocationLists := utils.GetRevocationListsForIssuer(caCert.AuthorityKeyId, caCert.Issuer, tm.revocationLists)
 					for _, crl := range parentRevocationLists {
 						for _, revoked := range crl.RevokedCertificateEntries {
 							if revoked.SerialNumber.Cmp(caCert.SerialNumber) == 0 {
@@ -237,15 +214,10 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 	return nil
 }
 
-func (tm *TrustModel) VerifyCertificateAgainstIssuerRevocationLists(cert *x509.Certificate) error {
-	issuerRevocationLists := tm.GetRevocationListsForIssuer(cert.AuthorityKeyId, cert.Issuer)
-
-	for _, revocationList := range issuerRevocationLists {
-		for _, revokedCert := range revocationList.RevokedCertificateEntries {
-			if revokedCert.SerialNumber.Cmp(cert.SerialNumber) == 0 {
-				return fmt.Errorf("certificate is revoked by issuer %v in revocation list with number %v", cert.Issuer.ToRDNSequence().String(), revocationList.Number)
-			}
-		}
+func (tm *TrustModel) CreateVerifyOptionsTemplate() x509.VerifyOptions {
+	return x509.VerifyOptions{
+		Roots:         tm.trustedRootCertificates,
+		Intermediates: tm.trustedIntermediateCertificates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	return nil
 }

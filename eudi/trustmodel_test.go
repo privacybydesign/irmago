@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
@@ -285,22 +286,22 @@ func testTrustModelGetRevocationListsForIssuerReturnsCorrectCRLs(t *testing.T) {
 	}
 
 	// Root certificate 1 has 1 CRL
-	crls := tm.GetRevocationListsForIssuer(rootCert.SubjectKeyId, rootCert.Subject)
+	crls := utils.GetRevocationListsForIssuer(rootCert.SubjectKeyId, rootCert.Subject, tm.revocationLists)
 	require.Len(t, crls, 1)
 	require.Contains(t, crls, rootCrl)
 
 	// Root certificate 2 has 1 CRL
-	crls = tm.GetRevocationListsForIssuer(rootCert2.SubjectKeyId, rootCert2.Subject)
+	crls = utils.GetRevocationListsForIssuer(rootCert2.SubjectKeyId, rootCert2.Subject, tm.revocationLists)
 	require.Len(t, crls, 1)
 	require.Contains(t, crls, rootCrl2)
 
 	// Root certificate 1, CA 1 has 1 CRL
-	crls = tm.GetRevocationListsForIssuer(caCerts[0].SubjectKeyId, caCerts[0].Subject)
+	crls = utils.GetRevocationListsForIssuer(caCerts[0].SubjectKeyId, caCerts[0].Subject, tm.revocationLists)
 	require.Len(t, crls, 1)
 	require.Contains(t, crls, caCrls[0])
 
 	// Root certificate 1, CA 2 has no CRL
-	crls = tm.GetRevocationListsForIssuer(caCerts[1].SubjectKeyId, caCerts[1].Subject)
+	crls = utils.GetRevocationListsForIssuer(caCerts[1].SubjectKeyId, caCerts[1].Subject, tm.revocationLists)
 	require.Len(t, crls, 0)
 }
 
@@ -313,7 +314,7 @@ func testTrustModelVerifyRevocationListSignaturesReturnsNoErrorOnValidSignatures
 		logger:          logrus.New(),
 	}
 
-	err := tm.verifyRevocationListsSignatures(caCerts[0])
+	err := utils.VerifyRevocationListsSignatures(caCerts[0], tm.revocationLists)
 	require.NoError(t, err)
 }
 
@@ -326,7 +327,7 @@ func testTrustModelVerifyRevocationListSignaturesReturnsNilOnNoRevocationLists(t
 		logger:          logrus.New(),
 	}
 
-	err := tm.verifyRevocationListsSignatures(caCerts[0])
+	err := utils.VerifyRevocationListsSignatures(caCerts[0], tm.revocationLists)
 	require.NoError(t, err)
 }
 

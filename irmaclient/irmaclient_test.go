@@ -13,6 +13,8 @@ import (
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -84,16 +86,17 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 
-	x509Options, err := sdjwtvc.CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	x509Options, err := utils.CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 
 	require.NoError(t, err)
 
-	context := sdjwtvc.VerificationContext{
-		IssuerMetadataFetcher:   sdjwtvc.NewHttpIssuerMetadataFetcher(),
-		Clock:                   sdjwtvc.NewSystemClock(),
-		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
-		AllowNonHttpsIssuer:     false,
-		X509VerificationOptions: x509Options,
+	context := sdjwtvc.SdJwtVcVerificationContext{
+		VerificationContext: eudi_jwt.VerificationContext{
+			X509VerificationOptionsTemplate: *x509Options,
+		},
+		Clock:               sdjwtvc.NewSystemClock(),
+		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		AllowNonHttpsIssuer: false,
 	}
 
 	client, _ := NewIrmaClient(
@@ -517,16 +520,22 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer client.Close()
 
+	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(chain)
+	if err != nil {
+		panic(err)
+	}
+
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, _ := createTestSdJwtVc(keyBinder, "pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app",
 		map[string]any{
 			"mobilenumber": "+31612345678",
-		},
+		}, certChain,
 	)
 
 	cred := irma.CredentialRequest{}
 
-	err := client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
 
 	require.NoError(t, err)
 }
@@ -535,18 +544,24 @@ func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer client.Close()
 
+	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(chain)
+	if err != nil {
+		panic(err)
+	}
+
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, _ := createTestSdJwtVc(
 		keyBinder,
 		"pbdf.pbdf.mobilenumber", "http://openid4vc.staging.yivi.app",
 		map[string]any{
 			"mobilenumber": "+31612345678",
-		},
+		}, certChain,
 	)
 
 	cred := irma.CredentialRequest{}
 
-	err := client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
 
 	require.Error(t, err)
 }
