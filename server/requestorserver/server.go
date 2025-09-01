@@ -19,9 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -233,11 +231,6 @@ func (s *Server) Handler() http.Handler {
 		})
 
 		r.Get("/publickey", s.handlePublicKey)
-
-		r.Route("/.well-known", func(r chi.Router) {
-			// TODO: add caching (headers + middleware)
-			r.Get("/jwt-vc-issuer", s.handleSdJwtVcMetadataRequest)
-		})
 	})
 
 	router.Group(func(r chi.Router) {
@@ -510,34 +503,6 @@ func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 		Bytes: bts,
 	})
 	_, _ = w.Write(pubBytes)
-}
-
-// TODO: consider moving this to `irmaserver`; this however will require the `issuer` to always have `/irma/` in its path: https://<domain>/irma/.well-known/jwt-vc-issuer
-// GET .well-known/jwt-vc-issues
-func (s *Server) handleSdJwtVcMetadataRequest(w http.ResponseWriter, r *http.Request) {
-	if !s.conf.SdJwtIssuanceSettings.Enabled {
-		server.WriteError(w, server.ErrorUnsupported, "Server is not configured to issue SD-JWT VCs")
-		return
-	}
-
-	// Import the public key from the configured ECDSA private key
-	jwkKey, err := jwk.Import(s.conf.SdJwtIssuanceSettings.JwtEcdsaPrivateKey.PublicKey)
-
-	if err != nil {
-		server.WriteError(w, server.ErrorInternal, "Failed to read configuration")
-		s.conf.Logger.Error(fmt.Sprintf("Failed to import ECDSA public key: %s", err.Error()))
-		return
-	}
-
-	jwks := jwk.NewSet()
-	jwks.AddKey(jwkKey)
-
-	metadata := sdjwtvc.IssuerMetadata{
-		Issuer: s.conf.SdJwtIssuanceSettings.Issuer,
-		Jwks:   jwks,
-	}
-
-	server.WriteResponse(w, metadata, nil)
 }
 
 func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {

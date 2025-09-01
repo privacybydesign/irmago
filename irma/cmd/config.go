@@ -53,7 +53,6 @@ func getSdJwtIssuanceConfigFromCli() *server.SdJwtIssuanceSettings {
 		return nil
 	}
 	return &server.SdJwtIssuanceSettings{
-		Issuer:                     issuer,
 		JwtPrivateKey:              jwtPrivateKey,
 		JwtPrivateKeyFile:          jwtPrivateKeyFile,
 		IssuerCertificateChain:     issuerCertificateChain,

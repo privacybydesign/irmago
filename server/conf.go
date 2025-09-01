@@ -142,8 +142,6 @@ type RedisSettings struct {
 }
 
 type SdJwtIssuanceSettings struct {
-	// The issuer url that ends up in the `iss` field of the sd-jwt vc
-	Issuer string `json:"issuer,omitempty" mapstructure:"issuer"`
 	// The private key that signs the sd-jwt vc (inline)
 	JwtPrivateKey string `json:"privkey,omitempty" mapstructure:"privkey"`
 	// The private key that signs the sd-jwt vc (file path)
@@ -608,10 +606,6 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 	}
 	if len(certChain) == 0 {
 		return fmt.Errorf("SD-JWT VC x.509 issuer certificate chain is empty")
-	}
-
-	if sdConf.Issuer == "" {
-		return errors.New("SD-JWT VC issuance enabled, but no issuer specified in configuration")
 	}
 
 	sdConf.X509CertChain = certChain

@@ -790,7 +790,6 @@ func createAuthRequestRequest() string {
 func irmaServerConfWithSdJwtEnabled(t *testing.T) *server.Configuration {
 	conf := IrmaServerConfigurationWithTempStorage(t)
 	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
-		Issuer:                 "https://openid4vc.staging.yivi.app",
 		IssuerCertificateChain: string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		JwtPrivateKey:          string(testdata.IssuerPrivKeyBytes),
 	}

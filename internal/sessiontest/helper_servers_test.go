@@ -344,7 +344,6 @@ func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	irmaServerConf.DisableTLS = true
 	irmaServerConf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
-		Issuer:                     "https://openid4vc.staging.yivi.app",
 		JwtPrivateKeyFile:          jwtEcdsaPrivkeyPath,
 		IssuerCertificateChainFile: issuerCertificateChainPath,
 	}
