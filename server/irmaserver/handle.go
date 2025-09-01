@@ -241,8 +241,6 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 			settings.X509CertChain,
 			settings.JwtEcdsaPrivateKey,
 			commitments.KeyBindingPubKeys,
-			settings.Issuer,
-			conf.DisableTLS,
 		)
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error(), conf)

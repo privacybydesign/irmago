@@ -814,7 +814,6 @@ func (session *sessionData) generateSdJwts(
 	issuerCertificateChain []string,
 	privKey *ecdsa.PrivateKey,
 	kbPubKeys []jwk.Key,
-	allowNonHttps bool,
 ) ([]sdjwtvc.SdJwtVc, error) {
 	// Check that the request is a valid issuance request
 	req, err := session.getRequest()
@@ -869,7 +868,6 @@ func (session *sessionData) generateSdJwts(
 			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
 				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 				WithIssuerCertificateChain(issuerCertificateChain).
-				WithAllowNonHttpsIssuerUrl(allowNonHttps).
 				WithVerifiableCredentialType(credentialType).
 				WithDisclosures(disclosures).
 				WithHolderKey(kbPubKeys[index]).
