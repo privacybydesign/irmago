@@ -493,9 +493,7 @@ func constructCandidatesFromCredentialQueries(
 			}
 
 			// also add empty to this discon so it can be used to issue new credentials in the UI
-			for _, con := range empty {
-				disCon = append(disCon, con)
-			}
+			disCon = append(disCon, empty...)
 
 			conDisCon = append(conDisCon, disCon)
 		}
@@ -557,10 +555,10 @@ func constructCandidatesForCredentialSets(
 			if err != nil {
 				return nil, fmt.Errorf("failed to construct empty discon for query: %s", queryResult.Query.Id)
 			}
-			for _, con := range empty {
-				disCon = append(disCon, con)
-			}
+
+			disCon = append(disCon, empty...)
 		}
+
 		conDisCon = append(conDisCon, disCon)
 		if !disConSatisfied {
 			conDisConSatisfied = false
