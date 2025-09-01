@@ -261,7 +261,7 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiablePickFirstClaim(t *testing.T) {
 						Value: newTranslatedString("hello@gmail.com"),
 					},
 				},
-				// TODO: improve support for claim_sets?
+				// also support adding new credential with predefined value
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
@@ -309,16 +309,6 @@ func testDcqlClaimSetsTwoOptionsOneSatisfiable(t *testing.T) {
 						Value: newTranslatedString("gmail.com"),
 					},
 				},
-				// TODO: Make this egde case also work
-				// {
-				// 	{
-				// 		AttributeIdentifier: &irma.AttributeIdentifier{
-				// 			Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
-				// 			CredentialHash: "",
-				// 		},
-				// 		Value: newTranslatedString("gmail.com"),
-				// 	},
-				// },
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
