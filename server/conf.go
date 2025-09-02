@@ -152,16 +152,16 @@ type SdJwtIssuer struct {
 
 type SdJwtIssuanceSettings struct {
 	// Path to a directory of issuer certificates. Each issuer should have their own certificate file.
-	// They should be named `<issuer_id>.pem` (e.g. `pbdf.sidn-pbdf.email.pem`)
+	// They should be named `<issuer_id>.pem` (e.g. `pbdf.sidn-pbdf.pem`)
 	SdJwtIssuerCertificatesPath string `json:"sdjwtvc_issuer_certificates_path"`
 
 	// Path to a directory of issuer ECDSA private keys. Each issuer should have their own private key file.
-	// They should be named `<issuer_id>.pem` (e.g. `pbdf.sidn-pbdf.email.pem`)
+	// They should be named `<issuer_id>.pem` (e.g. `pbdf.sidn-pbdf.pem`)
 	SdJwtIssuerPrivKeysPath string `json:"sdjwtvc_issuer_priv_keys_path"`
 
 	Enabled bool `json:"-"`
 
-	// Map of issuer ID to anything required to issuer an SD-JWT VC
+	// Map of issuer ID to everything required to issuer an SD-JWT VC
 	Issuers map[irma.IssuerIdentifier]*SdJwtIssuer `json:"-"`
 }
 
