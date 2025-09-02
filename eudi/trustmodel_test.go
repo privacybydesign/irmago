@@ -1,13 +1,18 @@
 package eudi
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
@@ -30,15 +35,28 @@ func TestTrustModel(t *testing.T) {
 	t.Run("readTrustModel reads chain (valid root + expired sub-CA), should only add root cert", testReadTrustModelReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
 	t.Run("readTrustModel reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testReadTrustModelReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
 
-	// readRevocationLists tests
-	// t.Run("readRevocationLists reads invalid revocation list, should .....", )
+	// Certificate revocation lists tests
+	//t.Run("readRevocationLists reads invalid revocation list, should .....", )
 
-	// GetRevocationListsForIssuer tests
-	t.Run("GetRevocationListsForIssuer returns correct CRLs", testTrustModelGetRevocationListsForIssuerReturnsCorrectCRLs)
+	t.Run("readCRLIndex reads valid CRL index successfully", testReadCRLIndexReadsValidSuccessfully)
+	t.Run("readCRLIndex tries to read non-existing index, returns empty index map", testReadCRLIndexReadsNonExistingIndexReturnsEmptyMap)
+	t.Run("readCRLIndex reads index with one invalid line (3 parts in one line), returns only valid lines", testReadCRLIndexReadsIndexWithInvalidLineReturnsOnlyValidLines)
 
-	// VerifyRevocationListSignatures tests
-	t.Run("verifyRevocationListSignatures returns no error on valid signatures", testTrustModelVerifyRevocationListSignaturesReturnsNoErrorOnValidSignatures)
-	t.Run("verifyRevocationListSignatures returns nil on no revocation lists", testTrustModelVerifyRevocationListSignaturesReturnsNilOnNoRevocationLists)
+	t.Run("writeCRLIndex writes valid CRL index successfully", testWriteCRLIndexWritesValidSuccessfully)
+	t.Run("writeCRLIndex overwrites existing CRL index successfully", testWriteCRLIndexOverwritesExistingSuccessfully)
+
+	t.Run("syncCertificateRevocationLists does nothing, given no certificate chains", testSyncCertificateRevocationListsDoesNothingGivenNoCertificateChains)
+	t.Run("syncCertificateRevocationLists creates empty index, given certificate without distribution points", testSyncCertificateRevocationListsCreatesEmptyIndexGivenCertificateWithoutDistributionPoints)
+	t.Run("syncCertificateRevocationLists clears CRL files from old index, given new certificate without distribution points", testSyncCertificateRevocationListsClearsCrlFilesFromOldIndexGivenNewCertificateWithoutDistributionPoints)
+	t.Run("syncCertificateRevocationLists reads CRL file and does not need to update", testSyncCertificateRevocationListsReadsCrlFileAndDoesNotNeedToUpdate)
+	t.Run("syncCertificateRevocationLists reads CRL file and updates, given CRL NextUpdate is in the past", testSyncCertificateRevocationListsReadsCrlFileAndUpdatesGivenCrlNextUpdateIsInThePast)
+	t.Run("syncCertificateRevocationLists first sync downloads CRL from distribution points", testSyncCertificateRevocationListsFirstSyncDownloadsCrlFromDistributionPoints)
+	t.Run("syncCertificateRevocationLists fails CRL signature check and will re-sync from distribution points", testSyncCertificateRevocationListsFailsCrlSignatureCheckAndWillReSyncFromDistributionPoints)
+
+	t.Run("downloadVerifyAndSaveCRL downloads, saves and verifies a CRL successfully", testDownloadVerifyAndSaveCRLDownloadsSavesAndVerifiesSuccessfully)
+	t.Run("downloadVerifyAndSaveCRL throws error on unknown URL", testDownloadVerifyAndSaveCRLThrowsErrorOnUnknownURL)
+	t.Run("downloadVerifyAndSaveCRL throws error on invalid CRL download content", testDownloadVerifyAndSaveCRLThrowsErrorOnInvalidCRLDownloadContent)
+	t.Run("downloadVerifyAndSaveCRL throws error on invalid CRL signature", testDownloadVerifyAndSaveCRLThrowsErrorOnInvalidCRLSignature)
 }
 
 func testReadTrustModelReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
@@ -265,72 +283,430 @@ func testReadTrustModelReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertifi
 	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 0)
 }
 
-// PKI setup
-// ROOT CERT 1
-//   - CA CERT 1
-//   - CA CERT 2
-//
-// ROOT CERT 2
-//   - CA CERT 1
-func testTrustModelGetRevocationListsForIssuerReturnsCorrectCRLs(t *testing.T) {
-	// Setup multiple CRLs
-	rootDN1 := testdata.CreateDistinguishedName("ROOT CERT 1")
-	_, rootCert, rootCrl, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN1, 2, testdata.PkiOption_None)
+func testReadCRLIndexReadsValidSuccessfully(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	indexContent := "https://yivi.app/crl.crl\tcrl.crl"
+	os.WriteFile(path.Join(tm.GetCrlPath(), "cert.index"), []byte(indexContent), 0644)
+
+	// Act
+	index, err := tm.readCRLIndex("cert.index")
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, index["https://yivi.app/crl.crl"], "crl.crl")
+}
+
+func testReadCRLIndexReadsNonExistingIndexReturnsEmptyMap(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	// Act
+	index, err := tm.readCRLIndex("non_existing.index")
+
+	// Assert
+	require.NoError(t, err)
+	require.Empty(t, index)
+}
+
+func testReadCRLIndexReadsIndexWithInvalidLineReturnsOnlyValidLines(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+	indexContent := "invalid_line\nhttps://yivi.app/crl.crl\tcrl.crl\nhttps://yivi.app/crl2.crl\tcrl2.crl"
+	os.WriteFile(path.Join(tm.GetCrlPath(), "cert.index"), []byte(indexContent), 0644)
+
+	// Act
+	index, err := tm.readCRLIndex("cert.index")
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, index, 2)
+	require.Equal(t, index["https://yivi.app/crl.crl"], "crl.crl")
+	require.Equal(t, index["https://yivi.app/crl2.crl"], "crl2.crl")
+}
+
+func testWriteCRLIndexWritesValidSuccessfully(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+	index := map[string]string{
+		"https://yivi.app/crl.crl":  "crl.crl",
+		"https://yivi.app/crl2.crl": "crl2.crl",
+	}
+
+	// Act
+	err := tm.writeCRLIndex("cert.index", index)
+
+	// Assert
+	require.NoError(t, err)
+	require.FileExists(t, path.Join(tm.GetCrlPath(), "cert.index"))
+}
+
+func testWriteCRLIndexOverwritesExistingSuccessfully(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+	index := map[string]string{
+		"https://yivi.app/crl.crl":  "crl.crl",
+		"https://yivi.app/crl2.crl": "crl2.crl",
+	}
+
+	// Act
+	err := tm.writeCRLIndex("cert.index", index)
+
+	// Assert
+	require.NoError(t, err)
+	require.FileExists(t, path.Join(tm.GetCrlPath(), "cert.index"))
+
+	bts, err := os.ReadFile(path.Join(tm.GetCrlPath(), "cert.index"))
+	require.NoError(t, err)
+	require.Equal(t, string(bts), "https://yivi.app/crl.crl\tcrl.crl\nhttps://yivi.app/crl2.crl\tcrl2.crl\n")
+
+	// Arrange, again
+	index = map[string]string{
+		"https://test.app/crl.crl":  "crl.crl",
+		"https://test.app/crl2.crl": "crl2.crl",
+	}
+
+	// Act, again
+	err = tm.writeCRLIndex("cert.index", index)
+
+	// Assert, again
+	require.NoError(t, err)
+	require.FileExists(t, path.Join(tm.GetCrlPath(), "cert.index"))
+
+	bts, err = os.ReadFile(path.Join(tm.GetCrlPath(), "cert.index"))
+	require.NoError(t, err)
+	require.Equal(t, string(bts), "https://test.app/crl.crl\tcrl.crl\nhttps://test.app/crl2.crl\tcrl2.crl\n")
+}
+
+func testSyncCertificateRevocationListsDoesNothingGivenNoCertificateChains(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	// Act
+	tm.syncCertificateRevocationLists()
+
+	// Assert
+	crlIndexes, err := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.index"))
+	require.NoError(t, err)
+	require.Len(t, crlIndexes, 0)
+}
+
+func testSyncCertificateRevocationListsCreatesEmptyIndexGivenCertificateWithoutDistributionPoints(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	// Create a root certificate and write it to storage
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, rootCert, _ := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN, testdata.PkiOption_None)
+	tm.allCerts = append(tm.allCerts, rootCert)
+
+	// Act
+	tm.syncCertificateRevocationLists()
+
+	// Assert
+	require.FileExists(t, path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"))
+}
+
+func testSyncCertificateRevocationListsClearsCrlFilesFromOldIndexGivenNewCertificateWithoutDistributionPoints(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	// Pretend we had a CRL before, which needs to be empty after running the test
+	indexContent := "https://yivi.app/crl.crl\tcrl.crl\n"
+	os.WriteFile(path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"), []byte(indexContent), 0644)
+	os.WriteFile(path.Join(tm.GetCrlPath(), "crl.crl"), []byte("test crl content"), 0644)
+
+	// Create a root certificate and write it to storage
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, rootCert, _ := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN, testdata.PkiOption_None)
+	tm.allCerts = append(tm.allCerts, rootCert)
+
+	// Act
+	tm.syncCertificateRevocationLists()
+
+	// Assert
+	require.NoFileExists(t, path.Join(tm.GetCrlPath(), "crl.crl"))
+	require.FileExists(t, path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"))
+
+	bts, err := os.ReadFile(path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"))
+	require.NoError(t, err)
+	require.Equal(t, string(bts), "")
+}
+
+func testSyncCertificateRevocationListsReadsCrlFileAndDoesNotNeedToUpdate(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	// Create a root certificate with distribution point + CRL and write it to storage
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, rootCert, crl := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN, testdata.PkiOption_None)
+	rootCert.CRLDistributionPoints = []string{"https://yivi.app/crl.crl"}
+	tm.allCerts = append(tm.allCerts, rootCert)
+
+	crl.NextUpdate = time.Now().Add(24 * time.Hour)
+
+	indexContent := "https://yivi.app/crl.crl\tcrl.crl\n"
+	os.WriteFile(path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"), []byte(indexContent), 0644)
+	os.WriteFile(path.Join(tm.GetCrlPath(), "crl.crl"), crl.Raw, 0644)
+
+	// Store the timestamp, so we can compare the time with the write to the index (which should be greater)
+	currTime := time.Now().UnixMicro()
+
+	// Startup a test server, which will count any requests made to it
+	requestCounter := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCounter++
+	}))
+	defer ts.Close()
+
+	// Change client configuration to use the test server
+	tm.httpClient = ts.Client()
+
+	// Sleep for a short time to allow for change in time on the index file modification
+	time.Sleep(10 * time.Millisecond)
+
+	// Act
+	tm.syncCertificateRevocationLists()
+
+	// Assert
+	require.Equal(t, 0, requestCounter) // Since the CRL will be up-to-date, no requests should be made
+
+	// Assert the index file (last update time) has been changed, but the content should be the same
+	indexFileInfo, err := os.Stat(path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"))
+	require.NoError(t, err)
+	indexFileLastUpdate := indexFileInfo.ModTime().UnixMicro()
+	require.Greater(t, indexFileLastUpdate, currTime)
+
+	bts, err := os.ReadFile(path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"))
+	require.NoError(t, err)
+	require.Equal(t, indexContent, string(bts))
+}
+
+func testSyncCertificateRevocationListsReadsCrlFileAndUpdatesGivenCrlNextUpdateIsInThePast(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	// Create a root certificate with distribution point + CRL and write it to storage
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	rootKey, rootCert, _ := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN, testdata.PkiOption_None)
+	tm.allCerts = append(tm.allCerts, rootCert)
+
+	// Make sure the CRL's NextUpdate is in the past
+	crlTemplate := testdata.GetDefaultCrlTemplate()
+	crlTemplate.ThisUpdate = time.Now().Add(-5 * time.Hour)
+	crlTemplate.NextUpdate = time.Now().Add(-time.Hour)
+
+	crl := testdata.CreateRootRevocationList(t, crlTemplate, rootKey, rootCert, nil, testdata.PkiOption_None)
+
+	requestCounter := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(crl.Raw)
+		requestCounter++
+	}))
+	defer ts.Close()
+
+	rootCert.CRLDistributionPoints = []string{fmt.Sprintf("%s/crl.crl", ts.URL)}
+	tm.httpClient = ts.Client()
+
+	crlFilename := fmt.Sprintf("%s-%x.crl", "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c", sha256.Sum256([]byte(rootCert.CRLDistributionPoints[0])))
+	indexContent := fmt.Sprintf("%s\t%s\n", rootCert.CRLDistributionPoints[0], crlFilename)
+
+	os.WriteFile(path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"), []byte(indexContent), 0644)
+	os.WriteFile(path.Join(tm.GetCrlPath(), crlFilename), crl.Raw, 0644)
+
+	currTime := time.Now().UnixMicro()
+
+	// Act
+	tm.syncCertificateRevocationLists()
+
+	// Assert
+	require.Equal(t, 1, requestCounter) // One request should have been made
+
+	// Assert the index and CRL file last update times have been changed, but the content should be the same
+	indexFileInfo, err := os.Stat(path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"))
+	require.NoError(t, err)
+	indexFileLastUpdate := indexFileInfo.ModTime().UnixMicro()
+	require.Greater(t, indexFileLastUpdate, currTime)
+
+	bts, err := os.ReadFile(path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index"))
+	require.NoError(t, err)
+	require.Equal(t, indexContent, string(bts))
+
+	crlFileInfo, err := os.Stat(path.Join(tm.GetCrlPath(), crlFilename))
+	require.NoError(t, err)
+	crlFileLastUpdate := crlFileInfo.ModTime().UnixMicro()
+	require.Greater(t, crlFileLastUpdate, currTime)
+}
+
+func testSyncCertificateRevocationListsFirstSyncDownloadsCrlFromDistributionPoints(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	// Create a root certificate with distribution point + CRL and write it to storage
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, rootCert, crl := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN, testdata.PkiOption_None)
+	tm.allCerts = append(tm.allCerts, rootCert)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(crl.Raw)
+	}))
+	defer ts.Close()
+
+	rootCert.CRLDistributionPoints = []string{fmt.Sprintf("%s/crl.crl", ts.URL)}
+	tm.httpClient = ts.Client()
+
+	expectedCrlFilename := fmt.Sprintf("%s-%x.crl", "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c", sha256.Sum256([]byte(rootCert.CRLDistributionPoints[0])))
+	expectedIndexPath := path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index")
+
+	require.NoFileExists(t, expectedIndexPath)
+
+	// Act
+	tm.syncCertificateRevocationLists()
+
+	// Assert
+	require.FileExists(t, expectedIndexPath)                               // Index created
+	require.FileExists(t, path.Join(tm.GetCrlPath(), expectedCrlFilename)) // CRL created
+}
+
+func testSyncCertificateRevocationListsFailsCrlSignatureCheckAndWillReSyncFromDistributionPoints(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	rootDN2 := testdata.CreateDistinguishedName("ROOT CERT 2")
-	_, rootCert2, rootCrl2, _, _, caCrls2 := testdata.CreateTestPkiHierarchy(t, rootDN2, 1, testdata.PkiOption_None)
+	_, rootCert, crl := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN, testdata.PkiOption_None)
+	_, _, crl2 := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN2, testdata.PkiOption_None)
 
-	tm := &TrustModel{
-		// Add all CRLs except the one for ROOT CERT 1 > CA CERT 2
-		revocationLists: []*x509.RevocationList{rootCrl, rootCrl2, caCrls[0], caCrls2[0]},
-		logger:          logrus.New(),
-	}
+	tm.allCerts = append(tm.allCerts, rootCert)
 
-	// Root certificate 1 has 1 CRL
-	crls := utils.GetRevocationListsForIssuer(rootCert.SubjectKeyId, rootCert.Subject, tm.revocationLists)
-	require.Len(t, crls, 1)
-	require.Contains(t, crls, rootCrl)
+	requestCounter := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(crl.Raw)
+		requestCounter++
+	}))
+	defer ts.Close()
 
-	// Root certificate 2 has 1 CRL
-	crls = utils.GetRevocationListsForIssuer(rootCert2.SubjectKeyId, rootCert2.Subject, tm.revocationLists)
-	require.Len(t, crls, 1)
-	require.Contains(t, crls, rootCrl2)
+	rootCert.CRLDistributionPoints = []string{fmt.Sprintf("%s/crl.crl", ts.URL)}
+	tm.httpClient = ts.Client()
 
-	// Root certificate 1, CA 1 has 1 CRL
-	crls = utils.GetRevocationListsForIssuer(caCerts[0].SubjectKeyId, caCerts[0].Subject, tm.revocationLists)
-	require.Len(t, crls, 1)
-	require.Contains(t, crls, caCrls[0])
+	// Create a 'false' index to fake a signature check failure (store CRL2 under CA1 index)
+	crlFilename := fmt.Sprintf("%s-%x.crl", "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c", sha256.Sum256([]byte(rootCert.CRLDistributionPoints[0])))
+	indexPath := path.Join(tm.GetCrlPath(), "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index")
+	indexContent := fmt.Sprintf("%s\t%s\n", rootCert.CRLDistributionPoints[0], crlFilename)
 
-	// Root certificate 1, CA 2 has no CRL
-	crls = utils.GetRevocationListsForIssuer(caCerts[1].SubjectKeyId, caCerts[1].Subject, tm.revocationLists)
-	require.Len(t, crls, 0)
-}
+	os.WriteFile(indexPath, []byte(indexContent), 0644)
+	os.WriteFile(path.Join(tm.GetCrlPath(), crlFilename), crl2.Raw, 0644)
 
-func testTrustModelVerifyRevocationListSignaturesReturnsNoErrorOnValidSignatures(t *testing.T) {
-	rootDN1 := testdata.CreateDistinguishedName("ROOT CERT 1")
-	_, _, rootCrl, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN1, 2, testdata.PkiOption_None)
+	// Act
+	tm.syncCertificateRevocationLists()
 
-	tm := &TrustModel{
-		revocationLists: []*x509.RevocationList{rootCrl, caCrls[0], caCrls[1]},
-		logger:          logrus.New(),
-	}
+	// Assert
+	require.FileExists(t, indexPath)                               // Index created
+	require.FileExists(t, path.Join(tm.GetCrlPath(), crlFilename)) // CRL created
 
-	err := utils.VerifyRevocationListsSignatures(caCerts[0], tm.revocationLists)
+	// Assert CRL file now contains CRL1 content
+	bts, err := os.ReadFile(path.Join(tm.GetCrlPath(), crlFilename))
 	require.NoError(t, err)
+	require.Equal(t, crl.Raw, bts)
 }
 
-func testTrustModelVerifyRevocationListSignaturesReturnsNilOnNoRevocationLists(t *testing.T) {
-	rootDN1 := testdata.CreateDistinguishedName("ROOT CERT 1")
-	_, _, rootCrl, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN1, 2, testdata.PkiOption_None)
+func testDownloadVerifyAndSaveCRLDownloadsSavesAndVerifiesSuccessfully(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
 
-	tm := &TrustModel{
-		revocationLists: []*x509.RevocationList{rootCrl},
-		logger:          logrus.New(),
-	}
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, rootCert, crl := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN, testdata.PkiOption_None)
+	tm.allCerts = append(tm.allCerts, rootCert)
 
-	err := utils.VerifyRevocationListsSignatures(caCerts[0], tm.revocationLists)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(crl.Raw)
+	}))
+	defer ts.Close()
+
+	tm.httpClient = ts.Client()
+
+	crlDownloadUrl := fmt.Sprintf("%s/crl.crl", ts.URL)
+	expectedFilename := fmt.Sprintf("%s-%x.crl", "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c", sha256.Sum256([]byte(crlDownloadUrl)))
+
+	// Act
+	crlFilename, err := tm.downloadVerifyAndSaveCRL(crlDownloadUrl, rootCert)
+
+	// Assert
 	require.NoError(t, err)
+	require.Equal(t, expectedFilename, crlFilename)
 }
 
+func testDownloadVerifyAndSaveCRLThrowsErrorOnUnknownURL(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	tm.httpClient = ts.Client()
+
+	invalidCrlUri := fmt.Sprintf("%s/crl.crl", ts.URL)
+
+	// Act
+	_, err := tm.downloadVerifyAndSaveCRL(invalidCrlUri, nil)
+
+	// Assert
+	require.Error(t, err, "error downloading CRL file")
+	require.ErrorContains(t, err, "error downloading CRL file")
+}
+
+func testDownloadVerifyAndSaveCRLThrowsErrorOnInvalidCRLDownloadContent(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("invalid crl content"))
+	}))
+	defer ts.Close()
+
+	tm.httpClient = ts.Client()
+
+	// Act
+	_, err := tm.downloadVerifyAndSaveCRL(ts.URL, nil)
+
+	// Assert
+	require.Error(t, err, "error reading CRL file")
+	require.ErrorContains(t, err, "error reading CRL file")
+}
+
+func testDownloadVerifyAndSaveCRLThrowsErrorOnInvalidCRLSignature(t *testing.T) {
+	// Arrange
+	tm := setupTrustModelWithStoragePath(t)
+
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, _, crl := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN, testdata.PkiOption_None)
+	rootDN2 := testdata.CreateDistinguishedName("ROOT CERT 2")
+	_, rootCert2, _ := testdata.CreateRootCertificateWithEmptyRevocationList(t, rootDN2, testdata.PkiOption_None)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(crl.Raw)
+	}))
+	defer ts.Close()
+
+	tm.httpClient = ts.Client()
+
+	// Act; server returns CRL from root1, but verifies with root2 cert to 'fake' signature failure
+	_, err := tm.downloadVerifyAndSaveCRL(ts.URL, rootCert2)
+
+	// Assert
+	require.Error(t, err, "error verifying CRL signature")
+	require.ErrorContains(t, err, "error verifying CRL signature")
+}
+
+// HELPER FUNCTIONS
 func setupTrustModelWithStoragePath(t *testing.T) *TrustModel {
 	storageFolder := test.CreateTestStorage(t)
 

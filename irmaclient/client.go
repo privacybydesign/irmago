@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-co-op/gocron/v2"
+
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -22,6 +24,8 @@ type Client struct {
 	irmaClient      *IrmaClient
 	logsStorage     LogsStorage
 	keyBinder       sdjwtvc.KeyBinder
+
+	scheduler *gocron.Scheduler
 }
 
 func New(

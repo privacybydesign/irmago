@@ -190,11 +190,12 @@ func CreateTestPkiHierarchy(t *testing.T, rootName pkix.Name, numberOfCAs int, o
 		caCrls[i] = caCrl
 	}
 
-	rootCrl = CreateRootRevocationList(t, rootKey, rootCert, caCerts, opts)
+	rootCrl = CreateRootRevocationList(t, GetDefaultCrlTemplate(), rootKey, rootCert, caCerts, opts)
 
 	return
 }
 
+// TODO: add parameter to set the distributionpoint(s) ?
 func CreateRootCertificate(t *testing.T, subject pkix.Name, opts PkiGenerationOptions) (key *ecdsa.PrivateKey, cert *x509.Certificate) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -214,14 +215,8 @@ func CreateRootCertificate(t *testing.T, subject pkix.Name, opts PkiGenerationOp
 	return
 }
 
-func CreateRootRevocationList(t *testing.T, key *ecdsa.PrivateKey, cert *x509.Certificate, revokedCerts []*x509.Certificate, opts PkiGenerationOptions) (crl *x509.RevocationList) {
+func CreateRootRevocationList(t *testing.T, crlTemplate *x509.RevocationList, key *ecdsa.PrivateKey, cert *x509.Certificate, revokedCerts []*x509.Certificate, opts PkiGenerationOptions) (crl *x509.RevocationList) {
 	// Create revocation list for the root certificate
-	crlTemplate := &x509.RevocationList{
-		Number:     big.NewInt(1),
-		ThisUpdate: time.Now().Add(-time.Hour),
-		NextUpdate: time.Now().Add(time.Hour),
-	}
-
 	// Add all CA certs to the CRL (no option to select just one for now)
 	if opts&PkiOption_RevokedIntermediates != 0 {
 		revokedIntermediateEntries := make([]x509.RevocationListEntry, 0, len(revokedCerts))
@@ -245,7 +240,7 @@ func CreateRootRevocationList(t *testing.T, key *ecdsa.PrivateKey, cert *x509.Ce
 
 func CreateRootCertificateWithEmptyRevocationList(t *testing.T, subject pkix.Name, opts PkiGenerationOptions) (key *ecdsa.PrivateKey, cert *x509.Certificate, crl *x509.RevocationList) {
 	key, cert = CreateRootCertificate(t, subject, opts)
-	crl = CreateRootRevocationList(t, key, cert, nil, opts)
+	crl = CreateRootRevocationList(t, GetDefaultCrlTemplate(), key, cert, nil, opts)
 	return
 }
 
@@ -345,6 +340,14 @@ func getCaCertTemplate(subject pkix.Name, opts PkiGenerationOptions) *x509.Certi
 	}
 
 	return certTemplate
+}
+
+func GetDefaultCrlTemplate() *x509.RevocationList {
+	return &x509.RevocationList{
+		Number:     big.NewInt(1),
+		ThisUpdate: time.Now().Add(-time.Hour),
+		NextUpdate: time.Now().Add(time.Hour),
+	}
 }
 
 func generateRandomBytes(length int) []byte {

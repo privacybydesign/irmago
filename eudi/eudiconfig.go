@@ -3,6 +3,7 @@ package eudi
 import (
 	"fmt"
 	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -22,15 +23,19 @@ type Configuration struct {
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
 func NewConfiguration(path string) (conf *Configuration, err error) {
+	httpClient := &http.Client{}
+
 	conf = &Configuration{
 		path: path,
 		Issuers: TrustModel{
-			basePath: filepath.Join(path, "issuers"),
-			logger:   common.Logger,
+			basePath:   filepath.Join(path, "issuers"),
+			logger:     common.Logger,
+			httpClient: httpClient,
 		},
 		Verifiers: TrustModel{
-			basePath: filepath.Join(path, "verifiers"),
-			logger:   common.Logger,
+			basePath:   filepath.Join(path, "verifiers"),
+			logger:     common.Logger,
+			httpClient: httpClient,
 		},
 	}
 
