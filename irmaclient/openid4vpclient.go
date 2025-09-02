@@ -469,13 +469,15 @@ func constructCandidatesFromCredentialQueries(
 
 	for _, query := range queries {
 		candidates, ok := allAvailableCredentials[query.Id]
+
+		empty, err := constructEmptyDisConForQuery(query)
+		if err != nil {
+			return nil, err
+		}
+
 		if !ok || len(candidates.SatisfyingCredentials) == 0 {
 			satisfiable = false
-			disCon, err := constructEmptyDisConForQuery(query)
-			if err != nil {
-				return nil, err
-			}
-			conDisCon = append(conDisCon, disCon)
+			conDisCon = append(conDisCon, empty)
 		} else {
 			disCon := []DisclosureCandidates{}
 			for _, candidate := range candidates.SatisfyingCredentials {
@@ -490,6 +492,10 @@ func constructCandidatesFromCredentialQueries(
 				}
 				disCon = append(disCon, con)
 			}
+
+			// also add empty to this discon so it can be used to issue new credentials in the UI
+			disCon = append(disCon, empty...)
+
 			conDisCon = append(conDisCon, disCon)
 		}
 	}
@@ -542,8 +548,18 @@ func constructCandidatesForCredentialSets(
 				if conSatisfied {
 					disConSatisfied = true
 				}
+
 			}
+
+			// add empty discon to allow the user to issue new instances of the credential
+			empty, err := constructEmptyDisConForQuery(queryResult.Query)
+			if err != nil {
+				return nil, fmt.Errorf("failed to construct empty discon for query: %s", queryResult.Query.Id)
+			}
+
+			disCon = append(disCon, empty...)
 		}
+
 		conDisCon = append(conDisCon, disCon)
 		if !disConSatisfied {
 			conDisConSatisfied = false
@@ -668,8 +684,8 @@ func findAllCandidatesForCredQuery(storage SdJwtVcStorage, query dcql.Credential
 }
 
 type SingleCredentialQueryCandidates struct {
-	// The id for the dcql.CredentialQuery
-	CredentialQueryId string
+	// The dcql.CredentialQuery
+	Query dcql.CredentialQuery
 	// The names of the attributes requested in this credential query
 	RequestedAttributes []string
 	// A list of credential info and the instance that satisfy the requirements described by the query
@@ -697,7 +713,7 @@ func findAllCandidatesForAllCredentialQueries(
 		}
 
 		result[query.Id] = SingleCredentialQueryCandidates{
-			CredentialQueryId:     query.Id,
+			Query:                 query,
 			SatisfyingCredentials: candidates,
 			RequestedAttributes:   attrs,
 		}
