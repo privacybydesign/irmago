@@ -838,6 +838,11 @@ func (session *sessionData) generateSdJwts(
 	if numSdJwtsRequested == 0 {
 		return nil, nil
 	}
+	// when the list of pub keys is empty it's most likely an older Yivi app
+	// that doesn't have SD-JWT support, so don't make any, but also don't return an error
+	if kbPubKeys == nil {
+		return nil, nil
+	}
 
 	if numPubKeys := uint(len(kbPubKeys)); numSdJwtsRequested != numPubKeys {
 		return nil, fmt.Errorf(
