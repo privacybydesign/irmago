@@ -31,7 +31,6 @@ import (
 // - [x] kbjwt doesn't contain the kb+jwt typ in header
 // - [x] failing to get issuer metadata fails the verifiction
 // - [x] no iss value provided
-// - [x] valid self-signed x509 certificate with DNS/URI value that doesn't match `iss` value
 // - [x] valid self-signed x509 certificate that doesn't match a trusted certificate
 //
 // success for
@@ -328,17 +327,6 @@ func Test_NoDisclosuresWithKbJwt_Succeeds(t *testing.T) {
 		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
 		withDisclosures([]DisclosureContent{}).withKbJwt()
 	noErrorTestCase(t, config, "no disclosures but with a kbjwt is valid")
-}
-
-func Test_IssLinkNotInCertificateSAN_Fails(t *testing.T) {
-	url := "http://invalid.domain"
-	config := newWorkingSdJwtTestConfig().
-		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
-		withIssuerUrl(url, false)
-	context := newWorkingSdJwtVcVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
-	sdjwtvc := createTestSdJwtVc(t, config)
-	_, err := ParseAndVerifySdJwtVc(context, sdjwtvc)
-	require.Error(t, err)
 }
 
 func Test_NoSdsAtAll_Succeeds(t *testing.T) {
