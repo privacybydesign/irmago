@@ -190,16 +190,6 @@ func newWorkingVerifyOptions(trustedChains ...[]byte) x509.VerifyOptions {
 	}
 }
 
-func newWorkingSdJwtVcVerificationContext(trustedChains ...[]byte) SdJwtVcVerificationContext {
-	return SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: newWorkingVerifyOptions(trustedChains...),
-		},
-		Clock:       NewSystemClock(),
-		JwtVerifier: NewJwxJwtVerifier(),
-	}
-}
-
 func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"name":     "Yivi",
