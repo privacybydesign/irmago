@@ -157,6 +157,7 @@ type SdJwtIssuanceSettings struct {
 	// x.509 certificate chain in the format the `x5c` header field of the sd-jwt vc expects
 	// Note: the public key from the leaf certificate should be the public part of the configured JwtPrivateKey (or JwtPrivateKeyFile).
 	X509CertChain []string `json:"-"`
+	IssuerUrl     string   `json:"-"`
 }
 
 // Check ensures that the Configuration is loaded, usable and free of errors.
@@ -600,9 +601,23 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		return fmt.Errorf("failed to obtain SD-JWT VC issuer certificate chain: %v", err)
 	}
 
-	certChain, err := utils.ParsePemCertificateChainToX5cFormat(certBytes)
+	certChainPem, err := utils.ParsePemCertificateChain(certBytes)
 	if err != nil {
 		return fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
+	}
+
+	// since issuer URL was a mandatory field in some older SD-JWT VC drafts
+	// we will include it based on what's in the certificate
+	issuerUrl, err := utils.ObtainIssuerUrlFromCertChain(certChainPem)
+	if err != nil {
+		return fmt.Errorf("failed to obtain host name from cert chain: %v", err)
+	}
+
+	sdConf.IssuerUrl = issuerUrl
+
+	certChain, err := utils.ConvertPemCertificateChainToX5cFormat(certChainPem)
+	if err != nil {
+		return fmt.Errorf("failed to convert x.509 certificate chain to x5c: %v", err)
 	}
 	if len(certChain) == 0 {
 		return fmt.Errorf("SD-JWT VC x.509 issuer certificate chain is empty")

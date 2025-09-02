@@ -87,9 +87,8 @@ func New(
 			X509VerificationOptionsTemplate: eudiConf.Issuers.CreateVerifyOptionsTemplate(),
 			X509RevocationLists:             eudiConf.Issuers.GetRevocationLists(),
 		},
-		Clock:               sdjwtvc.NewSystemClock(),
-		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
-		AllowNonHttpsIssuer: false,
+		Clock:       sdjwtvc.NewSystemClock(),
+		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),
 	}
 
 	irmaClient, err := NewIrmaClient(irmaConf, handler, signer, storage, sdJwtVcVerificationContext, sdjwtvcStorage, keyBinder)

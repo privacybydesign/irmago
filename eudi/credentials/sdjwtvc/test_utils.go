@@ -100,7 +100,7 @@ func readHolderPublicJwk() (CnfField, error) {
 
 // =======================================================================
 
-func CreateTestVerificationContext(allowNonHttpsIssuer bool) SdJwtVcVerificationContext {
+func CreateTestVerificationContext() SdJwtVcVerificationContext {
 	irmaAppCertChain, err := utils.ParsePemCertificateChain(testdata.IssuerCertChain_irma_app_Bytes)
 	if err != nil {
 		log.Fatalf("failed to parse issuer cert chain: %v", err)
@@ -120,9 +120,8 @@ func CreateTestVerificationContext(allowNonHttpsIssuer bool) SdJwtVcVerification
 				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 			},
 		},
-		Clock:               &testClock{},
-		AllowNonHttpsIssuer: allowNonHttpsIssuer,
-		JwtVerifier:         NewJwxJwtVerifier(),
+		Clock:       &testClock{},
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 }
 

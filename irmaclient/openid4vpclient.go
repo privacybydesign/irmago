@@ -271,7 +271,8 @@ func (session *openid4vpSession) perform() error {
 		return err
 	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("response status was not ok: %v", response)
+		vp_token := responseReq.Form.Get("vp_token")
+		return fmt.Errorf("response status was not ok: %v (req: %v)", response, vp_token)
 	}
 
 	// note: we don't add irma.ActionDisclosing, as that's for the irma protocol

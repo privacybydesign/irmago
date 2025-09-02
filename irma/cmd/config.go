@@ -43,13 +43,12 @@ func configureEmail() keyshare.EmailConfiguration {
 }
 
 func getSdJwtIssuanceConfigFromCli() *server.SdJwtIssuanceSettings {
-	issuer := viper.GetString("sdjwtvc_issuer")
 	jwtPrivateKey := viper.GetString("sdjwtvc_privkey")
 	jwtPrivateKeyFile := viper.GetString("sdjwtvc_privkey_file")
 	issuerCertificateChain := viper.GetString("sdjwtvc_cert_chain")
 	issuerCertificateChainFile := viper.GetString("sdjwtvc_cert_chain_file")
 
-	if issuer == "" && jwtPrivateKey == "" && jwtPrivateKeyFile == "" && issuerCertificateChain == "" && issuerCertificateChainFile == "" {
+	if jwtPrivateKey == "" && jwtPrivateKeyFile == "" && issuerCertificateChain == "" && issuerCertificateChainFile == "" {
 		return nil
 	}
 	return &server.SdJwtIssuanceSettings{

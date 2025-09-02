@@ -812,6 +812,7 @@ func (s *Server) newSession(
 
 func (session *sessionData) generateSdJwts(
 	issuerCertificateChain []string,
+	issuerUrl string,
 	privKey *ecdsa.PrivateKey,
 	kbPubKeys []jwk.Key,
 ) ([]sdjwtvc.SdJwtVc, error) {
@@ -872,6 +873,7 @@ func (session *sessionData) generateSdJwts(
 				WithDisclosures(disclosures).
 				WithHolderKey(kbPubKeys[index]).
 				WithExpiresAt(validUntil).
+				WithIssuerUrl(issuerUrl).
 				// Make sure all SD-JWTs have the same issuance dates; we therefor use a 'static' clock
 				WithIssuedAt(issuanceTime).
 				Build(creator)

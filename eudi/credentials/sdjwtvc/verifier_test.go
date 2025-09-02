@@ -137,7 +137,7 @@ func Test_ValidButUntrusted_SelfSigned_X509Cert_Fails(t *testing.T) {
 
 func Test_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")
-	context := CreateTestVerificationContext(false)
+	context := CreateTestVerificationContext()
 
 	_, err := ParseAndVerifySdJwtVc(context, sdJwt)
 	require.Error(t, err)
