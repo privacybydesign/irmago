@@ -39,9 +39,10 @@ var (
 	TokenAuthenticationKey = "xa6=*&9?8jeUu5>.f-%rVg`f63pHim"
 	HmacAuthenticationKey  = "eGE2PSomOT84amVVdTU+LmYtJXJWZ2BmNjNwSGltCg=="
 
-	jwtPrivkeyPath             = filepath.Join(testdataFolder, "jwtkeys", "sk.pem")
-	jwtEcdsaPrivkeyPath        = filepath.Join(testdataFolder, "eudi", "issuer_ec_priv.pem")
-	issuerCertificateChainPath = filepath.Join(testdataFolder, "eudi", "issuer_cert_openid4vc_staging_yivi_app.pem")
+	jwtPrivkeyPath = filepath.Join(testdataFolder, "jwtkeys", "sk.pem")
+
+	sdJwtIssuerPrivKeysPath = filepath.Join(testdataFolder, "eudi", "irma_server_config", "sdjwt_priv_keys")
+	sdJwtIssuerCertsPath    = filepath.Join(testdataFolder, "eudi", "irma_server_config", "sdjwt_certs")
 )
 
 const (
@@ -344,8 +345,8 @@ func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	irmaServerConf.DisableTLS = true
 	irmaServerConf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
-		JwtPrivateKeyFile:          jwtEcdsaPrivkeyPath,
-		IssuerCertificateChainFile: issuerCertificateChainPath,
+		SdJwtIssuerCertificatesPath: sdJwtIssuerCertsPath,
+		SdJwtIssuerPrivKeysPath:     sdJwtIssuerPrivKeysPath,
 	}
 	return &requestorserver.Configuration{
 		Configuration:                  irmaServerConf,

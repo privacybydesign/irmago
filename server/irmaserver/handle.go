@@ -238,9 +238,7 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 	settings := conf.SdJwtIssuanceSettings
 	if settings.Enabled {
 		sdJwts, err = session.generateSdJwts(
-			settings.X509CertChain,
-			settings.IssuerUrl,
-			settings.JwtEcdsaPrivateKey,
+			settings,
 			commitments.KeyBindingPubKeys,
 		)
 		if err != nil {
