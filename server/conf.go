@@ -628,6 +628,9 @@ func readSdJwtIssuerCertChains(dir string) (map[irma.IssuerIdentifier][]*x509.Ce
 
 			certPath := path.Join(dir, fileName)
 			bytes, err := os.ReadFile(certPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read certificate at %v: %v", certPath, err)
+			}
 			certChain, err := utils.ParsePemCertificateChain(bytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
