@@ -8,26 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTrustModelVerifyRevocationListSignaturesReturnsNilOnNoRevocationLists(t *testing.T) {
-	rootDN1 := testdata.CreateDistinguishedName("ROOT CERT 1")
-	_, _, rootCrl, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN1, 2, testdata.PkiOption_None)
-
-	revocationLists := []*x509.RevocationList{rootCrl}
-
-	err := VerifyRevocationListsSignatures(caCerts[0], revocationLists)
-	require.NoError(t, err)
-}
-
-func TestTrustModelVerifyRevocationListSignaturesReturnsNoErrorOnValidSignatures(t *testing.T) {
-	rootDN1 := testdata.CreateDistinguishedName("ROOT CERT 1")
-	_, _, rootCrl, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN1, 2, testdata.PkiOption_None)
-
-	revocationLists := []*x509.RevocationList{rootCrl, caCrls[0], caCrls[1]}
-
-	err := VerifyRevocationListsSignatures(caCerts[0], revocationLists)
-	require.NoError(t, err)
-}
-
 // PKI setup
 // ROOT CERT 1
 //   - CA CERT 1

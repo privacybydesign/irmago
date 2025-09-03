@@ -102,18 +102,6 @@ func VerifyCertificateAgainstIssuerRevocationLists(cert *x509.Certificate, revoc
 	return nil
 }
 
-// VerifyRevocationListsSignatures verifies the signatures of the revocation lists for a given parent certificate.
-// In case of a revocation list for the root certificate, this will verify for the root certificate itself.
-func VerifyRevocationListsSignatures(parentCert *x509.Certificate, revocationLists []*x509.RevocationList) error {
-	parentRevocationLists := GetRevocationListsForIssuer(parentCert.SubjectKeyId, parentCert.Subject, revocationLists)
-	for _, crl := range parentRevocationLists {
-		if err := crl.CheckSignatureFrom(parentCert); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func VerifyCertificateUri(cert *x509.Certificate, uri string) error {
 	if cert == nil {
 		return fmt.Errorf("certificate is nil")

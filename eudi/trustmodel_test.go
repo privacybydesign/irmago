@@ -22,21 +22,22 @@ import (
 
 func TestTrustModel(t *testing.T) {
 	// Happy path tests
-	t.Run("readTrustModel reads single certificate chain (root-only, no crl) successfully", testReadTrustModelReadsSingleChainRootOnlyNoCrlSuccessfully)
-	t.Run("readTrustModel reads single certificate chain (root-only + crl) successfully", testReadTrustModelReadsSingleChainRootOnlyWithCrlSuccessfully)
-	t.Run("readTrustModel reads multiple certificate chains (root-only + crls) successfully", testReadTrustModelReadsMultipleChainsWithCrlsRootOnlySuccessfully)
-	t.Run("readTrustModel reads certificate chain (root + single sub-CA + crl) successfully", testReadTrustModelReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully)
-	t.Run("readTrustModel reads certificate chains (root with multiple sub-CAs + crls) successfully", testReadTrustModelReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully)
-	t.Run("readTrustModel reads certificate chain (root with multi level sub-CA + crls) successfully", testReadTrustModelReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully)
+	t.Run("loadTrustChains reads single certificate chain (root-only, no crl) successfully", testLoadTrustChainsReadsSingleChainRootOnlyNoCrlSuccessfully)
+	t.Run("loadTrustChains reads single certificate chain (root-only + crl) successfully", testLoadTrustChainsReadsSingleChainRootOnlyWithCrlSuccessfully)
+	t.Run("loadTrustChains reads multiple certificate chains (root-only + crls) successfully", testLoadTrustChainsReadsMultipleChainsWithCrlsRootOnlySuccessfully)
+	t.Run("loadTrustChains reads certificate chain (root + single sub-CA + crl) successfully", testLoadTrustChainsReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully)
+	t.Run("loadTrustChains reads certificate chains (root with multiple sub-CAs + crls) successfully", testLoadTrustChainsReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully)
+	t.Run("loadTrustChains reads certificate chain (root with multi level sub-CA + crls) successfully", testLoadTrustChainsReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully)
 
 	// Error handling tests
-	t.Run("readTrustModel reads multiple chains (valid root + 1 valid sub-CA + 1 revoked sub-CA), should only add the valid chain", testReadTrustModelReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain)
-	t.Run("readTrustModel reads multiple chains (1 valid + 1 expired root, both with sub-CAs), should add both root certs but only one sub-CA", testReadTrustModelReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa)
-	t.Run("readTrustModel reads chain (valid root + expired sub-CA), should only add root cert", testReadTrustModelReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
-	t.Run("readTrustModel reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testReadTrustModelReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
+	t.Run("loadTrustChains reads multiple chains (valid root + 1 valid sub-CA + 1 revoked sub-CA), should only add the valid chain", testLoadTrustChainsReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain)
+	t.Run("loadTrustChains reads multiple chains (1 valid + 1 expired root, both with sub-CAs), should add both root certs but only one sub-CA", testLoadTrustChainsReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa)
+	t.Run("loadTrustChains reads chain (valid root + expired sub-CA), should only add root cert", testLoadTrustChainsReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
+	t.Run("loadTrustChains reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testLoadTrustChainsReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
 
 	// Certificate revocation lists tests
-	//t.Run("readRevocationLists reads invalid revocation list, should .....", )
+	t.Run("getCrlIndexFileNameForCert generates correct index filename", testGetCrlIndexFileNameForCertGeneratesCorrectFilename)
+	t.Run("getCrlFileNameForCertDistributionPoint generates correct filename", testGetCrlFileNameForCertDistributionPointGeneratesCorrectFilename)
 
 	t.Run("readCRLIndex reads valid CRL index successfully", testReadCRLIndexReadsValidSuccessfully)
 	t.Run("readCRLIndex tries to read non-existing index, returns empty index map", testReadCRLIndexReadsNonExistingIndexReturnsEmptyMap)
@@ -59,7 +60,7 @@ func TestTrustModel(t *testing.T) {
 	t.Run("downloadVerifyAndSaveCRL throws error on invalid CRL signature", testDownloadVerifyAndSaveCRLThrowsErrorOnInvalidCRLSignature)
 }
 
-func testReadTrustModelReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
+func testLoadTrustChainsReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
@@ -68,7 +69,7 @@ func testReadTrustModelReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "root_cert.pem"), rootCert)
 
 	// Read the trust model
-	err := tm.readTrustModel()
+	err := tm.loadTrustChains()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -76,7 +77,7 @@ func testReadTrustModelReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
 	require.Len(t, tm.revocationLists, 0)
 }
 
-func testReadTrustModelReadsSingleChainRootOnlyWithCrlSuccessfully(t *testing.T) {
+func testLoadTrustChainsReadsSingleChainRootOnlyWithCrlSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
@@ -87,9 +88,13 @@ func testReadTrustModelReadsSingleChainRootOnlyWithCrlSuccessfully(t *testing.T)
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "root_cert.pem"), rootCert)
 	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), "root_cert.crl"), rootCrl.Raw, 0644)
 	require.NoError(t, err)
+	indexContent := "http://example.com/crls/root_cert.crl\troot_cert.crl\n"
+	indexFilePath := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(rootCert))
+	err = os.WriteFile(indexFilePath, []byte(indexContent), 0644)
+	require.NoError(t, err)
 
 	// Read the trust model
-	err = tm.readTrustModel()
+	err = tm.loadTrustChains()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -97,7 +102,7 @@ func testReadTrustModelReadsSingleChainRootOnlyWithCrlSuccessfully(t *testing.T)
 	require.Len(t, tm.revocationLists, 1)
 }
 
-func testReadTrustModelReadsMultipleChainsWithCrlsRootOnlySuccessfully(t *testing.T) {
+func testLoadTrustChainsReadsMultipleChainsWithCrlsRootOnlySuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
@@ -114,8 +119,17 @@ func testReadTrustModelReadsMultipleChainsWithCrlsRootOnlySuccessfully(t *testin
 	err = os.WriteFile(filepath.Join(tm.GetCrlPath(), "root_cert2.crl"), rootCrl2.Raw, 0644)
 	require.NoError(t, err)
 
+	indexContent := "http://example1.com/crls/root_cert.crl\troot_cert.crl\n"
+	indexFilePath := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(rootCert))
+	err = os.WriteFile(indexFilePath, []byte(indexContent), 0644)
+	require.NoError(t, err)
+	indexContent2 := "http://example2.com/crls/root_cert2.crl\troot_cert2.crl\n"
+	indexFilePath2 := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(rootCert2))
+	err = os.WriteFile(indexFilePath2, []byte(indexContent2), 0644)
+	require.NoError(t, err)
+
 	// Read the trust model
-	err = tm.readTrustModel()
+	err = tm.loadTrustChains()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 2)
@@ -123,7 +137,7 @@ func testReadTrustModelReadsMultipleChainsWithCrlsRootOnlySuccessfully(t *testin
 	require.Len(t, tm.revocationLists, 2)
 }
 
-func testReadTrustModelReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing.T) {
+func testLoadTrustChainsReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
@@ -137,8 +151,18 @@ func testReadTrustModelReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t 
 	err = os.WriteFile(filepath.Join(tm.GetCrlPath(), "ca.crl"), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
 
+	indexContent := "http://example.com/crls/root_cert.crl\troot_cert.crl\n"
+	indexFilePath := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(rootCert))
+	err = os.WriteFile(indexFilePath, []byte(indexContent), 0644)
+	require.NoError(t, err)
+
+	indexContentCa := "http://example.com/crls/ca.crl\tca.crl\n"
+	indexFilePathCa := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(caCerts[0]))
+	err = os.WriteFile(indexFilePathCa, []byte(indexContentCa), 0644)
+	require.NoError(t, err)
+
 	// Read the trust model
-	err = tm.readTrustModel()
+	err = tm.loadTrustChains()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -146,7 +170,7 @@ func testReadTrustModelReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t 
 	require.Len(t, tm.revocationLists, 2)
 }
 
-func testReadTrustModelReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *testing.T) {
+func testLoadTrustChainsReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a (root > CA1) and (root > CA2) chains and write to storage
@@ -163,8 +187,23 @@ func testReadTrustModelReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfu
 	err = os.WriteFile(filepath.Join(tm.GetCrlPath(), "ca2.crl"), caCrls[1].Raw, 0644)
 	require.NoError(t, err)
 
+	indexContentRoot := "http://example.com/crls/root_cert.crl\troot_cert.crl\n"
+	indexFilePathRoot := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(rootCert))
+	err = os.WriteFile(indexFilePathRoot, []byte(indexContentRoot), 0644)
+	require.NoError(t, err)
+
+	indexContentCa1 := "http://example.com/crls/ca1.crl\tca1.crl\n"
+	indexFilePathCa1 := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(caCerts[0]))
+	err = os.WriteFile(indexFilePathCa1, []byte(indexContentCa1), 0644)
+	require.NoError(t, err)
+
+	indexContentCa2 := "http://example.com/crls/ca2.crl\tca2.crl\n"
+	indexFilePathCa2 := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(caCerts[1]))
+	err = os.WriteFile(indexFilePathCa2, []byte(indexContentCa2), 0644)
+	require.NoError(t, err)
+
 	// Read the trust model
-	err = tm.readTrustModel()
+	err = tm.loadTrustChains()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -172,7 +211,7 @@ func testReadTrustModelReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfu
 	require.Len(t, tm.revocationLists, 3)
 }
 
-func testReadTrustModelReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *testing.T) {
+func testLoadTrustChainsReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a (root > CA > CA) chain and write it to storage
@@ -189,8 +228,23 @@ func testReadTrustModelReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessf
 	err = os.WriteFile(filepath.Join(tm.GetCrlPath(), "sub-ca.crl"), subCaCrl.Raw, 0644)
 	require.NoError(t, err)
 
+	indexContentRoot := "http://example.com/crls/root_cert.crl\troot_cert.crl\n"
+	indexFilePathRoot := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(rootCert))
+	err = os.WriteFile(indexFilePathRoot, []byte(indexContentRoot), 0644)
+	require.NoError(t, err)
+
+	indexContentCa := "http://example.com/crls/ca.crl\tca.crl\n"
+	indexFilePathCa := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(caCerts[0]))
+	err = os.WriteFile(indexFilePathCa, []byte(indexContentCa), 0644)
+	require.NoError(t, err)
+
+	indexContentSubCa := "http://example.com/crls/sub-ca.crl\tsub-ca.crl\n"
+	indexFilePathSubCa := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(subCaCert))
+	err = os.WriteFile(indexFilePathSubCa, []byte(indexContentSubCa), 0644)
+	require.NoError(t, err)
+
 	// Read the trust model
-	err = tm.readTrustModel()
+	err = tm.loadTrustChains()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -198,7 +252,7 @@ func testReadTrustModelReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessf
 	require.Len(t, tm.revocationLists, 3)
 }
 
-func testReadTrustModelReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain(t *testing.T) {
+func testLoadTrustChainsReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a 2 roots certs (1 revoked, 1 valid) and write it to storage
@@ -212,8 +266,13 @@ func testReadTrustModelReadsMultipleChainsValidRootWithValidAndRevokedSubCaShoul
 	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), "root_cert.crl"), rootCrl.Raw, 0644)
 	require.NoError(t, err)
 
+	crlIndexContentRoot := "http://example.com/crls/root_cert.crl\troot_cert.crl\n"
+	crlIndexFilePathRoot := filepath.Join(tm.GetCrlPath(), getCrlIndexFileNameForCert(rootCert))
+	err = os.WriteFile(crlIndexFilePathRoot, []byte(crlIndexContentRoot), 0644)
+	require.NoError(t, err)
+
 	// Read the trust model
-	err = tm.readTrustModel()
+	err = tm.loadTrustChains()
 	require.NoError(t, err)
 
 	// The revoked sub-CA should not be added to the pools
@@ -221,7 +280,7 @@ func testReadTrustModelReadsMultipleChainsValidRootWithValidAndRevokedSubCaShoul
 	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
 }
 
-func testReadTrustModelReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa(t *testing.T) {
+func testLoadTrustChainsReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a 2 roots certs (1 expired, 1 valid) and write it to storage
@@ -235,7 +294,7 @@ func testReadTrustModelReadsMultipleChainsValidRootAndExpiredRootWithSubCasShoul
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain2.pem"), rootCert2, caCerts2[0])
 
 	// Read the trust model
-	err := tm.readTrustModel()
+	err := tm.loadTrustChains()
 	require.NoError(t, err)
 
 	// The expired root (+intermediates) should not be added to the pools
@@ -243,7 +302,7 @@ func testReadTrustModelReadsMultipleChainsValidRootAndExpiredRootWithSubCasShoul
 	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
 }
 
-func testReadTrustModelReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testing.T) {
+func testLoadTrustChainsReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root cert and an expired sub-CA cert
@@ -254,7 +313,7 @@ func testReadTrustModelReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
 
 	// Read the trust model
-	err := tm.readTrustModel()
+	err := tm.loadTrustChains()
 	require.NoError(t, err)
 
 	// Only the root cert should be added to the pools
@@ -265,7 +324,7 @@ func testReadTrustModelReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t
 	require.NotContains(t, tm.trustedIntermediateCertificates.Subjects(), caCerts[0].Subject.ToRDNSequence().String())
 }
 
-func testReadTrustModelReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
+func testLoadTrustChainsReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root cert and a CA cert, but write them in reversed order
@@ -275,12 +334,36 @@ func testReadTrustModelReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertifi
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), caCerts[0], rootCert)
 
 	// Read the trust model
-	err := tm.readTrustModel()
+	err := tm.loadTrustChains()
 	require.NoError(t, err)
 
 	// No certificates should be added to the pools
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 0)
 	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 0)
+}
+
+func testGetCrlIndexFileNameForCertGeneratesCorrectFilename(t *testing.T) {
+	// Arrange
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, cert := testdata.CreateRootCertificate(t, rootDN, testdata.PkiOption_None)
+
+	// Act
+	filename := getCrlIndexFileNameForCert(cert)
+
+	// Assert
+	require.Equal(t, "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c.index", filename)
+}
+
+func testGetCrlFileNameForCertDistributionPointGeneratesCorrectFilename(t *testing.T) {
+	// Arrange
+	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
+	_, cert := testdata.CreateRootCertificate(t, rootDN, testdata.PkiOption_None)
+
+	// Act
+	filename := getCrlFileNameForCertDistributionPoint(cert, "https://yivi.app/crl.crl")
+
+	// Assert
+	require.Equal(t, "56e34de4a851a4566fe635d447d592f85e2edc34cbcdaec9e61bb19fcf1e2f0c-6114ae2e097c5d91cfc94cc8aa7f026dd7348d68265e4dbb9fab59026d24e03d.crl", filename)
 }
 
 func testReadCRLIndexReadsValidSuccessfully(t *testing.T) {

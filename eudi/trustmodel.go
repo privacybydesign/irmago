@@ -62,6 +62,15 @@ func (tm *TrustModel) clear() {
 	tm.revocationLists = []*x509.RevocationList{}
 }
 
+func getCrlIndexFileNameForCert(cert *x509.Certificate) string {
+	hash := sha256.Sum256(cert.RawSubject)
+	return fmt.Sprintf("%x.index", hash)
+}
+
+func getCrlFileNameForCertDistributionPoint(cert *x509.Certificate, distPoint string) string {
+	return fmt.Sprintf("%x-%x.crl", sha256.Sum256(cert.RawSubject), sha256.Sum256([]byte(distPoint)))
+}
+
 // The CRL index stores a mapping from the certificate Distribution Point to a local stored file
 func (tm *TrustModel) readCRLIndex(indexFileName string) (map[string]string, error) {
 	var crlIndex = make(map[string]string)
@@ -123,23 +132,31 @@ func (tm *TrustModel) writeCRLIndex(indexFileName string, crlIndex map[string]st
 	return writer.Flush()
 }
 
-func (tm *TrustModel) readRevocationLists() error {
-	crlFiles, err := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.crl"))
+func (tm *TrustModel) readAndVerifyRevocationListsForCert(cert *x509.Certificate) ([]*x509.RevocationList, error) {
+	var crls []*x509.RevocationList
+
+	// Read index file
+	certIndexFile := getCrlIndexFileNameForCert(cert)
+	index, err := tm.readCRLIndex(certIndexFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	crls := make([]*x509.RevocationList, len(crlFiles))
-	for i, crlFile := range crlFiles {
-		crl, err := readRevocationListFromFile(crlFile)
+	for _, crlFile := range index {
+		crl, err := readRevocationListFromFile(path.Join(tm.GetCrlPath(), crlFile))
 		if err != nil {
-			return err
+			// Skip loading this CRL
+			continue
 		}
-		crls[i] = crl
-	}
 
-	tm.revocationLists = crls
-	return nil
+		err = crl.CheckSignatureFrom(cert)
+		if err != nil {
+			// Skip loading this CRL
+			continue
+		}
+		crls = append(crls, crl)
+	}
+	return crls, nil
 }
 
 func readRevocationListFromFile(filePath string) (*x509.RevocationList, error) {
@@ -156,23 +173,7 @@ func readRevocationListFromFile(filePath string) (*x509.RevocationList, error) {
 	return crl, nil
 }
 
-func (tm *TrustModel) readTrustModel() error {
-	// Parse and read the CRLs
-	err := tm.readRevocationLists()
-	if err != nil {
-		return err
-	}
-
-	// Parse and load the trustchains
-	err = tm.readTrustChains()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (tm *TrustModel) readTrustChains() error {
+func (tm *TrustModel) loadTrustChains() error {
 	chains, err := filepath.Glob(filepath.Join(tm.GetCertificatePath(), "*.pem"))
 	if err != nil {
 		return err
@@ -211,21 +212,33 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			// For now, we only accept the root certs that are self-signed (no system CA certs)
 			// Verify if the root is self-signed, otherwise this is not a valid root cert
 			if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
-				tm.logger.Infof("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
+				tm.logger.Warnf("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
 				continue
 			}
 
-			// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
-			// Note: duplicates are filtered out by the call to .AddCert()
-			// Note: if the root cert is not valid, the cert will still be in the trustedRootCertificates pool, but the verification will fail later on
-			tm.trustedRootCertificates.AddCert(rootCert)
-			tm.allCerts = append(tm.allCerts, rootCert)
+			// Only add the root again if it wasn't already part of another chain and loaded into memory
+			if !slices.ContainsFunc(tm.allCerts, func(cert *x509.Certificate) bool {
+				return bytes.Equal(cert.Raw, rootCert.Raw)
+			}) {
+				// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
+				// Note: duplicates are filtered out by the call to .AddCert()
+				// Note: if the root cert is not valid, the cert will still be in the trustedRootCertificates pool, but the verification will fail later on
+				tm.trustedRootCertificates.AddCert(rootCert)
+				tm.allCerts = append(tm.allCerts, rootCert)
 
-			_, err = rootCert.Verify(rootValidationOptions)
-			if err != nil {
-				// If the root cert is not valid, skip the rest of the chain
-				tm.logger.Infof("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
-				continue
+				_, err = rootCert.Verify(rootValidationOptions)
+				if err != nil {
+					// If the root cert is not valid, skip the rest of the chain
+					tm.logger.Warnf("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
+					continue
+				}
+
+				// Add the root CRLs (if any)
+				crls, err := tm.readAndVerifyRevocationListsForCert(rootCert)
+				if err != nil {
+					tm.logger.Warnf("Failed to read or verify CRLs for root certificate %s: %v", rootCert.Subject.ToRDNSequence().String(), err)
+				}
+				tm.revocationLists = append(tm.revocationLists, crls...)
 			}
 
 			// Add the intermediate certs to the intermediate pool
@@ -241,18 +254,12 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 					},
 				}
 
-				parentCert := rootCert
 				for _, caCert := range intermediateCerts {
 					// Verify the certificate against the root pools
 					if _, err := caCert.Verify(validationOptions); err != nil {
 						// Skip this intermediate cert, as it is not valid
-						tm.logger.Infof("Intermediate certificate %s is not valid: %v, skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), err)
+						tm.logger.Warnf("Intermediate certificate %s is not valid: %v, skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), err)
 						continue
-					}
-
-					// Check if the available CLR(s) for this cert are signed correctly
-					if err := utils.VerifyRevocationListsSignatures(parentCert, tm.revocationLists); err != nil {
-						return err
 					}
 
 					// Validate intermediate cert against parent CRLs (if any)
@@ -262,7 +269,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 						for _, revoked := range crl.RevokedCertificateEntries {
 							if revoked.SerialNumber.Cmp(caCert.SerialNumber) == 0 {
 								isRevoked = true
-								tm.logger.Infof("Intermediate certificate %s is revoked by CRL %s (number %s), skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String(), crl.Number.String())
+								tm.logger.Warnf("Intermediate certificate %s is revoked by CRL %s (number %s), skipping the rest of the chain", caCert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String(), crl.Number.String())
 								break
 							}
 						}
@@ -272,16 +279,21 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 						}
 					}
 
-					// Only if the validations pass, add the cert to the intermediate pool
+					// Only if the validations passes, add the cert to the intermediate pool
 					// Otherwise, skip this (and all following) intermediate certs in the chain
 					if isRevoked {
 						break
 					}
 
+					// Add the CA CRLs (if any)
+					crls, err := tm.readAndVerifyRevocationListsForCert(caCert)
+					if err != nil {
+						tm.logger.Warnf("Failed to read or verify CRLs for intermediate certificate %s: %v", caCert.Subject.ToRDNSequence().String(), err)
+					}
+
 					tm.trustedIntermediateCertificates.AddCert(caCert)
 					tm.allCerts = append(tm.allCerts, caCert)
-
-					parentCert = caCert
+					tm.revocationLists = append(tm.revocationLists, crls...)
 				}
 			}
 		}
@@ -300,9 +312,8 @@ func (tm *TrustModel) CreateVerifyOptionsTemplate() x509.VerifyOptions {
 // syncCertificateRevocationLists downloads revocation lists unknown by the system yet,
 // plus it updates existing CRLs which are due for refresh.
 // For now, we only support Full CRLs (issued by the certificate issuing CA, so no indirect CRLs) and we do not (yet) handle CRL-delta files.
-// TODO: also read certs from file (not from tm.allCerts) ?
-// TODO: determine what to do if one or more downloads fail;  do we accept the risk of using potentially revoked certificates?
-// TODO: remove index files for certificates which are no longer available (i.e. on built-in chain update or after building 'Add/remove chain' functionality)
+// For now, if a download of a CRL fails, we accept the risk that the certificate may be revoked.
+// For now, if a certificate chain were to be removed from the trust model, the index file will not be cleaned up. This can be a future improvement.
 func (tm *TrustModel) syncCertificateRevocationLists() {
 	// For each certificate in the model, check if it has a CRL distribution point and see if we need to download or update it
 	for _, cert := range tm.allCerts {
@@ -310,8 +321,7 @@ func (tm *TrustModel) syncCertificateRevocationLists() {
 		updatedCrlIndex := make(map[string]string)
 
 		// Create a hash of the certificate's raw subject to be used as the filename
-		hash := sha256.Sum256(cert.RawSubject)
-		certIndexFile := fmt.Sprintf("%x.index", hash)
+		certIndexFile := getCrlIndexFileNameForCert(cert)
 
 		// Read the current CRL index from file for processing
 		tm.logger.Debugf("reading certificate CRL index file %s", certIndexFile)
@@ -442,7 +452,7 @@ func (tm *TrustModel) downloadVerifyAndSaveCRL(distPoint string, cert *x509.Cert
 	}
 
 	// Determine filename (hash cert subject + hash dist point) + filepath
-	filename := fmt.Sprintf("%x-%x.crl", sha256.Sum256(cert.RawSubject), sha256.Sum256([]byte(distPoint)))
+	filename := getCrlFileNameForCertDistributionPoint(cert, distPoint)
 	filePath := filepath.Join(tm.GetCrlPath(), filename)
 
 	out, err := os.Create(filePath)

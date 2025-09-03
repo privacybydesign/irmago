@@ -66,12 +66,12 @@ func (conf *Configuration) Reload() error {
 	conf.Verifiers.addTrustAnchors([]byte(DefaultVerifierTrustAnchor_YiviStaging))
 
 	// Read the trust anchors from storage
-	err := conf.Issuers.readTrustModel()
+	err := conf.Issuers.loadTrustChains()
 	if err != nil {
 		return err
 	}
 
-	return conf.Verifiers.readTrustModel()
+	return conf.Verifiers.loadTrustChains()
 }
 
 func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullFilename string, path string, err error) {
