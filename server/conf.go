@@ -685,7 +685,7 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 			continue
 		}
 
-		irma.Logger.Info("using issuer url ('iss' in sdjwtvc) '%s' for '%s'", issuerUrl, issuerId.String())
+		irma.Logger.Infof("using issuer url ('iss' in sdjwtvc) '%s' for '%s'", issuerUrl, issuerId.String())
 
 		sdConf.Issuers[issuerId] = &SdJwtIssuer{
 			CertChainX509: certChain,
