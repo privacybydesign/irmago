@@ -161,7 +161,7 @@ type SdJwtIssuanceSettings struct {
 
 	Enabled bool `json:"-"`
 
-	// Map of issuer ID to everything required to issuer an SD-JWT VC
+	// Map of issuer ID to everything required to issue an SD-JWT VC
 	Issuers map[irma.IssuerIdentifier]*SdJwtIssuer `json:"-"`
 }
 
