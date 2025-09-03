@@ -650,11 +650,19 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		return nil
 	}
 
+	if len(privKeys) == 0 {
+		conf.Logger.Warnf("sdjwt private keys directory doesn't contain private keys")
+	}
+
 	certChains, err := readSdJwtIssuerCertChains(conf.SdJwtIssuanceSettings.SdJwtIssuerCertificatesPath)
 
 	if err != nil {
 		conf.Logger.Warnf("failed to read sdjwt issuer certificate chains: %v", err)
 		return nil
+	}
+
+	if len(certChains) == 0 {
+		conf.Logger.Warnf("sdjwt certificate chains directory doesn't contain certificates")
 	}
 
 	if len(privKeys) != len(certChains) {
