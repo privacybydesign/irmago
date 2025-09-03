@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -582,62 +582,52 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 }
 
 func readSdJwtIssuerPivKeys(dir string) (map[irma.IssuerIdentifier]*ecdsa.PrivateKey, error) {
-	entries, err := os.ReadDir(dir)
+	result := map[irma.IssuerIdentifier]*ecdsa.PrivateKey{}
+
+	matches, err := filepath.Glob(filepath.Join(dir, "*.pem"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir '%v': %v", dir, err)
 	}
 
-	result := map[irma.IssuerIdentifier]*ecdsa.PrivateKey{}
+	for _, match := range matches {
+		issuerId := irma.NewIssuerIdentifier(strings.TrimSuffix(filepath.Base(match), ".pem"))
 
-	for _, entry := range entries {
-		fileName := entry.Name()
-		if entry.Type().IsRegular() && strings.HasSuffix(fileName, ".pem") {
-			issuerIdStr := strings.TrimSuffix(fileName, ".pem")
-			issuerId := irma.NewIssuerIdentifier(issuerIdStr)
-
-			keyPath := path.Join(dir, fileName)
-			bytes, err := os.ReadFile(keyPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read ecdsa private key from '%v': %v", keyPath, err)
-			}
-			privKey, err := sdjwtvc.DecodeEcdsaPrivateKey(bytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode ecdsa private key from '%v': %v", keyPath, err)
-			}
-
-			result[issuerId] = privKey
+		bytes, err := os.ReadFile(match)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read ecdsa private key from '%v': %v", match, err)
 		}
+		privKey, err := sdjwtvc.DecodeEcdsaPrivateKey(bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode ecdsa private key from '%v': %v", match, err)
+		}
+
+		result[issuerId] = privKey
 	}
 
 	return result, nil
 }
 
 func readSdJwtIssuerCertChains(dir string) (map[irma.IssuerIdentifier][]*x509.Certificate, error) {
-	entries, err := os.ReadDir(dir)
+	result := map[irma.IssuerIdentifier][]*x509.Certificate{}
+
+	matches, err := filepath.Glob(filepath.Join(dir, "*.pem"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir '%v': %v", dir, err)
 	}
 
-	result := map[irma.IssuerIdentifier][]*x509.Certificate{}
+	for _, match := range matches {
+		issuerId := irma.NewIssuerIdentifier(strings.TrimSuffix(filepath.Base(match), ".pem"))
 
-	for _, entry := range entries {
-		fileName := entry.Name()
-		if entry.Type().IsRegular() && strings.HasSuffix(fileName, ".pem") {
-			issuerIdStr := strings.TrimSuffix(fileName, ".pem")
-			issuerId := irma.NewIssuerIdentifier(issuerIdStr)
-
-			certPath := path.Join(dir, fileName)
-			bytes, err := os.ReadFile(certPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read certificate at %v: %v", certPath, err)
-			}
-			certChain, err := utils.ParsePemCertificateChain(bytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
-			}
-
-			result[issuerId] = certChain
+		bytes, err := os.ReadFile(match)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read certificate at %v: %v", match, err)
 		}
+		certChain, err := utils.ParsePemCertificateChain(bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
+		}
+
+		result[issuerId] = certChain
 	}
 
 	return result, nil
@@ -656,35 +646,46 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 	privKeys, err := readSdJwtIssuerPivKeys(conf.SdJwtIssuanceSettings.SdJwtIssuerPrivKeysPath)
 
 	if err != nil {
-		return fmt.Errorf("failed to read sdjwt issuer private keys: %v", err)
+		irma.Logger.Warnf("failed to read sdjwt issuer private keys: %v", err)
+		return nil
 	}
 
 	certChains, err := readSdJwtIssuerCertChains(conf.SdJwtIssuanceSettings.SdJwtIssuerCertificatesPath)
 
 	if err != nil {
-		return fmt.Errorf("failed to read sdjwt issuer certificate chains: %v", err)
+		irma.Logger.Warnf("failed to read sdjwt issuer certificate chains: %v", err)
+		return nil
 	}
 
 	if len(privKeys) != len(certChains) {
-		return fmt.Errorf("the number of sdjwtvc cert chains and private keys don't match")
+		irma.Logger.Warnf(
+			"the number of sdjwtvc cert chains (%v) and private keys (%v) don't match",
+			len(certChains),
+			len(privKeys),
+		)
 	}
 
 	sdConf.Issuers = map[irma.IssuerIdentifier]*SdJwtIssuer{}
 	for issuerId, privKey := range privKeys {
 		certChain, ok := certChains[issuerId]
 		if !ok {
-			return fmt.Errorf("expected cert chain for %v, but it's not present", issuerId)
+			irma.Logger.Warnf("expected cert chain for %v, but it's not present", issuerId)
+			continue
 		}
 
 		x5cChain, err := utils.ConvertPemCertificateChainToX5cFormat(certChain)
 		if err != nil {
-			return fmt.Errorf("failed to convert cert chain for %v to x5c format: %v", issuerId, err)
+			irma.Logger.Warnf("failed to convert cert chain for %v to x5c format: %v", issuerId, err)
+			continue
 		}
 
 		issuerUrl, err := utils.ObtainIssuerUrlFromCertChain(certChain)
 		if err != nil {
-			return fmt.Errorf("failed to obtain issuer url from cert chain for %v: %v", issuerId, err)
+			irma.Logger.Warnf("failed to obtain issuer url from cert chain for %v: %v", issuerId, err)
+			continue
 		}
+
+		irma.Logger.Info("using issuer url ('iss' in sdjwtvc) '%s' for '%s'", issuerUrl, issuerId.String())
 
 		sdConf.Issuers[issuerId] = &SdJwtIssuer{
 			CertChainX509: certChain,
