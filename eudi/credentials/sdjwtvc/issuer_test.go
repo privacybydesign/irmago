@@ -48,20 +48,6 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 	requireBuildFailure(t, builder)
 }
 
-func Test_BuildSdJwtVc_InvalidIssuerUrl_AllowNonHttps_Success(t *testing.T) {
-	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
-	require.NoError(t, err)
-
-	builder := NewSdJwtVcBuilder().
-		WithExpiresAt(time.Now().Unix()).
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
-		WithIssuerUrl("http://irma.app").
-		WithAllowNonHttpsIssuerUrl(true).
-		WithIssuerCertificateChain(irmaAppCert)
-
-	requireValidSdJwtVcWithNonHttpsIssuer(t, builder)
-}
-
 func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
@@ -118,16 +104,7 @@ func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	require.NoError(t, err)
-	context := CreateTestVerificationContext(false)
-	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
-	require.NoError(t, err)
-}
-
-func requireValidSdJwtVcWithNonHttpsIssuer(t *testing.T, builder *SdJwtVcBuilder) {
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdjwtvc, err := builder.Build(jwtCreator)
-	require.NoError(t, err)
-	context := CreateTestVerificationContext(true)
+	context := CreateTestVerificationContext()
 	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
 	require.NoError(t, err)
 }

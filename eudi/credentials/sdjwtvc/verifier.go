@@ -32,10 +32,6 @@ type SdJwtVcVerificationContext struct {
 
 	// Used to verify both JWT components of an SD-JWT VC (issuer signed jwt and kbjwt).
 	JwtVerifier JwtVerifier
-
-	// Whether the `iss` field should be allowed to contain non-https link.
-	// According to the spec this is never allowed, but for testing purposes it can come in handy.
-	AllowNonHttpsIssuer bool
 }
 
 // VerifiedSdJwtVc is the decoded & verified representation of an SD-JWT VC.
@@ -319,14 +315,7 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 		return IssuerSignedJwtPayload{}, err
 	}
 
-	// Get required fields
-	iss, issPresent := token.Issuer()
-	if !issPresent {
-		return IssuerSignedJwtPayload{}, errors.New("missing iss field")
-	}
-
-	// Use the `iss` claim to verify the issuer signed JWT
-	err = context.VerificationContext.VerifyCertificate(cert, nil, &iss)
+	err = context.VerificationContext.VerifyCertificate(cert, nil)
 	if err != nil {
 		return IssuerSignedJwtPayload{}, fmt.Errorf("failed to verify certificate: %v", err)
 	}
@@ -342,6 +331,7 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	exp, _ := token.Expiration()
 	iat, _ := token.IssuedAt()
 	nbf, _ := token.NotBefore()
+	iss, _ := token.Issuer()
 
 	sdAlg := utils.GetOptional[string](token, Key_SdAlg)
 	status := utils.GetOptional[string](token, Key_Status)
@@ -364,11 +354,6 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 		if err != nil {
 			return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
-	}
-
-	// Apply custom verifications
-	if issPresent && !strings.HasPrefix(iss, "https://") && !context.AllowNonHttpsIssuer {
-		return IssuerSignedJwtPayload{}, fmt.Errorf("iss field should be https if it's included but is now %s", iss)
 	}
 
 	// TODO: create Yivi Issuer Requestor from cert data

@@ -43,21 +43,16 @@ func configureEmail() keyshare.EmailConfiguration {
 }
 
 func getSdJwtIssuanceConfigFromCli() *server.SdJwtIssuanceSettings {
-	issuer := viper.GetString("sdjwtvc_issuer")
-	jwtPrivateKey := viper.GetString("sdjwtvc_privkey")
-	jwtPrivateKeyFile := viper.GetString("sdjwtvc_privkey_file")
-	issuerCertificateChain := viper.GetString("sdjwtvc_cert_chain")
-	issuerCertificateChainFile := viper.GetString("sdjwtvc_cert_chain_file")
+	certChainsPath := viper.GetString("sdjwtvc_issuer_certificates_path")
+	privKeysPath := viper.GetString("sdjwtvc_issuer_priv_keys_path")
 
-	if issuer == "" && jwtPrivateKey == "" && jwtPrivateKeyFile == "" && issuerCertificateChain == "" && issuerCertificateChainFile == "" {
+	if certChainsPath == "" && privKeysPath == "" {
 		return nil
 	}
+
 	return &server.SdJwtIssuanceSettings{
-		Issuer:                     issuer,
-		JwtPrivateKey:              jwtPrivateKey,
-		JwtPrivateKeyFile:          jwtPrivateKeyFile,
-		IssuerCertificateChain:     issuerCertificateChain,
-		IssuerCertificateChainFile: issuerCertificateChainFile,
+		SdJwtIssuerCertificatesPath: certChainsPath,
+		SdJwtIssuerPrivKeysPath:     privKeysPath,
 	}
 }
 

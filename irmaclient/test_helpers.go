@@ -15,23 +15,34 @@ import (
 
 type MockClientHandler struct {
 	enrollmentChannel chan error
+	log               bool
 }
 
 func NewMockClientHandler() *MockClientHandler {
 	return &MockClientHandler{
 		enrollmentChannel: make(chan error),
+		log:               false,
 	}
 }
 
 func (h *MockClientHandler) AwaitEnrollmentResult() error {
+	if h.log {
+		fmt.Println("AwaitEnrollmentResult()")
+	}
 	return <-h.enrollmentChannel
 }
 
 func (h *MockClientHandler) EnrollmentFailure(manager irma.SchemeManagerIdentifier, err error) {
+	if h.log {
+		fmt.Println("EnrollmentFailure()")
+	}
 	h.enrollmentChannel <- err
 }
 
 func (h *MockClientHandler) EnrollmentSuccess(manager irma.SchemeManagerIdentifier) {
+	if h.log {
+		fmt.Println("EnrollmentSuccess()")
+	}
 	h.enrollmentChannel <- nil
 }
 
@@ -43,7 +54,11 @@ func (h *MockClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifie
 func (h *MockClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet)                    {}
 func (h *MockClientHandler) UpdateAttributes()                                                  {}
 func (h *MockClientHandler) Revoked(cred *irma.CredentialIdentifier)                            {}
-func (h *MockClientHandler) ReportError(err error)                                              {}
+func (h *MockClientHandler) ReportError(err error) {
+	if h.log {
+		fmt.Printf("ReportError(): %v\n", err)
+	}
+}
 
 // =============================================================================
 

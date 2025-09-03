@@ -3,7 +3,6 @@ package irmaserver
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -811,11 +810,8 @@ func (s *Server) newSession(
 }
 
 func (session *sessionData) generateSdJwts(
-	issuerCertificateChain []string,
-	privKey *ecdsa.PrivateKey,
+	settings *server.SdJwtIssuanceSettings,
 	kbPubKeys []jwk.Key,
-	issuerUrl string,
-	allowNonHttps bool,
 ) ([]sdjwtvc.SdJwtVc, error) {
 	// Check that the request is a valid issuance request
 	req, err := session.getRequest()
@@ -828,13 +824,12 @@ func (session *sessionData) generateSdJwts(
 		return nil, errors.New("session request is not an issuance request; cannot generate SD-JWTs")
 	}
 
-	// No SD-JWTs requested, return nothing
-	creator := sdjwtvc.NewJwtCreator(privKey)
-
 	numSdJwtsRequested, err := irma.CalculateAmountOfSdJwtsToIssue(issuanceReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate sdjwts: %v", err)
 	}
+
+	// No SD-JWTs requested, return nothing
 	if numSdJwtsRequested == 0 {
 		return nil, nil
 	}
@@ -859,7 +854,14 @@ func (session *sessionData) generateSdJwts(
 
 	var index uint = 0
 	for _, cred := range issuanceReq.Credentials {
+		issuerId := cred.CredentialTypeID.IssuerIdentifier()
+		sdJwtIssuer, ok := settings.Issuers[issuerId]
+		if !ok {
+			return nil, fmt.Errorf("failed to generate sdjwts, no issuer configured for %v", issuerId)
+		}
 		credentialType := cred.CredentialTypeID.String()
+
+		creator := sdjwtvc.NewJwtCreator(sdJwtIssuer.PrivKey)
 
 		// Calculate how many SD-JWTs to issue for this credential
 		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
@@ -874,9 +876,8 @@ func (session *sessionData) generateSdJwts(
 			// TODO: add choice of signature scheme to the builder
 			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
 				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
-				WithIssuerUrl(issuerUrl).
-				WithIssuerCertificateChain(issuerCertificateChain).
-				WithAllowNonHttpsIssuerUrl(allowNonHttps).
+				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).
+				WithIssuerUrl(sdJwtIssuer.IssuerUrl).
 				WithVerifiableCredentialType(credentialType).
 				WithDisclosures(disclosures).
 				WithHolderKey(kbPubKeys[index]).

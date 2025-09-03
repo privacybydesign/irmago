@@ -3,6 +3,8 @@ package sessiontest
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -788,11 +790,16 @@ func createAuthRequestRequest() string {
 }
 
 func irmaServerConfWithSdJwtEnabled(t *testing.T) *server.Configuration {
+	certDir := t.TempDir()
+	require.NoError(t, os.WriteFile(path.Join(certDir, "test.test.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes, 0644))
+
+	privKeyDir := t.TempDir()
+	require.NoError(t, os.WriteFile(path.Join(privKeyDir, "test.test.pem"), testdata.IssuerPrivKeyBytes, 0644))
+
 	conf := IrmaServerConfigurationWithTempStorage(t)
 	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
-		Issuer:                 "https://openid4vc.staging.yivi.app",
-		IssuerCertificateChain: string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
-		JwtPrivateKey:          string(testdata.IssuerPrivKeyBytes),
+		SdJwtIssuerPrivKeysPath:     privKeyDir,
+		SdJwtIssuerCertificatesPath: certDir,
 	}
 	return conf
 }
