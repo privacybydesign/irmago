@@ -646,19 +646,19 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 	privKeys, err := readSdJwtIssuerPivKeys(conf.SdJwtIssuanceSettings.SdJwtIssuerPrivKeysPath)
 
 	if err != nil {
-		irma.Logger.Warnf("failed to read sdjwt issuer private keys: %v", err)
+		conf.Logger.Warnf("failed to read sdjwt issuer private keys: %v", err)
 		return nil
 	}
 
 	certChains, err := readSdJwtIssuerCertChains(conf.SdJwtIssuanceSettings.SdJwtIssuerCertificatesPath)
 
 	if err != nil {
-		irma.Logger.Warnf("failed to read sdjwt issuer certificate chains: %v", err)
+		conf.Logger.Warnf("failed to read sdjwt issuer certificate chains: %v", err)
 		return nil
 	}
 
 	if len(privKeys) != len(certChains) {
-		irma.Logger.Warnf(
+		conf.Logger.Warnf(
 			"the number of sdjwtvc cert chains (%v) and private keys (%v) don't match",
 			len(certChains),
 			len(privKeys),
@@ -667,25 +667,26 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 
 	sdConf.Issuers = map[irma.IssuerIdentifier]*SdJwtIssuer{}
 	for issuerId, privKey := range privKeys {
+		conf.Logger.Infof("loading sdjwt issuer settings for %v", issuerId.String())
 		certChain, ok := certChains[issuerId]
 		if !ok {
-			irma.Logger.Warnf("expected cert chain for %v, but it's not present", issuerId)
+			conf.Logger.Warnf("expected cert chain for %v, but it's not present", issuerId)
 			continue
 		}
 
 		x5cChain, err := utils.ConvertPemCertificateChainToX5cFormat(certChain)
 		if err != nil {
-			irma.Logger.Warnf("failed to convert cert chain for %v to x5c format: %v", issuerId, err)
+			conf.Logger.Warnf("failed to convert cert chain for %v to x5c format: %v", issuerId, err)
 			continue
 		}
 
 		issuerUrl, err := utils.ObtainIssuerUrlFromCertChain(certChain)
 		if err != nil {
-			irma.Logger.Warnf("failed to obtain issuer url from cert chain for %v: %v", issuerId, err)
+			conf.Logger.Warnf("failed to obtain issuer url from cert chain for %v: %v", issuerId, err)
 			continue
 		}
 
-		irma.Logger.Infof("using issuer url ('iss' in sdjwtvc) '%s' for '%s'", issuerUrl, issuerId.String())
+		conf.Logger.Infof("using issuer url ('iss' in sdjwtvc) '%s' for '%s'", issuerUrl, issuerId.String())
 
 		sdConf.Issuers[issuerId] = &SdJwtIssuer{
 			CertChainX509: certChain,
