@@ -877,11 +877,11 @@ func (session *sessionData) generateSdJwts(
 			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
 				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
 				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).
+				WithIssuerUrl(sdJwtIssuer.IssuerUrl).
 				WithVerifiableCredentialType(credentialType).
 				WithDisclosures(disclosures).
 				WithHolderKey(kbPubKeys[index]).
 				WithExpiresAt(validUntil).
-				WithIssuerUrl(sdJwtIssuer.IssuerUrl).
 				// Make sure all SD-JWTs have the same issuance dates; we therefor use a 'static' clock
 				WithIssuedAt(issuanceTime).
 				Build(creator)

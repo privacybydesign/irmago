@@ -56,7 +56,6 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_AllowNonHttps_Success(t *testing.T) {
 		WithExpiresAt(time.Now().Unix()).
 		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
 		WithIssuerUrl("http://irma.app").
-		WithAllowNonHttpsIssuerUrl(true).
 		WithIssuerCertificateChain(irmaAppCert)
 
 	requireValidSdJwtVcWithNonHttpsIssuer(t, builder)
