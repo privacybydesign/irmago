@@ -121,6 +121,13 @@ func setFlags(cmd *cobra.Command, production bool) error {
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 
+	headers["sdjwtvc-issuer"] = "SD-JWT VC issuance configuration"
+	flags.String("sdjwtvc-issuer", "", "SD-JWT VC issuer ('iss') field")
+	flags.String("sdjwtvc-privkey", "", "SD-JWT VC issuance private key")
+	flags.String("sdjwtvc-privkey-file", "", "SD-JWT VC issuance private key file")
+	flags.String("sdjwtvc-cert-chain", "", "SD-JWT VC issuance certificate chain (PEM)")
+	flags.String("sdjwtvc-cert-chain-file", "", "SD-JWT VC issuance certificate chain file (PEM)")
+
 	headers["store-type"] = "Session store configuration"
 	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
 	flags.String("redis-addr", "", "Redis address, to be specified as host:port")

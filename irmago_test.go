@@ -46,7 +46,6 @@ func s2big(s string) (r *big.Int) {
 
 func TestConfigurationAutocopy(t *testing.T) {
 	storage := test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t, nil, storage)
 
 	require.NoError(t, os.Remove(filepath.Join(storage, "client")))
 	require.NoError(t, common.CopyDirectory(filepath.Join("testdata", "irma_configuration"), storage))
@@ -63,7 +62,6 @@ func TestConfigurationAutocopy(t *testing.T) {
 
 func TestUpdateConfiguration(t *testing.T) {
 	storage := test.SetupTestStorage(t)
-	defer test.ClearTestStorage(t, nil, storage)
 	test.StartSchemeManagerHttpServer()
 	defer test.StopSchemeManagerHttpServer()
 
@@ -132,7 +130,6 @@ func TestParseInvalidIrmaConfiguration(t *testing.T) {
 
 func TestParseIrmaConfigurationLeftoverTempDir(t *testing.T) {
 	storage := test.SetupTestStorage(t)
-	defer test.ClearTestStorage(t, nil, storage)
 
 	confpath := filepath.Join(storage, "client")
 	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(confpath, ".tempscheme")))
@@ -193,7 +190,6 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 	defer test.StopSchemeManagerHttpServer()
 
 	storage := test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t, nil, storage)
 	require.NoError(t, os.Remove(filepath.Join(storage, "client")))
 
 	conf, err := NewConfiguration(storage, ConfigurationOptions{
@@ -219,7 +215,6 @@ func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
 
 func TestInvalidIrmaConfigurationRestoreFromAssets(t *testing.T) {
 	storage := test.CreateTestStorage(t)
-	defer test.ClearTestStorage(t, nil, storage)
 
 	conf, err := NewConfiguration(filepath.Join(storage, "client", "irma_configuration"), ConfigurationOptions{
 		Assets: filepath.Join("testdata", "irma_configuration_invalid"),
@@ -293,9 +288,7 @@ func TestInstallScheme(t *testing.T) {
 	defer test.StopSchemeManagerHttpServer()
 
 	// setup a new empty Configuration
-	storage, err := os.MkdirTemp("", "scheme")
-	require.NoError(t, err)
-	defer test.ClearTestStorage(t, nil, storage)
+	storage := test.CreateTestStorage(t)
 	conf, err := NewConfiguration(storage, ConfigurationOptions{})
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())

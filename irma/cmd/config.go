@@ -42,6 +42,20 @@ func configureEmail() keyshare.EmailConfiguration {
 	}
 }
 
+func getSdJwtIssuanceConfigFromCli() *server.SdJwtIssuanceSettings {
+	certChainsPath := viper.GetString("sdjwtvc_issuer_certificates_path")
+	privKeysPath := viper.GetString("sdjwtvc_issuer_priv_keys_path")
+
+	if certChainsPath == "" && privKeysPath == "" {
+		return nil
+	}
+
+	return &server.SdJwtIssuanceSettings{
+		SdJwtIssuerCertificatesPath: certChainsPath,
+		SdJwtIssuerPrivKeysPath:     privKeysPath,
+	}
+}
+
 func configureIRMAServer() (*server.Configuration, error) {
 	conf := &server.Configuration{
 		SchemesPath:            viper.GetString("schemes_path"),
@@ -69,6 +83,7 @@ func configureIRMAServer() (*server.Configuration, error) {
 		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
 		AllowUnsignedCallbacks: viper.GetBool("allow_unsigned_callbacks"),
 		AugmentClientReturnURL: viper.GetBool("augment_client_return_url"),
+		SdJwtIssuanceSettings:  getSdJwtIssuanceConfigFromCli(),
 	}
 
 	// Parse session store configuration

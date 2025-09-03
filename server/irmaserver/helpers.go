@@ -18,17 +18,21 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
 
 var one *big.Int = big.NewInt(1)
+
+const defaultCredentialValidityInMonths = 6
 
 // Session helpers
 
@@ -267,7 +271,7 @@ func (s *Server) validateIssuanceRequest(request *irma.IssuanceRequest) error {
 		}
 
 		// Ensure the credential has an expiry date
-		defaultValidity := irma.Timestamp(time.Now().AddDate(0, 6, 0))
+		defaultValidity := irma.Timestamp(time.Now().AddDate(0, defaultCredentialValidityInMonths, 0))
 		if cred.Validity == nil {
 			cred.Validity = &defaultValidity
 		}
@@ -803,4 +807,93 @@ func (s *Server) newSession(
 	}
 
 	return ses, nil
+}
+
+func (session *sessionData) generateSdJwts(
+	settings *server.SdJwtIssuanceSettings,
+	kbPubKeys []jwk.Key,
+) ([]sdjwtvc.SdJwtVc, error) {
+	// Check that the request is a valid issuance request
+	req, err := session.getRequest()
+	if err != nil {
+		return nil, err
+	}
+
+	issuanceReq, ok := req.(*irma.IssuanceRequest)
+	if !ok {
+		return nil, errors.New("session request is not an issuance request; cannot generate SD-JWTs")
+	}
+
+	numSdJwtsRequested, err := irma.CalculateAmountOfSdJwtsToIssue(issuanceReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate sdjwts: %v", err)
+	}
+
+	// No SD-JWTs requested, return nothing
+	if numSdJwtsRequested == 0 {
+		return nil, nil
+	}
+	// when the list of pub keys is empty it's most likely an older Yivi app
+	// that doesn't have SD-JWT support, so don't make any, but also don't return an error
+	if kbPubKeys == nil {
+		return nil, nil
+	}
+
+	if numPubKeys := uint(len(kbPubKeys)); numSdJwtsRequested != numPubKeys {
+		return nil, fmt.Errorf(
+			"number of requested SD-JWTs (%v) does not match the number of pub keys (%v)",
+			numSdJwtsRequested,
+			numPubKeys,
+		)
+	}
+
+	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
+	sdJwts := make([]sdjwtvc.SdJwtVc, numSdJwtsRequested)
+
+	issuanceTime := sdjwtvc.NewSystemClock().Now().Unix()
+
+	var index uint = 0
+	for _, cred := range issuanceReq.Credentials {
+		issuerId := cred.CredentialTypeID.IssuerIdentifier()
+		sdJwtIssuer, ok := settings.Issuers[issuerId]
+		if !ok {
+			return nil, fmt.Errorf("failed to generate sdjwts, no issuer configured for %v", issuerId)
+		}
+		credentialType := cred.CredentialTypeID.String()
+
+		creator := sdjwtvc.NewJwtCreator(sdJwtIssuer.PrivKey)
+
+		// Calculate how many SD-JWTs to issue for this credential
+		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
+		validUntil := time.Time(*cred.Validity).Unix()
+
+		for range cred.SdJwtBatchSize {
+			disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
+			if err != nil {
+				return nil, err
+			}
+
+			// TODO: add choice of signature scheme to the builder
+			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
+				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
+				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).
+				WithIssuerUrl(sdJwtIssuer.IssuerUrl).
+				WithVerifiableCredentialType(credentialType).
+				WithDisclosures(disclosures).
+				WithHolderKey(kbPubKeys[index]).
+				WithExpiresAt(validUntil).
+				// Make sure all SD-JWTs have the same issuance dates; we therefor use a 'static' clock
+				WithIssuedAt(issuanceTime).
+				Build(creator)
+
+			if err != nil {
+				return nil, errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
+			}
+
+			sdJwts[index] = sdJwt
+			index++
+		}
+	}
+
+	return sdJwts, nil
 }
