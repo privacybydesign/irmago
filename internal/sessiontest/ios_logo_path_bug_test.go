@@ -15,6 +15,66 @@ import (
 )
 
 func Test_iOSLogoPathBug(t *testing.T) {
+	t.Run("irma_issuance_log_logo_path", test_iOSLogoPathBug)
+	t.Run("openid4vp_disclosure_log_logo_path", test_iOSLogoPathBugEudiLogs)
+}
+
+func test_iOSLogoPathBugEudiLogs(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+	signer := test.NewSigner(t)
+	storagePath, irmaConfigurationPath := createClientStorage(t)
+	client, handler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, signer)
+	keyshareEnrollClient(t, client, handler)
+
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+	discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPost_Host)
+
+	logs, err := client.LoadNewestLogs(1)
+	require.NoError(t, err)
+
+	log := logs[0].DisclosureLog
+
+	// make sure we have the correct OpenID4VP log
+	require.Contains(t, log.Credentials[0].CredentialType, "test.test.email")
+	require.Contains(t, log.Protocol, irmaclient.Protocol_OpenID4VP)
+
+	// require the logo of the requestor to be an existing file
+	require.FileExists(t, *log.Verifier.LogoPath)
+
+	client.Close()
+
+	// move the storage to a new path
+	newStoragePath := t.TempDir()
+	require.NoError(t, common.CopyDirectory(storagePath, newStoragePath))
+	// delete the old one
+	require.NoError(t, os.RemoveAll(storagePath))
+	require.NoDirExists(t, storagePath)
+
+	newClient, handler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, signer)
+
+	// make sure it can still do sessions
+	issueSdJwtAndIdemixToClientExpectPin(t, newClient, irmaServer)
+
+	logs, err = newClient.LoadNewestLogs(2)
+	require.Len(t, logs, 2)
+	// need the second to last one, because that log used the previous storage
+	log = logs[1].DisclosureLog
+
+	// make sure we have the correct OpenID4VP log
+	require.Contains(t, log.Credentials[0].CredentialType, "test.test.email")
+	require.Contains(t, log.Protocol, irmaclient.Protocol_OpenID4VP)
+
+	// require the logo of the requestor to be an existing file
+	require.FileExists(t, *log.Verifier.LogoPath)
+
+	newClient.Close()
+}
+
+func test_iOSLogoPathBug(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
 	defer irmaServer.Stop()
 
@@ -93,6 +153,10 @@ func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPat
 	storageFolder := test.CreateTestStorage(t)
 	storagePath = filepath.Join(storageFolder, "client")
 	irmaConfigurationPath = filepath.Join(storagePath, "irma_configuration")
+
+	// Copy files to storage folder
+	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
+	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration")))
 
 	// Add test issuer certificates as trusted chain
 	certsPath := filepath.Join(storagePath, "eudi_configuration", "issuers", "certs")
