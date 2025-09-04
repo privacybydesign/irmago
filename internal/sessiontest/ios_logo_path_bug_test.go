@@ -57,12 +57,13 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	require.NoError(t, os.RemoveAll(storagePath))
 	require.NoDirExists(t, storagePath)
 
-	newClient, handler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, signer)
+	newClient, _ := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, signer)
 
 	// make sure it can still do sessions
 	issueSdJwtAndIdemixToClientExpectPin(t, newClient, irmaServer)
 
 	logs, err = newClient.LoadNewestLogs(2)
+	require.NoError(t, err)
 	require.Len(t, logs, 2)
 	// need the second to last one, because that log used the previous storage
 	log = logs[1].DisclosureLog
@@ -112,12 +113,13 @@ func test_iOSLogoPathBug(t *testing.T) {
 	require.NoError(t, os.RemoveAll(storagePath))
 	require.NoDirExists(t, storagePath)
 
-	newClient, handler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, signer)
+	newClient, _ := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, signer)
 
 	// make sure it can still do sessions
 	issueSdJwtAndIdemixToClientExpectPin(t, newClient, irmaServer)
 
 	logs, err = newClient.LoadNewestLogs(2)
+	require.NoError(t, err)
 	require.Len(t, logs, 2)
 	// need the second to last one, because that log used the previous storage
 	log = logs[1].IssuanceLog
@@ -155,7 +157,6 @@ func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPat
 	path := test.FindTestdataFolder(t)
 	storageFolder := test.CreateTestStorage(t)
 	storagePath = filepath.Join(storageFolder, "client")
-	irmaConfigurationPath = filepath.Join(storagePath, "irma_configuration")
 
 	// Copy files to storage folder
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
