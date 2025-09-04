@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
+	"github.com/google/uuid"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
@@ -24,8 +25,7 @@ type Client struct {
 	irmaClient      *IrmaClient
 	logsStorage     LogsStorage
 	keyBinder       sdjwtvc.KeyBinder
-
-	scheduler *gocron.Scheduler
+	scheduler       gocron.Scheduler
 }
 
 func New(
@@ -57,6 +57,7 @@ func New(
 		return nil, fmt.Errorf("instantiating configuration failed: %v", err)
 	}
 
+	eudi.Logger = irma.Logger
 	eudiConf, err := eudi.NewConfiguration(eudiConfigurationPath)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating eudi configuration failed: %v", err)
@@ -101,6 +102,37 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
 
+	scheduler, err := gocron.NewScheduler()
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate new scheduler: %v", err)
+	}
+
+	// TODO: add Context so we can check for cancellation of the job ?
+	crlSyncTask := gocron.NewTask(func() {
+		eudiConf.UpdateCertificateRevocationLists()
+	})
+
+	scheduler.NewJob(
+		gocron.OneTimeJob(
+			gocron.OneTimeJobStartDateTime(time.Now().Add(10*time.Second)),
+			//gocron.OneTimeJobStartImmediately(),
+		),
+		crlSyncTask,
+		gocron.WithEventListeners(
+			gocron.AfterJobRuns(
+				func(jobID uuid.UUID, jobName string) {
+					// TODO: For now; update the schedule to run again in 2 minutes (for testing)
+					// For prod; either run again at the desired time, or set a CRON
+					//scheduler.Update(jobID, gocron.CronJob(""))
+
+					scheduler.Update(jobID, gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(time.Now().Add(2*time.Minute))), crlSyncTask)
+				},
+			),
+		),
+	)
+
+	//scheduler.Start()
+
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
 	// so we do this by listening for session-done events
@@ -112,10 +144,12 @@ func New(
 		irmaClient:      irmaClient,
 		logsStorage:     storage,
 		keyBinder:       keyBinder,
+		scheduler:       scheduler,
 	}, nil
 }
 
 func (client *Client) Close() error {
+	client.scheduler.Shutdown()
 	return client.irmaClient.Close()
 }
 

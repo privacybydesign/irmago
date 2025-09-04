@@ -8,7 +8,15 @@ import (
 	"path/filepath"
 
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/sirupsen/logrus"
 )
+
+// Logger is used for logging. For now, it will be set via the Client component
+var Logger *logrus.Logger
+
+func init() {
+	Logger = common.Logger
+}
 
 // Configuration keeps track of issuer and requestor trusted chains and certificate revocation lists,
 // retrieving them from the eudi_configuration folder, and downloads and saves new ones on demand.
@@ -29,12 +37,12 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 		path: path,
 		Issuers: TrustModel{
 			basePath:   filepath.Join(path, "issuers"),
-			logger:     common.Logger,
+			logger:     Logger,
 			httpClient: httpClient,
 		},
 		Verifiers: TrustModel{
 			basePath:   filepath.Join(path, "verifiers"),
-			logger:     common.Logger,
+			logger:     Logger,
 			httpClient: httpClient,
 		},
 	}
@@ -71,7 +79,9 @@ func (conf *Configuration) Reload() error {
 		return err
 	}
 
-	return conf.Verifiers.loadTrustChains()
+	err = conf.Verifiers.loadTrustChains()
+
+	return err
 }
 
 func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullFilename string, path string, err error) {

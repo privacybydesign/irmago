@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -98,7 +97,7 @@ func (tm *TrustModel) readCRLIndex(indexFileName string) (map[string]string, err
 		if len(parts) == 2 {
 			crlIndex[parts[0]] = parts[1]
 		} else {
-			log.Printf("invalid line in CRL index file: %q. Skipping line...", line)
+			tm.logger.Warnf("invalid line in CRL index file: %q. Skipping line...", line)
 		}
 	}
 

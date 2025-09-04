@@ -10,7 +10,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/testdata"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -246,7 +245,6 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 		trustedRootCertificates:         rootPool,
 		trustedIntermediateCertificates: intermediatePool,
 		revocationLists:                 revocationLists,
-		logger:                          logrus.New(),
 	}
 
 	verifierValidatorContext := eudi_jwt.VerificationContext{

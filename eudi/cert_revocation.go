@@ -1,24 +1,22 @@
 package eudi
 
-func (conf *Configuration) UpdateCertificateRevocationLists() error {
-	// TODO: Implement revocation list update logic
+import "sync"
 
-	// First find all certificate chains which have CLR distribution points set,
-	// and are not yet known to the system. We need to download those first.
+func (conf *Configuration) UpdateCertificateRevocationLists() {
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	// err := conf.Issuers.updateCertificateRevocationLists()
-	// if err != nil {
-	// 	return err
-	// }
+	go updateWorker(conf.Issuers.syncCertificateRevocationLists, &wg)
+	go updateWorker(conf.Verifiers.syncCertificateRevocationLists, &wg)
 
-	// TODO: run in parallel
-
-	conf.Issuers.syncCertificateRevocationLists()
-	conf.Verifiers.syncCertificateRevocationLists()
+	wg.Wait()
 
 	// TODO: implement some kind of locking on the config and/or start of the job?
 	// We should not update if we are in the middle of handling a session, because it might disrupt the session?
 	conf.Reload()
+}
 
-	return nil
+func updateWorker(worker func(), wg *sync.WaitGroup) {
+	defer wg.Done()
+	worker()
 }
