@@ -14,6 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// iOS moves all data to a different directory after every new app version.
+// Logs used to have a static file path that became invalid after every update.
+// These tests proof that this is no longer a problem.
 func Test_iOSLogoPathBug(t *testing.T) {
 	t.Run("irma_issuance_log_logo_path", test_iOSLogoPathBug)
 	t.Run("openid4vp_disclosure_log_logo_path", test_iOSLogoPathBugEudiLogs)
@@ -139,8 +142,8 @@ func issueSdJwtAndIdemixToClientExpectPin(t *testing.T, client *irmaclient.Clien
 	permissionRequest := sessionHandler.AwaitPermissionRequest()
 
 	go func() {
-		pinRequest := sessionHandler.AwaitPinRequest()
-		pinRequest(true, "12345")
+		pinHandler := sessionHandler.AwaitPinRequest()
+		pinHandler(true, "12345")
 	}()
 
 	permissionRequest.PermissionHandler(true, nil)
