@@ -69,7 +69,7 @@ func (conf *Configuration) Reload() error {
 	return conf.Verifiers.readTrustModel()
 }
 
-func (conf *Configuration) ResolveVerifierLogo(filename string) (string, error) {
+func (conf *Configuration) ResolveVerifierLogoPath(filename string) (string, error) {
 	path := filepath.Join(conf.Verifiers.GetLogosPath(), filename)
 	exists, err := common.PathExists(path)
 	if err != nil {
