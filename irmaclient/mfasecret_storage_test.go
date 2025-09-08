@@ -32,6 +32,7 @@ var secretsSample = []MFASecret{
 
 func TestMFASecretStorage(t *testing.T) {
 	RunTestWithTempBboltMfaStorage(t, "Store and retrieve MFA Secret", testStoreRetrieveMFASecret)
+	RunTestWithTempBboltMfaStorage(t, "Store duplicate MFA Secret (by Secret field)", testStoreDuplicateMFASecret)
 	RunTestWithTempBboltMfaStorage(t, "Store and retrieve multiple MFA Secrets", testStoreRetrieveMultipleMFASecret)
 	RunTestWithTempBboltMfaStorage(t, "Remove MFA Secret by secret from multiple", testRemoveSecretBySecretFromMultiple)
 	RunTestWithTempBboltMfaStorage(t, "Retrieve from empty storage", testRetrieveFromEmptyStorage)
@@ -60,6 +61,28 @@ func testStoreRetrieveMFASecret(t *testing.T, storage MfaSecretStorage) {
 
 	require.Len(t, secrets, 1)
 	require.Equal(t, secretSample.Secret, secrets[0].Secret)
+}
+
+func testStoreDuplicateMFASecret(t *testing.T, storage MfaSecretStorage) {
+	var secretSampleDiffName = MFASecret{
+		Issuer:      "yivi-dupe",
+		Secret:      "JBSWY3DPEHPK3PXP",
+		Period:      30,
+		UserAccount: "test@test.com",
+		Algorithm:   "SHA1",
+	}
+
+	err := storage.StoreMFASecret(secretSample)
+	require.NoError(t, err)
+
+	err = storage.StoreMFASecret(secretSampleDiffName)
+	require.NoError(t, err)
+
+	secrets, err := storage.GetAllSecrets()
+	require.NoError(t, err)
+
+	require.Len(t, secrets, 1)
+	require.Equal(t, secretSampleDiffName.Issuer, secrets[0].Issuer)
 }
 
 func testStoreRetrieveMultipleMFASecret(t *testing.T, storage MfaSecretStorage) {

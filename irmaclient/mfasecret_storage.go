@@ -27,6 +27,7 @@ type BboltMFASecretStorage struct {
 }
 
 type MfaSecretStorage interface {
+	// StoreMFASecret stores the given MFA secret. If a secret with the same Secret field already exists, it is updated.
 	StoreMFASecret(secret MFASecret) error
 
 	GetAllSecrets() ([]MFASecret, error)
@@ -37,6 +38,30 @@ type MfaSecretStorage interface {
 func (s *BboltMFASecretStorage) StoreMFASecret(secret MFASecret) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte(mfaSecretBucketName))
+		if err != nil {
+			return err
+		}
+
+		foundDuplicate := false
+		err = b.ForEach(func(k, v []byte) error {
+			existingSecret, err := unmarshalAndDecryptSecret(v, s.aesKey)
+			if err != nil {
+				return err
+			}
+			if existingSecret.Secret == secret.Secret {
+				encryptedSecret, err := marshalAndEncryptSecret(secret, s.aesKey)
+				if err != nil {
+					return err
+				}
+				b.Put(k, encryptedSecret)
+				foundDuplicate = true
+				return nil
+			}
+			return nil
+		})
+		if foundDuplicate {
+			return nil
+		}
 
 		encryptedSecret, err := marshalAndEncryptSecret(secret, s.aesKey)
 		if err != nil {
