@@ -95,8 +95,13 @@ func testStoreRetrieveMultipleMFASecret(t *testing.T, storage MfaSecretStorage) 
 	require.NoError(t, err)
 
 	require.Len(t, secrets, 2)
-	require.Equal(t, secrets[0].Secret, secrets[0].Secret)
-	require.Equal(t, secrets[1].Secret, secrets[1].Secret)
+	// verify both secrets present regardless of order
+	found := map[string]bool{}
+	for _, s := range secrets {
+		found[s.Secret] = true
+	}
+	require.True(t, found[secretsSample[0].Secret])
+	require.True(t, found[secretsSample[1].Secret])
 }
 
 func testRemoveSecretBySecretFromMultiple(t *testing.T, storage MfaSecretStorage) {
