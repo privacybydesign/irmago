@@ -59,6 +59,9 @@ func (s *BboltMFASecretStorage) StoreMFASecret(secret MFASecret) error {
 			}
 			return nil
 		})
+		if err != nil {
+			return err
+		}
 		if foundDuplicate {
 			return nil
 		}
