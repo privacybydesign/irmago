@@ -9,6 +9,22 @@ import (
 	"fmt"
 )
 
+func ObtainIssuerUrlFromCertChain(certChain []*x509.Certificate) (string, error) {
+	if len(certChain) == 0 {
+		return "", fmt.Errorf("no certificate to get host name from")
+	}
+	leaf := certChain[0]
+	if len(leaf.URIs) == 0 {
+		return "", fmt.Errorf("no URIs in certificate")
+	}
+	for _, uri := range leaf.URIs {
+		if uri != nil {
+			return uri.String(), nil
+		}
+	}
+	return "", fmt.Errorf("all URIs are nil")
+}
+
 // ParsePemCertificateChain takes in the raw contents of a PEM formatted certificate
 // file and returns the contents as a list of x509 certificates.
 func ParsePemCertificateChain(data []byte) ([]*x509.Certificate, error) {
@@ -35,15 +51,7 @@ func ParsePemCertificateChain(data []byte) ([]*x509.Certificate, error) {
 	return certs, nil
 }
 
-// ParsePemCertificateChainToX5cFormat takes in the raw contents of a PEM formatted certificate
-// file and returns the contents of the chain in the format expected
-// as the `x5c` header parameter of a jwt.
-func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
-	certs, err := ParsePemCertificateChain(data)
-	if err != nil {
-		return nil, err
-	}
-
+func ConvertPemCertificateChainToX5cFormat(certs []*x509.Certificate) ([]string, error) {
 	x5c := []string{}
 
 	for _, cert := range certs {
@@ -52,6 +60,18 @@ func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
 	}
 
 	return x5c, nil
+
+}
+
+// ParsePemCertificateChainToX5cFormat takes in the raw contents of a PEM formatted certificate
+// file and returns the contents of the chain in the format expected
+// as the `x5c` header parameter of a jwt.
+func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
+	certs, err := ParsePemCertificateChain(data)
+	if err != nil {
+		return nil, err
+	}
+	return ConvertPemCertificateChainToX5cFormat(certs)
 }
 
 // CreateX509VerifyOptionsFromCertChain creates x509.VerifyOptions that can be added
@@ -118,4 +138,16 @@ func VerifyCertificateUri(cert *x509.Certificate, uri string) error {
 	}
 
 	return fmt.Errorf("URI %q is not in the SANs of the certificate", uri)
+}
+
+// VerifyRevocationListsSignatures verifies the signatures of the revocation lists for a given parent certificate.
+// In case of a revocation list for the root certificate, this will verify for the root certificate itself.
+func VerifyRevocationListsSignatures(parentCert *x509.Certificate, revocationLists []*x509.RevocationList) error {
+	parentRevocationLists := GetRevocationListsForIssuer(parentCert.SubjectKeyId, parentCert.Subject, revocationLists)
+	for _, crl := range parentRevocationLists {
+		if err := crl.CheckSignatureFrom(parentCert); err != nil {
+			return err
+		}
+	}
+	return nil
 }

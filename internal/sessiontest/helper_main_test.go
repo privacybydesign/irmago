@@ -80,9 +80,8 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 		VerificationContext: eudi_jwt.VerificationContext{
 			X509VerificationOptionsTemplate: *x509Options,
 		},
-		Clock:               sdjwtvc.NewSystemClock(),
-		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
-		AllowNonHttpsIssuer: false,
+		Clock:       sdjwtvc.NewSystemClock(),
+		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),
 	}
 	client, err := irmaclient.NewIrmaClient(
 		conf,

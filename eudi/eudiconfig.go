@@ -84,6 +84,18 @@ func (conf *Configuration) Reload() error {
 	return err
 }
 
+func (conf *Configuration) ResolveVerifierLogoPath(filename string) (string, error) {
+	path := filepath.Join(conf.Verifiers.GetLogosPath(), filename)
+	exists, err := common.PathExists(path)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return "", fmt.Errorf("verifier logo %v not found", filename)
+	}
+	return path, nil
+}
+
 func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullFilename string, path string, err error) {
 	if logo == nil || logo.Data == nil || len(logo.Data) == 0 {
 		return "", "", fmt.Errorf("invalid logo")

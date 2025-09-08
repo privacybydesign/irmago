@@ -119,7 +119,7 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
-		if err := v.verificationContext.VerifyCertificate(parsedCert, &hostname, nil); err != nil {
+		if err := v.verificationContext.VerifyCertificate(parsedCert, &hostname); err != nil {
 			return nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
 		}
 

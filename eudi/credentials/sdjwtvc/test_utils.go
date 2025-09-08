@@ -100,7 +100,7 @@ func readHolderPublicJwk() (CnfField, error) {
 
 // =======================================================================
 
-func CreateTestVerificationContext(allowNonHttpsIssuer bool) SdJwtVcVerificationContext {
+func CreateTestVerificationContext() SdJwtVcVerificationContext {
 	irmaAppCertChain, err := utils.ParsePemCertificateChain(testdata.IssuerCertChain_irma_app_Bytes)
 	if err != nil {
 		log.Fatalf("failed to parse issuer cert chain: %v", err)
@@ -120,9 +120,8 @@ func CreateTestVerificationContext(allowNonHttpsIssuer bool) SdJwtVcVerification
 				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 			},
 		},
-		Clock:               &testClock{},
-		AllowNonHttpsIssuer: allowNonHttpsIssuer,
-		JwtVerifier:         NewJwxJwtVerifier(),
+		Clock:       &testClock{},
+		JwtVerifier: NewJwxJwtVerifier(),
 	}
 }
 
@@ -188,16 +187,6 @@ func newWorkingVerifyOptions(trustedChains ...[]byte) x509.VerifyOptions {
 		Roots:         roots,
 		Intermediates: im,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-	}
-}
-
-func newWorkingSdJwtVcVerificationContext(trustedChains ...[]byte) SdJwtVcVerificationContext {
-	return SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: newWorkingVerifyOptions(trustedChains...),
-		},
-		Clock:       NewSystemClock(),
-		JwtVerifier: NewJwxJwtVerifier(),
 	}
 }
 

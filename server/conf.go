@@ -8,6 +8,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -141,24 +143,26 @@ type RedisSettings struct {
 	DisableTLS               bool   `json:"no_tls,omitempty" mapstructure:"no_tls"`
 }
 
+type SdJwtIssuer struct {
+	CertChainX509 []*x509.Certificate
+	CertChainX5c  []string
+	IssuerUrl     string
+	PrivKey       *ecdsa.PrivateKey
+}
+
 type SdJwtIssuanceSettings struct {
-	// The issuer url that ends up in the `iss` field of the sd-jwt vc
-	Issuer string `json:"issuer,omitempty" mapstructure:"issuer"`
-	// The private key that signs the sd-jwt vc (inline)
-	JwtPrivateKey string `json:"privkey,omitempty" mapstructure:"privkey"`
-	// The private key that signs the sd-jwt vc (file path)
-	JwtPrivateKeyFile string `json:"privkey_file,omitempty" mapstructure:"privkey_file"`
-	// The x.509 certificate chain that proves the issuer's trust relation (inline, PEM format)
-	IssuerCertificateChain string `json:"cert_chain,omitempty" mapstructure:"cert_chain"`
-	// The x.509 certificate chain that proves the issuer's trust relation (file path, PEM file)
-	IssuerCertificateChainFile string `json:"cert_chain_file,omitempty" mapstructure:"cert_chain_file"`
+	// Path to a directory of issuer certificates. Each issuer should have their own certificate file.
+	// They should be named `<issuer_id>.pem` (e.g. `pbdf.sidn-pbdf.pem`)
+	SdJwtIssuerCertificatesPath string `json:"sdjwtvc_issuer_certificates_path"`
+
+	// Path to a directory of issuer ECDSA private keys. Each issuer should have their own private key file.
+	// They should be named `<issuer_id>.pem` (e.g. `pbdf.sidn-pbdf.pem`)
+	SdJwtIssuerPrivKeysPath string `json:"sdjwtvc_issuer_priv_keys_path"`
 
 	Enabled bool `json:"-"`
-	// Parsed JWT private key
-	JwtEcdsaPrivateKey *ecdsa.PrivateKey `json:"-"`
-	// x.509 certificate chain in the format the `x5c` header field of the sd-jwt vc expects
-	// Note: the public key from the leaf certificate should be the public part of the configured JwtPrivateKey (or JwtPrivateKeyFile).
-	X509CertChain []string `json:"-"`
+
+	// Map of issuer ID to everything required to issue an SD-JWT VC
+	Issuers map[irma.IssuerIdentifier]*SdJwtIssuer `json:"-"`
 }
 
 // Check ensures that the Configuration is loaded, usable and free of errors.
@@ -577,6 +581,58 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
+func readSdJwtIssuerPivKeys(dir string) (map[irma.IssuerIdentifier]*ecdsa.PrivateKey, error) {
+	result := map[irma.IssuerIdentifier]*ecdsa.PrivateKey{}
+
+	matches, err := filepath.Glob(filepath.Join(dir, "*.pem"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dir '%v': %v", dir, err)
+	}
+
+	for _, match := range matches {
+		issuerId := irma.NewIssuerIdentifier(strings.TrimSuffix(filepath.Base(match), ".pem"))
+
+		bytes, err := os.ReadFile(match)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read ecdsa private key from '%v': %v", match, err)
+		}
+		privKey, err := sdjwtvc.DecodeEcdsaPrivateKey(bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode ecdsa private key from '%v': %v", match, err)
+		}
+
+		result[issuerId] = privKey
+	}
+
+	return result, nil
+}
+
+func readSdJwtIssuerCertChains(dir string) (map[irma.IssuerIdentifier][]*x509.Certificate, error) {
+	result := map[irma.IssuerIdentifier][]*x509.Certificate{}
+
+	matches, err := filepath.Glob(filepath.Join(dir, "*.pem"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dir '%v': %v", dir, err)
+	}
+
+	for _, match := range matches {
+		issuerId := irma.NewIssuerIdentifier(strings.TrimSuffix(filepath.Base(match), ".pem"))
+
+		bytes, err := os.ReadFile(match)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read certificate at %v: %v", match, err)
+		}
+		certChain, err := utils.ParsePemCertificateChain(bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
+		}
+
+		result[issuerId] = certChain
+	}
+
+	return result, nil
+}
+
 func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 	sdConf := conf.SdJwtIssuanceSettings
 
@@ -587,34 +643,66 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		return nil
 	}
 
-	privKeyBytes, err := common.ReadKey(sdConf.JwtPrivateKey, sdConf.JwtPrivateKeyFile)
+	privKeys, err := readSdJwtIssuerPivKeys(conf.SdJwtIssuanceSettings.SdJwtIssuerPrivKeysPath)
+
 	if err != nil {
-		return fmt.Errorf("failed to read private key from file: %v", err)
+		conf.Logger.Warnf("failed to read sdjwt issuer private keys: %v", err)
+		return nil
 	}
 
-	sdConf.JwtEcdsaPrivateKey, err = sdjwtvc.DecodeEcdsaPrivateKey(privKeyBytes)
+	if len(privKeys) == 0 {
+		conf.Logger.Warnf("sdjwt private keys directory doesn't contain private keys")
+	}
+
+	certChains, err := readSdJwtIssuerCertChains(conf.SdJwtIssuanceSettings.SdJwtIssuerCertificatesPath)
+
 	if err != nil {
-		return errors.WrapPrefix(err, "failed to parse SD-JWT VC private key", 0)
+		conf.Logger.Warnf("failed to read sdjwt issuer certificate chains: %v", err)
+		return nil
 	}
 
-	certBytes, err := common.ReadKey(sdConf.IssuerCertificateChain, sdConf.IssuerCertificateChainFile)
-	if err != nil {
-		return fmt.Errorf("failed to obtain SD-JWT VC issuer certificate chain: %v", err)
+	if len(certChains) == 0 {
+		conf.Logger.Warnf("sdjwt certificate chains directory doesn't contain certificates")
 	}
 
-	certChain, err := utils.ParsePemCertificateChainToX5cFormat(certBytes)
-	if err != nil {
-		return fmt.Errorf("failed to parse x.509 certificate chain: %v", err)
-	}
-	if len(certChain) == 0 {
-		return fmt.Errorf("SD-JWT VC x.509 issuer certificate chain is empty")
-	}
-
-	if sdConf.Issuer == "" {
-		return errors.New("SD-JWT VC issuance enabled, but no issuer specified in configuration")
+	if len(privKeys) != len(certChains) {
+		conf.Logger.Warnf(
+			"the number of sdjwtvc cert chains (%v) and private keys (%v) don't match",
+			len(certChains),
+			len(privKeys),
+		)
 	}
 
-	sdConf.X509CertChain = certChain
+	sdConf.Issuers = map[irma.IssuerIdentifier]*SdJwtIssuer{}
+	for issuerId, privKey := range privKeys {
+		conf.Logger.Infof("loading sdjwt issuer settings for %v", issuerId.String())
+		certChain, ok := certChains[issuerId]
+		if !ok {
+			conf.Logger.Warnf("expected cert chain for %v, but it's not present", issuerId)
+			continue
+		}
+
+		x5cChain, err := utils.ConvertPemCertificateChainToX5cFormat(certChain)
+		if err != nil {
+			conf.Logger.Warnf("failed to convert cert chain for %v to x5c format: %v", issuerId, err)
+			continue
+		}
+
+		issuerUrl, err := utils.ObtainIssuerUrlFromCertChain(certChain)
+		if err != nil {
+			conf.Logger.Warnf("failed to obtain issuer url from cert chain for %v: %v", issuerId, err)
+			continue
+		}
+
+		conf.Logger.Infof("using issuer url ('iss' in sdjwtvc) '%s' for '%s'", issuerUrl, issuerId.String())
+
+		sdConf.Issuers[issuerId] = &SdJwtIssuer{
+			CertChainX509: certChain,
+			CertChainX5c:  x5cChain,
+			IssuerUrl:     issuerUrl,
+			PrivKey:       privKey,
+		}
+	}
 
 	conf.Logger.Info("SD-JWT VC settings correctly configured; SD-JWT VC issuance enabled")
 	sdConf.Enabled = true

@@ -33,21 +33,12 @@ func (context VerificationContext) GetX509VerificationOptionsFromTemplate(hostna
 	}
 }
 
-func (context VerificationContext) VerifyCertificate(cert *x509.Certificate, hostname *string, uri *string) error {
-	if hostname == nil && uri == nil {
-		return fmt.Errorf("either hostname or uri must be provided to verify the certificate")
-	}
-
+func (context VerificationContext) VerifyCertificate(cert *x509.Certificate, hostname *string) error {
 	// Verify the end-entity cert against the trusted chains
 	var verifyOpts x509.VerifyOptions
 	if hostname != nil {
 		verifyOpts = context.GetX509VerificationOptionsFromTemplate(*hostname)
 	} else {
-		// x509.DNSName does not verify SAN URIs, so we do that manually
-		if err := utils.VerifyCertificateUri(cert, *uri); err != nil {
-			return err
-		}
-
 		// If URI successfully verifies, continue with the rest of the validations
 		verifyOpts = context.X509VerificationOptionsTemplate
 	}

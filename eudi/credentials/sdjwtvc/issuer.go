@@ -13,7 +13,6 @@ type SdJwtVcBuilder struct {
 	expiry                 *int64
 	issuedAt               *int64
 	issuerUrl              *string
-	allowNonHttps          bool
 	cnfPubKey              *CnfField
 	status                 *string
 	subject                *string
@@ -29,11 +28,6 @@ func NewSdJwtVcBuilder() *SdJwtVcBuilder {
 
 func (b *SdJwtVcBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtVcBuilder {
 	b.issuerCertificateChain = &certChain
-	return b
-}
-
-func (b *SdJwtVcBuilder) WithAllowNonHttpsIssuerUrl(allowNonHttps bool) *SdJwtVcBuilder {
-	b.allowNonHttps = allowNonHttps
 	return b
 }
 
@@ -93,7 +87,7 @@ func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	payload := map[string]any{}
 
 	if b.issuerUrl != nil {
-		if !strings.HasPrefix(*b.issuerUrl, "https://") && !b.allowNonHttps {
+		if !strings.HasPrefix(*b.issuerUrl, "https://") {
 			return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", *b.issuerUrl)
 		}
 		payload[Key_Issuer] = *b.issuerUrl
