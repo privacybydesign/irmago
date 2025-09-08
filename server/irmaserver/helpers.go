@@ -568,9 +568,15 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 
 		recorder := server.NewHTTPResponseRecorder(w)
 		if err := s.sessions.clientTransaction(r.Context(), token, func(session *sessionData) (bool, error) {
+			requestHost := r.Host
+			if r.Header.Get("X-Forwarded-Host") != "" {
+				requestHost = r.Header.Get("X-Forwarded-Host")
+			}
+
 			expectedHost := session.Rrequest.SessionRequest().Base().Host
-			if expectedHost != "" && expectedHost != r.Host {
+			if expectedHost != "" && expectedHost != requestHost {
 				server.WriteError(recorder, server.ErrorUnauthorized, "Host mismatch")
+				s.conf.Logger.Errorf("Host mismatch, request host (%s) does not match expected host (%s)", requestHost, expectedHost)
 				return false, nil
 			}
 
