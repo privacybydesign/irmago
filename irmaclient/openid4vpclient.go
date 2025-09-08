@@ -109,7 +109,7 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 		}
 
 		// Store the verifier logo in the cache
-		filename, path, err := client.eudiConf.CacheVerifierLogo(endEntityCert.Subject.SerialNumber, &requestorSchemeData.Organization.Logo)
+		filename, path, err := client.eudiConf.CacheVerifierLogo(endEntityCert.SerialNumber.String(), &requestorSchemeData.Organization.Logo)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
 			return
