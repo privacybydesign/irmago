@@ -1378,3 +1378,44 @@ func signSessionRequest(t *testing.T, req irma.SessionRequest) string {
 	require.NoError(t, err)
 	return j
 }
+
+func TestRequestorHostPermissionsWithForwardedHostHeader(t *testing.T) {
+	client, handler := parseStorage(t)
+	defer test.ClearTestStorage(t, client, handler.storage)
+	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
+	defer rs.Stop()
+
+	// Check that a requestor can use a host that is allowed.
+	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	request := getDisclosureRequest(id)
+	sesPkg := &server.SessionPackage{}
+
+	// Start a new session using the allowed host.
+	request.Base().Host = "localhost:48682"
+	err := irma.NewHTTPTransport(requestorServerURL, false).Post("session", sesPkg, signSessionRequest(t, request))
+	require.NoError(t, err)
+
+	// Check that a client can't use another host than the requestor wanted.
+	sesPkg.SessionPtr.URL = strings.Replace(sesPkg.SessionPtr.URL, "localhost", "127.0.0.1", 1)
+	sessionHandler, resultChan := createSessionHandler(t, optionIgnoreError, client, sesPkg, nil, nil)
+	startSessionAtClient(t, sesPkg, client, sessionHandler)
+	result := <-resultChan
+	require.Error(t, result.Err)
+	require.Contains(t, result.Err.Error(), "Host mismatch")
+
+	// Check that a client can use the requested host using the X-Forwared-Host header.
+	sesPkg.SessionPtr.URL = strings.Replace(sesPkg.SessionPtr.URL, "localhost", "127.0.0.1", 1)
+	sessionHandler, resultChan = createSessionHandler(t, 0, client, sesPkg, nil, nil)
+
+	// Logic of startSessionAtClient but with custom forwarded host header
+	jsonData, jsonErr := json.Marshal(sesPkg.SessionPtr)
+	require.NoError(t, jsonErr)
+	dismisser := client.NewSession(string(jsonData), sessionHandler)
+	clientTransport := extractClientTransport(dismisser)
+	clientTransport.SetHeader("X-Forwarded-Host", "localhost:48682")
+	sessionHandler.SetClientTransport(clientTransport)
+
+	// TODO: Fix is needed, test is failing on expectedServerName checks
+	result = <-resultChan
+	require.Nil(t, result)
+}
