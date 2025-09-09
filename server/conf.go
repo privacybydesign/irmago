@@ -106,7 +106,7 @@ type Configuration struct {
 	// Production mode: enables safer and stricter defaults and config checking
 	Production bool `json:"production" mapstructure:"production"`
 
-	SdJwtIssuanceSettings *SdJwtIssuanceSettings `json:"sdjwtvc,omitempty" mapstructure:"sdjwtvc"`
+	SdJwtIssuanceSettings *SdJwtIssuanceSettings `json:"sdjwtvc,omitempty" mapstructure:"sdjwtvc,omitempty"`
 }
 
 type RedisClient struct {
@@ -153,11 +153,11 @@ type SdJwtIssuer struct {
 type SdJwtIssuanceSettings struct {
 	// Path to a directory of issuer certificates. Each issuer should have their own certificate file.
 	// They should be named `<issuer_id>.pem` (e.g. `pbdf.sidn-pbdf.pem`)
-	SdJwtIssuerCertificatesPath string `json:"sdjwtvc_issuer_certificates_path"`
+	SdJwtIssuerCertificatesDir string `json:"issuer_certificates_dir" mapstructure:"issuer_certificates_dir"`
 
 	// Path to a directory of issuer ECDSA private keys. Each issuer should have their own private key file.
 	// They should be named `<issuer_id>.pem` (e.g. `pbdf.sidn-pbdf.pem`)
-	SdJwtIssuerPrivKeysPath string `json:"sdjwtvc_issuer_priv_keys_path"`
+	SdJwtIssuerPrivKeysDir string `json:"issuer_private_keys_dir" mapstructure:"issuer_private_keys_dir"`
 
 	Enabled bool `json:"-"`
 
@@ -642,8 +642,15 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		}
 		return nil
 	}
+	if sdConf.SdJwtIssuerPrivKeysDir == "" {
+		return errors.New("sdjwtvc issuance was enabled but no sdjwtvc private keys directory was provided")
+	}
+	if sdConf.SdJwtIssuerCertificatesDir == "" {
+		return errors.New("sdjwtvc issuance was enabled but no sdjwtvc certificates directory was provided")
+	}
 
-	privKeys, err := readSdJwtIssuerPivKeys(conf.SdJwtIssuanceSettings.SdJwtIssuerPrivKeysPath)
+	privKeysDir := conf.SdJwtIssuanceSettings.SdJwtIssuerPrivKeysDir
+	privKeys, err := readSdJwtIssuerPivKeys(privKeysDir)
 
 	if err != nil {
 		conf.Logger.Warnf("failed to read sdjwt issuer private keys: %v", err)
@@ -651,10 +658,11 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 	}
 
 	if len(privKeys) == 0 {
-		conf.Logger.Warnf("sdjwt private keys directory doesn't contain private keys")
+		conf.Logger.Warnf("sdjwt private keys directory ('%v') does not contain any private keys", privKeysDir)
 	}
 
-	certChains, err := readSdJwtIssuerCertChains(conf.SdJwtIssuanceSettings.SdJwtIssuerCertificatesPath)
+	certsDir := conf.SdJwtIssuanceSettings.SdJwtIssuerCertificatesDir
+	certChains, err := readSdJwtIssuerCertChains(certsDir)
 
 	if err != nil {
 		conf.Logger.Warnf("failed to read sdjwt issuer certificate chains: %v", err)
@@ -662,7 +670,7 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 	}
 
 	if len(certChains) == 0 {
-		conf.Logger.Warnf("sdjwt certificate chains directory doesn't contain certificates")
+		conf.Logger.Warnf("sdjwt certificate chains directory ('%v') does not contain any certificates", certsDir)
 	}
 
 	if len(privKeys) != len(certChains) {
@@ -704,7 +712,7 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 		}
 	}
 
-	conf.Logger.Info("SD-JWT VC settings correctly configured; SD-JWT VC issuance enabled")
+	conf.Logger.Info("SD-JWT VC issuance enabled")
 	sdConf.Enabled = true
 
 	return nil

@@ -43,16 +43,16 @@ func configureEmail() keyshare.EmailConfiguration {
 }
 
 func getSdJwtIssuanceConfigFromCli() *server.SdJwtIssuanceSettings {
-	certChainsPath := viper.GetString("sdjwtvc_issuer_certificates_path")
-	privKeysPath := viper.GetString("sdjwtvc_issuer_priv_keys_path")
+	certChainsDir := viper.GetString("sdjwtvc_issuer_certificates_dir")
+	privKeysDir := viper.GetString("sdjwtvc_issuer_private_keys_dir")
 
-	if certChainsPath == "" && privKeysPath == "" {
+	if certChainsDir == "" && privKeysDir == "" {
 		return nil
 	}
 
 	return &server.SdJwtIssuanceSettings{
-		SdJwtIssuerCertificatesPath: certChainsPath,
-		SdJwtIssuerPrivKeysPath:     privKeysPath,
+		SdJwtIssuerCertificatesDir: certChainsDir,
+		SdJwtIssuerPrivKeysDir:     privKeysDir,
 	}
 }
 
@@ -204,6 +204,15 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	} else {
 		logger.Info("Config file: ", viper.ConfigFileUsed())
 	}
+}
+
+func wasProvidedInAnyWay(key string) bool {
+	if val, flagOrEnv := viper.Get(key).(string); !flagOrEnv || val != "" {
+		if _, err := cast.ToStringMapE(viper.Get(key)); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func handleMapOrString(key string, dest interface{}) error {
