@@ -41,8 +41,8 @@ var (
 
 	jwtPrivkeyPath = filepath.Join(testdataFolder, "jwtkeys", "sk.pem")
 
-	sdJwtIssuerPrivKeysPath = filepath.Join(testdataFolder, "eudi", "irma_server_config", "sdjwt_priv_keys")
-	sdJwtIssuerCertsPath    = filepath.Join(testdataFolder, "eudi", "irma_server_config", "sdjwt_certs")
+	sdJwtIssuerPrivKeysDir = filepath.Join(testdataFolder, "eudi", "irma_server_config", "sdjwt_priv_keys")
+	sdJwtIssuerCertsDir    = filepath.Join(testdataFolder, "eudi", "irma_server_config", "sdjwt_certs")
 )
 
 const (
@@ -345,8 +345,8 @@ func RequestorServerConfiguration() *requestorserver.Configuration {
 	irmaServerConf.URL = requestorServerURL + "/irma"
 	irmaServerConf.DisableTLS = true
 	irmaServerConf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
-		SdJwtIssuerCertificatesPath: sdJwtIssuerCertsPath,
-		SdJwtIssuerPrivKeysPath:     sdJwtIssuerPrivKeysPath,
+		SdJwtIssuerCertificatesDir: sdJwtIssuerCertsDir,
+		SdJwtIssuerPrivKeysDir:     sdJwtIssuerPrivKeysDir,
 	}
 	return &requestorserver.Configuration{
 		Configuration:                  irmaServerConf,

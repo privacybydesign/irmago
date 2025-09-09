@@ -1360,7 +1360,7 @@ func (scheme *RequestorScheme) setPath(path string) {
 	// Rebase all logo paths
 	for _, requestor := range scheme.requestors {
 		requestor.LogoPath = nil
-		logoPath := requestor.logoPath(scheme)
+		logoPath := requestor.ResolveLogoPath(scheme)
 		if logoPath != "" {
 			requestor.LogoPath = &logoPath
 		}
@@ -1369,7 +1369,7 @@ func (scheme *RequestorScheme) setPath(path string) {
 
 func (scheme *RequestorScheme) parseContents(conf *Configuration) error {
 	for _, requestor := range scheme.requestors {
-		if logoPath := requestor.logoPath(scheme); logoPath != "" {
+		if logoPath := requestor.ResolveLogoPath(scheme); logoPath != "" {
 			requestor.LogoPath = &logoPath
 		}
 		for _, hostname := range requestor.Hostnames {

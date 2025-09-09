@@ -333,7 +333,21 @@ func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]LogInfo, er
 }
 
 func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
+	// NOTE: iOS builds change the container ID of the app, meaning that after every compilation/app update the location
+	// of all app data changes. Logs store an absolute path to requestor logo's, which becomes invalid when the data is moved,
+	// resulting in the logo's not being found for existing logs when an iOS app is updated.
+	// Solving this issue correctly would require a deep refactor of many components and would likely introduce some very obscure bugs.
+	// This hacky solution works around the issue by assuming the image path to be invalid and resolving it based on other information:
+	//  - For OpenID4VP sessions the logo path is resolved based on the image name
+	//  - For IRMA sessions the logo path is resolved based on the requestor ID and using the requestor schemes
 	if entry.OpenID4VP != nil {
+		requestor := entry.ServerName
+		if requestor != nil && requestor.Logo != nil {
+			path, err := client.openid4vpClient.eudiConf.ResolveVerifierLogoPath(*entry.ServerName.Logo)
+			if err == nil {
+				requestor.LogoPath = &path
+			}
+		}
 		return LogInfo{
 			ID:   entry.ID,
 			Type: LogType_Disclosure,
@@ -341,9 +355,19 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 			DisclosureLog: &DisclosureLog{
 				Protocol:    Protocol_OpenID4VP,
 				Credentials: entry.OpenID4VP.DisclosedCredentials,
-				Verifier:    entry.ServerName,
+				Verifier:    requestor,
 			},
 		}, nil
+	}
+
+	// resolve the image for an irma session
+	requestor := entry.ServerName
+	if requestor != nil && requestor.Logo != nil {
+		requestorScheme, ok := client.GetIrmaConfiguration().RequestorSchemes[requestor.ID.RequestorSchemeIdentifier()]
+		if ok && requestorScheme != nil {
+			path := requestor.ResolveLogoPath(requestorScheme)
+			requestor.LogoPath = &path
+		}
 	}
 
 	switch entry.Type {
@@ -359,7 +383,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 		disclosureLog := &DisclosureLog{
 			Protocol:    Protocol_Irma,
 			Credentials: credLog,
-			Verifier:    entry.ServerName,
+			Verifier:    requestor,
 		}
 
 		if entry.Type == irma.ActionSigning {
@@ -404,7 +428,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *LogEntry) (LogInfo, error) {
 				Protocol:             Protocol_Irma,
 				Credentials:          issuedLog,
 				DisclosedCredentials: credLog,
-				Issuer:               entry.ServerName,
+				Issuer:               requestor,
 			},
 		}, nil
 	case ActionRemoval:
