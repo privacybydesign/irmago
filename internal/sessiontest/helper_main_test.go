@@ -73,7 +73,6 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 
 	x509Options, err := utils.CreateX509VerifyOptionsFromCertChain(
 		testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
-		// TODO: need cert chains from /eudi/irma_server_config/sdjwt_certs here
 	)
 	require.NoError(t, err)
 

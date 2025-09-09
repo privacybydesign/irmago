@@ -128,7 +128,7 @@ type QueryValidator interface {
 	ValidateQuery(query *DcqlQuery) error
 }
 
-func (c CredentialQuery) AllPaths() iter.Seq[string] {
+func (c CredentialQuery) AllClaimPaths() iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for _, claim := range c.Claims {
 			for _, path := range claim.Path {

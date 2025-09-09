@@ -85,7 +85,7 @@ func (ap AttestationProvider) VerifySdJwtIssuance(vct string, disclosureKeys []s
 }
 
 func isQueryAuthorized(query dcql.CredentialQuery, authorizedAttributeSets []AuthorizedAttributeSet) error {
-	allPaths := slices.Collect(query.AllPaths())
+	allPaths := slices.Collect(query.AllClaimPaths())
 	for _, vctValue := range query.Meta.VctValues {
 		err := isCredentialAuthorized(vctValue, allPaths, authorizedAttributeSets)
 		if err != nil {

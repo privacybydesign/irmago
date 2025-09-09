@@ -64,7 +64,7 @@ func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) 
 		return VerifiedSdJwtVc{}, err
 	}
 
-	issuerSignedJwtPayload, decodedDisclosures, err := parseAndVerifyIssuerSignedJwt(context, issuerSignedJwt, disclosures)
+	issuerSignedJwtPayload, decodedDisclosures, err := parseAndVerifyIssuerSignedJwtAndDisclosures(context, issuerSignedJwt, disclosures)
 
 	if err != nil {
 		return VerifiedSdJwtVc{}, err
@@ -304,7 +304,7 @@ func parseConfirmField(value any) (CnfField, error) {
 	return CnfField{Jwk: key}, nil
 }
 
-func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (IssuerSignedJwtPayload, []DisclosureContent, error) {
+func parseAndVerifyIssuerSignedJwtAndDisclosures(context SdJwtVcVerificationContext, signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (IssuerSignedJwtPayload, []DisclosureContent, error) {
 	token, cert, err := decodeJwt([]byte(signedJwt), context)
 	if err != nil {
 		return IssuerSignedJwtPayload{}, nil, err
