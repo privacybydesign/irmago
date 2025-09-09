@@ -798,8 +798,8 @@ func irmaServerConfWithSdJwtEnabled(t *testing.T) *server.Configuration {
 
 	conf := IrmaServerConfigurationWithTempStorage(t)
 	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
-		SdJwtIssuerPrivKeysPath:     privKeyDir,
-		SdJwtIssuerCertificatesPath: certDir,
+		SdJwtIssuerPrivKeysDir:     privKeyDir,
+		SdJwtIssuerCertificatesDir: certDir,
 	}
 	return conf
 }
