@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"slices"
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -195,7 +196,7 @@ func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, er
 		if err != nil {
 			return "", fmt.Errorf("failed to decode disclosure: %v", err)
 		}
-		if Contains(disclosureNames, decoded.Key) {
+		if slices.Contains(disclosureNames, decoded.Key) {
 			disclosuresToKeep = append(disclosuresToKeep, disclosure)
 		}
 	}
