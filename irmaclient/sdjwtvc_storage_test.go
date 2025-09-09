@@ -60,25 +60,25 @@ func TestSdJwtVcStorage(t *testing.T) {
 
 func testStoringSameAttributesReplacesInstances(t *testing.T, storage SdJwtVcStorage) {
 	instanceCount := 10
-	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, uint(instanceCount))
 
 	require.NoError(t, storage.StoreCredential(info, sdjwts))
 
-	creds := storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+	creds := storage.GetCredentialsForId("test.test.email")
 
 	require.Len(t, creds, 1)
 	require.Equal(t, 10, int(creds[0].Metadata.BatchSize))
 	require.Equal(t, 10, int(creds[0].Metadata.RemainingInstanceCount))
 
-	info, sdjwts = createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+	info, sdjwts = createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, uint(instanceCount))
 
 	require.NoError(t, storage.StoreCredential(info, sdjwts))
 
-	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+	creds = storage.GetCredentialsForId("test.test.email")
 
 	require.Len(t, creds, 1)
 	require.Equal(t, 10, int(creds[0].Metadata.BatchSize))
@@ -86,13 +86,13 @@ func testStoringSameAttributesReplacesInstances(t *testing.T, storage SdJwtVcSto
 }
 
 func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {
-	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, 2)
 
 	require.NoError(t, storage.StoreCredential(info, sdjwts))
 
-	creds := storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+	creds := storage.GetCredentialsForId("test.test.email")
 
 	require.Len(t, creds, 1)
 	require.Equal(t, 2, int(creds[0].Metadata.BatchSize))
@@ -100,7 +100,7 @@ func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {
 
 	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
 
-	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+	creds = storage.GetCredentialsForId("test.test.email")
 
 	require.Len(t, creds, 1)
 	require.Equal(t, 2, int(creds[0].Metadata.BatchSize))
@@ -108,13 +108,13 @@ func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {
 
 	require.NoError(t, storage.RemoveLastUsedInstanceOfCredentialByHash(creds[0].Metadata.Hash))
 
-	creds = storage.GetCredentialsForId("pbdf.sidn-pbdf.email")
+	creds = storage.GetCredentialsForId("test.test.email")
 	require.Equal(t, 2, int(creds[0].Metadata.BatchSize))
 	require.Equal(t, 0, int(creds[0].Metadata.RemainingInstanceCount))
 }
 
 func testRemovingInstanceReturnsCorrectHolderKeys(t *testing.T, storage SdJwtVcStorage) {
-	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.sidn-pbdf.email", "https://openid4vc.staging.yivi.app", map[string]string{
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, 10)
 	storage.StoreCredential(info, sdjwts)
@@ -141,11 +141,11 @@ func testGetCredentialInfoListFromEmptyStorage(t *testing.T, storage SdJwtVcStor
 // Adding sets of sdjwts with the same attributes should add the sdjwts to the list of existing sdjwt instances.
 // The result should not affect the info list
 func testAddingMultipleInstancesWithSameAttributeSets(t *testing.T, storage SdJwtVcStorage) {
-	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email": "test@gmail.com",
 	}, 5)
 
-	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email": "test@gmail.com",
 	}, 5)
 
@@ -164,11 +164,11 @@ func testAddingMultipleInstancesWithSameAttributeSets(t *testing.T, storage SdJw
 
 // adding sets of sdjwts with differing attribute sets should result in multiple credential infos in the info list
 func testAddingMultipleAttributePairs(t *testing.T, storage SdJwtVcStorage) {
-	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email": "test@gmail.com",
 	}, 5)
 
-	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email": "test2@gmail.com",
 	}, 5)
 
@@ -183,11 +183,11 @@ func testAddingMultipleAttributePairs(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
-	emailInfo, emailSdJwts := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo, emailSdJwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email": "test@gmail.com",
 	}, 2)
-	mobileInfo, mobileSdJwts := createMultipleSdJwtVcs(t, "pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app", map[string]any{
-		"mobilenumber": "1234567",
+	mobileInfo, mobileSdJwts := createMultipleSdJwtVcs(t, "test.test.mobilephone", "https://openid4vc.staging.yivi.app", map[string]any{
+		"mobilephone": "1234567",
 	}, 3)
 
 	err := storage.StoreCredential(emailInfo, emailSdJwts)
@@ -207,14 +207,14 @@ func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	}, 1)
 	err := storage.StoreCredential(info, sdjwts)
 	require.NoError(t, err)
 
-	result := storage.GetCredentialsForId("pbdf.pbdf.email")
+	result := storage.GetCredentialsForId("test.test.email")
 	require.Equal(t, len(result), 1)
 
 	first := result[0]
@@ -222,7 +222,7 @@ func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.pbdf.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
 		"email": "test@gmail.com",
 	}, 2)
 
@@ -265,8 +265,8 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	info, sdjwts := createMultipleSdJwtVcs(t, "pbdf.pbdf.mobilenumber", "https://openid4vc.staging.yivi.app", map[string]any{
-		"mobilenumber": "12345678",
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.mobilephone", "https://openid4vc.staging.yivi.app", map[string]any{
+		"mobilephone": "12345678",
 	}, 3)
 
 	err := storage.StoreCredential(info, sdjwts)
@@ -278,7 +278,7 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 
 	require.Equal(t, cred.Metadata, info)
 
-	result := storage.GetCredentialsForId("pbdf.pbdf.mobilenumber")
+	result := storage.GetCredentialsForId("test.test.mobilephone")
 	require.Equal(t, len(result), 1)
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -69,7 +70,7 @@ func (conf *Configuration) Reload() error {
 	return conf.Verifiers.readTrustModel()
 }
 
-func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullFilename string, path string, err error) {
+func (conf *Configuration) CacheVerifierLogo(filename string, logo *scheme.Logo) (fullFilename string, path string, err error) {
 	if logo == nil || logo.Data == nil || len(logo.Data) == 0 {
 		return "", "", fmt.Errorf("invalid logo")
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
@@ -63,7 +64,7 @@ func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) 
 		return VerifiedSdJwtVc{}, err
 	}
 
-	issuerSignedJwtPayload, err := parseAndVerifyIssuerSignedJwt(context, issuerSignedJwt, disclosures)
+	issuerSignedJwtPayload, decodedDisclosures, err := parseAndVerifyIssuerSignedJwt(context, issuerSignedJwt, disclosures)
 
 	if err != nil {
 		return VerifiedSdJwtVc{}, err
@@ -82,12 +83,6 @@ func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) 
 			return VerifiedSdJwtVc{}, err
 		}
 		kbJwtPayload = &keyBindingJwtPayload
-	}
-
-	decodedDisclosures, err := DecodeDisclosures(disclosures)
-
-	if err != nil {
-		return VerifiedSdJwtVc{}, fmt.Errorf("failed to decode disclosures: %v", err)
 	}
 
 	err = verifyTime(context, issuerSignedJwtPayload, kbJwtPayload)
@@ -309,21 +304,21 @@ func parseConfirmField(value any) (CnfField, error) {
 	return CnfField{Jwk: key}, nil
 }
 
-func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (IssuerSignedJwtPayload, error) {
+func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (IssuerSignedJwtPayload, []DisclosureContent, error) {
 	token, cert, err := decodeJwt([]byte(signedJwt), context)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, err
+		return IssuerSignedJwtPayload{}, nil, err
 	}
 
 	err = context.VerificationContext.VerifyCertificate(cert, nil)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, fmt.Errorf("failed to verify certificate: %v", err)
+		return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to verify certificate: %v", err)
 	}
 
 	var vct string
 	err = token.Get(Key_VerifiableCredentialType, &vct)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, errors.New("missing vct field")
+		return IssuerSignedJwtPayload{}, nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
@@ -343,7 +338,7 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	if err == nil {
 		sd, err = parseSdField(sdRaw)
 		if err != nil {
-			return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse sd field: %v", err)
+			return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to parse sd field: %v", err)
 		}
 	}
 
@@ -352,13 +347,25 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	if err == nil {
 		cnf, err = parseConfirmField(cnfRaw)
 		if err != nil {
-			return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse cnf field: %v", err)
+			return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
 	}
 
-	// TODO: create Yivi Issuer Requestor from cert data
-	if cert == nil {
-		return IssuerSignedJwtPayload{}, errors.New("missing x509 certificate")
+	decodedDisclosures, err := DecodeDisclosures(disclosures)
+	if err != nil {
+		return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to decode disclosures: %v", err)
+	}
+
+	// Verify the SD-JWT against the credentials the issuer is authorized to issue
+	requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
+	if err != nil {
+		return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
+	}
+
+	disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
+	err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(vct, disclosureKeys)
+	if err != nil {
+		return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
 	}
 
 	// Construct payload
@@ -378,10 +385,10 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	// Verify disclosures
 	err = verifyPayloadContainsAllDisclosureHashes(payload, disclosures)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, err
+		return IssuerSignedJwtPayload{}, nil, err
 	}
 
-	return payload, nil
+	return payload, decodedDisclosures, nil
 }
 
 func verifyPayloadContainsAllDisclosureHashes(payload IssuerSignedJwtPayload, disclosures []EncodedDisclosure) error {

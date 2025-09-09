@@ -3,6 +3,7 @@ package eudi
 import (
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
 type MockQueryValidatorFactory struct {
@@ -13,7 +14,7 @@ type MockQueryValidator struct {
 	failsValidation bool
 }
 
-func (f *MockQueryValidatorFactory) CreateQueryValidator(rp *RelyingParty) dcql.QueryValidator {
+func (f *MockQueryValidatorFactory) CreateQueryValidator(rp *scheme.RelyingParty) dcql.QueryValidator {
 	return &MockQueryValidator{
 		failsValidation: f.failsQueryValidation,
 	}
