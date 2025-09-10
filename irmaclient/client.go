@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -203,23 +204,37 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 	client.irmaClient.KeyshareEnroll(manager, email, pin, lang)
 }
 
-func hashAttributesAndCredType(info *irma.CredentialInfo) string {
-	toHash := info.Identifier().String()
-	for attrType, attrValue := range info.Attributes {
-		toHash += attrType.String() + attrValue[""]
+func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
+	hashContent := info.Identifier().String()
+
+	sortedKeys := []string{}
+	for key := range info.Attributes {
+		sortedKeys = append(sortedKeys, key.String())
 	}
-	hashBytes := sha256.Sum256([]byte(toHash))
-	return string(hashBytes[:])
+	sort.Strings(sortedKeys)
+
+	for _, key := range sortedKeys {
+		valueStr, err := json.Marshal(info.Attributes[irma.NewAttributeTypeIdentifier(key)])
+		if err != nil {
+			return "", err
+		}
+		hashContent += key + string(valueStr)
+	}
+
+	return sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, hashContent)
 }
 
-func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) bool {
+func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error) {
 	typeAndAttrsHashes := map[string]struct{}{}
 
 	for _, c := range creds {
-		hash := hashAttributesAndCredType(c)
+		hash, err := hashAttributesAndCredType(c)
+		if err != nil {
+			return false, err
+		}
 		typeAndAttrsHashes[hash] = struct{}{}
 	}
-	return len(typeAndAttrsHashes) == 1
+	return len(typeAndAttrsHashes) == 1, nil
 }
 
 func (client *Client) RemoveCredentialsByHash(hashByFormat map[CredentialFormat]string) error {
@@ -235,8 +250,12 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[CredentialFormat]
 		return fmt.Errorf("trying to delete credential that doesn't exist")
 	}
 
-	if !sameCredentialAndAttributesCombi(relevantCreds) {
-		return fmt.Errorf("deleting two different credential instances at once is not supported")
+	if same, err := sameCredentialAndAttributesCombi(relevantCreds); !same || err != nil {
+		if !same {
+			return fmt.Errorf("deleting two different credential instances at once is not supported")
+		} else {
+			return fmt.Errorf("error while comparing credential attributes: %v", err)
+		}
 	}
 
 	formats := []CredentialFormat{}
