@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -70,18 +71,23 @@ func (conf *Configuration) Reload() error {
 	conf.Verifiers.clear()
 
 	// Read the hardcoded trust anchors
-	conf.Issuers.addTrustAnchors([]byte(DefaultIssuerTrustAnchor_YiviStaging))
-	conf.Verifiers.addTrustAnchors([]byte(DefaultVerifierTrustAnchor_YiviStaging))
-
-	// Read the trust anchors from storage
-	err := conf.Issuers.loadTrustChains()
-	if err != nil {
-		return err
+	if err := conf.Issuers.addTrustAnchors([]byte(DefaultIssuerTrustAnchor_YiviStaging)); err != nil {
+		return fmt.Errorf("failed to add yivi staging issuer trust anchors: %v", err)
+	}
+	if err := conf.Verifiers.addTrustAnchors([]byte(DefaultVerifierTrustAnchor_YiviStaging)); err != nil {
+		return fmt.Errorf("failed to add yivi staging verifier trust anchors: %v", err)
 	}
 
-	err = conf.Verifiers.loadTrustChains()
+	// Read the trust anchors from storage
+	if err := conf.Issuers.loadTrustChains(); err != nil {
+		return fmt.Errorf("failed to load issuer trust chains: %v", err)
+	}
 
-	return err
+	if err := conf.Verifiers.loadTrustChains(); err != nil {
+		return fmt.Errorf("failed to load verifier trust chains: %v", err)
+	}
+
+	return nil
 }
 
 func (conf *Configuration) ResolveVerifierLogoPath(filename string) (string, error) {
@@ -134,4 +140,23 @@ func (conf *Configuration) CacheVerifierLogo(filename string, logo *Logo) (fullF
 	}
 
 	return
+}
+
+func (conf *Configuration) UpdateCertificateRevocationLists() error {
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go updateWorker(conf.Issuers.syncCertificateRevocationLists, &wg)
+	go updateWorker(conf.Verifiers.syncCertificateRevocationLists, &wg)
+
+	wg.Wait()
+
+	// TODO: implement some kind of locking on the config and/or start of the job?
+	// We should not update if we are in the middle of handling a session, because it might disrupt the session?
+	return conf.Reload()
+}
+
+func updateWorker(worker func(), wg *sync.WaitGroup) {
+	defer wg.Done()
+	worker()
 }

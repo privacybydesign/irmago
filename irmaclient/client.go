@@ -107,11 +107,9 @@ func New(
 	}
 
 	// TODO: add Context so we can check for cancellation of the job ?
-	crlSyncTask := gocron.NewTask(func() {
-		eudiConf.UpdateCertificateRevocationLists()
-	})
+	crlSyncTask := gocron.NewTask(eudiConf.UpdateCertificateRevocationLists)
 
-	scheduler.NewJob(
+	_, err = scheduler.NewJob(
 		gocron.OneTimeJob(
 			gocron.OneTimeJobStartDateTime(time.Now().Add(10*time.Second)),
 			//gocron.OneTimeJobStartImmediately(),
@@ -124,13 +122,17 @@ func New(
 					// For prod; either run again at the desired time, or set a CRON
 					//scheduler.Update(jobID, gocron.CronJob(""))
 
-					scheduler.Update(jobID, gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(time.Now().Add(2*time.Minute))), crlSyncTask)
+					scheduler.Update(jobID, gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(time.Now().Add(20*time.Second))), crlSyncTask)
 				},
 			),
 		),
 	)
 
-	//scheduler.Start()
+	if err != nil {
+		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
+	} else {
+		scheduler.Start()
+	}
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,

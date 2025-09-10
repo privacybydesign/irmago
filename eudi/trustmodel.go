@@ -33,15 +33,19 @@ type TrustModel struct {
 func (tm *TrustModel) GetCertificatePath() string {
 	return filepath.Join(tm.basePath, "certs")
 }
+
 func (tm *TrustModel) GetCrlPath() string {
 	return filepath.Join(tm.basePath, "crls")
 }
+
 func (tm *TrustModel) GetLogosPath() string {
 	return filepath.Join(tm.basePath, "logos")
 }
+
 func (tm *TrustModel) GetRevocationLists() []*x509.RevocationList {
 	return tm.revocationLists
 }
+
 func (tm *TrustModel) ensureDirectoryExists() error {
 	if err := common.EnsureDirectoryExists(tm.GetCertificatePath()); err != nil {
 		return err
@@ -54,6 +58,7 @@ func (tm *TrustModel) ensureDirectoryExists() error {
 	}
 	return nil
 }
+
 func (tm *TrustModel) clear() {
 	tm.allCerts = []*x509.Certificate{}
 	tm.trustedRootCertificates = x509.NewCertPool()
@@ -74,17 +79,17 @@ func getCrlFileNameForCertDistributionPoint(cert *x509.Certificate, distPoint st
 func (tm *TrustModel) readCRLIndex(indexFileName string) (map[string]string, error) {
 	var crlIndex = make(map[string]string)
 
-	filePath := filepath.Join(tm.GetCrlPath(), indexFileName)
+	clrPath := filepath.Join(tm.GetCrlPath(), indexFileName)
 
 	// If the file does not (yet) exist, return an empty map
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return crlIndex, nil
+	if _, err := os.Stat(clrPath); os.IsNotExist(err) {
+		return nil, nil
 	}
 
 	// Open the file
-	file, err := os.Open(filePath)
+	file, err := os.Open(clrPath)
 	if err != nil {
-		return crlIndex, fmt.Errorf("error opening CRL index file: %v", err)
+		return nil, fmt.Errorf("error opening CRL index file: %v", err)
 	}
 	defer file.Close()
 
@@ -316,7 +321,7 @@ func (tm *TrustModel) CreateVerifyOptionsTemplate() x509.VerifyOptions {
 func (tm *TrustModel) syncCertificateRevocationLists() {
 	// For each certificate in the model, check if it has a CRL distribution point and see if we need to download or update it
 	for _, cert := range tm.allCerts {
-		tm.logger.Debugf("Syncing CRLs for certificate %s with serial %s", cert.Subject.ToRDNSequence().String(), cert.SerialNumber.String())
+		tm.logger.Debugf("syncing CRLs for certificate %s with serial %s", cert.Subject.ToRDNSequence().String(), cert.SerialNumber.String())
 		updatedCrlIndex := make(map[string]string)
 
 		// Create a hash of the certificate's raw subject to be used as the filename
@@ -358,7 +363,7 @@ func (tm *TrustModel) syncCertificateRevocationLists() {
 				// Verify we are working with a valid CRL file
 				err = crl.CheckSignatureFrom(cert)
 				if err != nil {
-					tm.logger.Warn("could not verify signature of cached CRL; marking CRL for deletion...")
+					tm.logger.Warnf("could not verify signature of cached CRL: %v; marking CRL for deletion...", err)
 
 					// Do not add the CRL to the index, instead remove the file from disk and check the next file
 					markCrlForDeletion = true
@@ -380,7 +385,7 @@ func (tm *TrustModel) syncCertificateRevocationLists() {
 			}
 
 			if markCrlForDeletion {
-				tm.logger.Debugf("removing file %q...", crlFilePath)
+				tm.logger.Debugf("removing CRL file %q...", crlFilePath)
 
 				// Remove the file from disk and remove the reference from the index
 				if err := os.Remove(crlFilePath); err != nil {
@@ -404,7 +409,7 @@ func (tm *TrustModel) syncCertificateRevocationLists() {
 			if _, ok := crlIndex[distPoint]; !ok {
 				// This is a new distribution point, download the CRL and update the index
 				if filename, err := tm.downloadVerifyAndSaveCRL(distPoint, cert); err != nil {
-					tm.logger.Warnf("error downloading CRL from distribution point %q: %v", distPoint, err)
+					tm.logger.Warnf("error downloading CRL from distribution point %q for %v: %v", distPoint, cert.Subject.String(), err)
 				} else {
 					updatedCrlIndex[distPoint] = filename
 				}

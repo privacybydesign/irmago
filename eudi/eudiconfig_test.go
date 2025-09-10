@@ -7,8 +7,29 @@ import (
 
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	Logger = logrus.New()
+	os.Exit(m.Run())
+}
+
+func TestIntegrationConfig(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+
+	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+
+	err := common.EnsureDirectoryExists(eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(eudiConfigPath)
+	require.NoError(t, err)
+
+	require.NoError(t, conf.Reload())
+	require.NoError(t, conf.UpdateCertificateRevocationLists())
+}
 
 func TestConfig(t *testing.T) {
 	t.Run("NewConfiguration creates required directories and initializes successfully", testNewConfigurationSuccessfulInitialization)
