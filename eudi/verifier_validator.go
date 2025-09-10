@@ -25,13 +25,13 @@ type VerifierValidator interface {
 
 type RequestorCertificateStoreVerifierValidator struct {
 	verificationContext *eudi_jwt.VerificationContext
-	queryValidator      QueryValidatorFactory
+	validatorFactory    QueryValidatorFactory
 }
 
-func NewRequestorCertificateStoreVerifierValidator(verificationContext *eudi_jwt.VerificationContext, queryValidatorFactory QueryValidatorFactory) VerifierValidator {
+func NewRequestorCertificateStoreVerifierValidator(verificationContext *eudi_jwt.VerificationContext, validatorFactory QueryValidatorFactory) VerifierValidator {
 	return &RequestorCertificateStoreVerifierValidator{
 		verificationContext: verificationContext,
-		queryValidator:      queryValidatorFactory,
+		validatorFactory:    validatorFactory,
 	}
 }
 
@@ -63,7 +63,7 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	}
 
 	// Now we have a valid request, we can evaluate the query against the RP authorized attributes
-	queryValidator := v.queryValidator.CreateQueryValidator(&requestorInfo.RelyingParty)
+	queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
 	if err := queryValidator.ValidateQuery(&authRequest.DcqlQuery); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
 	}
