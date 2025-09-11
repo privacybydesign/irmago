@@ -1,7 +1,6 @@
 package irmaclient
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
