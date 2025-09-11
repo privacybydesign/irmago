@@ -81,7 +81,6 @@ func TestIrmaServer(t *testing.T) {
 	t.Run("EmptyDisclosure", apply(testEmptyDisclosure, IrmaServerConfiguration))
 	t.Run("SigningSession", apply(testSigningSession, IrmaServerConfiguration))
 	t.Run("IssuanceSession", apply(testIssuanceSession, IrmaServerConfiguration))
-	t.Run("IssuanceSessionWithSdJwt", apply(testSdJwtIssuanceSession, RequestorServerConfiguration))
 
 	t.Run("MultipleIssuanceSession", apply(testMultipleIssuanceSession, IrmaServerConfiguration))
 	t.Run("IssuancePairing", apply(testIssuancePairing, IrmaServerConfiguration))
@@ -654,10 +653,6 @@ func testIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	doIssuanceSession(t, false, nil, conf, opts...)
 }
 
-func testSdJwtIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
-	doIssuanceSession(t, false, nil, conf, append(opts, optionExpectSdJwts)...)
-}
-
 func testCombinedSessionMultipleAttributes(t *testing.T, conf interface{}, opts ...option) {
 	var ir irma.IssuanceRequest
 	require.NoError(t, irma.UnmarshalValidate([]byte(`{
@@ -712,14 +707,6 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClien
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.mijnirma"),
 			Attributes:       map[string]string{"email": "testusername"},
 		})
-	}
-
-	opts := processOptions(options...)
-	if opts.enabled(optionExpectSdJwts) {
-		for _, credReq := range request.Credentials {
-			credReq.SdJwtBatchSize = irma.DefaultSdJwtIssueAmount
-		}
-		// TODO: add assertion for resulting SD-JWTs
 	}
 
 	result := doSession(t, request, client, nil, nil, nil, nil, conf, options...)

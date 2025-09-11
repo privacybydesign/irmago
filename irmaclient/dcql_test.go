@@ -21,8 +21,8 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("unsatisfiable multiple credentials single available", testDcqlUnsatisfiableMultipleCredentialsSingleAvailable)
 	t.Run("unsatisfiable multiple credentials none available", testDcqlUnSatisfiableMultipleCredentialsNoneAvailable)
 	t.Run("satisfiable multiple attributes single credential", testDcqlSatisfiableMultipleAttributesSingleCredential)
-	t.Run("multiple attributes single credential partially available", testDcqlMultpleAttributesSingleCredentialPartiallyAvailable)
-	t.Run("satisfiable credential sets all required different purpose", testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes)
+	t.Run("multiple attributes single credential partially available", testDcqlMultipleAttributesSingleCredentialPartiallyAvailable)
+	t.Run("satisfiable credential sets all required different purpose", testDcqlSatisfiableClaimSetAllRequiredDifferentPurposes)
 	t.Run("satisfiable credential set two options for same purpose", testDcqlSatisfiableTwoOptionsSamePurpose)
 	t.Run("satisfiable credential set two options multiple claims single candidate each", testDcqlSatisfiableTwoOptionsMultipleClaims)
 	t.Run("satisfiable credential set two options multiple claims multiple candidates", testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates)
@@ -48,13 +48,13 @@ func testNonRequiredCredentialSet(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
 		}, {
 			"id": "phone",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}],
 		"credential_sets": [{
 			"options": [["email"], ["phone"]],
@@ -63,9 +63,9 @@ func testNonRequiredCredentialSet(t *testing.T) {
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
-	emailInfo2 := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "contact@yivi.app", "domain": "yivi.app"})
-	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+1234567"})
+	emailInfo := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
+	emailInfo2 := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "contact@yivi.app", "domain": "yivi.app"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "test.test.mobilephone", map[string]string{"mobilephone": "+1234567"})
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
 
@@ -77,13 +77,13 @@ func testNonRequiredCredentialSet(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
@@ -91,13 +91,13 @@ func testNonRequiredCredentialSet(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 					},
@@ -105,13 +105,13 @@ func testNonRequiredCredentialSet(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo2.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: emailInfo2.Hash,
 						},
 					},
@@ -119,7 +119,7 @@ func testNonRequiredCredentialSet(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: mobileInfo.Hash,
 						},
 					},
@@ -127,7 +127,7 @@ func testNonRequiredCredentialSet(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: "",
 						},
 					},
@@ -144,7 +144,7 @@ func testDcqlClaimSetsTwoOptionsNotSatisfiable(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["hotmail.com"]}],
 			"claim_sets": [["em"], ["do"]]
 		}]
@@ -161,7 +161,7 @@ func testDcqlClaimSetsTwoOptionsNotSatisfiable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 						Value: newTranslatedString("hello@gmail.com"),
@@ -175,19 +175,20 @@ func testDcqlClaimSetsTwoOptionsNotSatisfiable(t *testing.T) {
 }
 
 func testDcqlClaimSetsTwoOptionsBothSatisfiableByDifferentInstances(t *testing.T) {
+	// TODO: debug
 	dcqlQuery := parseTestQuery(t, `{
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["hotmail.com"]}],
 			"claim_sets": [["em"], ["do"]]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	infoHotmail := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	infoGmail := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
+	infoHotmail := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	infoGmail := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -199,7 +200,7 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiableByDifferentInstances(t *testing.T
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: infoGmail.Hash,
 						},
 						Value: newTranslatedString("hello@gmail.com"),
@@ -208,7 +209,7 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiableByDifferentInstances(t *testing.T
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 						Value: newTranslatedString("hello@gmail.com"),
@@ -217,7 +218,7 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiableByDifferentInstances(t *testing.T
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: infoHotmail.Hash,
 						},
 						Value: newTranslatedString("hotmail.com"),
@@ -235,15 +236,15 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiablePickFirstClaim(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["gmail.com"]}],
 			"claim_sets": [["em"], ["do"]]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	infoGmail := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
+	createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	infoGmail := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -255,7 +256,7 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiablePickFirstClaim(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: infoGmail.Hash,
 						},
 						Value: newTranslatedString("hello@gmail.com"),
@@ -265,7 +266,7 @@ func testDcqlClaimSetsTwoOptionsBothSatisfiablePickFirstClaim(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 						Value: newTranslatedString("hello@gmail.com"),
@@ -283,15 +284,15 @@ func testDcqlClaimSetsTwoOptionsOneSatisfiable(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "em", "path": ["email"], "values": ["not@available.com"]}, {"id": "do", "path": ["domain"], "values": ["gmail.com"]}],
 			"claim_sets": [["em"], ["do"]]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	infoGmail := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "user@gmail.com", "domain": "gmail.com"})
+	createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	infoGmail := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "user@gmail.com", "domain": "gmail.com"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -303,7 +304,7 @@ func testDcqlClaimSetsTwoOptionsOneSatisfiable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: infoGmail.Hash,
 						},
 						Value: newTranslatedString("gmail.com"),
@@ -312,7 +313,7 @@ func testDcqlClaimSetsTwoOptionsOneSatisfiable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 						Value: newTranslatedString("not@available.com"),
@@ -330,14 +331,14 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions(t *testin
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"], "values": ["gmail.com", "hotmail.com", "yahoo.com"]}]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	infoHotmail := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	infoGmail := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "user@gmail.com", "domain": "gmail.com"})
+	infoHotmail := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	infoGmail := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "user@gmail.com", "domain": "gmail.com"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -349,13 +350,13 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions(t *testin
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: infoHotmail.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: infoHotmail.Hash,
 						},
 						Value: newTranslatedString("hotmail.com"),
@@ -364,13 +365,13 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions(t *testin
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: infoGmail.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: infoGmail.Hash,
 						},
 						Value: newTranslatedString("gmail.com"),
@@ -380,13 +381,13 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions(t *testin
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 						Value: newTranslatedString("gmail.com"),
@@ -404,14 +405,14 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiable(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"], "values": ["gmail.com", "hotmail.com", "yahoo.com"]}]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	info := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "user@live.com", "domain": "live.com"})
+	info := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "user@live.com", "domain": "live.com"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -423,13 +424,13 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: info.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: info.Hash,
 						},
 						Value: newTranslatedString("hotmail.com"),
@@ -438,13 +439,13 @@ func testDcqlMultipleValueOptionsSingleClaimSatisfiable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 						Value: newTranslatedString("gmail.com"),
@@ -462,14 +463,14 @@ func testDcqlSingleUnsatisfiableExpectedValueForClaim(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"], "values": ["gmail.com"]}]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "user@live.com", "domain": "live.com"})
+	createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "user@live.com", "domain": "live.com"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -481,13 +482,13 @@ func testDcqlSingleUnsatisfiableExpectedValueForClaim(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 						Value: newTranslatedString("gmail.com"),
@@ -505,14 +506,14 @@ func testDcqlSingleSatisfiableExpectedValueForClaim(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"], "values": ["gmail.com"]}]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
-	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
+	emailInfo := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
+	createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -525,13 +526,13 @@ func testDcqlSingleSatisfiableExpectedValueForClaim(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: emailInfo.Hash,
 						},
 						Value: irma.NewTranslatedString(&expectedValue),
@@ -540,13 +541,13 @@ func testDcqlSingleSatisfiableExpectedValueForClaim(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 						Value: irma.NewTranslatedString(&expectedValue),
@@ -564,7 +565,7 @@ func testDcqlInvalidFormatInCredentialQueryIsUnsupported(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "idemix",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "em", "path": ["email"]}, {"id": "do", "path": ["domain"]}]
 		}]
 	}`)
@@ -579,13 +580,13 @@ func testDcqlMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
 		}, {
 			"id": "phone",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}],
 		"credential_sets": [{
 			"options": [["email", "phone"]]
@@ -602,13 +603,13 @@ func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T)
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
 		}, {
 			"id": "phone",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}],
 		"credential_sets": [{
 			"options": [["email"], ["phone"]]
@@ -616,9 +617,9 @@ func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T)
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
-	emailInfo2 := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "contact@yivi.app", "domain": "yivi.app"})
-	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+1234567"})
+	emailInfo := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
+	emailInfo2 := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "contact@yivi.app", "domain": "yivi.app"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "test.test.mobilephone", map[string]string{"mobilephone": "+1234567"})
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
 
@@ -629,13 +630,13 @@ func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T)
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
@@ -643,13 +644,13 @@ func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T)
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo2.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: emailInfo2.Hash,
 						},
 					},
@@ -658,13 +659,13 @@ func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T)
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 					},
@@ -672,7 +673,7 @@ func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T)
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: mobileInfo.Hash,
 						},
 					},
@@ -681,7 +682,7 @@ func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T)
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: "",
 						},
 					},
@@ -698,13 +699,13 @@ func testDcqlSatisfiableTwoOptionsMultipleClaims(t *testing.T) {
 		"credentials": [{
 			"id": "email",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
 		}, {
 			"id": "phone",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}],
 		"credential_sets": [{
 			"options": [["email"], ["phone"]]
@@ -712,8 +713,8 @@ func testDcqlSatisfiableTwoOptionsMultipleClaims(t *testing.T) {
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
-	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+1234567"})
+	emailInfo := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "test.test.mobilephone", map[string]string{"mobilephone": "+1234567"})
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
 
@@ -724,13 +725,13 @@ func testDcqlSatisfiableTwoOptionsMultipleClaims(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
@@ -739,13 +740,13 @@ func testDcqlSatisfiableTwoOptionsMultipleClaims(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 					},
@@ -753,7 +754,7 @@ func testDcqlSatisfiableTwoOptionsMultipleClaims(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: mobileInfo.Hash,
 						},
 					},
@@ -762,7 +763,7 @@ func testDcqlSatisfiableTwoOptionsMultipleClaims(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: "",
 						},
 					},
@@ -779,13 +780,13 @@ func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
 		"credentials": [{
 			"id": "123",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}]
 		}, {
 			"id": "789",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}],
 		"credential_sets": [{
 			"options": [["123"], ["789"]]
@@ -793,8 +794,8 @@ func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com"})
-	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+1234567"})
+	emailInfo := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "test.test.mobilephone", map[string]string{"mobilephone": "+1234567"})
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
 
@@ -805,7 +806,7 @@ func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
@@ -814,7 +815,7 @@ func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
@@ -822,7 +823,7 @@ func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: mobileInfo.Hash,
 						},
 					},
@@ -831,7 +832,7 @@ func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: "",
 						},
 					},
@@ -843,18 +844,18 @@ func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
 	requireSameCandidates(t, expected, result)
 }
 
-func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
+func testDcqlSatisfiableClaimSetAllRequiredDifferentPurposes(t *testing.T) {
 	dcqlQuery := parseTestQuery(t, `{
 		"credentials": [{
 			"id": "123",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}]
 		}, {
 			"id": "789",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}],
 		"credential_sets": [{
 			"options": [["123"]]
@@ -864,8 +865,8 @@ func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@gmail.com"})
-	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+1234567"})
+	emailInfo := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "test.test.mobilephone", map[string]string{"mobilephone": "+1234567"})
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
 
@@ -876,7 +877,7 @@ func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
@@ -885,7 +886,7 @@ func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
@@ -895,7 +896,7 @@ func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: mobileInfo.Hash,
 						},
 					},
@@ -904,7 +905,7 @@ func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: "",
 						},
 					},
@@ -916,12 +917,12 @@ func testDcqlSatisfiableClaimSetAllRequiedDifferentPurposes(t *testing.T) {
 	requireSameCandidates(t, expected, result)
 }
 
-func testDcqlMultpleAttributesSingleCredentialPartiallyAvailable(t *testing.T) {
+func testDcqlMultipleAttributesSingleCredentialPartiallyAvailable(t *testing.T) {
 	dcqlQuery := parseTestQuery(t, `{
 		"credentials": [{
 			"id": "123",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [
 				{ "id": "456", "path": ["email"]},
 				{ "id": "789", "path": ["domain"]}
@@ -930,7 +931,7 @@ func testDcqlMultpleAttributesSingleCredentialPartiallyAvailable(t *testing.T) {
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{
+	createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{
 		"email": "test@gmail.com",
 	})
 
@@ -944,14 +945,14 @@ func testDcqlMultpleAttributesSingleCredentialPartiallyAvailable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type: irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type: irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							// even though this one is technically satisfiable it doesn't matter if this hash is valid or not
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 					},
@@ -968,7 +969,7 @@ func testDcqlSatisfiableMultipleAttributesSingleCredential(t *testing.T) {
 		"credentials": [{
 			"id": "123",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [
 				{ "id": "456", "path": ["email"]},
 				{ "id": "789", "path": ["domain"]}
@@ -977,7 +978,7 @@ func testDcqlSatisfiableMultipleAttributesSingleCredential(t *testing.T) {
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	info := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{
+	info := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	})
@@ -992,13 +993,13 @@ func testDcqlSatisfiableMultipleAttributesSingleCredential(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: info.Hash,
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: info.Hash,
 						},
 					},
@@ -1006,13 +1007,13 @@ func testDcqlSatisfiableMultipleAttributesSingleCredential(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.domain"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.domain"),
 							CredentialHash: "",
 						},
 					},
@@ -1029,13 +1030,13 @@ func testDcqlUnSatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
 		"credentials": [{
 			"id": "123",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}]
 		}, {
 			"id": "789",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}]
 	}`)
 
@@ -1051,7 +1052,7 @@ func testDcqlUnSatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
@@ -1061,7 +1062,7 @@ func testDcqlUnSatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: "",
 						},
 					},
@@ -1079,18 +1080,18 @@ func testDcqlUnsatisfiableMultipleCredentialsSingleAvailable(t *testing.T) {
 		"credentials": [{
 			"id": "123",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}]
 		}, {
 			"id": "789",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+31612345678"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "test.test.mobilephone", map[string]string{"mobilephone": "+31612345678"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -1102,7 +1103,7 @@ func testDcqlUnsatisfiableMultipleCredentialsSingleAvailable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
@@ -1112,7 +1113,7 @@ func testDcqlUnsatisfiableMultipleCredentialsSingleAvailable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: mobileInfo.Hash,
 						},
 					},
@@ -1120,7 +1121,7 @@ func testDcqlUnsatisfiableMultipleCredentialsSingleAvailable(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: "",
 						},
 					},
@@ -1137,19 +1138,19 @@ func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
 		"credentials": [{
 			"id": "123",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [ {"id": "456", "path": ["email"]}]
 		}, {
 			"id": "789",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]},
-			"claims": [{"id": "191112", "path": ["mobilenumber"]}]
+			"meta": {"vct_values": ["test.test.mobilephone"]},
+			"claims": [{"id": "191112", "path": ["mobilephone"]}]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	emailInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "yivi@test.com"})
-	mobileInfo := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.mobilenumber", map[string]string{"mobilenumber": "+31612345678"})
+	emailInfo := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "yivi@test.com"})
+	mobileInfo := createAndStoreSdJwt(t, storage, "test.test.mobilephone", map[string]string{"mobilephone": "+31612345678"})
 
 	result, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -1161,7 +1162,7 @@ func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: emailInfo.Hash,
 						},
 					},
@@ -1170,7 +1171,7 @@ func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
@@ -1180,7 +1181,7 @@ func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: mobileInfo.Hash,
 						},
 					},
@@ -1189,7 +1190,7 @@ func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.mobilenumber.mobilenumber"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.mobilephone.mobilephone"),
 							CredentialHash: "",
 						},
 					},
@@ -1206,15 +1207,15 @@ func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
 		"credentials": [{
 			"id": "identifier",
 			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["pbdf.sidn-pbdf.email"] },
+			"meta": { "vct_values": ["test.test.email"] },
 			"claims": [{ "id": "email-claim-id", "path": ["email"]}]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
 
-	info1 := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@email.com"})
-	info2 := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test2@email.com"})
+	info1 := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@email.com"})
+	info2 := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test2@email.com"})
 
 	candidates, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -1225,7 +1226,7 @@ func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: info1.Hash,
 						},
 					},
@@ -1233,7 +1234,7 @@ func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: info2.Hash,
 						},
 					},
@@ -1241,7 +1242,7 @@ func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
@@ -1259,7 +1260,7 @@ func testDcqlUnsatisfiableSingleCredential(t *testing.T) {
 		"credentials": [{
 			"id": "12345",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.email"]},
+			"meta": {"vct_values": ["test.test.email"]},
 			"claims": [{"id": "9876", "path": ["email"]}]
 		}]
 	}`)
@@ -1275,7 +1276,7 @@ func testDcqlUnsatisfiableSingleCredential(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},
@@ -1292,13 +1293,13 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 		"credentials": [{
 			"id": "12345",
 			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["pbdf.sidn-pbdf.email"]},
+			"meta": {"vct_values": ["test.test.email"]},
 			"claims": [{"id": "9876", "path": ["email"]}]
 		}]
 	}`)
 
 	storage, _ := NewInMemorySdJwtVcStorage()
-	info := createAndStoreSdJwt(t, storage, "pbdf.sidn-pbdf.email", map[string]string{"email": "test@email.com"})
+	info := createAndStoreSdJwt(t, storage, "test.test.email", map[string]string{"email": "test@email.com"})
 
 	candidates, err := getCandidatesForDcqlQuery(storage, dcqlQuery)
 	require.NoError(t, err)
@@ -1309,7 +1310,7 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: info.Hash,
 						},
 					},
@@ -1318,7 +1319,7 @@ func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
 				{
 					{
 						AttributeIdentifier: &irma.AttributeIdentifier{
-							Type:           irma.NewAttributeTypeIdentifier("pbdf.sidn-pbdf.email.email"),
+							Type:           irma.NewAttributeTypeIdentifier("test.test.email.email"),
 							CredentialHash: "",
 						},
 					},

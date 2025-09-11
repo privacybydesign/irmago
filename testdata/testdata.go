@@ -49,9 +49,6 @@ var IssuerCert_irma_app_Bytes []byte
 //go:embed eudi/issuer_cert_chain_irma_app.pem
 var IssuerCertChain_irma_app_Bytes []byte
 
-//go:embed eudi/verifier/verifier.crt
-var VerifierCert_localhost_Bytes []byte
-
 //go:embed eudi/verifier/verifier_scheme_data.json
 var VerifierCertSchemeData string
 
@@ -95,7 +92,7 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
         "id": "32f54163-7166-48f1-93d8-ff217bdb0653",
         "format": "dc+sd-jwt",
         "meta": {
-			"vct_values": ["pbdf.sidn-pbdf.email"]
+			"vct_values": ["test.test.email"]
         },
         "claims": [
           {
@@ -107,11 +104,11 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
         "id": "32f54163-7166-48f1-93d8-ff217bdb0654",
         "format": "dc+sd-jwt",
         "meta": {
-			"vct_values": ["pbdf.sidn-pbdf.mobilenumber"]
+			"vct_values": ["test.test.mobilephone"]
         },
         "claims": [
           {
-			"path": ["mobilenumber"]
+			"path": ["mobilephone"]
           }
         ]
       }

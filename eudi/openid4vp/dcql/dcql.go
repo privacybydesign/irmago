@@ -1,5 +1,7 @@
 package dcql
 
+import "iter"
+
 type DcqlQuery struct {
 	// REQUIRED: A non-empty array of credential queries that specify the requested verifiable credentials.
 	Credentials []CredentialQuery `json:"credentials"`
@@ -124,4 +126,16 @@ type TrustedAuthority struct {
 
 type QueryValidator interface {
 	ValidateQuery(query *DcqlQuery) error
+}
+
+func (c CredentialQuery) AllClaimPaths() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, claim := range c.Claims {
+			for _, path := range claim.Path {
+				if !yield(path) {
+					return
+				}
+			}
+		}
+	}
 }

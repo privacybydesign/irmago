@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -39,6 +41,18 @@ type DisclosureContent struct {
 	Key  string
 	// This value can be any type that is allowed in JSON
 	Value interface{}
+}
+
+type DisclosureContents []DisclosureContent
+
+func (d DisclosureContents) Keys() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, item := range d {
+			if !yield(item.Key) {
+				break
+			}
+		}
+	}
 }
 
 func generateSalt(numBytes int) (string, error) {
@@ -182,7 +196,7 @@ func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, er
 		if err != nil {
 			return "", fmt.Errorf("failed to decode disclosure: %v", err)
 		}
-		if Contains(disclosureNames, decoded.Key) {
+		if slices.Contains(disclosureNames, decoded.Key) {
 			disclosuresToKeep = append(disclosuresToKeep, disclosure)
 		}
 	}

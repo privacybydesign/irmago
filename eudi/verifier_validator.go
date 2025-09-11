@@ -2,10 +2,7 @@ package eudi
 
 import (
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/asn1"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -14,26 +11,27 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
+	"github.com/privacybydesign/irmago/eudi/scheme"
+	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
-const SchemeExtensionOID = "2.1.123.1"
 const ClockSkew = 60 * time.Second
 
 // VerifierValidator is an interface to be used to validate verifiers by parsing and verifying the
 // authorization request and returning the requestor info for the verifier.
 type VerifierValidator interface {
-	ParseAndVerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *x509.Certificate, *RelyingPartyRequestor, error)
+	ParseAndVerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *x509.Certificate, *scheme.RelyingPartyRequestor, error)
 }
 
 type RequestorCertificateStoreVerifierValidator struct {
 	verificationContext *eudi_jwt.VerificationContext
-	queryValidator      QueryValidatorFactory
+	validatorFactory    QueryValidatorFactory
 }
 
-func NewRequestorCertificateStoreVerifierValidator(verificationContext *eudi_jwt.VerificationContext, queryValidatorFactory QueryValidatorFactory) VerifierValidator {
+func NewRequestorCertificateStoreVerifierValidator(verificationContext *eudi_jwt.VerificationContext, validatorFactory QueryValidatorFactory) VerifierValidator {
 	return &RequestorCertificateStoreVerifierValidator{
 		verificationContext: verificationContext,
-		queryValidator:      queryValidatorFactory,
+		validatorFactory:    validatorFactory,
 	}
 }
 
@@ -41,7 +39,7 @@ func NewRequestorCertificateStoreVerifierValidator(verificationContext *eudi_jwt
 func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*openid4vp.AuthorizationRequest,
 	*x509.Certificate,
-	*RelyingPartyRequestor,
+	*scheme.RelyingPartyRequestor,
 	error,
 ) {
 	// Parse the JWT and verify it using the verifier
@@ -59,39 +57,18 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		return nil, nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 	}
 
-	var schemeExtensionData *pkix.Extension
-	for _, ext := range endEntityCert.Extensions {
-		if ext.Id.String() == SchemeExtensionOID {
-			schemeExtensionData = &ext
-			break
-		}
-	}
-
-	if schemeExtensionData == nil {
-		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: it does not contain the required custom certificate extension with OID %s", SchemeExtensionOID)
-	}
-
-	// The scheme extension data is expected to be a DERUTF8STRING, so we need to unmarshal it
-	var schemeData string
-	_, err = asn1.Unmarshal(schemeExtensionData.Value, &schemeData)
+	requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](endEntityCert)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: failed to unmarshal scheme extension data: %v", err)
-	}
-
-	// Unmarshal the scheme JSON data to a RequestorInfo struct
-	var requestorSchemeData RelyingPartyRequestor
-	err = json.Unmarshal([]byte(schemeData), &requestorSchemeData)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to verify end-entity certificate: failed to unmarshal scheme data to requestor object: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
 	}
 
 	// Now we have a valid request, we can evaluate the query against the RP authorized attributes
-	queryValidator := v.queryValidator.CreateQueryValidator(&requestorSchemeData.RelyingParty)
+	queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
 	if err := queryValidator.ValidateQuery(&authRequest.DcqlQuery); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
 	}
 
-	return &authRequest, endEntityCert, &requestorSchemeData, nil
+	return &authRequest, endEntityCert, requestorInfo, nil
 }
 
 func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier() jwt.Keyfunc {

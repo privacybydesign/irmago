@@ -1,4 +1,3 @@
-\cert
-\certs
+\cert*
 *.srl
 *.csr

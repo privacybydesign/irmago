@@ -51,7 +51,6 @@ const (
 	optionPrePairingClient
 	optionPolling
 	optionNoSchemeAssets
-	optionExpectSdJwts
 )
 
 func processOptions(options ...option) option {

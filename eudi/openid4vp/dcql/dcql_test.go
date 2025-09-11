@@ -2,6 +2,7 @@ package dcql
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -50,4 +51,35 @@ func parseDcqlQuery(query string) (DcqlQuery, error) {
 		return DcqlQuery{}, nil
 	}
 	return q, nil
+}
+
+func TestGetAllClaimPathsShouldReturnAllPathsFromCredentialQuery(t *testing.T) {
+	// Arrange
+	cq := CredentialQuery{
+		Claims: []Claim{
+			{
+				Id: "1",
+				Path: []string{
+					"email",
+					"domain",
+				},
+			},
+			{
+				Id: "2",
+				Path: []string{
+					"location",
+					"country",
+				},
+			},
+		},
+	}
+	// Act
+	paths := slices.Collect(cq.AllClaimPaths())
+
+	// Assert
+	require.Len(t, paths, 4)
+	require.Equal(t, "email", paths[0])
+	require.Equal(t, "domain", paths[1])
+	require.Equal(t, "location", paths[2])
+	require.Equal(t, "country", paths[3])
 }

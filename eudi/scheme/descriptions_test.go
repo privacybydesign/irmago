@@ -1,4 +1,4 @@
-package eudi
+package scheme
 
 import (
 	"testing"
@@ -24,7 +24,7 @@ func testSchemeQueryValidatorValidatesAuthorizedQueryForSingleCredentialSuccessf
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
-			AuthorizedQueryableAttributeSets: []QueryableAttributeSet{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
 				{
 					Credential: "pbdf.issuer1.cred",
 					Attributes: []string{"attr"},
@@ -43,7 +43,7 @@ func testSchemeQueryValidatorValidatesAuthorizedQueryForMultipleCredentialSucces
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
-			AuthorizedQueryableAttributeSets: []QueryableAttributeSet{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
 				{
 					Credential: "pbdf.issuer1.cred",
 					Attributes: []string{"attr"},
@@ -65,7 +65,7 @@ func testSchemeQueryValidatorFailsValidationForUnknownCredential(t *testing.T) {
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
-			AuthorizedQueryableAttributeSets: []QueryableAttributeSet{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
 				{
 					Credential: "pbdf.issuer2.cred",
 					Attributes: []string{"attr"},
@@ -75,7 +75,7 @@ func testSchemeQueryValidatorFailsValidationForUnknownCredential(t *testing.T) {
 	}
 
 	err := validator.ValidateQuery(query)
-	require.Error(t, err, "credential query is not authorized: credential pbdf.issuer1.cred is not in the authorized set")
+	require.Errorf(t, err, "credential is not authorized: credential pbdf.issuer1.cred is not in the authorized set")
 }
 
 func testSchemeQueryValidatorFailsValidationForSingleUnknownCredential(t *testing.T) {
@@ -85,7 +85,7 @@ func testSchemeQueryValidatorFailsValidationForSingleUnknownCredential(t *testin
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
-			AuthorizedQueryableAttributeSets: []QueryableAttributeSet{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
 				{
 					Credential: "pbdf.issuer1.cred",
 					Attributes: []string{"attr"},
@@ -95,7 +95,7 @@ func testSchemeQueryValidatorFailsValidationForSingleUnknownCredential(t *testin
 	}
 
 	err := validator.ValidateQuery(query)
-	require.Error(t, err, "credential query is not authorized: credential pbdf.issuer2.cred is not in the authorized set")
+	require.Errorf(t, err, "credential is not authorized: credential pbdf.issuer2.cred is not in the authorized set")
 }
 
 func testSchemeQueryValidatorFailsValidationForUnauthorizedAttribute(t *testing.T) {
@@ -104,7 +104,7 @@ func testSchemeQueryValidatorFailsValidationForUnauthorizedAttribute(t *testing.
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
-			AuthorizedQueryableAttributeSets: []QueryableAttributeSet{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
 				{
 					Credential: "pbdf.issuer1.cred",
 					Attributes: []string{"attr"},
@@ -114,7 +114,7 @@ func testSchemeQueryValidatorFailsValidationForUnauthorizedAttribute(t *testing.
 	}
 
 	err := validator.ValidateQuery(query)
-	require.Error(t, err, "credential query is not authorized: requested attribute unauthorizedAttr is not in the authorized set")
+	require.Errorf(t, err, "credential is not authorized: requested attribute unauthorizedAttr is not in the authorized set")
 }
 
 func testSchemeQueryValidatorFailsValidationForSingleUnauthorizedAttribute(t *testing.T) {
@@ -123,7 +123,7 @@ func testSchemeQueryValidatorFailsValidationForSingleUnauthorizedAttribute(t *te
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
-			AuthorizedQueryableAttributeSets: []QueryableAttributeSet{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
 				{
 					Credential: "pbdf.issuer1.cred",
 					Attributes: []string{"attr", "attr2"},
@@ -133,7 +133,7 @@ func testSchemeQueryValidatorFailsValidationForSingleUnauthorizedAttribute(t *te
 	}
 
 	err := validator.ValidateQuery(query)
-	require.Error(t, err, "credential query is not authorized: requested attribute pbdf.issuer1.cred.unauthorizedAttr is not in the authorized set")
+	require.Errorf(t, err, "credential is not authorized: requested attribute pbdf.issuer1.cred.unauthorizedAttr is not in the authorized set")
 }
 
 func createBasicQuery() *dcql.DcqlQuery {

@@ -2,7 +2,6 @@ package sdjwtvc
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
@@ -63,7 +63,7 @@ func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) 
 		return VerifiedSdJwtVc{}, err
 	}
 
-	issuerSignedJwtPayload, err := parseAndVerifyIssuerSignedJwt(context, issuerSignedJwt, disclosures)
+	issuerSignedJwtPayload, requestorInfo, err := parseAndVerifyIssuerSignedJwt(context, issuerSignedJwt, disclosures)
 
 	if err != nil {
 		return VerifiedSdJwtVc{}, err
@@ -84,17 +84,24 @@ func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) 
 		kbJwtPayload = &keyBindingJwtPayload
 	}
 
-	decodedDisclosures, err := DecodeDisclosures(disclosures)
-
-	if err != nil {
-		return VerifiedSdJwtVc{}, fmt.Errorf("failed to decode disclosures: %v", err)
-	}
-
 	err = verifyTime(context, issuerSignedJwtPayload, kbJwtPayload)
 	if err != nil {
 		return VerifiedSdJwtVc{}, err
 	}
 
+	// Verify the credential is allowed to be issued by the requestor
+	decodedDisclosures, err := DecodeDisclosures(disclosures)
+	if err != nil {
+		return VerifiedSdJwtVc{}, fmt.Errorf("failed to decode disclosures: %v", err)
+	}
+
+	disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
+	err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(issuerSignedJwtPayload.VerifiableCredentialType, disclosureKeys)
+	if err != nil {
+		return VerifiedSdJwtVc{}, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
+	}
+
+	// Valid SD-JWT
 	return VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: issuerSignedJwtPayload,
 		KeyBindingJwt:          kbJwtPayload,
@@ -309,21 +316,20 @@ func parseConfirmField(value any) (CnfField, error) {
 	return CnfField{Jwk: key}, nil
 }
 
-func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (IssuerSignedJwtPayload, error) {
-	token, cert, err := decodeJwt([]byte(signedJwt), context)
+func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (
+	IssuerSignedJwtPayload,
+	*scheme.AttestationProviderRequestor,
+	error,
+) {
+	token, requestorInfo, err := decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt), context)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, err
-	}
-
-	err = context.VerificationContext.VerifyCertificate(cert, nil)
-	if err != nil {
-		return IssuerSignedJwtPayload{}, fmt.Errorf("failed to verify certificate: %v", err)
+		return IssuerSignedJwtPayload{}, nil, err
 	}
 
 	var vct string
 	err = token.Get(Key_VerifiableCredentialType, &vct)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, errors.New("missing vct field")
+		return IssuerSignedJwtPayload{}, nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
@@ -343,7 +349,7 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	if err == nil {
 		sd, err = parseSdField(sdRaw)
 		if err != nil {
-			return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse sd field: %v", err)
+			return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to parse sd field: %v", err)
 		}
 	}
 
@@ -352,13 +358,8 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	if err == nil {
 		cnf, err = parseConfirmField(cnfRaw)
 		if err != nil {
-			return IssuerSignedJwtPayload{}, fmt.Errorf("failed to parse cnf field: %v", err)
+			return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
-	}
-
-	// TODO: create Yivi Issuer Requestor from cert data
-	if cert == nil {
-		return IssuerSignedJwtPayload{}, errors.New("missing x509 certificate")
 	}
 
 	// Construct payload
@@ -378,10 +379,10 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	// Verify disclosures
 	err = verifyPayloadContainsAllDisclosureHashes(payload, disclosures)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, err
+		return IssuerSignedJwtPayload{}, nil, err
 	}
 
-	return payload, nil
+	return payload, requestorInfo, nil
 }
 
 func verifyPayloadContainsAllDisclosureHashes(payload IssuerSignedJwtPayload, disclosures []EncodedDisclosure) error {
@@ -392,20 +393,11 @@ func verifyPayloadContainsAllDisclosureHashes(payload IssuerSignedJwtPayload, di
 			return fmt.Errorf("failed to hash disclosure: %v", err)
 		}
 
-		if !Contains(payload.Sd, hash) {
+		if !slices.Contains(payload.Sd, hash) {
 			return fmt.Errorf("sd field doesn't contain %s (for %s)", hash, disc)
 		}
 	}
 	return nil
-}
-
-func Contains[T comparable](slice []T, value T) bool {
-	for _, v := range slice {
-		if v == value {
-			return true
-		}
-	}
-	return false
 }
 
 func verifyKeyBindingJwtHeader(header map[string]any) error {
@@ -429,10 +421,9 @@ func decodeJwtWithoutCheckingSignature(jwtString string) (header map[string]any,
 	return token.Header, claimsResult, err
 }
 
-// TODO: export cert data for Yivi Requestor
-// Note: if found, the decodeJwt returns the certificate with which the JWTs signature can be validated.
-// The cert itself however is NOT yet verified (against CRLs and other checks).
-func decodeJwt(signedJwt []byte, verificationContext SdJwtVcVerificationContext) (jwt.Token, *x509.Certificate, error) {
+// Decode the JWT into a token, verify the signature with the X.509 certificate in the header and verify the certificate is trusted (both against root/intermediate certs and CRLs).
+// Function returns the token and the requestor info from the certificate.
+func decodeJwtAndVerifyFromX5cHeader(signedJwt []byte, verificationContext SdJwtVcVerificationContext) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
 	keyProvider := &SdJwtKeyProvider{
 		X509KeyProvider: eudi_jwt.X509KeyProvider{},
 	}
@@ -447,7 +438,20 @@ func decodeJwt(signedJwt []byte, verificationContext SdJwtVcVerificationContext)
 		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
 	}
 
-	return token, keyProvider.X509KeyProvider.GetCert(), nil
+	// Get requestor info from cert
+	cert := keyProvider.X509KeyProvider.GetCert()
+	err = verificationContext.VerifyCertificate(cert, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
+	}
+
+	// Verify the SD-JWT against the credentials the issuer is authorized to issue
+	requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
+	}
+
+	return token, requestorInfo, nil
 }
 
 type SdJwtKeyProvider struct {
