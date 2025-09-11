@@ -27,18 +27,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build artifact
-        uses: ./.github/actions/build
-        id: build
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          os: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
+          go-version-file: go.mod
+
+      - name: Build artifact
+        run: |
+          mkdir build
+          go build -o build ./...
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: irma-${{ matrix.os }}-${{ matrix.arch }}
-          path: ${{ steps.build.outputs.artifact-name }}
+          path: build/irma
 
   docker-build:
     runs-on: ubuntu-latest
@@ -58,6 +61,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Clean Go toolchain module cache
+      run: rm -rf  /opt/hostedtoolcache/go
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -83,7 +88,7 @@ jobs:
       run: misspell -error .
 
     - name: Install staticcheck
-      run: go install honnef.co/go/tools/cmd/staticcheck@2024.1.1
+      run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
     - name: Run staticcheck
       run: staticcheck -checks "all,-ST1000,-ST1003,-SA1019,-SA1029" ./...
