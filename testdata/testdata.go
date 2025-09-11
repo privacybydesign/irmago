@@ -169,10 +169,9 @@ func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.Priva
 	return authRequestJwt
 }
 
-func CreateTestPkiHierarchy(t *testing.T, rootName pkix.Name, numberOfCAs int, opts PkiGenerationOptions) (
+func CreateTestPkiHierarchy(t *testing.T, rootName pkix.Name, numberOfCAs int, opts PkiGenerationOptions, crlDistPoint *string) (
 	rootKey *ecdsa.PrivateKey,
 	rootCert *x509.Certificate,
-	rootCrl *x509.RevocationList,
 	caKeys []*ecdsa.PrivateKey,
 	caCerts []*x509.Certificate,
 	caCrls []*x509.RevocationList,
@@ -184,24 +183,22 @@ func CreateTestPkiHierarchy(t *testing.T, rootName pkix.Name, numberOfCAs int, o
 	caCrls = make([]*x509.RevocationList, numberOfCAs)
 
 	for i := range numberOfCAs {
-		caKey, caCert, caCrl := CreateCaCertificate(t, CreateDistinguishedName("CA CERT "+strconv.Itoa(i)), rootCert, rootKey, opts)
+		caKey, caCert, caCrl := CreateCaCertificate(t, CreateDistinguishedName("CA CERT "+strconv.Itoa(i)), rootCert, rootKey, opts, crlDistPoint)
 		caKeys[i] = caKey
 		caCerts[i] = caCert
 		caCrls[i] = caCrl
 	}
 
-	rootCrl = CreateRootRevocationList(t, GetDefaultCrlTemplate(), rootKey, rootCert, caCerts, opts)
-
 	return
 }
 
-// TODO: add parameter to set the distributionpoint(s) ?
 func CreateRootCertificate(t *testing.T, subject pkix.Name, opts PkiGenerationOptions) (key *ecdsa.PrivateKey, cert *x509.Certificate) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
 	// Create a self-signed root certificate
-	certTemplate := getCaCertTemplate(subject, opts)
+	keyId := generateRandomBytes(10)
+	certTemplate := getCaCertTemplate(keyId, keyId, subject, opts, nil)
 
 	if opts&PkiOption_ExpiredRoot != 0 {
 		certTemplate.NotAfter = time.Now().Add(-time.Hour)
@@ -215,41 +212,13 @@ func CreateRootCertificate(t *testing.T, subject pkix.Name, opts PkiGenerationOp
 	return
 }
 
-func CreateRootRevocationList(t *testing.T, crlTemplate *x509.RevocationList, key *ecdsa.PrivateKey, cert *x509.Certificate, revokedCerts []*x509.Certificate, opts PkiGenerationOptions) (crl *x509.RevocationList) {
-	// Create revocation list for the root certificate
-	// Add all CA certs to the CRL (no option to select just one for now)
-	if opts&PkiOption_RevokedIntermediates != 0 {
-		revokedIntermediateEntries := make([]x509.RevocationListEntry, 0, len(revokedCerts))
-		for _, caCert := range revokedCerts {
-			revokedIntermediateEntries = append(revokedIntermediateEntries, x509.RevocationListEntry{
-				SerialNumber:   caCert.SerialNumber,
-				RevocationTime: time.Now().Add(-time.Hour),
-				ReasonCode:     0,
-			})
-		}
-		crlTemplate.RevokedCertificateEntries = revokedIntermediateEntries
-	}
-
-	crlBytes, err := x509.CreateRevocationList(rand.Reader, crlTemplate, cert, key)
-	require.NoError(t, err)
-	crl, err = x509.ParseRevocationList(crlBytes)
-	require.NoError(t, err)
-
-	return
-}
-
-func CreateRootCertificateWithEmptyRevocationList(t *testing.T, subject pkix.Name, opts PkiGenerationOptions) (key *ecdsa.PrivateKey, cert *x509.Certificate, crl *x509.RevocationList) {
-	key, cert = CreateRootCertificate(t, subject, opts)
-	crl = CreateRootRevocationList(t, GetDefaultCrlTemplate(), key, cert, nil, opts)
-	return
-}
-
-func CreateCaCertificate(t *testing.T, subject pkix.Name, rootCert *x509.Certificate, rootKey *ecdsa.PrivateKey, opts PkiGenerationOptions) (key *ecdsa.PrivateKey, cert *x509.Certificate, crl *x509.RevocationList) {
+func CreateCaCertificate(t *testing.T, subject pkix.Name, rootCert *x509.Certificate, rootKey *ecdsa.PrivateKey, opts PkiGenerationOptions, crlDistPoint *string) (key *ecdsa.PrivateKey, cert *x509.Certificate, crl *x509.RevocationList) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
 	// Create the CA certificate
-	certTemplate := getCaCertTemplate(subject, opts)
+	keyId := generateRandomBytes(10)
+	certTemplate := getCaCertTemplate(rootCert.AuthorityKeyId, keyId, subject, opts, crlDistPoint)
 
 	if opts&PkiOption_ExpiredIntermediate != 0 {
 		certTemplate.NotAfter = time.Now().Add(-time.Hour)
@@ -266,7 +235,18 @@ func CreateCaCertificate(t *testing.T, subject pkix.Name, rootCert *x509.Certifi
 		ThisUpdate: time.Now().Add(time.Duration(-1 * time.Hour)),
 		NextUpdate: time.Now().Add(time.Duration(1 * time.Hour)),
 	}
-	crlBytes, err := x509.CreateRevocationList(rand.Reader, crlTemplate, cert, key)
+
+	if opts&PkiOption_RevokedIntermediates != 0 {
+		crlTemplate.RevokedCertificateEntries = []x509.RevocationListEntry{
+			{
+				SerialNumber:   cert.SerialNumber,
+				RevocationTime: time.Now().Add(-time.Hour),
+				ReasonCode:     0,
+			},
+		}
+	}
+
+	crlBytes, err := x509.CreateRevocationList(rand.Reader, crlTemplate, rootCert, rootKey)
 	require.NoError(t, err)
 	crl, err = x509.ParseRevocationList(crlBytes)
 	require.NoError(t, err)
@@ -327,11 +307,12 @@ func CreateDistinguishedName(cn string) pkix.Name {
 	}
 }
 
-func getCaCertTemplate(subject pkix.Name, opts PkiGenerationOptions) *x509.Certificate {
+func getCaCertTemplate(authKeyId []byte, subKeyId []byte, subject pkix.Name, opts PkiGenerationOptions, crlDistPoint *string) *x509.Certificate {
 	certTemplate := &x509.Certificate{
+		AuthorityKeyId:        authKeyId,
 		SerialNumber:          big.NewInt(mathRand.Int63()),
 		Subject:               subject,
-		SubjectKeyId:          generateRandomBytes(10),
+		SubjectKeyId:          subKeyId,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -339,14 +320,19 @@ func getCaCertTemplate(subject pkix.Name, opts PkiGenerationOptions) *x509.Certi
 		NotAfter:              time.Now().Add(time.Duration(1 * time.Hour)),
 	}
 
+	if crlDistPoint != nil {
+		certTemplate.CRLDistributionPoints = []string{*crlDistPoint}
+	}
+
 	return certTemplate
 }
 
-func GetDefaultCrlTemplate() *x509.RevocationList {
+func GetDefaultCrlTemplate(cert *x509.Certificate) *x509.RevocationList {
 	return &x509.RevocationList{
-		Number:     big.NewInt(1),
-		ThisUpdate: time.Now().Add(-time.Hour),
-		NextUpdate: time.Now().Add(time.Hour),
+		Number:         big.NewInt(1),
+		ThisUpdate:     time.Now().Add(-time.Hour),
+		NextUpdate:     time.Now().Add(time.Hour),
+		AuthorityKeyId: cert.AuthorityKeyId,
 	}
 }
 

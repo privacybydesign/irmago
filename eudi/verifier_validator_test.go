@@ -207,7 +207,8 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
 	// Setup PKI
 	hostname := "example.com"
-	_, rootCert, _, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts)
+	crlDistPoint := "https://yivi.app/crl.crl"
+	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts, &crlDistPoint)
 	verifierKey, verifierCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), hostname, caCerts[0], caKeys[0], opts)
 
 	// Setup VerifierValidator with PKI
