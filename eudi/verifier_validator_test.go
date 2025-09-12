@@ -10,7 +10,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/testdata"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -208,7 +207,8 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
 	// Setup PKI
 	hostname := "example.com"
-	_, rootCert, _, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts)
+	crlDistPoint := "https://yivi.app/crl.crl"
+	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts, &crlDistPoint)
 	verifierKey, verifierCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), hostname, caCerts[0], caKeys[0], opts)
 
 	// Setup VerifierValidator with PKI
@@ -246,7 +246,6 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 		trustedRootCertificates:         rootPool,
 		trustedIntermediateCertificates: intermediatePool,
 		revocationLists:                 revocationLists,
-		logger:                          logrus.New(),
 	}
 
 	verifierValidatorContext := eudi_jwt.VerificationContext{
