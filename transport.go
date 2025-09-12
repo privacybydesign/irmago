@@ -2,10 +2,12 @@ package irma
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -126,7 +128,7 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 			return err != nil || resp.StatusCode == 0, err
 		},
 		HTTPClient: &http.Client{
-			Timeout:   time.Second * 5,
+			Timeout:   time.Second * 50,
 			Transport: innerTransport,
 			Jar:       cookieJar,
 		},
@@ -223,6 +225,7 @@ func (transport *HTTPTransport) request(
 	if reader != nil && contenttype != "" {
 		req.Header.Set("Content-Type", contenttype)
 	}
+	req.Header.Add("Accept-Encoding", "gzip")
 	res, err := transport.client.Do(&req)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
@@ -279,7 +282,30 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 		return nil
 	}
 
-	body, err := io.ReadAll(res.Body)
+	var body []byte
+
+	if res.Header.Get("Content-Encoding") == "gzip" {
+		Logger.Debugf("Content-Encoding is gzip, ContentLength: %v bytes", res.ContentLength)
+
+		zr, err := gzip.NewReader(res.Body)
+		if err != nil {
+			return &SessionError{ErrorType: ErrorServerResponse, Err: fmt.Errorf("failed to create gzip reader: %v", err), RemoteStatus: res.StatusCode}
+		}
+		defer zr.Close()
+		body, err = io.ReadAll(zr)
+		Logger.Debugf("Body is %v bytes", len(body))
+
+		if err != nil {
+			return &SessionError{ErrorType: ErrorServerResponse, Err: fmt.Errorf("failed to read body with gzip: %v", err), RemoteStatus: res.StatusCode}
+		}
+	} else {
+		Logger.Debug("Content-Encoding is not gzip")
+		body, err = io.ReadAll(res.Body)
+		if err != nil {
+			return &SessionError{ErrorType: ErrorServerResponse, Err: fmt.Errorf("failed to read response body: %v", err), RemoteStatus: res.StatusCode}
+		}
+	}
+
 	if err != nil {
 		return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}

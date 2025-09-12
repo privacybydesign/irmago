@@ -237,10 +237,13 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 	var sdJwts []sdjwtvc.SdJwtVc
 	settings := conf.SdJwtIssuanceSettings
 	if settings.Enabled {
+		start := time.Now()
 		sdJwts, err = session.generateSdJwts(
 			settings,
 			commitments.KeyBindingPubKeys,
 		)
+		end := time.Now()
+		irma.Logger.Warnf("Took %v to generate sdjwts", end.Sub(start))
 		if err != nil {
 			return nil, session.fail(server.ErrorIssuanceFailed, err.Error(), conf)
 		}
@@ -370,6 +373,7 @@ func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request
 		return
 	}
 	session.setStatus(irma.ServerStatusDone, s.conf)
+
 	server.WriteResponse(w, res, nil)
 }
 

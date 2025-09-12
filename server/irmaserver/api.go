@@ -5,12 +5,14 @@
 package irmaserver
 
 import (
+	"compress/gzip"
 	"context"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
+	"github.com/NYTimes/gziphandler"
 	"github.com/go-co-op/gocron"
 
 	"github.com/privacybydesign/irmago/internal/common"
@@ -147,6 +149,8 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 	r.NotFound(errorWriter(notfound, server.WriteResponse))
 	r.MethodNotAllowed(errorWriter(notallowed, server.WriteResponse))
 
+	gzip, _ := gziphandler.NewGzipLevelHandler(gzip.BestCompression)
+
 	r.Route("/session/{clientToken}", func(r chi.Router) {
 		r.Use(s.sessionMiddleware)
 		r.Delete("/", s.handleSessionDelete)
@@ -165,7 +169,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			r.Group(func(r chi.Router) {
 				r.Use(s.pairingMiddleware)
 				r.Get("/request", s.handleSessionGetRequest)
-				r.Post("/commitments", s.handleSessionCommitments)
+				r.Post("/commitments", gzip(http.HandlerFunc(s.handleSessionCommitments)).ServeHTTP)
 				r.Post("/proofs", s.handleSessionProofs)
 			})
 		})
