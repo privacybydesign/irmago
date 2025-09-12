@@ -1,7 +1,6 @@
 package irmaserver
 
 import (
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
