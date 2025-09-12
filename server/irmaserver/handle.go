@@ -1,12 +1,14 @@
 package irmaserver
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/privacybydesign/gabi"
@@ -370,7 +372,12 @@ func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request
 		return
 	}
 	session.setStatus(irma.ServerStatusDone, s.conf)
-	server.WriteResponse(w, res, nil)
+
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		server.WriteDeflatedResponse(w, res, nil)
+	} else {
+		server.WriteResponse(w, res, nil)
+	}
 }
 
 func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {

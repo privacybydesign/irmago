@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NYTimes/gziphandler"
 	"github.com/go-co-op/gocron"
 
 	"github.com/privacybydesign/irmago/internal/common"
@@ -165,7 +166,7 @@ func (s *Server) HandlerFunc() http.HandlerFunc {
 			r.Group(func(r chi.Router) {
 				r.Use(s.pairingMiddleware)
 				r.Get("/request", s.handleSessionGetRequest)
-				r.Post("/commitments", s.handleSessionCommitments)
+				r.Post("/commitments", gziphandler.GzipHandler(http.HandlerFunc(s.handleSessionCommitments)).ServeHTTP)
 				r.Post("/proofs", s.handleSessionProofs)
 			})
 		})

@@ -2,10 +2,12 @@ package irma
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -223,6 +225,7 @@ func (transport *HTTPTransport) request(
 	if reader != nil && contenttype != "" {
 		req.Header.Set("Content-Type", contenttype)
 	}
+	req.Header.Add("Accept-Encoding", "gzip")
 	res, err := transport.client.Do(&req)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
@@ -279,7 +282,25 @@ func (transport *HTTPTransport) jsonRequest(url string, method string, result in
 		return nil
 	}
 
-	body, err := io.ReadAll(res.Body)
+	var body []byte
+
+	if res.Header.Get("Content-Encoding") == "gzip" {
+		zr, err := gzip.NewReader(res.Body)
+		if err != nil {
+			return fmt.Errorf("failed to create gzip reader: %v", err)
+		}
+		defer zr.Close()
+		body, err = io.ReadAll(zr)
+		if err != nil {
+			return fmt.Errorf("failed to read body with gzip: %v", err)
+		}
+	} else {
+		body, err = io.ReadAll(res.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response body: %v", err)
+		}
+	}
+
 	if err != nil {
 		return &SessionError{ErrorType: ErrorServerResponse, Err: err, RemoteStatus: res.StatusCode}
 	}
