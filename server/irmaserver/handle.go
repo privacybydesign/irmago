@@ -372,11 +372,7 @@ func (s *Server) handleSessionCommitments(w http.ResponseWriter, r *http.Request
 	}
 	session.setStatus(irma.ServerStatusDone, s.conf)
 
-	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-		server.WriteDeflatedResponse(w, res, nil)
-	} else {
-		server.WriteResponse(w, res, nil)
-	}
+	server.WriteResponse(w, res, nil)
 }
 
 func (s *Server) handleSessionProofs(w http.ResponseWriter, r *http.Request) {

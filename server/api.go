@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/rsa"
 	"encoding/hex"
@@ -154,21 +153,6 @@ func WriteBinaryResponse(w http.ResponseWriter, object interface{}, rerr *irma.R
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(status)
 	_, _ = w.Write(bts)
-}
-
-func WriteDeflatedResponse(w http.ResponseWriter, object any, rerr *irma.RemoteError) {
-	w.Header().Set("Content-Encoding", "gzip")
-	gz := gzip.NewWriter(w)
-	defer gz.Close()
-	status, bts := JsonResponse(object, rerr)
-
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.WriteHeader(status)
-
-	_, err := gz.Write(bts)
-	if err != nil {
-		_ = LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
-	}
 }
 
 // WriteResponse writes the specified object or error as JSON to the http.ResponseWriter.
