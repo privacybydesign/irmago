@@ -25,16 +25,16 @@ var yiviCrlDistPoint = "https://yivi.app/crl.crl"
 
 func TestTrustModel(t *testing.T) {
 	// Happy path tests
-	t.Run("loadTrustChains reads single certificate chain (root-only, no crl) successfully", testLoadTrustChainsReadsSingleChainRootOnlyNoCrlSuccessfully)
-	t.Run("loadTrustChains reads certificate chain (root + single sub-CA + crl) successfully", testLoadTrustChainsReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully)
-	t.Run("loadTrustChains reads certificate chains (root with multiple sub-CAs + crls) successfully", testLoadTrustChainsReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully)
-	t.Run("loadTrustChains reads certificate chain (root with multi level sub-CA + crls) successfully", testLoadTrustChainsReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully)
+	t.Run("Reload reads single certificate chain (root-only, no crl) successfully", testReloadReadsSingleChainRootOnlyNoCrlSuccessfully)
+	t.Run("Reload reads certificate chain (root + single sub-CA + crl) successfully", testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully)
+	t.Run("Reload reads certificate chains (root with multiple sub-CAs + crls) successfully", testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully)
+	t.Run("Reload reads certificate chain (root with multi level sub-CA + crls) successfully", testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully)
 
 	// Error handling tests
-	t.Run("loadTrustChains reads multiple chains (valid root + 1 valid sub-CA + 1 revoked sub-CA), should only add the valid chain", testLoadTrustChainsReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain)
-	t.Run("loadTrustChains reads multiple chains (1 valid + 1 expired root, both with sub-CAs), should add both root certs but only one sub-CA", testLoadTrustChainsReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa)
-	t.Run("loadTrustChains reads chain (valid root + expired sub-CA), should only add root cert", testLoadTrustChainsReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
-	t.Run("loadTrustChains reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testLoadTrustChainsReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
+	t.Run("Reload reads multiple chains (valid root + 1 valid sub-CA + 1 revoked sub-CA), should only add the valid chain", testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain)
+	t.Run("Reload reads multiple chains (1 valid + 1 expired root, both with sub-CAs), should add both root certs but only one sub-CA", testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa)
+	t.Run("Reload reads chain (valid root + expired sub-CA), should only add root cert", testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert)
+	t.Run("Reload reads invalid certificate chain (root + CA in reversed order), not add any certificates to the pools", testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates)
 
 	// Certificate revocation lists tests
 	t.Run("getCrlFileNameForCertDistributionPoint generates correct filename", testGetCrlFileNameForCertDistributionPointGeneratesCorrectFilename)
@@ -56,7 +56,7 @@ func TestTrustModel(t *testing.T) {
 	t.Run("cacheCrl fails, given invalid CRL file name", testCacheCrlFailsGivenInvalidCrlFileName)
 }
 
-func testLoadTrustChainsReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
+func testReloadReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
@@ -65,7 +65,7 @@ func testLoadTrustChainsReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) 
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "root_cert.pem"), rootCert)
 
 	// Read the trust model
-	err := tm.loadTrustChains()
+	err := tm.Reload()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -73,7 +73,7 @@ func testLoadTrustChainsReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) 
 	require.Len(t, tm.revocationLists, 0)
 }
 
-func testLoadTrustChainsReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing.T) {
+func testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
@@ -86,7 +86,7 @@ func testLoadTrustChainsReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t
 	require.NoError(t, err)
 
 	// Read the trust model
-	err = tm.loadTrustChains()
+	err = tm.Reload()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -94,7 +94,7 @@ func testLoadTrustChainsReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t
 	require.Len(t, tm.revocationLists, 1)
 }
 
-func testLoadTrustChainsReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *testing.T) {
+func testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a (root > CA1) and (root > CA2) chains and write to storage
@@ -108,7 +108,7 @@ func testLoadTrustChainsReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessf
 	require.NoError(t, err)
 
 	// Read the trust model
-	err = tm.loadTrustChains()
+	err = tm.Reload()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -116,7 +116,7 @@ func testLoadTrustChainsReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessf
 	require.Len(t, tm.revocationLists, 1)
 }
 
-func testLoadTrustChainsReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *testing.T) {
+func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	yiviSubCrlDistPoint := "https://sub.yivi.app/crl.crl"
@@ -134,7 +134,7 @@ func testLoadTrustChainsReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccess
 	require.NoError(t, err)
 
 	// Read the trust model
-	err = tm.loadTrustChains()
+	err = tm.Reload()
 	require.NoError(t, err)
 
 	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
@@ -142,7 +142,7 @@ func testLoadTrustChainsReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccess
 	require.Len(t, tm.revocationLists, 2)
 }
 
-func testLoadTrustChainsReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain(t *testing.T) {
+func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 	yivi2CrlDistPoint := "https://yivi.app/crl2.crl"
 
@@ -160,7 +160,7 @@ func testLoadTrustChainsReadsMultipleChainsValidRootWithValidAndRevokedSubCaShou
 	require.NoError(t, err)
 
 	// Read the trust model
-	err = tm.loadTrustChains()
+	err = tm.Reload()
 	require.NoError(t, err)
 
 	// The revoked sub-CA should not be added to the pools
@@ -168,7 +168,7 @@ func testLoadTrustChainsReadsMultipleChainsValidRootWithValidAndRevokedSubCaShou
 	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
 }
 
-func testLoadTrustChainsReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa(t *testing.T) {
+func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a 2 roots certs (1 expired, 1 valid) and write it to storage
@@ -182,7 +182,7 @@ func testLoadTrustChainsReadsMultipleChainsValidRootAndExpiredRootWithSubCasShou
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain2.pem"), rootCert2, caCerts2[0])
 
 	// Read the trust model
-	err := tm.loadTrustChains()
+	err := tm.Reload()
 	require.NoError(t, err)
 
 	// The expired root (+intermediates) should not be added to the pools
@@ -190,7 +190,7 @@ func testLoadTrustChainsReadsMultipleChainsValidRootAndExpiredRootWithSubCasShou
 	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
 }
 
-func testLoadTrustChainsReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testing.T) {
+func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root cert and an expired sub-CA cert
@@ -201,7 +201,7 @@ func testLoadTrustChainsReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
 
 	// Read the trust model
-	err := tm.loadTrustChains()
+	err := tm.Reload()
 	require.NoError(t, err)
 
 	// Only the root cert should be added to the pools
@@ -212,7 +212,7 @@ func testLoadTrustChainsReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(
 	require.NotContains(t, tm.trustedIntermediateCertificates.Subjects(), caCerts[0].Subject.ToRDNSequence().String())
 }
 
-func testLoadTrustChainsReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
+func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
 	tm := setupTrustModelWithStoragePath(t)
 
 	// Create a root cert and a CA cert, but write them in reversed order
@@ -222,7 +222,7 @@ func testLoadTrustChainsReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertif
 	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), caCerts[0], rootCert)
 
 	// Read the trust model
-	err := tm.loadTrustChains()
+	err := tm.Reload()
 	require.NoError(t, err)
 
 	// No certificates should be added to the pools

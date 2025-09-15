@@ -87,12 +87,12 @@ func (conf *Configuration) Reload() error {
 	}
 
 	// Read the trust anchors from storage
-	if err := conf.Issuers.loadTrustChains(); err != nil {
-		return fmt.Errorf("failed to load issuer trust chains: %v", err)
+	if err := conf.Issuers.Reload(); err != nil {
+		return fmt.Errorf("failed to load issuer trust model: %v", err)
 	}
 
-	if err := conf.Verifiers.loadTrustChains(); err != nil {
-		return fmt.Errorf("failed to load verifier trust chains: %v", err)
+	if err := conf.Verifiers.Reload(); err != nil {
+		return fmt.Errorf("failed to load verifier trust model: %v", err)
 	}
 
 	return nil

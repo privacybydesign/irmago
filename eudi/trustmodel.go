@@ -160,6 +160,20 @@ func (tm *TrustModel) isCrlUpToDate(crl *x509.RevocationList) bool {
 	return updateNeeded
 }
 
+func (tm *TrustModel) Reload() error {
+	// Load all trust chains from the certs folder
+	if err := tm.loadTrustChains(); err != nil {
+		return fmt.Errorf("failed to load trust chains: %v", err)
+	}
+
+	// With all certs loaded into memory, load all CRLs from the CRL folder and verify them against the certs
+	if err := tm.loadRevocationLists(); err != nil {
+		return fmt.Errorf("failed to load revocation lists: %v", err)
+	}
+
+	return nil
+}
+
 func (tm *TrustModel) loadTrustChains() error {
 	chains, err := filepath.Glob(filepath.Join(tm.GetCertificatePath(), "*.pem"))
 	if err != nil {
@@ -243,24 +257,15 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 						continue
 					}
 
-					// Add the CA CRLs (if any and not already added to the list of revocation lists)
+					// Add the CA parents CRLs
 					crls, err := tm.readAndVerifyRevocationListsForCert(caCert, parentCert)
 					if err != nil {
-						tm.logger.Warnf("Failed to read or verify CRLs for intermediate certificate %s: %v", caCert.Subject.ToRDNSequence().String(), err)
-					}
-
-					for _, crl := range crls {
-						if !slices.ContainsFunc(tm.revocationLists, func(item *x509.RevocationList) bool {
-							return bytes.Equal(item.Signature, crl.Signature)
-						}) {
-							tm.revocationLists = append(tm.revocationLists, crl)
-						}
+						tm.logger.Warnf("Failed to read or verify CRLs to verify intermediate certificate %s revocation: %v", caCert.Subject.ToRDNSequence().String(), err)
 					}
 
 					// Validate intermediate cert against parent CRLs (if any)
 					isRevoked := false
-					parentRevocationLists := utils.GetRevocationListsForIssuer(caCert.AuthorityKeyId, caCert.Issuer, tm.revocationLists)
-					for _, crl := range parentRevocationLists {
+					for _, crl := range crls {
 						for _, revoked := range crl.RevokedCertificateEntries {
 							if revoked.SerialNumber.Cmp(caCert.SerialNumber) == 0 {
 								isRevoked = true
@@ -287,6 +292,42 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			}
 		}
 	}
+	return nil
+}
+
+func (tm *TrustModel) loadRevocationLists() error {
+	crlPaths, err := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.crl"))
+	if err != nil {
+		return err
+	}
+	crls := make([]*x509.RevocationList, len(crlPaths))
+	for i, crlPath := range crlPaths {
+		crlFilename := filepath.Base(crlPath)
+		crl, err := tm.readRevocationListFromFile(crlFilename)
+		if err != nil {
+			tm.logger.Warnf("Failed to read CRL file %q: %v, skipping loading the CRL", crlPath, err)
+			continue
+		}
+
+		// Find the issuing certificate for this CRL
+		issuingCert := tm.findCertificateForRevocationList(crl)
+		if issuingCert == nil {
+			tm.logger.Warnf("No issuing certificate found for CRL from issuer %s, skipping loading the CRL", crl.Issuer.ToRDNSequence().String())
+			continue
+		}
+
+		tm.logger.Tracef("Found issuing certificate %s for CRL from issuer %s. Verifying...", issuingCert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String())
+		// Verify the CRL signature using the issuing cert
+		err = crl.CheckSignatureFrom(issuingCert)
+		if err != nil {
+			tm.logger.Warnf("Failed to verify CRL from issuer %s: %v, skipping loading the CRL", crl.Issuer.ToRDNSequence().String(), err)
+			continue
+		}
+
+		tm.logger.Tracef("Successfully loaded and verified CRL %x issued by %s", crl.Signature, crl.Issuer.ToRDNSequence().String())
+		crls[i] = crl
+	}
+	tm.revocationLists = crls
 	return nil
 }
 
