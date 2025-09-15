@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+
+	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
 func ObtainIssuerUrlFromCertChain(certChain []*x509.Certificate) (string, error) {
@@ -76,18 +80,23 @@ func ParsePemCertificateChainToX5cFormat(data []byte) ([]string, error) {
 
 // CreateX509VerifyOptionsFromCertChain creates x509.VerifyOptions that can be added
 // to the `VerificationContext` as the trusted certificate chain.
-func CreateX509VerifyOptionsFromCertChain(pemChainData []byte) (*x509.VerifyOptions, error) {
-	certs, err := ParsePemCertificateChain(pemChainData)
-	if err != nil {
-		return nil, err
-	}
-
+func CreateX509VerifyOptionsFromCertChain(pemChainData ...[]byte) (*x509.VerifyOptions, error) {
 	rootPool := x509.NewCertPool()
-	rootPool.AddCert(certs[0])
-
 	intermediatePool := x509.NewCertPool()
-	for _, cert := range certs[1:] {
-		intermediatePool.AddCert(cert)
+
+	for _, chain := range pemChainData {
+		certs, err := ParsePemCertificateChain(chain)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(certs) > 0 {
+			rootPool.AddCert(certs[0])
+
+			for _, cert := range certs[1:] {
+				intermediatePool.AddCert(cert)
+			}
+		}
 	}
 
 	certVerifyOpts := x509.VerifyOptions{
@@ -150,4 +159,34 @@ func VerifyRevocationListsSignatures(parentCert *x509.Certificate, revocationLis
 		}
 	}
 	return nil
+}
+
+func GetRequestorInfoFromCertificate[T scheme.AttestationProviderRequestor | scheme.RelyingPartyRequestor](cert *x509.Certificate) (*T, error) {
+	var schemeExtensionData *pkix.Extension
+	for _, ext := range cert.Extensions {
+		if ext.Id.String() == scheme.X509SchemeExtensionOID {
+			schemeExtensionData = &ext
+			break
+		}
+	}
+
+	if schemeExtensionData == nil {
+		return nil, fmt.Errorf("failed to verify end-entity certificate: it does not contain the required custom certificate extension with OID %s", scheme.X509SchemeExtensionOID)
+	}
+
+	// The scheme extension data is expected to be a DERUTF8STRING, so we need to unmarshal it
+	var schemeData string
+	_, err := asn1.Unmarshal(schemeExtensionData.Value, &schemeData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify end-entity certificate: failed to unmarshal scheme extension data: %v", err)
+	}
+
+	// Unmarshal the scheme JSON data to a RequestorInfo struct
+	var requestorSchemeData T
+	err = json.Unmarshal([]byte(schemeData), &requestorSchemeData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify end-entity certificate: failed to unmarshal scheme data to requestor object: %v", err)
+	}
+
+	return &requestorSchemeData, nil
 }

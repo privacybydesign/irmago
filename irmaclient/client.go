@@ -73,6 +73,7 @@ func New(
 	keybindingStorage := NewBboltKeybindingStorage(storage.db, aesKey)
 	keyBinder := sdjwtvc.NewDefaultKeyBinder(keybindingStorage)
 
+	// Verifier verification checks if the verifier is trusted
 	verifierVerificationContext := eudi_jwt.VerificationContext{
 		X509VerificationOptionsTemplate: eudiConf.Verifiers.CreateVerifyOptionsTemplate(),
 		X509RevocationLists:             eudiConf.Verifiers.GetRevocationLists(),
@@ -86,6 +87,7 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
 
+	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
 		VerificationContext: eudi_jwt.VerificationContext{
 			X509VerificationOptionsTemplate: eudiConf.Issuers.CreateVerifyOptionsTemplate(),
