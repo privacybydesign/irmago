@@ -1,7 +1,6 @@
 package eudi
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"crypto/x509"
@@ -20,13 +19,14 @@ import (
 )
 
 type TrustModel struct {
-	basePath                        string
-	trustedRootCertificates         *x509.CertPool
-	trustedIntermediateCertificates *x509.CertPool
-	allCerts                        []*x509.Certificate
-	revocationLists                 []*x509.RevocationList
-	httpClient                      *http.Client
-	logger                          *logrus.Logger
+	basePath                          string
+	trustedRootCertificates           *x509.CertPool
+	trustedIntermediateCertificates   *x509.CertPool
+	allCerts                          []*x509.Certificate
+	revocationLists                   []*x509.RevocationList
+	revocationListsDistributionPoints []string
+	httpClient                        *http.Client
+	logger                            *logrus.Logger
 }
 
 func (tm *TrustModel) GetCertificatePath() string {
@@ -78,72 +78,11 @@ func (tm *TrustModel) isCrlFileCached(crlFileName string) bool {
 func (tm *TrustModel) findCertificateForRevocationList(crl *x509.RevocationList) *x509.Certificate {
 	// Find the certificate that matches the CRL's issuer
 	for _, cert := range tm.allCerts {
-		if bytes.Equal(crl.AuthorityKeyId, cert.AuthorityKeyId) && cert.Issuer.ToRDNSequence().String() == crl.Issuer.ToRDNSequence().String() {
+		if bytes.Equal(crl.AuthorityKeyId, cert.SubjectKeyId) && cert.Subject.ToRDNSequence().String() == crl.Issuer.ToRDNSequence().String() {
 			return cert
 		}
 	}
 	return nil
-}
-
-// The CRL index stores a mapping from the certificate Distribution Point to a local stored file
-func (tm *TrustModel) readCRLIndex(indexFileName string) (map[string]string, error) {
-	var crlIndex = make(map[string]string)
-
-	clrPath := filepath.Join(tm.GetCrlPath(), indexFileName)
-
-	// If the file does not (yet) exist, return an empty map
-	if _, err := os.Stat(clrPath); os.IsNotExist(err) {
-		return nil, nil
-	}
-
-	// Open the file
-	file, err := os.Open(clrPath)
-	if err != nil {
-		return nil, fmt.Errorf("error opening CRL index file: %v", err)
-	}
-	defer file.Close()
-
-	// Create a scanner to read the file line by line
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		// Print each line
-		line := scanner.Text()
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) == 2 {
-			crlIndex[parts[0]] = parts[1]
-		} else {
-			tm.logger.Warnf("invalid line in CRL index file: %q. Skipping line...", line)
-		}
-	}
-
-	// Check for errors during scanning
-	if err := scanner.Err(); err != nil {
-		// Since we don't know the state of the index at this point, return an empty map and the error so the caller can decide how to handle it
-		return make(map[string]string), fmt.Errorf("error reading CRL index file: %v", err)
-	}
-	return crlIndex, nil
-}
-
-func (tm *TrustModel) writeCRLIndex(indexFileName string, crlIndex map[string]string) error {
-	filePath := filepath.Join(tm.GetCrlPath(), indexFileName)
-
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("error creating file: %v", err)
-	}
-	defer file.Close()
-
-	// Use a buffered writer for efficient writing
-	writer := bufio.NewWriter(file)
-
-	for distPoint, filename := range crlIndex {
-		_, err := fmt.Fprintf(writer, "%s\t%s\n", distPoint, filename)
-		if err != nil {
-			return fmt.Errorf("error writing to file: %v", err)
-		}
-	}
-
-	return writer.Flush()
 }
 
 func (tm *TrustModel) readAndVerifyRevocationListsForCert(cert *x509.Certificate, parentCert *x509.Certificate) ([]*x509.RevocationList, error) {
@@ -212,7 +151,13 @@ func (tm *TrustModel) isCrlValid(crl *x509.RevocationList) bool {
 }
 
 func (tm *TrustModel) isCrlUpToDate(crl *x509.RevocationList) bool {
-	return crl != nil && crl.NextUpdate.After(time.Now())
+	updateNeeded := crl != nil && crl.NextUpdate.After(time.Now())
+
+	if !updateNeeded {
+		tm.logger.Infof("CRL from %x is outdated, a new version needs to be downloaded.", crl.AuthorityKeyId)
+	}
+
+	return updateNeeded
 }
 
 func (tm *TrustModel) loadTrustChains() error {
@@ -254,26 +199,26 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			// For now, we only accept the root certs that are self-signed (no system CA certs)
 			// Verify if the root is self-signed, otherwise this is not a valid root cert
 			if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
+				tm.logger.Warnf("Root certificate %s is a self-signed certificate. Skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String())
+				continue
+			}
+
+			// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
+			// Note: duplicates are filtered out by the call to .AddCert()
+			// Note: if the root cert is not valid, the cert will still be in the trustedRootCertificates pool, but the verification will fail later on
+			tm.trustedRootCertificates.AddCert(rootCert)
+			_, err = rootCert.Verify(rootValidationOptions)
+			if err != nil {
+				// If the root cert is not valid, skip the rest of the chain
 				tm.logger.Warnf("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
 				continue
 			}
 
-			// Only add the root again if it wasn't already part of another chain and loaded into memory
+			// Only add the root again if it wasn't already part of another chain loaded into memory
 			if !slices.ContainsFunc(tm.allCerts, func(cert *x509.Certificate) bool {
 				return bytes.Equal(cert.Raw, rootCert.Raw)
 			}) {
-				// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
-				// Note: duplicates are filtered out by the call to .AddCert()
-				// Note: if the root cert is not valid, the cert will still be in the trustedRootCertificates pool, but the verification will fail later on
-				tm.trustedRootCertificates.AddCert(rootCert)
 				tm.allCerts = append(tm.allCerts, rootCert)
-
-				_, err = rootCert.Verify(rootValidationOptions)
-				if err != nil {
-					// If the root cert is not valid, skip the rest of the chain
-					tm.logger.Warnf("Root certificate %s is not valid: %v, skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String(), err)
-					continue
-				}
 			}
 
 			// Add the intermediate certs to the intermediate pool
@@ -353,108 +298,44 @@ func (tm *TrustModel) CreateVerifyOptionsTemplate() x509.VerifyOptions {
 	}
 }
 
-// syncCertificateRevocationLists works by:
-// - Listing all (unique) CRL distribution points from all root and intermediate certificates
-// - Match that list against the locally stored once, and checking if they are (still) valid and up-to-date
-// -- If valid:
-// --- If not up-to-date: download and verify the latest CRL from the distribution point
-// -- If not valid:
-// --- Remove the local copy
-// - For any distribution point which is not cached yet, also download and verify the latest CRL
-// For any cached CRL that hasn't been checked, updated or downloaded anew, remove the cached file (this is the case when an issuing certificate removed one of its CRL distribution points)
 func (tm *TrustModel) syncCertificateRevocationLists() {
-	// Create a set, which will contain an up-to-date list of CRL files which should be on disk;
-	// Any file that is not in this list, will be removed at the end
-	crlFilesToKeep := utils.NewSet[string]()
+	tm.logger.Debugf("Starting CRL sync...")
 
-	// Get a set of all (unique) CRL distribution points from all certificates in the trustmodel
-	crlDistributionPoints := utils.NewSet[string]()
-	for _, cert := range tm.allCerts {
-		for _, dp := range cert.CRLDistributionPoints {
-			crlDistributionPoints.Add(dp)
-		}
-	}
+	// Loop over the known distribution points to download and verify CRLs
+	for _, distPoint := range tm.revocationListsDistributionPoints {
+		tm.logger.Debugf("Checking CRL distribution point %q...", distPoint)
 
-	// Match the list against the locally stored CRLs and check their validity (and up-to-dateness)
-	for crlDistPoint := range crlDistributionPoints.Values() {
-		crlFileName := getCrlFileNameForCertDistributionPoint(crlDistPoint)
+		crlFilename := getCrlFileNameForCertDistributionPoint(distPoint)
 
-		// If the file does not exist, continue with the next distribution point
-		if !tm.isCrlFileCached(crlFileName) {
-			tm.logger.Infof("CRL file %q does not exist and will be downloaded later...", crlFileName)
-			continue
-		}
-
-		// Read the CRL file and validate
-		crl, err := tm.readRevocationListFromFile(crlFileName)
-		if err != nil {
-			tm.logger.Warnf("Failed to read CRL file %q: %v", crlFileName, err)
-
-			// Try to remove local copy to initiate downloading again
-			err = os.Remove(crlFileName)
-			if err != nil {
-				tm.logger.Warnf("Failed to remove CRL file %q: %v", crlFileName, err)
-			}
-			continue
-		}
-
-		if !tm.isCrlValid(crl) {
-			// Remove the local copy immediately, so the download section will pick it up
-			tm.logger.Infof("CRL distribution point %q is not valid, removing local copy...", crlDistPoint)
-			err := os.Remove(filepath.Join(tm.GetCrlPath(), crlFileName))
-			if err != nil {
-				tm.logger.Warnf("Failed to remove CRL file %q: %v", crlFileName, err)
-			}
-		} else if !tm.isCrlUpToDate(crl) {
-			// Even if the update fails, keep the current file which (potentially) contains revoked certificates from before the latest update
-			crlFilesToKeep.Add(crlFileName)
-
-			tm.logger.Infof("CRL distribution point %q is not up-to-date, downloading latest CRL...", crlDistPoint)
-			err = tm.downloadVerifyAndCacheCrl(crlDistPoint, crlFileName)
-			if err != nil {
-				tm.logger.Warnf("Failed to download/verify/save CRL from %q: %v. Keep using current cached revocation list.", crlDistPoint, err)
-				continue
-			}
-			tm.logger.Infof("CRL distribution point %q updated successfully.", crlDistPoint)
+		// If the CRL is not cached, download and verify it
+		if !tm.isCrlFileCached(crlFilename) {
+			tm.logger.Info("CRL not cached, downloading file...")
 		} else {
-			crlFilesToKeep.Add(crlFileName)
-		}
-	}
-
-	// For any distribution point which is not cached yet, download and verify the latest CRL
-	for crlDistPoint := range crlDistributionPoints.Values() {
-		crlFileName := getCrlFileNameForCertDistributionPoint(crlDistPoint)
-		if !tm.isCrlFileCached(crlFileName) {
-			tm.logger.Infof("CRL distribution point %q is not cached (yet), downloading latest CRL...", crlDistPoint)
-			err := tm.downloadVerifyAndCacheCrl(crlDistPoint, crlFileName)
-			if err != nil {
-				// TODO: how should we work with this; we know there should be a CRL available (with potential revoked certs on it), but we cannot get to it....
-				tm.logger.Warnf("Failed to download/verify/save CRL from %q: %v. Skip caching the CRL.", crlDistPoint, err)
+			// CRL is cached, read it, verify it and check if an update might be available
+			// If the cached CRL is invalid, remove it and download it anew
+			crl, err := tm.readRevocationListFromFile(crlFilename)
+			if err != nil || !tm.isCrlValid(crl) {
+				tm.logger.Warnf("Failed to verify cached CRL: %v. Downloading new version...", err)
+			} else if tm.isCrlUpToDate(crl) {
+				tm.logger.Info("CRL is valid and up-to-date, no action needed.")
 				continue
 			}
-			tm.logger.Infof("CRL distribution point %q successfully cached.", crlDistPoint)
-			crlFilesToKeep.Add(crlFileName)
+
+			tm.logger.Info("CRL is outdated and needs to be updated. Downloading new version...")
 		}
+
+		// At this point, we need to download a CRL update
+		err := tm.downloadVerifyAndCacheCrl(distPoint, crlFilename)
+		if err != nil {
+			tm.logger.Warnf("Failed to download and cache CRL from %q: %v. Removing cached CRL.", distPoint, err)
+			os.Remove(filepath.Join(tm.GetCrlPath(), crlFilename))
+			tm.logger.Info("Removed cached CRL.")
+			continue
+		}
+		tm.logger.Info("Successfully downloaded and cached CRL.")
 	}
 
-	// For any cached CRL that hasn't been checked, updated or downloaded anew, remove the cached file (this is the case when an issuing certificate removed one of its CRL distribution points)
-	tm.logger.Infof("Removing outdated CRL files...")
-	existingFiles, _ := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.crl"))
-	for _, existingCrlFilePath := range existingFiles {
-		existingCrlFileName := filepath.Base(existingCrlFilePath)
-
-		// If the file is not available in the 'list to keep', remove the cached file
-		if !crlFilesToKeep.Contains(existingCrlFileName) {
-			tm.logger.Infof("Removing CRL file %q...", existingCrlFileName)
-			err := os.Remove(existingCrlFilePath)
-			if err != nil {
-				continue
-			}
-			tm.logger.Infof("CRL file %q removed successfully.", existingCrlFileName)
-		}
-	}
-
-	tm.logger.Infof("CRL sync completed, %d CRL files are now cached.", crlFilesToKeep.Len())
+	tm.logger.Debugf("CRL sync completed.")
 }
 
 func (tm *TrustModel) downloadAndVerifyCrl(distPoint string) (*x509.RevocationList, error) {

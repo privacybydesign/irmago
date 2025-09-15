@@ -40,11 +40,19 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 			basePath:   filepath.Join(path, "issuers"),
 			logger:     Logger,
 			httpClient: httpClient,
+			revocationListsDistributionPoints: []string{
+				RootCertificateRevocationListDistributionPoint_YiviStaging,
+				IssuerCaCertificateRevocationListDistributionPoint_YiviStaging,
+			},
 		},
 		Verifiers: TrustModel{
 			basePath:   filepath.Join(path, "verifiers"),
 			logger:     Logger,
 			httpClient: httpClient,
+			revocationListsDistributionPoints: []string{
+				RootCertificateRevocationListDistributionPoint_YiviStaging,
+				VerifierCaCertificateRevocationListDistributionPoint_YiviStaging,
+			},
 		},
 	}
 
@@ -151,8 +159,8 @@ func (conf *Configuration) UpdateCertificateRevocationLists() error {
 
 	wg.Wait()
 
-	// TODO: implement some kind of locking on the config and/or start of the job?
-	// We should not update if we are in the middle of handling a session, because it might disrupt the session?
+	// TODO: implement locking on the config to pause/start the job.
+	// We should not update if we are in the middle of handling a session, because it might disrupt the session.
 	return conf.Reload()
 }
 

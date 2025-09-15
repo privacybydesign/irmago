@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
-	"github.com/google/uuid"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
@@ -105,33 +104,18 @@ func New(
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new scheduler: %v", err)
 	}
+	scheduler.Start()
 
-	// TODO: add Context so we can check for cancellation of the job ?
-	crlSyncTask := gocron.NewTask(eudiConf.UpdateCertificateRevocationLists)
-
+	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err = scheduler.NewJob(
-		gocron.OneTimeJob(
-			gocron.OneTimeJobStartDateTime(time.Now().Add(10*time.Second)),
-			//gocron.OneTimeJobStartImmediately(),
-		),
-		crlSyncTask,
-		gocron.WithEventListeners(
-			gocron.AfterJobRuns(
-				func(jobID uuid.UUID, jobName string) {
-					// TODO: For now; update the schedule to run again in 2 minutes (for testing)
-					// For prod; either run again at the desired time, or set a CRON
-					//scheduler.Update(jobID, gocron.CronJob(""))
-
-					scheduler.Update(jobID, gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(time.Now().Add(20*time.Second))), crlSyncTask)
-				},
-			),
-		),
+		//gocron.DurationRandomJob(28*time.Minute, 32*time.Minute),
+		gocron.DurationRandomJob(28*time.Second, 32*time.Second),
+		gocron.NewTask(eudiConf.UpdateCertificateRevocationLists),
+		gocron.WithStartAt(gocron.WithStartImmediately()),
 	)
 
 	if err != nil {
 		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
-	} else {
-		scheduler.Start()
 	}
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
