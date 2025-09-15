@@ -131,6 +131,24 @@ func VerifyCertificateAgainstIssuerRevocationLists(cert *x509.Certificate, revoc
 	return nil
 }
 
+func VerifyCertificateUri(cert *x509.Certificate, uri string) error {
+	if cert == nil {
+		return fmt.Errorf("certificate is nil")
+	}
+	if uri == "" {
+		return fmt.Errorf("URI is empty")
+	}
+
+	// Check if the URI is in the Subject Alternative Names (SANs)
+	for _, san := range cert.URIs {
+		if san.String() == uri {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("URI %q is not in the SANs of the certificate", uri)
+}
+
 // VerifyRevocationListsSignatures verifies the signatures of the revocation lists for a given parent certificate.
 // In case of a revocation list for the root certificate, this will verify for the root certificate itself.
 func VerifyRevocationListsSignatures(parentCert *x509.Certificate, revocationLists []*x509.RevocationList) error {

@@ -1,5 +1,9 @@
 package eudi
 
+const RootCertificateRevocationListDistributionPoint_YiviStaging = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=kFCOt8NLhJ8g0WqMAnl%2BvoN2RuY"
+const IssuerCaCertificateRevocationListDistributionPoint_YiviStaging = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=NGSB30tAE2E/Z/j4V%2B%2BTTTS5Ay0"
+const VerifierCaCertificateRevocationListDistributionPoint_YiviStaging = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=gVrSxh0lO5cdqAS18OiZ/oui5h4"
+
 // DefaultIssuerTrustAnchor_YiviStaging is the default issuer trust anchor for Yivi staging and will be replaced with the actual trust anchor for Yivi production (TODO)
 const DefaultIssuerTrustAnchor_YiviStaging = `
 Subject: CN=Yivi Staging Requestors Root CA,O=Yivi,C=NL

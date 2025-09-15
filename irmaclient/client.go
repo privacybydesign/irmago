@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-co-op/gocron/v2"
+
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -22,6 +24,7 @@ type Client struct {
 	irmaClient      *IrmaClient
 	logsStorage     LogsStorage
 	keyBinder       sdjwtvc.KeyBinder
+	scheduler       gocron.Scheduler
 }
 
 func New(
@@ -53,6 +56,7 @@ func New(
 		return nil, fmt.Errorf("instantiating configuration failed: %v", err)
 	}
 
+	eudi.Logger = irma.Logger
 	eudiConf, err := eudi.NewConfiguration(eudiConfigurationPath)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating eudi configuration failed: %v", err)
@@ -98,6 +102,24 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
 
+	scheduler, err := gocron.NewScheduler()
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate new scheduler: %v", err)
+	}
+	scheduler.Start()
+
+	// Future TODO: add Context so we can check for cancellation of the job ?
+	_, err = scheduler.NewJob(
+		//gocron.DurationRandomJob(28*time.Minute, 32*time.Minute),
+		gocron.DurationRandomJob(28*time.Second, 32*time.Second),
+		gocron.NewTask(eudiConf.UpdateCertificateRevocationLists),
+		gocron.WithStartAt(gocron.WithStartImmediately()),
+	)
+
+	if err != nil {
+		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
+	}
+
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
 	// so we do this by listening for session-done events
@@ -109,10 +131,12 @@ func New(
 		irmaClient:      irmaClient,
 		logsStorage:     storage,
 		keyBinder:       keyBinder,
+		scheduler:       scheduler,
 	}, nil
 }
 
 func (client *Client) Close() error {
+	client.scheduler.Shutdown()
 	return client.irmaClient.Close()
 }
 

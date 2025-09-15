@@ -3,12 +3,22 @@ package eudi
 import (
 	"fmt"
 	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/sirupsen/logrus"
 )
+
+// Logger is used for logging. For now, it will be set via the Client component
+var Logger *logrus.Logger
+
+func init() {
+	Logger = common.Logger
+}
 
 // Configuration keeps track of issuer and requestor trusted chains and certificate revocation lists,
 // retrieving them from the eudi_configuration folder, and downloads and saves new ones on demand.
@@ -23,15 +33,27 @@ type Configuration struct {
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
 func NewConfiguration(path string) (conf *Configuration, err error) {
+	httpClient := &http.Client{}
+
 	conf = &Configuration{
 		path: path,
 		Issuers: TrustModel{
-			basePath: filepath.Join(path, "issuers"),
-			logger:   common.Logger,
+			basePath:   filepath.Join(path, "issuers"),
+			logger:     Logger,
+			httpClient: httpClient,
+			revocationListsDistributionPoints: []string{
+				RootCertificateRevocationListDistributionPoint_YiviStaging,
+				IssuerCaCertificateRevocationListDistributionPoint_YiviStaging,
+			},
 		},
 		Verifiers: TrustModel{
-			basePath: filepath.Join(path, "verifiers"),
-			logger:   common.Logger,
+			basePath:   filepath.Join(path, "verifiers"),
+			logger:     Logger,
+			httpClient: httpClient,
+			revocationListsDistributionPoints: []string{
+				RootCertificateRevocationListDistributionPoint_YiviStaging,
+				VerifierCaCertificateRevocationListDistributionPoint_YiviStaging,
+			},
 		},
 	}
 
@@ -58,16 +80,23 @@ func (conf *Configuration) Reload() error {
 	conf.Verifiers.clear()
 
 	// Read the hardcoded trust anchors
-	conf.Issuers.addTrustAnchors([]byte(DefaultIssuerTrustAnchor_YiviStaging))
-	conf.Verifiers.addTrustAnchors([]byte(DefaultVerifierTrustAnchor_YiviStaging))
-
-	// Read the trust anchors from storage
-	err := conf.Issuers.readTrustModel()
-	if err != nil {
-		return err
+	if err := conf.Issuers.addTrustAnchors([]byte(DefaultIssuerTrustAnchor_YiviStaging)); err != nil {
+		return fmt.Errorf("failed to add yivi staging issuer trust anchors: %v", err)
+	}
+	if err := conf.Verifiers.addTrustAnchors([]byte(DefaultVerifierTrustAnchor_YiviStaging)); err != nil {
+		return fmt.Errorf("failed to add yivi staging verifier trust anchors: %v", err)
 	}
 
-	return conf.Verifiers.readTrustModel()
+	// Read the trust anchors from storage
+	if err := conf.Issuers.Reload(); err != nil {
+		return fmt.Errorf("failed to load issuer trust model: %v", err)
+	}
+
+	if err := conf.Verifiers.Reload(); err != nil {
+		return fmt.Errorf("failed to load verifier trust model: %v", err)
+	}
+
+	return nil
 }
 
 func (conf *Configuration) ResolveVerifierLogoPath(filename string) (string, error) {
@@ -120,4 +149,23 @@ func (conf *Configuration) CacheVerifierLogo(filename string, logo *scheme.Logo)
 	}
 
 	return
+}
+
+func (conf *Configuration) UpdateCertificateRevocationLists() error {
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go updateWorker(conf.Issuers.syncCertificateRevocationLists, &wg)
+	go updateWorker(conf.Verifiers.syncCertificateRevocationLists, &wg)
+
+	wg.Wait()
+
+	// TODO: implement locking on the config to pause/start the job.
+	// We should not update if we are in the middle of handling a session, because it might disrupt the session.
+	return conf.Reload()
+}
+
+func updateWorker(worker func(), wg *sync.WaitGroup) {
+	defer wg.Done()
+	worker()
 }
