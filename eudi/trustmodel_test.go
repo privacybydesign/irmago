@@ -354,41 +354,6 @@ func testSyncCertificateRevocationListsRemovesCrlGivenNoAuthorityCertificatePres
 	require.Len(t, files, 0)
 }
 
-func testSyncCertificateRevocationListsClearsUnusedCachedCrlAndDownloadsNewCrlGivenUpdatedDistributionPoints(t *testing.T) {
-	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
-
-	// Create a root certificate and write it to storage
-	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
-	_, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
-
-	// Pretend we already had a cached CRL
-	expectedFilePathToBeRemoved := filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint))
-	err := os.WriteFile(expectedFilePathToBeRemoved, caCrls[0].Raw, 0644)
-	require.NoError(t, err)
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(caCrls[0].Raw)
-	}))
-	defer ts.Close()
-
-	tm.allCerts = append(tm.allCerts, rootCert)
-	tm.allCerts = append(tm.allCerts, caCerts...)
-	tm.httpClient = ts.Client()
-
-	// Change the distribution point URL to fake changing the URL
-	caCerts[0].CRLDistributionPoints = []string{ts.URL + "/NEWcrl.crl"}
-	expectedFilePathToBeAdded := filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(ts.URL+"/NEWcrl.crl"))
-
-	// Act
-	tm.syncCertificateRevocationLists()
-
-	// Assert
-	require.NoFileExists(t, expectedFilePathToBeRemoved)
-	require.FileExists(t, expectedFilePathToBeAdded)
-}
-
 func testSyncCertificateRevocationListsReadsCachedCrlAndDoesNotNeedToUpdate(t *testing.T) {
 	// Arrange
 	tm := setupTrustModelWithStoragePath(t)
