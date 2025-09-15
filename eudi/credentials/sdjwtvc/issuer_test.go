@@ -15,7 +15,7 @@ func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {
 
 	builder := NewSdJwtVcBuilder().
 		WithExpiresAt(time.Now().Unix()).
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithVerifiableCredentialType("test.test.email").
 		WithIssuerUrl("https://irma.app").
 		WithIssuerCertificateChain(irmaAppCert)
 
@@ -28,7 +28,7 @@ func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 
 	builder := NewSdJwtVcBuilder().
 		WithExpiresAt(time.Now().Unix()).
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithVerifiableCredentialType("test.test.email").
 		WithIssuerUrl("https://irma.app").
 		WithIssuerCertificateChain(irmaAppCert)
 
@@ -41,7 +41,7 @@ func Test_BuildSdJwtVc_InvalidIssuerUrl_BuildFailure(t *testing.T) {
 
 	builder := NewSdJwtVcBuilder().
 		WithExpiresAt(time.Now().Unix()).
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithVerifiableCredentialType("test.test.email").
 		WithIssuerUrl("http://irma.app").
 		WithIssuerCertificateChain(irmaAppCert)
 
@@ -53,15 +53,15 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"name":     "Yivi",
-		"location": "Utrecht",
+		"email":  "test@gmail.com",
+		"domain": "gmail.com",
 	})
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
 		WithExpiresAt(time.Now().Unix()).
 		WithHashingAlgorithm(HashAlg_Sha256).
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithVerifiableCredentialType("test.test.email").
 		WithDisclosures(disclosures).
 		WithIssuerUrl("https://irma.app").
 		WithIssuerCertificateChain(irmaAppCert)
@@ -74,14 +74,14 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"name":     "Yivi",
-		"location": "Utrecht",
+		"email":  "test@gmail.com",
+		"domain": "gmail.com",
 	})
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
 		WithExpiresAt(time.Now().Unix()).
-		WithVerifiableCredentialType("pbdf.sidn-pbdf.email").
+		WithVerifiableCredentialType("test.test.email").
 		WithDisclosures(disclosures).
 		WithIssuerCertificateChain(irmaAppCert)
 

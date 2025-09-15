@@ -1,6 +1,7 @@
 package sdjwtvc
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -114,4 +115,25 @@ func TestCreateSdJwtVcWithDisclosuresAndKbJwt(t *testing.T) {
 	if numTildes := strings.Count(string(fullSdjwt), "~"); numTildes != 3 {
 		t.Fatalf("expected 3 ~, but got %v (%v)", numTildes, fullSdjwt)
 	}
+}
+
+func TestGetKeysShouldReturnAllKeysFromDisclosureContents(t *testing.T) {
+	// Arrange
+	dc1, err := NewDisclosureContent("email", "test@gmail.com")
+	require.NoError(t, err)
+	dc2, err := NewDisclosureContent("domain", "gmail.com")
+	require.NoError(t, err)
+	dc3, err := NewDisclosureContent("location", "Utrecht")
+	require.NoError(t, err)
+
+	disclosureContents := DisclosureContents([]DisclosureContent{dc1, dc2, dc3})
+
+	// Act
+	keys := slices.Collect(disclosureContents.Keys())
+
+	// Assert
+	require.Len(t, keys, 3)
+	require.Equal(t, "email", keys[0])
+	require.Equal(t, "domain", keys[1])
+	require.Equal(t, "location", keys[2])
 }

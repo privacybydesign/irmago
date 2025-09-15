@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/stretchr/testify/require"
@@ -79,7 +80,7 @@ func testCacheVerifierLogoCachesLogoSuccessfully(t *testing.T) {
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
 
-	logo := &Logo{
+	logo := &scheme.Logo{
 		Data:     []byte("test logo data"),
 		MimeType: "image/png",
 	}
@@ -105,7 +106,7 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
 
-	logo := &Logo{
+	logo := &scheme.Logo{
 		Data:     []byte("test logo data"),
 		MimeType: "image/png",
 	}
@@ -158,7 +159,7 @@ func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
 
-	logo := &Logo{
+	logo := &scheme.Logo{
 		Data:     []byte(""),
 		MimeType: "image/png",
 	}
@@ -184,7 +185,7 @@ func testCacheVerifierLogoReturnsErrorOnUnknownMimeType(t *testing.T) {
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
 
-	logo := &Logo{
+	logo := &scheme.Logo{
 		Data:     []byte("test data"),
 		MimeType: "image/unknown",
 	}
