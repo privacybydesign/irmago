@@ -1,0 +1,18 @@
+production: true
+url: "http://localhost:8088"
+no_tls: true
+no_auth: false
+no_email: true
+allow_unsigned_callbacks: true
+
+sdjwtvc:
+  issuer: "http://localhost:8088"
+  privkey_file: "./testdata/eudi/issuer_ec_priv.pem"
+  cert_chain_file: "./testdata/eudi/issuer_cert_openid4vc_staging_yivi_app.pem"
+
+requestors:
+  alice:
+    auth_method: token
+    key: secret1
+    disclose_perms: ["irma-demo.*"]
+    issue_perms: ["irma-demo.RU.studentCard"]

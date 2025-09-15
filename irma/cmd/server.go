@@ -121,6 +121,10 @@ func setFlags(cmd *cobra.Command, production bool) error {
 
 	flags.String("revocation-settings", "", "revocation settings (in JSON)")
 
+	headers["sdjwtvc-issuer-certificates-dir"] = "SD-JWT VC issuance configuration"
+	flags.String("sdjwtvc-issuer-certificates-dir", "", "SD-JWT VC issuer certificates directory dir")
+	flags.String("sdjwtvc-issuer-private-keys-dir", "", "SD-JWT VC issuer private keys directory dir")
+
 	headers["store-type"] = "Session store configuration"
 	flags.String("store-type", "", "specifies how session state will be saved on the server (default \"memory\")")
 	flags.String("redis-addr", "", "Redis address, to be specified as host:port")
@@ -227,6 +231,13 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 		}
 		if viper.GetBool("no_email") && conf.Email != "" {
 			return nil, errors.New("--no-email cannot be combined with --email")
+		}
+	}
+
+	// no error handling for this one, as it can be left empty
+	if wasProvidedInAnyWay("sdjwtvc") {
+		if err := handleMapOrString("sdjwtvc", &conf.SdJwtIssuanceSettings); err != nil {
+			return nil, err
 		}
 	}
 

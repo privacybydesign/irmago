@@ -43,7 +43,7 @@ type keyshareSession struct {
 	builders         gabi.ProofBuilderList
 	session          irma.SessionRequest
 	schemeIDs        map[irma.SchemeManagerIdentifier]struct{}
-	client           *Client
+	client           *IrmaClient
 	keyshareServer   *keyshareServer // The one keyshare server in use in case of issuance
 	transports       map[irma.SchemeManagerIdentifier]*irma.HTTPTransport
 	issuerProofNonce *big.Int
@@ -98,7 +98,7 @@ func (kss *keyshareServer) HashedPin(pin string) string {
 // Error, blocked or success of the keyshare session is reported back to the keyshareSessionHandler.
 func newKeyshareSession(
 	sessionHandler keyshareSessionHandler,
-	client *Client,
+	client *IrmaClient,
 	pin KeysharePinRequestor,
 	session irma.SessionRequest,
 	implicitDisclosure [][]*irma.AttributeIdentifier,
@@ -284,7 +284,7 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 	return pinResult, pinResultErr
 }
 
-func (client *Client) verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
+func (client *IrmaClient) verifyPinWorker(pin string, kss *keyshareServer, transport *irma.HTTPTransport) (
 	success bool, tries int, blocked int, err error,
 ) {
 	var pinresult *irma.KeysharePinStatus

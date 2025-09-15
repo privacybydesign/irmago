@@ -42,6 +42,20 @@ func configureEmail() keyshare.EmailConfiguration {
 	}
 }
 
+func getSdJwtIssuanceConfigFromCli() *server.SdJwtIssuanceSettings {
+	certChainsDir := viper.GetString("sdjwtvc_issuer_certificates_dir")
+	privKeysDir := viper.GetString("sdjwtvc_issuer_private_keys_dir")
+
+	if certChainsDir == "" && privKeysDir == "" {
+		return nil
+	}
+
+	return &server.SdJwtIssuanceSettings{
+		SdJwtIssuerCertificatesDir: certChainsDir,
+		SdJwtIssuerPrivKeysDir:     privKeysDir,
+	}
+}
+
 func configureIRMAServer() (*server.Configuration, error) {
 	conf := &server.Configuration{
 		SchemesPath:            viper.GetString("schemes_path"),
@@ -69,6 +83,7 @@ func configureIRMAServer() (*server.Configuration, error) {
 		JwtPrivateKeyFile:      viper.GetString("jwt_privkey_file"),
 		AllowUnsignedCallbacks: viper.GetBool("allow_unsigned_callbacks"),
 		AugmentClientReturnURL: viper.GetBool("augment_client_return_url"),
+		SdJwtIssuanceSettings:  getSdJwtIssuanceConfigFromCli(),
 	}
 
 	// Parse session store configuration
@@ -189,6 +204,15 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 	} else {
 		logger.Info("Config file: ", viper.ConfigFileUsed())
 	}
+}
+
+func wasProvidedInAnyWay(key string) bool {
+	if val, flagOrEnv := viper.Get(key).(string); !flagOrEnv || val != "" {
+		if _, err := cast.ToStringMapE(viper.Get(key)); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func handleMapOrString(key string, dest interface{}) error {
