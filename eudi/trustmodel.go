@@ -331,16 +331,12 @@ func (tm *TrustModel) loadRevocationLists() error {
 	return nil
 }
 
-func (tm *TrustModel) CreateVerifyOptionsTemplate() x509.VerifyOptions {
+func (tm *TrustModel) GetVerificationOptionsTemplate() x509.VerifyOptions {
 	return x509.VerifyOptions{
 		Roots:         tm.trustedRootCertificates,
 		Intermediates: tm.trustedIntermediateCertificates,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-}
-
-func (tm *TrustModel) GetVerificationOptionsTemplate() x509.VerifyOptions {
-	return tm.CreateVerifyOptionsTemplate()
 }
 
 func (tm *TrustModel) syncCertificateRevocationLists() {
