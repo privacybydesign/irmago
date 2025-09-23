@@ -14,7 +14,6 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -74,12 +73,7 @@ func New(
 	keyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
-	verifierVerificationContext := eudi_jwt.VerificationContext{
-		X509VerificationOptionsTemplate: eudiConf.Verifiers.CreateVerifyOptionsTemplate(),
-		X509RevocationLists:             eudiConf.Verifiers.GetRevocationLists(),
-	}
-
-	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&verifierVerificationContext, &eudi.DefaultQueryValidatorFactory{})
+	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &eudi.DefaultQueryValidatorFactory{})
 	sdjwtvcStorage := NewBboltSdJwtVcStorage(storage.db, aesKey)
 
 	openid4vpClient, err := NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, keyBinder, storage)
@@ -89,12 +83,9 @@ func New(
 
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: eudiConf.Issuers.CreateVerifyOptionsTemplate(),
-			X509RevocationLists:             eudiConf.Issuers.GetRevocationLists(),
-		},
-		Clock:       sdjwtvc.NewSystemClock(),
-		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),
+		VerificationContext: &eudiConf.Issuers,
+		Clock:               sdjwtvc.NewSystemClock(),
+		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
 	}
 
 	irmaClient, err := NewIrmaClient(irmaConf, handler, signer, storage, sdJwtVcVerificationContext, sdjwtvcStorage, keyBinder)
