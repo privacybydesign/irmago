@@ -133,7 +133,7 @@ func RunTestWithTempBboltKeyBindingStorage(t *testing.T, name string, test func(
 			var aesKey [32]byte
 			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-			storage := NewBboltKeybindingStorage(db, aesKey)
+			storage := NewBboltKeyBindingStorage(db, aesKey)
 			test(t, storage)
 		})
 	})

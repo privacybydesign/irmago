@@ -70,8 +70,8 @@ func New(
 		return nil, fmt.Errorf("failed to open irma storage: %v", err)
 	}
 
-	keybindingStorage := NewBboltKeybindingStorage(storage.db, aesKey)
-	keyBinder := sdjwtvc.NewDefaultKeyBinder(keybindingStorage)
+	keyBindingStorage := NewBboltKeyBindingStorage(storage.db, aesKey)
+	keyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
 	verifierVerificationContext := eudi_jwt.VerificationContext{
