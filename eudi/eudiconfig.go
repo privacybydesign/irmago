@@ -42,8 +42,8 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 			logger:     Logger,
 			httpClient: httpClient,
 			revocationListsDistributionPoints: []string{
-				RootCertificateRevocationListDistributionPoint_YiviStaging,
-				IssuerCaCertificateRevocationListDistributionPoint_YiviStaging,
+				Staging_Yivi_RootCertificateRevocationListDistributionPoint,
+				Staging_Yivi_IssuerCaCertificateRevocationListDistributionPoint,
 			},
 		},
 		Verifiers: TrustModel{
@@ -51,8 +51,8 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 			logger:     Logger,
 			httpClient: httpClient,
 			revocationListsDistributionPoints: []string{
-				RootCertificateRevocationListDistributionPoint_YiviStaging,
-				VerifierCaCertificateRevocationListDistributionPoint_YiviStaging,
+				Staging_Yivi_RootCertificateRevocationListDistributionPoint,
+				Staging_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
 			},
 		},
 	}
@@ -80,10 +80,10 @@ func (conf *Configuration) Reload() error {
 	conf.Verifiers.clear()
 
 	// Read the hardcoded trust anchors
-	if err := conf.Issuers.addTrustAnchors([]byte(DefaultIssuerTrustAnchor_YiviStaging)); err != nil {
+	if err := conf.Issuers.addTrustAnchors([]byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi staging issuer trust anchors: %v", err)
 	}
-	if err := conf.Verifiers.addTrustAnchors([]byte(DefaultVerifierTrustAnchor_YiviStaging)); err != nil {
+	if err := conf.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi staging verifier trust anchors: %v", err)
 	}
 
