@@ -13,7 +13,6 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
@@ -37,12 +36,7 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	)
 	require.NoError(t, err)
 
-	verifierValidatorContext := eudi_jwt.VerificationContext{
-		X509VerificationOptionsTemplate: conf.Verifiers.CreateVerifyOptionsTemplate(),
-		X509RevocationLists:             conf.Verifiers.GetRevocationLists(),
-	}
-
-	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&verifierValidatorContext, &eudi.MockQueryValidatorFactory{})
+	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&conf.Verifiers, &eudi.MockQueryValidatorFactory{})
 	client, err := NewOpenID4VPClient(conf, storage, verifierValidator, keyBinder, &InMemoryLogsStorage{})
 	require.NoError(t, err)
 	return client

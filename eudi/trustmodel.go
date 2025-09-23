@@ -339,6 +339,10 @@ func (tm *TrustModel) CreateVerifyOptionsTemplate() x509.VerifyOptions {
 	}
 }
 
+func (tm *TrustModel) GetVerificationOptionsTemplate() x509.VerifyOptions {
+	return tm.CreateVerifyOptionsTemplate()
+}
+
 func (tm *TrustModel) syncCertificateRevocationLists() {
 	tm.logger.Debugf("Starting CRL sync...")
 
