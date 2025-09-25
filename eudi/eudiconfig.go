@@ -114,7 +114,7 @@ func (conf *Configuration) addProductionTrustAnchors() error {
 
 	// Read the hardcoded trust anchors
 	if err := conf.Issuers.addTrustAnchors([]byte(Production_Yivi_IssuerTrustAnchor)); err != nil {
-		return fmt.Errorf("failed to add yivi production staging issuer trust anchors: %v", err)
+		return fmt.Errorf("failed to add yivi production issuer trust anchors: %v", err)
 	}
 	if err := conf.Verifiers.addTrustAnchors([]byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production verifier trust anchors: %v", err)
