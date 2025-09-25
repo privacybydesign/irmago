@@ -93,6 +93,12 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
 
+	// When developer mode is enabled we want to load the staging trust anchors in addition
+	// to the production trust anchors
+	if irmaClient.Preferences.DeveloperMode {
+		openid4vpClient.eudiConf.EnableStagingTrustAnchors()
+	}
+
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new scheduler: %v", err)
@@ -145,7 +151,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return nil
 	}
 
-	if sessionReq.Protocol == "openid4vp" {
+	if sessionReq.Protocol == Protocol_OpenID4VP {
 		return client.openid4vpClient.NewSession(sessionReq.URL, handler)
 	}
 
@@ -559,6 +565,9 @@ func (client *Client) rawLogEntriesToLogInfo(entries []*LogEntry) ([]LogInfo, er
 
 func (client *Client) SetPreferences(prefs Preferences) {
 	client.irmaClient.SetPreferences(prefs)
+	if prefs.DeveloperMode {
+		client.openid4vpClient.eudiConf.EnableStagingTrustAnchors()
+	}
 }
 
 func (client *Client) GetPreferences() Preferences {

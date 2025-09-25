@@ -63,6 +63,7 @@ func (tm *TrustModel) clear() {
 	tm.trustedRootCertificates = x509.NewCertPool()
 	tm.trustedIntermediateCertificates = x509.NewCertPool()
 	tm.revocationLists = []*x509.RevocationList{}
+	tm.revocationListsDistributionPoints = []string{}
 }
 
 func getCrlFileNameForCertDistributionPoint(distPoint string) string {
@@ -188,6 +189,10 @@ func (tm *TrustModel) loadTrustChains() error {
 		trustAnchors[i] = bts
 	}
 	return tm.addTrustAnchors(trustAnchors...)
+}
+
+func (tm *TrustModel) addRevocationListDistributionPoints(distPointUrls ...string) {
+	tm.revocationListsDistributionPoints = append(tm.revocationListsDistributionPoints, distPointUrls...)
 }
 
 func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {

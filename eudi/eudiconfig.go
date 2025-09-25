@@ -25,7 +25,8 @@ func init() {
 // The trust chains are stored in the issuers and verifiers subfolders (.pem files), and the crls in the crls subfolder (.crl files).
 // The trust chains are expected to be in PEM format, where the first certificate is the root, followed by intermediate certificates.
 type Configuration struct {
-	path string
+	path                   string
+	useStagingTrustAnchors bool
 
 	Issuers   TrustModel
 	Verifiers TrustModel
@@ -38,22 +39,16 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 	conf = &Configuration{
 		path: path,
 		Issuers: TrustModel{
-			basePath:   filepath.Join(path, "issuers"),
-			logger:     Logger,
-			httpClient: httpClient,
-			revocationListsDistributionPoints: []string{
-				Staging_Yivi_RootCertificateRevocationListDistributionPoint,
-				Staging_Yivi_IssuerCaCertificateRevocationListDistributionPoint,
-			},
+			basePath:                          filepath.Join(path, "issuers"),
+			logger:                            Logger,
+			httpClient:                        httpClient,
+			revocationListsDistributionPoints: []string{},
 		},
 		Verifiers: TrustModel{
-			basePath:   filepath.Join(path, "verifiers"),
-			logger:     Logger,
-			httpClient: httpClient,
-			revocationListsDistributionPoints: []string{
-				Staging_Yivi_RootCertificateRevocationListDistributionPoint,
-				Staging_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
-			},
+			basePath:                          filepath.Join(path, "verifiers"),
+			logger:                            Logger,
+			httpClient:                        httpClient,
+			revocationListsDistributionPoints: []string{},
 		},
 	}
 
@@ -72,6 +67,11 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 	return
 }
 
+func (conf *Configuration) EnableStagingTrustAnchors() {
+	conf.useStagingTrustAnchors = true
+	conf.Reload()
+}
+
 // Reload assumes the latest files (trust anchors and certificate revocation lists) are downloaded.
 // Reload (re)populates the Configuration by loading the pinned trust anchors, followed by the downloaded ones.
 // Intermediate certificates are checked against the revocation list of the root certificates befor being added to the trust model.
@@ -79,12 +79,14 @@ func (conf *Configuration) Reload() error {
 	conf.Issuers.clear()
 	conf.Verifiers.clear()
 
-	// Read the hardcoded trust anchors
-	if err := conf.Issuers.addTrustAnchors([]byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
-		return fmt.Errorf("failed to add yivi staging issuer trust anchors: %v", err)
+	if err := conf.addProductionTrustAnchors(); err != nil {
+		return err
 	}
-	if err := conf.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
-		return fmt.Errorf("failed to add yivi staging verifier trust anchors: %v", err)
+
+	if conf.useStagingTrustAnchors {
+		if err := conf.addStagingTrustAnchors(); err != nil {
+			return err
+		}
 	}
 
 	// Read the trust anchors from storage
@@ -96,6 +98,48 @@ func (conf *Configuration) Reload() error {
 		return fmt.Errorf("failed to load verifier trust model: %v", err)
 	}
 
+	return nil
+}
+
+func (conf *Configuration) addProductionTrustAnchors() error {
+	conf.Issuers.addRevocationListDistributionPoints(
+		Production_Yivi_RootCertificateRevocationListDistributionPoint,
+		Production_Yivi_IssuerCaCertificateRevocationListDistributionPoint,
+	)
+
+	conf.Verifiers.addRevocationListDistributionPoints(
+		Production_Yivi_RootCertificateRevocationListDistributionPoint,
+		Production_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
+	)
+
+	// Read the hardcoded trust anchors
+	if err := conf.Issuers.addTrustAnchors([]byte(Production_Yivi_IssuerTrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add yivi production staging issuer trust anchors: %v", err)
+	}
+	if err := conf.Verifiers.addTrustAnchors([]byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add yivi production verifier trust anchors: %v", err)
+	}
+	return nil
+}
+
+func (conf *Configuration) addStagingTrustAnchors() error {
+	conf.Issuers.addRevocationListDistributionPoints(
+		Staging_Yivi_RootCertificateRevocationListDistributionPoint,
+		Staging_Yivi_IssuerCaCertificateRevocationListDistributionPoint,
+	)
+
+	conf.Verifiers.addRevocationListDistributionPoints(
+		Staging_Yivi_RootCertificateRevocationListDistributionPoint,
+		Staging_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
+	)
+
+	// Read the hardcoded trust anchors
+	if err := conf.Issuers.addTrustAnchors([]byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add yivi staging issuer trust anchors: %v", err)
+	}
+	if err := conf.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
+		return fmt.Errorf("failed to add yivi staging verifier trust anchors: %v", err)
+	}
 	return nil
 }
 
