@@ -67,9 +67,9 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 	return
 }
 
-func (conf *Configuration) EnableStagingTrustAnchors() {
+func (conf *Configuration) EnableStagingTrustAnchors() error {
 	conf.useStagingTrustAnchors = true
-	conf.Reload()
+	return conf.Reload()
 }
 
 // Reload assumes the latest files (trust anchors and certificate revocation lists) are downloaded.
