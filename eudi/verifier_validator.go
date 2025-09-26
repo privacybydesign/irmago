@@ -116,6 +116,10 @@ func getEndEntityCertFromX5cHeader(token *jwt.Token) (*x509.Certificate, error) 
 		return nil, fmt.Errorf("auth request token doesn't contain valid x5c field in the header")
 	}
 
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("auth request token contains empty x5c array in the header")
+	}
+
 	endEntityString, ok := certs[0].(string)
 	if !ok {
 		return nil, fmt.Errorf("failed to convert end-entity to string: %v", certs[0])
