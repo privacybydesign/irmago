@@ -93,6 +93,14 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
 
+	// When developer mode is enabled we want to load the staging trust anchors in addition
+	// to the production trust anchors
+	if irmaClient.Preferences.DeveloperMode {
+		if err := openid4vpClient.eudiConf.EnableStagingTrustAnchors(); err != nil {
+			common.Logger.Warnf("failed to enable staging trust anchors: %v", err)
+		}
+	}
+
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new scheduler: %v", err)
@@ -145,7 +153,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return nil
 	}
 
-	if sessionReq.Protocol == "openid4vp" {
+	if sessionReq.Protocol == Protocol_OpenID4VP {
 		return client.openid4vpClient.NewSession(sessionReq.URL, handler)
 	}
 
@@ -559,6 +567,14 @@ func (client *Client) rawLogEntriesToLogInfo(entries []*LogEntry) ([]LogInfo, er
 
 func (client *Client) SetPreferences(prefs Preferences) {
 	client.irmaClient.SetPreferences(prefs)
+	if prefs.DeveloperMode {
+		if err := client.openid4vpClient.eudiConf.EnableStagingTrustAnchors(); err != nil {
+			common.Logger.Warnf("error while enabling staging trust anchors: %v", err)
+		}
+		if err := client.openid4vpClient.eudiConf.UpdateCertificateRevocationLists(); err != nil {
+			common.Logger.Warnf("error while updating CRLs: %v", err)
+		}
+	}
 }
 
 func (client *Client) GetPreferences() Preferences {
