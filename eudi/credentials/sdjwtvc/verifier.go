@@ -48,8 +48,8 @@ func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationCo
 		panic(fmt.Errorf("failed to create X509 verification options: %v", err))
 	}
 	return SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: *opts,
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: *opts,
 		},
 		Clock:       NewSystemClock(),
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -440,7 +440,7 @@ func decodeJwtAndVerifyFromX5cHeader(signedJwt []byte, verificationContext SdJwt
 
 	// Get requestor info from cert
 	cert := keyProvider.X509KeyProvider.GetCert()
-	err = verificationContext.VerifyCertificate(cert, nil)
+	err = eudi_jwt.VerifyCertificate(verificationContext.VerificationContext, cert, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
 	}

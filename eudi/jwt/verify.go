@@ -11,36 +11,50 @@ import (
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
 
-type VerificationContext struct {
+type StaticVerificationContext struct {
+	VerifyOpts      x509.VerifyOptions
+	RevocationLists []*x509.RevocationList
+}
+
+func (s *StaticVerificationContext) GetVerificationOptionsTemplate() x509.VerifyOptions {
+	return s.VerifyOpts
+}
+
+func (s *StaticVerificationContext) GetRevocationLists() []*x509.RevocationList {
+	return s.RevocationLists
+}
+
+type VerificationContext interface {
 	// X509VerificationOptionsTemplate contains all trusted certificates and settings for verifying the `x5c` header
 	// field of the issuer signed jwt when provided.
 	// Before certificate verification, the options are copied to a new instance, where fields like the Hostname can be set on a per-request basis.
-	X509VerificationOptionsTemplate x509.VerifyOptions
+	GetVerificationOptionsTemplate() x509.VerifyOptions
 
 	// X509RevocationLists contains all revocation lists for verifying the `x5c` header
 	// field of the issuer signed jwt when provided.
-	X509RevocationLists []*x509.RevocationList
+	GetRevocationLists() []*x509.RevocationList
 }
 
-func (context VerificationContext) GetX509VerificationOptionsFromTemplate(hostname string) x509.VerifyOptions {
+func GetX509VerificationOptionsFromTemplate(context VerificationContext, hostname string) x509.VerifyOptions {
+	template := context.GetVerificationOptionsTemplate()
 	return x509.VerifyOptions{
 		// TODO: take clock skew into consideration?
 		//CurrentTime:   context.Clock.Now(),
-		Roots:         context.X509VerificationOptionsTemplate.Roots,
-		Intermediates: context.X509VerificationOptionsTemplate.Intermediates,
+		Roots:         template.Roots,
+		Intermediates: template.Intermediates,
 		DNSName:       hostname,
-		KeyUsages:     context.X509VerificationOptionsTemplate.KeyUsages,
+		KeyUsages:     template.KeyUsages,
 	}
 }
 
-func (context VerificationContext) VerifyCertificate(cert *x509.Certificate, hostname *string) error {
+func VerifyCertificate(context VerificationContext, cert *x509.Certificate, hostname *string) error {
 	// Verify the end-entity cert against the trusted chains
 	var verifyOpts x509.VerifyOptions
 	if hostname != nil {
-		verifyOpts = context.GetX509VerificationOptionsFromTemplate(*hostname)
+		verifyOpts = GetX509VerificationOptionsFromTemplate(context, *hostname)
 	} else {
 		// If URI successfully verifies, continue with the rest of the validations
-		verifyOpts = context.X509VerificationOptionsTemplate
+		verifyOpts = context.GetVerificationOptionsTemplate()
 	}
 
 	// Verify the end-entity cert against the trusted chains
@@ -49,7 +63,7 @@ func (context VerificationContext) VerifyCertificate(cert *x509.Certificate, hos
 	}
 
 	// Check the end-entity cert against all revocation lists from the issuing cert
-	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(cert, context.X509RevocationLists); err != nil {
+	if err := utils.VerifyCertificateAgainstIssuerRevocationLists(cert, context.GetRevocationLists()); err != nil {
 		return fmt.Errorf("failed to verify x5c end-entity certificate against revocation lists: %v", err)
 	}
 

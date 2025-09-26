@@ -113,8 +113,8 @@ func CreateTestVerificationContext() SdJwtVcVerificationContext {
 	im.AddCert(irmaAppCertChain[1])
 
 	return SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: x509.VerifyOptions{
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: x509.VerifyOptions{
 				Roots:         roots,
 				Intermediates: im,
 				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},

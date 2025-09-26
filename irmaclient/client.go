@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-co-op/gocron/v2"
+
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -22,6 +23,7 @@ type Client struct {
 	irmaClient      *IrmaClient
 	logsStorage     LogsStorage
 	keyBinder       sdjwtvc.KeyBinder
+	scheduler       gocron.Scheduler
 }
 
 func New(
@@ -53,6 +55,7 @@ func New(
 		return nil, fmt.Errorf("instantiating configuration failed: %v", err)
 	}
 
+	eudi.Logger = irma.Logger
 	eudiConf, err := eudi.NewConfiguration(eudiConfigurationPath)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating eudi configuration failed: %v", err)
@@ -66,16 +69,11 @@ func New(
 		return nil, fmt.Errorf("failed to open irma storage: %v", err)
 	}
 
-	keybindingStorage := NewBboltKeybindingStorage(storage.db, aesKey)
-	keyBinder := sdjwtvc.NewDefaultKeyBinder(keybindingStorage)
+	keyBindingStorage := NewBboltKeyBindingStorage(storage.db, aesKey)
+	keyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
-	verifierVerificationContext := eudi_jwt.VerificationContext{
-		X509VerificationOptionsTemplate: eudiConf.Verifiers.CreateVerifyOptionsTemplate(),
-		X509RevocationLists:             eudiConf.Verifiers.GetRevocationLists(),
-	}
-
-	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&verifierVerificationContext, &eudi.DefaultQueryValidatorFactory{})
+	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &eudi.DefaultQueryValidatorFactory{})
 	sdjwtvcStorage := NewBboltSdJwtVcStorage(storage.db, aesKey)
 
 	openid4vpClient, err := NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, keyBinder, storage)
@@ -85,17 +83,40 @@ func New(
 
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: eudiConf.Issuers.CreateVerifyOptionsTemplate(),
-			X509RevocationLists:             eudiConf.Issuers.GetRevocationLists(),
-		},
-		Clock:       sdjwtvc.NewSystemClock(),
-		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),
+		VerificationContext: &eudiConf.Issuers,
+		Clock:               sdjwtvc.NewSystemClock(),
+		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
 	}
 
 	irmaClient, err := NewIrmaClient(irmaConf, handler, signer, storage, sdJwtVcVerificationContext, sdjwtvcStorage, keyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
+	}
+
+	// When developer mode is enabled we want to load the staging trust anchors in addition
+	// to the production trust anchors
+	if irmaClient.Preferences.DeveloperMode {
+		if err := openid4vpClient.eudiConf.EnableStagingTrustAnchors(); err != nil {
+			common.Logger.Warnf("failed to enable staging trust anchors: %v", err)
+		}
+	}
+
+	scheduler, err := gocron.NewScheduler()
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate new scheduler: %v", err)
+	}
+	scheduler.Start()
+
+	// Future TODO: add Context so we can check for cancellation of the job ?
+	_, err = scheduler.NewJob(
+		//gocron.DurationRandomJob(28*time.Minute, 32*time.Minute),
+		gocron.DurationRandomJob(28*time.Second, 32*time.Second),
+		gocron.NewTask(eudiConf.UpdateCertificateRevocationLists),
+		gocron.WithStartAt(gocron.WithStartImmediately()),
+	)
+
+	if err != nil {
+		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
 	}
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
@@ -109,10 +130,12 @@ func New(
 		irmaClient:      irmaClient,
 		logsStorage:     storage,
 		keyBinder:       keyBinder,
+		scheduler:       scheduler,
 	}, nil
 }
 
 func (client *Client) Close() error {
+	client.scheduler.Shutdown()
 	return client.irmaClient.Close()
 }
 
@@ -130,7 +153,7 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return nil
 	}
 
-	if sessionReq.Protocol == "openid4vp" {
+	if sessionReq.Protocol == Protocol_OpenID4VP {
 		return client.openid4vpClient.NewSession(sessionReq.URL, handler)
 	}
 
@@ -544,6 +567,14 @@ func (client *Client) rawLogEntriesToLogInfo(entries []*LogEntry) ([]LogInfo, er
 
 func (client *Client) SetPreferences(prefs Preferences) {
 	client.irmaClient.SetPreferences(prefs)
+	if prefs.DeveloperMode {
+		if err := client.openid4vpClient.eudiConf.EnableStagingTrustAnchors(); err != nil {
+			common.Logger.Warnf("error while enabling staging trust anchors: %v", err)
+		}
+		if err := client.openid4vpClient.eudiConf.UpdateCertificateRevocationLists(); err != nil {
+			common.Logger.Warnf("error while updating CRLs: %v", err)
+		}
+	}
 }
 
 func (client *Client) GetPreferences() Preferences {

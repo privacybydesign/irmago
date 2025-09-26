@@ -91,8 +91,8 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 	require.NoError(t, err)
 
 	context := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: *x509Options,
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: *x509Options,
 		},
 		Clock:       sdjwtvc.NewSystemClock(),
 		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),

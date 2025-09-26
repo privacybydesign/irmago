@@ -24,11 +24,11 @@ type VerifierValidator interface {
 }
 
 type RequestorCertificateStoreVerifierValidator struct {
-	verificationContext *eudi_jwt.VerificationContext
+	verificationContext eudi_jwt.VerificationContext
 	validatorFactory    QueryValidatorFactory
 }
 
-func NewRequestorCertificateStoreVerifierValidator(verificationContext *eudi_jwt.VerificationContext, validatorFactory QueryValidatorFactory) VerifierValidator {
+func NewRequestorCertificateStoreVerifierValidator(verificationContext eudi_jwt.VerificationContext, validatorFactory QueryValidatorFactory) VerifierValidator {
 	return &RequestorCertificateStoreVerifierValidator{
 		verificationContext: verificationContext,
 		validatorFactory:    validatorFactory,
@@ -96,7 +96,7 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
-		if err := v.verificationContext.VerifyCertificate(parsedCert, &hostname); err != nil {
+		if err := eudi_jwt.VerifyCertificate(v.verificationContext, parsedCert, &hostname); err != nil {
 			return nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
 		}
 

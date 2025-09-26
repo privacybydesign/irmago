@@ -83,8 +83,8 @@ func runCertChainTest(t *testing.T, config x509TestConfig) {
 	require.NoError(t, err)
 
 	context := SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: *verifyOpts,
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: *verifyOpts,
 		},
 		Clock:       NewSystemClock(),
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -381,8 +381,8 @@ func Test_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
 		withNotBefore(nbf)
 
 	context := SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: newWorkingVerifyOptions(),
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: newWorkingVerifyOptions(),
 		},
 		Clock:       &testClock{time: now},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -402,8 +402,8 @@ func Test_VerificationMinusOneMinuteIsBeforeIat_GivenClockSkew_Success(t *testin
 		withKbIssuedAt(now)
 
 	context := SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now - 60},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -424,8 +424,8 @@ func Test_VerificationPlusOneMinuteIsAfterExp_GivenClockSkew_Success(t *testing.
 		withExpiryTime(now)
 
 	context := SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now + 60},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -446,8 +446,8 @@ func Test_VerificationMinusOneMinuteIsBeforeNotBefore_GivenClockSkew_Success(t *
 		withNotBefore(now)
 
 	context := SdJwtVcVerificationContext{
-		VerificationContext: eudi_jwt.VerificationContext{
-			X509VerificationOptionsTemplate: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now - 60},
 		JwtVerifier: NewJwxJwtVerifier(),
