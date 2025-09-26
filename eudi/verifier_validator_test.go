@@ -23,6 +23,7 @@ func TestVerifierValidator(t *testing.T) {
 
 	// Unhappy flow tests for x5c related errors
 	t.Run("ParseAndVerifyAuthorizationRequest fails with missing x5c header", testParseAndVerifyAuthorizationRequestFailureMissingX5C)
+	t.Run("ParseAndVerifyAuthorizationRequest fails with empty x5c array", testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray)
 	t.Run("ParseAndVerifyAuthorizationRequest fails with expired x5c certificate", testParseAndVerifyAuthorizationRequestFailureExpiredX5C)
 	t.Run("ParseAndVerifyAuthorizationRequest fails with revoked x5c certificate", testParseAndVerifyAuthorizationRequestFailureRevokedX5C)
 	t.Run("ParseAndVerifyAuthorizationRequest fails for missing scheme data in x5c certificate", testParseAndVerifyAuthorizationRequestFailureMissingSchemeData)
@@ -35,6 +36,20 @@ func TestVerifierValidator(t *testing.T) {
 
 	t.Run("ParseAndVerifyAuthorizationRequest fails with valid cert but missing intermediate certificate", testParseAndVerifyAuthorizationRequestFailureMissingIntermediate)
 	t.Run("ParseAndVerifyAuthorizationRequest fails with valid cert but expired intermediate certificate", testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate)
+}
+
+func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
+	// Setup test data
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		// Modify the client_id to an invalid value
+		token.Header["x5c"] = []string{}
+	}, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to get end-entity certificate from x5c header: auth request token contains empty x5c array in the header")
 }
 
 func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
