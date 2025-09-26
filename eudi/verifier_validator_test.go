@@ -41,7 +41,6 @@ func TestVerifierValidator(t *testing.T) {
 func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
 	// Setup test data
 	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
-		// Modify the client_id to an invalid value
 		token.Header["x5c"] = []string{}
 	}, testdata.PkiOption_None)
 
