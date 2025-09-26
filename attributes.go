@@ -234,6 +234,7 @@ func (al *AttributeList) CredentialInfo() *CredentialInfo {
 		Hash:                al.Hash(),
 		Revoked:             al.Revoked,
 		RevocationSupported: al.RevocationSupported,
+		CredentialFormat:    "idemix",
 	}
 }
 

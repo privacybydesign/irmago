@@ -10,7 +10,6 @@ import (
 	"github.com/go-errors/errors"
 
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/privacybydesign/irmago/server/requestorserver"
@@ -144,7 +143,7 @@ func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request inte
 		}
 
 		if useJWTs {
-			skbts, err := os.ReadFile(filepath.Join(testdata, "jwtkeys", "requestor1-sk.pem"))
+			skbts, err := os.ReadFile(filepath.Join(testdataFolder, "jwtkeys", "requestor1-sk.pem"))
 			require.NoError(t, err)
 			sk, err := jwt.ParseRSAPrivateKeyFromPEM(skbts)
 			require.NoError(t, err)
@@ -160,7 +159,7 @@ func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request inte
 	}
 }
 
-func startSessionAtClient(t *testing.T, sesPkg *server.SessionPackage, client *irmaclient.Client, sessionHandler sessionHandler) (*irma.HTTPTransport, irmaclient.SessionDismisser) {
+func startSessionAtClient(t *testing.T, sesPkg *server.SessionPackage, client *irmaclient.IrmaClient, sessionHandler sessionHandler) (*irma.HTTPTransport, irmaclient.SessionDismisser) {
 	j, err := json.Marshal(sesPkg.SessionPtr)
 	require.NoError(t, err)
 	dismisser := client.NewSession(string(j), sessionHandler)
@@ -214,7 +213,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 func createSessionHandler(
 	t *testing.T,
 	opts option,
-	client *irmaclient.Client,
+	client *irmaclient.IrmaClient,
 	sesPkg *server.SessionPackage,
 	frontendOptionsHandler func(handler *TestHandler),
 	pairingHandler func(handler *TestHandler),
@@ -273,7 +272,7 @@ func waitSessionFinished(t *testing.T, serv interface{}, token irma.RequestorTok
 func doSession(
 	t *testing.T,
 	request interface{},
-	client *irmaclient.Client,
+	client *irmaclient.IrmaClient,
 	irmaServer *IrmaServer,
 	requestorServer *requestorserver.Server,
 	frontendOptionsHandler func(handler *TestHandler),
@@ -282,12 +281,12 @@ func doSession(
 	options ...option,
 ) *requestorSessionResult {
 	if client == nil {
-		var handler *TestClientHandler
-		client, handler = parseStorage(t, options...)
-		defer test.ClearTestStorage(t, client, handler.storage)
+		client, _ = parseStorage(t, options...)
+		defer client.Close()
 	}
 
 	opts := processOptions(options...)
+
 	serv, conf, shouldStop := startServer(t, opts, irmaServer, requestorServer, config)
 	if shouldStop {
 		defer serv.Stop()
@@ -344,8 +343,7 @@ func doSession(
 func doChainedSessions(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
 	defer client.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
@@ -379,8 +377,7 @@ func doChainedSessions(
 func doUnauthorizedChainedSession(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
 	defer client.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
@@ -417,8 +414,8 @@ func doUnauthorizedChainedSession(
 func doNonRequestorChainedSessions(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, handler := parseStorage(t, opts...)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t, opts...)
+	defer client.Close()
 
 	require.IsType(t, IrmaServerConfiguration, conf)
 	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())

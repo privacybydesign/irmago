@@ -4,9 +4,7 @@ package test
 
 import (
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -85,26 +83,8 @@ func FindTestdataFolder(t *testing.T) string {
 	return ""
 }
 
-// ClearTestStorage removes any output from previously run tests.
-func ClearTestStorage(t *testing.T, client io.Closer, storage string) {
-	if client != nil {
-		checkError(t, client.Close())
-	}
-	checkError(t, os.RemoveAll(storage))
-}
-
-func ClearAllTestStorage() {
-	dir := filepath.Join(os.TempDir(), "irmatest*")
-	matches, err := filepath.Glob(dir)
-	checkError(nil, err)
-	for _, match := range matches {
-		checkError(nil, os.RemoveAll(match))
-	}
-}
-
 func CreateTestStorage(t *testing.T) string {
-	tmp, err := os.MkdirTemp("", "irmatest")
-	require.NoError(t, err)
+	tmp := t.TempDir()
 	checkError(t, common.EnsureDirectoryExists(filepath.Join(tmp, "client")))
 	return tmp
 }

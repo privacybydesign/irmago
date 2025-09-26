@@ -94,6 +94,25 @@ type IssuanceRequest struct {
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
 }
 
+// DefaultSdJwtIssueAmount is what you get when the requestor does not specify how many SD-JWTs to issue in a batch.
+const DefaultSdJwtIssueAmount uint = 50
+const MaxSdJwtIssueAmount uint = 200
+
+func CalculateAmountOfSdJwtsToIssue(req *IssuanceRequest) (uint, error) {
+	var amount uint = 0
+	for _, cred := range req.Credentials {
+		if cred.SdJwtBatchSize > MaxSdJwtIssueAmount {
+			return 0, fmt.Errorf("requested number of sdjwts (%v) is higher than maximum allowed amount (%v) for %v",
+				cred.SdJwtBatchSize,
+				MaxSdJwtIssueAmount,
+				cred.CredentialTypeID.String(),
+			)
+		}
+		amount += cred.SdJwtBatchSize
+	}
+	return amount, nil
+}
+
 // A CredentialRequest contains the attributes and metadata of a credential
 // that will be issued in an IssuanceRequest.
 type CredentialRequest struct {
@@ -104,6 +123,10 @@ type CredentialRequest struct {
 	RevocationKey               string                   `json:"revocationKey,omitempty"`
 	RevocationSupported         bool                     `json:"revocationSupported,omitempty"`
 	RandomBlindAttributeTypeIDs []string                 `json:"randomblindIDs,omitempty"`
+
+	// SD-JWT related fields
+	// The number of SD-JWT insances to issue for this credential.
+	SdJwtBatchSize uint `json:"sdJwtBatchSize,omitempty"`
 }
 
 // SessionRequest instances contain all information the irmaclient needs to perform an IRMA session.
@@ -631,7 +654,11 @@ func (cr *CredentialRequest) Info(conf *Configuration, metadataVersion byte, iss
 	if err != nil {
 		return nil, err
 	}
-	return list.CredentialInfo(), nil
+	info := list.CredentialInfo()
+	if cr.SdJwtBatchSize != 0 {
+		info.InstanceCount = &cr.SdJwtBatchSize
+	}
+	return info, nil
 }
 
 // Validate checks that this credential request is consistent with the specified Configuration:
@@ -783,6 +810,7 @@ func (ir *IssuanceRequest) GetCredentialInfoList(
 			if err != nil {
 				return nil, err
 			}
+
 			ir.CredentialInfoList = append(ir.CredentialInfoList, info)
 		}
 	}
@@ -886,7 +914,7 @@ func (t Timestamp) IsZero() bool {
 	return time.Time(t).IsZero()
 }
 
-func (t *Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+func (t Timestamp) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	return e.EncodeElement(t.String(), start)
 }
 
@@ -900,7 +928,7 @@ func (t *Timestamp) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 }
 
 // MarshalJSON marshals a timestamp.
-func (t *Timestamp) MarshalJSON() ([]byte, error) {
+func (t Timestamp) MarshalJSON() ([]byte, error) {
 	return []byte(t.String()), nil
 }
 

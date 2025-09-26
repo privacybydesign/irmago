@@ -300,7 +300,7 @@ func validatePrivateKey(issuerid IssuerIdentifier, sk *gabikeys.PrivateKey, conf
 		if conf.SchemeManagers[issuerid.SchemeManagerIdentifier()].Demo {
 			Logger.Warn(msg)
 		} else {
-			return errors.Errorf(msg)
+			return errors.New(msg)
 		}
 	}
 	return nil
