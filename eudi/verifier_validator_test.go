@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/testdata"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -172,7 +170,9 @@ func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
 
 	// Remove the root certificate from the trusted roots, to simulate a missing cert
-	verifierValidator.(*RequestorCertificateStoreVerifierValidator).verificationContext.X509VerificationOptionsTemplate.Roots = x509.NewCertPool()
+	verifierValidator.(*RequestorCertificateStoreVerifierValidator).
+		verificationContext.(*TrustModel).
+		trustedRootCertificates = x509.NewCertPool()
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -199,7 +199,9 @@ func testParseAndVerifyAuthorizationRequestFailureMissingIntermediate(t *testing
 	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
 
 	// Remove the intermediate certificate from the trusted intermediates, to simulate a missing cert
-	verifierValidator.(*RequestorCertificateStoreVerifierValidator).verificationContext.X509VerificationOptionsTemplate.Intermediates = x509.NewCertPool()
+	verifierValidator.(*RequestorCertificateStoreVerifierValidator).
+		verificationContext.(*TrustModel).
+		trustedIntermediateCertificates = x509.NewCertPool()
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -222,8 +224,9 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
 	// Setup PKI
 	hostname := "example.com"
-	_, rootCert, _, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts)
-	verifierKey, verifierCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), hostname, caCerts[0], caKeys[0], opts)
+	crlDistPoint := "https://yivi.app/crl.crl"
+	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts, &crlDistPoint)
+	verifierKey, verifierCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), hostname, caCerts[0], caKeys[0], testdata.VerifierCertSchemeData, opts)
 
 	// Setup VerifierValidator with PKI
 	rootPool := x509.NewCertPool()
@@ -260,15 +263,9 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 		trustedRootCertificates:         rootPool,
 		trustedIntermediateCertificates: intermediatePool,
 		revocationLists:                 revocationLists,
-		logger:                          logrus.New(),
 	}
 
-	verifierValidatorContext := eudi_jwt.VerificationContext{
-		X509VerificationOptionsTemplate: trustModel.CreateVerifyOptionsTemplate(),
-		X509RevocationLists:             trustModel.GetRevocationLists(),
-	}
-
-	verifierValidator = NewRequestorCertificateStoreVerifierValidator(&verifierValidatorContext, &MockQueryValidatorFactory{})
+	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, &MockQueryValidatorFactory{})
 
 	// Create an authorization request JWT
 	authRequestJwt = testdata.CreateTestAuthorizationRequestJWT(hostname, verifierKey, verifierCert, tokenModifier)

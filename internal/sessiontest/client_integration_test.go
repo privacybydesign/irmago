@@ -1,13 +1,21 @@
 package sessiontest
 
 import (
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	mathBig "math/big"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -21,6 +29,7 @@ import (
 
 func TestEudiClient(t *testing.T) {
 	t.Run("double sdjwt issuance replaces instances", testDoubleSdJwtIssuanceReplacesInstances)
+	t.Run("double sdjwt issuance fails after revocation list update", testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate)
 	t.Run("credential instance count", testCredentialInstanceCount)
 	t.Run("test logs for combined issuance and disclosure", testLogsForCombinedIssuanceAndDisclosure)
 
@@ -326,6 +335,121 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 	requireIdemixOnlyCredentialRemovalLog(t, logs[0])
 }
 
+func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
+	conf := irmaServerConfWithSdJwtEnabledWithoutCerts(t)
+
+	var crl *x509.RevocationList
+
+	// Setup a mocked server to get the CRL from
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(crl.Raw)
+	}))
+	defer ts.Close()
+
+	// Setup a PKI to test with
+	// The revocation list is already in need of an update at creation time, so that the client will try to download it
+	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT 1"), 1, testdata.PkiOption_None, &ts.URL)
+
+	// The caCrls are the CRLs issued by the root for the intermediate CAs, so we need to create a new one for the intermediate CA itself
+	crlTemplate := testdata.GetDefaultCrlTemplate(caCerts[0])
+	crlTemplate.AuthorityKeyId = caCerts[0].SubjectKeyId // Set the correct AuthorityKeyId
+	crlTemplate.Issuer = caCerts[0].Subject              // Set the correct Issuer
+	crlTemplate.ThisUpdate = time.Now().Add(-2 * time.Hour)
+	crlTemplate.NextUpdate = time.Now().Add(-1 * time.Hour)
+
+	crlBytes, err := x509.CreateRevocationList(rand.Reader, crlTemplate, caCerts[0], caKeys[0])
+	require.NoError(t, err)
+	crl, err = x509.ParseRevocationList(crlBytes)
+	require.NoError(t, err)
+
+	// Create an issuer certificate for the IRMA server
+	issuerSchemeData := `{
+		"registration": "https://portal.yivi.app/organizations/yivi",
+		"organization": {
+			"legalName": {
+				"en": "Yivi B.V.",
+				"nl": "Yivi B.V."
+			}
+		},
+		"ap": {
+			"authorized": [
+				{
+					"credential": "test.test.email",
+					"attributes": ["email"]
+				}
+			]
+		}
+	}`
+
+	uri, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	issuerKey, issuerCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), uri.Host, caCerts[0], caKeys[0], issuerSchemeData, testdata.PkiOption_None)
+	testdata.WritePrivateKeyToFile(t, path.Join(conf.SdJwtIssuanceSettings.SdJwtIssuerPrivKeysDir, "test.test.pem"), issuerKey)
+	testdata.WriteCertAsPemFile(t, path.Join(conf.SdJwtIssuanceSettings.SdJwtIssuerCertificatesDir, "test.test.pem"), issuerCert)
+
+	irmaServer := StartIrmaServer(t, conf)
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	client := createClientWithCustomIssuerTrustChain(t, rootCert, caCerts[0])
+	defer client.Close()
+
+	revocationListUpdateInterval := 3 * time.Second
+	client.InitJobs(revocationListUpdateInterval)
+
+	// Give the client some time to init and download the current CRL
+	time.Sleep(4 * time.Second)
+
+	// Execute first issuance
+	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	info := client.CredentialInfoList()
+	require.Len(t, info, 3)
+
+	creds := collectCredentialsWithId(info, "test.test.email")
+	require.Len(t, creds, 2)
+
+	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+
+	require.Equal(t, 10, int(*cred.InstanceCount))
+
+	// Revoke the issuer certificate, wait for the client to pick up the new CRL and try to issue again
+	crlTemplate.Number = crlTemplate.Number.Add(crl.Number, mathBig.NewInt(1))
+	crlTemplate.NextUpdate = time.Now().Add(24 * time.Hour)
+	crlTemplate.RevokedCertificateEntries = []x509.RevocationListEntry{
+		{
+			SerialNumber:   issuerCert.SerialNumber,
+			RevocationTime: time.Now(),
+			ReasonCode:     0,
+		},
+	}
+	updatedCrlBytes, err := x509.CreateRevocationList(rand.Reader, crlTemplate, caCerts[0], caKeys[0])
+	require.NoError(t, err)
+	crl, err = x509.ParseRevocationList(updatedCrlBytes)
+	require.NoError(t, err)
+
+	// Sleep shortly to let the client update the CRL
+	time.Sleep(6 * time.Second)
+
+	// Execute second issuance, which should now fail
+	// TODO: how to check that it failed?
+	failIssueSdJwtAndIdemixToClient(t, client, irmaServer)
+
+	info = client.CredentialInfoList()
+	require.Len(t, info, 3)
+
+	creds = collectCredentialsWithId(info, "test.test.email")
+	require.Len(t, creds, 2)
+
+	cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+
+	require.Equal(t, 10, int(*cred.InstanceCount))
+}
+
 func requireIdemixAndSdJwtCredentialRemovalLog(t *testing.T, log irmaclient.LogInfo) {
 	require.Equal(t, log.Type, irmaclient.LogType_CredentialRemoval)
 
@@ -626,7 +750,7 @@ func issueIdemixOnlyToClient(t *testing.T, client *irmaclient.Client, irmaServer
 }
 
 func issueSdJwtAndIdemixToClient(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
-	sessionReq := createIrmaIssuanceRequestWithSdJwts()
+	sessionReq := createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")
 	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, sessionReq)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
@@ -635,6 +759,18 @@ func issueSdJwtAndIdemixToClient(t *testing.T, client *irmaclient.Client, irmaSe
 	details.PermissionHandler(true, nil)
 
 	require.True(t, sessionHandler.AwaitSessionEnd())
+}
+
+func failIssueSdJwtAndIdemixToClient(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+	sessionReq := createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, sessionReq)
+
+	sessionHandler := irmaclient.NewMockSessionHandler(t)
+	client.NewSession(sessionRequestJson, sessionHandler)
+	details := sessionHandler.AwaitPermissionRequest()
+	details.PermissionHandler(true, nil)
+
+	require.False(t, sessionHandler.AwaitSessionEnd())
 }
 
 func performIrmaIssuanceSession(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer, request *irma.IssuanceRequest) {
@@ -715,13 +851,13 @@ func startIrmaSessionAtServer(t *testing.T, server *IrmaServer, req irma.Session
 	return string(sessionJson)
 }
 
-func createIrmaIssuanceRequestWithSdJwts() *irma.IssuanceRequest {
+func createIrmaIssuanceRequestWithSdJwts(credentialId string, attributeId string) *irma.IssuanceRequest {
 	var sdJwtBatchSize uint = 10
 	req := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
-			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.email"),
+			CredentialTypeID: irma.NewCredentialTypeIdentifier(credentialId),
 			Attributes: map[string]string{
-				"email": "test@gmail.com",
+				attributeId: "test@gmail.com",
 			},
 			SdJwtBatchSize: sdJwtBatchSize,
 		},
@@ -730,6 +866,10 @@ func createIrmaIssuanceRequestWithSdJwts() *irma.IssuanceRequest {
 }
 
 func createClient(t *testing.T) *irmaclient.Client {
+	return createClientWithIssuerChain(t, nil)
+}
+
+func createClientWithIssuerChain(t *testing.T, issuerChain []byte) *irmaclient.Client {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -745,7 +885,12 @@ func createClient(t *testing.T) *irmaclient.Client {
 	// Add test issuer certificates as trusted chain
 	certsPath := filepath.Join(storagePath, "eudi_configuration", "issuers", "certs")
 	require.NoError(t, common.EnsureDirectoryExists(certsPath))
-	require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
+
+	if issuerChain != nil {
+		require.NoError(t, common.SaveFile(filepath.Join(certsPath, "integrationtest-chain.pem"), issuerChain))
+	} else {
+		require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
+	}
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	client, err := irmaclient.New(storagePath, irmaConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
@@ -757,6 +902,13 @@ func createClient(t *testing.T) *irmaclient.Client {
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	return client
+}
+
+func createClientWithCustomIssuerTrustChain(t *testing.T, issuerRoot *x509.Certificate, issuerCert *x509.Certificate) *irmaclient.Client {
+	issuerChainBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerRoot.Raw})
+	issuerChainBytes = append(issuerChainBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerCert.Raw})...)
+
+	return createClientWithIssuerChain(t, issuerChainBytes)
 }
 
 func createAuthRequestRequest() string {
@@ -796,6 +948,17 @@ func irmaServerConfWithSdJwtEnabled(t *testing.T) *server.Configuration {
 	privKeyDir := t.TempDir()
 	require.NoError(t, os.WriteFile(path.Join(privKeyDir, "test.test.pem"), testdata.IssuerPrivKeyBytes, 0644))
 
+	conf := IrmaServerConfigurationWithTempStorage(t)
+	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
+		SdJwtIssuerPrivKeysDir:     privKeyDir,
+		SdJwtIssuerCertificatesDir: certDir,
+	}
+	return conf
+}
+
+func irmaServerConfWithSdJwtEnabledWithoutCerts(t *testing.T) *server.Configuration {
+	certDir := t.TempDir()
+	privKeyDir := t.TempDir()
 	conf := IrmaServerConfigurationWithTempStorage(t)
 	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{
 		SdJwtIssuerPrivKeysDir:     privKeyDir,

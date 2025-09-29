@@ -1,7 +1,87 @@
 package eudi
 
-// DefaultIssuerTrustAnchor_YiviStaging is the default issuer trust anchor for Yivi staging and will be replaced with the actual trust anchor for Yivi production (TODO)
-const DefaultIssuerTrustAnchor_YiviStaging = `
+// Production trust anchors
+const (
+	Production_Yivi_RootCertificateRevocationListDistributionPoint       = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=AKPlCD/saQ9CmdXzNQpPgmO%2BHQM"
+	Production_Yivi_IssuerCaCertificateRevocationListDistributionPoint   = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=TNFX2bhlb1JXido8TZQr1Wqlcb8"
+	Production_Yivi_VerifierCaCertificateRevocationListDistributionPoint = "https://ca.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=kP7IIn8hVVbRGQECuKyMxPkQM8k"
+
+	Production_Yivi_IssuerTrustAnchor = `
+Subject: CN=Yivi Requestors Root CA,O=Yivi,C=NL
+Issuer: CN=Yivi Requestors Root CA,O=Yivi,C=NL
+-----BEGIN CERTIFICATE-----
+MIIB4zCCAYmgAwIBAgIUa1/sUuxZ8S4BMrTTy+owosdc5eMwCgYIKoZIzj0EAwQw
+PjELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIDAeBgNVBAMMF1lpdmkgUmVx
+dWVzdG9ycyBSb290IENBMCAXDTI1MDkxOTA3Mjk0NloYDzIwNTUwOTA5MDcyOTQ1
+WjA+MQswCQYDVQQGEwJOTDENMAsGA1UECgwEWWl2aTEgMB4GA1UEAwwXWWl2aSBS
+ZXF1ZXN0b3JzIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARtliLj
+sg1Lbp8iH4NNbfjHHUJje/U1BFWolXu/jgJfrkvuUGt5iMsIBHXUdHBxOJfPytqd
+Pf6gdYd2Gk5HarSVo2MwYTAPBgNVHRMBAf8EBTADAQH/MB8GA1UdIwQYMBaAFFSZ
+opqha4HtjHfk2wJiwFJ5sN+4MB0GA1UdDgQWBBRUmaKaoWuB7Yx35NsCYsBSebDf
+uDAOBgNVHQ8BAf8EBAMCAYYwCgYIKoZIzj0EAwQDSAAwRQIgK9qm4AKZxudLjXEU
+Si3+IDl+vIXsGmEwWgSitfB2x1wCIQDOxRpQEqIf+E6VIPR0erh7TRw7Zez04M8n
+lzAIUfg4LA==
+-----END CERTIFICATE-----
+Subject: CN=Yivi Attestation Providers CA,O=Yivi,C=NL
+Issuer: CN=Yivi Requestors Root CA,O=Yivi,C=NL
+-----BEGIN CERTIFICATE-----
+MIIB5jCCAY2gAwIBAgIUDmP18B/Niv83bUlGCWVLgj/zDEMwCgYIKoZIzj0EAwQw
+PjELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIDAeBgNVBAMMF1lpdmkgUmVx
+dWVzdG9ycyBSb290IENBMB4XDTI1MDkxOTA4MTMyM1oXDTQwMDkxMzA4MTMyMlow
+RDELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxJjAkBgNVBAMMHVlpdmkgQXR0
+ZXN0YXRpb24gUHJvdmlkZXJzIENBMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE
+3tcJj5eiTUDzH8j5DCYZVdJEp3LHGtTLpyFGHMQ2XNBgEucAbz90qYvMwSBNP22I
+aklST+9pXQs2FFuCfR8uiKNjMGEwDwYDVR0TAQH/BAUwAwEB/zAfBgNVHSMEGDAW
+gBRUmaKaoWuB7Yx35NsCYsBSebDfuDAdBgNVHQ4EFgQUhgMtXET4IOJ9buDQJGiM
+Nka2D2MwDgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49BAMEA0cAMEQCIGFdvF6Sjtz2
+OobvKAXVEceA1TJ4eHy0a39t/CpGdFv7AiBX3BCsdioE2bY/TZJSnKR8HDnf5Hoy
+yWWmGlnckuP0gg==
+-----END CERTIFICATE-----
+`
+
+	Production_Yivi_VerifierTrustAnchor = `
+Subject: CN=Yivi Requestors Root CA,O=Yivi,C=NL
+Issuer: CN=Yivi Requestors Root CA,O=Yivi,C=NL
+-----BEGIN CERTIFICATE-----
+MIIB4zCCAYmgAwIBAgIUa1/sUuxZ8S4BMrTTy+owosdc5eMwCgYIKoZIzj0EAwQw
+PjELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIDAeBgNVBAMMF1lpdmkgUmVx
+dWVzdG9ycyBSb290IENBMCAXDTI1MDkxOTA3Mjk0NloYDzIwNTUwOTA5MDcyOTQ1
+WjA+MQswCQYDVQQGEwJOTDENMAsGA1UECgwEWWl2aTEgMB4GA1UEAwwXWWl2aSBS
+ZXF1ZXN0b3JzIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARtliLj
+sg1Lbp8iH4NNbfjHHUJje/U1BFWolXu/jgJfrkvuUGt5iMsIBHXUdHBxOJfPytqd
+Pf6gdYd2Gk5HarSVo2MwYTAPBgNVHRMBAf8EBTADAQH/MB8GA1UdIwQYMBaAFFSZ
+opqha4HtjHfk2wJiwFJ5sN+4MB0GA1UdDgQWBBRUmaKaoWuB7Yx35NsCYsBSebDf
+uDAOBgNVHQ8BAf8EBAMCAYYwCgYIKoZIzj0EAwQDSAAwRQIgK9qm4AKZxudLjXEU
+Si3+IDl+vIXsGmEwWgSitfB2x1wCIQDOxRpQEqIf+E6VIPR0erh7TRw7Zez04M8n
+lzAIUfg4LA==
+-----END CERTIFICATE-----
+Subject: CN=Yivi Relying Parties CA,O=Yivi,C=NL
+Issuer: CN=Yivi Requestors Root CA,O=Yivi,C=NL
+-----BEGIN CERTIFICATE-----
+MIIB4DCCAYegAwIBAgIUBSN5bB93aeuq69UFVHK5pzbs66MwCgYIKoZIzj0EAwQw
+PjELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIDAeBgNVBAMMF1lpdmkgUmVx
+dWVzdG9ycyBSb290IENBMB4XDTI1MDkxOTA4MTEyNFoXDTQwMDkxMzA4MTEyM1ow
+PjELMAkGA1UEBhMCTkwxDTALBgNVBAoMBFlpdmkxIDAeBgNVBAMMF1lpdmkgUmVs
+eWluZyBQYXJ0aWVzIENBMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEi6CJVtrb
+9b6oAGFgd28qZxbH2c2nShSFIt/UN8QSUZGfFnDrIjWUkw2SI7Xha7mQ8MZpbHnf
+Y5pQVFzhssXR+aNjMGEwDwYDVR0TAQH/BAUwAwEB/zAfBgNVHSMEGDAWgBRUmaKa
+oWuB7Yx35NsCYsBSebDfuDAdBgNVHQ4EFgQUZirErCw75lEQe34Yhb92NXVrdLEw
+DgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49BAMEA0cAMEQCIFWUraLqgTnEEC7mibAj
+w0rf8jtcfWjvzY2l0PbdTfN4AiAYiQzcmaVPM7YJf/3aS4ZQy47Z8N3gSFD7wCHd
+agOJLA==
+-----END CERTIFICATE-----
+`
+)
+
+// ------------------------------------------------------------------------------
+
+// Staging trust anchors
+const (
+	Staging_Yivi_RootCertificateRevocationListDistributionPoint       = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=kFCOt8NLhJ8g0WqMAnl%2BvoN2RuY"
+	Staging_Yivi_IssuerCaCertificateRevocationListDistributionPoint   = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=NGSB30tAE2E/Z/j4V%2B%2BTTTS5Ay0"
+	Staging_Yivi_VerifierCaCertificateRevocationListDistributionPoint = "https://ca.staging.yivi.app/ejbca/publicweb/crls/search.cgi?iHash=gVrSxh0lO5cdqAS18OiZ/oui5h4"
+
+	Staging_Yivi_IssuerTrustAnchor = `
 Subject: CN=Yivi Staging Requestors Root CA,O=Yivi,C=NL
 Issuer: CN=Yivi Staging Requestors Root CA,O=Yivi,C=NL
 -----BEGIN CERTIFICATE-----
@@ -37,8 +117,7 @@ Dw==
 -----END CERTIFICATE-----
 `
 
-// DefaultVerifierTrustAnchor_YiviStaging is the default issuer trust anchor for Yivi staging and will be replaced with the actual trust anchor for Yivi production (TODO)
-const DefaultVerifierTrustAnchor_YiviStaging = `
+	Staging_Yivi_VerifierTrustAnchor = `
 Subject: CN=Yivi Staging Requestors Root CA,O=Yivi,C=NL
 Issuer: CN=Yivi Staging Requestors Root CA,O=Yivi,C=NL
 -----BEGIN CERTIFICATE-----
@@ -72,3 +151,4 @@ BAQDAgGGMAoGCCqGSM49BAMEA0gAMEUCIQDs40VU7/tHrBsHdwVj2kc+ZqpvLoOf
 EtyHWcNN5HZpUAIgI3qf4KxHuFXdzEakHYb4aOpiQI9O7Sk8TUxJT7jymXM=
 -----END CERTIFICATE-----
 `
+)

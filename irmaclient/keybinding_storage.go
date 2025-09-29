@@ -11,7 +11,7 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-func NewBboltKeybindingStorage(db *bbolt.DB, aesKey [32]byte) sdjwtvc.KeyBindingStorage {
+func NewBboltKeyBindingStorage(db *bbolt.DB, aesKey [32]byte) sdjwtvc.KeyBindingStorage {
 	return &BboltKeyBindingStorage{
 		db:     db,
 		aesKey: aesKey,
