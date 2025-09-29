@@ -10,10 +10,13 @@ import (
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"math/big"
 	mathRand "math/rand"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -209,7 +212,7 @@ func CreateRootCertificate(t *testing.T, subject pkix.Name, opts PkiGenerationOp
 	return
 }
 
-func CreateCaCertificate(t *testing.T, subject pkix.Name, rootCert *x509.Certificate, rootKey *ecdsa.PrivateKey, opts PkiGenerationOptions, crlDistPoint *string) (key *ecdsa.PrivateKey, cert *x509.Certificate, crl *x509.RevocationList) {
+func CreateCaCertificate(t *testing.T, subject pkix.Name, rootCert *x509.Certificate, rootKey *ecdsa.PrivateKey, opts PkiGenerationOptions, crlDistPoint *string) (key *ecdsa.PrivateKey, cert *x509.Certificate, parentCrl *x509.RevocationList) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
@@ -243,19 +246,25 @@ func CreateCaCertificate(t *testing.T, subject pkix.Name, rootCert *x509.Certifi
 		}
 	}
 
-	crlBytes, err := x509.CreateRevocationList(rand.Reader, crlTemplate, rootCert, rootKey)
+	parentCrlBytes, err := x509.CreateRevocationList(rand.Reader, crlTemplate, rootCert, rootKey)
 	require.NoError(t, err)
-	crl, err = x509.ParseRevocationList(crlBytes)
+	parentCrl, err = x509.ParseRevocationList(parentCrlBytes)
 	require.NoError(t, err)
 	return
 }
 
-func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, opts PkiGenerationOptions) (key *ecdsa.PrivateKey, cert *x509.Certificate, certDerBytes []byte) {
+func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, schemeData string, opts PkiGenerationOptions) (key *ecdsa.PrivateKey, cert *x509.Certificate, certDerBytes []byte) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
+	// Create the SAN URI (in case of issuer certificate)
+	uri := &url.URL{
+		Scheme: "https",
+		Host:   hostname,
+	}
+
 	// Create the end entity certificate
-	asn1SchemeData, _ := asn1.Marshal(VerifierCertSchemeData)
+	asn1SchemeData, _ := asn1.Marshal(schemeData)
 	certTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(mathRand.Int63()),
 		Subject:               subject,
@@ -266,6 +275,7 @@ func CreateEndEntityCertificate(t *testing.T, subject pkix.Name, hostname string
 		NotBefore:             time.Now().Add(time.Duration(-1 * time.Hour)),
 		NotAfter:              time.Now().Add(time.Duration(1 * time.Hour)),
 		DNSNames:              []string{hostname},
+		URIs:                  []*url.URL{uri},
 		ExtraExtensions: []pkix.Extension{
 			{
 				Id:    stringToObjectIdentifier("2.1.123.1"),
@@ -364,3 +374,34 @@ const (
 	// Eudi verifier server with direct_post.jwt as the response_mode
 	OpenID4VP_DirectPostJwt_Host = "http://127.0.0.1:8090"
 )
+
+func WriteCertAsPemFile(t *testing.T, path string, certs ...*x509.Certificate) {
+	file, err := os.Create(path)
+	require.NoError(t, err)
+	defer file.Close()
+
+	for _, cert := range certs {
+		pemBlock := &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: cert.Raw,
+		}
+		err = pem.Encode(file, pemBlock)
+	}
+	require.NoError(t, err)
+}
+
+func WritePrivateKeyToFile(t *testing.T, path string, key *ecdsa.PrivateKey) {
+	file, err := os.Create(path)
+	require.NoError(t, err)
+	defer file.Close()
+
+	b, err := x509.MarshalECPrivateKey(key)
+	require.NoError(t, err)
+
+	pemBlock := &pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: b,
+	}
+	err = pem.Encode(file, pemBlock)
+	require.NoError(t, err)
+}

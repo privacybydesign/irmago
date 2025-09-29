@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -62,7 +61,7 @@ func testReloadReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
 	// Create a root certificate and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert := testdata.CreateRootCertificate(t, rootDN, testdata.PkiOption_None)
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "root_cert.pem"), rootCert)
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "root_cert.pem"), rootCert)
 
 	// Read the trust model
 	err := tm.Reload()
@@ -81,7 +80,7 @@ func testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing
 	_, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 
 	// Write to disk
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
 	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
 
@@ -102,8 +101,8 @@ func testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *t
 	_, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 2, testdata.PkiOption_None, &yiviCrlDistPoint)
 
 	// Write to disk
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain1.pem"), rootCert, caCerts[0])
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain2.pem"), rootCert, caCerts[1])
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain1.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain2.pem"), rootCert, caCerts[1])
 	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
 
@@ -127,7 +126,7 @@ func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *
 	_, subCaCert, subCaCrl := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("SUB-CA CERT"), caCerts[0], caKeys[0], testdata.PkiOption_None, &yiviSubCrlDistPoint)
 
 	// Write to disk
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0], subCaCert)
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0], subCaCert)
 	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviSubCrlDistPoint)), subCaCrl.Raw, 0644)
@@ -152,8 +151,8 @@ func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAdd
 	_, caCert2, caCrl2 := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA CERT 2"), rootCert, rootKey, testdata.PkiOption_None, &yivi2CrlDistPoint)
 
 	// Write to disk
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "revoked.pem"), rootCert, caCerts[0])
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "valid.pem"), rootCert, caCert2)
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "revoked.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "valid.pem"), rootCert, caCert2)
 	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yivi2CrlDistPoint)), caCrl2.Raw, 0644)
@@ -178,8 +177,8 @@ func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBoth
 	_, rootCert2, _, caCerts2, _ := testdata.CreateTestPkiHierarchy(t, rootDN2, 1, testdata.PkiOption_ExpiredRoot, &yiviCrlDistPoint)
 
 	// Write to disk
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain2.pem"), rootCert2, caCerts2[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain2.pem"), rootCert2, caCerts2[0])
 
 	// Read the trust model
 	err := tm.Reload()
@@ -198,7 +197,7 @@ func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testin
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_ExpiredIntermediate, &yiviCrlDistPoint)
 
 	// Write to disk
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
 
 	// Read the trust model
 	err := tm.Reload()
@@ -219,7 +218,7 @@ func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t 
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 	// Write to disk in reversed order
-	writeCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), caCerts[0], rootCert)
+	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), caCerts[0], rootCert)
 
 	// Read the trust model
 	err := tm.Reload()
@@ -584,19 +583,4 @@ func setupTrustModelWithStoragePath(t *testing.T) *TrustModel {
 	_ = common.EnsureDirectoryExists(tm.GetCrlPath())
 
 	return tm
-}
-
-func writeCertAsPemFile(t *testing.T, path string, certs ...*x509.Certificate) {
-	file, err := os.Create(path)
-	require.NoError(t, err)
-	defer file.Close()
-
-	for _, cert := range certs {
-		pemBlock := &pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: cert.Raw,
-		}
-		err = pem.Encode(file, pemBlock)
-	}
-	require.NoError(t, err)
 }

@@ -226,7 +226,7 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 	hostname := "example.com"
 	crlDistPoint := "https://yivi.app/crl.crl"
 	_, rootCert, caKeys, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT CERT 1"), 1, opts, &crlDistPoint)
-	verifierKey, verifierCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), hostname, caCerts[0], caKeys[0], opts)
+	verifierKey, verifierCert, _ := testdata.CreateEndEntityCertificate(t, testdata.CreateDistinguishedName("END ENTITY CERT"), hostname, caCerts[0], caKeys[0], testdata.VerifierCertSchemeData, opts)
 
 	// Setup VerifierValidator with PKI
 	rootPool := x509.NewCertPool()

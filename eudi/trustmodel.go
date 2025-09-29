@@ -293,6 +293,13 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 					tm.trustedIntermediateCertificates.AddCert(caCert)
 					tm.allCerts = append(tm.allCerts, caCert)
 					parentCert = caCert
+
+					// If the revocation list distribution points of this intermediate cert are known, add them to the list of known distribution points
+					for _, distPoint := range caCert.CRLDistributionPoints {
+						if !slices.Contains(tm.revocationListsDistributionPoints, distPoint) {
+							tm.revocationListsDistributionPoints = append(tm.revocationListsDistributionPoints, distPoint)
+						}
+					}
 				}
 			}
 		}

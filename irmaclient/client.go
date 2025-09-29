@@ -107,18 +107,6 @@ func New(
 	}
 	scheduler.Start()
 
-	// Future TODO: add Context so we can check for cancellation of the job ?
-	_, err = scheduler.NewJob(
-		//gocron.DurationRandomJob(28*time.Minute, 32*time.Minute),
-		gocron.DurationRandomJob(28*time.Second, 32*time.Second),
-		gocron.NewTask(eudiConf.UpdateCertificateRevocationLists),
-		gocron.WithStartAt(gocron.WithStartImmediately()),
-	)
-
-	if err != nil {
-		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
-	}
-
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
 	// so we do this by listening for session-done events
@@ -579,6 +567,19 @@ func (client *Client) SetPreferences(prefs Preferences) {
 
 func (client *Client) GetPreferences() Preferences {
 	return client.irmaClient.Preferences
+}
+
+func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {
+	// Future TODO: add Context so we can check for cancellation of the job ?
+	_, err := client.scheduler.NewJob(
+		gocron.DurationJob(eudiRevocationListUpdateInterval),
+		gocron.NewTask(client.openid4vpClient.eudiConf.UpdateCertificateRevocationLists),
+		gocron.WithStartAt(gocron.WithStartImmediately()),
+	)
+
+	if err != nil {
+		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
+	}
 }
 
 // Preferences contains the preferences of the user of this client.
