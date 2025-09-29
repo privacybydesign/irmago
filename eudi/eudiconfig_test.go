@@ -27,6 +27,7 @@ func TestIntegrationConfig(t *testing.T) {
 
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 
 	require.NoError(t, conf.Reload())
 	require.NoError(t, conf.UpdateCertificateRevocationLists())
@@ -55,6 +56,7 @@ func testNewConfigurationSuccessfulInitialization(t *testing.T) {
 
 	conf, err := NewConfiguration(filepath.Join(storageFolder, "eudi_configuration"))
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 	require.NotNil(t, conf)
 	require.DirExists(t, conf.Issuers.GetCertificatePath())
 	require.DirExists(t, conf.Issuers.GetCrlPath())
@@ -82,6 +84,7 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 	conf, err := NewConfiguration(filepath.Join(storageFolder, "eudi_configuration"))
 
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 	require.NotEmpty(t, conf.Issuers)
 	require.NotEmpty(t, conf.Verifiers)
 	require.NotNil(t, conf.Issuers.trustedRootCertificates)
@@ -100,6 +103,7 @@ func testCacheVerifierLogoCachesLogoSuccessfully(t *testing.T) {
 
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 
 	logo := &scheme.Logo{
 		Data:     []byte("test logo data"),
@@ -126,6 +130,7 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 
 	logo := &scheme.Logo{
 		Data:     []byte("test logo data"),
@@ -163,6 +168,7 @@ func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
 
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 
 	_, _, err = conf.CacheVerifierLogo("test_logo", nil)
 	require.Error(t, err)
@@ -179,6 +185,7 @@ func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 
 	logo := &scheme.Logo{
 		Data:     []byte(""),
@@ -205,6 +212,7 @@ func testCacheVerifierLogoReturnsErrorOnUnknownMimeType(t *testing.T) {
 
 	conf, err := NewConfiguration(eudiConfigPath)
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 
 	logo := &scheme.Logo{
 		Data:     []byte("test data"),

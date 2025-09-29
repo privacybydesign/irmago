@@ -35,6 +35,7 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 		filepath.Join(storageFolder, "eudi_configuration"),
 	)
 	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
 
 	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&conf.Verifiers, &eudi.MockQueryValidatorFactory{})
 	client, err := NewOpenID4VPClient(conf, storage, verifierValidator, keyBinder, &InMemoryLogsStorage{})

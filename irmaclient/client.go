@@ -96,9 +96,11 @@ func New(
 	// When developer mode is enabled we want to load the staging trust anchors in addition
 	// to the production trust anchors
 	if irmaClient.Preferences.DeveloperMode {
-		if err := openid4vpClient.eudiConf.EnableStagingTrustAnchors(); err != nil {
-			common.Logger.Warnf("failed to enable staging trust anchors: %v", err)
-		}
+		openid4vpClient.eudiConf.EnableStagingTrustAnchors()
+	}
+
+	if err := openid4vpClient.eudiConf.Reload(); err != nil {
+		return nil, fmt.Errorf("reloading eudi configuration failed: %v", err)
 	}
 
 	scheduler, err := gocron.NewScheduler()
@@ -556,8 +558,10 @@ func (client *Client) rawLogEntriesToLogInfo(entries []*LogEntry) ([]LogInfo, er
 func (client *Client) SetPreferences(prefs Preferences) {
 	client.irmaClient.SetPreferences(prefs)
 	if prefs.DeveloperMode {
-		if err := client.openid4vpClient.eudiConf.EnableStagingTrustAnchors(); err != nil {
-			common.Logger.Warnf("error while enabling staging trust anchors: %v", err)
+		client.openid4vpClient.eudiConf.EnableStagingTrustAnchors()
+
+		if err := client.openid4vpClient.eudiConf.Reload(); err != nil {
+			common.Logger.Warnf("error while reloading eudi config: %v", err)
 		}
 		if err := client.openid4vpClient.eudiConf.UpdateCertificateRevocationLists(); err != nil {
 			common.Logger.Warnf("error while updating CRLs: %v", err)

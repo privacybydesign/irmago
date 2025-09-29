@@ -61,15 +61,11 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to ensure verifier directories exist: %w", err)
 	}
-
-	err = conf.Reload()
-
 	return
 }
 
-func (conf *Configuration) EnableStagingTrustAnchors() error {
+func (conf *Configuration) EnableStagingTrustAnchors() {
 	conf.useStagingTrustAnchors = true
-	return conf.Reload()
 }
 
 // Reload assumes the latest files (trust anchors and certificate revocation lists) are downloaded.
