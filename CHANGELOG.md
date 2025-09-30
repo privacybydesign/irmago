@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports `x509_san_dns` client identifier prefix
   - Verifiers are trusted via x509 certificates on the new Yivi trust lists, attribute permissions are checked on the client via a custom json field in these certificates
 
+### Fix
+- Solve issue that made log logo paths invalid on iOS after each update/recompilation
+
 ### Security
  - Fix for [CVE GHSA-pv8v-c99h-c5q4](https://github.com/privacybydesign/irmago/security/advisories/GHSA-pv8v-c99h-c5q4) (Next session functionality can be used to do sessions on irma server without proper permissions)
 
