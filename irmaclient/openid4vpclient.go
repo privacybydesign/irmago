@@ -151,11 +151,11 @@ type AuthorizationResponseConfig struct {
 }
 
 func logMarshalled(message string, value any) {
-	jsoon, err := json.MarshalIndent(value, "", "   ")
+	jsonBytes, err := json.MarshalIndent(value, "", "   ")
 	if err != nil {
 		irma.Logger.Errorf("%s: failed to marshal: %v", message, err)
 	} else {
-		irma.Logger.Infof("\n%s\n%s\n\n", message, string(jsoon))
+		irma.Logger.Infof("\n%s\n%s\n\n", message, string(jsonBytes))
 	}
 }
 

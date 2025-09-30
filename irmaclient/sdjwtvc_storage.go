@@ -395,8 +395,8 @@ func getCredentialInfoFromBucket(bucket *bbolt.Bucket, aesKey [32]byte) (*SdJwtV
 
 type sdjwtvcStorageEntry struct {
 	// A list of strings containing sdjwtvc's (with all disclosures & without kbjwt)
-	rawRedentials []sdjwtvc.SdJwtVc
-	info          SdJwtVcBatchMetadata
+	rawCredentials []sdjwtvc.SdJwtVc
+	info           SdJwtVcBatchMetadata
 }
 
 type InMemorySdJwtVcStorage struct {
@@ -408,7 +408,7 @@ func (s *InMemorySdJwtVcStorage) GetCredentialByHash(hash string) (*SdJwtVcAndIn
 		if entry.info.Hash == hash {
 			return &SdJwtVcAndInfo{
 				Metadata: entry.info,
-				SdJwtVc:  entry.rawRedentials[0],
+				SdJwtVc:  entry.rawCredentials[0],
 			}, nil
 		}
 	}
@@ -451,7 +451,7 @@ func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []SdJwtVcAndInfo
 		if id == entry.info.CredentialType {
 			result = append(result, SdJwtVcAndInfo{
 				Metadata: entry.info,
-				SdJwtVc:  entry.rawRedentials[0],
+				SdJwtVc:  entry.rawCredentials[0],
 			})
 		}
 	}
@@ -460,8 +460,8 @@ func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []SdJwtVcAndInfo
 
 func (s *InMemorySdJwtVcStorage) StoreCredential(info SdJwtVcBatchMetadata, credentials []sdjwtvc.SdJwtVc) error {
 	s.entries = append(s.entries, sdjwtvcStorageEntry{
-		info:          info,
-		rawRedentials: credentials,
+		info:           info,
+		rawCredentials: credentials,
 	})
 	return nil
 }

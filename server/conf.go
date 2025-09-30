@@ -581,7 +581,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func readSdJwtIssuerPivKeys(dir string) (map[irma.IssuerIdentifier]*ecdsa.PrivateKey, error) {
+func readSdJwtIssuerPrivKeys(dir string) (map[irma.IssuerIdentifier]*ecdsa.PrivateKey, error) {
 	result := map[irma.IssuerIdentifier]*ecdsa.PrivateKey{}
 
 	matches, err := filepath.Glob(filepath.Join(dir, "*.pem"))
@@ -650,7 +650,7 @@ func (conf *Configuration) verifySdJwtIssuanceSettings() error {
 	}
 
 	privKeysDir := conf.SdJwtIssuanceSettings.SdJwtIssuerPrivKeysDir
-	privKeys, err := readSdJwtIssuerPivKeys(privKeysDir)
+	privKeys, err := readSdJwtIssuerPrivKeys(privKeysDir)
 
 	if err != nil {
 		conf.Logger.Warnf("failed to read sdjwt issuer private keys: %v", err)
