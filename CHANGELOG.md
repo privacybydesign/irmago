@@ -5,8 +5,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [0.19.0] - 2025-09-30
 ### Changed
 - Remove legacy storage from irmaclient
+- Add support for issuing SD-JWT VC together with Idemix over the IRMA protocol to `irmaclient` and `irmaserver`
+  - Irma servers can opt-in to SD-JWT VC issuance by configuring issuer certificates and private keys for SD-JWT VC
+  - SD-JWT VCs are issued in batches of which the size is specified in the issuance request
+  - SD-JWT VCs contain key binding public keys for which the private key is stored securely on the client
+    - These holder/key binding public keys are provided to the issuer's irma server by the client during the commitments POST request
+  - SD-JWT VC issuers are verified via certificates on the new Yivi trust lists, permissions are checked on the client via a custom json field in the certificates
+  - Old `Client` was renamed to `IrmaClient` and was wrapped in new `Client` struct together with new `OpenID4VPClient`
+- Add support for disclosing SD-JWT VC credentials over the OpenID4VP 1.0 protocol to `irmaclient`
+  - Supports both `direct_post` and `direct_post.jwt` response modes
+  - Supports DCQL queries for credentials that can be found in the schemes, specified by `vct_values`
+  - Supports `x509_san_dns` client identifier prefix
+  - Verifiers are trusted via x509 certificates on the new Yivi trust lists, attribute permissions are checked on the client via a custom json field in these certificates
+
+### Fix
+- Solve issue that made log logo paths invalid on iOS after each update/recompilation
 
 ### Security
  - Fix for [CVE GHSA-pv8v-c99h-c5q4](https://github.com/privacybydesign/irmago/security/advisories/GHSA-pv8v-c99h-c5q4) (Next session functionality can be used to do sessions on irma server without proper permissions)
@@ -563,6 +580,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.19.0]: https://github.com/privacybydesign/irmago/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/privacybydesign/irmago/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/privacybydesign/irmago/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/privacybydesign/irmago/compare/v0.17.0...v0.17.1

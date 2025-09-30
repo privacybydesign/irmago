@@ -7,7 +7,7 @@ import (
 
 // registerPublicKey registers our public key used in the ECDSA challenge-response
 // sub-protocol part of the keyshare protocol at the keyshare server.
-func (kss *keyshareServer) registerPublicKey(client *Client, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
+func (kss *keyshareServer) registerPublicKey(client *IrmaClient, transport *irma.HTTPTransport, pin string) (*irma.KeysharePinStatus, error) {
 	keyname := challengeResponseKeyName(kss.SchemeManagerIdentifier)
 
 	pk, err := client.signer.PublicKey(keyname)

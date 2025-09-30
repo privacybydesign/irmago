@@ -7,13 +7,12 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
 // Create a ManualTestHandler for unit tests
-func createManualSessionHandler(t *testing.T, client *irmaclient.Client) *ManualTestHandler {
+func createManualSessionHandler(t *testing.T, client *irmaclient.IrmaClient) *ManualTestHandler {
 	return &ManualTestHandler{
 		TestHandler: TestHandler{
 			t:      t,
@@ -23,11 +22,10 @@ func createManualSessionHandler(t *testing.T, client *irmaclient.Client) *Manual
 	}
 }
 
-func manualSessionHelper(t *testing.T, client *irmaclient.Client, h *ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
+func manualSessionHelper(t *testing.T, client *irmaclient.IrmaClient, h *ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
 	if client == nil {
-		var handler *TestClientHandler
-		client, handler = parseStorage(t)
-		defer test.ClearTestStorage(t, client, handler.storage)
+		client, _ = parseStorage(t)
+		defer client.Close()
 	}
 
 	bts, err := json.Marshal(request)
@@ -111,8 +109,8 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 }
 
 func TestManualSessionMultiProof(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	// First, we need to issue an extra credential (BSN)
 	doSession(t, getMultipleIssuanceRequest(), client, nil, nil, nil, nil, nil)

@@ -12,9 +12,13 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/signed"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/sirupsen/logrus"
 
 	"github.com/go-errors/errors"
@@ -32,22 +36,21 @@ func TestMain(m *testing.M) {
 	retval := m.Run()
 
 	test.StopSchemeManagerHttpServer()
-	test.ClearAllTestStorage()
 
 	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T) (*Client, *TestClientHandler) {
+func parseStorage(t *testing.T) (*IrmaClient, *TestClientHandler) {
 	storage := test.SetupTestStorage(t)
 	return parseExistingStorage(t, storage)
 }
 
-func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHandler) {
-	handler := &TestClientHandler{t: t, c: make(chan error), storage: storage}
+func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *TestClientHandler) {
+	handler := &TestClientHandler{t: t, c: make(chan error), storage: storageFolder}
 	path := test.FindTestdataFolder(t)
 
 	var signer Signer
-	bts, err := os.ReadFile(filepath.Join(storage, "client", "ecdsa_sk.pem"))
+	bts, err := os.ReadFile(filepath.Join(storageFolder, "client", "ecdsa_sk.pem"))
 	if os.IsNotExist(err) {
 		signer = test.NewSigner(t)
 	} else {
@@ -60,12 +63,49 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	client, err := New(
-		filepath.Join(storage, "client"),
-		filepath.Join(path, "irma_configuration"),
+	storagePath := filepath.Join(storageFolder, "client")
+	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
+
+	if err = common.AssertPathExists(storagePath); err != nil {
+		require.NoError(t, err)
+	}
+	if err = common.AssertPathExists(irmaConfigurationPath); err != nil {
+		require.NoError(t, err)
+	}
+
+	conf, err := irma.NewConfiguration(
+		filepath.Join(storagePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+	)
+	require.NoError(t, err)
+
+	storage := NewIrmaStorage(storagePath, conf, aesKey)
+	require.NoError(t, storage.Open())
+	sdjwtStorage, err := NewInMemorySdJwtVcStorage()
+	require.NoError(t, err)
+
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+
+	x509Options, err := utils.CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	require.NoError(t, err)
+
+	context := sdjwtvc.SdJwtVcVerificationContext{
+		VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: *x509Options,
+		},
+		Clock:       sdjwtvc.NewSystemClock(),
+		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),
+	}
+
+	client, _ := NewIrmaClient(
+		conf,
 		handler,
 		signer,
-		aesKey,
+		storage,
+		context,
+		sdjwtStorage,
+		keyBinder,
 	)
 	require.NoError(t, err)
 
@@ -73,7 +113,7 @@ func parseExistingStorage(t *testing.T, storage string) (*Client, *TestClientHan
 	return client, handler
 }
 
-func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
+func verifyClientIsUnmarshaled(t *testing.T, client *IrmaClient) {
 	cred, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 	require.NoError(t, err, "could not fetch credential")
 	require.NotNil(t, cred, "Credential should exist")
@@ -94,7 +134,7 @@ func verifyClientIsUnmarshaled(t *testing.T, client *Client) {
 	)
 }
 
-func verifyCredentials(t *testing.T, client *Client) {
+func verifyCredentials(t *testing.T, client *IrmaClient) {
 	var pk *gabikeys.PublicKey
 	for credtype, credsmap := range client.attributes {
 		for index, attrs := range credsmap {
@@ -114,7 +154,7 @@ func verifyCredentials(t *testing.T, client *Client) {
 	}
 }
 
-func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
+func verifyKeyshareIsUnmarshaled(t *testing.T, client *IrmaClient) {
 	require.NotNil(t, client.keyshareServers)
 	testManager := irma.NewSchemeManagerIdentifier("test")
 	require.Contains(t, client.keyshareServers, testManager)
@@ -123,8 +163,8 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *Client) {
 }
 
 func TestStorageDeserialization(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
@@ -135,8 +175,8 @@ func TestStorageDeserialization(t *testing.T) {
 // requested by the verifier, calculates a list of candidate attributes contained by the client that would
 // satisfy the attribute disjunction.
 func TestCandidates(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	// client contains one instance of the studentCard credential, whose studentID attribute is 456.
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -233,8 +273,8 @@ func TestCandidates(t *testing.T) {
 }
 
 func TestCandidateConjunctionOrder(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	j := `[
 	  [
@@ -267,7 +307,7 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 
 func TestCredentialRemoval(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	id := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	id2 := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
@@ -301,8 +341,8 @@ func TestCredentialRemoval(t *testing.T) {
 }
 
 func TestRemoveSchemes(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	// Unset configuration assets to enable removal of schemes
 	var err error
@@ -347,7 +387,7 @@ func TestRemoveSchemes(t *testing.T) {
 
 func TestWrongSchemeManager(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	irmademo := irma.NewSchemeManagerIdentifier("irma-demo")
 	require.Contains(t, client.Configuration.SchemeManagers, irmademo)
@@ -366,8 +406,8 @@ func TestWrongSchemeManager(t *testing.T) {
 }
 
 func TestCredentialInfoListNewAttribute(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -392,15 +432,14 @@ func TestCredentialInfoListNewAttribute(t *testing.T) {
 
 func TestFreshStorage(t *testing.T) {
 	storage := test.CreateTestStorage(t)
-	client, handler := parseExistingStorage(t, storage)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseExistingStorage(t, storage)
 	defer client.Close()
 	require.NotNil(t, client)
 }
 
 func TestKeyshareEnrollmentRemoval(t *testing.T) {
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	err := client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
@@ -415,8 +454,7 @@ func TestKeyshareEnrollmentRemoval(t *testing.T) {
 }
 
 func TestUpdatingStorage(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
 	defer client.Close()
 	require.NotNil(t, client)
 
@@ -427,8 +465,7 @@ func TestUpdatingStorage(t *testing.T) {
 }
 
 func TestRemoveStorage(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
 	defer client.Close()
 
 	// Check whether we have logs in storage to know whether the logs bucket is there
@@ -476,6 +513,56 @@ func TestCredentialsConcurrency(t *testing.T) {
 
 		grp.Wait()
 	}
+}
+
+func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer client.Close()
+
+	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(chain)
+	if err != nil {
+		panic(err)
+	}
+
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	sdjwt, _ := createTestSdJwtVc(keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
+		map[string]any{
+			"mobilephone": "+31612345678",
+		}, certChain,
+	)
+
+	cred := irma.CredentialRequest{}
+
+	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+
+	require.NoError(t, err)
+}
+
+func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer client.Close()
+
+	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(chain)
+	if err != nil {
+		panic(err)
+	}
+
+	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	sdjwt, _ := createTestSdJwtVc(
+		keyBinder,
+		"test.test.mobilephone", "http://openid4vc.staging.yivi.app", // issuer is invalid (no HTTPS)
+		map[string]any{
+			"mobilephone": "+31612345678",
+		}, certChain,
+	)
+
+	cred := irma.CredentialRequest{}
+
+	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+
+	require.Error(t, err)
 }
 
 // ------

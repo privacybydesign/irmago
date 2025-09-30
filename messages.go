@@ -3,12 +3,15 @@ package irma
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/privacybydesign/gabi/big"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/gabi/big"
+
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
 
 	"fmt"
@@ -299,7 +302,34 @@ type DisclosedAttributeIndex struct {
 
 type IssueCommitmentMessage struct {
 	*gabi.IssueCommitmentMessage
-	Indices DisclosedAttributeIndices `json:"indices,omitempty"`
+	Indices           DisclosedAttributeIndices `json:"indices,omitempty"`
+	KeyBindingPubKeys []jwk.Key                 `json:"keybinding_pub_keys,omitempty"`
+}
+
+func (i *IssueCommitmentMessage) UnmarshalJSON(data []byte) error {
+	type issueCommitmentMessageAlias struct {
+		*gabi.IssueCommitmentMessage
+		Indices    DisclosedAttributeIndices `json:"indices,omitempty"`
+		RawPubKeys []json.RawMessage         `json:"keybinding_pub_keys,omitempty"`
+	}
+
+	var alias issueCommitmentMessageAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return fmt.Errorf("failed to unmarshal base fields: %w", err)
+	}
+
+	i.IssueCommitmentMessage = alias.IssueCommitmentMessage
+	i.Indices = alias.Indices
+
+	for _, raw := range alias.RawPubKeys {
+		key, err := jwk.ParseKey(raw)
+		if err != nil {
+			return fmt.Errorf("failed to parse keybinding_pub_keys item: %w", err)
+		}
+		i.KeyBindingPubKeys = append(i.KeyBindingPubKeys, key)
+	}
+
+	return nil
 }
 
 //
@@ -561,6 +591,7 @@ func (status ServerStatus) Finished() bool {
 type ServerSessionResponse struct {
 	ProofStatus     ProofStatus                   `json:"proofStatus"`
 	IssueSignatures []*gabi.IssueSignatureMessage `json:"sigs,omitempty"`
+	SdJwts          []sdjwtvc.SdJwtVc             `json:"sdjwts,omitempty"`
 	NextSession     *Qr                           `json:"nextSession,omitempty"`
 
 	// needed for legacy (un)marshaling

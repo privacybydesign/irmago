@@ -8,7 +8,6 @@ import (
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irmaclient"
 	"github.com/privacybydesign/irmago/server/irmaserver"
@@ -38,7 +37,7 @@ func TestKeyshareRegister(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	require.NoError(t, client.KeyshareRemoveAll())
 	require.NoError(t, client.RemoveStorage())
@@ -60,8 +59,8 @@ func TestKeyshareAttributeRenewal(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
@@ -102,14 +101,14 @@ func TestKeyshareAttributeRenewal(t *testing.T) {
 func TestKeyshareSessions(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	keyshareSessions(t, client, irmaServer)
 }
 
-func keyshareSessions(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer, options ...option) {
+func keyshareSessions(t *testing.T, client *irmaclient.IrmaClient, irmaServer *IrmaServer, options ...option) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	expiry := irma.Timestamp(irma.NewMetadataAttribute(0).Expiry())
 	issuanceRequest := getCombinedIssuanceRequest(id)
@@ -162,7 +161,7 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	defer keyshareServerTest2.Stop()
 
 	client, handler := parseStorage(t, optionNoSchemeAssets)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	logs, err := client.LoadNewestLogs(20)
 	require.NoError(t, err)
@@ -204,8 +203,8 @@ func TestKeyshareEnrollIncorrectPin(t *testing.T) {
 	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"), 0)
 	defer keyshareServerTest2.Stop()
 
-	client, handler := parseStorage(t, optionNoSchemeAssets)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, handler := parseStorage(t)
+	defer client.Close()
 
 	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
 	client.KeyshareEnroll(test2SchemeID, nil, "54321", "en")
@@ -243,8 +242,8 @@ func TestKeyshareChainedSessions(t *testing.T) {
 func TestNewKeyshareJWTKey(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 1)
 	defer keyshareServer.Stop()
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 	keyshareSessions(t, client, irmaServer)
@@ -285,8 +284,8 @@ func TestKeyshareServerRestart(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 

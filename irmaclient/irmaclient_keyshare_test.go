@@ -8,7 +8,6 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/keysharecore"
-	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 )
 
@@ -23,7 +22,7 @@ func TestKeyshareChangePin(t *testing.T) {
 	defer ks2.Stop()
 
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	client.KeyshareEnroll(test2SchemeID, nil, "12345", "en")
 	require.NoError(t, <-handler.c)
@@ -56,7 +55,7 @@ func TestKeyshareChangePinFailed(t *testing.T) {
 	defer ks2.Stop()
 
 	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	defer client.Close()
 
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test2"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)
@@ -78,8 +77,8 @@ func TestKeyshareChangePinFailed(t *testing.T) {
 func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer ks.Stop()
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
 
@@ -108,8 +107,8 @@ func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 func TestKeyshareAuthentication(t *testing.T) {
 	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer ks.Stop()
-	client, handler := parseStorage(t)
-	defer test.ClearTestStorage(t, client, handler.storage)
+	client, _ := parseStorage(t)
+	defer client.Close()
 
 	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
 
@@ -132,7 +131,7 @@ func checkChallengeResponseEnforced(t *testing.T, kss *keyshareServer) {
 	require.Equal(t, keysharecore.ErrChallengeResponseRequired.Error(), sessErr.RemoteError.Message)
 }
 
-func verifyPin(t *testing.T, client *Client) {
+func verifyPin(t *testing.T, client *IrmaClient) {
 	succeeded, tries, blocked, err := client.KeyshareVerifyPin("12345", irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
 	require.True(t, succeeded)
@@ -140,7 +139,7 @@ func verifyPin(t *testing.T, client *Client) {
 	require.Equal(t, tries, 0)
 }
 
-func verifyWrongPin(t *testing.T, client *Client) {
+func verifyWrongPin(t *testing.T, client *IrmaClient) {
 	succeeded, tries, blocked, err := client.KeyshareVerifyPin("00000", irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
 	require.False(t, succeeded)

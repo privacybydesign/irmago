@@ -15,7 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (client *Client) initRevocation() {
+func (client *IrmaClient) initRevocation() {
 	// For every credential supporting revocation, compute nonrevocation caches in async jobs
 	for id, attrsets := range client.attributes {
 		for i, attrs := range attrsets {
@@ -91,7 +91,7 @@ func (client *Client) initRevocation() {
 // NonrevPrepare updates the revocation state for each credential in the request
 // requiring a nonrevocation proof, using the updates included in the request, or the remote
 // revocation server if those do not suffice.
-func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
+func (client *IrmaClient) NonrevPrepare(request irma.SessionRequest) error {
 	base := request.Base()
 	var err error
 	var wg sync.WaitGroup
@@ -120,7 +120,7 @@ func (client *Client) NonrevPrepare(request irma.SessionRequest) error {
 // nonrevUpdate updates all contained instances of the specified type, using the specified
 // updates if present and if they suffice, and contacting the issuer's server to download updates
 // otherwise.
-func (client *Client) nonrevUpdate(id irma.CredentialTypeIdentifier, updates map[uint]*revocation.Update) error {
+func (client *IrmaClient) nonrevUpdate(id irma.CredentialTypeIdentifier, updates map[uint]*revocation.Update) error {
 	lowest := map[uint]uint64{}
 	attrs := client.attrs(id)
 
@@ -171,7 +171,7 @@ func (client *Client) nonrevUpdate(id irma.CredentialTypeIdentifier, updates map
 	return nil
 }
 
-func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, counter uint, update *revocation.Update) error {
+func (client *IrmaClient) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, counter uint, update *revocation.Update) error {
 	client.credMutex.Lock()
 	defer client.credMutex.Unlock()
 
@@ -228,11 +228,11 @@ func (client *Client) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, count
 	return nil
 }
 
-func (client *Client) NonrevUpdateFromServer(id irma.CredentialTypeIdentifier) error {
+func (client *IrmaClient) NonrevUpdateFromServer(id irma.CredentialTypeIdentifier) error {
 	return client.nonrevUpdate(id, nil)
 }
 
-func (client *Client) nonrevPrepareCache(id irma.CredentialTypeIdentifier, index int) error {
+func (client *IrmaClient) nonrevPrepareCache(id irma.CredentialTypeIdentifier, index int) error {
 	logger := irma.Logger.WithFields(logrus.Fields{"credtype": id, "index": index})
 	logger.Debug("preparing cache")
 	defer logger.Debug("Preparing cache done")
@@ -245,7 +245,7 @@ func (client *Client) nonrevPrepareCache(id irma.CredentialTypeIdentifier, index
 
 // nonrevRepopulateCaches repopulates the consumed nonrevocation caches of the credentials involved
 // in the request, in background jobs, after the request has finished.
-func (client *Client) nonrevRepopulateCaches(request irma.SessionRequest) {
+func (client *IrmaClient) nonrevRepopulateCaches(request irma.SessionRequest) {
 	for id := range request.Disclosure().Identifiers().CredentialTypes {
 		credtype := client.Configuration.CredentialTypes[id]
 		if credtype == nil || !credtype.RevocationSupported() {

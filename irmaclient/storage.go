@@ -54,6 +54,14 @@ func (s *storage) path(p string) string {
 	return filepath.Join(s.storagePath, p)
 }
 
+func NewIrmaStorage(storagePath string, config *irma.Configuration, aesKey [32]byte) *storage {
+	return &storage{
+		storagePath:   storagePath,
+		Configuration: config,
+		aesKey:        aesKey,
+	}
+}
+
 // Open initializes the credential storage,
 // ensuring that it is in a usable state.
 // Setting it up in a properly protected location (e.g., with automatic
@@ -90,7 +98,7 @@ func (s *storage) txStore(tx *transaction, bucketName string, key string, value 
 		return err
 	}
 
-	ciphertext, err := s.encrypt(btsValue)
+	ciphertext, err := encrypt(btsValue, s.aesKey)
 	if err != nil {
 		return err
 	}
@@ -118,7 +126,7 @@ func (s *storage) txLoad(tx *transaction, bucketName string, key string, dest in
 		return false, nil
 	}
 
-	plaintext, err := s.decrypt(bts)
+	plaintext, err := decrypt(bts, s.aesKey)
 	if err != nil {
 		return false, err
 	}
@@ -299,7 +307,7 @@ func (s *storage) TxAddLogEntry(tx *transaction, entry *LogEntry) error {
 		return err
 	}
 
-	ciphertext, err := s.encrypt(v)
+	ciphertext, err := encrypt(v, s.aesKey)
 	if err != nil {
 		return err
 	}
@@ -396,7 +404,7 @@ func (s *storage) LoadAttributes() (list map[irma.CredentialTypeIdentifier][]*ir
 			credTypeID := irma.NewCredentialTypeIdentifier(string(key))
 			var attrlistlist []*irma.AttributeList
 
-			plaintext, err := s.decrypt(value)
+			plaintext, err := decrypt(value, s.aesKey)
 			if err != nil {
 				return err
 			}
@@ -482,13 +490,6 @@ func (s *storage) loadLogs(max int, startAt func(*bbolt.Cursor) (key, value []by
 	})
 }
 
-// IterateLogs iterates over all logs sorted by time, starting with the newest one.
-func (s *storage) IterateLogs(handler func(log *LogEntry) error) error {
-	return s.db.View(func(tx *bbolt.Tx) error {
-		return s.TxIterateLogs(&transaction{tx}, handler)
-	})
-}
-
 // TxIterateLogs iterates over all logs sorted by time, starting with the newest one.
 func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) error) error {
 	bucket := tx.Bucket([]byte(logsBucket))
@@ -510,7 +511,7 @@ func (s *storage) TxIterateLogs(tx *transaction, handler func(log *LogEntry) err
 }
 
 func (s *storage) decryptLog(encryptedLog []byte) (*LogEntry, error) {
-	plaintext, err := s.decrypt(encryptedLog)
+	plaintext, err := decrypt(encryptedLog, s.aesKey)
 	if err != nil {
 		return nil, err
 	}
@@ -564,18 +565,24 @@ func (s *storage) TxDeleteUserdata(tx *transaction) error {
 	return tx.DeleteBucket([]byte(userdataBucket))
 }
 
-func (s *storage) DeleteLogEntry(entry *LogEntry) error {
+func (s *storage) DeleteLogEntry(id uint64) error {
 	return s.Transaction(func(tx *transaction) error {
-		return s.TxDeleteLogEntry(tx, entry)
+		return s.TxDeleteLogEntry(tx, id)
 	})
 }
 
-func (s *storage) TxDeleteLogEntry(tx *transaction, entry *LogEntry) error {
+func (s *storage) TxDeleteLogEntry(tx *transaction, id uint64) error {
 	b := tx.Bucket([]byte(logsBucket))
 	if b == nil {
 		return nil
 	}
-	return b.Delete(s.logEntryKeyToBytes(entry.ID))
+	return b.Delete(s.logEntryKeyToBytes(id))
+}
+
+func (s *storage) DeleteLogs() error {
+	return s.Transaction(func(tx *transaction) error {
+		return s.TxDeleteLogs(tx)
+	})
 }
 
 func (s *storage) TxDeleteLogs(tx *transaction) error {
@@ -604,8 +611,8 @@ func (s *storage) DeleteAll() error {
 	})
 }
 
-func (s *storage) decrypt(ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(s.aesKey[:])
+func decrypt(ciphertext []byte, aesKey [32]byte) ([]byte, error) {
+	block, err := aes.NewCipher(aesKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -623,8 +630,8 @@ func (s *storage) decrypt(ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (s *storage) encrypt(plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(s.aesKey[:])
+func encrypt(bytes []byte, aesKey [32]byte) ([]byte, error) {
+	block, err := aes.NewCipher(aesKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -640,5 +647,5 @@ func (s *storage) encrypt(plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return gcm.Seal(nonce, nonce, plaintext, nil), nil
+	return gcm.Seal(nonce, nonce, bytes, nil), nil
 }
