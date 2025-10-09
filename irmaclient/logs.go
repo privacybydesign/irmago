@@ -20,8 +20,9 @@ const (
 	LogType_Signature         LogType = "signature"
 	LogType_CredentialRemoval LogType = "removal"
 
-	Protocol_Irma      Protocol = "irma"
-	Protocol_OpenID4VP Protocol = "openid4vp"
+	Protocol_Irma       Protocol = "irma"
+	Protocol_OpenID4VP  Protocol = "openid4vp"
+	Protocol_OpenID4VCI Protocol = "openid4vci"
 
 	Format_SdJwtVc CredentialFormat = "dc+sd-jwt"
 	Format_Idemix  CredentialFormat = "idemix"
