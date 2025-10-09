@@ -18,12 +18,13 @@ import (
 )
 
 type Client struct {
-	sdjwtvcStorage  SdJwtVcStorage
-	openid4vpClient *OpenID4VPClient
-	irmaClient      *IrmaClient
-	logsStorage     LogsStorage
-	keyBinder       sdjwtvc.KeyBinder
-	scheduler       gocron.Scheduler
+	sdjwtvcStorage   SdJwtVcStorage
+	openid4vpClient  *OpenID4VPClient
+	openid4vciClient *OpenID4VciClient
+	irmaClient       *IrmaClient
+	logsStorage      LogsStorage
+	keyBinder        sdjwtvc.KeyBinder
+	scheduler        gocron.Scheduler
 }
 
 func New(
@@ -145,6 +146,8 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 
 	if sessionReq.Protocol == Protocol_OpenID4VP {
 		return client.openid4vpClient.NewSession(sessionReq.URL, handler)
+	} else if sessionReq.Protocol == Protocol_OpenID4VCI {
+		return client.openid4vciClient.NewSession(sessionReq.URL, handler)
 	}
 
 	return client.irmaClient.NewSession(sessionrequest, handler)
