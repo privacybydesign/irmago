@@ -217,6 +217,10 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	}
 }
 
+func (h *MockSessionHandler) RequestAuthorizationCodeFlowIssuancePermission(request *irma.AuthorizationCodeIssuanceRequest, serverName *irma.RequestorInfo, callback PermissionHandler) {
+	callback(false, nil)
+}
+
 func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (string, error) {
 	apiUrl := fmt.Sprintf("%s/ui/presentations", openid4vpHost)
 	response, err := http.Post(apiUrl,

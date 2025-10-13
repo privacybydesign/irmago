@@ -57,6 +57,9 @@ type Handler interface {
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
+	RequestAuthorizationCodeFlowIssuancePermission(request *irma.AuthorizationCodeIssuanceRequest,
+		requestorInfo *irma.RequestorInfo,
+		callback PermissionHandler)
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }

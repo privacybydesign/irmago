@@ -149,13 +149,6 @@ func (d *Display) GetName() string {
 func (d *Display) GetLocale() string {
 	return d.Locale
 }
-func displaysToTranslateableList(displays []Display) []Translateable {
-	result := make([]Translateable, len(displays))
-	for i := range displays {
-		result[i] = &displays[i]
-	}
-	return result
-}
 
 func (d *CredentialDisplay) GetName() string {
 	return d.Name
@@ -163,24 +156,23 @@ func (d *CredentialDisplay) GetName() string {
 func (d *CredentialDisplay) GetLocale() string {
 	return d.Locale
 }
-func credentialDisplaysToTranslateableList(displays []CredentialDisplay) []Translateable {
-	result := make([]Translateable, len(displays))
-	for i := range displays {
-		result[i] = &displays[i]
-	}
-	return result
-}
-
 func (d *CredentialIssuerDisplay) GetName() string {
 	return d.Name
 }
 func (d *CredentialIssuerDisplay) GetLocale() string {
 	return d.Locale
 }
-func credentialIssuerDisplaysToTranslateableList(displays []CredentialIssuerDisplay) []Translateable {
+
+func DisplaysToTranslateableList[T Display | CredentialDisplay | CredentialIssuerDisplay](displays []T) []Translateable {
 	result := make([]Translateable, len(displays))
-	for i := range displays {
-		result[i] = &displays[i]
+	for i, d := range displays {
+		if x, ok := any(d).(Display); ok {
+			result[i] = &x
+		} else if x, ok := any(d).(CredentialDisplay); ok {
+			result[i] = &x
+		} else if x, ok := any(d).(CredentialIssuerDisplay); ok {
+			result[i] = &x
+		}
 	}
 	return result
 }
@@ -397,7 +389,7 @@ func (c *ClaimsDescription) verify() error {
 
 	// Validate locale, and check for duplicates
 	for _, display := range c.Display {
-		if err := validateLocale(displaysToTranslateableList(c.Display), &display); err != nil {
+		if err := validateLocale(DisplaysToTranslateableList(c.Display), &display); err != nil {
 			return err
 		}
 	}
@@ -433,7 +425,7 @@ func (d CredentialIssuerDisplays) verify() error {
 				return fmt.Errorf("invalid 'logo' in 'display': %w", err)
 			}
 		}
-		if err := validateLocale(credentialIssuerDisplaysToTranslateableList(d), &display); err != nil {
+		if err := validateLocale(DisplaysToTranslateableList(d), &display); err != nil {
 			return err
 		}
 	}
@@ -458,7 +450,7 @@ func (d CredentialDisplays) verify() error {
 		}
 
 		// Validate locale, and check for duplicates
-		if err := validateLocale(credentialDisplaysToTranslateableList(d), &display); err != nil {
+		if err := validateLocale(DisplaysToTranslateableList(d), &display); err != nil {
 			return err
 		}
 
@@ -497,4 +489,39 @@ func isValidCSSColorLevel3(s string) bool {
 
 	return hex6.MatchString(s) || hex3.MatchString(s) || hex4.MatchString(s) || hex8.MatchString(s) ||
 		rgb.MatchString(s) || rgba.MatchString(s) || hsl.MatchString(s) || hsla.MatchString(s)
+}
+
+func (m CredentialIssuerMetadata) GetAllBaseLanguages() []string {
+	// TODO: We need to make the app be aware of full locales, not just base languages
+	languageSet := []string{}
+
+	// Credential issuer display languages
+	for _, display := range m.Display {
+		if display.Locale != "" {
+			baseLang, err := language.Parse(display.Locale)
+			if err != nil {
+				continue
+			}
+			lang, _ := baseLang.Base()
+
+			if !slices.Contains(languageSet, lang.String()) {
+				languageSet = append(languageSet, lang.String())
+			}
+		}
+	}
+
+	return languageSet
+}
+
+func (m CredentialIssuerMetadata) GetAllLanguages() []string {
+	languageSet := make([]string, len(m.Display))
+
+	// Credential issuer display languages
+	for i, display := range m.Display {
+		if display.Locale != "" {
+			languageSet[i] = display.Locale
+		}
+	}
+
+	return languageSet
 }

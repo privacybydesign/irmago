@@ -9,6 +9,8 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/openid4vci"
+	"golang.org/x/text/language"
 )
 
 // CreateHashForSdJwtVc creates the hash used for SD-JWTs, it's kept this simple so it can also be constructed from
@@ -70,4 +72,27 @@ func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationCo
 		Attributes: attributes,
 	}
 	return &info, &decoded, nil
+}
+
+func convertDisplayToTranslatedString[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) irma.TranslatedString {
+	if displays == nil {
+		return nil
+	}
+
+	translations := openid4vci.DisplaysToTranslateableList(displays)
+
+	result := irma.TranslatedString{}
+	for _, display := range translations {
+		lang, err := language.Parse(display.GetLocale())
+		if err != nil {
+			continue
+		}
+
+		base, _ := lang.Base()
+
+		// TODO: this overwrites translations for the same base language (i.e. en-US would overwrite en-GB), because the app only handles base languages
+		result[base.String()] = display.GetName()
+	}
+
+	return result
 }

@@ -106,6 +106,9 @@ func (h *backgroundIssuanceHandler) RequestSignaturePermission(request *irma.Sig
 func (h *backgroundIssuanceHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(false)
 }
+func (h *backgroundIssuanceHandler) RequestAuthorizationCodeFlowIssuancePermission(request *irma.AuthorizationCodeIssuanceRequest, serverName *irma.RequestorInfo, callback PermissionHandler) {
+	callback(false, nil)
+}
 func (h *backgroundIssuanceHandler) Cancelled() {
 	h.fail(errors.New("session unexpectedly cancelled"))
 }
