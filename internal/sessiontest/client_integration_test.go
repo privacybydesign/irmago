@@ -487,19 +487,6 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	require.Equal(t, 10, int(*cred.InstanceCount))
 }
 
-func requireIdemixAndSdJwtCredentialRemovalLog(t *testing.T, log irmaclient.LogInfo) {
-	require.Equal(t, log.Type, irmaclient.LogType_CredentialRemoval)
-
-	credLog := log.RemovalLog.Credentials[0]
-
-	require.Equal(t, credLog.CredentialType, "test.test.email")
-	require.Contains(t, credLog.Formats, irmaclient.Format_Idemix)
-	require.Contains(t, credLog.Formats, irmaclient.Format_SdJwtVc)
-	require.Equal(t, credLog.Attributes, map[string]string{
-		"email": "test@gmail.com",
-	})
-}
-
 func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log irmaclient.LogInfo) {
 	require.Equal(t, log.Type, irmaclient.LogType_CredentialRemoval)
 	require.Equal(t, log.RemovalLog.Credentials, []irmaclient.CredentialLog{
