@@ -33,7 +33,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	client, handler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, signer)
 	keyshareEnrollClient(t, client, handler)
 
-	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPost_Host)
 
 	logs, err := client.LoadNewestLogs(1)
@@ -89,7 +89,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	client, handler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, signer)
 	keyshareEnrollClient(t, client, handler)
 
-	issueSdJwtAndIdemixToClient(t, client, irmaServer)
+	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	logs, err := client.LoadNewestLogs(1)
 	require.NoError(t, err)

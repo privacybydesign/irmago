@@ -295,7 +295,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[CredentialFormat]
 	}
 
 	info := relevantCreds[0]
-	logEntry, err := createRemovalLog(info.Identifier(), info.Attributes, formats)
+	logEntry, err := createRemovalLog(client.GetIrmaConfiguration(), info.Identifier(), info.Attributes, formats)
 	if err != nil {
 		return fmt.Errorf("failed to create delete log: %v", err)
 	}
@@ -304,13 +304,17 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[CredentialFormat]
 }
 
 func createRemovalLog(
+	irmaConfiguration *irma.Configuration,
 	credentialType irma.CredentialTypeIdentifier,
 	attributes map[irma.AttributeTypeIdentifier]irma.TranslatedString,
 	formats []CredentialFormat,
 ) (*LogEntry, error) {
 	attrs := []irma.TranslatedString{}
-	for _, attr := range attributes {
-		attrs = append(attrs, attr)
+
+	// loop over it in the order as defined in the scheme
+	for _, t := range irmaConfiguration.CredentialTypes[credentialType].AttributeTypes {
+		id := t.GetAttributeTypeIdentifier()
+		attrs = append(attrs, attributes[id])
 	}
 
 	return &LogEntry{
