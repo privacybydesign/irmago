@@ -231,6 +231,7 @@ func (s *Server) Handler() http.Handler {
 		})
 
 		r.Get("/publickey", s.handlePublicKey)
+		r.Post("/verifysignature", s.handleVerifySignature)
 	})
 
 	router.Group(func(r chi.Router) {
@@ -503,6 +504,33 @@ func (s *Server) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 		Bytes: bts,
 	})
 	_, _ = w.Write(pubBytes)
+}
+
+func (s *Server) handleVerifySignature(w http.ResponseWriter, r *http.Request) {
+	defer common.Close(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.conf.Logger.Error("Could not read signature verification request HTTP POST body")
+		_ = server.LogError(err)
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	verreq, err := server.ParseSignatureVerificationRequest(body)
+	if err != nil {
+		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
+		return
+	}
+
+	disclosed, proofStatus, err := verreq.Signature.Verify(s.conf.IrmaConfiguration, verreq.Request)
+	var rerr *irma.RemoteError
+	if err != nil && err == irma.ErrMissingPublicKey {
+		rerr = server.RemoteError(server.ErrorUnknownPublicKey, err.Error())
+	} else if err != nil {
+		rerr = server.RemoteError(server.ErrorUnknown, err.Error())
+	}
+	res := server.SignatureVerificationResult{ProofStatus: proofStatus, Disclosed: disclosed, Err: rerr}
+	server.WriteJson(w, res)
 }
 
 func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest irma.RequestorRequest) {
