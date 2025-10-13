@@ -1,6 +1,7 @@
 package openid4vci
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -715,6 +716,89 @@ func TestIsValidCSSColorLevel3(t *testing.T) {
 			got := isValidCSSColorLevel3(tt.input)
 			if got != tt.expected {
 				t.Errorf("isValidCSSColorLevel3(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
+	tests := []struct {
+		name     string // description of this test case
+		metadata CredentialIssuerMetadata
+		want     []string
+	}{
+		{
+			name: "single display, single locale",
+			metadata: CredentialIssuerMetadata{
+				Display: CredentialIssuerDisplays{
+					{
+						Display: Display{
+							Name:   "Issuer Name",
+							Locale: "en",
+						},
+					},
+				},
+			},
+			want: []string{"en"},
+		},
+		{
+			name: "multiple displays, multiple locales",
+			metadata: CredentialIssuerMetadata{
+				Display: CredentialIssuerDisplays{
+					{
+						Display: Display{
+							Name:   "Issuer Name",
+							Locale: "en-US",
+						},
+					},
+					{
+						Display: Display{
+							Name:   "Nom de l'émetteur",
+							Locale: "fr-FR",
+						},
+					},
+					{
+						Display: Display{
+							Name:   "Nombre del emisor",
+							Locale: "es",
+						},
+					},
+				},
+			},
+			want: []string{"en", "fr", "es"},
+		},
+		{
+			name: "displays with duplicate base languages",
+			metadata: CredentialIssuerMetadata{
+				Display: CredentialIssuerDisplays{
+					{
+						Display: Display{
+							Name:   "Issuer Name",
+							Locale: "en-US",
+						},
+					},
+					{
+						Display: Display{
+							Name:   "Another Issuer Name",
+							Locale: "en-GB",
+						},
+					},
+					{
+						Display: Display{
+							Name:   "Nom de l'émetteur",
+							Locale: "fr",
+						},
+					},
+				},
+			},
+			want: []string{"en", "fr"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.metadata.GetAllBaseLanguages()
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetAllBaseLanguages() = %v, want %v", got, tt.want)
 			}
 		})
 	}

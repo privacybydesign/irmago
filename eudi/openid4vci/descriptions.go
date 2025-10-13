@@ -3,7 +3,7 @@ package openid4vci
 type CredentialOffer struct {
 	CredentialIssuer           string   `json:"credential_issuer"`
 	CredentialConfigurationIds []string `json:"credential_configuration_ids"`
-	Grants                     Grants   `json:"grants,omitempty"`
+	Grants                     *Grants  `json:"grants,omitempty"`
 }
 
 type Grants struct {
@@ -12,8 +12,8 @@ type Grants struct {
 }
 
 type AuthorizationCodeGrant struct {
-	IssuerState         string `json:"issuer_state,omitempty"`
-	AuthorizationServer string `json:"authorization_server,omitempty"`
+	IssuerState         *string `json:"issuer_state,omitempty"`
+	AuthorizationServer *string `json:"authorization_server,omitempty"`
 }
 
 type PreAuthorizedCodeGrant struct {

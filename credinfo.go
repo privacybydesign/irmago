@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+type CredentialTypeInfo struct {
+	ID               string                                       // e.g., "studentCard"
+	IssuerID         string                                       // e.g., "RU"
+	SchemeManagerID  string                                       // e.g., "irma-demo"
+	Attributes       map[AttributeTypeIdentifier]TranslatedString // Human-readable rendered attributes
+	CredentialFormat string                                       // the credential format, e.g. "idemix" or "dc+sd-jwt"
+}
+
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
 	ID                  string                                       // e.g., "studentCard"
