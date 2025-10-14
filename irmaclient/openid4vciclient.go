@@ -13,20 +13,29 @@ import (
 
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
-type OpenID4VciClient struct {
-	eudiConf       *eudi.Configuration
-	httpClient     *http.Client
-	currentSession *openid4vciSession
+type SdJwtVcStorageClient interface {
+	VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error
 }
 
-func NewOpenID4VciClient(httpClient *http.Client, eudiConf *eudi.Configuration) *OpenID4VciClient {
+type OpenID4VciClient struct {
+	eudiConf                   *eudi.Configuration
+	httpClient                 *http.Client
+	currentSession             *openid4vciSession
+	sdJwtVcStorage             SdJwtVcStorage
+	sdJwtVcVerificationContext sdjwtvc.SdJwtVcVerificationContext
+}
+
+func NewOpenID4VciClient(httpClient *http.Client, eudiConf *eudi.Configuration, sdJwtVcStorage SdJwtVcStorage, sdJwtVcVerificationContext sdjwtvc.SdJwtVcVerificationContext) *OpenID4VciClient {
 	return &OpenID4VciClient{
-		httpClient: httpClient,
-		eudiConf:   eudiConf,
+		httpClient:                 httpClient,
+		eudiConf:                   eudiConf,
+		sdJwtVcStorage:             sdJwtVcStorage,
+		sdJwtVcVerificationContext: sdJwtVcVerificationContext,
 	}
 }
 
@@ -78,7 +87,6 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata,
 	handler Handler,
 ) error {
-	// Convert Credential Issuer metadata to RequestorInfo
 	requestorInfo := convertToRequestorInfo(credentialIssuerMetadata)
 	creds, err := convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata)
 	if err != nil {
@@ -91,6 +99,8 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 		requestorInfo:            requestorInfo,
 		credentials:              creds,
 		handler:                  handler,
+		storageClient:            client,
+		httpClient:               client.httpClient,
 		// sdjwtvcStorage:           client.sdjwtvcStorage,
 		// keyBinder:                client.keyBinder,
 		// logsStorage:              client.logsStorage,
@@ -279,6 +289,10 @@ func (client *OpenID4VciClient) downloadRemoteImage(remoteImage openid4vci.Remot
 	}
 
 	return bytes, response.Header.Get("Content-Type"), nil
+}
+
+func (client *OpenID4VciClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
+	return verifyAndStoreSdJwts(sdjwts, client.sdJwtVcStorage, client.sdJwtVcVerificationContext)
 }
 
 func (client *OpenID4VciClient) Dismiss() {

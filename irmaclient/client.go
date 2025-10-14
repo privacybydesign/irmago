@@ -112,7 +112,7 @@ func New(
 	scheduler.Start()
 
 	// Initiate the OpenID4VCI client
-	openid4vciClient := NewOpenID4VciClient(&http.Client{}, eudiConf)
+	openid4vciClient := NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdJwtVcVerificationContext)
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,

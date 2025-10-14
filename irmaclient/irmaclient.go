@@ -1540,57 +1540,9 @@ func (dcs DisclosureCandidates) Choose() ([]*irma.AttributeIdentifier, error) {
 	return ids, nil
 }
 
-// VerifyAndStoreSdJwts verifies the SD-JWTs and stores them in the SdJwtVcStorage.
-// SD-JWTs that are batch-issued should all have the exact same credential info (issuer, id, signedOn, expires, etc.), otherwise they cannot be stored together correctly.
 func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
 	// TODO: check if the correct amount of credentials has been issued for the requestedCredentials for batch requests
-	type credentialTuple struct {
-		credInfo         SdJwtVcMetadata
-		sdjwtvcInstances []sdjwtvc.SdJwtVc
-	}
-	credentialsMap := make(map[string]*credentialTuple)
-
-	for _, sdjwt := range sdjwts {
-		// TODO: check if the SD-JWT adheres to the requested credentials (e.g. if the credential ID and attributes etc match) ?
-		// If we don't check this, issuers might issue SD-JWTs that do not match the corresponding IRMA credential
-		credInfo, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwt, client.sdJwtVerificationContext)
-		if err != nil {
-			return err
-		}
-
-		// We use the credential info hash as the key to store the SD-JWTs in a map, NOT the credential info or credential ID.
-		// Because it is possible that multiple credentials with same credential ID, but different data (e.g. different attributes or minor differences in signedOn/expires)
-		// can be issued in a single request, we need to use the hash of the data itself to distinguish between them.
-		key := credInfo.Hash
-		if _, exists := credentialsMap[key]; !exists {
-			credentialsMap[key] = &credentialTuple{
-				credInfo:         *credInfo,
-				sdjwtvcInstances: []sdjwtvc.SdJwtVc{sdjwt},
-			}
-		} else {
-			credentialsMap[key].sdjwtvcInstances = append(credentialsMap[key].sdjwtvcInstances, sdjwt)
-		}
-	}
-
-	// Now that we've grouped the SD-JWTs by their credential info hash, we can store them
-	for _, v := range credentialsMap {
-		batchInfo := SdJwtVcBatchMetadata{
-			BatchSize:              uint(len(v.sdjwtvcInstances)),
-			RemainingInstanceCount: uint(len(v.sdjwtvcInstances)),
-			SignedOn:               v.credInfo.SignedOn,
-			Expires:                v.credInfo.Expires,
-			Attributes:             v.credInfo.Attributes,
-			Hash:                   v.credInfo.Hash,
-			CredentialType:         v.credInfo.CredentialType,
-		}
-
-		err := client.sdJwtVcStorage.StoreCredential(batchInfo, v.sdjwtvcInstances)
-		if err != nil {
-			return fmt.Errorf("failed to store sdjwtvc batch: %v", err)
-		}
-	}
-
-	return nil
+	return verifyAndStoreSdJwts(sdjwts, client.sdJwtVcStorage, client.sdJwtVerificationContext)
 }
 
 type credLookup struct {

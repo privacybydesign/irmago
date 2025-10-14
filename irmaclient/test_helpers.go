@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -258,4 +259,13 @@ func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest st
 	}
 
 	return url.String(), nil
+}
+
+type MockSdJwtVcStorageClient struct {
+	sdjwts []sdjwtvc.SdJwtVc
+}
+
+func (m *MockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
+	m.sdjwts = sdjwts
+	return nil
 }
