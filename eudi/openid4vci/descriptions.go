@@ -1,5 +1,7 @@
 package openid4vci
 
+import "fmt"
+
 type CredentialOffer struct {
 	CredentialIssuer           string   `json:"credential_issuer"`
 	CredentialConfigurationIds []string `json:"credential_configuration_ids"`
@@ -39,4 +41,44 @@ type TransactionCode struct {
 	InputMode   TransactionCodeInputMode `json:"input_mode,omitempty"` // TODO: make this optional with default "numeric"
 	Length      int                      `json:"length,omitempty"`
 	Description string                   `json:"description,omitempty"`
+}
+
+type CredentialRequest struct {
+	CredentialIdentifier      *string `json:"credential_identifier,omitempty"`
+	CredentialConfigurationId *string `json:"credential_configuration_id,omitempty"`
+}
+
+type CredentialResponse struct {
+	Credentials    []CredentialInstance `json:"credentials,omitempty"`
+	TransactionId  *string              `json:"transaction_id,omitempty"`
+	Interval       *int                 `json:"interval,omitempty"`
+	NotificationId *string              `json:"notification_id,omitempty"`
+}
+
+type CredentialInstance struct {
+	Credential string `json:"credential"`
+}
+
+type CredentialErrorResponse struct {
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description,omitempty"`
+}
+
+func (c *CredentialResponse) Validate(deferred bool) error {
+	if deferred {
+		if len(c.Credentials) != 0 {
+			return fmt.Errorf("credential response should not contain credentials when deferred response is indicated")
+		}
+		if c.TransactionId == nil || c.Interval == nil {
+			return fmt.Errorf("credential response should contain transaction_id and interval when deferred response is indicated")
+		}
+	} else {
+		if len(c.Credentials) == 0 {
+			return fmt.Errorf("credential response contains no credentials")
+		}
+		if c.TransactionId != nil || c.Interval != nil {
+			return fmt.Errorf("credential response should not contain transaction_id and interval upon immediate response")
+		}
+	}
+	return nil
 }
