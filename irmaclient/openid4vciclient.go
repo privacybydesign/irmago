@@ -344,7 +344,10 @@ func convertToCredentialInfoList(requestedCredentialConfigs []string, credential
 				continue
 			}
 
+			name := convertDisplayToTranslatedString(config.CredentialMetadata.Display)
+
 			credentialInfoList = append(credentialInfoList, &irma.CredentialTypeInfo{
+				Name:                     name,
 				CredentialFormat:         string(config.Format),
 				VerifiableCredentialType: config.VerifiableCredentialType,
 				Attributes:               convertToAttributeList(config.CredentialMetadata.Claims),
