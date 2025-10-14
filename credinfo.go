@@ -7,9 +7,10 @@ import (
 )
 
 type CredentialTypeInfo struct {
-	VerifiableCredentialType string                      // corresponds to vct value in sdjwtvc
-	Attributes               map[string]TranslatedString // Human-readable rendered attributes
-	CredentialFormat         string                      // the credential format, e.g. "idemix" or "dc+sd-jwt"
+	Name                     TranslatedString            // Human-readable of this credential type
+	VerifiableCredentialType string                      // Corresponds to vct value in sdjwtvc
+	Attributes               map[string]TranslatedString // Human-readable names of the different attributes mapped by their ID
+	CredentialFormat         string                      // The credential format, e.g. "idemix" or "dc+sd-jwt"
 }
 
 // CredentialInfo contains all information of an IRMA credential.
