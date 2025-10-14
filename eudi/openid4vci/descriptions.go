@@ -19,15 +19,9 @@ type AuthorizationCodeGrant struct {
 }
 
 type PreAuthorizedCodeGrant struct {
-	PreAuthorizedCode   string `json:"pre-authorized_code"`
-	TxCode              TxCode `json:"tx_code,omitempty"`
-	AuthorizationServer string `json:"authorization_server,omitempty"`
-}
-
-type TxCode struct {
-	InputMode   string `json:"input_mode,omitempty"`
-	Length      int    `json:"length,omitempty"`
-	Description string `json:"description,omitempty"`
+	PreAuthorizedCode   string          `json:"pre-authorized_code"`
+	TxCode              TransactionCode `json:"tx_code,omitempty"`
+	AuthorizationServer string          `json:"authorization_server,omitempty"`
 }
 
 type TransactionCodeInputMode string
