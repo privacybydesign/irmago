@@ -88,7 +88,8 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 	handler Handler,
 ) error {
 	requestorInfo := convertToRequestorInfo(credentialIssuerMetadata)
-	creds, err := convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata)
+	issuerName := convertDisplayToTranslatedString(credentialIssuerMetadata.Display)
+	creds, err := convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, issuerName)
 	if err != nil {
 		return fmt.Errorf("failed to convert credential info list: %v", err)
 	}
@@ -335,7 +336,11 @@ func getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuer string, lo
 	return fmt.Sprintf("%x_%s", sha256.Sum256([]byte(credentialIssuer)), locale)
 }
 
-func convertToCredentialInfoList(requestedCredentialConfigs []string, credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata) ([]*irma.CredentialTypeInfo, error) {
+func convertToCredentialInfoList(
+	requestedCredentialConfigs []string,
+	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata,
+	issuerName irma.TranslatedString,
+) ([]*irma.CredentialTypeInfo, error) {
 	credentialInfoList := make([]*irma.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
@@ -347,6 +352,7 @@ func convertToCredentialInfoList(requestedCredentialConfigs []string, credential
 			name := convertDisplayToTranslatedString(config.CredentialMetadata.Display)
 
 			credentialInfoList = append(credentialInfoList, &irma.CredentialTypeInfo{
+				IssuerName:               issuerName,
 				Name:                     name,
 				CredentialFormat:         string(config.Format),
 				VerifiableCredentialType: config.VerifiableCredentialType,
