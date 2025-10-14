@@ -7,11 +7,9 @@ import (
 )
 
 type CredentialTypeInfo struct {
-	ID               string                                       // e.g., "studentCard"
-	IssuerID         string                                       // e.g., "RU"
-	SchemeManagerID  string                                       // e.g., "irma-demo"
-	Attributes       map[AttributeTypeIdentifier]TranslatedString // Human-readable rendered attributes
-	CredentialFormat string                                       // the credential format, e.g. "idemix" or "dc+sd-jwt"
+	VerifiableCredentialType string                      // corresponds to vct value in sdjwtvc
+	Attributes               map[string]TranslatedString // Human-readable rendered attributes
+	CredentialFormat         string                      // the credential format, e.g. "idemix" or "dc+sd-jwt"
 }
 
 // CredentialInfo contains all information of an IRMA credential.
