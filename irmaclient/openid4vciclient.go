@@ -155,7 +155,7 @@ func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJ
 	}
 
 	if parsedCredentialIssuerUri.Scheme != "https" {
-		return nil, fmt.Errorf("credential issuer URI is not HTTPS")
+		return nil, fmt.Errorf("credential issuer URI (%s) is not HTTPS", credentialOffer.CredentialIssuer)
 	}
 
 	if parsedCredentialIssuerUri.RawQuery != "" || parsedCredentialIssuerUri.Fragment != "" {
@@ -330,32 +330,24 @@ func convertToCredentialInfoList(requestedCredentialConfigs []string, credential
 				continue
 			}
 
-			// Split the Verifiable Credential Type into its Yivi scheme components
-			schemeManagerId, issuerId, credId, err := splitVct(config.VerifiableCredentialType)
-			if err != nil {
-				return nil, fmt.Errorf("failed to split verifiable credential type %q: %v", config.VerifiableCredentialType, err)
-			}
-
 			credentialInfoList = append(credentialInfoList, &irma.CredentialTypeInfo{
-				CredentialFormat: string(config.Format),
-				ID:               credId,
-				IssuerID:         issuerId,
-				SchemeManagerID:  schemeManagerId,
-				Attributes:       convertToAttributeList(config.CredentialMetadata.Claims),
+				CredentialFormat:         string(config.Format),
+				VerifiableCredentialType: config.VerifiableCredentialType,
+				Attributes:               convertToAttributeList(config.CredentialMetadata.Claims),
 			})
 		}
 	}
 	return credentialInfoList, nil
 }
 
-func convertToAttributeList(claims []openid4vci.ClaimsDescription) map[irma.AttributeTypeIdentifier]irma.TranslatedString {
-	attrs := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
+func convertToAttributeList(claims []openid4vci.ClaimsDescription) map[string]irma.TranslatedString {
+	attrs := map[string]irma.TranslatedString{}
 	for _, claim := range claims {
 		for _, path := range claim.Path {
 			if len(claim.Display) == 0 {
-				attrs[irma.NewAttributeTypeIdentifier(path)] = irma.NewTranslatedString(&path)
+				attrs[path] = irma.NewTranslatedString(&path)
 			} else {
-				attrs[irma.NewAttributeTypeIdentifier(path)] = convertDisplayToTranslatedString(claim.Display)
+				attrs[path] = convertDisplayToTranslatedString(claim.Display)
 			}
 		}
 	}
