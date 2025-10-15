@@ -25,6 +25,10 @@ import (
 // and specifying the attributes to be disclosed.
 type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 
+// AuthorizationCodeHandler is a callback for providing the authorization code
+// from the app side when the authorization has been done and the flow was returned to the app
+type AuthorizationCodeHandler func(proceed bool, code string)
+
 // PinHandler is used to provide the user's PIN code.
 type PinHandler func(proceed bool, pin string)
 
@@ -57,6 +61,12 @@ type Handler interface {
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
+
+	// RequestAuthorizationCode should start the authorization code flow and
+	// get the resulting authorization code via the `AuthorizationCodeHandler`.
+	RequestAuthorizationCode(request *irma.AuthorizationCodeIssuanceRequest,
+		requestorInfo *irma.RequestorInfo,
+		callback AuthorizationCodeHandler)
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }

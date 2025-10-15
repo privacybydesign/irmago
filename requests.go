@@ -94,6 +94,11 @@ type IssuanceRequest struct {
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
 }
 
+type AuthorizationCodeIssuanceRequest struct {
+	AuthorizationServer string
+	CredentialInfoList  []*CredentialTypeInfo `json:",omitempty"`
+}
+
 // DefaultSdJwtIssueAmount is what you get when the requestor does not specify how many SD-JWTs to issue in a batch.
 const DefaultSdJwtIssueAmount uint = 50
 const MaxSdJwtIssueAmount uint = 200

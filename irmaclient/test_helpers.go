@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -217,6 +218,10 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	}
 }
 
+func (h *MockSessionHandler) RequestAuthorizationCode(request *irma.AuthorizationCodeIssuanceRequest, serverName *irma.RequestorInfo, callback AuthorizationCodeHandler) {
+	callback(false, "")
+}
+
 func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (string, error) {
 	apiUrl := fmt.Sprintf("%s/ui/presentations", openid4vpHost)
 	response, err := http.Post(apiUrl,
@@ -254,4 +259,13 @@ func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest st
 	}
 
 	return url.String(), nil
+}
+
+type MockSdJwtVcStorageClient struct {
+	sdjwts []sdjwtvc.SdJwtVc
+}
+
+func (m *MockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
+	m.sdjwts = sdjwts
+	return nil
 }

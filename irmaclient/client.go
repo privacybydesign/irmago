@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -18,12 +19,13 @@ import (
 )
 
 type Client struct {
-	sdjwtvcStorage  SdJwtVcStorage
-	openid4vpClient *OpenID4VPClient
-	irmaClient      *IrmaClient
-	logsStorage     LogsStorage
-	keyBinder       sdjwtvc.KeyBinder
-	scheduler       gocron.Scheduler
+	sdjwtvcStorage   SdJwtVcStorage
+	openid4vpClient  *OpenID4VPClient
+	openid4vciClient *OpenID4VciClient
+	irmaClient       *IrmaClient
+	logsStorage      LogsStorage
+	keyBinder        sdjwtvc.KeyBinder
+	scheduler        gocron.Scheduler
 }
 
 func New(
@@ -109,18 +111,22 @@ func New(
 	}
 	scheduler.Start()
 
+	// Initiate the OpenID4VCI client
+	openid4vciClient := NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdJwtVcVerificationContext)
+
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
 	// so we do this by listening for session-done events
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	return &Client{
-		sdjwtvcStorage:  sdjwtvcStorage,
-		openid4vpClient: openid4vpClient,
-		irmaClient:      irmaClient,
-		logsStorage:     storage,
-		keyBinder:       keyBinder,
-		scheduler:       scheduler,
+		sdjwtvcStorage:   sdjwtvcStorage,
+		openid4vpClient:  openid4vpClient,
+		openid4vciClient: openid4vciClient,
+		irmaClient:       irmaClient,
+		logsStorage:      storage,
+		keyBinder:        keyBinder,
+		scheduler:        scheduler,
 	}, nil
 }
 
@@ -143,8 +149,11 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return nil
 	}
 
-	if sessionReq.Protocol == Protocol_OpenID4VP {
+	switch sessionReq.Protocol {
+	case Protocol_OpenID4VP:
 		return client.openid4vpClient.NewSession(sessionReq.URL, handler)
+	case Protocol_OpenID4VCI:
+		return client.openid4vciClient.NewSession(sessionReq.URL, handler)
 	}
 
 	return client.irmaClient.NewSession(sessionrequest, handler)
