@@ -39,7 +39,7 @@ func (s *openid4vciSession) perform() error {
 			})
 			return nil
 		}
-		s.requestAuthorizationCodeFlowPermission(authorizationServer)
+		s.requestAuthorizationCode(authorizationServer)
 	} else {
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("only authorization code grant is supported"),
@@ -57,13 +57,13 @@ func (s *openid4vciSession) perform() error {
 	return nil
 }
 
-func (s *openid4vciSession) requestAuthorizationCodeFlowPermission(authorizationServer string) {
+func (s *openid4vciSession) requestAuthorizationCode(authorizationServer string) {
 	issuanceRequest := &irma.AuthorizationCodeIssuanceRequest{
 		CredentialInfoList:  s.credentials,
 		AuthorizationServer: authorizationServer,
 	}
 
-	s.handler.RequestAuthorizationCodeFlowIssuancePermission(
+	s.handler.RequestAuthorizationCode(
 		issuanceRequest,
 		s.requestorInfo,
 		AuthorizationCodeHandler(func(proceed bool, code string) {

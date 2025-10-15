@@ -61,7 +61,10 @@ type Handler interface {
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
-	RequestAuthorizationCodeFlowIssuancePermission(request *irma.AuthorizationCodeIssuanceRequest,
+
+	// RequestAuthorizationCode should start the authorization code flow and
+	// get the resulting authorization code via the `AuthorizationCodeHandler`.
+	RequestAuthorizationCode(request *irma.AuthorizationCodeIssuanceRequest,
 		requestorInfo *irma.RequestorInfo,
 		callback AuthorizationCodeHandler)
 

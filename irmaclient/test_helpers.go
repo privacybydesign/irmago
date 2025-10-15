@@ -218,7 +218,7 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	}
 }
 
-func (h *MockSessionHandler) RequestAuthorizationCodeFlowIssuancePermission(request *irma.AuthorizationCodeIssuanceRequest, serverName *irma.RequestorInfo, callback AuthorizationCodeHandler) {
+func (h *MockSessionHandler) RequestAuthorizationCode(request *irma.AuthorizationCodeIssuanceRequest, serverName *irma.RequestorInfo, callback AuthorizationCodeHandler) {
 	callback(false, "")
 }
 
