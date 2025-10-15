@@ -66,7 +66,8 @@ func (s *openid4vciSession) requestAuthorizationCodeFlowPermission(authorization
 	s.handler.RequestAuthorizationCodeFlowIssuancePermission(
 		issuanceRequest,
 		s.requestorInfo,
-		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+		AuthorizationCodeHandler(func(proceed bool, code string) {
+			irma.Logger.Printf("received authorization code: %v", code)
 			if proceed {
 				s.pendingPermissionRequest.channel <- &permissionResponse{}
 			} else {
