@@ -41,7 +41,7 @@ type CredentialResponseEncryption struct {
 }
 
 type BatchCredentialIssuance struct {
-	BatchSize int `json:"batch_size"`
+	BatchSize uint `json:"batch_size"`
 }
 
 type CredentialIssuerDisplay struct {
@@ -56,14 +56,23 @@ type RemoteImage struct {
 }
 
 type CredentialFormatIdentifier string
+type CredentialSigningAlgorithm string
+type CryptographicBindingMethod string
+type ProofTypeIdentifier string
+
+const (
+	CryptographicBindingMethod_JWK  CryptographicBindingMethod = "jwk"
+	CryptographicBindingMethod_DID  CryptographicBindingMethod = "did"
+	CryptographicBindingMethod_COSE CryptographicBindingMethod = "cose_key"
+)
 
 type CredentialConfiguration struct {
-	Format                               CredentialFormatIdentifier `json:"format"`
-	Scope                                string                     `json:"scope,omitempty"`
-	CredentialSigningAlgValuesSupported  []string                   `json:"credential_signing_alg_values_supported,omitempty"`
-	CryptographicBindingMethodsSupported []string                   `json:"cryptographic_binding_methods_supported,omitempty"`
-	ProofTypesSupported                  []ProofType                `json:"proof_types_supported,omitempty"`
-	CredentialMetadata                   *CredentialMetadata        `json:"credential_metadata,omitempty"`
+	Format                               CredentialFormatIdentifier        `json:"format"`
+	Scope                                string                            `json:"scope,omitempty"`
+	CredentialSigningAlgValuesSupported  []string                          `json:"credential_signing_alg_values_supported,omitempty"`
+	CryptographicBindingMethodsSupported []CryptographicBindingMethod      `json:"cryptographic_binding_methods_supported,omitempty"`
+	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType `json:"proof_types_supported,omitempty"`
+	CredentialMetadata                   *CredentialMetadata               `json:"credential_metadata,omitempty"`
 
 	// The following fields are present/absent, depending on the credential format
 	VerifiableCredentialType string                   `json:"vct,omitempty"`                   // SD-JWT VC
@@ -71,8 +80,8 @@ type CredentialConfiguration struct {
 }
 
 type ProofType struct {
-	ProofSigningAlgValuesSupported []string                    `json:"proof_signing_alg_values_supported"`
-	KeyAttestationsRequired        []KeyAttestationRequirement `json:"key_attestations_required,omitempty"`
+	ProofSigningAlgValuesSupported []string                   `json:"proof_signing_alg_values_supported"`
+	KeyAttestationsRequired        *KeyAttestationRequirement `json:"key_attestations_required,omitempty"`
 }
 
 type KeyAttestationRequirement struct {
@@ -141,6 +150,10 @@ const (
 	CredentialFormatIdentifier_W3CVCLD_ProofSuite CredentialFormatIdentifier = "ldp_vc"
 	CredentialFormatIdentifier_MsoMdoc            CredentialFormatIdentifier = "mso_mdoc"
 	CredentialFormatIdentifier_SdJwtVc            CredentialFormatIdentifier = "dc+sd-jwt"
+
+	ProofTypeIdentifier_JWT         ProofTypeIdentifier = "jwt"
+	ProofTypeIdentifier_DIVP        ProofTypeIdentifier = "di_vp"
+	ProofTypeIdentifier_Attestation ProofTypeIdentifier = "attestation"
 )
 
 func (d *Display) GetName() string {
@@ -178,7 +191,7 @@ func DisplaysToTranslateableList[T Display | CredentialDisplay | CredentialIssue
 }
 
 // Verify validates the Credential Issuer metadata against the OpenID for Verifiable Credential Issuance specification.
-func (m *CredentialIssuerMetadata) Verify(credentialOffer *CredentialOffer) error {
+func (m *CredentialIssuerMetadata) Verify() error {
 	// Required field validation
 	if m.CredentialIssuer == "" {
 		return fmt.Errorf("missing 'credential_issuer'")
@@ -188,13 +201,6 @@ func (m *CredentialIssuerMetadata) Verify(credentialOffer *CredentialOffer) erro
 	}
 	if len(m.CredentialConfigurationsSupported) == 0 {
 		return fmt.Errorf("missing 'credential_configurations_supported'")
-	}
-
-	// --- Credential issuer validation ---
-	// If the credential issuer is not equal to the issuer which initiated the Credential Offer, the metadata is invalid
-	// This assumes the caller has already verified that credentialIssuer is a valid URL
-	if m.CredentialIssuer != credentialOffer.CredentialIssuer {
-		return fmt.Errorf("'credential_issuer' in metadata does not match 'credential_issuer' from the credential offer")
 	}
 
 	// --- Authorization server(s) validation ---
@@ -257,7 +263,7 @@ func (m *CredentialIssuerMetadata) Verify(credentialOffer *CredentialOffer) erro
 
 	// --- Credential configurations supported validation ---
 	for name, credConfig := range m.CredentialConfigurationsSupported {
-		if err := credConfig.validateCredentialConfiguration(); err != nil {
+		if err := credConfig.Verify(); err != nil {
 			return fmt.Errorf("invalid credential configuration %q: %w", name, err)
 		}
 	}
@@ -270,24 +276,38 @@ func (m *CredentialIssuerMetadata) Verify(credentialOffer *CredentialOffer) erro
 	return nil
 }
 
-// ValidateSupportedFeatures checks whether the Credential Issuer is compliant with our client, by checking the supported features.
-func (m *CredentialIssuerMetadata) ValidateSupportedFeatures(credentialOffer *CredentialOffer) error {
-	// Match the metadata against the features we (currently) support
-	// - Only support SD-JWT VC credential configurations (other formats will be added later)
-
-	// Check that we only support SD-JWT VC for now
-	for credentialName, credFormat := range m.CredentialConfigurationsSupported {
-		if slices.Contains(credentialOffer.CredentialConfigurationIds, credentialName) {
-			if credFormat.Format != CredentialFormatIdentifier_SdJwtVc {
-				return fmt.Errorf("unsupported credential format %q", credFormat.Format)
-			}
-		}
+func (m *CredentialIssuerMetadata) ValidateAgainstCredentialOffer(credentialOffer *CredentialOffer) error {
+	// If the credential issuer is not equal to the issuer which initiated the Credential Offer, the metadata is invalid
+	// This assumes the caller has already verified that credentialIssuer is a valid URL
+	if m.CredentialIssuer != credentialOffer.CredentialIssuer {
+		return fmt.Errorf("'credential_issuer' in metadata does not match 'credential_issuer' from the credential offer")
 	}
 
+	// If the credential offer contains credential configuration IDs not present in the metadata, we cannot process the offer
+	for _, credConfigId := range credentialOffer.CredentialConfigurationIds {
+		if _, ok := m.CredentialConfigurationsSupported[credConfigId]; !ok {
+			return fmt.Errorf("unsupported credential configuration %q in credential offer", credConfigId)
+		}
+	}
 	return nil
 }
 
-func (c *CredentialConfiguration) validateCredentialConfiguration() error {
+// Verify validates a single Credential Configuration to the specification, according to its format profile
+func (c *CredentialConfiguration) Verify() error {
+	// Verify credential metadata, if present
+	if c.CredentialMetadata != nil {
+		if err := c.CredentialMetadata.verify(); err != nil {
+			return fmt.Errorf("invalid 'credential_metadata': %w", err)
+		}
+	}
+
+	if len(c.CryptographicBindingMethodsSupported) > 0 {
+		if len(c.ProofTypesSupported) == 0 {
+			return fmt.Errorf("missing 'proof_types_supported' while cryptographic binding methods are present")
+		}
+	}
+
+	// Verify the credential configuration according to its format profile
 	var verifier CredentialConfigurationVerifier
 	switch c.Format {
 	case CredentialFormatIdentifier_W3CVC:
@@ -307,27 +327,52 @@ func (c *CredentialConfiguration) validateCredentialConfiguration() error {
 	return verifier.Verify(c)
 }
 
-// Verify SD-JWT VC credential configuration according to the Credential Format Profile
-func (v *SdJwtVcFormatVerifier) Verify(credentialConfiguration *CredentialConfiguration) error {
+// ValidateSupportedFeatures verifies that the credential configuration is supported by our client. It is split from the credential configuration validation, so it can be used at the moment a configuration is used to request credentials,
+// because it makes no sense to validate configurations up front, which will not be requested either way.
+func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
+	// We only support SD-JWT VC, for now
+	if c.Format != CredentialFormatIdentifier_SdJwtVc {
+		return fmt.Errorf("unsupported credential format %q", c.Format)
+	}
+
 	// TODO: validate scope ?
 
-	// Validate supported signing algorithms
-	for _, signAlg := range credentialConfiguration.CredentialSigningAlgValuesSupported {
-		if _, ok := jwa.LookupSignatureAlgorithm(signAlg); !ok {
-			return fmt.Errorf("unsupported signing algorithm %q in 'credential_signing_alg_values_supported'", signAlg)
+	// Validate at least one credential signing algorithms is supported
+	if len(c.CredentialSigningAlgValuesSupported) != 0 &&
+		len(getSupportedAlgorithms(c.CredentialSigningAlgValuesSupported)) == 0 {
+		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
+	}
+
+	// We only support JWK cryptographic binding method, for now
+	if len(c.CryptographicBindingMethodsSupported) > 0 {
+		if !slices.Contains(c.CryptographicBindingMethodsSupported, CryptographicBindingMethod_JWK) {
+			return fmt.Errorf("unsupported cryptographic binding method(s) %q", c.CryptographicBindingMethodsSupported)
+		}
+
+		// We only support JWT proof type, for now
+		jwtProofType, ok := c.ProofTypesSupported[ProofTypeIdentifier_JWT]
+		if !ok {
+			return fmt.Errorf("missing 'proof_types_supported' for JWT")
+		} else {
+			if len(getSupportedAlgorithms(jwtProofType.ProofSigningAlgValuesSupported)) == 0 {
+				return fmt.Errorf("no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type")
+			}
+
+			// We don't support key attestations, for now
+			if jwtProofType.KeyAttestationsRequired != nil {
+				return fmt.Errorf("unsupported 'key_attestations_required' in 'proof_types_supported' for JWT proof type")
+			}
 		}
 	}
 
-	// TODO: validate cryptographic_binding_methods_supported
-	// TODO: validate proof_types_supported
+	return nil
+}
 
-	// Validate credential metadata
-	if credentialConfiguration.CredentialMetadata != nil {
-		if err := credentialConfiguration.CredentialMetadata.verify(); err != nil {
-			return fmt.Errorf("invalid 'credential_metadata': %w", err)
-		}
+// Verify SD-JWT VC credential configuration according to the Credential Format Profile specification
+func (v *SdJwtVcFormatVerifier) Verify(credentialConfiguration *CredentialConfiguration) error {
+	if credentialConfiguration.VerifiableCredentialType == "" {
+		return fmt.Errorf("missing 'vct' field for SD-JWT VC credential format")
 	}
-
 	return nil
 }
 
@@ -351,6 +396,7 @@ func (v *MdocFormatVerifier) Verify(credentialConfiguration *CredentialConfigura
 	return nil
 }
 
+// Verify validates the Credential Metadata according to the specification
 func (m *CredentialMetadata) verify() error {
 	if err := m.Display.verify(); err != nil {
 		return fmt.Errorf("invalid 'display': %w", err)
@@ -524,4 +570,14 @@ func (m CredentialIssuerMetadata) GetAllLanguages() []string {
 	}
 
 	return languageSet
+}
+
+func getSupportedAlgorithms(input []string) []string {
+	supportedAlgs := []string{}
+	for _, alg := range input {
+		if _, ok := jwa.LookupSignatureAlgorithm(alg); ok {
+			supportedAlgs = append(supportedAlgs, alg)
+		}
+	}
+	return supportedAlgs
 }

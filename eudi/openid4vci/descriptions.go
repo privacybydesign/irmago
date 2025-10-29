@@ -19,9 +19,9 @@ type AuthorizationCodeGrant struct {
 }
 
 type PreAuthorizedCodeGrant struct {
-	PreAuthorizedCode   string          `json:"pre-authorized_code"`
-	TxCode              TransactionCode `json:"tx_code,omitempty"`
-	AuthorizationServer string          `json:"authorization_server,omitempty"`
+	PreAuthorizedCode   string           `json:"pre-authorized_code"`
+	TxCode              *TransactionCode `json:"tx_code,omitempty"`
+	AuthorizationServer string           `json:"authorization_server,omitempty"`
 }
 
 type TransactionCodeInputMode string
@@ -37,9 +37,12 @@ type TransactionCode struct {
 	Description string                   `json:"description,omitempty"`
 }
 
+type Proofs map[ProofTypeIdentifier][]any
+
 type CredentialRequest struct {
 	CredentialIdentifier      *string `json:"credential_identifier,omitempty"`
 	CredentialConfigurationId *string `json:"credential_configuration_id,omitempty"`
+	Proofs                    *Proofs `json:"proofs,omitempty"`
 }
 
 type CredentialResponse struct {
@@ -56,6 +59,10 @@ type CredentialInstance struct {
 type CredentialErrorResponse struct {
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description,omitempty"`
+}
+
+type NonceResponse struct {
+	Nonce string `json:"c_nonce"`
 }
 
 func (c *CredentialResponse) Validate(deferred bool) error {

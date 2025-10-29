@@ -649,6 +649,7 @@ func (session *session) getProof() (interface{}, error) {
 		message, session.timestamp, err = session.client.Proofs(session.choice, session.request)
 	case irma.ActionIssuing:
 		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest), session.choice)
+		// TODO: if an error occurs when sending the commitments to the server, we should remove the corresponding private keys, as they will not be accessible anymore
 	}
 
 	return message, err

@@ -21,11 +21,12 @@ func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &CredentialConfiguration{
-				Format: tt.format,
+				Format:                   tt.format,
+				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 			}
-			err := c.validateCredentialConfiguration()
+			err := c.Verify()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateCredentialConfiguration() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Verify() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -35,38 +36,13 @@ func TestValidateCredentialConfiguration_UnsupportedFormat(t *testing.T) {
 	c := &CredentialConfiguration{
 		Format: "unsupported_format",
 	}
-	err := c.validateCredentialConfiguration()
+	err := c.Verify()
 	if err == nil {
 		t.Errorf("Expected error for unsupported format, got nil")
 	}
 	want := `unsupported credential format "unsupported_format"`
 	if err.Error() != want {
 		t.Errorf("Expected error %q, got %q", want, err.Error())
-	}
-}
-
-func TestValidateCredentialConfiguration_SdJwtVc_InvalidSigningAlg(t *testing.T) {
-	c := &CredentialConfiguration{
-		Format:                              CredentialFormatIdentifier_SdJwtVc,
-		CredentialSigningAlgValuesSupported: []string{"invalid-alg"},
-	}
-	err := c.validateCredentialConfiguration()
-	if err == nil {
-		t.Errorf("Expected error for invalid signing algorithm, got nil")
-	}
-	if err != nil && err.Error() != `unsupported signing algorithm "invalid-alg" in 'credential_signing_alg_values_supported'` {
-		t.Errorf("Unexpected error: %v", err)
-	}
-}
-
-func TestValidateCredentialConfiguration_SdJwtVc_ValidSigningAlg(t *testing.T) {
-	c := &CredentialConfiguration{
-		Format:                              CredentialFormatIdentifier_SdJwtVc,
-		CredentialSigningAlgValuesSupported: []string{"ES256"},
-	}
-	err := c.validateCredentialConfiguration()
-	if err != nil {
-		t.Errorf("Expected no error for valid signing algorithm, got %v", err)
 	}
 }
 
@@ -84,7 +60,7 @@ func TestValidateCredentialConfiguration_SdJwtVc_InvalidCredentialMetadata(t *te
 			},
 		},
 	}
-	err := c.validateCredentialConfiguration()
+	err := c.Verify()
 	if err == nil {
 		t.Errorf("Expected error for missing name in display, got nil")
 	}
@@ -107,14 +83,193 @@ func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *test
 				},
 			},
 		},
+		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 	}
-	err := c.validateCredentialConfiguration()
+	err := c.Verify()
 	if err != nil {
 		t.Errorf("Expected no error for valid credential metadata, got %v", err)
 	}
 }
 
 func TestCredentialIssuerMetadata_Verify(t *testing.T) {
+	validCredentialConfig := CredentialConfiguration{
+		Format:                              CredentialFormatIdentifier_SdJwtVc,
+		CredentialSigningAlgValuesSupported: []string{"ES256"},
+		CredentialMetadata: &CredentialMetadata{
+			Display: []CredentialDisplay{
+				{
+					Display: Display{
+						Name:   "Test Credential",
+						Locale: "en",
+					},
+				},
+			},
+		},
+		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+	}
+	tests := []struct {
+		name     string
+		metadata CredentialIssuerMetadata
+		offer    *CredentialOffer
+		wantErr  string
+	}{
+		{
+			name: "missing credential_issuer",
+			metadata: CredentialIssuerMetadata{
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "missing 'credential_issuer'",
+		},
+		{
+			name: "missing credential_endpoint",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "missing 'credential_endpoint'",
+		},
+		{
+			name: "missing credential_configurations_supported",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:   "https://issuer.example.com",
+				CredentialEndpoint: "https://issuer.example.com/credential",
+			},
+			wantErr: "missing 'credential_configurations_supported'",
+		},
+		{
+			name: "empty credential_configurations_supported",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{},
+			},
+			wantErr: "missing 'credential_configurations_supported'",
+		},
+		{
+			name: "invalid authorization_server URL",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				AuthorizationServers:              []string{"://invalid-url"},
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: `invalid 'authorization_server' URL "://invalid-url"`,
+		},
+		{
+			name: "invalid credential_endpoint URL",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "://invalid-url",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: `invalid 'credential_endpoint' URL "://invalid-url"`,
+		},
+		{
+			name: "credential_endpoint with fragment",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "https://issuer.example.com/credential#frag",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: `invalid 'credential_endpoint' URL "https://issuer.example.com/credential#frag": fragment is not allowed`,
+		},
+		{
+			name: "nonce_endpoint with fragment",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				NonceEndpoint:                     "https://issuer.example.com/nonce#frag",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: `invalid 'nonce_endpoint' URL "https://issuer.example.com/nonce#frag": fragment is not allowed`,
+		},
+		{
+			name: "deferred_credential_endpoint with fragment",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				DeferredCredentialEndpoint:        "https://issuer.example.com/deferred#frag",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: `invalid 'deferred_credential_endpoint' URL "https://issuer.example.com/deferred#frag": fragment is not allowed`,
+		},
+		{
+			name: "notification_endpoint with fragment",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				NotificationEndpoint:              "https://issuer.example.com/notify#frag",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: `invalid 'notification_endpoint' URL "https://issuer.example.com/notify#frag": fragment is not allowed`,
+		},
+		{
+			name: "batch_credential_issuance batch_size <= 1",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:   "https://issuer.example.com",
+				CredentialEndpoint: "https://issuer.example.com/credential",
+				BatchCredentialIssuance: &BatchCredentialIssuance{
+					BatchSize: 1,
+				},
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "'batch_size' in 'batch_credential_issuance' must be > 1",
+		},
+		{
+			name: "valid batch_credential_issuance batch_size (>1)",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:   "https://issuer.example.com",
+				CredentialEndpoint: "https://issuer.example.com/credential",
+				BatchCredentialIssuance: &BatchCredentialIssuance{
+					BatchSize: 2,
+				},
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "",
+		},
+		{
+			name: "invalid credential configuration",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:   "https://issuer.example.com",
+				CredentialEndpoint: "https://issuer.example.com/credential",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{
+					"test": {
+						Format: "invalid_format",
+					},
+				},
+			},
+			wantErr: `invalid credential configuration "test": unsupported credential format "invalid_format"`,
+		},
+		{
+			name: "valid metadata",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.metadata.Verify()
+			if tt.wantErr == "" && err != nil {
+				t.Errorf("Verify() unexpected error: %v", err)
+			}
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Errorf("Verify() expected error %q, got nil", tt.wantErr)
+				} else if err.Error() != tt.wantErr {
+					t.Errorf("Verify() expected error %q, got %q", tt.wantErr, err.Error())
+				}
+			}
+		})
+	}
+}
+
+func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 	validCredentialConfig := CredentialConfiguration{
 		Format:                              CredentialFormatIdentifier_SdJwtVc,
 		CredentialSigningAlgValuesSupported: []string{"ES256"},
@@ -141,36 +296,9 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 		wantErr  string
 	}{
 		{
-			name: "missing credential_issuer",
+			name: "credential_issuer mismatch with credential offer",
 			metadata: CredentialIssuerMetadata{
-				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: "missing 'credential_issuer'",
-		},
-		{
-			name: "missing credential_endpoint",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: "missing 'credential_endpoint'",
-		},
-		{
-			name: "missing credential_configurations_supported",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:   "https://issuer.example.com",
-				CredentialEndpoint: "https://issuer.example.com/credential",
-			},
-			offer:   validCredentialOffer,
-			wantErr: "missing 'credential_configurations_supported'",
-		},
-		{
-			name: "credential_issuer mismatch",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://other-issuer.example.com",
+				CredentialIssuer:                  "https://mismatched-issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
 				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
 			},
@@ -178,111 +306,23 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 			wantErr: "'credential_issuer' in metadata does not match 'credential_issuer' from the credential offer",
 		},
 		{
-			name: "invalid authorization_server URL",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialEndpoint:                "https://issuer.example.com/credential",
-				AuthorizationServers:              []string{"://invalid-url"},
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: `invalid 'authorization_server' URL "://invalid-url"`,
-		},
-		{
-			name: "invalid credential_endpoint URL",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialEndpoint:                "://invalid-url",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: `invalid 'credential_endpoint' URL "://invalid-url"`,
-		},
-		{
-			name: "credential_endpoint with fragment",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialEndpoint:                "https://issuer.example.com/credential#frag",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: `invalid 'credential_endpoint' URL "https://issuer.example.com/credential#frag": fragment is not allowed`,
-		},
-		{
-			name: "nonce_endpoint with fragment",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialEndpoint:                "https://issuer.example.com/credential",
-				NonceEndpoint:                     "https://issuer.example.com/nonce#frag",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: `invalid 'nonce_endpoint' URL "https://issuer.example.com/nonce#frag": fragment is not allowed`,
-		},
-		{
-			name: "deferred_credential_endpoint with fragment",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialEndpoint:                "https://issuer.example.com/credential",
-				DeferredCredentialEndpoint:        "https://issuer.example.com/deferred#frag",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: `invalid 'deferred_credential_endpoint' URL "https://issuer.example.com/deferred#frag": fragment is not allowed`,
-		},
-		{
-			name: "notification_endpoint with fragment",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialEndpoint:                "https://issuer.example.com/credential",
-				NotificationEndpoint:              "https://issuer.example.com/notify#frag",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: `invalid 'notification_endpoint' URL "https://issuer.example.com/notify#frag": fragment is not allowed`,
-		},
-		{
-			name: "batch_credential_issuance batch_size <= 1",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:   "https://issuer.example.com",
-				CredentialEndpoint: "https://issuer.example.com/credential",
-				BatchCredentialIssuance: &BatchCredentialIssuance{
-					BatchSize: 1,
-				},
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
-			},
-			offer:   validCredentialOffer,
-			wantErr: "'batch_size' in 'batch_credential_issuance' must be > 1",
-		},
-		{
-			name: "invalid credential configuration",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:   "https://issuer.example.com",
-				CredentialEndpoint: "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{
-					"test": {
-						Format: "invalid_format",
-					},
-				},
-			},
-			offer:   validCredentialOffer,
-			wantErr: `invalid credential configuration "test": unsupported credential format "invalid_format"`,
-		},
-		{
-			name: "valid metadata",
+			name: "credential offer mismatch against metadata",
 			metadata: CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
 				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
 			},
-			offer:   validCredentialOffer,
-			wantErr: "",
+			offer: &CredentialOffer{
+				CredentialIssuer:           "https://issuer.example.com",
+				CredentialConfigurationIds: []string{"unavailable"},
+			},
+			wantErr: `unsupported credential configuration "unavailable" in credential offer`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.metadata.Verify(tt.offer)
+			err := tt.metadata.ValidateAgainstCredentialOffer(tt.offer)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)
 			}
@@ -297,99 +337,227 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 	}
 }
 
-func TestCredentialIssuerMetadata_ValidateSupportedFeatures(t *testing.T) {
-	validCredentialConfig := CredentialConfiguration{
+func TestCredentialConfiguration_Verify(t *testing.T) {
+	validConfiguration := CredentialConfiguration{
 		Format: CredentialFormatIdentifier_SdJwtVc,
-	}
-	unsupportedCredentialConfig := CredentialConfiguration{
-		Format: CredentialFormatIdentifier_W3CVC,
+		CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+			CryptographicBindingMethod_JWK,
+		},
+		ProofTypesSupported:      map[ProofTypeIdentifier]ProofType{ProofTypeIdentifier_JWT: {ProofSigningAlgValuesSupported: []string{"test"}}},
+		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 	}
 
 	tests := []struct {
 		name        string
-		metadata    CredentialIssuerMetadata
-		offer       *CredentialOffer
+		config      CredentialConfiguration
 		wantErr     bool
 		expectedErr string
 	}{
 		{
-			name: "all credential configurations supported (SD-JWT VC)",
-			metadata: CredentialIssuerMetadata{
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{
-					"cred1": validCredentialConfig,
+			name: "cryptographic_binding_methods_supported present, missing 'proof_types_supported'",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+					CryptographicBindingMethod_JWK,
 				},
-			},
-			offer: &CredentialOffer{
-				CredentialConfigurationIds: []string{"cred1"},
-			},
-			wantErr: false,
-		},
-		{
-			name: "unsupported credential format in offer",
-			metadata: CredentialIssuerMetadata{
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{
-					"cred1": unsupportedCredentialConfig,
-				},
-			},
-			offer: &CredentialOffer{
-				CredentialConfigurationIds: []string{"cred1"},
 			},
 			wantErr:     true,
-			expectedErr: `unsupported credential format "jwt_vc_json"`,
+			expectedErr: "missing 'proof_types_supported' while cryptographic binding methods are present",
 		},
 		{
-			name: "multiple credential configurations, one unsupported",
-			metadata: CredentialIssuerMetadata{
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{
-					"cred1": validCredentialConfig,
-					"cred2": unsupportedCredentialConfig,
-				},
-			},
-			offer: &CredentialOffer{
-				CredentialConfigurationIds: []string{"cred1", "cred2"},
-			},
-			wantErr:     true,
-			expectedErr: `unsupported credential format "jwt_vc_json"`,
-		},
-		{
-			name: "credential configuration id not present in supported configurations",
-			metadata: CredentialIssuerMetadata{
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{
-					"cred1": validCredentialConfig,
-				},
-			},
-			offer: &CredentialOffer{
-				CredentialConfigurationIds: []string{"unknown"},
-			},
-			wantErr: false, // Should not error, as the code only checks present configs
-		},
-		{
-			name: "no credential configuration ids in offer",
-			metadata: CredentialIssuerMetadata{
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{
-					"cred1": validCredentialConfig,
-				},
-			},
-			offer: &CredentialOffer{
-				CredentialConfigurationIds: []string{},
-			},
-			wantErr: false,
-		},
-		{
-			name: "empty supported configurations",
-			metadata: CredentialIssuerMetadata{
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{},
-			},
-			offer: &CredentialOffer{
-				CredentialConfigurationIds: []string{"cred1"},
-			},
+			name:    "valid credential configuration",
+			config:  validConfiguration,
 			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.metadata.ValidateSupportedFeatures(tt.offer)
+			err := tt.config.Verify()
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Verify() expected error, got nil")
+				} else if tt.expectedErr != "" && err.Error() != tt.expectedErr {
+					t.Errorf("Verify() error = %q, want %q", err.Error(), tt.expectedErr)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Verify() unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
+	validFullConfiguration := CredentialConfiguration{
+		Format: CredentialFormatIdentifier_SdJwtVc,
+		CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+			CryptographicBindingMethod_JWK,
+		},
+		CredentialSigningAlgValuesSupported: []string{"ES256"},
+		ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
+			ProofTypeIdentifier_JWT: {
+				ProofSigningAlgValuesSupported: []string{"ES256"},
+			},
+		},
+	}
+
+	unsupportedCredentialConfig := CredentialConfiguration{
+		Format: CredentialFormatIdentifier_W3CVC,
+	}
+
+	tests := []struct {
+		name        string
+		config      CredentialConfiguration
+		wantErr     bool
+		expectedErr string
+	}{
+		{
+			name:        "unsupported credential format",
+			config:      unsupportedCredentialConfig,
+			wantErr:     true,
+			expectedErr: `unsupported credential format "jwt_vc_json"`,
+		},
+		{
+			name: "credential signing algorithms can be nil",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+			},
+			wantErr: false,
+		},
+		{
+			name: "credential signing algorithms can be empty",
+			config: CredentialConfiguration{
+				Format:                              CredentialFormatIdentifier_SdJwtVc,
+				CredentialSigningAlgValuesSupported: []string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "single credential signing algorithm - unsupported",
+			config: CredentialConfiguration{
+				Format:                              CredentialFormatIdentifier_SdJwtVc,
+				CredentialSigningAlgValuesSupported: []string{"invalid-alg"},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported'",
+		},
+		{
+			name: "single credential signing algorithm - supported",
+			config: CredentialConfiguration{
+				Format:                              CredentialFormatIdentifier_SdJwtVc,
+				CredentialSigningAlgValuesSupported: []string{"ES256"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple credential signing algorithms - at least one supported",
+			config: CredentialConfiguration{
+				Format:                              CredentialFormatIdentifier_SdJwtVc,
+				CredentialSigningAlgValuesSupported: []string{"ES256", "invalid-alg"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "unsupported cryptographic binding method",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+					CryptographicBindingMethod_COSE,
+				},
+			},
+			wantErr:     true,
+			expectedErr: `unsupported cryptographic binding method(s) ["cose_key"]`,
+		},
+		{
+			name: "cryptographic binding method present, no proof type supported present",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+					CryptographicBindingMethod_JWK,
+				},
+			},
+			wantErr:     true,
+			expectedErr: `missing 'proof_types_supported' for JWT`,
+		},
+		{
+			name: "cryptographic binding method present, no proof type JWT available",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+					CryptographicBindingMethod_JWK,
+				},
+				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
+					ProofTypeIdentifier_DIVP: {
+						ProofSigningAlgValuesSupported: []string{"ES256"},
+					},
+				},
+			},
+			wantErr:     true,
+			expectedErr: `missing 'proof_types_supported' for JWT`,
+		},
+		{
+			name: "cryptographic binding method present, proof type JWT, unsupported proof signing algorithms",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+					CryptographicBindingMethod_JWK,
+				},
+				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
+					ProofTypeIdentifier_JWT: {
+						ProofSigningAlgValuesSupported: []string{"invalid-alg"},
+					},
+				},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
+		},
+		{
+			name: "cryptographic binding method present, proof type JWT, multiple proof signing algorithms, at least one supported",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+					CryptographicBindingMethod_JWK,
+				},
+				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
+					ProofTypeIdentifier_JWT: {
+						ProofSigningAlgValuesSupported: []string{"ES256", "invalid-alg"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "cryptographic binding method present, proof type JWT, key attestations required - unsupported",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
+					CryptographicBindingMethod_JWK,
+				},
+				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
+					ProofTypeIdentifier_JWT: {
+						ProofSigningAlgValuesSupported: []string{"ES256"},
+						KeyAttestationsRequired: &KeyAttestationRequirement{
+							KeyStorage:         []AttestationAttackResistance{Iso18045_Basic},
+							UserAuthentication: []AttestationAttackResistance{Iso18045_Basic},
+						},
+					},
+				},
+			},
+			wantErr:     true,
+			expectedErr: `unsupported 'key_attestations_required' in 'proof_types_supported' for JWT proof type`,
+		},
+		{
+			name:    "valid credential configuration",
+			config:  validFullConfiguration,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.ValidateSupportedFeatures()
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("ValidateSupportedFeatures() expected error, got nil")
