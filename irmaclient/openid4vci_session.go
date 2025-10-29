@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unsafe"
 
+	"github.com/lestrrat-go/jwx/v3/jwa"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
@@ -21,6 +23,7 @@ type openid4vciSession struct {
 	httpClient               *http.Client
 	handler                  Handler
 	pendingPermissionRequest *permissionRequest
+	keyBinder                sdjwtvc.KeyBinder
 }
 
 func (s *openid4vciSession) perform() error {
@@ -97,8 +100,88 @@ func (s *openid4vciSession) awaitPermission() *permissionResponse {
 }
 
 func (s *openid4vciSession) requestCredentials(accessToken string) error {
-	// TODO: check if we need to set credential_identifier or credential_configuration_id field
-	request := &openid4vci.CredentialRequest{}
+	// If the issuer provides a Nonce endpoint, we should get a fresh c_nonce here and use it in all credential requests that require proof of possession
+	var cNonce *string
+	if s.credentialIssuerMetadata.NonceEndpoint != "" {
+		cNonceValue, err := s.requestNonce()
+		if err != nil {
+			return fmt.Errorf("could not obtain nonce from issuer: %v", err)
+		}
+		cNonce = &cNonceValue
+	}
+
+	// TODO: Request credentials in parallel
+	for _, credConfigId := range s.credentialOffer.CredentialConfigurationIds {
+		// TODO: check if/how we need to set/pass credential_identifier or credential_configuration_id field to the Credential Request
+		// As the credential identifier can be returned from the Authorization Details in the Token Response from authorization code flow
+		err := s.requestCredential(credConfigId, cNonce, accessToken)
+		if err != nil {
+			// TODO: how to handle if a single request fails but others succeed?
+			return err
+		}
+	}
+	return nil
+}
+
+// requestCredential requests a credential for the given credential configuration ID. Make sure the cNonce is provided if required (Nonce Endpoint is available) and is fresh.
+func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *string, accessToken string) error {
+	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
+		return fmt.Errorf("credential request requires nonce but none was provided")
+	}
+
+	credConfig := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
+
+	// Before we do anything; validate that we support the credential configuration
+	if err := credConfig.ValidateSupportedFeatures(); err != nil {
+		return fmt.Errorf("credential configuration %q is not supported: %v", credConfigId, err)
+	}
+
+	// TODO: fill correct fields in Credential Request; for now only the Credential Configuration ID is set
+	request := &openid4vci.CredentialRequest{
+		CredentialConfigurationId: &credConfigId,
+	}
+
+	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
+	if len(credConfig.CryptographicBindingMethodsSupported) > 0 {
+		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
+		num := uint(1)
+		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
+			num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
+		}
+
+		// Since we now only support JWT proofs (and the issuer supports this, as checked with ValidateSupportedFeatures), we can directly use that to create the key pairs with JWT proofs
+		proofType := credConfig.ProofTypesSupported[openid4vci.ProofTypeIdentifier_JWT]
+
+		// Determine signing algorithm for key binding proofs
+		var alg jwa.SignatureAlgorithm
+		for _, algName := range proofType.ProofSigningAlgValuesSupported {
+			foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
+			if ok {
+				alg = foundAlg
+				break
+			}
+		}
+
+		// According to the spec, the 'issuer' should be an identifier which identifies the wallet TYPE, not the wallet INSTANCE
+		// Fow now, we just use our applicationId as a fixed value
+		issuer := "org.irmacard.cardemu"
+		proofJwts, err := s.keyBinder.CreateKeyPairsWithJwtProofs(num, alg, issuer, s.credentialIssuerMetadata.CredentialIssuer, cNonce)
+		if err != nil {
+			return fmt.Errorf("could not create key pairs: %v", err)
+		}
+
+		// Use unsafe to convert []string to []any without allocations
+		// If we use type-safe conversion, we would need to allocate and copy each element
+		// which is costly when dealing with many key bindings
+		x := *(*[]any)(unsafe.Pointer(&proofJwts))
+		x = x[:len(proofJwts)]
+
+		// TODO: we need to thoroughly test that this works as intended and does not lead to issues
+		// for example; reading more proofs then we created, etc.
+		request.Proofs = &openid4vci.Proofs{
+			openid4vci.ProofTypeIdentifier_JWT: x,
+		}
+	}
 
 	jsonRequest, err := json.Marshal(request)
 	if err != nil {
@@ -194,4 +277,31 @@ func (s *openid4vciSession) requestCredentials(accessToken string) error {
 
 	// Store the credentials using the storage client
 	return s.storageClient.VerifyAndStoreSdJwts(sdJwts, nil)
+}
+
+// requestNonce requests a fresh nonce from the issuer's nonce endpoint
+func (s *openid4vciSession) requestNonce() (string, error) {
+	// TODO: implement use of DPoP nonce
+	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.NonceEndpoint, bytes.NewBuffer([]byte{}))
+	resp, err := s.httpClient.Do(req)
+	defer func() {
+		err = resp.Body.Close()
+		if err != nil {
+			irma.Logger.Warnf("failed to close credential request response body: %v", err)
+		}
+	}()
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("nonce request failed: %s", resp.Status)
+	}
+
+	var nonceResponse openid4vci.NonceResponse
+	err = json.NewDecoder(resp.Body).Decode(&nonceResponse)
+	if err != nil {
+		return "", fmt.Errorf("could not decode nonce response: %v", err)
+	}
+
+	return nonceResponse.Nonce, nil
 }

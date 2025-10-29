@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"slices"
 	"strings"
 
 	irma "github.com/privacybydesign/irmago"
@@ -28,14 +27,21 @@ type OpenID4VciClient struct {
 	currentSession             *openid4vciSession
 	sdJwtVcStorage             SdJwtVcStorage
 	sdJwtVcVerificationContext sdjwtvc.SdJwtVcVerificationContext
+	keyBinder                  sdjwtvc.KeyBinder
 }
 
-func NewOpenID4VciClient(httpClient *http.Client, eudiConf *eudi.Configuration, sdJwtVcStorage SdJwtVcStorage, sdJwtVcVerificationContext sdjwtvc.SdJwtVcVerificationContext) *OpenID4VciClient {
+func NewOpenID4VciClient(httpClient *http.Client,
+	eudiConf *eudi.Configuration,
+	sdJwtVcStorage SdJwtVcStorage,
+	sdJwtVcVerificationContext sdjwtvc.SdJwtVcVerificationContext,
+	keyBinder sdjwtvc.KeyBinder,
+) *OpenID4VciClient {
 	return &OpenID4VciClient{
 		httpClient:                 httpClient,
 		eudiConf:                   eudiConf,
 		sdJwtVcStorage:             sdJwtVcStorage,
 		sdJwtVcVerificationContext: sdJwtVcVerificationContext,
+		keyBinder:                  keyBinder,
 	}
 }
 
@@ -64,12 +70,6 @@ func (client *OpenID4VciClient) handleSessionAsync(credentialEndpointUrl string,
 		credentialIssuerMetadata, err := client.GetAndVerifyCredentialIssuerMetadata(credentialOffer)
 		if err != nil {
 			handleFailure(handler, "openid4vci: failed to get and verify credential issuer metadata: %v", err)
-			return
-		}
-
-		// Validate the Credential Offer against the Credential Issuer metadata
-		if err = validateCredentialOfferAgainstIssuerMetadata(credentialOffer, credentialIssuerMetadata); err != nil {
-			handleFailure(handler, "openid4vci: failed to validate credential offer against credential issuer metadata: %v", err)
 			return
 		}
 
@@ -102,8 +102,7 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 		handler:                  handler,
 		storageClient:            client,
 		httpClient:               client.httpClient,
-		// sdjwtvcStorage:           client.sdjwtvcStorage,
-		// keyBinder:                client.keyBinder,
+		keyBinder:                client.keyBinder,
 		// logsStorage:              client.logsStorage,
 	}
 	defer func() {
@@ -234,15 +233,15 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 	}
 
 	// Validate the Credential Issuer metadata against the spec
-	err = credentialIssuerMetadata.Verify(credentialOffer)
+	err = credentialIssuerMetadata.Verify()
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate credential issuer metadata: %v", err)
 	}
 
-	// Validate the metadata against our sub-set of supported features
-	err = credentialIssuerMetadata.ValidateSupportedFeatures(credentialOffer)
+	// Validate the metadata against the Credential Offer
+	err = credentialIssuerMetadata.ValidateAgainstCredentialOffer(credentialOffer)
 	if err != nil {
-		return nil, fmt.Errorf("credential issuer metadata contains unsupported features: %v", err)
+		return nil, fmt.Errorf("failed to validate credential issuer metadata against credential offer: %v", err)
 	}
 
 	// Valid metadata; download any logos, if present
@@ -307,29 +306,6 @@ func constructCredentialIssuerMetadataUrl(credentialIssuer url.URL) string {
 		Path:   path.Join("/.well-known/openid-credential-issuer", credentialIssuer.Path), // In case the Credential Issuer has multiple tenants, make sure to include the path
 	}
 	return url.String()
-}
-
-func validateCredentialOfferAgainstIssuerMetadata(credentialOffer *openid4vci.CredentialOffer, credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata) error {
-	// Validate that the Credential Issuer in the Credential Offer matches that in the Credential Issuer metadata
-	if credentialOffer.CredentialIssuer != credentialIssuerMetadata.CredentialIssuer {
-		return fmt.Errorf("credential offer credential_issuer does not match credential issuer metadata issuer")
-	}
-
-	// Validate that all Credential Configuration IDs in the Credential Offer are supported by the Credential Issuer
-	var missingConfigurationId *string
-	if !slices.ContainsFunc(credentialOffer.CredentialConfigurationIds, func(configurationId string) bool {
-		for supportedConfigurationName := range credentialIssuerMetadata.CredentialConfigurationsSupported {
-			if supportedConfigurationName == configurationId {
-				return true
-			}
-		}
-		missingConfigurationId = &configurationId
-		return false
-	}) {
-		return fmt.Errorf("credential offer credential_configuration_id %q is not supported by credential issuer", *missingConfigurationId)
-	}
-
-	return nil
 }
 
 func getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuer string, locale string) string {
