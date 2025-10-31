@@ -74,15 +74,17 @@ func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationCo
 	return &info, &decoded, nil
 }
 
-func convertDisplayToTranslatedString[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) irma.TranslatedString {
-	if displays == nil {
-		return nil
+func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) []openid4vci.Translateable {
+	translations := make([]openid4vci.Translateable, len(displays))
+	for i, display := range displays {
+		translations[i] = any(display).(openid4vci.Translateable)
 	}
+	return translations
+}
 
-	translations := openid4vci.DisplaysToTranslateableList(displays)
-
+func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.TranslatedString {
 	result := irma.TranslatedString{}
-	for _, display := range translations {
+	for _, display := range displays {
 		lang, err := language.Parse(display.GetLocale())
 		if err != nil {
 			continue

@@ -1,6 +1,7 @@
 package openid4vci
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -156,23 +157,23 @@ const (
 	ProofTypeIdentifier_Attestation ProofTypeIdentifier = "attestation"
 )
 
-func (d *Display) GetName() string {
+func (d Display) GetName() string {
 	return d.Name
 }
-func (d *Display) GetLocale() string {
+func (d Display) GetLocale() string {
 	return d.Locale
 }
 
-func (d *CredentialDisplay) GetName() string {
+func (d CredentialDisplay) GetName() string {
 	return d.Name
 }
-func (d *CredentialDisplay) GetLocale() string {
+func (d CredentialDisplay) GetLocale() string {
 	return d.Locale
 }
-func (d *CredentialIssuerDisplay) GetName() string {
+func (d CredentialIssuerDisplay) GetName() string {
 	return d.Name
 }
-func (d *CredentialIssuerDisplay) GetLocale() string {
+func (d CredentialIssuerDisplay) GetLocale() string {
 	return d.Locale
 }
 
@@ -580,4 +581,28 @@ func getSupportedAlgorithms(input []string) []string {
 		}
 	}
 	return supportedAlgs
+}
+
+func (r *RemoteImage) UnmarshalJSON(data []byte) error {
+	type BackwardsCompatibleRemoteImage struct {
+		Uri     string `json:"uri"`
+		Url     string `json:"url"`
+		AltText string `json:"alt_text"`
+	}
+
+	var raw BackwardsCompatibleRemoteImage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	r.AltText = raw.AltText
+
+	// Handle 'url' field for EUDIPLO backward compatibility
+	if raw.Uri == "" && raw.Url != "" {
+		r.Uri = raw.Url
+	} else {
+		r.Uri = raw.Uri
+	}
+
+	return nil
 }

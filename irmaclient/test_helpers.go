@@ -64,20 +64,22 @@ func (h *MockClientHandler) ReportError(err error) {
 // =============================================================================
 
 type MockSessionHandler struct {
-	t                 *testing.T
-	permissionChannel chan *MockPermissionRequest
-	sessionEndChannel chan bool // true if successful
-	pinRequestChannel chan PinHandler
-	log               bool
+	t                      *testing.T
+	permissionChannel      chan *MockPermissionRequest
+	sessionEndChannel      chan bool // true if successful
+	pinRequestChannel      chan PinHandler
+	authCodeRequestChannel chan AuthorizationCodeHandler
+	log                    bool
 }
 
 func NewMockSessionHandler(t *testing.T) *MockSessionHandler {
 	return &MockSessionHandler{
-		t:                 t,
-		permissionChannel: make(chan *MockPermissionRequest, 1),
-		sessionEndChannel: make(chan bool, 1),
-		pinRequestChannel: make(chan PinHandler, 1),
-		log:               false,
+		t:                      t,
+		permissionChannel:      make(chan *MockPermissionRequest, 1),
+		sessionEndChannel:      make(chan bool, 1),
+		pinRequestChannel:      make(chan PinHandler, 1),
+		authCodeRequestChannel: make(chan AuthorizationCodeHandler, 1),
+		log:                    false,
 	}
 }
 
@@ -93,12 +95,20 @@ func (h *MockSessionHandler) AwaitPinRequest() PinHandler {
 	return <-h.pinRequestChannel
 }
 
+func (h *MockSessionHandler) AwaitAuthCodeRequest() AuthorizationCodeHandler {
+	return <-h.authCodeRequestChannel
+}
+
 type MockPermissionRequest struct {
 	Satisfiable       bool
 	Candidates        [][]DisclosureCandidates
 	RequestorInfo     *irma.RequestorInfo
 	PermissionHandler PermissionHandler
 	SignedMessage     string
+}
+
+type MockAuthCodePermissionRequest struct {
+	PermissionHandler AuthorizationCodeHandler
 }
 
 func (h *MockSessionHandler) RequestVerificationPermission(request *irma.DisclosureRequest,
@@ -218,8 +228,17 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	}
 }
 
-func (h *MockSessionHandler) RequestAuthorizationCode(request *irma.AuthorizationCodeIssuanceRequest, serverName *irma.RequestorInfo, callback AuthorizationCodeHandler) {
-	callback(false, "")
+func (h *MockSessionHandler) RequestAuthorizationCode(request *irma.AuthorizationAndCodeExchangeRequest,
+	serverName *irma.RequestorInfo,
+	callback AuthorizationCodeHandler,
+) {
+	if h.log {
+		authCodeRequest, err := json.MarshalIndent(request, "", "    ")
+		require.NoError(h.t, err)
+		fmt.Printf("authCodeRequest: %v\n", string(authCodeRequest))
+	}
+
+	h.authCodeRequestChannel <- callback
 }
 
 func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (string, error) {

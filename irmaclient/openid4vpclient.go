@@ -135,7 +135,6 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
-			return
 		}
 	}()
 }

@@ -14,24 +14,41 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 )
 
+// AuthorizationCodeRequestor is used to asking the user for permission to start the authorization code flow.
+type AuthorizationCodeRequestor interface {
+	// RequestAuthorizationCode should start the authorization code flow and get the resulting authorization code via the `AuthorizationCodeHandler`.
+	RequestAuthorizationCode(request *irma.AuthorizationAndCodeExchangeRequest,
+		requestorInfo *irma.RequestorInfo,
+		callback AuthorizationCodeHandler)
+}
+
+type authCodeRequest struct {
+	channel chan *authCodeResponse
+}
+
+type authCodeResponse struct {
+	permissionGranted bool
+	code              string
+}
+
 type openid4vciSession struct {
 	credentialOffer          *openid4vci.CredentialOffer
 	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata
 	requestorInfo            *irma.RequestorInfo
-	credentials              []*irma.CredentialTypeInfo
+	credentials              []irma.CredentialTypeInfo
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler
-	pendingPermissionRequest *permissionRequest
+	pendingAuthCodeRequest   *authCodeRequest
 	keyBinder                sdjwtvc.KeyBinder
 }
 
 func (s *openid4vciSession) perform() error {
-	s.pendingPermissionRequest = &permissionRequest{
-		channel: make(chan *permissionResponse, 1),
+	s.pendingAuthCodeRequest = &authCodeRequest{
+		channel: make(chan *authCodeResponse, 1),
 	}
 	defer func() {
-		s.pendingPermissionRequest = nil
+		s.pendingAuthCodeRequest = nil
 	}()
 
 	if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
@@ -47,23 +64,26 @@ func (s *openid4vciSession) perform() error {
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("only authorization code grant is supported"),
 		})
+		return nil
 	}
 
-	permissionResponse := s.awaitPermission()
-
-	if permissionResponse == nil {
+	authCodeResponse := s.awaitAuthCode()
+	if authCodeResponse == nil || !authCodeResponse.permissionGranted {
 		s.handler.Cancelled()
 		return nil
 	}
+
+	// Code received;
+	// TODO: exchange it for an access token and continue to request credentials
 
 	s.handler.Success("openid4vci session completed")
 	return nil
 }
 
 func (s *openid4vciSession) requestAuthorizationCode(authorizationServer string) {
-	issuanceRequest := &irma.AuthorizationCodeIssuanceRequest{
-		CredentialInfoList:  s.credentials,
-		AuthorizationServer: authorizationServer,
+	issuanceRequest := &irma.AuthorizationAndCodeExchangeRequest{
+		CredentialInfoList: s.credentials,
+		//AuthorizationServer: authorizationServer,
 	}
 
 	s.handler.RequestAuthorizationCode(
@@ -72,20 +92,24 @@ func (s *openid4vciSession) requestAuthorizationCode(authorizationServer string)
 		AuthorizationCodeHandler(func(proceed bool, code string) {
 			irma.Logger.Printf("received authorization code: %v", code)
 			if proceed {
-				s.pendingPermissionRequest.channel <- &permissionResponse{}
+				s.pendingAuthCodeRequest.channel <- &authCodeResponse{permissionGranted: true, code: code}
 			} else {
-				s.pendingPermissionRequest.channel <- nil
+				s.pendingAuthCodeRequest.channel <- &authCodeResponse{permissionGranted: false}
 			}
 		}),
 	)
 }
 
 func (s *openid4vciSession) getAuthorizationServer() (string, error) {
-	if s.credentialOffer.Grants.AuthorizationCodeGrant.AuthorizationServer != nil || len(s.credentialIssuerMetadata.AuthorizationServers) == 0 {
-		// Use the credential issuer as the authorization server if no other authorization servers are listed in the metadata
+	if len(s.credentialIssuerMetadata.AuthorizationServers) == 0 {
+		// Use the credential issuer as the authorization server if no authorization servers are listed in the metadata
 		return s.credentialOffer.CredentialIssuer, nil
 	} else {
-		// Match the authorization server from the offer to the metadata
+		// Try to match the authorization server from the offer to the metadata, or just pick the first one if no hint is given in the offer
+		if s.credentialOffer.Grants.AuthorizationCodeGrant.AuthorizationServer == nil {
+			return s.credentialIssuerMetadata.AuthorizationServers[0], nil
+		}
+
 		for _, authServer := range s.credentialIssuerMetadata.AuthorizationServers {
 			if authServer == *s.credentialOffer.Grants.AuthorizationCodeGrant.AuthorizationServer && strings.HasPrefix(authServer, "https://") {
 				return authServer, nil
@@ -95,8 +119,8 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
-func (s *openid4vciSession) awaitPermission() *permissionResponse {
-	return <-s.pendingPermissionRequest.channel
+func (s *openid4vciSession) awaitAuthCode() *authCodeResponse {
+	return <-s.pendingAuthCodeRequest.channel
 }
 
 func (s *openid4vciSession) requestCredentials(accessToken string) error {

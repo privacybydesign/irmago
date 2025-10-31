@@ -94,9 +94,38 @@ type IssuanceRequest struct {
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
 }
 
-type AuthorizationCodeIssuanceRequest struct {
-	AuthorizationServer string
-	CredentialInfoList  []*CredentialTypeInfo `json:",omitempty"`
+type AuthorizationAndCodeExchangeRequest struct {
+	AuthorizationEndpoint string
+	TokenEndpoint         string
+	CredentialInfoList    CredentialTypeInfoList         `json:",omitempty"`
+	Parameters            AuthorizationRequestParameters `json:"parameters,omitempty"`
+}
+
+type AuthorizationRequestParameters struct {
+	ResponseType string `json:"response_type"`
+	ClientID     string `json:"client_id"`
+	RedirectURI  string `json:"redirect_uri,omitempty"` // TODO: let irmamobile determine this value, because it is app-specific?
+	State        string `json:"state,omitempty"`
+	IssuerState  string `json:"issuer_state,omitempty"`
+
+	// Auth request using scopes (5.1.2 of OpenID4VCI spec)
+	Scopes   []string `json:"scopes,omitempty"` // Scopes must be converted to a space-separated string when used in an actual request
+	Resource string   `json:"resource,omitempty"`
+
+	// Auth request using Authorization Details (5.1.1 of OpenID4VCI spec)
+	AuthorizationDetails []AuthorizationDetails `json:"authorization_details,omitempty"`
+}
+
+type AuthorizationDetails struct {
+	Type                      string                     `json:"type,omitempty"`
+	CredentialConfigurationId string                     `json:"credential_configuration_id,omitempty"`
+	Locations                 []string                   `json:"locations,omitempty"`
+	Claims                    []AuthorizationDetailClaim `json:"claims,omitempty"`
+}
+
+type AuthorizationDetailClaim struct {
+	Path      string `json:"path"`
+	Mandatory bool   `json:"mandatory"`
 }
 
 // DefaultSdJwtIssueAmount is what you get when the requestor does not specify how many SD-JWTs to issue in a batch.

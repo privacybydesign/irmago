@@ -28,6 +28,9 @@ type OpenID4VciClient struct {
 	sdJwtVcStorage             SdJwtVcStorage
 	sdJwtVcVerificationContext sdjwtvc.SdJwtVcVerificationContext
 	keyBinder                  sdjwtvc.KeyBinder
+
+	// Allow non-HTTPS for testing purposes
+	allowInsecureHttp bool
 }
 
 func NewOpenID4VciClient(httpClient *http.Client,
@@ -45,14 +48,18 @@ func NewOpenID4VciClient(httpClient *http.Client,
 	}
 }
 
-func (client *OpenID4VciClient) NewSession(credentialEndpointUrl string, handler Handler) SessionDismisser {
-	client.handleSessionAsync(credentialEndpointUrl, handler)
+func (client *OpenID4VciClient) AllowInsecureHttpForTesting() {
+	client.allowInsecureHttp = true
+}
+
+func (client *OpenID4VciClient) NewSession(credentialOfferEndpointUrl string, handler Handler) SessionDismisser {
+	client.handleSessionAsync(credentialOfferEndpointUrl, handler)
 	return client
 }
 
-func (client *OpenID4VciClient) handleSessionAsync(credentialEndpointUrl string, handler Handler) {
+func (client *OpenID4VciClient) handleSessionAsync(credentialOfferEndpointUrl string, handler Handler) {
 	go func() {
-		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialEndpointUrl)
+		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
 
 		if err != nil {
 			handleFailure(handler, "openid4vci: failed to validate credential offer endpoint: %v", err)
@@ -78,7 +85,9 @@ func (client *OpenID4VciClient) handleSessionAsync(credentialEndpointUrl string,
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
 		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, handler)
 
-		handleFailure(handler, "openid4vci: failed to handle credential offer: %v", err)
+		if err != nil {
+			handleFailure(handler, "openid4vci: failed to handle credential offer: %v", err)
+		}
 	}()
 }
 
@@ -88,8 +97,7 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 	handler Handler,
 ) error {
 	requestorInfo := convertToRequestorInfo(credentialIssuerMetadata)
-	issuerName := convertDisplayToTranslatedString(credentialIssuerMetadata.Display)
-	creds, err := convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, issuerName)
+	creds, err := convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo.Name)
 	if err != nil {
 		return fmt.Errorf("failed to convert credential info list: %v", err)
 	}
@@ -164,7 +172,7 @@ func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJ
 		return nil, fmt.Errorf("failed to parse credential issuer URI: %v", err)
 	}
 
-	if parsedCredentialIssuerUri.Scheme != "https" {
+	if !client.allowInsecureHttp && parsedCredentialIssuerUri.Scheme != "https" {
 		return nil, fmt.Errorf("credential issuer URI (%s) is not HTTPS", credentialOffer.CredentialIssuer)
 	}
 
@@ -217,7 +225,8 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 		return nil, fmt.Errorf("failed to get credential issuer metadata: server returned status code %d", response.StatusCode)
 	}
 
-	if response.Header.Get("Content-Type") != "application/json" {
+	// TODO: handle charset in Content-Type header ?
+	if !strings.HasPrefix(response.Header.Get("Content-Type"), "application/json") {
 		return nil, fmt.Errorf("failed to get credential issuer metadata: server returned unexpected Content-Type %s", response.Header.Get("Content-Type"))
 	}
 
@@ -316,8 +325,8 @@ func convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata,
 	issuerName irma.TranslatedString,
-) ([]*irma.CredentialTypeInfo, error) {
-	credentialInfoList := make([]*irma.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
+) ([]irma.CredentialTypeInfo, error) {
+	credentialInfoList := make([]irma.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
 			if config.Format != openid4vci.CredentialFormatIdentifier_SdJwtVc {
@@ -325,9 +334,16 @@ func convertToCredentialInfoList(
 				continue
 			}
 
-			name := convertDisplayToTranslatedString(config.CredentialMetadata.Display)
+			// Credential metadata is optional in the issuer metadata
+			// TODO: we might be able to get it from the /.well-known/jwt-vc-issuer endpoint
+			if config.CredentialMetadata == nil {
+				return nil, nil
+			}
 
-			credentialInfoList = append(credentialInfoList, &irma.CredentialTypeInfo{
+			displays := ToTranslateableList(config.CredentialMetadata.Display)
+			name := convertDisplayToTranslatedString(displays)
+
+			credentialInfoList = append(credentialInfoList, irma.CredentialTypeInfo{
 				IssuerName:               issuerName,
 				Name:                     name,
 				CredentialFormat:         string(config.Format),
@@ -346,7 +362,8 @@ func convertToAttributeList(claims []openid4vci.ClaimsDescription) map[string]ir
 			if len(claim.Display) == 0 {
 				attrs[path] = irma.NewTranslatedString(&path)
 			} else {
-				attrs[path] = convertDisplayToTranslatedString(claim.Display)
+				displays := ToTranslateableList(claim.Display)
+				attrs[path] = convertDisplayToTranslatedString(displays)
 			}
 		}
 	}
@@ -364,10 +381,11 @@ func splitVct(vct string) (string, string, string, error) {
 func convertToRequestorInfo(credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata) *irma.RequestorInfo {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 	// TODO: we need to know which language to use, in order to get the correct logo
+	displays := ToTranslateableList(credentialIssuerMetadata.Display)
 
 	return &irma.RequestorInfo{
 		//ID: credentialIssuerMetadata.CredentialIssuer,	//TODO: convert from Credential Issuer to ID
-		Name:       convertDisplayToTranslatedString(credentialIssuerMetadata.Display),
+		Name:       convertDisplayToTranslatedString(displays),
 		Languages:  credentialIssuerMetadata.GetAllBaseLanguages(),
 		Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
 		Industry:   &irma.TranslatedString{},
