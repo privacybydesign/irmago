@@ -72,7 +72,8 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := convertDisplayToTranslatedString(tt.displays)
+			displays := ToTranslateableList(tt.displays)
+			got := convertDisplayToTranslatedString(displays)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("convertDisplayToTranslatedString() = %v, want %v", got, tt.want)
 			}

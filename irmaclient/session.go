@@ -64,7 +64,7 @@ type Handler interface {
 
 	// RequestAuthorizationCode should start the authorization code flow and
 	// get the resulting authorization code via the `AuthorizationCodeHandler`.
-	RequestAuthorizationCode(request *irma.AuthorizationCodeIssuanceRequest,
+	RequestAuthorizationCode(request *irma.AuthorizationAndCodeExchangeRequest,
 		requestorInfo *irma.RequestorInfo,
 		callback AuthorizationCodeHandler)
 

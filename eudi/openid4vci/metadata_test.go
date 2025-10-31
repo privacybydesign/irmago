@@ -1,8 +1,11 @@
 package openid4vci
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
@@ -699,6 +702,25 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCredentialIssuerDisplay_UnmarshalJSON_HandleBackwardsCompatibilityUrl(t *testing.T) {
+	input := `{
+		"name": "Issuer Name",
+		"locale": "en",
+		"logo": {
+			"url": "https://example.com/logo.png"
+		}
+	}`
+
+	var display CredentialIssuerDisplay
+	err := json.Unmarshal([]byte(input), &display)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, display.Name)
+	require.NotEmpty(t, display.Locale)
+	require.NotNil(t, display.Logo)
+	require.Equal(t, "https://example.com/logo.png", display.Logo.Uri)
 }
 
 func TestCredentialIssuerDisplays_verify(t *testing.T) {

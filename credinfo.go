@@ -14,6 +14,9 @@ type CredentialTypeInfo struct {
 	CredentialFormat         string                      // The credential format, e.g. "idemix" or "dc+sd-jwt"
 }
 
+// A CredentialTypeInfoList is a list of credentials (implements sort.Interface).
+type CredentialTypeInfoList []CredentialTypeInfo
+
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
 	ID                  string                                       // e.g., "studentCard"
