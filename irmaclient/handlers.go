@@ -106,11 +106,8 @@ func (h *backgroundIssuanceHandler) RequestSignaturePermission(request *irma.Sig
 func (h *backgroundIssuanceHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(false)
 }
-func (h *backgroundIssuanceHandler) RequestOpenId4VciIssuancePermission(request *irma.OpenId4VciIssuanceRequest, serverName *irma.RequestorInfo, callback PermissionHandler) {
-	callback(false, nil)
-}
-func (h *backgroundIssuanceHandler) RequestAuthorizationCodeAndExchangeForToken(request *irma.AuthorizationCodeAndTokenExchangeRequest, callback TokenHandler) {
-	callback(false, "", nil)
+func (h *backgroundIssuanceHandler) RequestOpenId4VciIssuancePermission(request *irma.OpenId4VciIssuanceRequest, serverName *irma.RequestorInfo, callback TokenHandler) {
+	callback(false, "test-access-token", nil)
 }
 func (h *backgroundIssuanceHandler) Cancelled() {
 	h.fail(errors.New("session unexpectedly cancelled"))

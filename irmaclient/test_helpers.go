@@ -104,6 +104,7 @@ type MockPermissionRequest struct {
 	Candidates        [][]DisclosureCandidates
 	RequestorInfo     *irma.RequestorInfo
 	PermissionHandler PermissionHandler
+	TokenHandler      TokenHandler
 	SignedMessage     string
 }
 
@@ -230,28 +231,12 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 
 func (h *MockSessionHandler) RequestOpenId4VciIssuancePermission(request *irma.OpenId4VciIssuanceRequest,
 	requestorInfo *irma.RequestorInfo,
-	callback PermissionHandler,
+	callback TokenHandler,
 ) {
 	if h.log {
 		issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
 		require.NoError(h.t, err)
 		fmt.Printf("OpenId4VciIssuanceRequest: %v\n", string(issuanceRequestJson))
-	}
-
-	h.permissionChannel <- &MockPermissionRequest{
-		Satisfiable:       true,
-		RequestorInfo:     requestorInfo,
-		PermissionHandler: callback,
-	}
-}
-
-func (h *MockSessionHandler) RequestAuthorizationCodeAndExchangeForToken(request *irma.AuthorizationCodeAndTokenExchangeRequest,
-	callback TokenHandler,
-) {
-	if h.log {
-		authCodeRequest, err := json.MarshalIndent(request, "", "    ")
-		require.NoError(h.t, err)
-		fmt.Printf("authCodeRequest: %v\n", string(authCodeRequest))
 	}
 
 	h.tokenRequestChannel <- callback

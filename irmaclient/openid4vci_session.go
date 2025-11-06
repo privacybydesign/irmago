@@ -41,7 +41,6 @@ type openid4vciSession struct {
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler
-	pendingPermissionRequest *issuancePermissionRequest
 	pendingAuthTokenRequest  *authTokenRequest
 	keyBinder                sdjwtvc.KeyBinder
 }
@@ -68,12 +67,12 @@ func (s *openid4vciSession) perform() error {
 		return nil
 	}
 
-	// First, request permission to add the credential start the authorization code flow
-	s.pendingPermissionRequest = &issuancePermissionRequest{
-		channel: make(chan *issuancePermissionResponse, 1),
+	// Request permission to add the credential, which will start the authorization code flow in the frontend and return the access token via the TokenHandler
+	s.pendingAuthTokenRequest = &authTokenRequest{
+		channel: make(chan *authTokenResponse, 1),
 	}
 	defer func() {
-		s.pendingPermissionRequest = nil
+		s.pendingAuthTokenRequest = nil
 	}()
 
 	issuanceRequest := &irma.OpenId4VciIssuanceRequest{
@@ -89,33 +88,19 @@ func (s *openid4vciSession) perform() error {
 	s.handler.RequestOpenId4VciIssuancePermission(
 		issuanceRequest,
 		s.requestorInfo,
-		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+		TokenHandler(func(proceed bool, accessToken string, refreshToken *string) {
 			if proceed {
-				s.pendingPermissionRequest.channel <- &issuancePermissionResponse{}
+				irma.Logger.Printf("received access token via authorization code flow")
+				s.pendingAuthTokenRequest.channel <- &authTokenResponse{permissionGranted: true, accessToken: accessToken, refreshToken: refreshToken}
 			} else {
-				s.pendingPermissionRequest.channel <- nil
+				irma.Logger.Printf("User cancelled authorization code flow")
+				s.pendingAuthTokenRequest.channel <- &authTokenResponse{permissionGranted: false}
 			}
 		}),
 	)
 	permission := s.awaitPermission()
 
 	if permission == nil {
-		s.handler.Cancelled()
-		return nil
-	}
-
-	// Prepare for async handling of auth token request
-	s.pendingAuthTokenRequest = &authTokenRequest{
-		channel: make(chan *authTokenResponse, 1),
-	}
-	defer func() {
-		s.pendingAuthTokenRequest = nil
-	}()
-
-	s.requestAuthorizationCodeAndExchangeForToken()
-	authTokenResponse := s.awaitAuthToken()
-
-	if authTokenResponse == nil || !authTokenResponse.permissionGranted {
 		s.handler.Cancelled()
 		return nil
 	}
@@ -127,25 +112,8 @@ func (s *openid4vciSession) perform() error {
 	return nil
 }
 
-func (s *openid4vciSession) awaitPermission() *issuancePermissionResponse {
-	return <-s.pendingPermissionRequest.channel
-}
-
-func (s *openid4vciSession) requestAuthorizationCodeAndExchangeForToken() {
-	tokenRequest := &irma.AuthorizationCodeAndTokenExchangeRequest{}
-
-	s.handler.RequestAuthorizationCodeAndExchangeForToken(
-		tokenRequest,
-		TokenHandler(func(proceed bool, accessToken string, refreshToken *string) {
-			if proceed {
-				irma.Logger.Printf("received access token via authorization code flow")
-				s.pendingAuthTokenRequest.channel <- &authTokenResponse{permissionGranted: true, accessToken: accessToken, refreshToken: refreshToken}
-			} else {
-				irma.Logger.Printf("User cancelled authorization code flow")
-				s.pendingAuthTokenRequest.channel <- &authTokenResponse{permissionGranted: false}
-			}
-		}),
-	)
+func (s *openid4vciSession) awaitPermission() *authTokenResponse {
+	return <-s.pendingAuthTokenRequest.channel
 }
 
 func (s *openid4vciSession) getAuthorizationServer() (string, error) {
