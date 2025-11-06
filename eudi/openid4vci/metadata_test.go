@@ -292,6 +292,10 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 		CredentialConfigurationIds: []string{"test"},
 	}
 
+	unsupportedFeatureCredentialConfig := CredentialConfiguration{
+		Format: CredentialFormatIdentifier_MsoMdoc,
+	}
+
 	tests := []struct {
 		name     string
 		metadata CredentialIssuerMetadata
@@ -320,6 +324,19 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 				CredentialConfigurationIds: []string{"unavailable"},
 			},
 			wantErr: `unsupported credential configuration "unavailable" in credential offer`,
+		},
+		{
+			name: "unsupported feature(s) in credential config",
+			metadata: CredentialIssuerMetadata{
+				CredentialIssuer:                  "https://issuer.example.com",
+				CredentialEndpoint:                "https://issuer.example.com/credential",
+				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": unsupportedFeatureCredentialConfig},
+			},
+			offer: &CredentialOffer{
+				CredentialIssuer:           "https://issuer.example.com",
+				CredentialConfigurationIds: []string{"test"},
+			},
+			wantErr: `credential configuration "test" is not supported: unsupported credential format "mso_mdoc"`,
 		},
 	}
 

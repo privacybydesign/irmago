@@ -286,7 +286,12 @@ func (m *CredentialIssuerMetadata) ValidateAgainstCredentialOffer(credentialOffe
 
 	// If the credential offer contains credential configuration IDs not present in the metadata, we cannot process the offer
 	for _, credConfigId := range credentialOffer.CredentialConfigurationIds {
-		if _, ok := m.CredentialConfigurationsSupported[credConfigId]; !ok {
+		if credConfig, ok := m.CredentialConfigurationsSupported[credConfigId]; ok {
+			// Validate that we support the credential configuration
+			if err := credConfig.ValidateSupportedFeatures(); err != nil {
+				return fmt.Errorf("credential configuration %q is not supported: %v", credConfigId, err)
+			}
+		} else {
 			return fmt.Errorf("unsupported credential configuration %q in credential offer", credConfigId)
 		}
 	}
@@ -336,7 +341,10 @@ func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 
-	// TODO: validate scope ?
+	// We only support authorization requests for credential requests using the `scope` parameter, for now
+	if len(c.Scope) == 0 {
+		return fmt.Errorf("missing 'scope' parameter")
+	}
 
 	// Validate at least one credential signing algorithms is supported
 	if len(c.CredentialSigningAlgValuesSupported) != 0 &&

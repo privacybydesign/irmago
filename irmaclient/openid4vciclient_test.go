@@ -46,7 +46,6 @@ func createOpenID4VCiClientForTesting(t *testing.T) *OpenID4VciClient {
 }
 
 func TestOpenID4VciClient(t *testing.T) {
-	// TODO: further implement mock
 	var issuerBaseUrl string
 	issuerTestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/.well-known/openid-credential-issuer") {
@@ -59,12 +58,12 @@ func TestOpenID4VciClient(t *testing.T) {
 
 	issuerBaseUrl = issuerTestServer.URL
 
-	t.Run("issuing two credentials successfully", func(t *testing.T) {
-		testIssuingTwoCredentials_Success(t, testdata.GetCredentialOfferEndpointUrl(issuerBaseUrl))
+	t.Run("issuing a credential successfully", func(t *testing.T) {
+		testIssuingCredential_Success(t, testdata.GetCredentialOfferEndpointUrl(issuerBaseUrl))
 	})
 }
 
-func testIssuingTwoCredentials_Success(t *testing.T, credentialOfferEndpointUrl string) {
+func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl string) {
 	client := createOpenID4VCiClientForTesting(t)
 
 	handler := NewMockSessionHandler(t)
@@ -73,7 +72,7 @@ func testIssuingTwoCredentials_Success(t *testing.T, credentialOfferEndpointUrl 
 	authCodeRequestHandler := handler.AwaitAuthCodeRequest()
 
 	permissionGranted := true
-	authCodeRequestHandler(permissionGranted, "test-code")
+	authCodeRequestHandler(permissionGranted, "test-code", nil)
 	success := handler.AwaitSessionEnd()
 
 	require.True(t, success)
