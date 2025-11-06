@@ -64,10 +64,6 @@ type Handler interface {
 
 	RequestOpenId4VciIssuancePermission(request *irma.OpenId4VciIssuanceRequest,
 		requestorInfo *irma.RequestorInfo,
-		callback PermissionHandler)
-	// RequestAuthorizationCode should start the authorization code flow and
-	// get the resulting authorization code via the `AuthorizationCodeHandler`.
-	RequestAuthorizationCodeAndExchangeForToken(request *irma.AuthorizationCodeAndTokenExchangeRequest,
 		callback TokenHandler)
 
 	RequestPin(remainingAttempts int, callback PinHandler)
