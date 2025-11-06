@@ -116,6 +116,9 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 	defer func() {
 		client.currentSession = nil
 	}()
+
+	// For now; we only support requesting credentials based on the `scope` parameter
+
 	return client.currentSession.perform()
 }
 
@@ -325,8 +328,8 @@ func convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata,
 	issuerName irma.TranslatedString,
-) ([]irma.CredentialTypeInfo, error) {
-	credentialInfoList := make([]irma.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
+) ([]*irma.CredentialTypeInfo, error) {
+	credentialInfoList := make([]*irma.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
 			if config.Format != openid4vci.CredentialFormatIdentifier_SdJwtVc {
@@ -343,7 +346,7 @@ func convertToCredentialInfoList(
 			displays := ToTranslateableList(config.CredentialMetadata.Display)
 			name := convertDisplayToTranslatedString(displays)
 
-			credentialInfoList = append(credentialInfoList, irma.CredentialTypeInfo{
+			credentialInfoList = append(credentialInfoList, &irma.CredentialTypeInfo{
 				IssuerName:               issuerName,
 				Name:                     name,
 				CredentialFormat:         string(config.Format),

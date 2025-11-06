@@ -25,9 +25,9 @@ import (
 // and specifying the attributes to be disclosed.
 type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 
-// AuthorizationCodeHandler is a callback for providing the authorization code
-// from the app side when the authorization has been done and the flow was returned to the app
-type AuthorizationCodeHandler func(proceed bool, code string)
+// TokenHandler is a callback for providing the access token (and optionally refresh token)
+// from the app side when the authorization has completed, the code was exchanged for an access token and the flow is hereby returned to the app.
+type TokenHandler func(proceed bool, accessToken string, refreshToken *string)
 
 // PinHandler is used to provide the user's PIN code.
 type PinHandler func(proceed bool, pin string)
@@ -62,11 +62,13 @@ type Handler interface {
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
 
+	RequestOpenId4VciIssuancePermission(request *irma.OpenId4VciIssuanceRequest,
+		requestorInfo *irma.RequestorInfo,
+		callback PermissionHandler)
 	// RequestAuthorizationCode should start the authorization code flow and
 	// get the resulting authorization code via the `AuthorizationCodeHandler`.
-	RequestAuthorizationCode(request *irma.AuthorizationAndCodeExchangeRequest,
-		requestorInfo *irma.RequestorInfo,
-		callback AuthorizationCodeHandler)
+	RequestAuthorizationCodeAndExchangeForToken(request *irma.AuthorizationCodeAndTokenExchangeRequest,
+		callback TokenHandler)
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }

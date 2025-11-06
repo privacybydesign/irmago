@@ -94,26 +94,31 @@ type IssuanceRequest struct {
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
 }
 
-type AuthorizationAndCodeExchangeRequest struct {
-	AuthorizationEndpoint string
-	TokenEndpoint         string
-	CredentialInfoList    CredentialTypeInfoList         `json:",omitempty"`
-	Parameters            AuthorizationRequestParameters `json:"parameters,omitempty"`
+type OpenId4VciIssuanceRequest struct {
+	CredentialInfoList             CredentialTypeInfoList
+	AuthorizationRequestParameters AuthorizationRequestParameters
 }
 
+type AuthorizationCodeAndTokenExchangeRequest struct{}
+
 type AuthorizationRequestParameters struct {
-	ResponseType string `json:"response_type"`
-	ClientID     string `json:"client_id"`
-	RedirectURI  string `json:"redirect_uri,omitempty"` // TODO: let irmamobile determine this value, because it is app-specific?
-	State        string `json:"state,omitempty"`
-	IssuerState  string `json:"issuer_state,omitempty"`
+	// TODO: in the future, read auth-server metadata from its .well-known/oauth-authorization-server or .well-known/openid-configuration endpoint, and extract the endpoints from there
+	// For now, we use the issuer as root
+	IssuerDiscoveryUrl    string
+	AuthorizationEndpoint string
+	TokenEndpoint         string
+
+	ClientID    string
+	IssuerState *string `json:",omitempty"`
+	//State        *string `json:"state,omitempty"`		// TODO: check if Flutter AppAuth handles this parameter internally
+	//RedirectURI  string `json:"redirect_uri,omitempty"` // TODO: let irmamobile determine this value, because it is app-specific
 
 	// Auth request using scopes (5.1.2 of OpenID4VCI spec)
-	Scopes   []string `json:"scopes,omitempty"` // Scopes must be converted to a space-separated string when used in an actual request
-	Resource string   `json:"resource,omitempty"`
+	Scopes   []string `json:",omitempty"` // Scopes must be converted to a space-separated string when used in an actual request
+	Resource string   `json:",omitempty"`
 
 	// Auth request using Authorization Details (5.1.1 of OpenID4VCI spec)
-	AuthorizationDetails []AuthorizationDetails `json:"authorization_details,omitempty"`
+	AuthorizationDetails []AuthorizationDetails `json:",omitempty"`
 }
 
 type AuthorizationDetails struct {

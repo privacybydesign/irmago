@@ -15,7 +15,7 @@ type CredentialTypeInfo struct {
 }
 
 // A CredentialTypeInfoList is a list of credentials (implements sort.Interface).
-type CredentialTypeInfoList []CredentialTypeInfo
+type CredentialTypeInfoList []*CredentialTypeInfo
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {

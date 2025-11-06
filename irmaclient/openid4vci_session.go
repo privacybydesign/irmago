@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"unsafe"
 
@@ -14,87 +15,134 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 )
 
-// AuthorizationCodeRequestor is used to asking the user for permission to start the authorization code flow.
-type AuthorizationCodeRequestor interface {
-	// RequestAuthorizationCode should start the authorization code flow and get the resulting authorization code via the `AuthorizationCodeHandler`.
-	RequestAuthorizationCode(request *irma.AuthorizationAndCodeExchangeRequest,
+// TokenRequestor is used to asking the user for permission to start the authorization code flow, and let the app handle the code exchange for an access token.
+type TokenRequestor interface {
+	// RequestToken should start the authorization code flow and get the resulting token(s) via the `TokenHandler`.
+	RequestToken(request *irma.AuthorizationCodeAndTokenExchangeRequest,
 		requestorInfo *irma.RequestorInfo,
-		callback AuthorizationCodeHandler)
+		callback TokenHandler)
 }
 
-type authCodeRequest struct {
-	channel chan *authCodeResponse
+type authTokenRequest struct {
+	channel chan *authTokenResponse
 }
 
-type authCodeResponse struct {
+type authTokenResponse struct {
 	permissionGranted bool
-	code              string
+	accessToken       string
+	refreshToken      *string
 }
 
 type openid4vciSession struct {
 	credentialOffer          *openid4vci.CredentialOffer
 	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata
 	requestorInfo            *irma.RequestorInfo
-	credentials              []irma.CredentialTypeInfo
+	credentials              []*irma.CredentialTypeInfo
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler
-	pendingAuthCodeRequest   *authCodeRequest
+	pendingPermissionRequest *issuancePermissionRequest
+	pendingAuthTokenRequest  *authTokenRequest
 	keyBinder                sdjwtvc.KeyBinder
 }
 
-func (s *openid4vciSession) perform() error {
-	s.pendingAuthCodeRequest = &authCodeRequest{
-		channel: make(chan *authCodeResponse, 1),
-	}
-	defer func() {
-		s.pendingAuthCodeRequest = nil
-	}()
+type issuancePermissionRequest struct {
+	channel chan *issuancePermissionResponse
+}
 
-	if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
-		authorizationServer, err := s.getAuthorizationServer()
-		if err != nil {
-			s.handler.Failure(&irma.SessionError{
-				Err: fmt.Errorf("could not determine authorization server to use: %v", err),
-			})
-			return nil
-		}
-		s.requestAuthorizationCode(authorizationServer)
-	} else {
+type issuancePermissionResponse struct{}
+
+func (s *openid4vciSession) perform() error {
+	if s.credentialOffer.Grants.AuthorizationCodeGrant == nil {
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("only authorization code grant is supported"),
 		})
 		return nil
 	}
 
-	authCodeResponse := s.awaitAuthCode()
-	if authCodeResponse == nil || !authCodeResponse.permissionGranted {
+	authorizationServer, err := s.getAuthorizationServer()
+	if err != nil {
+		s.handler.Failure(&irma.SessionError{
+			Err: fmt.Errorf("could not determine authorization server to use: %v", err),
+		})
+		return nil
+	}
+
+	// First, request permission to add the credential start the authorization code flow
+	s.pendingPermissionRequest = &issuancePermissionRequest{
+		channel: make(chan *issuancePermissionResponse, 1),
+	}
+	defer func() {
+		s.pendingPermissionRequest = nil
+	}()
+
+	issuanceRequest := &irma.OpenId4VciIssuanceRequest{
+		CredentialInfoList: s.credentials,
+		AuthorizationRequestParameters: irma.AuthorizationRequestParameters{
+			IssuerDiscoveryUrl: getDiscoveryUrlFromIssuer(authorizationServer),
+			ClientID:           "yivi-app",
+			IssuerState:        s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
+			Resource:           s.credentialOffer.CredentialIssuer,
+			Scopes:             s.extractScopesFromCredentialOffer(),
+		},
+	}
+	s.handler.RequestOpenId4VciIssuancePermission(
+		issuanceRequest,
+		s.requestorInfo,
+		PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+			if proceed {
+				s.pendingPermissionRequest.channel <- &issuancePermissionResponse{}
+			} else {
+				s.pendingPermissionRequest.channel <- nil
+			}
+		}),
+	)
+	permission := s.awaitPermission()
+
+	if permission == nil {
 		s.handler.Cancelled()
 		return nil
 	}
 
-	// Code received;
-	// TODO: exchange it for an access token and continue to request credentials
+	// Prepare for async handling of auth token request
+	s.pendingAuthTokenRequest = &authTokenRequest{
+		channel: make(chan *authTokenResponse, 1),
+	}
+	defer func() {
+		s.pendingAuthTokenRequest = nil
+	}()
+
+	s.requestAuthorizationCodeAndExchangeForToken()
+	authTokenResponse := s.awaitAuthToken()
+
+	if authTokenResponse == nil || !authTokenResponse.permissionGranted {
+		s.handler.Cancelled()
+		return nil
+	}
+
+	// AccessToken received;
+	// TODO: request credential(s)
 
 	s.handler.Success("openid4vci session completed")
 	return nil
 }
 
-func (s *openid4vciSession) requestAuthorizationCode(authorizationServer string) {
-	issuanceRequest := &irma.AuthorizationAndCodeExchangeRequest{
-		CredentialInfoList: s.credentials,
-		//AuthorizationServer: authorizationServer,
-	}
+func (s *openid4vciSession) awaitPermission() *issuancePermissionResponse {
+	return <-s.pendingPermissionRequest.channel
+}
 
-	s.handler.RequestAuthorizationCode(
-		issuanceRequest,
-		s.requestorInfo,
-		AuthorizationCodeHandler(func(proceed bool, code string) {
-			irma.Logger.Printf("received authorization code: %v", code)
+func (s *openid4vciSession) requestAuthorizationCodeAndExchangeForToken() {
+	tokenRequest := &irma.AuthorizationCodeAndTokenExchangeRequest{}
+
+	s.handler.RequestAuthorizationCodeAndExchangeForToken(
+		tokenRequest,
+		TokenHandler(func(proceed bool, accessToken string, refreshToken *string) {
 			if proceed {
-				s.pendingAuthCodeRequest.channel <- &authCodeResponse{permissionGranted: true, code: code}
+				irma.Logger.Printf("received access token via authorization code flow")
+				s.pendingAuthTokenRequest.channel <- &authTokenResponse{permissionGranted: true, accessToken: accessToken, refreshToken: refreshToken}
 			} else {
-				s.pendingAuthCodeRequest.channel <- &authCodeResponse{permissionGranted: false}
+				irma.Logger.Printf("User cancelled authorization code flow")
+				s.pendingAuthTokenRequest.channel <- &authTokenResponse{permissionGranted: false}
 			}
 		}),
 	)
@@ -112,6 +160,7 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 
 		for _, authServer := range s.credentialIssuerMetadata.AuthorizationServers {
 			if authServer == *s.credentialOffer.Grants.AuthorizationCodeGrant.AuthorizationServer && strings.HasPrefix(authServer, "https://") {
+				// TODO: get metadata from the authorization server's .well-known endpoint to verify it supports the required features and to extract endpoints
 				return authServer, nil
 			}
 		}
@@ -119,8 +168,8 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
-func (s *openid4vciSession) awaitAuthCode() *authCodeResponse {
-	return <-s.pendingAuthCodeRequest.channel
+func (s *openid4vciSession) awaitAuthToken() *authTokenResponse {
+	return <-s.pendingAuthTokenRequest.channel
 }
 
 func (s *openid4vciSession) requestCredentials(accessToken string) error {
@@ -155,12 +204,8 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 
 	credConfig := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
 
-	// Before we do anything; validate that we support the credential configuration
-	if err := credConfig.ValidateSupportedFeatures(); err != nil {
-		return fmt.Errorf("credential configuration %q is not supported: %v", credConfigId, err)
-	}
-
-	// TODO: fill correct fields in Credential Request; for now only the Credential Configuration ID is set
+	// TODO: fill correct fields in Credential Request..
+	// For now, we only support the credential_configuration_id parameter, no credential_identifier from authorization details
 	request := &openid4vci.CredentialRequest{
 		CredentialConfigurationId: &credConfigId,
 	}
@@ -328,4 +373,22 @@ func (s *openid4vciSession) requestNonce() (string, error) {
 	}
 
 	return nonceResponse.Nonce, nil
+}
+
+func (s *openid4vciSession) extractScopesFromCredentialOffer() []string {
+	var scopes []string
+	for _, configId := range s.credentialOffer.CredentialConfigurationIds {
+		config := s.credentialIssuerMetadata.CredentialConfigurationsSupported[configId]
+		scopes = append(scopes, config.Scope)
+	}
+	return scopes
+}
+
+// TODO: this function is only used while we only use EUDIPLO;  we need to change the code to actually get the metadata, and fall back to /.well-known/openid-configuration if needed
+func getDiscoveryUrlFromIssuer(authServer string) string {
+	uri, _ := url.Parse(authServer)
+	return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/", uri.Scheme, uri.Host)
+
+	//return fmt.Sprintf("%s://%s/.well-known/openid-configuration/", uri.Scheme, uri.Host)
+	//return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/%s", uri.Scheme, uri.Host, strings.Trim(uri.Path, "/"))
 }
