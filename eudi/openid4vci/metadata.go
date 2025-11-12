@@ -31,7 +31,7 @@ type CredentialRequestEncryption struct {
 	Jwks               *jwk.Set `json:"jwks"`
 	EncValuesSupported []string `json:"enc_values_supported"`
 	ZipValuesSupported []string `json:"zip_values_supported,omitempty"`
-	EncryptionRequired *bool    `json:"encryption_required"`
+	EncryptionRequired bool     `json:"encryption_required"`
 }
 
 type CredentialResponseEncryption struct {
@@ -610,6 +610,47 @@ func (r *RemoteImage) UnmarshalJSON(data []byte) error {
 		r.Uri = raw.Url
 	} else {
 		r.Uri = raw.Uri
+	}
+
+	return nil
+}
+
+func (cre *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
+	// First unmarshal into map, to find out if 'jwks' is present
+	var obj map[string]interface{}
+	err := json.Unmarshal(data, &obj)
+
+	if err != nil {
+		return err
+	}
+
+	if rawJwks, ok := obj["jwks"].(string); ok {
+		if jwks, err := jwk.ParseString(rawJwks); err != nil {
+			return fmt.Errorf("invalid 'jwks': %w", err)
+		} else {
+			cre.Jwks = &jwks
+		}
+	}
+
+	// Next, we'll unmarshal again for the rest of the fields
+	type AliasStruct struct {
+		EncValuesSupported []string `json:"enc_values_supported"`
+		ZipValuesSupported []string `json:"zip_values_supported,omitempty"`
+		EncryptionRequired *bool    `json:"encryption_required"`
+	}
+
+	var aux AliasStruct
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	cre.EncValuesSupported = aux.EncValuesSupported
+	cre.ZipValuesSupported = aux.ZipValuesSupported
+
+	if aux.EncryptionRequired != nil {
+		cre.EncryptionRequired = *aux.EncryptionRequired
+	} else {
+		cre.EncryptionRequired = false
 	}
 
 	return nil

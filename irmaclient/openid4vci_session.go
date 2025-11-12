@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
-	"unsafe"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	irma "github.com/privacybydesign/irmago"
@@ -44,12 +42,6 @@ type openid4vciSession struct {
 	pendingAuthTokenRequest  *authTokenRequest
 	keyBinder                sdjwtvc.KeyBinder
 }
-
-type issuancePermissionRequest struct {
-	channel chan *issuancePermissionResponse
-}
-
-type issuancePermissionResponse struct{}
 
 func (s *openid4vciSession) perform() error {
 	if s.credentialOffer.Grants.AuthorizationCodeGrant == nil {
@@ -107,6 +99,13 @@ func (s *openid4vciSession) perform() error {
 
 	// AccessToken received;
 	// TODO: request credential(s)
+	err = s.requestCredentials(permission.accessToken)
+	if err != nil {
+		s.handler.Failure(&irma.SessionError{
+			Err: fmt.Errorf("could not request credentials: %v", err),
+		})
+		return nil
+	}
 
 	s.handler.Success("openid4vci session completed")
 	return nil
@@ -136,10 +135,6 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
-func (s *openid4vciSession) awaitAuthToken() *authTokenResponse {
-	return <-s.pendingAuthTokenRequest.channel
-}
-
 func (s *openid4vciSession) requestCredentials(accessToken string) error {
 	// If the issuer provides a Nonce endpoint, we should get a fresh c_nonce here and use it in all credential requests that require proof of possession
 	var cNonce *string
@@ -158,7 +153,7 @@ func (s *openid4vciSession) requestCredentials(accessToken string) error {
 		err := s.requestCredential(credConfigId, cNonce, accessToken)
 		if err != nil {
 			// TODO: how to handle if a single request fails but others succeed?
-			return err
+			return fmt.Errorf("could not request credential %q: %v", credConfigId, err)
 		}
 	}
 	return nil
@@ -210,8 +205,12 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		// Use unsafe to convert []string to []any without allocations
 		// If we use type-safe conversion, we would need to allocate and copy each element
 		// which is costly when dealing with many key bindings
-		x := *(*[]any)(unsafe.Pointer(&proofJwts))
-		x = x[:len(proofJwts)]
+		// x := *(*[]any)(unsafe.Pointer(&proofJwts))
+		// x = x[:len(proofJwts)]
+		x := make([]any, len(proofJwts))
+		for i, v := range proofJwts {
+			x[i] = v
+		}
 
 		// TODO: we need to thoroughly test that this works as intended and does not lead to issues
 		// for example; reading more proofs then we created, etc.
@@ -232,6 +231,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.httpClient.Do(req)
 	defer func() {
@@ -330,7 +330,7 @@ func (s *openid4vciSession) requestNonce() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if resp.StatusCode != http.StatusOK {
+	if !(resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK) {
 		return "", fmt.Errorf("nonce request failed: %s", resp.Status)
 	}
 
@@ -354,9 +354,14 @@ func (s *openid4vciSession) extractScopesFromCredentialOffer() []string {
 
 // TODO: this function is only used while we only use EUDIPLO;  we need to change the code to actually get the metadata, and fall back to /.well-known/openid-configuration if needed
 func getDiscoveryUrlFromIssuer(authServer string) string {
-	uri, _ := url.Parse(authServer)
-	return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/", uri.Scheme, uri.Host)
+	// Used for: Keycloak
+	return fmt.Sprintf("%s/.well-known/oauth-authorization-server/", authServer)
 
-	//return fmt.Sprintf("%s://%s/.well-known/openid-configuration/", uri.Scheme, uri.Host)
+	//uri, _ := url.Parse(authServer)
+
+	// Used for: EUDIPLO
+	//return fmt.Sprintf("%s://%s/.well-known/openid-configuration", uri.Scheme, uri.Host)
+
+	//return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/", uri.Scheme, uri.Host)
 	//return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/%s", uri.Scheme, uri.Host, strings.Trim(uri.Path, "/"))
 }
