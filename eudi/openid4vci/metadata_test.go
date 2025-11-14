@@ -1010,3 +1010,33 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 		})
 	}
 }
+
+func TestCredentialRequestEncryption_UnmarshalJSON_Success(t *testing.T) {
+	input := `{
+		"jwks": {
+			"keys": [
+				{
+					"kty": "EC",
+					"use": "enc",
+					"crv": "P-256",
+					"kid": "ccc9cfac-4b29-4931-a3cf-f95c8be9604e",
+					"x": "zgxTur31IjFQBYQICLQIOvwhzoK7mkxl-UydEQVim3g",
+					"y": "wSgkFI20hVrVbQ23GAtN_qRpd37S4quy2OAIuT6Paww",
+					"alg": "ECDH-ES"
+				}
+			]
+		},
+		"enc_values_supported": [ "A128GCM" ],
+		"zip_values_supported": [ "DEF" ],
+		"encryption_required": true
+	}`
+
+	var creqEnc CredentialRequestEncryption
+	err := json.Unmarshal([]byte(input), &creqEnc)
+
+	require.NoError(t, err)
+	require.NotNil(t, creqEnc.Jwks)
+	require.Equal(t, []string{"A128GCM"}, creqEnc.EncValuesSupported)
+	require.Equal(t, []string{"DEF"}, creqEnc.ZipValuesSupported)
+	require.Equal(t, true, creqEnc.EncryptionRequired)
+}

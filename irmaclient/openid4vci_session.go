@@ -8,6 +8,9 @@ import (
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwe"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
@@ -41,17 +44,20 @@ type openid4vciSession struct {
 	handler                  Handler
 	pendingAuthTokenRequest  *authTokenRequest
 	keyBinder                sdjwtvc.KeyBinder
+
+	// Settings determined from the Credential Offer and Credential Issuer metadata
+	authorizationServer            string
+	useCredentialRequestEncryption bool
+	credentialRequestEncryptionAlg *jwa.ContentEncryptionAlgorithm
+	credentialRequestEncryptionKey *jwk.Key
 }
 
 func (s *openid4vciSession) perform() error {
-	if s.credentialOffer.Grants.AuthorizationCodeGrant == nil {
-		s.handler.Failure(&irma.SessionError{
-			Err: fmt.Errorf("only authorization code grant is supported"),
-		})
-		return nil
-	}
+	// TODO: validate all properties are correctly set
 
-	authorizationServer, err := s.getAuthorizationServer()
+	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
+	err := s.configureSettings()
+
 	if err != nil {
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("could not determine authorization server to use: %v", err),
@@ -70,7 +76,7 @@ func (s *openid4vciSession) perform() error {
 	issuanceRequest := &irma.OpenId4VciIssuanceRequest{
 		CredentialInfoList: s.credentials,
 		AuthorizationRequestParameters: irma.AuthorizationRequestParameters{
-			IssuerDiscoveryUrl: getDiscoveryUrlFromIssuer(authorizationServer),
+			IssuerDiscoveryUrl: getDiscoveryUrlFromIssuer(s.authorizationServer),
 			ClientID:           "yivi-app",
 			IssuerState:        s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
 			Resource:           s.credentialOffer.CredentialIssuer,
@@ -108,6 +114,57 @@ func (s *openid4vciSession) perform() error {
 	}
 
 	s.handler.Success("openid4vci session completed")
+	return nil
+}
+
+func (s *openid4vciSession) configureSettings() error {
+	// Determine authorization server to use
+	if authorizationServer, err := s.getAuthorizationServer(); err != nil {
+		return fmt.Errorf("could not determine authorization server to use: %v", err)
+	} else {
+		s.authorizationServer = authorizationServer
+	}
+
+	// Determine if we need to use Credential Request Encryption
+	s.useCredentialRequestEncryption = false
+	if s.credentialIssuerMetadata.CredentialRequestEncryption != nil {
+		requestEncryption := *s.credentialIssuerMetadata.CredentialRequestEncryption
+
+		if requestEncryption.EncryptionRequired {
+			s.useCredentialRequestEncryption = true
+
+			// Determine which encryption algorithm to use
+			for _, algName := range requestEncryption.EncValuesSupported {
+				if alg, ok := jwa.LookupContentEncryptionAlgorithm(algName); ok {
+					//if alg, ok := jwa.LookupKeyEncryptionAlgorithm(algName); ok {
+					s.credentialRequestEncryptionAlg = &alg
+					break
+				}
+			}
+			if s.credentialRequestEncryptionAlg == nil {
+				return fmt.Errorf("no supported encryption algorithm found for credential request encryption")
+			}
+
+			// Get a key from the JWKS to use for encryption
+			//jwks := (*requestEncryption.Jwks)
+			for i := 0; i < requestEncryption.Jwks.Len(); i++ {
+				if key, found := requestEncryption.Jwks.Key(i); found {
+					keyAlg, keyAlgPresent := key.Algorithm()
+					keyUsage, keyUsagePresent := key.KeyUsage()
+
+					if keyAlgPresent && keyAlg.String() == s.credentialRequestEncryptionAlg.String() && keyUsagePresent && keyUsage == "enc" {
+						s.credentialRequestEncryptionKey = &key
+					}
+				} else {
+					break
+				}
+			}
+			if s.credentialRequestEncryptionKey == nil {
+				return fmt.Errorf("no suitable key found in credential request encryption for algorithm %s", s.credentialRequestEncryptionAlg.String())
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -224,14 +281,50 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		return err
 	}
 
+	// If the issuer requires encryption of the credential request, we need to handle that here
+	var requestBody []byte
+	var contentType string
+	if s.useCredentialRequestEncryption {
+		contentType = "application/jwt"
+
+		// TODO: handle alg/key errors
+		alg, _ := (*s.credentialRequestEncryptionKey).Algorithm()
+		key, _ := (*s.credentialRequestEncryptionKey).PublicKey()
+
+		token, err := jwt.NewBuilder().
+			Claim("credential_configuration_id", request.CredentialConfigurationId).
+			Claim("proofs", request.Proofs).
+			Build()
+
+		if err != nil {
+			irma.Logger.Errorf("failed to build jwt for credential request: %v", err)
+			return err
+		}
+
+		encryptedToken, err := jwt.NewSerializer().
+			Encrypt(jwt.WithEncryptOption(jwe.WithKey(alg, key))).
+			Serialize(token)
+
+		requestBody = encryptedToken
+
+		if err != nil {
+			irma.Logger.Errorf("failed to encrypt jwt for credential request: %v", err)
+			return err
+		}
+	} else {
+		contentType = "application/json"
+		requestBody = jsonRequest
+	}
+
 	// Send the request
-	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(jsonRequest))
+	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return err
 	}
 
+	// Set the headers
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 
 	resp, err := s.httpClient.Do(req)
 	defer func() {
@@ -310,6 +403,10 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	sdJwts := make([]sdjwtvc.SdJwtVc, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
 		sdJwts[i] = sdjwtvc.SdJwtVc(cred.Credential)
+
+		if i == 0 {
+			irma.Logger.Printf("first credential: %s", sdJwts[i])
+		}
 	}
 
 	// Store the credentials using the storage client
