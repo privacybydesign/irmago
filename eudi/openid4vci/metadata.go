@@ -28,7 +28,7 @@ type CredentialIssuerMetadata struct {
 }
 
 type CredentialRequestEncryption struct {
-	Jwks               *jwk.Set `json:"jwks"`
+	Jwks               jwk.Set  `json:"jwks"`
 	EncValuesSupported []string `json:"enc_values_supported"`
 	ZipValuesSupported []string `json:"zip_values_supported,omitempty"`
 	EncryptionRequired bool     `json:"encryption_required"`
@@ -248,7 +248,12 @@ func (m *CredentialIssuerMetadata) Verify() error {
 
 	// --- Request encryption validation ---
 	if m.CredentialRequestEncryption != nil {
-		// TODO
+		if m.CredentialRequestEncryption.Jwks == nil || m.CredentialRequestEncryption.Jwks.Len() == 0 {
+			return fmt.Errorf("missing or empty 'jwks' in 'credential_request_encryption'")
+		}
+		if len(m.CredentialRequestEncryption.EncValuesSupported) == 0 {
+			return fmt.Errorf("missing or empty 'enc_values_supported' in 'credential_request_encryption'")
+		}
 	}
 
 	// --- Response encryption validation ---
@@ -624,11 +629,17 @@ func (cre *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	if rawJwks, ok := obj["jwks"].(string); ok {
-		if jwks, err := jwk.ParseString(rawJwks); err != nil {
+	if rawJwks, ok := obj["jwks"]; ok {
+		// Workaround to extract jwk.Set from JSON
+		// Marshal back to JSON string and parse that string
+		rawJwksBytes, err := json.Marshal(rawJwks)
+		if err != nil {
+			return fmt.Errorf("invalid 'jwks': %w", err)
+		}
+		if jwks, err := jwk.Parse(rawJwksBytes); err != nil {
 			return fmt.Errorf("invalid 'jwks': %w", err)
 		} else {
-			cre.Jwks = &jwks
+			cre.Jwks = jwks
 		}
 	}
 
@@ -636,7 +647,7 @@ func (cre *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 	type AliasStruct struct {
 		EncValuesSupported []string `json:"enc_values_supported"`
 		ZipValuesSupported []string `json:"zip_values_supported,omitempty"`
-		EncryptionRequired *bool    `json:"encryption_required"`
+		EncryptionRequired bool     `json:"encryption_required"`
 	}
 
 	var aux AliasStruct
@@ -646,12 +657,7 @@ func (cre *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 
 	cre.EncValuesSupported = aux.EncValuesSupported
 	cre.ZipValuesSupported = aux.ZipValuesSupported
-
-	if aux.EncryptionRequired != nil {
-		cre.EncryptionRequired = *aux.EncryptionRequired
-	} else {
-		cre.EncryptionRequired = false
-	}
+	cre.EncryptionRequired = aux.EncryptionRequired
 
 	return nil
 }
