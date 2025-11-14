@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -42,6 +43,8 @@ type VerifiedSdJwtVc struct {
 	KeyBindingJwt          *KeyBindingJwtPayload
 }
 
+type ProcessedSdJwtPayload map[string]any
+
 func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationContext {
 	opts, err := utils.CreateX509VerifyOptionsFromCertChain(trustedChain)
 	if err != nil {
@@ -63,7 +66,7 @@ func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) 
 		return VerifiedSdJwtVc{}, err
 	}
 
-	issuerSignedJwtPayload, requestorInfo, err := parseAndVerifyIssuerSignedJwt(context, issuerSignedJwt, disclosures)
+	issuerSignedJwtPayload, requestorInfo, decodedDisclosures, err := parseAndVerifyIssuerSignedJwt(context, issuerSignedJwt, disclosures)
 
 	if err != nil {
 		return VerifiedSdJwtVc{}, err
@@ -90,11 +93,6 @@ func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) 
 	}
 
 	// Verify the credential is allowed to be issued by the requestor
-	decodedDisclosures, err := DecodeDisclosures(disclosures)
-	if err != nil {
-		return VerifiedSdJwtVc{}, fmt.Errorf("failed to decode disclosures: %v", err)
-	}
-
 	disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
 	err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(issuerSignedJwtPayload.VerifiableCredentialType, disclosureKeys)
 	if err != nil {
@@ -319,17 +317,18 @@ func parseConfirmField(value any) (CnfField, error) {
 func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (
 	IssuerSignedJwtPayload,
 	*scheme.AttestationProviderRequestor,
+	[]DisclosureContent,
 	error,
 ) {
 	token, requestorInfo, err := decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt), context)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, err
+		return IssuerSignedJwtPayload{}, nil, nil, err
 	}
 
 	var vct string
 	err = token.Get(Key_VerifiableCredentialType, &vct)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, errors.New("missing vct field")
+		return IssuerSignedJwtPayload{}, nil, nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
@@ -349,7 +348,7 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	if err == nil {
 		sd, err = parseSdField(sdRaw)
 		if err != nil {
-			return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to parse sd field: %v", err)
+			return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
 		}
 	}
 
@@ -358,8 +357,15 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 	if err == nil {
 		cnf, err = parseConfirmField(cnfRaw)
 		if err != nil {
-			return IssuerSignedJwtPayload{}, nil, fmt.Errorf("failed to parse cnf field: %v", err)
+			return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
+	}
+
+	// Verify and process disclosures
+	// Get structured SD-JWT claims, which we can check for embedded disclosure digests
+	issuerSignedJwtClaims, err := extractClaimsAndDisclosuresDigestsFromToken(token)
+	if err != nil {
+		return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
 
 	// Construct payload
@@ -376,27 +382,175 @@ func parseAndVerifyIssuerSignedJwt(context SdJwtVcVerificationContext, signedJwt
 		Status:                   status,
 	}
 
-	// Verify disclosures
-	err = verifyPayloadContainsAllDisclosureHashes(payload, disclosures)
+	// Parse and verify disclosures
+	// TODO: store ProcessedSdJwtPayload somewhere if needed
+	_, decodedDisclosures, err := verifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtClaims, disclosures)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, err
+		return IssuerSignedJwtPayload{}, nil, nil, err
 	}
 
-	return payload, requestorInfo, nil
+	return payload, requestorInfo, decodedDisclosures, nil
 }
 
-func verifyPayloadContainsAllDisclosureHashes(payload IssuerSignedJwtPayload, disclosures []EncodedDisclosure) error {
-	for _, disc := range disclosures {
-		hash, err := HashEncodedDisclosure(payload.SdAlg, disc)
-
-		if err != nil {
-			return fmt.Errorf("failed to hash disclosure: %v", err)
-		}
-
-		if !slices.Contains(payload.Sd, hash) {
-			return fmt.Errorf("sd field doesn't contain %s (for %s)", hash, disc)
-		}
+func extractClaimsAndDisclosuresDigestsFromToken(token jwt.Token) (map[string]any, error) {
+	defaultSdJwtClaims := []string{
+		jwt.SubjectKey,
+		jwt.ExpirationKey,
+		jwt.IssuedAtKey,
+		jwt.NotBeforeKey,
+		jwt.IssuerKey,
+		Key_VerifiableCredentialType,
+		Key_SdAlg,
+		Key_Confirmationkey,
+		Key_Status,
 	}
+	issuerSignedJwtClaims := map[string]any{}
+	for _, key := range token.Keys() {
+		if slices.Contains(defaultSdJwtClaims, key) {
+			continue
+		}
+
+		var value any
+		if err := token.Get(key, &value); err != nil {
+			return nil, fmt.Errorf("failed to get extra claim %s: %v", key, err)
+		}
+
+		issuerSignedJwtClaims[key] = value
+	}
+	return issuerSignedJwtClaims, nil
+}
+
+func verifyAndProcessDisclosures(sdAlg HashingAlgorithm,
+	issuerSignedJwtClaims *map[string]any,
+	disclosures []EncodedDisclosure,
+) (ProcessedSdJwtPayload, []DisclosureContent, error) {
+	// Step 1: decode all disclosures and calculate their digests
+	decodedDisclosures := make(map[HashedDisclosure]DisclosureContent, len(disclosures))
+	for _, disc := range disclosures {
+		// First, decode the disclosure
+		decodedDisclosure, err := DecodeDisclosure(disc)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decode disclosure: %v", err)
+		}
+
+		// Calculate its digest
+		hash, err := HashEncodedDisclosure(sdAlg, disc)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to hash disclosure: %v", err)
+		}
+
+		decodedDisclosures[hash] = decodedDisclosure
+	}
+
+	// Step 2: Identify all embedded digests in the Issuer-Signed JWT recursively and replace them with the actual disclosure values
+	err := processEmbeddedDisclosures(issuerSignedJwtClaims, decodedDisclosures)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if issuerSignedJwtClaims == nil {
+		issuerSignedJwtClaims = &map[string]any{}
+	}
+
+	return ProcessedSdJwtPayload(*issuerSignedJwtClaims), slices.Collect(maps.Values(decodedDisclosures)), nil
+}
+
+func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[HashedDisclosure]DisclosureContent) error {
+	// Only process if there are any claims
+	if claims == nil {
+		return nil
+	}
+
+	for claimKey, claimValue := range *claims {
+		// Find claim objects having an '_sd' field with embedded digests, or...
+		if claimKey == Key_Sd {
+			// Found disclosure digests at this level.. replace with disclosure values
+			if sdDigests, err := parseSdField(claimValue); err == nil {
+				for _, sdDigest := range sdDigests {
+					// Disclosure cannot be found for digest; ignore the digest
+					if embeddedDisclosure, ok := decodedDisclosures[sdDigest]; ok {
+						if embeddedDisclosure.isArrayElement {
+							return fmt.Errorf("embedded disclosure %s appears to be an array element, which is not expected here", embeddedDisclosure.Key)
+						}
+						if embeddedDisclosure.Key == Key_Sd {
+							return fmt.Errorf("embedded disclosure %s has an `_sd` field, which is not allowed", embeddedDisclosure.Key)
+						}
+						if embeddedDisclosure.Key == Key_Ellipsis {
+							return fmt.Errorf("embedded disclosure %s has an `...` field, which is not allowed", embeddedDisclosure.Key)
+						}
+						if _, ok := (*claims)[embeddedDisclosure.Key]; ok {
+							return fmt.Errorf("embedded disclosure key %s already exists at this level", embeddedDisclosure.Key)
+						}
+
+						(*claims)[embeddedDisclosure.Key] = embeddedDisclosure.Value
+					}
+				}
+			} else {
+				return fmt.Errorf("failed to parse digests for claim %q: %v", claimKey, err)
+			}
+
+			// Delete the _sd field after processing
+			delete(*claims, Key_Sd)
+			continue
+		}
+
+		if claimMap, ok := claimValue.(map[string]any); ok { //&& slices.Contains(slices.Collect(maps.Keys(claimMap)), Key_Sd) {
+			// Recursively process the claim map to find further embedded digests
+			err := processEmbeddedDisclosures(&claimMap, decodedDisclosures)
+			if err != nil {
+				return err
+			}
+			(*claims)[claimKey] = claimMap
+			continue
+		}
+
+		// ... find arrays
+		if arrayValue, ok := claimValue.([]any); ok {
+			processedArray := []any{}
+			for _, arrayElemValue := range arrayValue {
+				// Check if the value is a disclosure (format should be {"...":"<digest>"}) or not, and if so, verify the array element disclosure exists
+				if valMap, ok := arrayElemValue.(map[string]any); ok {
+					if arrayElemDisclosureDigestVal, ok := valMap[Key_Ellipsis]; ok {
+						// It's an embedded disclosure digest...
+						arrayElemDisclosureDigestStr, ok := arrayElemDisclosureDigestVal.(string)
+						if !ok {
+							return fmt.Errorf("array element, which should be an embedded disclosure digest, is not a valid digest: %v", arrayElemDisclosureDigestStr)
+						}
+
+						disclosureDigest, ok := HashedDisclosure(arrayElemDisclosureDigestStr), ok
+						if !ok {
+							return fmt.Errorf("array element, which should be an embedded disclosure digest, is not a valid digest: %v", arrayElemDisclosureDigestStr)
+						}
+
+						// In case no disclosure is found for the digest; the value will be ignored (potential decoy digest)
+						if embeddedDisclosure, ok := decodedDisclosures[disclosureDigest]; ok {
+							// Otherwise, replace the array element with the actual value from the disclosure
+							processedArray = append(processedArray, embeddedDisclosure.Value)
+							continue
+						}
+					}
+
+					// Complex value, but no embedded digest: just copy it
+					// Recursively process the claim map to find further embedded digests
+					err := processEmbeddedDisclosures(&valMap, decodedDisclosures)
+					if err != nil {
+						return err
+					}
+					processedArray = append(processedArray, valMap)
+				} else {
+					// Simple value, just copy it
+					processedArray = append(processedArray, arrayElemValue)
+				}
+			}
+
+			(*claims)[claimKey] = processedArray
+			continue
+		}
+
+		// No embedded disclosures found, just copy the claim as is
+		(*claims)[claimKey] = claimValue
+	}
+
 	return nil
 }
 

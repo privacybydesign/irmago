@@ -458,6 +458,92 @@ func Test_VerificationMinusOneMinuteIsBeforeNotBefore_GivenClockSkew_Success(t *
 	require.NoError(t, err)
 }
 
+func Test_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsNoArrays_Succeeds(t *testing.T) {
+	// Arrange
+	encodedDisclosures := []EncodedDisclosure{
+		// disclosure: ["_3JoPNqbcqtsdax9J0xMvA","family_name","T"]
+		"WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiZmFtaWx5X25hbWUiLCJUIl0",
+		// disclosure: ["OKyl8ky692IYD_W9OPP8xg","given_name","T"]
+		"WyJPS3lsOGt5NjkySVlEX1c5T1BQOHhnIiwiZ2l2ZW5fbmFtZSIsIlQiXQ",
+	}
+	payload := IssuerSignedJwtPayload{
+		SdAlg: "sha-256",
+	}
+
+	issuerSignedJwtPayload := map[string]any{
+		"_sd": []any{
+			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
+			"K4oRic8I4m2y8lMUAN7MttLYrynKgocsENANMvPoHYQ",
+		},
+	}
+
+	// Act
+	_, disclosures, err := verifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtPayload, encodedDisclosures)
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, disclosures, 2)
+
+	// Check that _sd field is removed from issuer signed jwt payload
+	_, ok := issuerSignedJwtPayload["_sd"]
+	require.False(t, ok)
+
+	// Check the claims are present/replaced correctly
+	_, ok = issuerSignedJwtPayload["family_name"]
+	require.True(t, ok)
+	_, ok = issuerSignedJwtPayload["given_name"]
+	require.True(t, ok)
+}
+
+func Test_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAnArray_Succeeds(t *testing.T) {
+	// Arrange
+	encodedDisclosures := []EncodedDisclosure{
+		// array element: ["dIvfpaioiTep5orz6eEZxw","NL"]
+		"WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ",
+		// array: ["PW8uSwHPfOh3fENJGCeEBQ","nationalities",[{"...":"b7MTXRZmMyE22_ZyiNvAp6hygI5Y8Ey6KNuKUaH6lio"}]]
+		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9XV0",
+	}
+	payload := IssuerSignedJwtPayload{
+		SdAlg: "sha-256",
+	}
+
+	issuerSignedJwtPayload := map[string]any{
+		"_sd": []any{
+			// Hash for array (NOT the array element)
+			"3KpnrnSJV9ING3MqFexvxLLkAEQDs4suq3MgG0RnE54",
+		},
+	}
+
+	// Act
+	_, disclosures, err := verifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtPayload, encodedDisclosures)
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, disclosures, 2)
+
+	// Check that _sd field is removed from issuer signed jwt payload
+	_, ok := issuerSignedJwtPayload["_sd"]
+	require.False(t, ok)
+
+	arrVal, ok := issuerSignedJwtPayload["nationalities"]
+	require.True(t, ok)
+	require.NotNil(t, arrVal)
+
+	arr, ok := arrVal.([]any)
+	require.True(t, ok)
+	require.Len(t, arr, 1)
+}
+
+// TODO: create tests for...
+// Test_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAnArray_GivenInvalidDigestElement_Succeeds  (i.e. an element with wrong and/or too many elements, like {"...": "digest", "extra": "invalid"})
+// Test_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAnArray_WithDecoyDigests_Succeeds
+// Test_VerifyAndProcessPayloadDisclosures_StructuredSdJwt_ContainsNoArrays_Succeeds
+// Test_VerifyAndProcessPayloadDisclosures_StructuredSdJwt_ContainsArrays_Succeeds
+// Test_VerifyAndProcessPayloadDisclosures_StructuredSdJwt_ContainsPermanentlyDisclosedValues_Succeeds
+// Test_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures_Succeeds
+// Test_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures_GivenDigestWithoutMatchingDisclosure_Succeeds
+// and more...?
+
 // ==============================================================================
 
 func errorTestCase(t *testing.T, config testSdJwtVcConfig, message string) {
