@@ -287,7 +287,7 @@ func parseSdField(value any) ([]HashedDisclosure, error) {
 	for _, s := range strs {
 		sStr, ok := s.(string)
 		if !ok {
-			return []HashedDisclosure{}, fmt.Errorf("failed to convert any to string (%v)", s)
+			return []HashedDisclosure{}, fmt.Errorf("failed to convert value in _sd array to string (%v)", s)
 		}
 		result = append(result, HashedDisclosure(sStr))
 	}
@@ -427,19 +427,17 @@ func verifyAndProcessDisclosures(sdAlg HashingAlgorithm,
 	// Step 1: decode all disclosures and calculate their digests
 	decodedDisclosures := make(map[HashedDisclosure]DisclosureContent, len(disclosures))
 	for _, disc := range disclosures {
-		// First, decode the disclosure
 		decodedDisclosure, err := DecodeDisclosure(disc)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to decode disclosure: %v", err)
 		}
 
-		// Calculate its digest
-		hash, err := HashEncodedDisclosure(sdAlg, disc)
+		digest, err := HashEncodedDisclosure(sdAlg, disc)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to hash disclosure: %v", err)
 		}
 
-		decodedDisclosures[hash] = decodedDisclosure
+		decodedDisclosures[digest] = decodedDisclosure
 	}
 
 	// Step 2: Identify all embedded digests in the Issuer-Signed JWT recursively and replace them with the actual disclosure values
@@ -461,41 +459,16 @@ func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[H
 		return nil
 	}
 
+	// Start with _sd field first
+	err := processSdClaim(claims, decodedDisclosures)
+	if err != nil {
+		return err
+	}
+
+	// Then process all other claims
 	for claimKey, claimValue := range *claims {
-		// Find claim objects having an '_sd' field with embedded digests, or...
-		if claimKey == Key_Sd {
-			// Found disclosure digests at this level.. replace with disclosure values
-			if sdDigests, err := parseSdField(claimValue); err == nil {
-				for _, sdDigest := range sdDigests {
-					// Disclosure cannot be found for digest; ignore the digest
-					if embeddedDisclosure, ok := decodedDisclosures[sdDigest]; ok {
-						if embeddedDisclosure.isArrayElement {
-							return fmt.Errorf("embedded disclosure %s appears to be an array element, which is not expected here", embeddedDisclosure.Key)
-						}
-						if embeddedDisclosure.Key == Key_Sd {
-							return fmt.Errorf("embedded disclosure %s has an `_sd` field, which is not allowed", embeddedDisclosure.Key)
-						}
-						if embeddedDisclosure.Key == Key_Ellipsis {
-							return fmt.Errorf("embedded disclosure %s has an `...` field, which is not allowed", embeddedDisclosure.Key)
-						}
-						if _, ok := (*claims)[embeddedDisclosure.Key]; ok {
-							return fmt.Errorf("embedded disclosure key %s already exists at this level", embeddedDisclosure.Key)
-						}
-
-						(*claims)[embeddedDisclosure.Key] = embeddedDisclosure.Value
-					}
-				}
-			} else {
-				return fmt.Errorf("failed to parse digests for claim %q: %v", claimKey, err)
-			}
-
-			// Delete the _sd field after processing
-			delete(*claims, Key_Sd)
-			continue
-		}
-
-		if claimMap, ok := claimValue.(map[string]any); ok { //&& slices.Contains(slices.Collect(maps.Keys(claimMap)), Key_Sd) {
-			// Recursively process the claim map to find further embedded digests
+		// If the property is a nested object, recursively process it
+		if claimMap, ok := claimValue.(map[string]any); ok {
 			err := processEmbeddedDisclosures(&claimMap, decodedDisclosures)
 			if err != nil {
 				return err
@@ -504,7 +477,7 @@ func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[H
 			continue
 		}
 
-		// ... find arrays
+		// Or, of it is an array, process each element
 		if arrayValue, ok := claimValue.([]any); ok {
 			processedArray := []any{}
 			for _, arrayElemValue := range arrayValue {
@@ -517,15 +490,17 @@ func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[H
 							return fmt.Errorf("array element, which should be an embedded disclosure digest, is not a valid digest: %v", arrayElemDisclosureDigestStr)
 						}
 
-						disclosureDigest, ok := HashedDisclosure(arrayElemDisclosureDigestStr), ok
-						if !ok {
-							return fmt.Errorf("array element, which should be an embedded disclosure digest, is not a valid digest: %v", arrayElemDisclosureDigestStr)
-						}
-
-						// In case no disclosure is found for the digest; the value will be ignored (potential decoy digest)
+						disclosureDigest := HashedDisclosure(arrayElemDisclosureDigestStr)
 						if embeddedDisclosure, ok := decodedDisclosures[disclosureDigest]; ok {
+							// Check for array element validity (i.e. should be in format ["...": "<digest>"])
+							if !embeddedDisclosure.isArrayElement {
+								return fmt.Errorf("embedded disclosure %s is expected to be an array element, but is not", embeddedDisclosure.Key)
+							}
 							// Otherwise, replace the array element with the actual value from the disclosure
 							processedArray = append(processedArray, embeddedDisclosure.Value)
+							continue
+						} else {
+							// In case no disclosure is found for the digest; the value will be ignored (potential decoy digest)
 							continue
 						}
 					}
@@ -550,6 +525,49 @@ func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[H
 		// No embedded disclosures found, just copy the claim as is
 		(*claims)[claimKey] = claimValue
 	}
+
+	return nil
+}
+
+func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclosure]DisclosureContent) error {
+	// Only process if there are any claims
+	if claims == nil {
+		return nil
+	}
+
+	// Check if there's an _sd field at this level
+	sdValue, ok := (*claims)[Key_Sd]
+	if !ok {
+		return nil
+	}
+
+	// Found disclosure digests at this level.. replace with disclosure values
+	if sdDigests, err := parseSdField(sdValue); err == nil {
+		for _, sdDigest := range sdDigests {
+			// Disclosure cannot be found for digest; ignore the digest
+			if embeddedDisclosure, ok := decodedDisclosures[sdDigest]; ok {
+				if embeddedDisclosure.isArrayElement {
+					return fmt.Errorf("embedded disclosure %s appears to be an array element, which is not expected here", embeddedDisclosure.Key)
+				}
+				if embeddedDisclosure.Key == Key_Sd {
+					return fmt.Errorf("embedded disclosure %s has an `_sd` field, which is not allowed", embeddedDisclosure.Key)
+				}
+				if embeddedDisclosure.Key == Key_Ellipsis {
+					return fmt.Errorf("embedded disclosure %s has an `...` field, which is not allowed", embeddedDisclosure.Key)
+				}
+				if _, ok := (*claims)[embeddedDisclosure.Key]; ok {
+					return fmt.Errorf("embedded disclosure key %q already exists at this level", embeddedDisclosure.Key)
+				}
+
+				(*claims)[embeddedDisclosure.Key] = embeddedDisclosure.Value
+			}
+		}
+	} else {
+		return fmt.Errorf("failed to parse digests for claim %q: %v", Key_Sd, err)
+	}
+
+	// Delete the _sd field after processing
+	delete(*claims, Key_Sd)
 
 	return nil
 }
