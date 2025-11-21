@@ -13,26 +13,9 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/oauth2"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 )
-
-// TokenRequestor is used to asking the user for permission to start the authorization code flow, and let the app handle the code exchange for an access token.
-type TokenRequestor interface {
-	// RequestToken should start the authorization code flow and get the resulting token(s) via the `TokenHandler`.
-	RequestToken(request *irma.AuthorizationCodeAndTokenExchangeRequest,
-		requestorInfo *irma.RequestorInfo,
-		callback TokenHandler)
-}
-
-type authTokenRequest struct {
-	channel chan *authTokenResponse
-}
-
-type authTokenResponse struct {
-	permissionGranted bool
-	accessToken       string
-	refreshToken      *string
-}
 
 type openid4vciSession struct {
 	credentialOffer          *openid4vci.CredentialOffer
@@ -42,11 +25,12 @@ type openid4vciSession struct {
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler
-	pendingAuthTokenRequest  *authTokenRequest
 	keyBinder                sdjwtvc.KeyBinder
 
 	// Settings determined from the Credential Offer and Credential Issuer metadata
+	grantType                      openid4vci.Grant
 	authorizationServer            string
+	authorizationServerMetadata    *oauth2.AuthorizationServerMetadata
 	useCredentialRequestEncryption bool
 	credentialRequestEncryptionAlg *jwa.ContentEncryptionAlgorithm
 	credentialRequestEncryptionKey *jwk.Key
@@ -57,55 +41,45 @@ func (s *openid4vciSession) perform() error {
 
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
 	err := s.configureSettings()
-
 	if err != nil {
 		s.handler.Failure(&irma.SessionError{
-			Err: fmt.Errorf("could not determine authorization server to use: %v", err),
+			Err: fmt.Errorf("could not configure the session: %v", err),
 		})
 		return nil
 	}
 
-	// Request permission to add the credential, which will start the authorization code flow in the frontend and return the access token via the TokenHandler
-	s.pendingAuthTokenRequest = &authTokenRequest{
-		channel: make(chan *authTokenResponse, 1),
+	// Based on the grant type, perform the appropriate flow
+	var grantHandler GrantHandler
+	switch s.grantType.GetGrantType() {
+	case openid4vci.GrantType_AuthorizationCode:
+		grantHandler = &AuthorizationCodeFlowHandler{}
+	case openid4vci.GrantType_PreAuthorizedCode:
+		grantHandler = &PreAuthorizedCodeFlowHandler{}
+	default:
+		s.handler.Failure(&irma.SessionError{
+			Err: fmt.Errorf("unsupported grant type"),
+		})
+		return nil
 	}
-	defer func() {
-		s.pendingAuthTokenRequest = nil
-	}()
 
-	issuanceRequest := &irma.OpenId4VciIssuanceRequest{
-		CredentialInfoList: s.credentials,
-		AuthorizationRequestParameters: irma.AuthorizationRequestParameters{
-			IssuerDiscoveryUrl: getDiscoveryUrlFromIssuer(s.authorizationServer),
-			ClientID:           "yivi-app",
-			IssuerState:        s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
-			Resource:           s.credentialOffer.CredentialIssuer,
-			Scopes:             s.extractScopesFromCredentialOffer(),
-		},
+	// Await permission and access token
+	permission, err := grantHandler.HandleGrant(s)
+	if err != nil {
+		s.handler.Failure(&irma.SessionError{
+			Err: fmt.Errorf("could not obtain permission to continue issuance session: %v", err),
+		})
+		return nil
 	}
-	s.handler.RequestOpenId4VciIssuancePermission(
-		issuanceRequest,
-		s.requestorInfo,
-		TokenHandler(func(proceed bool, accessToken string, refreshToken *string) {
-			if proceed {
-				irma.Logger.Printf("received access token via authorization code flow")
-				s.pendingAuthTokenRequest.channel <- &authTokenResponse{permissionGranted: true, accessToken: accessToken, refreshToken: refreshToken}
-			} else {
-				irma.Logger.Printf("User cancelled authorization code flow")
-				s.pendingAuthTokenRequest.channel <- &authTokenResponse{permissionGranted: false}
-			}
-		}),
-	)
-	permission := s.awaitPermission()
 
-	if permission == nil {
+	// Check if permission was granted
+	if permission == nil || !permission.PermissionGranted() {
 		s.handler.Cancelled()
 		return nil
 	}
 
 	// AccessToken received;
 	// TODO: request credential(s)
-	err = s.requestCredentials(permission.accessToken)
+	err = s.requestCredentials(permission.GetAccessToken())
 	if err != nil {
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("could not request credentials: %v", err),
@@ -118,12 +92,26 @@ func (s *openid4vciSession) perform() error {
 }
 
 func (s *openid4vciSession) configureSettings() error {
-	// Determine authorization server to use
-	if authorizationServer, err := s.getAuthorizationServer(); err != nil {
-		return fmt.Errorf("could not determine authorization server to use: %v", err)
+	// Determine which grant-type to use (Authorization Code is preferred over Pre-Authorized Code)
+	if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
+		s.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
+	} else if s.credentialOffer.Grants.PreAuthorizedCodeGrant != nil {
+		s.grantType = s.credentialOffer.Grants.PreAuthorizedCodeGrant
 	} else {
-		s.authorizationServer = authorizationServer
+		return fmt.Errorf("no supported grant type found in credential offer")
 	}
+
+	// Determine authorization server to use and fetch its metadata
+	authorizationServer, err := s.getAuthorizationServer()
+	if err != nil {
+		return fmt.Errorf("could not determine authorization server to use: %v", err)
+	}
+	asMetadata, err := oauth2.TryFetchAuthorizationServerMetadata(authorizationServer)
+	if err != nil {
+		return fmt.Errorf("could not fetch authorization server metadata: %v", err)
+	}
+	s.authorizationServer = authorizationServer
+	s.authorizationServerMetadata = asMetadata
 
 	// Determine if we need to use Credential Request Encryption
 	s.useCredentialRequestEncryption = false
@@ -168,22 +156,20 @@ func (s *openid4vciSession) configureSettings() error {
 	return nil
 }
 
-func (s *openid4vciSession) awaitPermission() *authTokenResponse {
-	return <-s.pendingAuthTokenRequest.channel
-}
-
 func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 	if len(s.credentialIssuerMetadata.AuthorizationServers) == 0 {
 		// Use the credential issuer as the authorization server if no authorization servers are listed in the metadata
 		return s.credentialOffer.CredentialIssuer, nil
 	} else {
+		credentialOfferedAuthServer := s.grantType.GetAuthorizationServer()
+
 		// Try to match the authorization server from the offer to the metadata, or just pick the first one if no hint is given in the offer
-		if s.credentialOffer.Grants.AuthorizationCodeGrant.AuthorizationServer == nil {
+		if credentialOfferedAuthServer == nil {
 			return s.credentialIssuerMetadata.AuthorizationServers[0], nil
 		}
 
 		for _, authServer := range s.credentialIssuerMetadata.AuthorizationServers {
-			if authServer == *s.credentialOffer.Grants.AuthorizationCodeGrant.AuthorizationServer && strings.HasPrefix(authServer, "https://") {
+			if authServer == *credentialOfferedAuthServer {
 				// TODO: get metadata from the authorization server's .well-known endpoint to verify it supports the required features and to extract endpoints
 				return authServer, nil
 			}
@@ -253,6 +239,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 
 		// According to the spec, the 'issuer' should be an identifier which identifies the wallet TYPE, not the wallet INSTANCE
 		// Fow now, we just use our applicationId as a fixed value
+		// TODO: replace with value from wallet attestation?
 		issuer := "org.irmacard.cardemu"
 		proofJwts, err := s.keyBinder.CreateKeyPairsWithJwtProofs(num, alg, issuer, s.credentialIssuerMetadata.CredentialIssuer, cNonce)
 		if err != nil {

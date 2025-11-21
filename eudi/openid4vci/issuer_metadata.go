@@ -151,6 +151,7 @@ const (
 	CredentialFormatIdentifier_W3CVCLD_ProofSuite CredentialFormatIdentifier = "ldp_vc"
 	CredentialFormatIdentifier_MsoMdoc            CredentialFormatIdentifier = "mso_mdoc"
 	CredentialFormatIdentifier_SdJwtVc            CredentialFormatIdentifier = "dc+sd-jwt"
+	CredentialFormatIdentifier_SdJwtVc_Legacy     CredentialFormatIdentifier = "vc+sd-jwt"
 
 	ProofTypeIdentifier_JWT         ProofTypeIdentifier = "jwt"
 	ProofTypeIdentifier_DIVP        ProofTypeIdentifier = "di_vp"
@@ -331,6 +332,8 @@ func (c *CredentialConfiguration) Verify() error {
 		verifier = &MdocFormatVerifier{}
 	case CredentialFormatIdentifier_SdJwtVc:
 		verifier = &SdJwtVcFormatVerifier{}
+	case CredentialFormatIdentifier_SdJwtVc_Legacy:
+		verifier = &SdJwtVcFormatVerifier{}
 	default:
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
@@ -342,7 +345,7 @@ func (c *CredentialConfiguration) Verify() error {
 // because it makes no sense to validate configurations up front, which will not be requested either way.
 func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
 	// We only support SD-JWT VC, for now
-	if c.Format != CredentialFormatIdentifier_SdJwtVc {
+	if c.Format != CredentialFormatIdentifier_SdJwtVc && c.Format != CredentialFormatIdentifier_SdJwtVc_Legacy {
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 
