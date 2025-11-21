@@ -40,7 +40,8 @@ type DisclosureContent struct {
 	Salt string
 	Key  string
 	// This value can be any type that is allowed in JSON
-	Value interface{}
+	Value          interface{}
+	isArrayElement bool
 }
 
 type DisclosureContents []DisclosureContent
@@ -101,8 +102,9 @@ func DecodeDisclosure(disclosure EncodedDisclosure) (DisclosureContent, error) {
 		return DisclosureContent{}, fmt.Errorf("failed to parse json from decoded disclosure bytes: %v", err)
 	}
 
-	if num := len(array); num != 3 {
-		return DisclosureContent{}, fmt.Errorf("disclosure array length should be 3 but is %v", num)
+	num := len(array)
+	if num != 2 && num != 3 {
+		return DisclosureContent{}, fmt.Errorf("disclosure array length should be 2 (for array ellements) or 3 (for object properties) but is %v", num)
 	}
 
 	salt, ok := array[0].(string)
@@ -110,30 +112,27 @@ func DecodeDisclosure(disclosure EncodedDisclosure) (DisclosureContent, error) {
 		return DisclosureContent{}, fmt.Errorf("failed to get salt from disclosure array: %v", array)
 	}
 
-	key, ok := array[1].(string)
-	if !ok {
-		return DisclosureContent{}, fmt.Errorf("failed to get key from disclosure array: %v", array)
-	}
+	var key string
+	var value any
+	if num == 2 {
+		// This is an array element disclosure
+		value = array[1]
+	} else {
+		// This is an object property disclosure
+		key, ok = array[1].(string)
+		if !ok {
+			return DisclosureContent{}, fmt.Errorf("failed to get key from disclosure array: %v", array)
+		}
 
-	value := array[2]
+		value = array[2]
+	}
 
 	return DisclosureContent{
-		Salt:  salt,
-		Key:   key,
-		Value: value,
+		Salt:           salt,
+		Key:            key,
+		Value:          value,
+		isArrayElement: num == 2,
 	}, nil
-}
-
-func DecodeDisclosures(disclosures []EncodedDisclosure) ([]DisclosureContent, error) {
-	result := []DisclosureContent{}
-	for _, d := range disclosures {
-		decoded, err := DecodeDisclosure(d)
-		if err != nil {
-			return []DisclosureContent{}, err
-		}
-		result = append(result, decoded)
-	}
-	return result, nil
 }
 
 // EncodedDisclosure is the base64url encoded version of a json array based on the `DisclosureContent` struct
@@ -219,6 +218,7 @@ const (
 	Key_NotBefore                string = "nbf"
 	Key_Typ                      string = "typ"
 	Key_X5c                      string = "x5c"
+	Key_Ellipsis                 string = "..."
 
 	SdJwtVcTyp        string = "dc+sd-jwt"
 	SdJwtVcTyp_Legacy string = "vc+sd-jwt"

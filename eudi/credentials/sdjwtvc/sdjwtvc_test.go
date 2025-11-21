@@ -137,3 +137,31 @@ func TestGetKeysShouldReturnAllKeysFromDisclosureContents(t *testing.T) {
 	require.Equal(t, "domain", keys[1])
 	require.Equal(t, "location", keys[2])
 }
+
+func TestObjectPropertyDecodeDisclosure(t *testing.T) {
+	// Arrange
+	encodedDisclosure := EncodedDisclosure("WyJfM0pvUE5xYmNxdHNkYXg5SjB4TXZBIiwiZmFtaWx5X25hbWUiLCJUZXN0Il0")
+
+	// Act
+	decodedDisclosure, err := DecodeDisclosure(encodedDisclosure)
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, "Test", decodedDisclosure.Value)
+	require.Equal(t, "family_name", decodedDisclosure.Key)
+	require.False(t, decodedDisclosure.isArrayElement)
+}
+
+func TestArrayElementDecodeDisclosure(t *testing.T) {
+	// Arrange
+	encodedDisclosure := EncodedDisclosure("WyJkSXZmcGFpb2lUZXA1b3J6NmVFWnh3IiwiTkwiXQ")
+
+	// Act
+	decodedDisclosure, err := DecodeDisclosure(encodedDisclosure)
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, "NL", decodedDisclosure.Value)
+	require.Empty(t, decodedDisclosure.Key)
+	require.True(t, decodedDisclosure.isArrayElement)
+}
