@@ -150,8 +150,11 @@ func (th TestHandler) RequestIssuancePermission(request *irma.IssuanceRequest, s
 func (th TestHandler) RequestSignaturePermission(request *irma.SignatureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, ServerName *irma.RequestorInfo, callback irmaclient.PermissionHandler) {
 	th.RequestVerificationPermission(&request.DisclosureRequest, satisfiable, candidates, ServerName, callback)
 }
-func (th TestHandler) RequestOpenId4VciIssuancePermission(request *irma.OpenId4VciIssuanceRequest, ServerName *irma.RequestorInfo, callback irmaclient.TokenHandler) {
+func (th TestHandler) RequestPermissionAndPerformAuthCodeWithTokenExchange(request *irma.AuthorizationCodeFlowAndTokenExchangeRequest, ServerName *irma.RequestorInfo, callback irmaclient.TokenHandler) {
 	callback(true, "test-access-token", nil)
+}
+func (th TestHandler) RequestPreAuthorizedCodeFlowPermission(request *irma.PreAuthorizedCodeFlowPermissionRequest, requestorInfo *irma.RequestorInfo, callback irmaclient.TokenPermissionHandler) {
+	callback(true)
 }
 func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	// Do callback asynchronously to simulate user giving permission.

@@ -13,15 +13,50 @@ type Grants struct {
 	PreAuthorizedCodeGrant *PreAuthorizedCodeGrant `json:"urn:ietf:params:oauth:grant-type:pre-authorized_code,omitempty"`
 }
 
+type GrantType int
+
+const (
+	GrantType_AuthorizationCode GrantType = iota
+	GrantType_PreAuthorizedCode
+)
+
+var grantTypeName = map[GrantType]string{
+	GrantType_AuthorizationCode: "authorization_code",
+	GrantType_PreAuthorizedCode: "pre-authorized_code",
+}
+
+func (gt GrantType) String() string {
+	return grantTypeName[gt]
+}
+
+type Grant interface {
+	GetAuthorizationServer() *string
+	GetGrantType() GrantType
+}
+
 type AuthorizationCodeGrant struct {
 	IssuerState         *string `json:"issuer_state,omitempty"`
 	AuthorizationServer *string `json:"authorization_server,omitempty"`
 }
 
+func (g *AuthorizationCodeGrant) GetAuthorizationServer() *string {
+	return g.AuthorizationServer
+}
+func (g *AuthorizationCodeGrant) GetGrantType() GrantType {
+	return GrantType_AuthorizationCode
+}
+
 type PreAuthorizedCodeGrant struct {
 	PreAuthorizedCode   string           `json:"pre-authorized_code"`
 	TxCode              *TransactionCode `json:"tx_code,omitempty"`
-	AuthorizationServer string           `json:"authorization_server,omitempty"`
+	AuthorizationServer *string          `json:"authorization_server,omitempty"`
+}
+
+func (g *PreAuthorizedCodeGrant) GetAuthorizationServer() *string {
+	return g.AuthorizationServer
+}
+func (g *PreAuthorizedCodeGrant) GetGrantType() GrantType {
+	return GrantType_PreAuthorizedCode
 }
 
 type TransactionCodeInputMode string
@@ -32,9 +67,9 @@ const (
 )
 
 type TransactionCode struct {
-	InputMode   TransactionCodeInputMode `json:"input_mode,omitempty"` // TODO: make this optional with default "numeric"
-	Length      int                      `json:"length,omitempty"`
-	Description string                   `json:"description,omitempty"`
+	InputMode   *TransactionCodeInputMode `json:"input_mode,omitempty"` // TODO: make this optional with default "numeric"
+	Length      *int                      `json:"length,omitempty"`
+	Description *string                   `json:"description,omitempty"`
 }
 
 type Proofs map[ProofTypeIdentifier][]any

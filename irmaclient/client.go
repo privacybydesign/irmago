@@ -88,6 +88,7 @@ func New(
 		VerificationContext: &eudiConf.Issuers,
 		Clock:               sdjwtvc.NewSystemClock(),
 		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		VerifyVerifiableCredentialTypeInRequestorInfo: true,
 	}
 
 	irmaClient, err := NewIrmaClient(irmaConf, handler, signer, storage, sdJwtVcVerificationContext, sdjwtvcStorage, keyBinder)
@@ -111,8 +112,16 @@ func New(
 	}
 	scheduler.Start()
 
+	// Fow now, create a new SD-JWT verification context, which skips the VCT check against the requestor info
+	sdJwtVcVerificationContextOpenId4Vci := sdjwtvc.SdJwtVcVerificationContext{
+		VerificationContext: &eudiConf.Issuers,
+		Clock:               sdjwtvc.NewSystemClock(),
+		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		VerifyVerifiableCredentialTypeInRequestorInfo: false,
+	}
+
 	// Initiate the OpenID4VCI client
-	openid4vciClient := NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdJwtVcVerificationContext, keyBinder)
+	openid4vciClient := NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdJwtVcVerificationContextOpenId4Vci, keyBinder)
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,

@@ -29,6 +29,9 @@ type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 // from the app side when the authorization has completed, the code was exchanged for an access token and the flow is hereby returned to the app.
 type TokenHandler func(proceed bool, accessToken string, refreshToken *string)
 
+// TokenPermissionHandler is a callback for providing permission for an Pre-Authorized Code issuance session to proceed.
+type TokenPermissionHandler func(proceed bool)
+
 // PinHandler is used to provide the user's PIN code.
 type PinHandler func(proceed bool, pin string)
 
@@ -62,9 +65,16 @@ type Handler interface {
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
 
-	RequestOpenId4VciIssuancePermission(request *irma.OpenId4VciIssuanceRequest,
+	RequestPermissionAndPerformAuthCodeWithTokenExchange(
+		request *irma.AuthorizationCodeFlowAndTokenExchangeRequest,
 		requestorInfo *irma.RequestorInfo,
 		callback TokenHandler)
+
+	RequestPreAuthorizedCodeFlowPermission(
+		request *irma.PreAuthorizedCodeFlowPermissionRequest,
+		requestorInfo *irma.RequestorInfo,
+		callback TokenPermissionHandler,
+	)
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }

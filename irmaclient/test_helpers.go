@@ -64,22 +64,24 @@ func (h *MockClientHandler) ReportError(err error) {
 // =============================================================================
 
 type MockSessionHandler struct {
-	t                   *testing.T
-	permissionChannel   chan *MockPermissionRequest
-	sessionEndChannel   chan bool // true if successful
-	pinRequestChannel   chan PinHandler
-	tokenRequestChannel chan TokenHandler
-	log                 bool
+	t                             *testing.T
+	permissionChannel             chan *MockPermissionRequest
+	sessionEndChannel             chan bool // true if successful
+	pinRequestChannel             chan PinHandler
+	tokenRequestChannel           chan TokenHandler
+	tokenPermissionRequestChannel chan TokenPermissionHandler
+	log                           bool
 }
 
 func NewMockSessionHandler(t *testing.T) *MockSessionHandler {
 	return &MockSessionHandler{
-		t:                   t,
-		permissionChannel:   make(chan *MockPermissionRequest, 1),
-		sessionEndChannel:   make(chan bool, 1),
-		pinRequestChannel:   make(chan PinHandler, 1),
-		tokenRequestChannel: make(chan TokenHandler, 1),
-		log:                 false,
+		t:                             t,
+		permissionChannel:             make(chan *MockPermissionRequest, 1),
+		sessionEndChannel:             make(chan bool, 1),
+		pinRequestChannel:             make(chan PinHandler, 1),
+		tokenRequestChannel:           make(chan TokenHandler, 1),
+		tokenPermissionRequestChannel: make(chan TokenPermissionHandler, 1),
+		log:                           false,
 	}
 }
 
@@ -229,7 +231,7 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	}
 }
 
-func (h *MockSessionHandler) RequestOpenId4VciIssuancePermission(request *irma.OpenId4VciIssuanceRequest,
+func (h *MockSessionHandler) RequestPermissionAndPerformAuthCodeWithTokenExchange(request *irma.AuthorizationCodeFlowAndTokenExchangeRequest,
 	requestorInfo *irma.RequestorInfo,
 	callback TokenHandler,
 ) {
@@ -240,6 +242,20 @@ func (h *MockSessionHandler) RequestOpenId4VciIssuancePermission(request *irma.O
 	}
 
 	h.tokenRequestChannel <- callback
+}
+
+func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
+	request *irma.PreAuthorizedCodeFlowPermissionRequest,
+	requestorInfo *irma.RequestorInfo,
+	callback TokenPermissionHandler,
+) {
+	if h.log {
+		//issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
+		//require.NoError(h.t, err)
+		fmt.Printf("OpenId4VciPreAuthorizedCodeTokenRequest")
+	}
+
+	h.tokenPermissionRequestChannel <- callback
 }
 
 func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (string, error) {

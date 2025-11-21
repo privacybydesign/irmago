@@ -33,6 +33,8 @@ type SdJwtVcVerificationContext struct {
 
 	// Used to verify both JWT components of an SD-JWT VC (issuer signed jwt and kbjwt).
 	JwtVerifier JwtVerifier
+
+	VerifyVerifiableCredentialTypeInRequestorInfo bool
 }
 
 // VerifiedSdJwtVc is the decoded & verified representation of an SD-JWT VC.
@@ -93,10 +95,14 @@ func ParseAndVerifySdJwtVc(context SdJwtVcVerificationContext, sdjwtvc SdJwtVc) 
 	}
 
 	// Verify the credential is allowed to be issued by the requestor
-	disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
-	err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(issuerSignedJwtPayload.VerifiableCredentialType, disclosureKeys)
-	if err != nil {
-		return VerifiedSdJwtVc{}, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
+	// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
+	// until we can issue SD-JWT VCs that fit our scheme
+	if context.VerifyVerifiableCredentialTypeInRequestorInfo {
+		disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
+		err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(issuerSignedJwtPayload.VerifiableCredentialType, disclosureKeys)
+		if err != nil {
+			return VerifiedSdJwtVc{}, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
+		}
 	}
 
 	// Valid SD-JWT

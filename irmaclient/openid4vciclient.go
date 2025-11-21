@@ -188,13 +188,6 @@ func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJ
 		return nil, fmt.Errorf("no credential_configuration_ids found in credential offer")
 	}
 
-	// Validate the Grants; we only support authorization_code for now
-	if credentialOffer.Grants != nil {
-		if credentialOffer.Grants.AuthorizationCodeGrant == nil {
-			return nil, fmt.Errorf("unsupported grant type in credential offer; only authorization_code is supported")
-		}
-	}
-
 	return &credentialOffer, nil
 }
 
@@ -203,6 +196,8 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 	credentialIssuerMetadataUrl := constructCredentialIssuerMetadataUrl(*parsedCredentialIssuerUri)
 
 	req, err := http.NewRequest("GET", credentialIssuerMetadataUrl, nil)
+
+	irma.Logger.Infof("Fetching Credential Issuer metadata from %s", credentialIssuerMetadataUrl)
 
 	// Explicitly ask for JSON response, so we do not get signed JWT metadata response
 	req.Header.Set("Accept", "application/json")
@@ -213,20 +208,27 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 
 	// TODO: add caching of metadata response (Cache-Control and Expires headers) ?
 
+	if err != nil {
+		if err != nil {
+			return nil, fmt.Errorf("failed to get credential issuer metadata from: %v", err)
+		}
+	}
+
+	if response.StatusCode != http.StatusOK {
+		// Retry on a different (non-compliant) well-known URL for Credential Issuer metadata
+		irma.Logger.Infof("Fetching Credential Issuer metadata from %s", credentialOffer.CredentialIssuer+"/.well-known/openid-credential-issuer")
+		response, err = client.httpClient.Get(credentialOffer.CredentialIssuer + "/.well-known/openid-credential-issuer")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get credential issuer metadata: server returned status code %d", response.StatusCode)
+		}
+	}
+
 	defer func() {
 		err = response.Body.Close()
 		if err != nil {
 			irma.Logger.Warnf("failed to close credential issuer metadata response body: %v", err)
 		}
 	}()
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get credential issuer metadata: %v", err)
-	}
-
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get credential issuer metadata: server returned status code %d", response.StatusCode)
-	}
 
 	// TODO: handle charset in Content-Type header ?
 	if !strings.HasPrefix(response.Header.Get("Content-Type"), "application/json") {
