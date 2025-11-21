@@ -102,36 +102,37 @@ func DecodeDisclosure(disclosure EncodedDisclosure) (DisclosureContent, error) {
 		return DisclosureContent{}, fmt.Errorf("failed to parse json from decoded disclosure bytes: %v", err)
 	}
 
-	if num := len(array); !(num == 2 || num == 3) {
+	num := len(array)
+	if num != 2 && num != 3 {
 		return DisclosureContent{}, fmt.Errorf("disclosure array length should be 2 (for array ellements) or 3 (for object properties) but is %v", num)
-	} else {
-		salt, ok := array[0].(string)
-		if !ok {
-			return DisclosureContent{}, fmt.Errorf("failed to get salt from disclosure array: %v", array)
-		}
-
-		var key string
-		var value any
-		if num == 2 {
-			// This is an array element disclosure
-			value = array[1]
-		} else {
-			// This is an object property disclosure
-			key, ok = array[1].(string)
-			if !ok {
-				return DisclosureContent{}, fmt.Errorf("failed to get key from disclosure array: %v", array)
-			}
-
-			value = array[2]
-		}
-
-		return DisclosureContent{
-			Salt:           salt,
-			Key:            key,
-			Value:          value,
-			isArrayElement: num == 2,
-		}, nil
 	}
+
+	salt, ok := array[0].(string)
+	if !ok {
+		return DisclosureContent{}, fmt.Errorf("failed to get salt from disclosure array: %v", array)
+	}
+
+	var key string
+	var value any
+	if num == 2 {
+		// This is an array element disclosure
+		value = array[1]
+	} else {
+		// This is an object property disclosure
+		key, ok = array[1].(string)
+		if !ok {
+			return DisclosureContent{}, fmt.Errorf("failed to get key from disclosure array: %v", array)
+		}
+
+		value = array[2]
+	}
+
+	return DisclosureContent{
+		Salt:           salt,
+		Key:            key,
+		Value:          value,
+		isArrayElement: num == 2,
+	}, nil
 }
 
 // EncodedDisclosure is the base64url encoded version of a json array based on the `DisclosureContent` struct
