@@ -256,8 +256,6 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 			x[i] = v
 		}
 
-		// TODO: we need to thoroughly test that this works as intended and does not lead to issues
-		// for example; reading more proofs then we created, etc.
 		request.Proofs = &openid4vci.Proofs{
 			openid4vci.ProofTypeIdentifier_JWT: x,
 		}

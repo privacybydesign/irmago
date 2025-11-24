@@ -356,7 +356,7 @@ func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
 
 	// Validate at least one credential signing algorithms is supported
 	if len(c.CredentialSigningAlgValuesSupported) != 0 &&
-		len(getSupportedAlgorithms(c.CredentialSigningAlgValuesSupported)) == 0 {
+		len(getSupportedSignatureAlgorithms(c.CredentialSigningAlgValuesSupported)) == 0 {
 		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
 	}
 
@@ -367,11 +367,10 @@ func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
 		}
 
 		// We only support JWT proof type, for now
-		jwtProofType, ok := c.ProofTypesSupported[ProofTypeIdentifier_JWT]
-		if !ok {
+		if jwtProofType, ok := c.ProofTypesSupported[ProofTypeIdentifier_JWT]; !ok {
 			return fmt.Errorf("missing 'proof_types_supported' for JWT")
 		} else {
-			if len(getSupportedAlgorithms(jwtProofType.ProofSigningAlgValuesSupported)) == 0 {
+			if len(getSupportedSignatureAlgorithms(jwtProofType.ProofSigningAlgValuesSupported)) == 0 {
 				return fmt.Errorf("no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type")
 			}
 
@@ -589,7 +588,7 @@ func (m CredentialIssuerMetadata) GetAllLanguages() []string {
 	return languageSet
 }
 
-func getSupportedAlgorithms(input []string) []string {
+func getSupportedSignatureAlgorithms(input []string) []string {
 	supportedAlgs := []string{}
 	for _, alg := range input {
 		if _, ok := jwa.LookupSignatureAlgorithm(alg); ok {
