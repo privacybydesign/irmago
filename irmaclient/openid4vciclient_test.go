@@ -34,12 +34,14 @@ func createOpenID4VCiClientForTesting(t *testing.T) *OpenID4VciClient {
 	require.NoError(t, conf.Reload())
 
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: &conf.Issuers,
-		Clock:               sdjwtvc.NewSystemClock(),
-		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		X509VerificationContext: &conf.Issuers,
+		Clock:                   sdjwtvc.NewSystemClock(),
+		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 	}
 
-	client := NewOpenID4VciClient(&http.Client{}, conf, storage, sdJwtVcVerificationContext, keyBinder)
+	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
+
+	client := NewOpenID4VciClient(&http.Client{}, conf, storage, holderVerifier, keyBinder)
 	client.AllowInsecureHttpForTesting()
 
 	return client

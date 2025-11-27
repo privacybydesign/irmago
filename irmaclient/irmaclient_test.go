@@ -91,7 +91,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 	require.NoError(t, err)
 
 	context := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: &eudi_jwt.StaticVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: *x509Options,
 		},
 		Clock:       sdjwtvc.NewSystemClock(),
@@ -534,7 +534,8 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 
 	cred := irma.CredentialRequest{}
 
-	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+	// Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
+	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVcKb{sdjwtvc.SdJwtVcKb(sdjwt)}, []*irma.CredentialRequest{&cred})
 
 	require.NoError(t, err)
 }
@@ -560,7 +561,8 @@ func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 
 	cred := irma.CredentialRequest{}
 
-	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+	// Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
+	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVcKb{sdjwtvc.SdJwtVcKb(sdjwt)}, []*irma.CredentialRequest{&cred})
 
 	require.Error(t, err)
 }

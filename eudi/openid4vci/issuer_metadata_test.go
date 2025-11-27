@@ -412,6 +412,7 @@ func TestCredentialConfiguration_Verify(t *testing.T) {
 func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 	validFullConfiguration := CredentialConfiguration{
 		Format: CredentialFormatIdentifier_SdJwtVc,
+		Scope:  "https://pid-issuer/vct/pid",
 		CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
 			CryptographicBindingMethod_JWK,
 		},
@@ -425,6 +426,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 
 	unsupportedCredentialConfig := CredentialConfiguration{
 		Format: CredentialFormatIdentifier_W3CVC,
+		Scope:  "https://pid-issuer/vct/pid",
 	}
 
 	tests := []struct {
@@ -440,9 +442,18 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			expectedErr: `unsupported credential format "jwt_vc_json"`,
 		},
 		{
+			name: "no scope present",
+			config: CredentialConfiguration{
+				Format: CredentialFormatIdentifier_SdJwtVc,
+			},
+			wantErr:     true,
+			expectedErr: `missing 'scope' parameter`,
+		},
+		{
 			name: "credential signing algorithms can be nil",
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
+				Scope:  "https://pid-issuer/vct/pid",
 			},
 			wantErr: false,
 		},
@@ -450,6 +461,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "credential signing algorithms can be empty",
 			config: CredentialConfiguration{
 				Format:                              CredentialFormatIdentifier_SdJwtVc,
+				Scope:                               "https://pid-issuer/vct/pid",
 				CredentialSigningAlgValuesSupported: []string{},
 			},
 			wantErr: false,
@@ -458,6 +470,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "single credential signing algorithm - unsupported",
 			config: CredentialConfiguration{
 				Format:                              CredentialFormatIdentifier_SdJwtVc,
+				Scope:                               "https://pid-issuer/vct/pid",
 				CredentialSigningAlgValuesSupported: []string{"invalid-alg"},
 			},
 			wantErr:     true,
@@ -467,6 +480,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "single credential signing algorithm - supported",
 			config: CredentialConfiguration{
 				Format:                              CredentialFormatIdentifier_SdJwtVc,
+				Scope:                               "https://pid-issuer/vct/pid",
 				CredentialSigningAlgValuesSupported: []string{"ES256"},
 			},
 			wantErr: false,
@@ -475,6 +489,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "multiple credential signing algorithms - at least one supported",
 			config: CredentialConfiguration{
 				Format:                              CredentialFormatIdentifier_SdJwtVc,
+				Scope:                               "https://pid-issuer/vct/pid",
 				CredentialSigningAlgValuesSupported: []string{"ES256", "invalid-alg"},
 			},
 			wantErr: false,
@@ -483,6 +498,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "unsupported cryptographic binding method",
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
+				Scope:  "https://pid-issuer/vct/pid",
 				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
 					CryptographicBindingMethod_COSE,
 				},
@@ -494,6 +510,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "cryptographic binding method present, no proof type supported present",
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
+				Scope:  "https://pid-issuer/vct/pid",
 				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
 					CryptographicBindingMethod_JWK,
 				},
@@ -505,6 +522,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "cryptographic binding method present, no proof type JWT available",
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
+				Scope:  "https://pid-issuer/vct/pid",
 				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
 					CryptographicBindingMethod_JWK,
 				},
@@ -521,6 +539,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "cryptographic binding method present, proof type JWT, unsupported proof signing algorithms",
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
+				Scope:  "https://pid-issuer/vct/pid",
 				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
 					CryptographicBindingMethod_JWK,
 				},
@@ -537,6 +556,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "cryptographic binding method present, proof type JWT, multiple proof signing algorithms, at least one supported",
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
+				Scope:  "https://pid-issuer/vct/pid",
 				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
 					CryptographicBindingMethod_JWK,
 				},
@@ -552,6 +572,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "cryptographic binding method present, proof type JWT, key attestations required - unsupported",
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
+				Scope:  "https://pid-issuer/vct/pid",
 				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
 					CryptographicBindingMethod_JWK,
 				},

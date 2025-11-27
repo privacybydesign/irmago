@@ -59,9 +59,9 @@ type IrmaClient struct {
 	storage *storage
 
 	// Where we store/load SD-JWT-VC related data to/from
-	sdJwtVcStorage           SdJwtVcStorage
-	sdJwtVerificationContext sdjwtvc.SdJwtVcVerificationContext
-	keyBinder                sdjwtvc.KeyBinder
+	sdJwtVcStorage SdJwtVcStorage
+	keyBinder      sdjwtvc.KeyBinder
+	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
 	// Versions the client supports
 	minVersion *irma.ProtocolVersion
@@ -155,7 +155,7 @@ func NewIrmaClient(
 	client.initRevocation()
 	client.StartJobs()
 
-	client.sdJwtVerificationContext = sdJwtVerificationContext
+	client.holderVerifier = sdjwtvc.NewHolderVerificationProcessor(sdJwtVerificationContext)
 
 	return client, schemeMgrErr
 }
@@ -1540,9 +1540,9 @@ func (dcs DisclosureCandidates) Choose() ([]*irma.AttributeIdentifier, error) {
 	return ids, nil
 }
 
-func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
+func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error {
 	// TODO: check if the correct amount of credentials has been issued for the requestedCredentials for batch requests
-	return verifyAndStoreSdJwts(sdjwts, client.sdJwtVcStorage, client.sdJwtVerificationContext)
+	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier)
 }
 
 type credLookup struct {

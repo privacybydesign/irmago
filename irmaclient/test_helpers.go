@@ -298,10 +298,10 @@ func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest st
 }
 
 type MockSdJwtVcStorageClient struct {
-	sdjwts []sdjwtvc.SdJwtVc
+	sdjwts []sdjwtvc.SdJwtVcKb
 }
 
-func (m *MockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
+func (m *MockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error {
 	m.sdjwts = sdjwts
 	return nil
 }

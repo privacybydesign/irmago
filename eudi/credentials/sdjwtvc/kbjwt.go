@@ -13,6 +13,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 // KeyBindingJwt is a string containing the key binding jwt (just the jwt, no ~ or something)
@@ -272,7 +273,7 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string
 		return "", err
 	}
 
-	hash, err := CreateHash(alg, string(sdJwt))
+	hash, err := CreateUrlEncodedHash(alg, string(sdJwt))
 	if err != nil {
 		return "", nil
 	}
@@ -280,8 +281,8 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string
 	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
 }
 
-func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jwk.Key, error) {
-	issuerSignedJwt, _, _, err := SplitSdJwtVc(sdJwt)
+func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (iana.HashingAlgorithm, jwk.Key, error) {
+	issuerSignedJwt, _, err := splitSdJwtVc(sdJwt)
 	if err != nil {
 		return "", nil, err
 	}
@@ -310,5 +311,5 @@ func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (HashingAlgorithm, jw
 		return "", nil, fmt.Errorf("failed to parse key (%v) from json: %v", keyJson, err)
 	}
 
-	return HashingAlgorithm(alg), key, nil
+	return iana.HashingAlgorithm(alg), key, nil
 }

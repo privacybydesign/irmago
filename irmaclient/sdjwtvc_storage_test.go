@@ -9,6 +9,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
@@ -285,7 +286,7 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 func createMultipleSdJwtVcsWithCustomKeyBinder[T any](
 	t *testing.T, keyBinder sdjwtvc.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
 ) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
-	result := []sdjwtvc.SdJwtVc{}
+	result := make([]sdjwtvc.SdJwtVc, num)
 
 	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
 	certChain, err := utils.ParsePemCertificateChainToX5cFormat(chain)
@@ -293,12 +294,15 @@ func createMultipleSdJwtVcsWithCustomKeyBinder[T any](
 		panic(err)
 	}
 
-	for range num {
+	for i := range num {
 		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims, certChain)
 		require.NoError(t, err)
-		result = append(result, sdjwt)
+		result[i] = sdjwt
 	}
-	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext(chain))
+
+	// Convert to SdJwtVcKb since the holder doesn't know if a Key Binding JWT is present or not
+	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier)
 	require.NoError(t, err)
 	return SdJwtVcBatchMetadata{
 		BatchSize:              num,
@@ -326,7 +330,7 @@ func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string
 	return sdjwtvc.NewSdJwtVcBuilder().
 		WithDisclosures(contents).
 		WithHolderKey(holderKey[0]).
-		WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
+		WithHashingAlgorithm(iana.SHA256).
 		WithVerifiableCredentialType(vct).
 		WithIssuerUrl(issuerUrl).
 		WithIssuedAt(sdjwtvc.NewSystemClock().Now().Unix()).
@@ -350,7 +354,8 @@ func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, clai
 		require.NoError(t, err)
 		result = append(result, sdjwt)
 	}
-	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(result[0], sdjwtvc.CreateDefaultVerificationContext(chain))
+	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier) // Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
 	require.NoError(t, err)
 	return SdJwtVcBatchMetadata{
 		BatchSize:              num,

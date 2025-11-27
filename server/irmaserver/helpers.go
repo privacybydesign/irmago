@@ -26,6 +26,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/server"
 	"github.com/sirupsen/logrus"
 )
@@ -812,7 +813,7 @@ func (s *Server) newSession(
 func (session *sessionData) generateSdJwts(
 	settings *server.SdJwtIssuanceSettings,
 	kbPubKeys []jwk.Key,
-) ([]sdjwtvc.SdJwtVc, error) {
+) ([]sdjwtvc.SdJwtVcKb, error) {
 	// Check that the request is a valid issuance request
 	req, err := session.getRequest()
 	if err != nil {
@@ -847,8 +848,9 @@ func (session *sessionData) generateSdJwts(
 		)
 	}
 
+	// We create the SD-JWTs and assign them to SdJwtVcKb type, as the holder doesn't know if issuers will send Key Binding JWTs (which they shouldn't)
 	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
-	sdJwts := make([]sdjwtvc.SdJwtVc, numSdJwtsRequested)
+	sdJwts := make([]sdjwtvc.SdJwtVcKb, numSdJwtsRequested)
 
 	issuanceTime := sdjwtvc.NewSystemClock().Now().Unix()
 
@@ -875,7 +877,7 @@ func (session *sessionData) generateSdJwts(
 
 			// TODO: add choice of signature scheme to the builder
 			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
-				WithHashingAlgorithm(sdjwtvc.HashAlg_Sha256).
+				WithHashingAlgorithm(iana.SHA256).
 				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).
 				WithIssuerUrl(sdJwtIssuer.IssuerUrl).
 				WithVerifiableCredentialType(credentialType).
@@ -890,7 +892,7 @@ func (session *sessionData) generateSdJwts(
 				return nil, errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
 			}
 
-			sdJwts[index] = sdJwt
+			sdJwts[index] = sdjwtvc.SdJwtVcKb(sdJwt)
 			index++
 		}
 	}

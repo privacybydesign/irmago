@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 type Client struct {
@@ -85,9 +86,9 @@ func New(
 
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: &eudiConf.Issuers,
-		Clock:               sdjwtvc.NewSystemClock(),
-		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		X509VerificationContext: &eudiConf.Issuers,
+		Clock:                   sdjwtvc.NewSystemClock(),
+		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: true,
 	}
 
@@ -114,14 +115,14 @@ func New(
 
 	// Fow now, create a new SD-JWT verification context, which skips the VCT check against the requestor info
 	sdJwtVcVerificationContextOpenId4Vci := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: &eudiConf.Issuers,
-		Clock:               sdjwtvc.NewSystemClock(),
-		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		X509VerificationContext: &eudiConf.Issuers,
+		Clock:                   sdjwtvc.NewSystemClock(),
+		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
 	}
 
 	// Initiate the OpenID4VCI client
-	openid4vciClient := NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdJwtVcVerificationContextOpenId4Vci, keyBinder)
+	openid4vciClient := NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci), keyBinder)
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
@@ -253,7 +254,7 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
 		hashContent += key + string(valueStr)
 	}
 
-	return sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, hashContent)
+	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent)
 }
 
 func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error) {

@@ -10,6 +10,7 @@ import (
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"golang.org/x/text/language"
 )
 
@@ -32,46 +33,46 @@ func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, e
 		hashContent += key + string(valueStr)
 	}
 
-	return sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, hashContent)
+	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent)
 }
 
-func createCredentialInfoAndVerifiedSdJwtVc(cred sdjwtvc.SdJwtVc, verificationContext sdjwtvc.SdJwtVcVerificationContext) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
-	decoded, err := sdjwtvc.ParseAndVerifySdJwtVc(verificationContext, cred)
+func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
+	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdJwt)
 
 	if err != nil {
 		return nil, nil, err
 	}
 
 	attributes := map[string]any{}
-	for _, d := range decoded.Disclosures {
+	for _, d := range verifiedSdJwtVc.Disclosures {
 		attributes[d.Key] = d.Value
 	}
 
-	hash, err := CreateHashForSdJwtVc(decoded.IssuerSignedJwtPayload.VerifiableCredentialType, attributes)
+	hash, err := CreateHashForSdJwtVc(verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType, attributes)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	idComponents := strings.Split(decoded.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
+	idComponents := strings.Split(verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
 	if num := len(idComponents); num != 3 {
 		return nil, nil, fmt.Errorf(
 			"credential id expected to have exactly 3 components, separated by dots: %s",
-			decoded.IssuerSignedJwtPayload.VerifiableCredentialType,
+			verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
 		)
 	}
 
 	info := SdJwtVcMetadata{
 		Hash:           hash,
-		CredentialType: decoded.IssuerSignedJwtPayload.VerifiableCredentialType,
+		CredentialType: verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
 		SignedOn: irma.Timestamp(
-			time.Unix(decoded.IssuerSignedJwtPayload.IssuedAt, 0),
+			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt, 0),
 		),
 		Expires: irma.Timestamp(
-			time.Unix(decoded.IssuerSignedJwtPayload.Expiry, 0),
+			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry, 0),
 		),
 		Attributes: attributes,
 	}
-	return &info, &decoded, nil
+	return &info, &verifiedSdJwtVc, nil
 }
 
 func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) []openid4vci.Translateable {
@@ -101,8 +102,8 @@ func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.
 
 // verifyAndStoreSdJwts verifies the SD-JWTs and stores them in the SdJwtVcStorage.
 // SD-JWTs that are batch-issued should all have the exact same credential info (issuer, id, signedOn, expires, etc.), otherwise they cannot be stored together correctly.
-func verifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, sdJwtVcStorage SdJwtVcStorage, sdJwtVerificationContext sdjwtvc.SdJwtVcVerificationContext) error {
-	// TODO: check if all SD-JWTs have a unique Key-Binding public key, if not, the SD-JWTs should be rejected
+func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJwtVcStorage, holderVerifier *sdjwtvc.HolderVerificationProcessor) error {
+	// TODO: check if all SD-JWTs have a unique Key-Binding public key (cnf field), if not, the SD-JWTs should be rejected
 
 	type credentialTuple struct {
 		credInfo         SdJwtVcMetadata
@@ -110,10 +111,10 @@ func verifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, sdJwtVcStorage SdJwtVcStorag
 	}
 	credentialsMap := make(map[string]*credentialTuple)
 
-	for _, sdjwt := range sdjwts {
+	for _, sdJwtVcKb := range sdJwtVcKbs {
 		// TODO: check if the SD-JWT adheres to the requested credentials (e.g. if the credential ID and attributes etc match) ?
 		// If we don't check this, issuers might issue SD-JWTs that do not match the corresponding IRMA credential
-		credInfo, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwt, sdJwtVerificationContext)
+		credInfo, verifiedSdJwtVc, err := createCredentialInfoAndVerifiedSdJwtVc(sdJwtVcKb, holderVerifier)
 		if err != nil {
 			return err
 		}
@@ -125,10 +126,10 @@ func verifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, sdJwtVcStorage SdJwtVcStorag
 		if _, exists := credentialsMap[key]; !exists {
 			credentialsMap[key] = &credentialTuple{
 				credInfo:         *credInfo,
-				sdjwtvcInstances: []sdjwtvc.SdJwtVc{sdjwt},
+				sdjwtvcInstances: []sdjwtvc.SdJwtVc{verifiedSdJwtVc.GetRawSdJwtVc()},
 			}
 		} else {
-			credentialsMap[key].sdjwtvcInstances = append(credentialsMap[key].sdjwtvcInstances, sdjwt)
+			credentialsMap[key].sdjwtvcInstances = append(credentialsMap[key].sdjwtvcInstances, verifiedSdJwtVc.GetRawSdJwtVc())
 		}
 	}
 

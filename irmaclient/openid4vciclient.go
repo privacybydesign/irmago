@@ -18,16 +18,16 @@ import (
 )
 
 type SdJwtVcStorageClient interface {
-	VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error
+	VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error
 }
 
 type OpenID4VciClient struct {
-	eudiConf                   *eudi.Configuration
-	httpClient                 *http.Client
-	currentSession             *openid4vciSession
-	sdJwtVcStorage             SdJwtVcStorage
-	sdJwtVcVerificationContext sdjwtvc.SdJwtVcVerificationContext
-	keyBinder                  sdjwtvc.KeyBinder
+	eudiConf       *eudi.Configuration
+	httpClient     *http.Client
+	currentSession *openid4vciSession
+	sdJwtVcStorage SdJwtVcStorage
+	holderVerifier *sdjwtvc.HolderVerificationProcessor
+	keyBinder      sdjwtvc.KeyBinder
 
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
@@ -36,15 +36,15 @@ type OpenID4VciClient struct {
 func NewOpenID4VciClient(httpClient *http.Client,
 	eudiConf *eudi.Configuration,
 	sdJwtVcStorage SdJwtVcStorage,
-	sdJwtVcVerificationContext sdjwtvc.SdJwtVcVerificationContext,
+	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	keyBinder sdjwtvc.KeyBinder,
 ) *OpenID4VciClient {
 	return &OpenID4VciClient{
-		httpClient:                 httpClient,
-		eudiConf:                   eudiConf,
-		sdJwtVcStorage:             sdJwtVcStorage,
-		sdJwtVcVerificationContext: sdJwtVcVerificationContext,
-		keyBinder:                  keyBinder,
+		httpClient:     httpClient,
+		eudiConf:       eudiConf,
+		sdJwtVcStorage: sdJwtVcStorage,
+		holderVerifier: holderVerifier,
+		keyBinder:      keyBinder,
 	}
 }
 
@@ -305,8 +305,8 @@ func (client *OpenID4VciClient) downloadRemoteImage(remoteImage openid4vci.Remot
 	return bytes, response.Header.Get("Content-Type"), nil
 }
 
-func (client *OpenID4VciClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVc, requestedCredentials []*irma.CredentialRequest) error {
-	return verifyAndStoreSdJwts(sdjwts, client.sdJwtVcStorage, client.sdJwtVcVerificationContext)
+func (client *OpenID4VciClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error {
+	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier)
 }
 
 func (client *OpenID4VciClient) Dismiss() {

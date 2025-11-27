@@ -385,9 +385,9 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	}
 
 	// Verify and store the received credentials
-	sdJwts := make([]sdjwtvc.SdJwtVc, len(credentialResponse.Credentials))
+	sdJwts := make([]sdjwtvc.SdJwtVcKb, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
-		sdJwts[i] = sdjwtvc.SdJwtVc(cred.Credential)
+		sdJwts[i] = sdjwtvc.SdJwtVcKb(cred.Credential)
 
 		if i == 0 {
 			irma.Logger.Printf("first credential: %s", sdJwts[i])
