@@ -178,13 +178,13 @@ func Test_openid4vciSession_requestCredential_succesResponses(t *testing.T) {
 		s                   *openid4vciSession
 		accessToken         string
 		expectedErr         string
-		expectedCredentials []sdjwtvc.SdJwtVc
+		expectedCredentials []sdjwtvc.SdJwtVcKb
 	}{
 		{
 			name:                "test successful credential request - unencrypted - no keybinding",
 			s:                   session,
 			accessToken:         "valid_token::unencrypted",
-			expectedCredentials: []sdjwtvc.SdJwtVc{"cred1", "cred2"},
+			expectedCredentials: []sdjwtvc.SdJwtVcKb{"cred1", "cred2"},
 		},
 	}
 
