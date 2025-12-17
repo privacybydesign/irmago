@@ -173,6 +173,10 @@ func (client *Client) GetIrmaConfiguration() *irma.Configuration {
 	return client.irmaClient.Configuration
 }
 
+func (client *Client) GetEudiConfiguration() *eudi.Configuration {
+	return client.openid4vciClient.eudiConf
+}
+
 func (client *Client) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.irmaClient.UnenrolledSchemeManagers()
 }
@@ -581,6 +585,7 @@ func (client *Client) rawLogEntriesToLogInfo(entries []*LogEntry) ([]LogInfo, er
 func (client *Client) SetPreferences(prefs Preferences) {
 	client.irmaClient.SetPreferences(prefs)
 	if prefs.DeveloperMode {
+		client.openid4vciClient.eudiConf.SetCertificateVerificationMode(eudi.DeveloperModeCertificateVerification)
 		client.openid4vpClient.eudiConf.EnableStagingTrustAnchors()
 
 		if err := client.openid4vpClient.eudiConf.Reload(); err != nil {

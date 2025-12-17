@@ -29,7 +29,15 @@ type TrustModel struct {
 	revocationListsDistributionPoints []string
 	httpClient                        *http.Client
 	logger                            *logrus.Logger
+	certificateVerificationMode       CertificateVerificationMode
 }
+
+type CertificateVerificationMode int
+
+const (
+	StrictCertificateVerification CertificateVerificationMode = iota
+	DeveloperModeCertificateVerification
+)
 
 func (tm *TrustModel) GetCertificatePath() string {
 	return filepath.Join(tm.basePath, "certs")
@@ -45,6 +53,10 @@ func (tm *TrustModel) GetLogosPath() string {
 
 func (tm *TrustModel) GetRevocationLists() []*x509.RevocationList {
 	return tm.revocationLists
+}
+
+func (tm *TrustModel) SetCertificateVerificationMode(mode CertificateVerificationMode) {
+	tm.certificateVerificationMode = mode
 }
 
 func (tm *TrustModel) ensureDirectoryExists() error {
@@ -177,35 +189,69 @@ func (tm *TrustModel) Reload() error {
 	return nil
 }
 
-func (tm *TrustModel) loadTrustChains() error {
+func (tm *TrustModel) GetSavedTrustChains() ([][]byte, error) {
 	chains, err := filepath.Glob(filepath.Join(tm.GetCertificatePath(), "*.pem"))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	trustAnchors := make([][]byte, len(chains))
 	for i, trustChainFile := range chains {
 		bts, err := os.ReadFile(trustChainFile)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		trustAnchors[i] = bts
 	}
-	return tm.addTrustAnchors(trustAnchors...)
+	return trustAnchors, nil
+}
+
+func (tm *TrustModel) loadTrustChains() error {
+	trustedChainFiles, err := tm.GetSavedTrustChains()
+	if err != nil {
+		return err
+	}
+	return tm.addTrustAnchors(trustedChainFiles...)
 }
 
 func (tm *TrustModel) addRevocationListDistributionPoints(distPointUrls ...string) {
 	tm.revocationListsDistributionPoints = append(tm.revocationListsDistributionPoints, distPointUrls...)
 }
 
-func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
-	rootValidationOptions := x509.VerifyOptions{
+func (tm *TrustModel) getRootVerificationOptions() x509.VerifyOptions {
+	validationOptions := x509.VerifyOptions{
 		CurrentTime: time.Now(),
 		Roots:       tm.trustedRootCertificates,
-		KeyUsages: []x509.ExtKeyUsage{
+	}
+
+	if tm.certificateVerificationMode == StrictCertificateVerification {
+		validationOptions.KeyUsages = []x509.ExtKeyUsage{
 			x509.ExtKeyUsage(x509.KeyUsageCertSign),
 			x509.ExtKeyUsage(x509.KeyUsageCRLSign),
-		},
+		}
 	}
+
+	return validationOptions
+}
+
+func (tm *TrustModel) getIntermediateCertificateVerificationOptions() x509.VerifyOptions {
+	validationOptions := x509.VerifyOptions{
+		CurrentTime:   time.Now(),
+		Roots:         tm.trustedRootCertificates,
+		Intermediates: tm.trustedIntermediateCertificates,
+	}
+
+	if tm.certificateVerificationMode == StrictCertificateVerification {
+		validationOptions.KeyUsages = []x509.ExtKeyUsage{
+			x509.ExtKeyUsage(x509.KeyUsageCertSign),
+			x509.ExtKeyUsage(x509.KeyUsageCRLSign),
+		}
+	}
+
+	return validationOptions
+}
+
+func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
+	rootValidationOptions := tm.getRootVerificationOptions()
 
 	for _, bts := range trustAnchors {
 		chain, err := utils.ParsePemCertificateChain(bts)
@@ -219,10 +265,10 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 
 			// For now, we only accept the root certs that are self-signed (no system CA certs)
 			// Verify if the root is self-signed, otherwise this is not a valid root cert
-			if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
-				tm.logger.Warnf("Root certificate %s is a self-signed certificate. Skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String())
-				continue
-			}
+			// if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
+			// 	tm.logger.Warnf("Root certificate %s is a self-signed certificate. Skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String())
+			// 	continue
+			// }
 
 			// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
 			// Note: duplicates are filtered out by the call to .AddCert()
@@ -246,15 +292,7 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			if len(chain) >= 2 {
 				parentCert := rootCert
 				intermediateCerts := chain[1:]
-				validationOptions := x509.VerifyOptions{
-					CurrentTime:   time.Now(),
-					Roots:         tm.trustedRootCertificates,
-					Intermediates: tm.trustedIntermediateCertificates,
-					KeyUsages: []x509.ExtKeyUsage{
-						x509.ExtKeyUsage(x509.KeyUsageCertSign),
-						x509.ExtKeyUsage(x509.KeyUsageCRLSign),
-					},
-				}
+				validationOptions := tm.getIntermediateCertificateVerificationOptions()
 
 				for _, caCert := range intermediateCerts {
 					// Verify the certificate against the root pools
@@ -508,4 +546,27 @@ func (tm *TrustModel) CacheLogo(filename string, logo *scheme.Logo) (fullFilenam
 	}
 
 	return
+}
+
+func (tm *TrustModel) InstallCertificate(pemData []byte) error {
+	certChain, err := utils.ParsePemCertificateChain(pemData)
+	if err != nil {
+		return fmt.Errorf("failed to parse certificate chain: %v", err)
+	}
+
+	if len(certChain) == 0 {
+		return fmt.Errorf("no certificates found in provided data")
+	}
+
+	// Create a filename based on the signature of the 'leaf' certificate in this chain
+	filename := fmt.Sprintf("%x.pem", certChain[len(certChain)-1].Signature)
+
+	fullPath := filepath.Join(tm.GetCertificatePath(), filename)
+
+	err = os.WriteFile(fullPath, pemData, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write certificate file: %v", err)
+	}
+
+	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -302,7 +303,7 @@ func createMultipleSdJwtVcsWithCustomKeyBinder[T any](
 
 	// Convert to SdJwtVcKb since the holder doesn't know if a Key Binding JWT is present or not
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
-	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier)
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier, eudi.StrictSdJwtVerificationMode)
 	require.NoError(t, err)
 	return SdJwtVcBatchMetadata{
 		BatchSize:              num,
@@ -355,7 +356,7 @@ func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, clai
 		result = append(result, sdjwt)
 	}
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
-	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier) // Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
+	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier, eudi.StrictSdJwtVerificationMode) // Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
 	require.NoError(t, err)
 	return SdJwtVcBatchMetadata{
 		BatchSize:              num,

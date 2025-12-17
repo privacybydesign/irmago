@@ -48,6 +48,12 @@ type TokenResponse struct {
 	AuthorizationDetails *string `json:"authorization_details,omitempty"`
 }
 
+type TokenErrorResponse struct {
+	Error            string  `json:"error"`
+	ErrorDescription *string `json:"error_description,omitempty"`
+	ErrorUri         *string `json:"error_uri,omitempty"`
+}
+
 func GetOAuthMetadataUrlFromAuthorizationServer(authorizationServer string) (string, error) {
 	return getWellKnownUrlFromAuthorizationServer(authorizationServer, "oauth-authorization-server")
 }

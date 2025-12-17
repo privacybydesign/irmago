@@ -450,8 +450,9 @@ func (c *ClaimsDescription) verify() error {
 	}
 
 	// Validate locale, and check for duplicates
+	translations := DisplaysToTranslateableList(c.Display)
 	for _, display := range c.Display {
-		if err := validateLocale(DisplaysToTranslateableList(c.Display), &display); err != nil {
+		if err := validateLocale(translations, &display); err != nil {
 			return err
 		}
 	}
@@ -481,21 +482,26 @@ func validateLocale(availableTranslations []Translateable, translation Translate
 }
 
 func (d CredentialIssuerDisplays) verify() error {
+	translations := DisplaysToTranslateableList(d)
 	for _, display := range d {
 		if display.Logo != nil {
 			if err := display.Logo.verify(); err != nil {
 				return fmt.Errorf("invalid 'logo' in 'display': %w", err)
 			}
 		}
-		if err := validateLocale(DisplaysToTranslateableList(d), &display); err != nil {
-			return err
+
+		if display.Locale != "" {
+			if err := validateLocale(translations, &display); err != nil {
+				return err
+			}
 		}
 	}
-
 	return nil
 }
 
 func (d CredentialDisplays) verify() error {
+	translations := DisplaysToTranslateableList(d)
+
 	for _, display := range d {
 		if display.Name == "" {
 			return fmt.Errorf("missing 'name'")
@@ -512,8 +518,10 @@ func (d CredentialDisplays) verify() error {
 		}
 
 		// Validate locale, and check for duplicates
-		if err := validateLocale(DisplaysToTranslateableList(d), &display); err != nil {
-			return err
+		if display.Locale != "" {
+			if err := validateLocale(translations, &display); err != nil {
+				return err
+			}
 		}
 
 		// Validate background color, if present

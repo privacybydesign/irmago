@@ -10,6 +10,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type SdJwtVerificationMode int
+
+const (
+	StrictSdJwtVerificationMode SdJwtVerificationMode = iota
+	LaxSdJwtVerificationMode
+)
+
 // Logger is used for logging. For now, it will be set via the Client component
 var Logger *logrus.Logger
 
@@ -63,6 +70,11 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 
 func (conf *Configuration) EnableStagingTrustAnchors() {
 	conf.useStagingTrustAnchors = true
+}
+
+func (conf *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {
+	conf.Issuers.SetCertificateVerificationMode(mode)
+	conf.Verifiers.SetCertificateVerificationMode(mode)
 }
 
 // Reload assumes the latest files (trust anchors and certificate revocation lists) are downloaded.
@@ -128,11 +140,12 @@ func (conf *Configuration) addStagingTrustAnchors() error {
 
 	// Read the hardcoded trust anchors
 	if err := conf.Issuers.addTrustAnchors([]byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
-		return fmt.Errorf("failed to add yivi staging issuer trust anchors: %v", err)
+		return fmt.Errorf("failed to add Yivi staging issuer trust anchors: %v", err)
 	}
 	if err := conf.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
-		return fmt.Errorf("failed to add yivi staging verifier trust anchors: %v", err)
+		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
 	}
+
 	return nil
 }
 

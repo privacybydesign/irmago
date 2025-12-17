@@ -217,54 +217,50 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	}
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
-	if len(credConfig.CryptographicBindingMethodsSupported) > 0 {
-		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
-		num := uint(1)
-		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
-			num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
-		}
+	// TODO: disabled check for testing with Digidentity
+	//if len(credConfig.CryptographicBindingMethodsSupported) > 0 {
+	// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
+	num := uint(1)
+	if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
+		num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
+	}
 
-		// Since we now only support JWT proofs (and the issuer supports this, as checked with ValidateSupportedFeatures), we can directly use that to create the key pairs with JWT proofs
-		proofType := credConfig.ProofTypesSupported[openid4vci.ProofTypeIdentifier_JWT]
+	// Since we now only support JWT proofs (and the issuer supports this, as checked with ValidateSupportedFeatures), we can directly use that to create the key pairs with JWT proofs
+	proofType := credConfig.ProofTypesSupported[openid4vci.ProofTypeIdentifier_JWT]
 
-		// Determine signing algorithm for key binding proofs
-		var alg jwa.SignatureAlgorithm
-		for _, algName := range proofType.ProofSigningAlgValuesSupported {
-			foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
-			if ok {
-				alg = foundAlg
-				break
-			}
-		}
-
-		// According to the spec, the 'issuer' should be an identifier which identifies the wallet TYPE, not the wallet INSTANCE
-		// Fow now, we just use our applicationId as a fixed value
-		// TODO: replace with value from wallet attestation?
-		issuer := "org.irmacard.cardemu"
-		proofJwts, err := s.keyBinder.CreateKeyPairsWithJwtProofs(num, alg, issuer, s.credentialIssuerMetadata.CredentialIssuer, cNonce)
-		if err != nil {
-			return fmt.Errorf("could not create key pairs: %v", err)
-		}
-
-		// Use unsafe to convert []string to []any without allocations
-		// If we use type-safe conversion, we would need to allocate and copy each element
-		// which is costly when dealing with many key bindings
-		// x := *(*[]any)(unsafe.Pointer(&proofJwts))
-		// x = x[:len(proofJwts)]
-		x := make([]any, len(proofJwts))
-		for i, v := range proofJwts {
-			x[i] = v
-		}
-
-		request.Proofs = &openid4vci.Proofs{
-			openid4vci.ProofTypeIdentifier_JWT: x,
+	// Determine signing algorithm for key binding proofs
+	var alg jwa.SignatureAlgorithm
+	for _, algName := range proofType.ProofSigningAlgValuesSupported {
+		foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
+		if ok {
+			alg = foundAlg
+			break
 		}
 	}
 
-	jsonRequest, err := json.Marshal(request)
+	// According to the spec, the 'issuer' should be an identifier which identifies the wallet TYPE, not the wallet INSTANCE
+	// Fow now, we just use our applicationId as a fixed value
+	// TODO: replace with value from wallet attestation?
+	issuer := "org.irmacard.cardemu"
+	proofJwts, err := s.keyBinder.CreateKeyPairsWithJwtProofs(num, alg, issuer, s.credentialIssuerMetadata.CredentialIssuer, cNonce)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not create key pairs: %v", err)
 	}
+
+	// Use unsafe to convert []string to []any without allocations
+	// If we use type-safe conversion, we would need to allocate and copy each element
+	// which is costly when dealing with many key bindings
+	// x := *(*[]any)(unsafe.Pointer(&proofJwts))
+	// x = x[:len(proofJwts)]
+	x := make([]any, len(proofJwts))
+	for i, v := range proofJwts {
+		x[i] = v
+	}
+
+	request.Proofs = &openid4vci.Proofs{
+		openid4vci.ProofTypeIdentifier_JWT: x,
+	}
+	//}
 
 	// If the issuer requires encryption of the credential request, we need to handle that here
 	var requestBody []byte
@@ -297,9 +293,16 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 			return err
 		}
 	} else {
+		jsonRequest, err := json.Marshal(request)
+		if err != nil {
+			return err
+		}
+
 		contentType = "application/json"
 		requestBody = jsonRequest
 	}
+
+	irma.Logger.Tracef("Sending credential request: %s", string(requestBody))
 
 	// Send the request
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
@@ -369,7 +372,8 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 			return fmt.Errorf("could not decode credential error response: %v", err)
 		}
 		return fmt.Errorf("credential request failed with error %s: %s", errorResponse.Error, errorResponse.ErrorDescription)
-	} else if resp.StatusCode != http.StatusOK {
+	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		// TODO: we're handling 201: Created as OK for now, but is that correct according to the spec
 		return fmt.Errorf("credential request failed: %s", resp.Status)
 	}
 

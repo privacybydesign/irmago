@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/concmap"
 )
@@ -1542,7 +1543,7 @@ func (dcs DisclosureCandidates) Choose() ([]*irma.AttributeIdentifier, error) {
 
 func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error {
 	// TODO: check if the correct amount of credentials has been issued for the requestedCredentials for batch requests
-	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier)
+	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, eudi.StrictSdJwtVerificationMode)
 }
 
 type credLookup struct {

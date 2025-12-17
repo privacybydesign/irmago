@@ -306,7 +306,7 @@ func (client *OpenID4VciClient) downloadRemoteImage(remoteImage openid4vci.Remot
 }
 
 func (client *OpenID4VciClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error {
-	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier)
+	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, eudi.LaxSdJwtVerificationMode)
 }
 
 func (client *OpenID4VciClient) Dismiss() {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -36,7 +37,7 @@ func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, e
 	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent)
 }
 
-func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
+func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdJwt)
 
 	if err != nil {
@@ -53,12 +54,14 @@ func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerif
 		return nil, nil, err
 	}
 
-	idComponents := strings.Split(verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
-	if num := len(idComponents); num != 3 {
-		return nil, nil, fmt.Errorf(
-			"credential id expected to have exactly 3 components, separated by dots: %s",
-			verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
-		)
+	if mode == eudi.StrictSdJwtVerificationMode {
+		idComponents := strings.Split(verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
+		if num := len(idComponents); num != 3 {
+			return nil, nil, fmt.Errorf(
+				"credential id expected to have exactly 3 components, separated by dots: %s",
+				verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
+			)
+		}
 	}
 
 	info := SdJwtVcMetadata{
@@ -102,7 +105,7 @@ func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.
 
 // verifyAndStoreSdJwts verifies the SD-JWTs and stores them in the SdJwtVcStorage.
 // SD-JWTs that are batch-issued should all have the exact same credential info (issuer, id, signedOn, expires, etc.), otherwise they cannot be stored together correctly.
-func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJwtVcStorage, holderVerifier *sdjwtvc.HolderVerificationProcessor) error {
+func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJwtVcStorage, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) error {
 	// TODO: check if all SD-JWTs have a unique Key-Binding public key (cnf field), if not, the SD-JWTs should be rejected
 
 	type credentialTuple struct {
@@ -114,7 +117,7 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 	for _, sdJwtVcKb := range sdJwtVcKbs {
 		// TODO: check if the SD-JWT adheres to the requested credentials (e.g. if the credential ID and attributes etc match) ?
 		// If we don't check this, issuers might issue SD-JWTs that do not match the corresponding IRMA credential
-		credInfo, verifiedSdJwtVc, err := createCredentialInfoAndVerifiedSdJwtVc(sdJwtVcKb, holderVerifier)
+		credInfo, verifiedSdJwtVc, err := createCredentialInfoAndVerifiedSdJwtVc(sdJwtVcKb, holderVerifier, mode)
 		if err != nil {
 			return err
 		}

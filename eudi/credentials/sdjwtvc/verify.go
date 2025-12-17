@@ -517,12 +517,17 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(signedJwt []byte) (jw
 	}
 
 	// Verify the SD-JWT against the credentials the issuer is authorized to issue
-	requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
+	// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
+	// until we can issue SD-JWT VCs that fit our scheme
+	if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
+		requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
+		}
+		return token, requestorInfo, nil
 	}
 
-	return token, requestorInfo, nil
+	return token, nil, nil
 }
 
 // ============================= Verifier processing =====================================

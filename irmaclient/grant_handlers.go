@@ -156,7 +156,20 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession) 
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("token endpoint returned status code %d", response.StatusCode)
+		var errResponse oauth2.TokenErrorResponse
+		err = json.NewDecoder(response.Body).Decode(&errResponse)
+		if err != nil {
+			return nil, fmt.Errorf("token endpoint returned status code: %d, %s", response.StatusCode, err)
+		}
+		errDescription := ""
+		errUri := ""
+		if errResponse.ErrorDescription != nil {
+			errDescription = *errResponse.ErrorDescription
+		}
+		if errResponse.ErrorUri != nil {
+			errUri = *errResponse.ErrorUri
+		}
+		return nil, fmt.Errorf("token endpoint returned status code %d, %s - %s. See also %s,", response.StatusCode, errResponse.Error, errDescription, errUri)
 	}
 
 	var tokenResponse oauth2.TokenResponse
