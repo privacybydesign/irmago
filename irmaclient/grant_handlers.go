@@ -27,6 +27,7 @@ type AccessTokenResponse interface {
 
 type authTokenPermissionResponse struct {
 	permissionGranted bool
+	transactionCode   *string
 }
 
 type authTokenResponse struct {
@@ -100,18 +101,35 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 		pendingAuthTokenPermissionRequestChannel = nil
 	}()
 
+	var transactionCodeParameters *irma.PreAuthorizedCodeTransactionCodeParameters = nil
+	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {
+		txCode := s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode
+
+		txCodeInputMode := "numeric" // Default input mode is 'numeric' if it's not specified in the grant
+		if txCode.InputMode != nil {
+			txCodeInputMode = string(*txCode.InputMode)
+		}
+
+		transactionCodeParameters = &irma.PreAuthorizedCodeTransactionCodeParameters{
+			InputMode:   txCodeInputMode,
+			Length:      txCode.Length,
+			Description: txCode.Description,
+		}
+	}
+
 	request := &irma.PreAuthorizedCodeFlowPermissionRequest{
-		CredentialInfoList: s.credentials,
+		CredentialInfoList:        s.credentials,
+		TransactionCodeParameters: transactionCodeParameters,
 	}
 	s.handler.RequestPreAuthorizedCodeFlowPermission(
 		request,
 		s.requestorInfo,
-		TokenPermissionHandler(func(proceed bool) {
+		TokenPermissionHandler(func(proceed bool, transactionCode *string) {
 			if proceed {
 				irma.Logger.Printf("received access token via authorization code flow")
-				pendingAuthTokenPermissionRequestChannel <- &authTokenPermissionResponse{permissionGranted: true}
+				pendingAuthTokenPermissionRequestChannel <- &authTokenPermissionResponse{permissionGranted: true, transactionCode: transactionCode}
 			} else {
-				irma.Logger.Printf("User cancelled authorization code flow")
+				irma.Logger.Printf("user cancelled authorization code flow")
 				pendingAuthTokenPermissionRequestChannel <- &authTokenPermissionResponse{permissionGranted: false}
 			}
 		}),
@@ -126,10 +144,10 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 		}, nil
 	}
 
-	return h.requestAccessToken(s)
+	return h.requestAccessToken(s, permission.transactionCode)
 }
 
-func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession) (AccessTokenResponse, error) {
+func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession, transactionCode *string) (AccessTokenResponse, error) {
 	values := url.Values{}
 
 	values.Add("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
@@ -138,7 +156,10 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession) 
 
 	// If a tx_code is required, it should be asked from the user via the TokenPermissionHandler callback
 	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {
-		//values.Add("tx_code", )
+		if transactionCode == nil {
+			return nil, fmt.Errorf("transaction code is required by issuer, but was not provided by user")
+		}
+		values.Add("tx_code", *transactionCode)
 	}
 
 	// TODO: after we've added support for fetching AS metadata, we should check if we need to add Authorization Details parameter
@@ -155,25 +176,29 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession) 
 	}
 	defer response.Body.Close()
 
+	return handleTokenResponse(response)
+}
+
+func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
 		var errResponse oauth2.TokenErrorResponse
-		err = json.NewDecoder(response.Body).Decode(&errResponse)
+		err := json.NewDecoder(response.Body).Decode(&errResponse)
 		if err != nil {
 			return nil, fmt.Errorf("token endpoint returned status code: %d, %s", response.StatusCode, err)
 		}
 		errDescription := ""
-		errUri := ""
 		if errResponse.ErrorDescription != nil {
-			errDescription = *errResponse.ErrorDescription
+			errDescription = *errResponse.ErrorDescription + " - "
 		}
+		errUri := ""
 		if errResponse.ErrorUri != nil {
-			errUri = *errResponse.ErrorUri
+			errUri = " More info: " + *errResponse.ErrorUri
 		}
-		return nil, fmt.Errorf("token endpoint returned status code %d, %s - %s. See also %s,", response.StatusCode, errResponse.Error, errDescription, errUri)
+		return nil, fmt.Errorf("token endpoint returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
 	}
 
 	var tokenResponse oauth2.TokenResponse
-	err = json.NewDecoder(response.Body).Decode(&tokenResponse)
+	err := json.NewDecoder(response.Body).Decode(&tokenResponse)
 	if err != nil {
 		return nil, err
 	}

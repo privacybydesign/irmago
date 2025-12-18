@@ -306,7 +306,9 @@ func (client *OpenID4VciClient) downloadRemoteImage(remoteImage openid4vci.Remot
 }
 
 func (client *OpenID4VciClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error {
-	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, eudi.LaxSdJwtVerificationMode)
+	// TODO: set the verification mode to Lax for testing purposes only
+	// adding an SD-JWT without having a credential type in the Yivi scheme will break the app in Lax mode
+	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, eudi.StrictSdJwtVerificationMode)
 }
 
 func (client *OpenID4VciClient) Dismiss() {

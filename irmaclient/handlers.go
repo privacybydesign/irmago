@@ -110,7 +110,7 @@ func (h *backgroundIssuanceHandler) RequestPermissionAndPerformAuthCodeWithToken
 	callback(false, "test-access-token", nil)
 }
 func (h *backgroundIssuanceHandler) RequestPreAuthorizedCodeFlowPermission(request *irma.PreAuthorizedCodeFlowPermissionRequest, requestorInfo *irma.RequestorInfo, callback TokenPermissionHandler) {
-	callback(false)
+	callback(false, nil)
 }
 func (h *backgroundIssuanceHandler) Cancelled() {
 	h.fail(errors.New("session unexpectedly cancelled"))

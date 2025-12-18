@@ -154,7 +154,8 @@ func (th TestHandler) RequestPermissionAndPerformAuthCodeWithTokenExchange(reque
 	callback(true, "test-access-token", nil)
 }
 func (th TestHandler) RequestPreAuthorizedCodeFlowPermission(request *irma.PreAuthorizedCodeFlowPermissionRequest, requestorInfo *irma.RequestorInfo, callback irmaclient.TokenPermissionHandler) {
-	callback(true)
+	transactionCode := "1234"
+	callback(true, &transactionCode)
 }
 func (th TestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	// Do callback asynchronously to simulate user giving permission.

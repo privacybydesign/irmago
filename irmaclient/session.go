@@ -30,7 +30,7 @@ type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 type TokenHandler func(proceed bool, accessToken string, refreshToken *string)
 
 // TokenPermissionHandler is a callback for providing permission for an Pre-Authorized Code issuance session to proceed.
-type TokenPermissionHandler func(proceed bool)
+type TokenPermissionHandler func(proceed bool, transactionCode *string)
 
 // PinHandler is used to provide the user's PIN code.
 type PinHandler func(proceed bool, pin string)
