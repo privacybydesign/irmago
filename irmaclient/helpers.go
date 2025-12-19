@@ -3,10 +3,12 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -105,16 +107,18 @@ func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.
 
 // verifyAndStoreSdJwts verifies the SD-JWTs and stores them in the SdJwtVcStorage.
 // SD-JWTs that are batch-issued should all have the exact same credential info (issuer, id, signedOn, expires, etc.), otherwise they cannot be stored together correctly.
-func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJwtVcStorage, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) error {
+func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJwtVcStorage, holderVerifier *sdjwtvc.HolderVerificationProcessor, validateUniqueKeyBindingConfirmations bool, mode eudi.SdJwtVerificationMode) error {
 	// TODO: check if all SD-JWTs have a unique Key-Binding public key (cnf field), if not, the SD-JWTs should be rejected
 
 	type credentialTuple struct {
 		credInfo         SdJwtVcMetadata
 		sdjwtvcInstances []sdjwtvc.SdJwtVc
 	}
-	credentialsMap := make(map[string]*credentialTuple)
 
-	for _, sdJwtVcKb := range sdJwtVcKbs {
+	credentialsMap := make(map[string]*credentialTuple)
+	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(sdJwtVcKbs))
+
+	for i, sdJwtVcKb := range sdJwtVcKbs {
 		// TODO: check if the SD-JWT adheres to the requested credentials (e.g. if the credential ID and attributes etc match) ?
 		// If we don't check this, issuers might issue SD-JWTs that do not match the corresponding IRMA credential
 		credInfo, verifiedSdJwtVc, err := createCredentialInfoAndVerifiedSdJwtVc(sdJwtVcKb, holderVerifier, mode)
@@ -133,6 +137,26 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 			}
 		} else {
 			credentialsMap[key].sdjwtvcInstances = append(credentialsMap[key].sdjwtvcInstances, verifiedSdJwtVc.GetRawSdJwtVc())
+		}
+
+		verifiedSdJwtVcs[i] = verifiedSdJwtVc
+	}
+
+	// Check if every SD-JWT has a unique Key-Binding public key (cnf field)
+	if validateUniqueKeyBindingConfirmations {
+		for _, verifiedSdJwtVc := range verifiedSdJwtVcs {
+			cnf := verifiedSdJwtVc.IssuerSignedJwtPayload.Confirm
+			if cnf != nil {
+				duplicateCryptographicKey := slices.ContainsFunc(verifiedSdJwtVcs, func(otherSdJwtVc *sdjwtvc.VerifiedSdJwtVc) bool {
+					return otherSdJwtVc != verifiedSdJwtVc &&
+						otherSdJwtVc.IssuerSignedJwtPayload.Confirm != nil &&
+						jwk.Equal(otherSdJwtVc.IssuerSignedJwtPayload.Confirm.Jwk, cnf.Jwk)
+				})
+
+				if duplicateCryptographicKey {
+					return fmt.Errorf("duplicate cryptographic key binding confirmation found for SD-JWT with vct %q", verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType)
+				}
+			}
 		}
 	}
 
@@ -155,4 +179,23 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 	}
 
 	return nil
+}
+
+// isUniqueStrings checks if all strings in the slice are unique (case-sensitive or insensitive)
+func isUniqueStrings(slice []string, caseInsensitive bool) bool {
+	seen := make(map[string]bool)
+
+	for _, str := range slice {
+		// Normalize case if case-insensitive check is required
+		key := str
+		if caseInsensitive {
+			key = strings.ToLower(str)
+		}
+
+		if seen[key] {
+			return false // Duplicate found
+		}
+		seen[key] = true
+	}
+	return true
 }

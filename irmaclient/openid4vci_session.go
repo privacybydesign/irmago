@@ -28,9 +28,11 @@ type openid4vciSession struct {
 	keyBinder                sdjwtvc.KeyBinder
 
 	// Settings determined from the Credential Offer and Credential Issuer metadata
-	grantType                      openid4vci.Grant
-	authorizationServer            string
-	authorizationServerMetadata    *oauth2.AuthorizationServerMetadata
+	grantType                   openid4vci.Grant
+	authorizationServer         string
+	authorizationServerMetadata *oauth2.AuthorizationServerMetadata
+
+	// Credential Request encryption settings
 	useCredentialRequestEncryption bool
 	credentialRequestEncryptionAlg *jwa.ContentEncryptionAlgorithm
 	credentialRequestEncryptionKey *jwk.Key
@@ -40,7 +42,7 @@ func (s *openid4vciSession) perform() error {
 	// TODO: validate all properties are correctly set
 
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
-	err := s.configureSettings()
+	err := s.configureIssuerSettings()
 	if err != nil {
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("could not configure the session: %v", err),
@@ -78,7 +80,6 @@ func (s *openid4vciSession) perform() error {
 	}
 
 	// AccessToken received;
-	// TODO: request credential(s)
 	err = s.requestCredentials(permission.GetAccessToken())
 	if err != nil {
 		s.handler.Failure(&irma.SessionError{
@@ -91,7 +92,7 @@ func (s *openid4vciSession) perform() error {
 	return nil
 }
 
-func (s *openid4vciSession) configureSettings() error {
+func (s *openid4vciSession) configureIssuerSettings() error {
 	// Determine which grant-type to use (Authorization Code is preferred over Pre-Authorized Code)
 	if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
 		s.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
@@ -134,7 +135,6 @@ func (s *openid4vciSession) configureSettings() error {
 			}
 
 			// Get a key from the JWKS to use for encryption
-			//jwks := (*requestEncryption.Jwks)
 			for i := 0; i < requestEncryption.Jwks.Len(); i++ {
 				if key, found := requestEncryption.Jwks.Key(i); found {
 					keyAlg, keyAlgPresent := key.Algorithm()
@@ -196,6 +196,7 @@ func (s *openid4vciSession) requestCredentials(accessToken string) error {
 		err := s.requestCredential(credConfigId, cNonce, accessToken)
 		if err != nil {
 			// TODO: how to handle if a single request fails but others succeed?
+			// I think, we need to add transaction support; if a single Credential Configuration fails, the entire Credential Offer fails and no credentials should be stored
 			return fmt.Errorf("could not request credential %q: %v", credConfigId, err)
 		}
 	}
@@ -209,6 +210,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	}
 
 	credConfig := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
+	requireCryptographicKeyBinding := len(credConfig.CryptographicBindingMethodsSupported) > 0
 
 	// TODO: fill correct fields in Credential Request..
 	// For now, we only support the credential_configuration_id parameter, no credential_identifier from authorization details
@@ -218,7 +220,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
 	// TODO: disabled check for testing with Digidentity
-	//if len(credConfig.CryptographicBindingMethodsSupported) > 0 {
+	//if requireCryptographicKeyBinding {
 	// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
 	num := uint(1)
 	if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
@@ -373,7 +375,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		}
 		return fmt.Errorf("credential request failed with error %s: %s", errorResponse.Error, errorResponse.ErrorDescription)
 	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		// TODO: we're handling 201: Created as OK for now, but is that correct according to the spec
+		// TODO: we're handling 201: Created as OK for now, but that is not completely according to spec
 		return fmt.Errorf("credential request failed: %s", resp.Status)
 	}
 
@@ -393,13 +395,14 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	for i, cred := range credentialResponse.Credentials {
 		sdJwts[i] = sdjwtvc.SdJwtVcKb(cred.Credential)
 
+		// TODO: remove this
 		if i == 0 {
 			irma.Logger.Printf("first credential: %s", sdJwts[i])
 		}
 	}
 
 	// Store the credentials using the storage client
-	return s.storageClient.VerifyAndStoreSdJwts(sdJwts, nil)
+	return s.storageClient.VerifyAndStoreSdJwts(sdJwts, nil, requireCryptographicKeyBinding)
 }
 
 // requestNonce requests a fresh nonce from the issuer's nonce endpoint

@@ -540,6 +540,26 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestVerifyAndStoreSdJwtVc_ValidSdJwts_GivenDuplicateHolderKey_Fails(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer client.Close()
+
+	_, sdjwts := createMultipleSdJwtVcs(t, "test.test.mobilephone", "https://openid4vc.staging.yivi.app", map[string]string{
+		"mobilephone": "+31612345678",
+	}, 3, true)
+
+	cred := irma.CredentialRequest{}
+
+	// Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
+	sdjwtKbs := make([]sdjwtvc.SdJwtVcKb, len(sdjwts))
+	for i, sdjwt := range sdjwts {
+		sdjwtKbs[i] = sdjwtvc.SdJwtVcKb(sdjwt)
+	}
+
+	err := client.VerifyAndStoreSdJwts(sdjwtKbs, []*irma.CredentialRequest{&cred})
+	require.ErrorContains(t, err, "duplicate cryptographic key binding confirmation found for SD-JWT with vct \"test.test.mobilephone\"")
+}
+
 func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 	client, _ := parseStorage(t)
 	defer client.Close()

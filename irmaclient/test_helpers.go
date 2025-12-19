@@ -301,7 +301,7 @@ type MockSdJwtVcStorageClient struct {
 	sdjwts []sdjwtvc.SdJwtVcKb
 }
 
-func (m *MockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error {
+func (m *MockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error {
 	m.sdjwts = sdjwts
 	return nil
 }

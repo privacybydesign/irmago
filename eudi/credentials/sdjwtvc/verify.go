@@ -173,7 +173,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 		}
 	}
 
-	var cnf CnfField
+	var cnf *CnfField
 	err = token.Get(Key_Confirmationkey, &cnfRaw)
 	if err == nil {
 		cnf, err = parseConfirmField(cnfRaw)
@@ -268,24 +268,24 @@ func parseSdField(value any) ([]HashedDisclosure, error) {
 	return result, nil
 }
 
-func parseConfirmField(value any) (CnfField, error) {
+func parseConfirmField(value any) (*CnfField, error) {
 	anyMap, ok := value.(map[string]any)
 	if !ok {
-		return CnfField{}, fmt.Errorf("failed to parse as anymap: %v", value)
+		return nil, fmt.Errorf("failed to parse as anymap: %v", value)
 	}
 	keyAny, ok := anyMap["jwk"]
 	if !ok {
-		return CnfField{}, errors.New("failed to get jwk field from cnf field")
+		return nil, errors.New("failed to get jwk field from cnf field")
 	}
 	keyJson, err := json.Marshal(keyAny)
 	if err != nil {
-		return CnfField{}, err
+		return nil, err
 	}
 	key, err := jwk.ParseKey(keyJson)
 	if err != nil {
-		return CnfField{}, fmt.Errorf("failed to parse key (%v) from json: %v", value, err)
+		return nil, fmt.Errorf("failed to parse key (%v) from json: %v", value, err)
 	}
-	return CnfField{Jwk: key}, nil
+	return &CnfField{Jwk: key}, nil
 }
 
 func verifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,

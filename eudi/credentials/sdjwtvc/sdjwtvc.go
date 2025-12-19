@@ -266,7 +266,7 @@ type IssuerSignedJwtPayload struct {
 	SdAlg iana.HashingAlgorithm
 
 	// OPTIONAL: Public key (JWK format) of the holder, which can be used to verify the key binding jwt
-	Confirm CnfField
+	Confirm *CnfField
 
 	// OPTIONAL: The information on how to read the status of the verifiable credential
 	Status string
@@ -439,7 +439,7 @@ func CreateTestSdJwtVc() (SdJwtVc, error) {
 		Sd:                       sdClaimHashes,
 		SdAlg:                    iana.SHA256,
 		Issuer:                   "https://openid4vc.staging.yivi.app",
-		Confirm:                  holderKey,
+		Confirm:                  &holderKey,
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
 		Expiry:                   1835689661,
 		IssuedAt:                 1516239022,

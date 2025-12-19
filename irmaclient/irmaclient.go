@@ -1543,7 +1543,7 @@ func (dcs DisclosureCandidates) Choose() ([]*irma.AttributeIdentifier, error) {
 
 func (client *IrmaClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest) error {
 	// TODO: check if the correct amount of credentials has been issued for the requestedCredentials for batch requests
-	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, eudi.StrictSdJwtVerificationMode)
+	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, true, eudi.StrictSdJwtVerificationMode)
 }
 
 type credLookup struct {
