@@ -37,7 +37,7 @@ func IsSupportedHashingAlgorithm(name HashingAlgorithm) bool {
 	}
 }
 
-func GetHashByIANA(name HashingAlgorithm) (hash.Hash, error) {
+func getHashByIANA(name HashingAlgorithm) (hash.Hash, error) {
 	switch name {
 	case SHA256:
 		return sha256.New(), nil
@@ -69,7 +69,7 @@ func GetHashByIANA(name HashingAlgorithm) (hash.Hash, error) {
 }
 
 func Sum(algorithm HashingAlgorithm, content string) ([]byte, error) {
-	hasher, err := GetHashByIANA(algorithm)
+	hasher, err := getHashByIANA(algorithm)
 	if err != nil {
 		return nil, err
 	}
