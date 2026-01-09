@@ -24,11 +24,12 @@ import (
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/revocation"
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/internal/testhelpers"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
-	"github.com/privacybydesign/irmago/irmaclient"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmaserver"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,8 +93,8 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	require.NotNil(t, result.Dismisser)
 	result.Dismisser.Dismiss()
 	// client revocation callback was called
-	require.NotNil(t, handler.(*TestClientHandler).revoked)
-	require.Equal(t, credid, handler.(*TestClientHandler).revoked.Type)
+	require.NotNil(t, handler.(*testhelpers.TestClientHandler).RevokedCred)
+	require.Equal(t, credid, handler.(*testhelpers.TestClientHandler).RevokedCred.Type)
 	// credential is no longer available as candidate
 	_, satisfiable, err := client.Candidates(request)
 	require.NoError(t, err)
@@ -814,7 +815,7 @@ func revocationSession(t *testing.T, client *irmaclient.IrmaClient, request irma
 }
 
 // revocationSetup sets up an irmaclient with a revocation-enabled credential, constants, and revocation key material.
-func revocationSetup(t *testing.T, irmaServer *IrmaServer, dbType string) (*IrmaServer, *irmaclient.IrmaClient, *TestClientHandler) {
+func revocationSetup(t *testing.T, irmaServer *IrmaServer, dbType string) (*IrmaServer, *irmaclient.IrmaClient, *testhelpers.TestClientHandler) {
 	revServer := startRevocationServer(t, true, dbType)
 
 	// issue a MijnOverheid.root instance with revocation enabled

@@ -17,12 +17,14 @@ import (
 	"testing"
 	"time"
 
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/client"
+	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
-	"github.com/privacybydesign/irmago/irmaclient"
-	"github.com/privacybydesign/irmago/server"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -167,7 +169,7 @@ func createMijnOverheidIssuanceRequest() *irma.IssuanceRequest {
 	})
 }
 
-func performCombinedIssuanceAndDisclosureSession(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+func performCombinedIssuanceAndDisclosureSession(t *testing.T, client *client.Client, irmaServer *IrmaServer) {
 	regularIssuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
@@ -247,7 +249,7 @@ func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
 	require.Equal(t, latestLog.DisclosureLog.Verifier.ID, irma.NewRequestorIdentifier("test-requestors.test-requestor"))
 }
 
-func performCompletelyOptionalDisclosure(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+func performCompletelyOptionalDisclosure(t *testing.T, client *client.Client, irmaServer *IrmaServer) {
 	req := irma.NewDisclosureRequest()
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -724,10 +726,10 @@ func testDiscloseOverOpenID4VP(t *testing.T) {
 	discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPostJwt_Host)
 }
 
-func discloseOverOpenID4VP(t *testing.T, client *irmaclient.Client, openid4vpHost string) {
+func discloseOverOpenID4VP(t *testing.T, c *client.Client, openid4vpHost string) {
 	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(openid4vpHost, createAuthRequestRequest())
 	require.NoError(t, err)
-	session := irmaclient.SessionRequestData{
+	session := client.SessionRequestData{
 		Qr: irma.Qr{
 			Type: irma.ActionDisclosing,
 			URL:  sessionLink,
@@ -738,7 +740,7 @@ func discloseOverOpenID4VP(t *testing.T, client *irmaclient.Client, openid4vpHos
 	require.NoError(t, err)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
-	client.NewSession(string(sessionJson), sessionHandler)
+	c.NewSession(string(sessionJson), sessionHandler)
 
 	permissionRequest := sessionHandler.AwaitPermissionRequest()
 
@@ -765,7 +767,7 @@ func createIdemixOnlyIssuanceRequest() *irma.IssuanceRequest {
 	})
 }
 
-func failIssueSdJwtAndIdemixToClient(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+func failIssueSdJwtAndIdemixToClient(t *testing.T, client *client.Client, irmaServer *IrmaServer) {
 	sessionReq := createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")
 	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, sessionReq)
 
@@ -777,7 +779,7 @@ func failIssueSdJwtAndIdemixToClient(t *testing.T, client *irmaclient.Client, ir
 	require.False(t, sessionHandler.AwaitSessionEnd())
 }
 
-func performIrmaIssuanceSession(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer, request *irma.IssuanceRequest) {
+func performIrmaIssuanceSession(t *testing.T, client *client.Client, irmaServer *IrmaServer, request *irma.IssuanceRequest) {
 	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
@@ -788,7 +790,7 @@ func performIrmaIssuanceSession(t *testing.T, client *irmaclient.Client, irmaSer
 	require.True(t, sessionHandler.AwaitSessionEnd())
 }
 
-func performIrmaDisclosureSession(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+func performIrmaDisclosureSession(t *testing.T, client *client.Client, irmaServer *IrmaServer) {
 	req := irma.NewDisclosureRequest()
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -813,7 +815,7 @@ func performIrmaDisclosureSession(t *testing.T, client *irmaclient.Client, irmaS
 	require.True(t, sessionHandler.AwaitSessionEnd())
 }
 
-func performIrmaSignatureSession(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+func performIrmaSignatureSession(t *testing.T, client *client.Client, irmaServer *IrmaServer) {
 	req := irma.NewSignatureRequest("Hello, World!")
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -846,7 +848,7 @@ func performIrmaSignatureSession(t *testing.T, client *irmaclient.Client, irmaSe
 func startIrmaSessionAtServer(t *testing.T, server *IrmaServer, req irma.SessionRequest) string {
 	qr, _, _, err := server.irma.StartSession(req, nil, "")
 	require.NoError(t, err)
-	session := irmaclient.SessionRequestData{
+	session := client.SessionRequestData{
 		Qr:       *qr,
 		Protocol: irmaclient.Protocol_Irma,
 	}
@@ -869,11 +871,11 @@ func createIrmaIssuanceRequestWithSdJwts(credentialId string, attributeId string
 	return req
 }
 
-func createClient(t *testing.T) *irmaclient.Client {
+func createClient(t *testing.T) *client.Client {
 	return createClientWithIssuerChain(t, nil)
 }
 
-func createClientWithIssuerChain(t *testing.T, issuerChain []byte) *irmaclient.Client {
+func createClientWithIssuerChain(t *testing.T, issuerChain []byte) *client.Client {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -893,14 +895,15 @@ func createClientWithIssuerChain(t *testing.T, issuerChain []byte) *irmaclient.C
 	if issuerChain != nil {
 		require.NoError(t, common.SaveFile(filepath.Join(certsPath, "integrationtest-chain.pem"), issuerChain))
 	} else {
+		// TODO: certificate has wrong Usage flag; need to fix that in testdata
 		require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
 	}
 
 	clientHandler := irmaclient.NewMockClientHandler()
-	client, err := irmaclient.New(storagePath, irmaConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
+	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
 
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
@@ -908,7 +911,7 @@ func createClientWithIssuerChain(t *testing.T, issuerChain []byte) *irmaclient.C
 	return client
 }
 
-func createClientWithCustomIssuerTrustChain(t *testing.T, issuerRoot *x509.Certificate, issuerCert *x509.Certificate) *irmaclient.Client {
+func createClientWithCustomIssuerTrustChain(t *testing.T, issuerRoot *x509.Certificate, issuerCert *x509.Certificate) *client.Client {
 	issuerChainBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerRoot.Raw})
 	issuerChainBytes = append(issuerChainBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerCert.Raw})...)
 

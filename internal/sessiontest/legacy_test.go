@@ -1,8 +1,9 @@
 package sessiontest
 
 import (
-	"github.com/privacybydesign/irmago/server/irmaserver"
 	"testing"
+
+	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 )
 
 func TestWithoutPairingSupport(t *testing.T) {

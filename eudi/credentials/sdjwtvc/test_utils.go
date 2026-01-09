@@ -227,9 +227,7 @@ func newWorkingSdJwtVcTestConfig() *testSdJwtVcConfig {
 		withIssuedAt(1745394126).
 		withExpiryTime(1945394126).
 		withNotBefore(50).
-		withCnf(createHolderCnfField()).
-		withSdAlg(iana.SHA256).
-		withSdClaims(disclosures).
+		withSdClaims(disclosures, iana.SHA256).
 		withDisclosures(disclosures).
 		withTypHeader(SdJwtVcTyp)
 }
@@ -243,6 +241,9 @@ func newWorkingSdJwtVcKbTestConfig() *testSdJwtVcKbConfig {
 		withKbNonce("nonce").
 		withValidSdHash().
 		withKbIssuedAt(1745394126)
+
+	// Set the cnf to match the holder key used in the KeyBindingJwt
+	config.testSdJwtVcConfig.withCnf(createHolderCnfField())
 
 	return config
 }
@@ -293,13 +294,18 @@ func (c *testSdJwtVcConfig) withNotBefore(time int64) *testSdJwtVcConfig {
 	return c
 }
 
-func (c *testSdJwtVcConfig) withSdClaims(claims []DisclosureContent) *testSdJwtVcConfig {
-	alg := iana.SHA256
+func (c *testSdJwtVcConfig) withSdClaims(claims []DisclosureContent, alg iana.HashingAlgorithm) *testSdJwtVcConfig {
 	hashes, err := HashDisclosures(alg, claims)
 	if err != nil {
 		log.Fatalf("failed to create hashes: %v", err)
 	}
 	c.sdClaims = &hashes
+	return c
+}
+
+func (c *testSdJwtVcConfig) withoutSdClaims() *testSdJwtVcConfig {
+	c.sdClaims = nil
+	c.sdAlg = nil
 	return c
 }
 

@@ -9,13 +9,16 @@ import (
 	"unsafe"
 
 	"github.com/privacybydesign/gabi/signed"
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/internal/testhelpers"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -31,13 +34,13 @@ func TestMain(m *testing.M) {
 	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T, opts ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
+func parseStorage(t *testing.T, opts ...option) (*irmaclient.IrmaClient, *testhelpers.TestClientHandler) {
 	storage := test.SetupTestStorage(t)
 	return parseExistingStorage(t, storage, opts...)
 }
 
-func parseExistingStorage(t *testing.T, storageFolder string, options ...option) (*irmaclient.IrmaClient, *TestClientHandler) {
-	handler := &TestClientHandler{t: t, c: make(chan error), storage: storageFolder}
+func parseExistingStorage(t *testing.T, storageFolder string, options ...option) (*irmaclient.IrmaClient, *testhelpers.TestClientHandler) {
+	handler := &testhelpers.TestClientHandler{T: t, C: make(chan error), Storage: storageFolder}
 	path := test.FindTestdataFolder(t)
 
 	var signer irmaclient.Signer
@@ -63,8 +66,11 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 	)
 	require.NoError(t, err)
 
-	irmaStorage := irmaclient.NewIrmaStorage(storagePath, conf, aesKey)
-	require.NoError(t, irmaStorage.Open())
+	storage := clientstorage.NewStorage(storagePath, aesKey)
+	require.NoError(t, storage.Open())
+
+	irmaStorage := irmaclient.NewIrmaStorage(storage, conf)
+	require.NotNil(t, irmaStorage)
 
 	sdjwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
@@ -112,7 +118,7 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 		*version = irma.ProtocolVersion{Major: 2, Minor: 7}
 	}
 
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	return client, handler
 }
 
@@ -199,12 +205,12 @@ func extractPrivateField(i interface{}, field string) interface{} {
 	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface()
 }
 
-func setPairingMethod(method irma.PairingMethod, handler *TestHandler) string {
+func setPairingMethod(method irma.PairingMethod, handler *testhelpers.TestHandler) string {
 	optionsRequest := irma.NewFrontendOptionsRequest()
 	optionsRequest.PairingMethod = method
 	options := &irma.SessionOptions{}
-	err := handler.frontendTransport.Post("frontend/options", options, optionsRequest)
-	require.NoError(handler.t, err)
+	err := handler.FrontendTransport.Post("frontend/options", options, optionsRequest)
+	require.NoError(handler.T, err)
 	return options.PairingCode
 }
 

@@ -217,10 +217,10 @@ func (tm *TrustModel) addRevocationListDistributionPoints(distPointUrls ...strin
 	tm.revocationListsDistributionPoints = append(tm.revocationListsDistributionPoints, distPointUrls...)
 }
 
-func (tm *TrustModel) getRootVerificationOptions() x509.VerifyOptions {
+func (tm *TrustModel) getRootVerificationOptions(rootCerts *x509.CertPool) x509.VerifyOptions {
 	validationOptions := x509.VerifyOptions{
 		CurrentTime: time.Now(),
-		Roots:       tm.trustedRootCertificates,
+		Roots:       rootCerts,
 	}
 
 	if tm.certificateVerificationMode == StrictCertificateVerification {
@@ -251,8 +251,6 @@ func (tm *TrustModel) getIntermediateCertificateVerificationOptions() x509.Verif
 }
 
 func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
-	rootValidationOptions := tm.getRootVerificationOptions()
-
 	for _, bts := range trustAnchors {
 		chain, err := utils.ParsePemCertificateChain(bts)
 		if err != nil {
@@ -265,15 +263,18 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 
 			// For now, we only accept the root certs that are self-signed (no system CA certs)
 			// Verify if the root is self-signed, otherwise this is not a valid root cert
-			// if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
-			// 	tm.logger.Warnf("Root certificate %s is a self-signed certificate. Skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String())
-			// 	continue
-			// }
+			if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
+				tm.logger.Warnf("Root certificate %s is no root or self-signed certificate. Skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String())
+				continue
+			}
 
 			// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
 			// Note: duplicates are filtered out by the call to .AddCert()
-			// Note: if the root cert is not valid, the cert will still be in the trustedRootCertificates pool, but the verification will fail later on
-			tm.trustedRootCertificates.AddCert(rootCert)
+
+			rootCertsForValidation := tm.trustedRootCertificates.Clone()
+			rootCertsForValidation.AddCert(rootCert)
+			rootValidationOptions := tm.getRootVerificationOptions(rootCertsForValidation)
+
 			_, err = rootCert.Verify(rootValidationOptions)
 			if err != nil {
 				// If the root cert is not valid, skip the rest of the chain
@@ -287,6 +288,9 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			}) {
 				tm.allCerts = append(tm.allCerts, rootCert)
 			}
+
+			// Valid root cert, add to the trusted root pool
+			tm.trustedRootCertificates.AddCert(rootCert)
 
 			// Add the intermediate certs to the intermediate pool
 			if len(chain) >= 2 {

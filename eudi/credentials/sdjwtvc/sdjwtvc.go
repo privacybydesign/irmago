@@ -164,7 +164,7 @@ type CnfField struct {
 // IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
 // taking into account some sdjwtvc specific rules
 func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, error) {
-	jsonValues := make(map[string]interface{})
+	jsonValues := make(map[string]any)
 
 	if !strings.HasPrefix(payload.Issuer, "https://") {
 		return "", fmt.Errorf("issuer (`iss`) field is required to be an https link, but is %s", payload.Issuer)
@@ -178,7 +178,7 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 		jsonValues[Key_SdAlg] = payload.SdAlg
 	}
 
-	if payload.Confirm.Jwk != nil {
+	if payload.Confirm != nil && payload.Confirm.Jwk != nil {
 		jsonValues[Key_Confirmationkey] = payload.Confirm
 	}
 

@@ -3,7 +3,7 @@ package sessiontest
 import (
 	"testing"
 
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/irma"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,8 +26,8 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+1)
 
 	// Check whether newly issued credential is actually stored
-	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client.Close()
+	client, handler = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
@@ -50,8 +50,8 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+2)
 
 	// Check whether log entry for disclosing session is actually stored
-	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client.Close()
+	client, handler = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+2)
@@ -82,8 +82,8 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+3)
 
 	// Check whether log entry for signature session is actually stored
-	require.NoError(t, client.Close())
-	client, _ = parseExistingStorage(t, handler.storage)
+	client.Close()
+	client, _ = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)
@@ -99,5 +99,5 @@ func TestLogging(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.NotEmpty(t, attrs)
 	require.Equal(t, attrid, attrs[0][0].Identifier)
-	require.NoError(t, client.Close())
+	client.Close()
 }

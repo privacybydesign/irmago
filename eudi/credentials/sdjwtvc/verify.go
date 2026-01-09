@@ -590,7 +590,7 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, err
 	}
 
-	if issuerSignedJwtPayload.Confirm.Jwk == nil {
+	if issuerSignedJwtPayload.Confirm == nil || issuerSignedJwtPayload.Confirm.Jwk == nil {
 		return nil, errors.New("issuer signed jwt is missing holder key (cnf) required to verify kbjwt signature")
 	}
 

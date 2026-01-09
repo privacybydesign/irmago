@@ -9,10 +9,11 @@ import (
 
 	"github.com/go-errors/errors"
 
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/irmaclient"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/requestorserver"
+	"github.com/privacybydesign/irmago/internal/testhelpers"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/requestorserver"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ type (
 
 	requestorSessionResult struct {
 		*server.SessionResult
-		clientResult *SessionResult
+		clientResult *testhelpers.SessionResult
 		Missing      [][]irmaclient.DisclosureCandidates
 		Dismisser    irmaclient.SessionDismisser
 	}
@@ -215,23 +216,23 @@ func createSessionHandler(
 	opts option,
 	client *irmaclient.IrmaClient,
 	sesPkg *server.SessionPackage,
-	frontendOptionsHandler func(handler *TestHandler),
-	pairingHandler func(handler *TestHandler),
-) (sessionHandler, chan *SessionResult) {
-	clientChan := make(chan *SessionResult, 2)
+	frontendOptionsHandler func(handler *testhelpers.TestHandler),
+	pairingHandler func(handler *testhelpers.TestHandler),
+) (sessionHandler, chan *testhelpers.SessionResult) {
+	clientChan := make(chan *testhelpers.SessionResult, 2)
 	requestor := expectedRequestorInfo(t, client.Configuration)
-	handler := TestHandler{t: t, c: clientChan, client: client, expectedServerName: requestor}
+	handler := testhelpers.TestHandler{T: t, C: clientChan, Client: client, ExpectedServerName: requestor}
 	if opts.enabled(optionUnsatisfiableRequest) {
-		return &UnsatisfiableTestHandler{TestHandler: handler}, clientChan
+		return &testhelpers.UnsatisfiableTestHandler{TestHandler: handler}, clientChan
 	}
 
 	if frontendOptionsHandler != nil || pairingHandler != nil {
-		handler.pairingCodeChan = make(chan string)
-		handler.frontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
-		handler.frontendTransport.SetHeader(irma.AuthorizationHeader, string(sesPkg.FrontendRequest.Authorization))
+		handler.PairingCodeChan = make(chan string)
+		handler.FrontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
+		handler.FrontendTransport.SetHeader(irma.AuthorizationHeader, string(sesPkg.FrontendRequest.Authorization))
 	}
 	if opts.enabled(optionClientWait) {
-		handler.wait = 2 * time.Second
+		handler.Wait = 2 * time.Second
 	}
 	return &handler, clientChan
 }
@@ -275,8 +276,8 @@ func doSession(
 	client *irmaclient.IrmaClient,
 	irmaServer *IrmaServer,
 	requestorServer *requestorserver.Server,
-	frontendOptionsHandler func(handler *TestHandler),
-	pairingHandler func(handler *TestHandler),
+	frontendOptionsHandler func(handler *testhelpers.TestHandler),
+	pairingHandler func(handler *testhelpers.TestHandler),
 	config interface{},
 	options ...option,
 ) *requestorSessionResult {
@@ -303,7 +304,7 @@ func doSession(
 	sessionHandler, clientChan := createSessionHandler(t, opts, client, sesPkg, frontendOptionsHandler, pairingHandler)
 
 	if frontendOptionsHandler != nil {
-		frontendOptionsHandler(sessionHandler.(*TestHandler))
+		frontendOptionsHandler(sessionHandler.(*testhelpers.TestHandler))
 	}
 
 	if opts.enabled(optionPolling) {
@@ -315,7 +316,7 @@ func doSession(
 	clientTransport, dismisser := startSessionAtClient(t, sesPkg, client, sessionHandler)
 
 	if pairingHandler != nil {
-		pairingHandler(sessionHandler.(*TestHandler))
+		pairingHandler(sessionHandler.(*testhelpers.TestHandler))
 	}
 
 	clientResult := <-clientChan
@@ -333,7 +334,7 @@ func doSession(
 
 	if opts.enabled(optionRetryPost) {
 		var result string
-		err := clientTransport.Post("proofs", &result, sessionHandler.(*TestHandler).result)
+		err := clientTransport.Post("proofs", &result, sessionHandler.(*testhelpers.TestHandler).Result)
 		require.NoError(t, err)
 	}
 

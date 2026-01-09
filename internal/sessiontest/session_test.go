@@ -16,11 +16,13 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/big"
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/irmaclient"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmaserver"
+	"github.com/privacybydesign/irmago/internal/testhelpers"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 	sseclient "github.com/sietseringers/go-sse"
 	"github.com/stretchr/testify/require"
 )
@@ -168,8 +170,8 @@ func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 
 	// Also check whether this is actually stored
-	require.NoError(t, client.Close())
-	client, _ = parseExistingStorage(t, handler.storage)
+	client.Close()
+	client, _ = parseExistingStorage(t, handler.Storage)
 	defer client.Close()
 
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
@@ -180,19 +182,19 @@ func testIssuancePairing(t *testing.T, conf interface{}, opts ...option) {
 	request := getCombinedIssuanceRequest(id)
 
 	var pairingCode string
-	frontendOptionsHandler := func(handler *TestHandler) {
+	frontendOptionsHandler := func(handler *testhelpers.TestHandler) {
 		pairingCode = setPairingMethod(irma.PairingMethodPin, handler)
 	}
-	pairingHandler := func(handler *TestHandler) {
+	pairingHandler := func(handler *testhelpers.TestHandler) {
 		// Below protocol version 2.8 pairing is not supported, so then the pairing stage is expected to be skipped.
-		if extractClientMaxVersion(handler.client).Below(2, 8) {
+		if extractClientMaxVersion(handler.Client).Below(2, 8) {
 			return
 		}
 
-		require.Equal(t, pairingCode, <-handler.pairingCodeChan)
+		require.Equal(t, pairingCode, <-handler.PairingCodeChan)
 
 		// Check whether access to request endpoint is denied as long as pairing is not finished
-		err := handler.clientTransport.Get("request", struct{}{})
+		err := handler.ClientTransport.Get("request", struct{}{})
 		require.Error(t, err)
 		sessionErr := err.(*irma.SessionError)
 		require.Equal(t, irma.ErrorApi, sessionErr.ErrorType)
@@ -202,14 +204,14 @@ func testIssuancePairing(t *testing.T, conf interface{}, opts ...option) {
 		// Check whether pairing cannot be disabled again after client is connected.
 		request := irma.NewFrontendOptionsRequest()
 		result := &irma.SessionOptions{}
-		err = handler.frontendTransport.Post("frontend/options", result, request)
+		err = handler.FrontendTransport.Post("frontend/options", result, request)
 		require.Error(t, err)
 		sessionErr = err.(*irma.SessionError)
 		require.Equal(t, irma.ErrorApi, sessionErr.ErrorType)
 		require.Equal(t, server.ErrorUnexpectedRequest.Status, sessionErr.RemoteError.Status)
 		require.Equal(t, string(server.ErrorUnexpectedRequest.Type), sessionErr.RemoteError.ErrorName)
 
-		err = handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
+		err = handler.FrontendTransport.Post("frontend/pairingcompleted", nil, nil)
 		require.NoError(t, err)
 	}
 	doSession(t, request, nil, nil, nil, frontendOptionsHandler, pairingHandler, conf, opts...)
@@ -220,12 +222,12 @@ func testPairingRejected(t *testing.T, conf interface{}, opts ...option) {
 	request := getCombinedIssuanceRequest(id)
 
 	var pairingCode string
-	frontendOptionsHandler := func(handler *TestHandler) {
+	frontendOptionsHandler := func(handler *testhelpers.TestHandler) {
 		pairingCode = setPairingMethod(irma.PairingMethodPin, handler)
 	}
-	pairingHandler := func(handler *TestHandler) {
-		require.Equal(t, pairingCode, <-handler.pairingCodeChan)
-		err := handler.frontendTransport.Delete()
+	pairingHandler := func(handler *testhelpers.TestHandler) {
+		require.Equal(t, pairingCode, <-handler.PairingCodeChan)
+		err := handler.FrontendTransport.Delete()
 		require.NoError(t, err)
 	}
 	sessionOpts := append(opts, optionIgnoreError)
@@ -242,7 +244,7 @@ func testLargeAttribute(t *testing.T, conf interface{}, opts ...option) {
 	defer client.Close()
 
 	require.NoError(t, client.RemoveStorage())
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 
 	issuanceRequest := getSpecialIssuanceRequest(false, "1234567890123456789012345678901234567890") // 40 chars
 	doSession(t, issuanceRequest, client, nil, nil, nil, nil, conf, opts...)
@@ -276,8 +278,8 @@ func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...opt
 	require.Nil(t, client.Attributes(credid, 1))
 
 	// Also check whether this is actually stored
-	require.NoError(t, client.Close())
-	client, _ = parseExistingStorage(t, handler.storage)
+	client.Close()
+	client, _ = parseExistingStorage(t, handler.Storage)
 	defer client.Close()
 
 	require.NotNil(t, client.Attributes(credid, 0))
@@ -329,7 +331,7 @@ func testAttributeByteEncoding(t *testing.T, conf interface{}, opts ...option) {
 	client, _ := parseStorage(t, opts...)
 	defer client.Close()
 	require.NoError(t, client.RemoveStorage())
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 
 	/* After bitshifting the presence bit into the large attribute below, the most significant
 	bit is 1. In the bigint->[]byte conversion that happens before hashing this attribute, in
@@ -358,7 +360,7 @@ func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ..
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	require.Nil(t, doSession(t, getIssuanceRequest(true), client, nil, nil, nil, nil, conf, opts...).Err)
 
 	// client does not have updated irma_configuration with new attribute irma-demo.RU.studentCard.newAttribute,
@@ -382,7 +384,7 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	require.Nil(t, doSession(t, getIssuanceRequest(true), client, nil, nil, nil, nil, conf, opts...).Err)
 
 	// Trigger downloading the updated irma_configuration using a disclosure request containing the
@@ -432,10 +434,10 @@ func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 	bts, err := json.Marshal(qr)
 	require.NoError(t, err)
 	requestor := expectedRequestorInfo(t, client.Configuration)
-	c := make(chan *SessionResult)
+	c := make(chan *testhelpers.SessionResult)
 
 	// Perform session
-	client.NewSession(string(bts), &TestHandler{t, c, client, requestor, 0, "", nil, nil, nil})
+	client.NewSession(string(bts), &testhelpers.TestHandler{T: t, C: c, Client: client, ExpectedServerName: requestor, Wait: 0, Result: "", PairingCodeChan: nil, ClientTransport: nil, FrontendTransport: nil})
 	if result := <-c; result != nil {
 		require.NoError(t, result.Err)
 	}
@@ -452,9 +454,9 @@ func testIssuedCredentialIsStored(t *testing.T, conf interface{}, opts ...option
 
 	issuanceRequest := getNameIssuanceRequest()
 	doSession(t, issuanceRequest, client, nil, nil, nil, nil, conf, opts...)
-	require.NoError(t, client.Close())
+	client.Close()
 
-	client, _ = parseExistingStorage(t, handler.storage)
+	client, _ = parseExistingStorage(t, handler.Storage)
 	defer client.Close()
 
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
@@ -501,7 +503,7 @@ func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	require.Equal(t, 3, len(attrList.Ints), "number of attributes in credential should be 3")
 	require.NotNil(t, attrList.Ints[2], "randomblind attribute should not be nil")
 	require.NotEqual(t, 0, attrList.Ints[2].Cmp(big.NewInt(0)), "random blind attribute should not equal zero")
-	require.NoError(t, client.Close())
+	client.Close()
 }
 
 // Tests whether the client correctly detects a mismatch in the randomblind attributes between client and server.
@@ -579,7 +581,7 @@ func testDisablePairing(t *testing.T, conf interface{}, opts ...option) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
 
-	frontendOptionsHandler := func(handler *TestHandler) {
+	frontendOptionsHandler := func(handler *testhelpers.TestHandler) {
 		_ = setPairingMethod(irma.PairingMethodPin, handler)
 		_ = setPairingMethod(irma.PairingMethodNone, handler)
 	}
@@ -1027,11 +1029,11 @@ func TestStatusEventsSSE(t *testing.T) {
 	// Make a client, and let it perform the session
 	client, _ := parseStorage(t)
 	defer client.Close()
-	h := &TestHandler{
-		t:                  t,
-		c:                  make(chan *SessionResult),
-		client:             client,
-		expectedServerName: expectedRequestorInfo(t, client.Configuration),
+	h := &testhelpers.TestHandler{
+		T:                  t,
+		C:                  make(chan *testhelpers.SessionResult),
+		Client:             client,
+		ExpectedServerName: expectedRequestorInfo(t, client.Configuration),
 	}
 	qrjson, err := json.Marshal(sesPkg.SessionPtr)
 	require.NoError(t, err)
@@ -1170,10 +1172,10 @@ func TestClientDeveloperMode(t *testing.T) {
 	issuanceRequest = getNameIssuanceRequest()
 	qr, _, _, err := irmaServer.irma.StartSession(issuanceRequest, nil, "")
 	require.NoError(t, err)
-	c := make(chan *SessionResult, 1)
+	c := make(chan *testhelpers.SessionResult, 1)
 	j, err := json.Marshal(qr)
 	require.NoError(t, err)
-	client.NewSession(string(j), &TestHandler{t, c, client, nil, 0, "", nil, nil, nil})
+	client.NewSession(string(j), &testhelpers.TestHandler{T: t, C: c, Client: client, ExpectedServerName: nil, Wait: 0, Result: "", PairingCodeChan: nil, ClientTransport: nil, FrontendTransport: nil})
 	result := <-c
 
 	// Check that it failed with an appropriate error message
@@ -1194,7 +1196,7 @@ func TestParallelSessions(t *testing.T) {
 
 	// Ensure we don't have the requested attribute at first
 	require.NoError(t, client.RemoveStorage())
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 
 	// Start disclosure session for an attribute we don't have.
 	// optionWait makes this block until the IRMA server returns a result.
@@ -1242,18 +1244,18 @@ func TestParallelSessionsWithPairing(t *testing.T) {
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 	request := getCombinedIssuanceRequest(id)
 
-	frontendOptionsHandler := func(handler *TestHandler) {
+	frontendOptionsHandler := func(handler *testhelpers.TestHandler) {
 		_ = setPairingMethod(irma.PairingMethodPin, handler)
 	}
 
-	pairingHandler := func(handler *TestHandler) {
-		<-handler.pairingCodeChan
+	pairingHandler := func(handler *testhelpers.TestHandler) {
+		<-handler.PairingCodeChan
 
 		// Do a second session while the first session is pairing.
 		doSession(t, request, client, irmaServer, nil, nil, nil, nil)
 
 		// After the second session has been completed, we complete pairing of the first session.
-		err := handler.frontendTransport.Post("frontend/pairingcompleted", nil, nil)
+		err := handler.FrontendTransport.Post("frontend/pairingcompleted", nil, nil)
 		require.NoError(t, err)
 	}
 

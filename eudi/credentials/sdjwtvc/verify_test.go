@@ -878,7 +878,7 @@ func Test_HolderVerificationProcessor_VerificationIsBeforeNotBefore_Fails(t *tes
 
 func Test_HolderVerificationProcessor_EmptyButNotMissingSdField_Fails(t *testing.T) {
 	emptyNotMissingSdField := newWorkingSdJwtVcTestConfig().
-		withSdClaims([]DisclosureContent{}).
+		withSdClaims([]DisclosureContent{}, iana.SHA256).
 		withDisclosures([]DisclosureContent{})
 	errorTestCaseHolder(t, emptyNotMissingSdField, "failed to parse sd field: when the _sd field is present it may not be empty")
 }
@@ -906,7 +906,7 @@ func Test_HolderVerificationProcessor_ValidSdJwt_WithDisclosures_NoKbJwt_Succeed
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoKbJwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	require.Len(t, verifiedSdJwtVc.Disclosures, 1)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 

@@ -6,23 +6,24 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/internal/testhelpers"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
 // Create a ManualTestHandler for unit tests
-func createManualSessionHandler(t *testing.T, client *irmaclient.IrmaClient) *ManualTestHandler {
-	return &ManualTestHandler{
-		TestHandler: TestHandler{
-			t:      t,
-			c:      make(chan *SessionResult),
-			client: client,
+func createManualSessionHandler(t *testing.T, client *irmaclient.IrmaClient) *testhelpers.ManualTestHandler {
+	return &testhelpers.ManualTestHandler{
+		TestHandler: testhelpers.TestHandler{
+			T:      t,
+			C:      make(chan *testhelpers.SessionResult),
+			Client: client,
 		},
 	}
 }
 
-func manualSessionHelper(t *testing.T, client *irmaclient.IrmaClient, h *ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
+func manualSessionHelper(t *testing.T, client *irmaclient.IrmaClient, h *testhelpers.ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
 	if client == nil {
 		client, _ = parseStorage(t)
 		defer client.Close()
@@ -33,12 +34,12 @@ func manualSessionHelper(t *testing.T, client *irmaclient.IrmaClient, h *ManualT
 
 	go client.NewSession(string(bts), h)
 
-	result := <-h.c
+	result := <-h.C
 	if result.Err != nil {
 		require.NoError(t, result.Err)
 	}
 
-	switch h.action {
+	switch h.Action {
 	case irma.ActionDisclosing:
 		r, _ := verifyAs.(*irma.DisclosureRequest)
 		list, status, err := result.DisclosureResult.Verify(client.Configuration, r)

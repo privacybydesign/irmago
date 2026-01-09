@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
-	"github.com/privacybydesign/irmago/irmaclient"
-	"github.com/privacybydesign/irmago/server/irmaserver"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,9 +43,9 @@ func TestKeyshareRegister(t *testing.T) {
 	require.NoError(t, client.KeyshareRemoveAll())
 	require.NoError(t, client.RemoveStorage())
 
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
-	require.NoError(t, <-handler.c)
+	require.NoError(t, <-handler.C)
 
 	require.Len(t, client.CredentialInfoList(), 1)
 
@@ -169,7 +170,7 @@ func TestMultipleKeyshareServers(t *testing.T) {
 
 	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
 	client.KeyshareEnroll(test2SchemeID, nil, "12345", "en")
-	require.NoError(t, <-handler.c)
+	require.NoError(t, <-handler.C)
 
 	request := irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"),
@@ -208,7 +209,7 @@ func TestKeyshareEnrollIncorrectPin(t *testing.T) {
 
 	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
 	client.KeyshareEnroll(test2SchemeID, nil, "54321", "en")
-	require.ErrorContains(t, <-handler.c, "incorrect pin")
+	require.ErrorContains(t, <-handler.C, "incorrect pin")
 	require.NotContains(t, client.EnrolledSchemeManagers(), test2SchemeID)
 }
 

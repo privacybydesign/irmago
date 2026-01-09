@@ -25,8 +25,8 @@ import (
 	"strings"
 	"testing"
 
-	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
+	"github.com/privacybydesign/irmago/irma"
 )
 
 func TestClientIntegration(t *testing.T) {

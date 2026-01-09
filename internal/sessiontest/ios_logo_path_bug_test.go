@@ -5,11 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/client"
+	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
-	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -134,7 +136,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	newClient.Close()
 }
 
-func issueSdJwtAndIdemixToClientExpectPin(t *testing.T, client *irmaclient.Client, irmaServer *IrmaServer) {
+func issueSdJwtAndIdemixToClientExpectPin(t *testing.T, client *client.Client, irmaServer *IrmaServer) {
 	sessionReq := createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")
 	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, sessionReq)
 
@@ -174,8 +176,8 @@ func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPat
 	return storagePath, filepath.Join(path, "irma_configuration")
 }
 
-func keyshareEnrollClient(t *testing.T, client *irmaclient.Client, handler *irmaclient.MockClientHandler) {
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
+func keyshareEnrollClient(t *testing.T, client *client.Client, handler *irmaclient.MockClientHandler) {
+	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 
 	require.NoError(t, handler.AwaitEnrollmentResult())
@@ -186,12 +188,12 @@ func createClientWithStorageAndSigner(
 	storagePath,
 	irmaConfigurationPath string,
 	signer irmaclient.Signer,
-) (*irmaclient.Client, *irmaclient.MockClientHandler) {
+) (*client.Client, *irmaclient.MockClientHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
 	clientHandler := irmaclient.NewMockClientHandler()
-	client, err := irmaclient.New(storagePath, irmaConfigurationPath, clientHandler, signer, aesKey)
+	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, signer, aesKey)
 	require.NoError(t, err)
 
 	return client, clientHandler
