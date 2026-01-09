@@ -77,7 +77,7 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 	require.NoError(t, err)
 
 	context := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: &eudi_jwt.StaticVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: *x509Options,
 		},
 		Clock:       sdjwtvc.NewSystemClock(),

@@ -55,6 +55,9 @@ var IssuerCertChain_irma_app_Bytes []byte
 //go:embed eudi/verifier/verifier_scheme_data.json
 var VerifierCertSchemeData string
 
+//go:embed eudi/issuer/well_known_configuration_response.json
+var OpenID4VciIssuerWellKnownConfigurationResponse string
+
 type PkiGenerationOptions int
 
 const (
@@ -404,4 +407,13 @@ func WritePrivateKeyToFile(t *testing.T, path string, key *ecdsa.PrivateKey) {
 	}
 	err = pem.Encode(file, pemBlock)
 	require.NoError(t, err)
+}
+
+func GetCredentialOfferEndpointUrl(baseUrl string) string {
+	encodedUrl := url.PathEscape(baseUrl)
+	return "openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22" + encodedUrl + "%2Fb0ce4f83-1946-4037-b13c-641191fd3214%22%2C%22credential_configuration_ids%22%3A%5B%22employee-badge%22%5D%2C%22grants%22%3A%7B%22authorization_code%22%3A%7B%22issuer_state%22%3A%22b0ce4f83-1946-4037-b13c-641191fd3214%22%7D%7D%7D"
+}
+
+func GetWellKnownConfigurationUrl(baseUrl string) string {
+	return strings.ReplaceAll(OpenID4VciIssuerWellKnownConfigurationResponse, "<BASE_URL>", baseUrl)
 }

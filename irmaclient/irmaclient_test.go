@@ -91,7 +91,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*IrmaClient, *Tes
 	require.NoError(t, err)
 
 	context := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: &eudi_jwt.StaticVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: *x509Options,
 		},
 		Clock:       sdjwtvc.NewSystemClock(),
@@ -534,9 +534,30 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 
 	cred := irma.CredentialRequest{}
 
-	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+	// Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
+	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVcKb{sdjwtvc.SdJwtVcKb(sdjwt)}, []*irma.CredentialRequest{&cred})
 
 	require.NoError(t, err)
+}
+
+func TestVerifyAndStoreSdJwtVc_ValidSdJwts_GivenDuplicateHolderKey_Fails(t *testing.T) {
+	client, _ := parseStorage(t)
+	defer client.Close()
+
+	_, sdjwts := createMultipleSdJwtVcs(t, "test.test.mobilephone", "https://openid4vc.staging.yivi.app", map[string]string{
+		"mobilephone": "+31612345678",
+	}, 3, true)
+
+	cred := irma.CredentialRequest{}
+
+	// Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
+	sdjwtKbs := make([]sdjwtvc.SdJwtVcKb, len(sdjwts))
+	for i, sdjwt := range sdjwts {
+		sdjwtKbs[i] = sdjwtvc.SdJwtVcKb(sdjwt)
+	}
+
+	err := client.VerifyAndStoreSdJwts(sdjwtKbs, []*irma.CredentialRequest{&cred})
+	require.ErrorContains(t, err, "duplicate cryptographic key binding confirmation found for SD-JWT with vct \"test.test.mobilephone\"")
 }
 
 func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
@@ -560,7 +581,8 @@ func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 
 	cred := irma.CredentialRequest{}
 
-	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVc{sdjwt}, []*irma.CredentialRequest{&cred})
+	// Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
+	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVcKb{sdjwtvc.SdJwtVcKb(sdjwt)}, []*irma.CredentialRequest{&cred})
 
 	require.Error(t, err)
 }

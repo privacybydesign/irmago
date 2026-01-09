@@ -24,7 +24,7 @@ func (s *StaticVerificationContext) GetRevocationLists() []*x509.RevocationList 
 	return s.RevocationLists
 }
 
-type VerificationContext interface {
+type X509VerificationContext interface {
 	// X509VerificationOptionsTemplate contains all trusted certificates and settings for verifying the `x5c` header
 	// field of the issuer signed jwt when provided.
 	// Before certificate verification, the options are copied to a new instance, where fields like the Hostname can be set on a per-request basis.
@@ -35,7 +35,7 @@ type VerificationContext interface {
 	GetRevocationLists() []*x509.RevocationList
 }
 
-func GetX509VerificationOptionsFromTemplate(context VerificationContext, hostname string) x509.VerifyOptions {
+func GetX509VerificationOptionsFromTemplate(context X509VerificationContext, hostname string) x509.VerifyOptions {
 	template := context.GetVerificationOptionsTemplate()
 	return x509.VerifyOptions{
 		// TODO: take clock skew into consideration?
@@ -47,13 +47,12 @@ func GetX509VerificationOptionsFromTemplate(context VerificationContext, hostnam
 	}
 }
 
-func VerifyCertificate(context VerificationContext, cert *x509.Certificate, hostname *string) error {
+func VerifyCertificate(context X509VerificationContext, cert *x509.Certificate, hostname *string) error {
 	// Verify the end-entity cert against the trusted chains
 	var verifyOpts x509.VerifyOptions
 	if hostname != nil {
 		verifyOpts = GetX509VerificationOptionsFromTemplate(context, *hostname)
 	} else {
-		// If URI successfully verifies, continue with the rest of the validations
 		verifyOpts = context.GetVerificationOptionsTemplate()
 	}
 

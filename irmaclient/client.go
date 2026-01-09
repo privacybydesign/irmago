@@ -3,6 +3,7 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -15,15 +16,17 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/common"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 type Client struct {
-	sdjwtvcStorage  SdJwtVcStorage
-	openid4vpClient *OpenID4VPClient
-	irmaClient      *IrmaClient
-	logsStorage     LogsStorage
-	keyBinder       sdjwtvc.KeyBinder
-	scheduler       gocron.Scheduler
+	sdjwtvcStorage   SdJwtVcStorage
+	openid4vpClient  *OpenID4VPClient
+	openid4vciClient *OpenID4VciClient
+	irmaClient       *IrmaClient
+	logsStorage      LogsStorage
+	keyBinder        sdjwtvc.KeyBinder
+	scheduler        gocron.Scheduler
 }
 
 func New(
@@ -83,9 +86,10 @@ func New(
 
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
-		VerificationContext: &eudiConf.Issuers,
-		Clock:               sdjwtvc.NewSystemClock(),
-		JwtVerifier:         sdjwtvc.NewJwxJwtVerifier(),
+		X509VerificationContext: &eudiConf.Issuers,
+		Clock:                   sdjwtvc.NewSystemClock(),
+		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		VerifyVerifiableCredentialTypeInRequestorInfo: true,
 	}
 
 	irmaClient, err := NewIrmaClient(irmaConf, handler, signer, storage, sdJwtVcVerificationContext, sdjwtvcStorage, keyBinder)
@@ -109,18 +113,30 @@ func New(
 	}
 	scheduler.Start()
 
+	// Fow now, create a new SD-JWT verification context, which skips the VCT check against the requestor info
+	sdJwtVcVerificationContextOpenId4Vci := sdjwtvc.SdJwtVcVerificationContext{
+		X509VerificationContext: &eudiConf.Issuers,
+		Clock:                   sdjwtvc.NewSystemClock(),
+		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		VerifyVerifiableCredentialTypeInRequestorInfo: false,
+	}
+
+	// Initiate the OpenID4VCI client
+	openid4vciClient := NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci), keyBinder)
+
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
 	// so we do this by listening for session-done events
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	return &Client{
-		sdjwtvcStorage:  sdjwtvcStorage,
-		openid4vpClient: openid4vpClient,
-		irmaClient:      irmaClient,
-		logsStorage:     storage,
-		keyBinder:       keyBinder,
-		scheduler:       scheduler,
+		sdjwtvcStorage:   sdjwtvcStorage,
+		openid4vpClient:  openid4vpClient,
+		openid4vciClient: openid4vciClient,
+		irmaClient:       irmaClient,
+		logsStorage:      storage,
+		keyBinder:        keyBinder,
+		scheduler:        scheduler,
 	}, nil
 }
 
@@ -143,8 +159,11 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 		return nil
 	}
 
-	if sessionReq.Protocol == Protocol_OpenID4VP {
+	switch sessionReq.Protocol {
+	case Protocol_OpenID4VP:
 		return client.openid4vpClient.NewSession(sessionReq.URL, handler)
+	case Protocol_OpenID4VCI:
+		return client.openid4vciClient.NewSession(sessionReq.URL, handler)
 	}
 
 	return client.irmaClient.NewSession(sessionrequest, handler)
@@ -152,6 +171,10 @@ func (client *Client) NewSession(sessionrequest string, handler Handler) Session
 
 func (client *Client) GetIrmaConfiguration() *irma.Configuration {
 	return client.irmaClient.Configuration
+}
+
+func (client *Client) GetEudiConfiguration() *eudi.Configuration {
+	return client.openid4vciClient.eudiConf
 }
 
 func (client *Client) UnenrolledSchemeManagers() []irma.SchemeManagerIdentifier {
@@ -235,7 +258,7 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
 		hashContent += key + string(valueStr)
 	}
 
-	return sdjwtvc.CreateHash(sdjwtvc.HashAlg_Sha256, hashContent)
+	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent)
 }
 
 func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error) {
@@ -562,6 +585,7 @@ func (client *Client) rawLogEntriesToLogInfo(entries []*LogEntry) ([]LogInfo, er
 func (client *Client) SetPreferences(prefs Preferences) {
 	client.irmaClient.SetPreferences(prefs)
 	if prefs.DeveloperMode {
+		client.openid4vciClient.eudiConf.SetCertificateVerificationMode(eudi.DeveloperModeCertificateVerification)
 		client.openid4vpClient.eudiConf.EnableStagingTrustAnchors()
 
 		if err := client.openid4vpClient.eudiConf.Reload(); err != nil {

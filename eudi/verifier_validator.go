@@ -24,11 +24,11 @@ type VerifierValidator interface {
 }
 
 type RequestorCertificateStoreVerifierValidator struct {
-	verificationContext eudi_jwt.VerificationContext
+	verificationContext eudi_jwt.X509VerificationContext
 	validatorFactory    QueryValidatorFactory
 }
 
-func NewRequestorCertificateStoreVerifierValidator(verificationContext eudi_jwt.VerificationContext, validatorFactory QueryValidatorFactory) VerifierValidator {
+func NewRequestorCertificateStoreVerifierValidator(verificationContext eudi_jwt.X509VerificationContext, validatorFactory QueryValidatorFactory) VerifierValidator {
 	return &RequestorCertificateStoreVerifierValidator{
 		verificationContext: verificationContext,
 		validatorFactory:    validatorFactory,

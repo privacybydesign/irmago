@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/utils"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -14,6 +15,7 @@ func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
+		WithHashingAlgorithm(iana.SHA256).
 		WithExpiresAt(time.Now().Unix()).
 		WithVerifiableCredentialType("test.test.email").
 		WithIssuerUrl("https://irma.app").
@@ -27,6 +29,7 @@ func Test_BuildSdJwtVc_ValidIssuerUrl_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := NewSdJwtVcBuilder().
+		WithHashingAlgorithm(iana.SHA256).
 		WithExpiresAt(time.Now().Unix()).
 		WithVerifiableCredentialType("test.test.email").
 		WithIssuerUrl("https://irma.app").
@@ -60,7 +63,7 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 
 	builder := NewSdJwtVcBuilder().
 		WithExpiresAt(time.Now().Unix()).
-		WithHashingAlgorithm(HashAlg_Sha256).
+		WithHashingAlgorithm(iana.SHA256).
 		WithVerifiableCredentialType("test.test.email").
 		WithDisclosures(disclosures).
 		WithIssuerUrl("https://irma.app").
@@ -105,6 +108,7 @@ func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
 	sdjwtvc, err := builder.Build(jwtCreator)
 	require.NoError(t, err)
 	context := CreateTestVerificationContext()
-	_, err = ParseAndVerifySdJwtVc(context, sdjwtvc)
+	holderVerifier := NewHolderVerificationProcessor(context)
+	_, err = holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.NoError(t, err)
 }

@@ -233,8 +233,8 @@ func (session *sessionData) handlePostCommitments(commitments *irma.IssueCommitm
 		sigs = append(sigs, sig)
 	}
 
-	// Generate SD-JWT here if configured
-	var sdJwts []sdjwtvc.SdJwtVc
+	// Generate SD-JWT VC here if configured
+	var sdJwts []sdjwtvc.SdJwtVcKb
 	settings := conf.SdJwtIssuanceSettings
 	if settings.Enabled {
 		sdJwts, err = session.generateSdJwts(

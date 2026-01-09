@@ -14,9 +14,17 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
+
+type x509TestConfig struct {
+	IssuerCert                     []byte
+	VerifierTrustedIssuerCertChain []byte
+	IssUrl                         string
+	ShouldFail                     bool
+}
 
 func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
@@ -38,7 +46,7 @@ func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 		WithIssuerUrl(issuer).
 		WithDisclosures(disclosures).
 		WithVerifiableCredentialType("pbdf.pbdf.email").
-		WithHashingAlgorithm(HashAlg_Sha256).
+		WithHashingAlgorithm(iana.SHA256).
 		WithIssuerCertificateChain(irmaAppCert).
 		Build(jwtCreator)
 
@@ -113,7 +121,7 @@ func CreateTestVerificationContext() SdJwtVcVerificationContext {
 	im.AddCert(irmaAppCertChain[1])
 
 	return SdJwtVcVerificationContext{
-		VerificationContext: &eudi_jwt.StaticVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: x509.VerifyOptions{
 				Roots:         roots,
 				Intermediates: im,
@@ -131,8 +139,8 @@ func (c *testClock) Now() time.Time { return time.Unix(c.time, 0) }
 
 // =======================================================================
 
-func newEmptyTestConfig() testSdJwtVcConfig {
-	return testSdJwtVcConfig{
+func newEmptyTestConfig() *testSdJwtVcConfig {
+	return &testSdJwtVcConfig{
 		issuerUrl:        nil,
 		issuedAt:         nil,
 		expiryTime:       nil,
@@ -142,24 +150,25 @@ func newEmptyTestConfig() testSdJwtVcConfig {
 		vct:              nil,
 		sdAlg:            nil,
 		typHeader:        nil,
-		nonce:            nil,
-		sdHash:           nil,
-		useActualSdHash:  false,
-		audience:         nil,
-		kbIssuedAt:       nil,
-		kbjwtTypHeader:   nil,
-		addKbJwt:         false,
 		disclosures:      []DisclosureContent{},
 		holderPrivateKey: nil,
 		issuerPrivateKey: nil,
 	}
 }
 
-func createIssuerCnfField() CnfField {
-	return CnfField{
-		Jwk: testdata.ParseIssuerPubJwk(),
+func newEmptyTestConfigWithKbJwt() *testSdJwtVcKbConfig {
+	return &testSdJwtVcKbConfig{
+		testSdJwtVcConfig: *newEmptyTestConfig(),
+		nonce:             nil,
+		sdHash:            nil,
+		useActualSdHash:   false,
+		audience:          nil,
+		kbIssuedAt:        nil,
+		kbjwtTypHeader:    nil,
 	}
 }
+
+// ========================================================================
 
 func createHolderCnfField() CnfField {
 	return CnfField{
@@ -190,7 +199,7 @@ func newWorkingVerifyOptions(trustedChains ...[]byte) x509.VerifyOptions {
 	}
 }
 
-func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
+func newWorkingSdJwtVcTestConfig() *testSdJwtVcConfig {
 	disclosures, err := MultipleNewDisclosureContents(map[string]string{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
@@ -210,6 +219,7 @@ func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
 	}
 
 	return newEmptyTestConfig().
+		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
 		withHolderPrivateKey(holderKey).
 		withIssuerPrivateKey(issuerKey).
 		withVct("test.test.email").
@@ -218,66 +228,73 @@ func newWorkingSdJwtTestConfig() testSdJwtVcConfig {
 		withExpiryTime(1945394126).
 		withNotBefore(50).
 		withCnf(createHolderCnfField()).
-		withSdAlg(HashAlg_Sha256).
+		withSdAlg(iana.SHA256).
 		withSdClaims(disclosures).
 		withDisclosures(disclosures).
-		withTypHeader(SdJwtVcTyp).
-		withKbJwt().
-		withKbTypHeader(KbJwtTyp).
+		withTypHeader(SdJwtVcTyp)
+}
+
+func newWorkingSdJwtVcKbTestConfig() *testSdJwtVcKbConfig {
+	config := newEmptyTestConfigWithKbJwt()
+	config.testSdJwtVcConfig = *newWorkingSdJwtVcTestConfig()
+
+	config.withKbTypHeader(KbJwtTyp).
 		withAudience("Verifier").
 		withKbNonce("nonce").
 		withValidSdHash().
 		withKbIssuedAt(1745394126)
+
+	return config
 }
 
-func (c testSdJwtVcConfig) withHolderPrivateKey(key *ecdsa.PrivateKey) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withHolderPrivateKey(key *ecdsa.PrivateKey) *testSdJwtVcConfig {
 	c.holderPrivateKey = key
 	return c
 }
 
-func (c testSdJwtVcConfig) withIssuerPrivateKey(key *ecdsa.PrivateKey) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withIssuerPrivateKey(key *ecdsa.PrivateKey) *testSdJwtVcConfig {
 	c.issuerPrivateKey = key
 	return c
 }
 
-func (c testSdJwtVcConfig) withIssuerUrl(url string, allowNonHttps bool) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withIssuerUrl(url string, allowNonHttps bool) *testSdJwtVcConfig {
 	c.issuerUrl = &url
 	c.allowNonHttps = allowNonHttps
 	return c
 }
 
-func (c testSdJwtVcConfig) withVct(vct string) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withVct(vct string) *testSdJwtVcConfig {
 	c.vct = &vct
 	return c
 }
 
-func (c testSdJwtVcConfig) withIssuedAt(time int64) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withIssuedAt(time int64) *testSdJwtVcConfig {
 	c.issuedAt = &time
 	return c
 }
 
-func (c testSdJwtVcConfig) withExpiryTime(time int64) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withExpiryTime(time int64) *testSdJwtVcConfig {
 	c.expiryTime = &time
 	return c
 }
 
-func (c testSdJwtVcConfig) withCnf(field CnfField) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withCnf(field CnfField) *testSdJwtVcConfig {
 	c.cnfPubKey = &field
 	return c
 }
 
-func (c testSdJwtVcConfig) withSdAlg(alg HashingAlgorithm) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withSdAlg(alg iana.HashingAlgorithm) *testSdJwtVcConfig {
 	c.sdAlg = &alg
 	return c
 }
 
-func (c testSdJwtVcConfig) withNotBefore(time int64) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withNotBefore(time int64) *testSdJwtVcConfig {
 	c.notBefore = &time
 	return c
 }
 
-func (c testSdJwtVcConfig) withSdClaims(claims []DisclosureContent) testSdJwtVcConfig {
-	alg := HashAlg_Sha256
+func (c *testSdJwtVcConfig) withSdClaims(claims []DisclosureContent) *testSdJwtVcConfig {
+	alg := iana.SHA256
 	hashes, err := HashDisclosures(alg, claims)
 	if err != nil {
 		log.Fatalf("failed to create hashes: %v", err)
@@ -286,48 +303,48 @@ func (c testSdJwtVcConfig) withSdClaims(claims []DisclosureContent) testSdJwtVcC
 	return c
 }
 
-func (c testSdJwtVcConfig) withTypHeader(value string) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withTypHeader(value string) *testSdJwtVcConfig {
 	c.typHeader = &value
 	return c
 }
 
-func (c testSdJwtVcConfig) withKbNonce(nonce string) testSdJwtVcConfig {
+func (c *testSdJwtVcKbConfig) withKbNonce(nonce string) *testSdJwtVcKbConfig {
 	c.nonce = &nonce
 	return c
 }
 
-func (c testSdJwtVcConfig) withValidSdHash() testSdJwtVcConfig {
+func (c *testSdJwtVcKbConfig) withValidSdHash() *testSdJwtVcKbConfig {
 	c.useActualSdHash = true
 	return c
 }
 
-func (c testSdJwtVcConfig) withoutAnySdHash() testSdJwtVcConfig {
+func (c *testSdJwtVcKbConfig) withoutAnySdHash() *testSdJwtVcKbConfig {
 	c.useActualSdHash = false
 	c.sdHash = nil
 	return c
 }
 
-func (c testSdJwtVcConfig) withSdHash(hash string) testSdJwtVcConfig {
+func (c *testSdJwtVcKbConfig) withSdHash(hash string) *testSdJwtVcKbConfig {
 	c.sdHash = &hash
 	return c
 }
 
-func (c testSdJwtVcConfig) withAudience(aud string) testSdJwtVcConfig {
+func (c *testSdJwtVcKbConfig) withAudience(aud string) *testSdJwtVcKbConfig {
 	c.audience = &aud
 	return c
 }
 
-func (c testSdJwtVcConfig) withKbIssuedAt(time int64) testSdJwtVcConfig {
+func (c *testSdJwtVcKbConfig) withKbIssuedAt(time int64) *testSdJwtVcKbConfig {
 	c.kbIssuedAt = &time
 	return c
 }
 
-func (c testSdJwtVcConfig) withKbTypHeader(value string) testSdJwtVcConfig {
+func (c *testSdJwtVcKbConfig) withKbTypHeader(value string) *testSdJwtVcKbConfig {
 	c.kbjwtTypHeader = &value
 	return c
 }
 
-func (c testSdJwtVcConfig) withIssuerCertificateChainBytes(value []byte) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withIssuerCertificateChainBytes(value []byte) *testSdJwtVcConfig {
 	appCert, err := utils.ParsePemCertificateChainToX5cFormat(value)
 	if err != nil {
 		panic(err)
@@ -338,17 +355,7 @@ func (c testSdJwtVcConfig) withIssuerCertificateChainBytes(value []byte) testSdJ
 	return c
 }
 
-func (c testSdJwtVcConfig) withKbJwt() testSdJwtVcConfig {
-	c.addKbJwt = true
-	return c
-}
-
-func (c testSdJwtVcConfig) withoutKbJwt() testSdJwtVcConfig {
-	c.addKbJwt = false
-	return c
-}
-
-func (c testSdJwtVcConfig) withDisclosures(disclosures []DisclosureContent) testSdJwtVcConfig {
+func (c *testSdJwtVcConfig) withDisclosures(disclosures []DisclosureContent) *testSdJwtVcConfig {
 	c.disclosures = disclosures
 	return c
 }
@@ -362,12 +369,21 @@ type testSdJwtVcConfig struct {
 	notBefore     *int64
 	cnfPubKey     *CnfField
 	sdClaims      *[]HashedDisclosure
-	sdAlg         *HashingAlgorithm
+	sdAlg         *iana.HashingAlgorithm
 	vct           *string
+	disclosures   []DisclosureContent
 
 	// stuff inside the issuer signed header
 	typHeader *string
 	x5cHeader []string
+
+	// general signing stuff
+	holderPrivateKey *ecdsa.PrivateKey
+	issuerPrivateKey *ecdsa.PrivateKey
+}
+
+type testSdJwtVcKbConfig struct {
+	testSdJwtVcConfig
 
 	// stuff inside the kbjwt payload
 	nonce           *string
@@ -378,23 +394,15 @@ type testSdJwtVcConfig struct {
 
 	// stuff inside the kbjwt header
 	kbjwtTypHeader *string
-
-	// whether to add the kbjwt
-	addKbJwt    bool
-	disclosures []DisclosureContent
-
-	// general signing stuff
-	holderPrivateKey *ecdsa.PrivateKey
-	issuerPrivateKey *ecdsa.PrivateKey
 }
 
-func addTestKbJwt(config testSdJwtVcConfig, sdjwtvc SdJwtVc) (SdJwtVc, error) {
+func addTestKbJwt(config testSdJwtVcKbConfig, sdjwtvc SdJwtVc) (SdJwtVcKb, error) {
 	payload := map[string]any{}
 	if config.nonce != nil {
 		payload[Key_Nonce] = *config.nonce
 	}
 	if config.useActualSdHash {
-		hash, err := CreateHash(HashAlg_Sha256, string(sdjwtvc))
+		hash, err := CreateUrlEncodedHash(iana.SHA256, string(sdjwtvc))
 		if err != nil {
 			return "", err
 		}
@@ -418,7 +426,9 @@ func addTestKbJwt(config testSdJwtVcConfig, sdjwtvc SdJwtVc) (SdJwtVc, error) {
 	}
 
 	header := map[string]any{}
-	if config.kbjwtTypHeader != nil {
+	if config.kbjwtTypHeader == nil {
+		header[Key_Typ] = ""
+	} else {
 		header[Key_Typ] = *config.kbjwtTypHeader
 	}
 
@@ -476,18 +486,27 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 	return IssuerSignedJwt(jwt), err
 }
 
-func createTestSdJwtVc(t *testing.T, config testSdJwtVcConfig) SdJwtVc {
-	issuerJwt, err := createTestIssuerSignedJwt(config)
+func createTestSdJwtVc(t *testing.T, config *testSdJwtVcConfig) SdJwtVc {
+	issuerJwt, err := createTestIssuerSignedJwt(*config)
 	require.NoError(t, err)
 
 	encodedDisclosures, err := EncodeDisclosures(config.disclosures)
 	require.NoError(t, err)
 	sdjwt := CreateSdJwtVc(issuerJwt, encodedDisclosures)
 
-	if config.addKbJwt {
-		sdjwt, err = addTestKbJwt(config, sdjwt)
-		require.NoError(t, err)
-	}
-
 	return sdjwt
+}
+
+func createTestSdJwtVcKb(t *testing.T, config *testSdJwtVcKbConfig) SdJwtVcKb {
+	issuerJwt, err := createTestIssuerSignedJwt(config.testSdJwtVcConfig)
+	require.NoError(t, err)
+
+	encodedDisclosures, err := EncodeDisclosures(config.disclosures)
+	require.NoError(t, err)
+	sdjwt := CreateSdJwtVc(issuerJwt, encodedDisclosures)
+
+	sdjwtvckb, err := addTestKbJwt(*config, sdjwt)
+	require.NoError(t, err)
+
+	return sdjwtvckb
 }

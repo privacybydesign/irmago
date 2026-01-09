@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,7 +95,7 @@ func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
 		WithIssuerUrl(issuer).
 		WithVerifiableCredentialType("pbdf.pbdf.email").
 		WithDisclosures(disclosures).
-		WithHashingAlgorithm(HashAlg_Sha256).
+		WithHashingAlgorithm(iana.SHA256).
 		Build(jwtCreator)
 
 	require.NoError(t, err)
@@ -164,4 +165,17 @@ func TestArrayElementDecodeDisclosure(t *testing.T) {
 	require.Equal(t, "NL", decodedDisclosure.Value)
 	require.Empty(t, decodedDisclosure.Key)
 	require.True(t, decodedDisclosure.isArrayElement)
+}
+
+func Test_DecodingDisclosure_Succeeds(t *testing.T) {
+	content, err := NewDisclosureContent("name", "Yivi")
+	require.NoError(t, err)
+	d, err := EncodeDisclosure(content)
+	require.NoError(t, err)
+
+	decoded, err := DecodeDisclosure(d)
+	require.NoError(t, err)
+
+	require.Equal(t, "name", decoded.Key)
+	require.Equal(t, "Yivi", decoded.Value)
 }

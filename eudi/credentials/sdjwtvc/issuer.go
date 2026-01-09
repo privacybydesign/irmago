@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 type SdJwtVcBuilder struct {
@@ -17,7 +18,7 @@ type SdJwtVcBuilder struct {
 	status                 *string
 	subject                *string
 	vct                    *string
-	sdAlg                  *HashingAlgorithm
+	sdAlg                  *iana.HashingAlgorithm
 	disclosures            []DisclosureContent
 	ensureHaipCompatible   bool
 }
@@ -61,7 +62,7 @@ func (b *SdJwtVcBuilder) WithVerifiableCredentialType(vct string) *SdJwtVcBuilde
 	return b
 }
 
-func (b *SdJwtVcBuilder) WithHashingAlgorithm(alg HashingAlgorithm) *SdJwtVcBuilder {
+func (b *SdJwtVcBuilder) WithHashingAlgorithm(alg iana.HashingAlgorithm) *SdJwtVcBuilder {
 	b.sdAlg = &alg
 	return b
 }

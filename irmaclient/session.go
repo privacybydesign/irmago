@@ -25,6 +25,13 @@ import (
 // and specifying the attributes to be disclosed.
 type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 
+// TokenHandler is a callback for providing the access token (and optionally refresh token)
+// from the app side when the authorization has completed, the code was exchanged for an access token and the flow is hereby returned to the app.
+type TokenHandler func(proceed bool, accessToken string, refreshToken *string)
+
+// TokenPermissionHandler is a callback for providing permission for an Pre-Authorized Code issuance session to proceed.
+type TokenPermissionHandler func(proceed bool, transactionCode *string)
+
 // PinHandler is used to provide the user's PIN code.
 type PinHandler func(proceed bool, pin string)
 
@@ -57,6 +64,17 @@ type Handler interface {
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
+
+	RequestPermissionAndPerformAuthCodeWithTokenExchange(
+		request *irma.AuthorizationCodeFlowAndTokenExchangeRequest,
+		requestorInfo *irma.RequestorInfo,
+		callback TokenHandler)
+
+	RequestPreAuthorizedCodeFlowPermission(
+		request *irma.PreAuthorizedCodeFlowPermissionRequest,
+		requestorInfo *irma.RequestorInfo,
+		callback TokenPermissionHandler,
+	)
 
 	RequestPin(remainingAttempts int, callback PinHandler)
 }
@@ -639,6 +657,7 @@ func (session *session) getProof() (interface{}, error) {
 		message, session.timestamp, err = session.client.Proofs(session.choice, session.request)
 	case irma.ActionIssuing:
 		message, session.builders, err = session.client.IssueCommitments(session.request.(*irma.IssuanceRequest), session.choice)
+		// TODO: if an error occurs when sending the commitments to the server, we should remove the corresponding private keys, as they will not be accessible anymore
 	}
 
 	return message, err

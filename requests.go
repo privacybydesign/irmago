@@ -94,6 +94,65 @@ type IssuanceRequest struct {
 	RemovalCredentialInfoList CredentialInfoList `json:",omitempty"`
 }
 
+type PreAuthorizedCodeFlowPermissionRequest struct {
+	CredentialInfoList        CredentialTypeInfoList
+	TransactionCodeParameters *PreAuthorizedCodeTransactionCodeParameters
+}
+
+type PreAuthorizedCodeTransactionCodeParameters struct {
+	InputMode   string
+	Length      *int
+	Description *string
+}
+
+type AuthorizationCodeFlowAndTokenExchangeRequest struct {
+	CredentialInfoList             CredentialTypeInfoList
+	AuthorizationRequestParameters AuthorizationRequestParameters
+}
+
+type AuthorizationRequestParameters struct {
+	// TODO: in the future, read auth-server metadata from its .well-known/oauth-authorization-server or .well-known/openid-configuration endpoint, and extract the endpoints from there
+	// For now, we use the issuer as root
+	IssuerDiscoveryUrl    string
+	AuthorizationEndpoint string
+	TokenEndpoint         string
+
+	IssuerState *string `json:",omitempty"`
+
+	// Auth request using scopes (5.1.2 of OpenID4VCI spec)
+	Scopes   []string `json:",omitempty"`
+	Resource string   `json:",omitempty"`
+
+	// Auth request using Authorization Details (5.1.1 of OpenID4VCI spec)
+	AuthorizationDetails []AuthorizationDetails `json:",omitempty"`
+}
+
+type TokenRequestForPreAuthorizedCodeParameters struct {
+	IssuerDiscoveryUrl string
+
+	PreAuthorizedCode string
+	TransactionCode   *string `json:",omitempty"`
+
+	// Token request using scopes (6.1 of OpenID4VCI spec)
+	Scopes   []string `json:",omitempty"`
+	Resource string   `json:",omitempty"`
+
+	// Token request using Authorization Details (6.1.1 of OpenID4VCI spec)
+	AuthorizationDetails []AuthorizationDetails `json:",omitempty"`
+}
+
+type AuthorizationDetails struct {
+	Type                      string                     `json:"type,omitempty"`
+	CredentialConfigurationId string                     `json:"credential_configuration_id,omitempty"`
+	Locations                 []string                   `json:"locations,omitempty"`
+	Claims                    []AuthorizationDetailClaim `json:"claims,omitempty"`
+}
+
+type AuthorizationDetailClaim struct {
+	Path      string `json:"path"`
+	Mandatory bool   `json:"mandatory"`
+}
+
 // DefaultSdJwtIssueAmount is what you get when the requestor does not specify how many SD-JWTs to issue in a batch.
 const DefaultSdJwtIssueAmount uint = 50
 const MaxSdJwtIssueAmount uint = 200

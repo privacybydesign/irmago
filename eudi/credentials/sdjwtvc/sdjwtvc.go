@@ -2,7 +2,6 @@ package sdjwtvc
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 // The format of an SD-JWT VC:
@@ -40,11 +40,26 @@ type DisclosureContent struct {
 	Salt string
 	Key  string
 	// This value can be any type that is allowed in JSON
-	Value          interface{}
+	Value interface{}
+
+	// Processing related fields
 	isArrayElement bool
+	touched        bool
 }
 
 type DisclosureContents []DisclosureContent
+
+func (d *DisclosureContent) IsArrayElement() bool {
+	return d.isArrayElement
+}
+
+func (d *DisclosureContent) Touch() {
+	d.touched = true
+}
+
+func (d *DisclosureContent) IsTouched() bool {
+	return d.touched
+}
 
 func (d DisclosureContents) Keys() iter.Seq[string] {
 	return func(yield func(string) bool) {
@@ -146,8 +161,6 @@ type CnfField struct {
 	Jwk jwk.Key `json:"jwk"`
 }
 
-type HashingAlgorithm string
-
 // IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
 // taking into account some sdjwtvc specific rules
 func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, error) {
@@ -184,7 +197,7 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 // Note that this expects an sdjwtvc without a kbjwt, as it would not make sense to
 // remove disclosures from an sdjwtvc with a kbjwt.
 func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, error) {
-	issuerSignedJwt, disclosures, _, err := SplitSdJwtVc(fullSdjwt)
+	issuerSignedJwt, disclosures, err := splitSdJwtVc(fullSdjwt)
 	if err != nil {
 		return "", fmt.Errorf("failed to split sdjwtvc: %v", err)
 	}
@@ -204,8 +217,6 @@ func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, er
 }
 
 const (
-	HashAlg_Sha256 HashingAlgorithm = "sha-256"
-
 	Key_Subject                  string = "sub"
 	Key_VerifiableCredentialType string = "vct"
 	Key_ExpiryTime               string = "exp"
@@ -252,10 +263,10 @@ type IssuerSignedJwtPayload struct {
 
 	// OPTIONAL: hashing algorithm to be used for the disclosure hashes in `_sd` and the hash over
 	// the complete SD-JWT VC that can be found in the key binding JWT
-	SdAlg HashingAlgorithm
+	SdAlg iana.HashingAlgorithm
 
 	// OPTIONAL: Public key (JWK format) of the holder, which can be used to verify the key binding jwt
-	Confirm CnfField
+	Confirm *CnfField
 
 	// OPTIONAL: The information on how to read the status of the verifiable credential
 	Status string
@@ -267,8 +278,11 @@ type IssuerSignedJwtPayload struct {
 // IssuerSignedJwt is the issued signed jwt as a string (so only the section of the sd-jwt vc up to and NOT including the first ~)
 type IssuerSignedJwt string
 
-// SdJwtVc represents any full sd-jwt vc as a string, be it with or without disclosures or key binding jwt
+// SdJwtVc represents an encoded sd-jwt vc as a string, be it with or without disclosures, without a key binding jwt
 type SdJwtVc string
+
+// SdJwtVcKb represents an encoded sd-jwt vc as a string, be it with or without disclosures, potentially with a key binding jwt (which needs to be determined by processing)
+type SdJwtVcKb string
 
 // SdJwtVc_IssuerRepresentation is a representation of the SD-JWT VC that can be used by the issuer or holder to issue and disclose
 type SdJwtVc_IssuerRepresentation struct {
@@ -276,23 +290,23 @@ type SdJwtVc_IssuerRepresentation struct {
 	Disclosures     []DisclosureContent
 }
 
-func CreateHash(algorithm HashingAlgorithm, content string) (string, error) {
-	if algorithm != HashAlg_Sha256 {
-		return "", fmt.Errorf("%s is not a supported hashing algorithm, valid choice: %s", algorithm, HashAlg_Sha256)
+func CreateUrlEncodedHash(algorithm iana.HashingAlgorithm, content string) (string, error) {
+	hash, err := iana.Sum(algorithm, content)
+	if err != nil {
+		return "", err
 	}
-	hash := sha256.Sum256([]byte(content))
-	return base64.RawURLEncoding.EncodeToString(hash[:]), nil
+	return base64.RawURLEncoding.EncodeToString(hash), nil
 }
 
-func HashEncodedDisclosure(algorithm HashingAlgorithm, disclosure EncodedDisclosure) (HashedDisclosure, error) {
-	hash, err := CreateHash(algorithm, string(disclosure))
+func HashEncodedDisclosure(algorithm iana.HashingAlgorithm, disclosure EncodedDisclosure) (HashedDisclosure, error) {
+	hash, err := CreateUrlEncodedHash(algorithm, string(disclosure))
 	if err != nil {
 		return "", err
 	}
 	return HashedDisclosure(hash), nil
 }
 
-func HashEncodedDisclosures(algorithm HashingAlgorithm, disclosures []EncodedDisclosure) ([]HashedDisclosure, error) {
+func HashEncodedDisclosures(algorithm iana.HashingAlgorithm, disclosures []EncodedDisclosure) ([]HashedDisclosure, error) {
 	result := []HashedDisclosure{}
 	for _, d := range disclosures {
 		hash, err := HashEncodedDisclosure(algorithm, d)
@@ -304,7 +318,7 @@ func HashEncodedDisclosures(algorithm HashingAlgorithm, disclosures []EncodedDis
 	return result, nil
 }
 
-func HashDisclosure(algorithm HashingAlgorithm, claim DisclosureContent) (HashedDisclosure, error) {
+func HashDisclosure(algorithm iana.HashingAlgorithm, claim DisclosureContent) (HashedDisclosure, error) {
 	disclosure, err := EncodeDisclosure(claim)
 	if err != nil {
 		return "", err
@@ -312,7 +326,7 @@ func HashDisclosure(algorithm HashingAlgorithm, claim DisclosureContent) (Hashed
 	return HashEncodedDisclosure(algorithm, disclosure)
 }
 
-func HashDisclosures(algorithm HashingAlgorithm, disclosures []DisclosureContent) ([]HashedDisclosure, error) {
+func HashDisclosures(algorithm iana.HashingAlgorithm, disclosures []DisclosureContent) ([]HashedDisclosure, error) {
 	result := []HashedDisclosure{}
 	for _, d := range disclosures {
 		hash, err := HashDisclosure(algorithm, d)
@@ -380,8 +394,8 @@ func CreateSdJwtVcWithDisclosureContents(issJwt IssuerSignedJwt, disclosures []D
 	return SdJwtVc(fmt.Sprintf("%s~%s", issJwt, discs)), nil
 }
 
-func AddKeyBindingJwtToSdJwtVc(sdjwtvc SdJwtVc, kbjwt KeyBindingJwt) SdJwtVc {
-	return SdJwtVc(fmt.Sprintf("%s%s", sdjwtvc, kbjwt))
+func AddKeyBindingJwtToSdJwtVc(sdjwtvc SdJwtVc, kbjwt KeyBindingJwt) SdJwtVcKb {
+	return SdJwtVcKb(fmt.Sprintf("%s%s", sdjwtvc, kbjwt))
 }
 
 func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator) (IssuerSignedJwt, error) {
@@ -410,7 +424,7 @@ func CreateTestSdJwtVc() (SdJwtVc, error) {
 		return "", err
 	}
 
-	sdClaimHashes, err := HashDisclosures(HashAlg_Sha256, sdClaims)
+	sdClaimHashes, err := HashDisclosures(iana.SHA256, sdClaims)
 	if err != nil {
 		return "", err
 	}
@@ -423,9 +437,9 @@ func CreateTestSdJwtVc() (SdJwtVc, error) {
 	sdJwtClaims := IssuerSignedJwtPayload{
 		Subject:                  "6c5c0a49-b589-431d-bae7-219122a9ec2c",
 		Sd:                       sdClaimHashes,
-		SdAlg:                    HashAlg_Sha256,
+		SdAlg:                    iana.SHA256,
 		Issuer:                   "https://openid4vc.staging.yivi.app",
-		Confirm:                  holderKey,
+		Confirm:                  &holderKey,
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
 		Expiry:                   1835689661,
 		IssuedAt:                 1516239022,

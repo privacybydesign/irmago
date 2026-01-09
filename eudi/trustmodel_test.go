@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
@@ -53,6 +54,13 @@ func TestTrustModel(t *testing.T) {
 	t.Run("cacheCrl caches CRL successfully", testCacheCrlCachesCRLSuccessfully)
 	t.Run("cacheCrl fails, given nil CRL", testCacheCrlFailsGivenNilCRL)
 	t.Run("cacheCrl fails, given invalid CRL file name", testCacheCrlFailsGivenInvalidCrlFileName)
+
+	// Logo cache tests
+	t.Run("CacheVerifierLogo caches logo successfully", testCacheLogoCachesLogoSuccessfully)
+	t.Run("CacheVerifierLogo caches logo multiple times successfully", testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully)
+	t.Run("CacheVerifierLogo returns error on nil logo", testCacheVerifierLogoReturnsErrorOnNilLogo)
+	t.Run("CacheVerifierLogo returns error on empty logo data", testCacheVerifierLogoReturnsErrorOnEmptyLogoData)
+	t.Run("CacheVerifierLogo returns error on unknown mime type", testCacheVerifierLogoReturnsErrorOnUnknownMimeType)
 }
 
 func testReloadReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
@@ -583,4 +591,135 @@ func setupTrustModelWithStoragePath(t *testing.T) *TrustModel {
 	_ = common.EnsureDirectoryExists(tm.GetCrlPath())
 
 	return tm
+}
+
+func testCacheLogoCachesLogoSuccessfully(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+
+	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+
+	err := common.EnsureDirectoryExists(eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(eudiConfigPath)
+	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
+
+	logo := &scheme.Logo{
+		Data:     []byte("test logo data"),
+		MimeType: "image/png",
+	}
+
+	fullFilename, path, err := conf.Verifiers.CacheLogo("test_logo", logo)
+	require.NoError(t, err)
+	require.NotEmpty(t, fullFilename)
+	require.NotEmpty(t, path)
+
+	fileInfo, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, "test_logo.png", fileInfo.Name())
+}
+
+func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+
+	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+
+	err := common.EnsureDirectoryExists(eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(eudiConfigPath)
+	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
+
+	logo := &scheme.Logo{
+		Data:     []byte("test logo data"),
+		MimeType: "image/png",
+	}
+
+	fullFilename, path, err := conf.Verifiers.CacheLogo("test_logo", logo)
+	require.NoError(t, err)
+	require.NotEmpty(t, fullFilename)
+	require.NotEmpty(t, path)
+
+	// Change logo data to simulate an update
+	logo.Data = []byte("updated logo data")
+	fullFilename, path, err = conf.Verifiers.CacheLogo("test_logo", logo)
+	require.NoError(t, err)
+	require.NotEmpty(t, fullFilename)
+	require.NotEmpty(t, path)
+
+	fileInfo, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, "test_logo.png", fileInfo.Name())
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "updated logo data", string(data))
+}
+
+func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+
+	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+
+	err := common.EnsureDirectoryExists(eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(eudiConfigPath)
+	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
+
+	_, _, err = conf.Verifiers.CacheLogo("test_logo", nil)
+	require.Error(t, err)
+	require.EqualError(t, err, "invalid logo")
+}
+
+func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+
+	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+
+	err := common.EnsureDirectoryExists(eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(eudiConfigPath)
+	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
+
+	logo := &scheme.Logo{
+		Data:     []byte(""),
+		MimeType: "image/png",
+	}
+
+	_, _, err = conf.Verifiers.CacheLogo("test_logo", logo)
+	require.Error(t, err)
+	require.EqualError(t, err, "invalid logo")
+
+	logo.Data = nil
+	_, _, err = conf.Verifiers.CacheLogo("test_logo", logo)
+	require.Error(t, err)
+	require.EqualError(t, err, "invalid logo")
+}
+
+func testCacheVerifierLogoReturnsErrorOnUnknownMimeType(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+
+	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+
+	err := common.EnsureDirectoryExists(eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(eudiConfigPath)
+	require.NoError(t, err)
+	require.NoError(t, conf.Reload())
+
+	logo := &scheme.Logo{
+		Data:     []byte("test data"),
+		MimeType: "image/unknown",
+	}
+
+	_, _, err = conf.Verifiers.CacheLogo("test_logo", logo)
+	require.Error(t, err)
+	require.EqualError(t, err, "unknown mime type \"image/unknown\"")
 }
