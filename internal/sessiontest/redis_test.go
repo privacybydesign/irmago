@@ -249,7 +249,7 @@ func TestRedisSessionFailure(t *testing.T) {
 	mr.Close()
 
 	clientChan := make(chan *testhelpers.SessionResult)
-	h := &testhelpers.TestHandler{t, clientChan, client, nil, 0, "", nil, nil, nil}
+	h := &testhelpers.TestHandler{T: t, C: clientChan, Client: client, ExpectedServerName: nil, Wait: 0, Result: "", PairingCodeChan: nil, ClientTransport: nil, FrontendTransport: nil}
 	client.NewSession(string(qrjson), h)
 	clientResult := <-h.C
 

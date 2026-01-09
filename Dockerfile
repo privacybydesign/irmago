@@ -1,4 +1,4 @@
-FROM golang:1-alpine as build
+FROM golang:1-alpine AS build
 
 # Set build environment
 ENV CGO_ENABLED=0
@@ -6,7 +6,7 @@ ENV CGO_ENABLED=0
 # Build irma CLI tool
 COPY . /irmago
 WORKDIR /irmago
-RUN go build -a -ldflags '-extldflags "-static"' -o "/bin/irma" ./irma
+RUN go build -a -ldflags '-extldflags "-static"' -o "/bin/irma" ./cmd/main.go
 
 # Create application user
 RUN adduser -D -u 1000 -g irma irma
