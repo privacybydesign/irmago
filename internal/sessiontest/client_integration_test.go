@@ -89,13 +89,8 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 func testCredentialInstanceCount(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
-	defer irmaServer.Stop()
-
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
-	defer keyshareServer.Stop()
-
 	client := createClient(t)
-	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
@@ -123,6 +118,10 @@ func testCredentialInstanceCount(t *testing.T) {
 		cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
 		require.Equal(t, numInstances-1-i, *cred.InstanceCount)
 	}
+
+	client.Close()
+	keyshareServer.Stop()
+	irmaServer.Stop()
 }
 
 func getCredWithFormat(creds []*irma.CredentialInfo, format irmaclient.CredentialFormat) *irma.CredentialInfo {
@@ -309,13 +308,8 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 	tester := func(t *testing.T) {
 		conf := IrmaServerConfigurationWithTempStorage(t)
 		irmaServer := StartIrmaServer(t, conf)
-		defer irmaServer.Stop()
-
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
-		defer keyshareServer.Stop()
-
 		client := createClient(t)
-		defer client.Close()
 
 		performIrmaIssuanceSession(t, client, irmaServer, createMijnOverheidIssuanceRequest())
 
@@ -343,6 +337,10 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, attrs["firstname"], "")
 		require.Equal(t, attrs["familyname"], "Batsbak")
 		require.Equal(t, attrs["prefix"], "Sir")
+
+		client.Close()
+		keyshareServer.Stop()
+		irmaServer.Stop()
 	}
 
 	for range 10 {

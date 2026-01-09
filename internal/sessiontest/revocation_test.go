@@ -44,7 +44,7 @@ var (
 	revocationPkCounter uint = 2
 )
 
-func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irmaclient.IrmaClient, handler irmaclient.ClientHandler, server *irmaserver.Server) {
+func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, storage *clientstorage.Storage, client *irmaclient.IrmaClient, handler irmaclient.ClientHandler, server *irmaserver.Server) {
 	// issue first credential
 	credid := attr.CredentialTypeIdentifier()
 	result := doSession(t, revocationIssuanceRequest(t, credid), client, nil, nil, nil, nil, nil)
@@ -62,7 +62,7 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	// perform disclosure session (of key2) with nonrevocation proof
 	logger.Info("step 1")
 	request := revocationRequest(attr)
-	result = revocationSession(t, client, request, nil)
+	result = revocationSession(t, storage, client, request, nil)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 	require.NotEmpty(t, result.Disclosed[0])
@@ -78,7 +78,7 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	// perform another disclosure session with nonrevocation proof to see that key2 still works
 	// client updates its witness to the new accumulator first
 	logger.Info("step 3")
-	result = revocationSession(t, client, request, nil)
+	result = revocationSession(t, storage, client, request, nil)
 	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 	require.NotEmpty(t, result.Disclosed)
 
@@ -89,7 +89,7 @@ func testRevocation(t *testing.T, attr irma.AttributeTypeIdentifier, client *irm
 	// try to perform session with revoked credential
 	// client notices that his credential is revoked and aborts
 	logger.Info("step 5")
-	result = revocationSession(t, client, request, nil, optionUnsatisfiableRequest)
+	result = revocationSession(t, storage, client, request, nil, optionUnsatisfiableRequest)
 	require.NotEmpty(t, result.Missing)
 	require.NotNil(t, result.Dismisser)
 	result.Dismisser.Dismiss()
@@ -119,9 +119,9 @@ func testRevocationAll(t *testing.T, dbType string) {
 		revServer := startRevocationServer(t, true, dbType)
 		defer revServer.Stop()
 		storage, client, handler := parseStorage(t)
-		defer storage.Close()
 		defer client.Close()
-		testRevocation(t, revocationTestAttr, client, handler, revServer.irma)
+		defer storage.Close()
+		testRevocation(t, revocationTestAttr, storage, client, handler, revServer.irma)
 	})
 
 	t.Run("RevocationServerSessions", func(t *testing.T) {
@@ -130,17 +130,17 @@ func testRevocationAll(t *testing.T, dbType string) {
 
 		// issue a MijnOverheid.root instance with revocation enabled
 		storage, client, _ := parseStorage(t)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 		request := revocationIssuanceRequest(t, revocationTestCred)
 		result := doSession(t, request, client, revServer, nil, nil, nil, nil)
 		require.Nil(t, result.Err)
 
 		// do disclosure and signature sessions
-		result = revocationSession(t, client, nil, revServer)
+		result = revocationSession(t, storage, client, nil, revServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
-		result = revocationSession(t, client, revocationSigRequest(), revServer)
+		result = revocationSession(t, storage, client, revocationSigRequest(), revServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 
 		// revoke
@@ -151,25 +151,25 @@ func testRevocationAll(t *testing.T, dbType string) {
 		)
 
 		// try another disclosure
-		result = revocationSession(t, client, nil, revServer, optionUnsatisfiableRequest)
+		result = revocationSession(t, storage, client, nil, revServer, optionUnsatisfiableRequest)
 		require.NotEmpty(t, result.Missing)
 	})
 
 	t.Run("MixRevocationNonRevocation", func(t *testing.T) {
 		revServer, storage, client, _ := revocationSetup(t, nil, dbType)
 		defer revServer.Stop()
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		request := revocationRequest(revocationTestAttr)
 		request.Disclose[0][0] = append(request.Disclose[0][0], irma.NewAttributeRequest("irma-demo.RU.studentCard.studentID"))
-		result := revocationSession(t, client, request, nil)
+		result := revocationSession(t, storage, client, request, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 
 		request = revocationRequest(revocationTestAttr)
 		request.Disclose = append(request.Disclose, irma.AttributeDisCon{{irma.NewAttributeRequest("irma-demo.RU.studentCard.studentID")}})
-		result = revocationSession(t, client, request, nil)
+		result = revocationSession(t, storage, client, request, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
@@ -179,12 +179,12 @@ func testRevocationAll(t *testing.T, dbType string) {
 		defer irmaServer.Stop()
 
 		revServer, storage, client, _ := revocationSetup(t, nil, dbType)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 		defer revServer.Stop()
 
 		request := revocationSigRequest()
-		result := revocationSession(t, client, request, irmaServer)
+		result := revocationSession(t, storage, client, request, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 		require.NotNil(t, result.Signature)
@@ -200,8 +200,8 @@ func testRevocationAll(t *testing.T, dbType string) {
 
 	t.Run("VerifyAttributeBasedSignature", func(t *testing.T) {
 		storage, client, _ := parseStorage(t)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		j := `{"@context":"https://irma.app/ld/signature/v2","signature":[{"c":"It0yT9OjFotXN0tUMZKaEo43WOugqv6GVlG0/WP03jE=","A":"WkB+1nj1vT5kdq7Q9hjoNlndvGtKoaLB/Ugs0rvjqMYBhCgXq19h/5ThesxLysVH15yPbVh+rlaZRYWfqKRvXs1z4aBhcHi+1hBB1JXENAnBpdfEQvZtzfz5I1fOIqEFkY+5kU6t7wkGj4QM7OhjHsquihoCnTT/vp6VIpYZnfI=","e_response":"wL+gwLa/myLy8HdilGKor4/Kfake1PvY0ZYfZyY4LZiO41hLC17MD6vYSTrsblkzuWO6ai3WsCIW","v_response":"DI3bQp04GNAIF7ylUqElTTwh4aLuytQOzFYVSGwtzlX8YGxsUZzOaLo0iCc2MKtqCiYBJp1LsQNW9f1lKub31ML2Xu53wYw99tGuqngl1wJaqHI6rQCSLlxTgyXzj0CJ6SXNkWEIBFpPcauMLnRG4eD20WtQ8oyFHQjfRrm0hZKMNlqb8CQOdDZNL8POnUHlap9FhFrM7IVCjUuOf8XHtgXo5PaFh7Gzj1dkyZKdofvM51hVvLi4T+qf4b9F5XZV4b1fVmmU70Sm/BA3eaonXv67vk5XBb8XW7cbLGtUqtg8tO/T5Cpdnw/fGGn0g61CJ11RmuEqbFa0uwp/rhIs","a_responses":{"0":"dBDhQmFfrCLFwIUL92UudSsk4TdtCj/bfpl6wBNjV4fD1upB8ViXSn8mQMMCm7SoOM8/9qf/aWw0vzuv4JAWe03N6gqdMTlNbtI=","3":"ZqbH95Dc56+9LzG9AJi7jZX1rEzv5AKtbrom+DVuF6k59dAahz77huVos/SYSSSGsQl6yh8oUinaGhyel9hgPYZXOREA8OfG"},"a_disclosed":{"1":"AwAKOQAaAAIIuOcAMwFiUVy4Y5PtnTFG","2":"ZHJybnJkaGpx"},"nonrev_proof":{"C_r":"bi6ByaP46KtZaJEril4vMky1sbQr3/tBIo/yra1KTNV7vWIPc7IEusYLaTWRIfgdASYFgZg7MWgPPqcvzzrx8M0tjUEEayQeeWKwuKm0pL3lHOaZY+IuCzQXdh2lEZxGPlTM0gFlWE7JOywvt4rC6b8CThVgropZBgc8PJBPjWs=","C_u":"udtOV/dALqU2ab5GRzy7Ps6F10g6XyU7aj0ij4D7G55UQu/9Dxy562VLcmJQWGVhW63EuyHYKpEWEcQsi81UJV+eYXI7obiKJ0UJE8L5dLiEjR5+Nbwm+RsyJ+75daOpkerf/gpyECroiTsYtIl6u5Yz5uP9DgfyzKqjpSYzSY4=","responses":{"alpha":"ZqbH95Dc56+9LzG9AJi7jZX1rEzv5AKtbrom+DVuF6k59dAahz77huVos/SYSSSGsQl6yh8oUinaGhyel9hgPYZXOREA8OfG","beta":"68eyUujDJDUv8P3ooM2yMLuHqTcAJERyVW7bQGF4MCfKRF7iIQz1bNr4bXWWw9QPBcKbryQjAQpUzPfIsWd0c9sjXvE6AdRj9KHWTo6WPbGB59vemK2hHf/WI88mysy+/zskEj1TZVJSBjqaGXcRLvV5HsAvgI3IlYAfdB2F+EE6ZSLuH3nkYVhFOlw15lI0mU3FnKwaeT9Tm+SbW2Zzy1VoFdaK+wkxACmYD/6hFhFH5rP7SvRMZ2aqjDa1I0I8GUxTnv7HZdo=","delta":"AQgE6fY7pFpC8iRrI9PhmfBNf0dQAYWNf5Jlm3Q7QhAm4BA9v7EzM0c8nUCcLTA39yWKw3ZOaLnXnRNmdRzRDPauWi9brvHmgaMVdABhoE3d6r84tLg1GHgnPPWh30W6C5PZAsPy+65CUQzcdZZo138agebi2OiYGv5t07E7KaGwHR/SuQAOQl0oDZ3p74Uc/tY7/Ocz5DHHoG7hYEmoa7jaNBFarlDItLs4OoLvMpOijQNelu2f3qn8MVEfwb/B5ucpWWDzwUka","epsilon":"dJ/RNAi6XLKUupglYfbnYEXGBcblVLwjcGhh/TTGFIdnBrENirg+33XAq8+Hl1DPYEA6PAj7ictCO9rq9Zf8HIohTcqwOx0aV7m9nXZgilQuu+v3WrVhuk06HnVPNHAP7C7VdoWkg6J6J4EXpJj1bb/uZx/gWmWhneUIalfZP44K8YrzGnJ6eSfu3xjk0XYbAlQDrIRC2cZ+pq/LpPKNDZtSBSyTJOlPTIvkD2zljA==","zeta":"K7zPNUe2rNH2mFhGUA0o5JH/cbb88/URksO0Bq2ASUiqIs3t4UaNqcEDizbkoC+l2OJ2LzvObr5z3qcI/qhXAmiLWg/ifExRLHF9jGIjwQbjptftjlF3hGmhhDsHAsP8WGfACFNfvwSdsMPgCGIAZQDSWhgXyoIJzafS9xZx82/LwwNYX8E27FeKZzlh62/ZTC/3sU/mLcsL1TIk4ysmXGMLLDJUCbXN4EIWE14vsnA="},"sacc":{"data":"omNNc2dYxaRiTnVYgCmYtZDXoWoh9Do70RmLdeiIAWimmG4pJAMK/3kHKqJy+U8ePnzh/5qKo8JTj++RUOkPN2vBwqRMRrNsn4rd4Aa0xHmx17/d2YnjhEWwk2M4kPvIoNoM3202fLQRpwPh2vofp7JwYEaz+/DkmK3Gz8f/kv5fLqP/Q5X5Be2jZFiKZUluZGV4AGRUaW1lGl5X3AtpRXZlbnRIYXNoWCISIMiMqOJlUpd1DIx4UEkjTRF0he/yjjM3TQ6I8x7ShWF7Y1NpZ1hHMEUCIAqH0UaPkqeEp6dmEk1sdf/SOVYUjJvU2Hb05LlBJ5mrAiEA0jDFc5fQhOl8rgcJdSlDCY169UksNQQKgtPKNoWhX0k=","pk":2}}}],"indices":[[{"cred":0,"attr":2}]],"nonce":"OkdD8pg642lA3m7uCjW7Xw==","context":"AQ==","message":"message","timestamp":{"Time":1582816270,"ServerUrl":"https://irma.sidn.nl/atumd/","Sig":{"Alg":"ed25519","Data":"8E/Nj/acMLe8Xbn5IKWAoivS9xVRf7oPr0HmxmhGQ8TqurjIWyEuMdSTRZNORKjDATLjDrTHA6bL5UK2roxCCQ==","PublicKey":"MKdXxJxEWPRIwNP7SuvP0J/M/NV51VZvqCyO+7eDwJ8="}}}`
 
@@ -255,13 +255,13 @@ func testRevocationAll(t *testing.T, dbType string) {
 	t.Run("NoKnownAccumulator", func(t *testing.T) {
 		revServer, storage, client, _ := revocationSetup(t, nil, dbType)
 		defer revServer.Stop()
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		// stop revocation server so the verifier cannot fetch revocation state
 		revServer.Stop()
 
-		result := revocationSession(t, client, nil, nil, optionIgnoreError)
+		result := revocationSession(t, storage, client, nil, nil, optionIgnoreError)
 		require.Equal(t, irma.ServerStatusCancelled, result.Status)
 		require.NotNil(t, result.Err)
 		require.Equal(t, result.Err.ErrorName, string(server.ErrorRevocation.Type))
@@ -270,8 +270,8 @@ func testRevocationAll(t *testing.T, dbType string) {
 	t.Run("OtherAccumulator", func(t *testing.T) {
 		revServer, storage, client, _ := revocationSetup(t, nil, dbType)
 		defer revServer.Stop()
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		// Prepare key material
 		conf := revServer.conf.IrmaConfiguration.Revocation
@@ -353,8 +353,8 @@ func testRevocationAll(t *testing.T, dbType string) {
 	t.Run("ClientSessionServerUpdate", func(t *testing.T) {
 		revServer, storage, client, _ := revocationSetup(t, nil, dbType)
 		defer revServer.Stop()
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		conf := revServer.conf.IrmaConfiguration.Revocation
 		sacc, err := conf.Accumulator(revocationTestCred, revocationPkCounter)
@@ -364,7 +364,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 		// to contact the RA to update its witness, concurrently fetching a number of event intervals
 		fakeMultipleRevocations(t, 116, conf, sacc.Accumulator)
 
-		result := revocationSession(t, client, nil, nil)
+		result := revocationSession(t, storage, client, nil, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
@@ -406,8 +406,8 @@ func testRevocationAll(t *testing.T, dbType string) {
 
 	t.Run("ClientAutoServerUpdate", func(t *testing.T) {
 		revServer, storage, client, _ := revocationSetup(t, nil, dbType) // revocation server is stopped manually below
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		// Advance the accumulator by performing 3 revocations
 		conf := revServer.conf.IrmaConfiguration.Revocation
@@ -445,7 +445,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 		// The client has only been updated until revocation event with index 3, and because the revocation server has
 		// been stopped the client cannot update by itself anymore. The IRMA server should exactly provide enough revocation
 		// events from its cache to fulfill the client's update needs. Therefore, the session should succeed.
-		result := revocationSession(t, client, nil, irmaServer)
+		result := revocationSession(t, storage, client, nil, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
@@ -453,8 +453,8 @@ func testRevocationAll(t *testing.T, dbType string) {
 	t.Run("LaggingNonRevocationWitness", func(t *testing.T) {
 		revServer, storage, client, _ := revocationSetup(t, nil, dbType)
 		defer revServer.Stop()
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		// Advance the accumulator by performing a few revocations
 		revServerStorage := revServer.conf.IrmaConfiguration.Revocation
@@ -497,7 +497,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 		// Do a revocation session.
 		// The client has not updated at all, so it should use the revocation events from the IRMA server's cache to update,
 		// and it should contact the revocation server to fetch the 4 events that the cache is missing.
-		result := revocationSession(t, client, nil, irmaServer)
+		result := revocationSession(t, storage, client, nil, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
@@ -508,15 +508,15 @@ func testRevocationAll(t *testing.T, dbType string) {
 
 		// issue a credential, populating irmaServer's revocation memdb
 		revServer, storage, client, _ := revocationSetup(t, irmaServer, dbType)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 		defer revServer.Stop()
 
 		// disable serving revocation updates in revocation server
 		require.NoError(t, revServer.conf.IrmaConfiguration.Revocation.Close())
 
 		// do disclosure session, using irmaServer's memdb
-		result := revocationSession(t, client, nil, irmaServer)
+		result := revocationSession(t, storage, client, nil, irmaServer)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 	})
@@ -630,12 +630,12 @@ func testRevocationAll(t *testing.T, dbType string) {
 
 	t.Run("RevocationTolerance", func(t *testing.T) {
 		revServer, storage, client, _ := revocationSetup(t, nil, dbType)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 		defer revServer.Stop()
 		start := time.Now()
 
-		result := revocationSession(t, client, nil, nil)
+		result := revocationSession(t, storage, client, nil, nil)
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
 		require.NotEmpty(t, result.Disclosed[0])
@@ -645,7 +645,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 
 		request := revocationRequest(revocationTestAttr)
 		request.Revocation[revocationTestCred].Tolerance = 1
-		result = revocationSession(t, client, request, nil, optionClientWait)
+		result = revocationSession(t, storage, client, request, nil, optionClientWait)
 
 		require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
 		require.NotEmpty(t, result.Disclosed)
@@ -701,8 +701,8 @@ func testRevocationAll(t *testing.T, dbType string) {
 
 	t.Run("NonRevocationAwareCredential", func(t *testing.T) {
 		storage, client, _ := parseStorage(t)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		// Start irma server and hackily temporarily disable revocation for our credtype
 		// by editing its irma.Configuration instance
@@ -732,7 +732,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 
 		// Try disclosure session requiring nonrevocation proof
 		// client notices it has no revocation-aware credential instance and aborts
-		result = revocationSession(t, client, nil, irmaServer, optionUnsatisfiableRequest)
+		result = revocationSession(t, storage, client, nil, irmaServer, optionUnsatisfiableRequest)
 		require.NotEmpty(t, result.Missing)
 	})
 }
@@ -745,10 +745,10 @@ func TestKeyshareRevocation(t *testing.T) {
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 		defer keyshareServer.Stop()
 		storage, client, handler := parseStorage(t)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
-		testRevocation(t, revKeyshareTestAttr, client, handler, revServer.irma)
+		testRevocation(t, revKeyshareTestAttr, storage, client, handler, revServer.irma)
 	})
 
 	t.Run("Both", func(t *testing.T) {
@@ -757,11 +757,11 @@ func TestKeyshareRevocation(t *testing.T) {
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 		defer keyshareServer.Stop()
 		storage, client, handler := parseStorage(t)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
-		testRevocation(t, revKeyshareTestAttr, client, handler, revServer.irma)
-		testRevocation(t, revocationTestAttr, client, handler, revServer.irma)
+		testRevocation(t, revKeyshareTestAttr, storage, client, handler, revServer.irma)
+		testRevocation(t, revocationTestAttr, storage, client, handler, revServer.irma)
 	})
 
 	t.Run("KeyshareMultipleCredentials", func(t *testing.T) {
@@ -770,11 +770,11 @@ func TestKeyshareRevocation(t *testing.T) {
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 		defer keyshareServer.Stop()
 		storage, client, handler := parseStorage(t)
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
-		testRevocation(t, revKeyshareTestAttr, client, handler, revServer.irma)
-		testRevocation(t, revKeyshareSecondTestAttr, client, handler, revServer.irma)
+		testRevocation(t, revKeyshareTestAttr, storage, client, handler, revServer.irma)
+		testRevocation(t, revKeyshareSecondTestAttr, storage, client, handler, revServer.irma)
 	})
 }
 
@@ -820,7 +820,7 @@ func revocationRequest(attr irma.AttributeTypeIdentifier) *irma.DisclosureReques
 	return req
 }
 
-func revocationSession(t *testing.T, client *irmaclient.IrmaClient, request irma.SessionRequest, irmaServer *IrmaServer, options ...option) *requestorSessionResult {
+func revocationSession(t *testing.T, storage *clientstorage.Storage, client *irmaclient.IrmaClient, request irma.SessionRequest, irmaServer *IrmaServer, options ...option) *requestorSessionResult {
 	if request == nil {
 		request = revocationRequest(revocationTestAttr)
 	}

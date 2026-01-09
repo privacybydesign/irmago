@@ -124,17 +124,14 @@ func testMultipleIssuanceSession(t *testing.T, conf interface{}, opts ...option)
 }
 
 func testDefaultCredentialValidity(t *testing.T, conf interface{}, opts ...option) {
-	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
-	defer client.Close()
 	request := getIssuanceRequest(true)
-	doSession(t, request, client, nil, nil, nil, nil, conf, opts...)
+	doSession(t, request, nil, nil, nil, nil, nil, conf, opts...)
 }
 
 func testIssuanceDisclosureEmptyAttributes(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	req := getNameIssuanceRequest()
 	doSession(t, req, client, nil, nil, nil, nil, conf, opts...)
@@ -160,8 +157,6 @@ func testIssuanceOptionalSetAttributes(t *testing.T, conf interface{}, opts ...o
 
 func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, handler := parseStorage(t, opts...)
-	defer storage.Close()
-	defer client.Close()
 
 	prevLen := len(client.CredentialInfoList())
 
@@ -173,12 +168,12 @@ func testIssuanceSameAttributesNotSingleton(t *testing.T, conf interface{}, opts
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 
 	// Also check whether this is actually stored
-	storage.Close()
 	client.Close()
+	storage.Close()
 
 	storage, client, _ = parseExistingStorage(t, handler.Storage)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	require.Equal(t, prevLen+1, len(client.CredentialInfoList()))
 }
@@ -247,8 +242,8 @@ func testPairingRejected(t *testing.T, conf interface{}, opts ...option) {
 
 func testLargeAttribute(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
@@ -262,8 +257,6 @@ func testLargeAttribute(t *testing.T, conf interface{}, opts ...option) {
 
 func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, handler := parseStorage(t, opts...)
-	defer storage.Close()
-	defer client.Close()
 
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton")
 	request := getIssuanceRequest(false)
@@ -286,22 +279,18 @@ func testIssuanceSingletonCredential(t *testing.T, conf interface{}, opts ...opt
 	require.Nil(t, client.Attributes(credid, 1))
 
 	// Also check whether this is actually stored
-	storage.Close()
 	client.Close()
+	storage.Close()
 
 	storage, client, _ = parseExistingStorage(t, handler.Storage)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	require.NotNil(t, client.Attributes(credid, 0))
 	require.Nil(t, client.Attributes(credid, 1))
 }
 
 func testUnsatisfiableDisclosureSession(t *testing.T, conf interface{}, opts ...option) {
-	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
-	defer client.Close()
-
 	request := irma.NewDisclosureRequest()
 	request.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -326,9 +315,8 @@ func testUnsatisfiableDisclosureSession(t *testing.T, conf interface{}, opts ...
 	require.NoError(t, json.Unmarshal([]byte(`[[[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"irma-demo.MijnOverheid.root.BSN","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"test.test.mijnirma.email","CredentialHash":"dc8d5f252ae0e87db6136ba74598682158bfe8d0d2e2fc4ee61dbf24aa2746d4","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.firstname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false},{"Type":"irma-demo.MijnOverheid.fullName.familyname","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]],[[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"5ac19c13941eb3b3687511a526adc1fdfa7a8c1bc976634e202671c2ba38c9fa","Expired":false,"Revoked":false,"NotRevokable":false}],[{"Type":"irma-demo.RU.studentCard.level","CredentialHash":"","Expired":false,"Revoked":false,"NotRevokable":false}]]]`), &missing))
 	require.True(t, reflect.DeepEqual(
 		missing,
-		doSession(t, request, client, nil, nil, nil, nil, nil, append(opts, optionUnsatisfiableRequest)...).Missing),
+		doSession(t, request, nil, nil, nil, nil, nil, nil, append(opts, optionUnsatisfiableRequest)...).Missing),
 	)
-
 }
 
 /*
@@ -341,8 +329,8 @@ that they have been fixed.
 */
 func testAttributeByteEncoding(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	require.NoError(t, client.RemoveStorage())
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 
@@ -369,8 +357,8 @@ func testOutdatedClientIrmaConfiguration(t *testing.T, conf interface{}, opts ..
 	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
 
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	// Remove old studentCard credential from before support for optional attributes, and issue a new one
 	require.NoError(t, client.RemoveStorage())
@@ -389,8 +377,8 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 	irmaServerConf := updatedSchemeConfigDecorator(conf.(func() *server.Configuration))
 
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -428,8 +416,8 @@ func testDisclosureNewAttributeUpdateSchemeManager(t *testing.T, conf interface{
 
 func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
 	defer rs.Stop()
 
@@ -466,17 +454,15 @@ func testStaticQRSession(t *testing.T, _ interface{}, opts ...option) {
 
 func testIssuedCredentialIsStored(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, handler := parseStorage(t, opts...)
-	defer storage.Close()
-	defer client.Close()
 
 	issuanceRequest := getNameIssuanceRequest()
 	doSession(t, issuanceRequest, client, nil, nil, nil, nil, conf, opts...)
-	storage.Close()
 	client.Close()
+	storage.Close()
 
 	storage, client, _ = parseExistingStorage(t, handler.Storage)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	id := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.fullName.familyname")
 	doSession(t, getDisclosureRequest(id), client, nil, nil, nil, nil, conf, opts...)
@@ -488,8 +474,8 @@ func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
 
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
@@ -523,7 +509,6 @@ func testBlindIssuanceSession(t *testing.T, conf interface{}, opts ...option) {
 	require.Equal(t, 3, len(attrList.Ints), "number of attributes in credential should be 3")
 	require.NotNil(t, attrList.Ints[2], "randomblind attribute should not be nil")
 	require.NotEqual(t, 0, attrList.Ints[2].Cmp(big.NewInt(0)), "random blind attribute should not equal zero")
-	client.Close()
 }
 
 // Tests whether the client correctly detects a mismatch in the randomblind attributes between client and server.
@@ -539,8 +524,8 @@ func testBlindIssuanceSessionDifferentAmountOfRandomBlinds(t *testing.T, conf in
 	attrID2 := irma.NewAttributeTypeIdentifier("irma-demo.stemmen.stempas.votingnumber")
 
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	require.Truef(t, client.Configuration.ContainsCredentialType(credID), "CredentialType %s not found", credID)
 	require.Truef(t, client.Configuration.ContainsAttributeType(attrID1), "AttributeType %s not found", attrID1)
@@ -619,8 +604,8 @@ func updatedSchemeConfigDecorator(fn func() *server.Configuration) func() *serve
 
 func testSigningSession(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	id := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
 	var serverResult *requestorSessionResult
@@ -744,8 +729,8 @@ func doIssuanceSession(t *testing.T, keyshare bool, client *irmaclient.IrmaClien
 
 func testConDisCon(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	ir := getMultipleIssuanceRequest()
 	ir.Credentials = append(ir.Credentials, &irma.CredentialRequest{
 		Validity:         ir.Credentials[0].Validity,
@@ -779,8 +764,8 @@ func testConDisCon(t *testing.T, conf interface{}, opts ...option) {
 
 func testOptionalDisclosure(t *testing.T, conf interface{}, opts ...option) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	university := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university")
 	studentid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
 
@@ -838,8 +823,8 @@ func testOptionalDisclosure(t *testing.T, conf interface{}, opts ...option) {
 
 func TestIssueNewAttributeUpdateSchemeManager(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -897,8 +882,8 @@ func TestIrmaServerPrivateKeysFolder(t *testing.T) {
 
 func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
@@ -940,8 +925,8 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 
 func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 
@@ -958,8 +943,8 @@ func TestIssueNewCredTypeUpdateSchemeManager(t *testing.T) {
 
 func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	schemeid := irma.NewSchemeManagerIdentifier("irma-demo")
 	credid := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	attrid := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level")
@@ -976,8 +961,8 @@ func TestDisclosureNewCredTypeUpdateSchemeManager(t *testing.T) {
 
 func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	request := irma.NewDisclosureRequest(
 		irma.NewAttributeTypeIdentifier("irma-demo.baz.qux.abc"),        // non-existing issuer
 		irma.NewAttributeTypeIdentifier("irma-demo.RU.foo.bar"),         // non-existing credential
@@ -1057,8 +1042,8 @@ func TestStatusEventsSSE(t *testing.T) {
 
 	// Make a client, and let it perform the session
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	h := &testhelpers.TestHandler{
 		T:                  t,
 		C:                  make(chan *testhelpers.SessionResult),
@@ -1184,8 +1169,8 @@ func TestClientDeveloperMode(t *testing.T) {
 	common.ForceHTTPS = true
 	defer func() { common.ForceHTTPS = false }()
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
@@ -1221,8 +1206,8 @@ func TestClientDeveloperMode(t *testing.T) {
 
 func TestParallelSessions(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
@@ -1236,8 +1221,7 @@ func TestParallelSessions(t *testing.T) {
 	go func() {
 		result := doSession(t,
 			getDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")),
-			client,
-			irmaServer,
+			client, irmaServer,
 			nil, nil, nil, nil,
 			optionUnsatisfiableRequest, optionWait,
 		)
@@ -1269,8 +1253,8 @@ func TestParallelSessions(t *testing.T) {
 
 func TestParallelSessionsWithPairing(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
@@ -1304,8 +1288,8 @@ func expireKey(t *testing.T, conf *irma.Configuration) {
 
 func TestIssueExpiredKey(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
 
@@ -1333,8 +1317,8 @@ func TestExpiredCredential(t *testing.T) {
 	}()
 
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
@@ -1368,8 +1352,8 @@ func TestExpiredCredential(t *testing.T) {
 
 func TestRequestorHostPermissions(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 	rs := StartRequestorServer(t, RequestorServerAuthConfiguration())
 	defer rs.Stop()
 

@@ -196,6 +196,7 @@ func (client *IrmaClient) SetOnSessionDoneCallback(callback func()) {
 func (client *IrmaClient) Close() {
 	client.PauseJobs()
 	client.Configuration.Scheduler.Stop()
+	// TODO: wait for jobs to finish and then close storage
 }
 
 func (client *IrmaClient) loadCredentialStorage() (err error) {

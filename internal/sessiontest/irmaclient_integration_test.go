@@ -65,8 +65,8 @@ func TestClientIntegration(t *testing.T) {
 		storageFolder := test.CreateTestStorage(t)
 		storage, client, _ := parseExistingStorage(t, storageFolder)
 
-		defer storage.Close()
 		defer client.Close()
+		defer storage.Close()
 
 		// Fresh irmaclient storage was used, so we need to do some initialization.
 		client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")

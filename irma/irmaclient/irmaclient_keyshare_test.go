@@ -22,8 +22,8 @@ func TestKeyshareChangePin(t *testing.T) {
 	defer ks2.Stop()
 
 	storage, client, handler := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	client.KeyshareEnroll(test2SchemeID, nil, "12345", "en")
 	require.NoError(t, <-handler.c)
@@ -56,8 +56,8 @@ func TestKeyshareChangePinFailed(t *testing.T) {
 	defer ks2.Stop()
 
 	storage, client, handler := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test2"), nil, "12345", "en")
 	require.NoError(t, <-handler.c)
@@ -80,8 +80,8 @@ func TestKeyshareChallengeResponseUpgrade(t *testing.T) {
 	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer ks.Stop()
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
 
@@ -111,8 +111,8 @@ func TestKeyshareAuthentication(t *testing.T) {
 	ks := testkeyshare.StartKeyshareServer(t, irma.Logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer ks.Stop()
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	kss := client.keyshareServers[irma.NewSchemeManagerIdentifier("test")]
 

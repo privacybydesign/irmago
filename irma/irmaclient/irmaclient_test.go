@@ -168,8 +168,8 @@ func verifyKeyshareIsUnmarshaled(t *testing.T, client *IrmaClient) {
 
 func TestStorageDeserialization(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	verifyClientIsUnmarshaled(t, client)
 	verifyCredentials(t, client)
@@ -181,8 +181,8 @@ func TestStorageDeserialization(t *testing.T) {
 // satisfy the attribute disjunction.
 func TestCandidates(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	// client contains one instance of the studentCard credential, whose studentID attribute is 456.
 	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
@@ -280,8 +280,8 @@ func TestCandidates(t *testing.T) {
 
 func TestCandidateConjunctionOrder(t *testing.T) {
 	storage, client, _ := parseStorage(t)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	j := `[
 	  [
@@ -314,8 +314,6 @@ func TestCandidateConjunctionOrder(t *testing.T) {
 
 func TestCredentialRemoval(t *testing.T) {
 	storage, client, handler := parseStorage(t)
-	defer storage.Close()
-	defer client.Close()
 
 	id := irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard")
 	id2 := irma.NewCredentialTypeIdentifier("test.test.mijnirma")
@@ -339,10 +337,14 @@ func TestCredentialRemoval(t *testing.T) {
 	require.Nil(t, cred)
 
 	// Also check whether credential is removed after reloading the storage
-	err = client.storage.dbStorage.Close()
+	client.Close()
+	err = storage.Close()
 	require.NoError(t, err)
-	_, client, _ = parseExistingStorage(t, handler.storage)
-	defer client.storage.dbStorage.Close()
+
+	storage, client, _ = parseExistingStorage(t, handler.storage)
+	defer storage.Close()
+	defer client.Close()
+
 	cred, err = client.credential(id2, 0)
 	require.NoError(t, err)
 	require.Nil(t, cred)
@@ -451,19 +453,21 @@ func TestFreshStorage(t *testing.T) {
 
 func TestKeyshareEnrollmentRemoval(t *testing.T) {
 	storage, client, handler := parseStorage(t)
-	defer storage.Close()
-	defer client.Close()
 
 	err := client.KeyshareRemove(irma.NewSchemeManagerIdentifier("test"))
 	require.NoError(t, err)
 
-	err = client.storage.dbStorage.Close()
-	require.NoError(t, err)
-	_, client, _ = parseExistingStorage(t, handler.storage)
-	err = client.storage.dbStorage.Close()
+	client.Close()
+	err = storage.Close()
 	require.NoError(t, err)
 
+	storage, client, _ = parseExistingStorage(t, handler.storage)
+
 	require.NotContains(t, client.keyshareServers, "test")
+
+	client.Close()
+	err = storage.Close()
+	require.NoError(t, err)
 }
 
 func TestUpdatingStorage(t *testing.T) {

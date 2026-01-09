@@ -282,9 +282,10 @@ func doSession(
 	options ...option,
 ) *requestorSessionResult {
 	if client == nil {
-		storage, client, _ := parseStorage(t, options...)
+		storage, c, _ := parseStorage(t, options...)
+		client = c
+		defer c.Close()
 		defer storage.Close()
-		defer client.Close()
 	}
 
 	opts := processOptions(options...)
@@ -346,8 +347,8 @@ func doChainedSessions(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
 
@@ -381,8 +382,8 @@ func doUnauthorizedChainedSession(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
 
@@ -419,8 +420,8 @@ func doNonRequestorChainedSessions(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
 	storage, client, _ := parseStorage(t, opts...)
-	defer storage.Close()
 	defer client.Close()
+	defer storage.Close()
 
 	require.IsType(t, IrmaServerConfiguration, conf)
 	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())
