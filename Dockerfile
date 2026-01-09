@@ -6,7 +6,7 @@ ENV CGO_ENABLED=0
 # Build irma CLI tool
 COPY . /irmago
 WORKDIR /irmago
-RUN go build -a -ldflags '-extldflags "-static"' -o "/bin/irma" ./cmd/main.go
+RUN go build -a -ldflags '-extldflags "-static"' -o "/bin/irma" ./irma
 
 # Create application user
 RUN adduser -D -u 1000 -g irma irma
