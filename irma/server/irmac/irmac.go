@@ -13,9 +13,9 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 
+	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/irmaserver"
 )
