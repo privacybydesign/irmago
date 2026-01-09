@@ -8,7 +8,8 @@ import (
 )
 
 func TestLogging(t *testing.T) {
-	client, handler := parseStorage(t)
+	storage, client, handler := parseStorage(t)
+	defer storage.Close()
 	defer client.Close()
 
 	logs, err := client.LoadNewestLogs(100)
@@ -26,8 +27,10 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+1)
 
 	// Check whether newly issued credential is actually stored
+	storage.Close()
 	client.Close()
-	client, handler = parseExistingStorage(t, handler.Storage)
+
+	storage, client, handler = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
@@ -50,8 +53,10 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+2)
 
 	// Check whether log entry for disclosing session is actually stored
+	storage.Close()
 	client.Close()
-	client, handler = parseExistingStorage(t, handler.Storage)
+
+	storage, client, handler = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+2)
@@ -82,8 +87,10 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+3)
 
 	// Check whether log entry for signature session is actually stored
+	storage.Close()
 	client.Close()
-	client, _ = parseExistingStorage(t, handler.Storage)
+
+	storage, client, handler = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)

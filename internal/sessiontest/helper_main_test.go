@@ -34,12 +34,12 @@ func TestMain(m *testing.M) {
 	os.Exit(retval)
 }
 
-func parseStorage(t *testing.T, opts ...option) (*irmaclient.IrmaClient, *testhelpers.TestClientHandler) {
+func parseStorage(t *testing.T, opts ...option) (*clientstorage.Storage, *irmaclient.IrmaClient, *testhelpers.TestClientHandler) {
 	storage := test.SetupTestStorage(t)
 	return parseExistingStorage(t, storage, opts...)
 }
 
-func parseExistingStorage(t *testing.T, storageFolder string, options ...option) (*irmaclient.IrmaClient, *testhelpers.TestClientHandler) {
+func parseExistingStorage(t *testing.T, storageFolder string, options ...option) (*clientstorage.Storage, *irmaclient.IrmaClient, *testhelpers.TestClientHandler) {
 	handler := &testhelpers.TestClientHandler{T: t, C: make(chan error), Storage: storageFolder}
 	path := test.FindTestdataFolder(t)
 
@@ -119,7 +119,7 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 	}
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
-	return client, handler
+	return storage, client, handler
 }
 
 func getDisclosureRequest(id irma.AttributeTypeIdentifier) *irma.DisclosureRequest {

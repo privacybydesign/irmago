@@ -37,7 +37,8 @@ func TestIssuanceKeyshareSession(t *testing.T) {
 func TestKeyshareRegister(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
-	client, handler := parseStorage(t)
+	storage, client, handler := parseStorage(t)
+	defer storage.Close()
 	defer client.Close()
 
 	require.NoError(t, client.KeyshareRemoveAll())
@@ -60,7 +61,8 @@ func TestKeyshareAttributeRenewal(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client, _ := parseStorage(t)
+	storage, client, _ := parseStorage(t)
+	defer storage.Close()
 	defer client.Close()
 
 	irmaServer := StartIrmaServer(t, nil)
@@ -102,7 +104,8 @@ func TestKeyshareAttributeRenewal(t *testing.T) {
 func TestKeyshareSessions(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
-	client, _ := parseStorage(t)
+	storage, client, _ := parseStorage(t)
+	defer storage.Close()
 	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
@@ -161,7 +164,8 @@ func TestMultipleKeyshareServers(t *testing.T) {
 	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"), 0)
 	defer keyshareServerTest2.Stop()
 
-	client, handler := parseStorage(t, optionNoSchemeAssets)
+	storage, client, handler := parseStorage(t, optionNoSchemeAssets)
+	defer storage.Close()
 	defer client.Close()
 
 	logs, err := client.LoadNewestLogs(20)
@@ -204,7 +208,8 @@ func TestKeyshareEnrollIncorrectPin(t *testing.T) {
 	keyshareServerTest2 := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test2"), 0)
 	defer keyshareServerTest2.Stop()
 
-	client, handler := parseStorage(t)
+	storage, client, handler := parseStorage(t)
+	defer storage.Close()
 	defer client.Close()
 
 	test2SchemeID := irma.NewSchemeManagerIdentifier("test2")
@@ -243,7 +248,8 @@ func TestKeyshareChainedSessions(t *testing.T) {
 func TestNewKeyshareJWTKey(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 1)
 	defer keyshareServer.Stop()
-	client, _ := parseStorage(t)
+	storage, client, _ := parseStorage(t)
+	defer storage.Close()
 	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()
@@ -285,7 +291,8 @@ func TestKeyshareServerRestart(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 
-	client, _ := parseStorage(t)
+	storage, client, _ := parseStorage(t)
+	defer storage.Close()
 	defer client.Close()
 	irmaServer := StartIrmaServer(t, nil)
 	defer irmaServer.Stop()

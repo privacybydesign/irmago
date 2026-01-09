@@ -237,7 +237,8 @@ func TestRedisSessionFailure(t *testing.T) {
 
 	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)())
 	defer irmaServer.Stop()
-	client, _ := parseStorage(t)
+	storage, client, _ := parseStorage(t)
+	defer storage.Close()
 	defer client.Close()
 
 	qr, _, _, err := irmaServer.irma.StartSession(request, nil, "")

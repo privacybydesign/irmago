@@ -282,7 +282,8 @@ func doSession(
 	options ...option,
 ) *requestorSessionResult {
 	if client == nil {
-		client, _ = parseStorage(t, options...)
+		storage, client, _ := parseStorage(t, options...)
+		defer storage.Close()
 		defer client.Close()
 	}
 
@@ -344,7 +345,8 @@ func doSession(
 func doChainedSessions(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, _ := parseStorage(t, opts...)
+	storage, client, _ := parseStorage(t, opts...)
+	defer storage.Close()
 	defer client.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
@@ -378,7 +380,8 @@ func doChainedSessions(
 func doUnauthorizedChainedSession(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, _ := parseStorage(t, opts...)
+	storage, client, _ := parseStorage(t, opts...)
+	defer storage.Close()
 	defer client.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
@@ -415,7 +418,8 @@ func doUnauthorizedChainedSession(
 func doNonRequestorChainedSessions(
 	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, _ := parseStorage(t, opts...)
+	storage, client, _ := parseStorage(t, opts...)
+	defer storage.Close()
 	defer client.Close()
 
 	require.IsType(t, IrmaServerConfiguration, conf)
