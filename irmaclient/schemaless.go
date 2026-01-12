@@ -28,7 +28,7 @@ type Issuer struct {
 	// Absolute path to the image for this issuer stored on disk
 	ImagePath string
 	// The trust chain for this issuer (if any)
-	TrustChain *CertificateAuthority
+	CertificateAuthority *CertificateAuthority
 }
 
 type AttributeType string
@@ -90,6 +90,14 @@ type Credential struct {
 	BatchInstanceCountsRemaining map[CredentialFormat]*int
 	// All the attributes and their values in this credential
 	Attributes []Attribute
+	// The data and time at which this credential was issued
+	IssuanceDate irma.Timestamp
+	// The date and time when this credential expires
+	ExpiryDate irma.Timestamp
+	// Whether or not this credential has been revoked
+	Revoked bool
+	// Whether or not revocation is supported for this credential
+	RevocationSupported bool
 }
 
 func (client *Client) GetCredentials() ([]Credential, error) {
@@ -135,7 +143,7 @@ func (client *Client) GetCredentials() ([]Credential, error) {
 				// TODO: figure out where the issuer logo's come from
 				ImagePath: "",
 				// TODO: figure out what it means to be on the Yivi trust chain
-				TrustChain: nil,
+				CertificateAuthority: nil,
 			},
 			CredentialInstanceIds: map[CredentialFormat]string{
 				// cred.CredentialFormat: cred.Hash,
