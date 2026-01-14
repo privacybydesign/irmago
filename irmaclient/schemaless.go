@@ -48,7 +48,7 @@ type AttributeValue struct {
 	// See the table for `Value` to see what each `AttributeType` means
 	Type AttributeType
 	// | --------------------------------|-------------------------|
-	// | Attribute type                  | Value type              |
+	// | Attribute type                  | Data type              |
 	// | --------------------------------|-------------------------|
 	// | AttributeType_Object            | Attribute               |
 	// | AttributeType_Array             | []AttributeValue        |
@@ -58,7 +58,7 @@ type AttributeValue struct {
 	// | AttributeType_Int               | int                     |
 	// | AttributeType_Image             | absolute path (string)  |
 	// | --------------------------------|-------------------------|
-	Value any
+	Data any
 }
 
 type Attribute struct {
@@ -87,7 +87,7 @@ type Credential struct {
 	// The IDs for all instances of this credential in all different formats it's available in.
 	CredentialInstanceIds map[CredentialFormat]string
 	// The number of credential instances left per credential format (in case they were issued in batches)
-	BatchInstanceCountsRemaining map[CredentialFormat]*int
+	BatchInstanceCountsRemaining map[CredentialFormat]*uint
 	// All the attributes and their values in this credential
 	Attributes []Attribute
 	// The data and time at which this credential was issued
@@ -100,59 +100,91 @@ type Credential struct {
 	RevocationSupported bool
 }
 
-func (client *Client) GetCredentials() ([]Credential, error) {
-	result := []Credential{}
+func (client *Client) GetCredentials() ([]*Credential, error) {
+	result := []*Credential{}
 
 	irmaConfig := client.GetIrmaConfiguration()
 	creds := client.CredentialInfoList()
 
+	intermediateResult := map[string]*Credential{}
+
+	// loop over all credentials and immediately combine them when they're the same
+	// attributes + credential ID in different credential formats
 	for _, cred := range creds {
-		id := cred.Identifier()
-		info, ok := irmaConfig.CredentialTypes[id]
-
-		if !ok {
-			return nil, fmt.Errorf("failed to find credential info for %s", id.String())
+		instanceHash, err := hashAttributesAndCredType(cred)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash attributes and cred type: %w", err)
 		}
 
-		issuerId := info.IssuerIdentifier()
-		issuer := irmaConfig.Issuers[issuerId]
-		attributes := []Attribute{}
+		format := CredentialFormat(cred.CredentialFormat)
 
-		for _, at := range info.AttributeTypes {
-			attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
-			attributes = append(attributes, Attribute{
-				Id:          at.ID,
-				DisplayName: at.Name,
-				Description: at.Description,
-				Value: AttributeValue{
-					Type:  AttributeType_String,
-					Value: attrValue,
+		// if there's an existing instance we just add some format specific info
+		// and combine the two formats into a single credential result
+		if existing, ok := intermediateResult[instanceHash]; ok {
+			existing.BatchInstanceCountsRemaining[format] = cred.InstanceCount
+			existing.CredentialInstanceIds[format] = cred.Hash
+			// TODO: potentially add this informatino into format specific fields too
+			existing.Revoked = existing.Revoked || cred.Revoked
+			existing.RevocationSupported = existing.RevocationSupported || cred.RevocationSupported
+		} else
+		// if there's no existing one we create a new one
+		{
+			id := cred.Identifier()
+			info, ok := irmaConfig.CredentialTypes[id]
+
+			if !ok {
+				return nil, fmt.Errorf("failed to find credential info for %s", id.String())
+			}
+
+			issuerId := info.IssuerIdentifier()
+			issuer := irmaConfig.Issuers[issuerId]
+			attributes := []Attribute{}
+
+			for _, at := range info.AttributeTypes {
+				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
+				attributes = append(attributes, Attribute{
+					Id:          at.ID,
+					DisplayName: at.Name,
+					Description: at.Description,
+					Value: AttributeValue{
+						Type: AttributeType_String,
+						Data: attrValue,
+					},
+				})
+			}
+
+			newCred := Credential{
+				CredentialId: cred.Identifier().String(),
+				Hash:         instanceHash,
+				ImagePath:    info.Logo(irmaConfig),
+				Name:         info.Name,
+				Issuer: Issuer{
+					Id:   issuer.ID,
+					Name: issuer.Name,
+					Url:  *info.IssueURL,
+					// TODO: figure out where the issuer logo's come from
+					ImagePath: "",
+					// TODO: figure out what it means to be on the Yivi trust chain
+					CertificateAuthority: nil,
 				},
-			})
+				CredentialInstanceIds: map[CredentialFormat]string{
+					format: cred.Hash,
+				},
+				BatchInstanceCountsRemaining: map[CredentialFormat]*uint{
+					format: cred.InstanceCount,
+				},
+				Attributes:          attributes,
+				IssuanceDate:        cred.SignedOn,
+				ExpiryDate:          cred.Expires,
+				Revoked:             cred.Revoked,
+				RevocationSupported: cred.RevocationSupported,
+			}
+			intermediateResult[instanceHash] = &newCred
 		}
+	}
 
-		newCred := Credential{
-			CredentialId: cred.Identifier().String(),
-			Hash:         cred.Hash,
-			ImagePath:    info.Logo(irmaConfig),
-			Name:         info.Name,
-			Issuer: Issuer{
-				Id:   issuer.ID,
-				Name: issuer.Name,
-				Url:  *info.IssueURL,
-				// TODO: figure out where the issuer logo's come from
-				ImagePath: "",
-				// TODO: figure out what it means to be on the Yivi trust chain
-				CertificateAuthority: nil,
-			},
-			CredentialInstanceIds: map[CredentialFormat]string{
-				// cred.CredentialFormat: cred.Hash,
-			},
-			BatchInstanceCountsRemaining: map[CredentialFormat]*int{},
-			Attributes:                   attributes,
-		}
-
-		result = append(result, newCred)
+	for _, credential := range intermediateResult {
+		result = append(result, credential)
 	}
 
 	return result, nil
