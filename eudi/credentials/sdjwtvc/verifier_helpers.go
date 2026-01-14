@@ -44,7 +44,7 @@ func splitSdJwtVcKb(sdJwtVcKb SdJwtVcKb) (issuerSignedJwt IssuerSignedJwt, encod
 		return
 	}
 
-	// Key-Binding JWT present; get SD-JWT VC slice seperate from the Key-Binding JWT
+	// Key-Binding JWT present; get SD-JWT VC slice separate from the Key-Binding JWT
 	lastTildeChar := strings.LastIndex(string(sdJwtVcKb), "~")
 
 	rawSdJwtVc = SdJwtVc(sdJwtVcKb[:lastTildeChar+1])
