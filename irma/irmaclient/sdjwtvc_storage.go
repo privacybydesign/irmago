@@ -7,7 +7,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	clientstorage "github.com/privacybydesign/irmago/internal/clientstorage"
+	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/irma"
 	"go.etcd.io/bbolt"
 )

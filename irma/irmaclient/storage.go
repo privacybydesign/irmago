@@ -7,7 +7,7 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
-	clientstorage "github.com/privacybydesign/irmago/internal/clientstorage"
+	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/irma"
 
 	"github.com/go-errors/errors"
@@ -22,9 +22,6 @@ type storage struct {
 	dbStorage     *clientstorage.Storage
 	Configuration *irma.Configuration
 }
-
-// Filenames
-const databaseFile = "db2"
 
 // Bucketnames bbolt
 const (

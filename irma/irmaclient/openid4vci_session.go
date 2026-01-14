@@ -330,8 +330,8 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	// Process the response
 	deferredResponse := false
 	if resp.StatusCode == http.StatusAccepted {
-		deferredResponse = true
-		return fmt.Errorf("wallet does not accept deferred credential responses")
+		//deferredResponse = true
+		return fmt.Errorf("wallet does not accept deferred credential responses for now")
 	} else if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		// Parse the error from the WWW-Authenticate header
 		authHeader := resp.Header.Get("WWW-Authenticate")
@@ -409,6 +409,10 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 func (s *openid4vciSession) requestNonce() (string, error) {
 	// TODO: implement use of DPoP nonce
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.NonceEndpoint, bytes.NewBuffer([]byte{}))
+	if err != nil {
+		return "", err
+	}
+
 	resp, err := s.httpClient.Do(req)
 	defer func() {
 		err = resp.Body.Close()

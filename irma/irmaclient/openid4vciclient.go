@@ -201,6 +201,9 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 	credentialIssuerMetadataUrl := constructCredentialIssuerMetadataUrl(*parsedCredentialIssuerUri)
 
 	req, err := http.NewRequest("GET", credentialIssuerMetadataUrl, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for credential issuer metadata: %v", err)
+	}
 
 	irma.Logger.Infof("Fetching Credential Issuer metadata from %s", credentialIssuerMetadataUrl)
 
@@ -212,11 +215,8 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 	response, err := client.httpClient.Do(req)
 
 	// TODO: add caching of metadata response (Cache-Control and Expires headers) ?
-
 	if err != nil {
-		if err != nil {
-			return nil, fmt.Errorf("failed to get credential issuer metadata from: %v", err)
-		}
+		return nil, fmt.Errorf("failed to get credential issuer metadata from: %v", err)
 	}
 
 	if response.StatusCode != http.StatusOK {
