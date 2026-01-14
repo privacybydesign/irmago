@@ -24,7 +24,7 @@ runs:
         curl --create-dirs -L -o ./bin-is/yivi ${{ inputs.irma-server-artifact }}
       shell: bash
 
-    # Backwards compatibile version: download `irma` instead of `yivi`
+    # Backwards compatible version: download `irma` instead of `yivi`
     - name: Download IRMA server artifact (url, backwards compatible)
       if: startsWith(inputs.irma-server-artifact, 'https://') && endsWith(inputs.irma-server-artifact, 'irma-linux-amd64')
       run: |
@@ -43,9 +43,9 @@ runs:
       run: chmod +x ./bin-is/yivi
       shell: bash
 
-    # Backwards compatibile version: download `irma` instead of `yivi`
+    # Backwards compatible version: download `irma` instead of `yivi`
     - name: Set file permissions for bin-is (backwards compatible)
-      if: not( endsWith(inputs.irma-server-artifact, 'yivi-linux-amd64'))
+      if: ${{ !endsWith(inputs.irma-server-artifact, 'yivi-linux-amd64') }}
       run: chmod +x ./bin-is/irma
       shell: bash
 
@@ -55,7 +55,7 @@ runs:
         curl --create-dirs -L -o ./bin-ks/yivi ${{ inputs.keyshare-server-artifact }}
       shell: bash
 
-    # Backwards compatibile version: download `irma` instead of `yivi`
+    # Backwards compatible version: download `irma` instead of `yivi`
     - name: Download keyshare server artifact (url, backwards compatible)
       if: startsWith(inputs.keyshare-server-artifact, 'https://') && endsWith(inputs.keyshare-server-artifact, 'irma-linux-amd64')
       run: |
