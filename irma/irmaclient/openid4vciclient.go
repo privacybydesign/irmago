@@ -198,6 +198,10 @@ func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJ
 
 func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialOffer *openid4vci.CredentialOffer) (*openid4vci.CredentialIssuerMetadata, error) {
 	parsedCredentialIssuerUri, err := url.Parse(credentialOffer.CredentialIssuer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse credential issuer URI: %v", err)
+	}
+
 	credentialIssuerMetadataUrl := constructCredentialIssuerMetadataUrl(*parsedCredentialIssuerUri)
 
 	req, err := http.NewRequest("GET", credentialIssuerMetadataUrl, nil)
