@@ -88,7 +88,7 @@ func TestLogging(t *testing.T) {
 	client.Close()
 	storage.Close()
 
-	storage, client, handler = parseExistingStorage(t, handler.Storage)
+	storage, client, _ = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)

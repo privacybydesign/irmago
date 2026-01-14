@@ -6,7 +6,6 @@ import (
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/big"
-	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/testhelpers"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -24,11 +23,13 @@ func createManualSessionHandler(t *testing.T, client *irmaclient.IrmaClient) *te
 	}
 }
 
-func manualSessionHelper(t *testing.T, storage *clientstorage.Storage, client *irmaclient.IrmaClient, h *testhelpers.ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
+func manualSessionHelper(t *testing.T, client *irmaclient.IrmaClient, h *testhelpers.ManualTestHandler, request, verifyAs irma.SessionRequest, corrupt bool) ([][]*irma.DisclosedAttribute, irma.ProofStatus) {
 	if client == nil {
-		storage, client, _ = parseStorage(t)
-		defer client.Close()
-		defer storage.Close()
+		s, c, _ := parseStorage(t)
+		defer c.Close()
+		defer s.Close()
+
+		client = c
 	}
 
 	bts, err := json.Marshal(request)
@@ -68,10 +69,10 @@ func TestManualSession(t *testing.T) {
 
 	ms := createManualSessionHandler(t, nil)
 
-	attrs, status := manualSessionHelper(t, nil, nil, ms, request, request, false)
+	attrs, status := manualSessionHelper(t, nil, ms, request, request, false)
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.Equal(t, irma.AttributeProofStatusPresent, attrs[0][0].Status)
-	attrs, status = manualSessionHelper(t, nil, nil, ms, request, nil, false)
+	attrs, status = manualSessionHelper(t, nil, ms, request, nil, false)
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.Equal(t, irma.AttributeProofStatusExtra, attrs[0][0].Status)
 }
@@ -83,7 +84,7 @@ func TestManualSessionInvalidNonce(t *testing.T) {
 	invalidRequest.Nonce = big.NewInt(1)
 
 	ms := createManualSessionHandler(t, nil)
-	_, status := manualSessionHelper(t, nil, nil, ms, request, invalidRequest, false)
+	_, status := manualSessionHelper(t, nil, ms, request, invalidRequest, false)
 
 	require.Equal(t, irma.ProofStatusUnmatchedRequest, status)
 }
@@ -93,7 +94,7 @@ func TestManualSessionInvalidRequest(t *testing.T) {
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	invalidRequest := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
 	ms := createManualSessionHandler(t, nil)
-	_, status := manualSessionHelper(t, nil, nil, ms, request, invalidRequest, false)
+	_, status := manualSessionHelper(t, nil, ms, request, invalidRequest, false)
 
 	require.Equal(t, irma.ProofStatusMissingAttributes, status)
 }
@@ -107,7 +108,7 @@ func TestManualSessionInvalidAttributeValue(t *testing.T) {
 	invalidRequest.Disclose[0][0][0].Value = &wrong
 
 	ms := createManualSessionHandler(t, nil)
-	_, status := manualSessionHelper(t, nil, nil, ms, request, invalidRequest, false)
+	_, status := manualSessionHelper(t, nil, ms, request, invalidRequest, false)
 	require.Equal(t, irma.ProofStatusMissingAttributes, status)
 }
 
@@ -126,11 +127,11 @@ func TestManualSessionMultiProof(t *testing.T) {
 
 	ms := createManualSessionHandler(t, client)
 
-	attrs, status := manualSessionHelper(t, storage, client, ms, request, request, false)
+	attrs, status := manualSessionHelper(t, client, ms, request, request, false)
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.Equal(t, irma.AttributeProofStatusPresent, attrs[0][0].Status)
 	require.Equal(t, irma.AttributeProofStatusPresent, attrs[1][0].Status)
-	attrs, status = manualSessionHelper(t, storage, client, ms, request, nil, false)
+	attrs, status = manualSessionHelper(t, client, ms, request, nil, false)
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.Equal(t, irma.AttributeProofStatusExtra, attrs[0][0].Status)
 	require.Equal(t, irma.AttributeProofStatusExtra, attrs[0][1].Status)
@@ -139,7 +140,7 @@ func TestManualSessionMultiProof(t *testing.T) {
 func TestManualSessionInvalidProof(t *testing.T) {
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	ms := createManualSessionHandler(t, nil)
-	_, status := manualSessionHelper(t, nil, nil, ms, request, request, true)
+	_, status := manualSessionHelper(t, nil, ms, request, request, true)
 
 	require.Equal(t, irma.ProofStatusInvalid, status)
 }
@@ -147,7 +148,7 @@ func TestManualSessionInvalidProof(t *testing.T) {
 func TestManualDisclosureSession(t *testing.T) {
 	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	ms := createManualSessionHandler(t, nil)
-	attrs, status := manualSessionHelper(t, nil, nil, ms, request, request, false)
+	attrs, status := manualSessionHelper(t, nil, ms, request, request, false)
 
 	require.Equal(t, irma.AttributeProofStatusPresent, attrs[0][0].Status)
 	require.Equal(t, "456", attrs[0][0].Value["en"])
@@ -159,7 +160,7 @@ func TestManualDisclosureSessionInvalidRequest(t *testing.T) {
 	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 	invalidRequest := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"))
 	ms := createManualSessionHandler(t, nil)
-	_, status := manualSessionHelper(t, nil, nil, ms, request, invalidRequest, false)
+	_, status := manualSessionHelper(t, nil, ms, request, invalidRequest, false)
 
 	require.Equal(t, irma.ProofStatusMissingAttributes, status)
 }

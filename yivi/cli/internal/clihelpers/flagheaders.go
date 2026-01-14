@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// headerFlagsTemplate is copied from cobra.Command.UsageTemplate, modified to include an invocation
+// HeaderFlagsTemplate is copied from cobra.Command.UsageTemplate, modified to include an invocation
 // of insertHeaders on the flags, which intersperses the flags with headers defined in the
 // flagHeaders variable.
 var HeaderFlagsTemplate = `Usage:{{if .Runnable}}

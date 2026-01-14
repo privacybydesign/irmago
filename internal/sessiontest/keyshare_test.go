@@ -22,9 +22,9 @@ func TestManualKeyshareSession(t *testing.T) {
 	request := irma.NewSignatureRequest("I owe you everything", irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"))
 	ms := createManualSessionHandler(t, nil)
 
-	_, status := manualSessionHelper(t, nil, nil, ms, request, request, false)
+	_, status := manualSessionHelper(t, nil, ms, request, request, false)
 	require.Equal(t, irma.ProofStatusValid, status)
-	_, status = manualSessionHelper(t, nil, nil, ms, request, nil, false)
+	_, status = manualSessionHelper(t, nil, ms, request, nil, false)
 	require.Equal(t, irma.ProofStatusValid, status)
 }
 

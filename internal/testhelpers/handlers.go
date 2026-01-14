@@ -219,7 +219,7 @@ func (th *UnsatisfiableTestHandler) RequestVerificationPermission(request *irma.
 	}
 }
 
-// Override TestHandler.Cancelled() so we can cancel future RequestVerificationPermission() invocations
+// Cancelled() overrides TestHandler.Cancelled() so we can cancel future RequestVerificationPermission() invocations
 func (th *UnsatisfiableTestHandler) Cancelled() {}
 
 // ManualTestHandler embeds a TestHandler to inherit its methods.
@@ -266,10 +266,12 @@ func (th *ManualTestHandler) RequestIssuancePermission(request *irma.IssuanceReq
 	ph(true, nil)
 }
 
-// These handlers should not be called, fail test if they are called
+// RequestSchemeManagerPermission handler should not be called, fail test if it is called
 func (th *ManualTestHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	th.Failure(&irma.SessionError{Err: errors.New("Unexpected session type")})
 }
+
+// RequestVerificationPermission handler should not be called, fail test if it is called
 func (th *ManualTestHandler) RequestVerificationPermission(request *irma.DisclosureRequest, satisfiable bool, candidates [][]irmaclient.DisclosureCandidates, verifierName *irma.RequestorInfo, ph irmaclient.PermissionHandler) {
 	if !satisfiable {
 		th.Failure(&irma.SessionError{ErrorType: irma.ErrorType("UnsatisfiableRequest")})
