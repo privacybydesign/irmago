@@ -20,6 +20,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
+	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -448,7 +449,7 @@ func (conf *Configuration) verifyEmail() error {
 	}
 	t := irma.NewHTTPTransport("https://privacybydesign.foundation/", true)
 	t.SetHeader("User-Agent", "irmaserver")
-	data := &serverInfo{Email: conf.Email, Version: irma.Version}
+	data := &serverInfo{Email: conf.Email, Version: irmago.Version}
 
 	go func() {
 		err := t.Post("serverinfo/", nil, data)

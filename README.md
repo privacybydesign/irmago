@@ -2,52 +2,56 @@
 
 `irmago` is an IRMA implementation in Go. It contains multiple libraries and applications:
 
-* The commandline tool [`irma`](https://irma.app/docs/irma-cli/), which contains an [IRMA server](https://irma.app/docs/irma-server/); subcommands for manipulating [IRMA schemes](https://irma.app/docs/schemes/), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
-* The Go library [`irmaserver`](https://irma.app/docs/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
-* The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://irma.app/docs/schemes/), parsing [IRMA metadata attributes](https://irma.app/docs/overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
+* The commandline tool [`yivi`](https://yivi.app/docs/yivi-cli/), which contains an [IRMA server](https://yivi.app/docs/irma-server/); subcommands for manipulating [IRMA schemes](https://yivi.app/docs/schemes/), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
+* The Go library [`irmaserver`](https://yivi.app/docs/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
+* The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://yivi.app/docs/schemes/), parsing [IRMA metadata attributes](https://irma.app/docs/overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
 * The Go package `irmaclient` is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
 
 ## Documentation
 
-Technical documentation of all components of `irmago` and more can be found at https://irma.app/docs.
+Technical documentation of all components of `irmago` and more can be found at https://yivi.app/docs.
 
 ## Running (development)
 
-The easiest way to run the `irma` command line tool for development purposes is using Docker.
+The easiest way to run the `yivi` command line tool for development purposes is using Docker.
 
-    docker-compose run irma
+    docker-compose run yivi
 
 For example, to start a simple IRMA session:
 
     IP=192.168.1.2 # Replace with your local IP address.
-    docker-compose run -p 48680:48680 irma session --disclose pbdf.sidn-pbdf.email.email --url "http://$IP:48680"
+    docker-compose run -p 48680:48680 yivi irma session --disclose pbdf.sidn-pbdf.email.email --url "http://$IP:48680"
 
 You can run the `irma keyshare` services locally using the test configuration in `testdata/configurations`.
 
     # To run the IRMA keyshare server
-    docker-compose run -p 8080:8080 irma keyshare server -c ./testdata/configurations/keyshareserver.yml
+    docker-compose run -p 8080:8080 yivi irma keyshare server -c ./testdata/configurations/keyshareserver.yml
     # To run the MyIRMA backend server
-    docker-compose run -p 8081:8081 irma keyshare myirmaserver -c ./testdata/configurations/myirmaserver.yml
+    docker-compose run -p 8081:8081 yivi irma keyshare myirmaserver -c ./testdata/configurations/myirmaserver.yml
 
 ## Installing
 ### Using Go
-To install the latest released version of the `irma` command line tool using Go, you do the following.
+To install the latest released version of the `yivi` command line tool using Go, you do the following.
 
-    go install github.com/privacybydesign/irmago/irma@latest
+    go install github.com/privacybydesign/irmago/yivi@latest
 
-You can also specify an exact version. You should replace `v0.0.0` with the desired version number.
+You can also specify an exact version, from version v0.20.0 or newer. You should replace `v0.0.0` with the desired version number.
   
+    go install github.com/privacybydesign/irmago/yivi@v0.0.0
+
+The `yivi` command is only available from v0.20.0 and newer. If you want to use an older version of IRMA, use the command below.
+
     go install github.com/privacybydesign/irmago/irma@v0.0.0
 
 ### Using a container
-If you want a container image of the `irma` command line tool, then you can use our `ghcr.io/privacybydesign/irma` image.
+If you want a container image of the `yivi` command line tool, then you can use our `ghcr.io/privacybydesign/yivi` image.
 
-    docker run ghcr.io/privacybydesign/irma:latest
+    docker run ghcr.io/privacybydesign/yivi:latest
 
 The images are tagged in the following way:
-- `latest`: latest released version of `irma`
+- `latest`: latest released version of `yivi`
 - `edge`: HEAD of the main development branch (`master`)
-- `v0.0.0`: `irma` version (replace `v0.0.0` with the desired version number)
+- `v0.0.0`: `yivi` version (replace `v0.0.0` with the desired version number)
 
 When you build for production, we recommend you to use the [latest release](https://github.com/privacybydesign/irmago/releases/latest).
 
@@ -59,7 +63,7 @@ In case you want to use `v0.12.6` or lower, then you should build it yourself.
     docker build -t privacybydesign/irma:$VERSION .
 
 ### Using pre-compiled binaries
-You can find pre-compiled binaries of the `irma` command line tool on the [GitHub release page](https://github.com/privacybydesign/irmago/releases).
+You can find pre-compiled binaries of the `yivi` command line tool on the [GitHub release page](https://github.com/privacybydesign/irmago/releases).
 We recommend you to use the [latest release](https://github.com/privacybydesign/irmago/releases/latest).
 
 ## Running the unit tests
@@ -108,15 +112,15 @@ docker run --name redis-test-instance -p 6379:6379 -d redis
 You can then start `irma` with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
 
 ```
-irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password --redis-no-tls
+yivi irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password --redis-no-tls
 ```
 
 If you use Redis in Sentinel mode for high availability, you need to consider whether you accept the risk of losing session state in case of a failover. Redis does not guarantee [strong consistency](https://redis.io/docs/management/scaling/#redis-cluster-consistency-guarantees) in these setups. We mitigated this by waiting for a write to have reached the master node and at least one replica. This means that at least two replicas should be configured for every master node to achieve high availability. Even then, there is a small chance of losing session state when a replica fails at the same time as the master node. For example, this might be problematic if you want to guarantee that a credential is not issued twice or if you need a session QR to have a long lifetime but you do want the session to be finished soon after the QR is scanned. If you require IRMA sessions to be highly consistent, you should use the default in-memory store or Redis in standalone mode. If you accept this risk, then you can enable Sentinel mode support by setting the `--redis-accept-inconsistency-risk` flag.
 
-Besides the `irma server`, Redis can also be configured for the `irma keyshare server` and the `irma keyshare myirmaserver` in the same way as described above. Note that the `irma keyshare server` does not become stateless when using Redis, because it stores the keyshare commitments and authentication challenges in memory. These cannot be stored in Redis, because we require this data to be strongly consistent. Instead, you can use sticky sessions to make sure that the same user is always routed to the same keyshare server instance. The stored commitments and challenges are only relevant for a few seconds, so the risk of losing this data is low. The `irma keyshare myirmaserver` does become stateless when using Redis.
+Besides the `yivi irma server`, Redis can also be configured for the `yivi irma keyshare server` and the `yivi irma keyshare myirmaserver` in the same way as described above. Note that the `yivi irma keyshare server` does not become stateless when using Redis, because it stores the keyshare commitments and authentication challenges in memory. These cannot be stored in Redis, because we require this data to be strongly consistent. Instead, you can use sticky sessions to make sure that the same user is always routed to the same keyshare server instance. The stored commitments and challenges are only relevant for a few seconds, so the risk of losing this data is low. The `yivi irma keyshare myirmaserver` does become stateless when using Redis.
 
 ## Performance tests
-This project only includes performance tests for the `irma keyshare server`. These tests can be run using the [k6 load testing tool](https://k6.io/docs/) and need a running keyshare server instance to test against. Instructions on how to run a keyshare server locally can be found [above](#running).
+This project only includes performance tests for the `yivi irma keyshare server`. These tests can be run using the [k6 load testing tool](https://k6.io/docs/) and need a running keyshare server instance to test against. Instructions on how to run a keyshare server locally can be found [above](#running).
 
 The performance tests can be started in the following way:
 

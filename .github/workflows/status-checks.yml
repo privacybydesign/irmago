@@ -40,8 +40,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: irma-${{ matrix.os }}-${{ matrix.arch }}
-          path: build/irma
+          name: yivi-${{ matrix.os }}-${{ matrix.arch }}
+          path: build/yivi
 
   docker-build:
     runs-on: ubuntu-latest
@@ -50,12 +50,11 @@ jobs:
 
       # We only run the build stage to prevent that the IRMA schemes are downloaded.
       - name: Run Dockerfile build stage
-        run: docker build -t privacybydesign/irma:build --target build .
+        run: docker build -t privacybydesign/yivi:build --target build .
 
       - name: Test Docker image
-        # Because we have only run the build stage, we have to explicitly set irma as entrypoint.
-        run: docker run --entrypoint irma privacybydesign/irma:build version
-
+        # Because we have only run the build stage, we have to explicitly set yivi as entrypoint.
+        run: docker run --entrypoint yivi privacybydesign/yivi:build version
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -119,7 +118,7 @@ jobs:
         with:
           test-ref: ${{ github.ref }}
           irma-server-artifact: https://github.com/privacybydesign/irmago/releases/download/${{ matrix.irma-server }}/irma-linux-amd64
-          keyshare-server-artifact: irma-linux-amd64 # Current build
+          keyshare-server-artifact: yivi-linux-amd64 # Current build
 
   integration-test-serverside: # Checks whether IRMA server interacts with older irmaclients
     needs: build
@@ -135,8 +134,8 @@ jobs:
         uses: ./.github/actions/integration-test
         with:
           test-ref: ${{ matrix.irmaclient-ref }}
-          irma-server-artifact: irma-linux-amd64 # Current build
-          keyshare-server-artifact: irma-linux-amd64 # Current build
+          irma-server-artifact: yivi-linux-amd64 # Current build
+          keyshare-server-artifact: yivi-linux-amd64 # Current build
 
   analyze:
     # Add integration tests as dependencies to make sure that PRs are not merged if they fail.

@@ -98,9 +98,9 @@ services:
     command: ./...
 
   # Service to run the 'irma' command line tool
-  irma:
+  yivi:
     build: .
-    image: privacybydesign/irma:latest
+    image: privacybydesign/yivi:latest
     # Add a run profile to prevent this service to be included when running docker-compose up.
     profiles:
       - run
