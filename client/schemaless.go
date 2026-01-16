@@ -2,34 +2,22 @@ package client
 
 import (
 	"fmt"
-
-	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"time"
 )
 
-// A description of a CA in a chain of trust that can be used to tell the
-// user about the chain
-type CertificateAuthority struct {
-	// The parent of this CA (nil if root)
-	Parent *CertificateAuthority
-	// The human readable name for this CA
-	Name irma.TranslatedString
-	// A description for this CA, telling the user who it is
-	Description irma.TranslatedString
-	// The url for this CA
-	Url string
-}
+type TranslatedString map[string]string
+type CredentialFormat string
 
-type Issuer struct {
+type TrustedParty struct {
 	Id string
 	// Display name for the issuer
-	Name irma.TranslatedString
+	Name TranslatedString
 	// Url for the issuer (which can be different per language)
-	Url irma.TranslatedString
+	Url TranslatedString
 	// Absolute path to the image for this issuer stored on disk
 	ImagePath string
 	// The trust chain for this issuer (if any)
-	CertificateAuthority *CertificateAuthority
+	Parent *TrustedParty
 }
 
 type AttributeType string
@@ -49,12 +37,12 @@ type AttributeValue struct {
 	// See the table for `Value` to see what each `AttributeType` means
 	Type AttributeType
 	// | --------------------------------|-------------------------|
-	// | Attribute type                  | Data type              |
+	// | Attribute type                  | Data type               |
 	// | --------------------------------|-------------------------|
 	// | AttributeType_Object            | Attribute               |
 	// | AttributeType_Array             | []AttributeValue        |
 	// | AttributeType_String            | string                  |
-	// | AttributeType_TranslatedString  | irma.TranslatedString   |
+	// | AttributeType_TranslatedString  | TranslatedString        |
 	// | AttributeType_Bool              | bool                    |
 	// | AttributeType_Int               | int                     |
 	// | AttributeType_Image             | absolute path (string)  |
@@ -66,9 +54,9 @@ type Attribute struct {
 	// Id for this attribute (only the last part in case of irma/idemix)
 	Id string
 	// The name for this attribute as displayed to the end user
-	DisplayName irma.TranslatedString
+	DisplayName TranslatedString
 	// The description for this attribute if any
-	Description irma.TranslatedString
+	Description TranslatedString
 	// The value to be displayed to the user
 	Value AttributeValue
 }
@@ -82,19 +70,19 @@ type Credential struct {
 	// Absolute path to the image for this credential stored on disk
 	ImagePath string
 	// The display name for this credential
-	Name irma.TranslatedString
+	Name TranslatedString
 	// All information about the credential issuer
-	Issuer Issuer
+	Issuer TrustedParty
 	// The IDs for all instances of this credential in all different formats it's available in.
-	CredentialInstanceIds map[irmaclient.CredentialFormat]string
+	CredentialInstanceIds map[CredentialFormat]string
 	// The number of credential instances left per credential format (in case they were issued in batches)
-	BatchInstanceCountsRemaining map[irmaclient.CredentialFormat]*uint
+	BatchInstanceCountsRemaining map[CredentialFormat]*uint
 	// All the attributes and their values in this credential
 	Attributes []Attribute
-	// The data and time at which this credential was issued
-	IssuanceDate irma.Timestamp
-	// The date and time when this credential expires
-	ExpiryDate irma.Timestamp
+	// The data and time (unix format) at which this credential was issued
+	IssuanceDate int64
+	// The date and time (unix format) when this credential expires
+	ExpiryDate int64
 	// Whether or not this credential has been revoked
 	Revoked bool
 	// Whether or not revocation is supported for this credential
@@ -117,7 +105,7 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 			return nil, fmt.Errorf("failed to hash attributes and cred type: %w", err)
 		}
 
-		format := irmaclient.CredentialFormat(cred.CredentialFormat)
+		format := CredentialFormat(cred.CredentialFormat)
 
 		// if there's an existing instance we just add some format specific info
 		// and combine the two formats into a single credential result
@@ -145,8 +133,8 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
 				attributes = append(attributes, Attribute{
 					Id:          at.ID,
-					DisplayName: at.Name,
-					Description: at.Description,
+					DisplayName: TranslatedString(at.Name),
+					Description: TranslatedString(at.Description),
 					Value: AttributeValue{
 						Type: AttributeType_String,
 						Data: attrValue,
@@ -158,25 +146,25 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 				CredentialId: cred.Identifier().String(),
 				Hash:         instanceHash,
 				ImagePath:    info.Logo(irmaConfig),
-				Name:         info.Name,
-				Issuer: Issuer{
+				Name:         TranslatedString(info.Name),
+				Issuer: TrustedParty{
 					Id:   issuer.ID,
-					Name: issuer.Name,
-					Url:  *info.IssueURL,
+					Name: TranslatedString(issuer.Name),
+					Url:  TranslatedString(*info.IssueURL),
 					// TODO: figure out where the issuer logo's come from
 					ImagePath: "",
 					// TODO: figure out what it means to be on the Yivi trust chain
-					CertificateAuthority: nil,
+					Parent: nil,
 				},
-				CredentialInstanceIds: map[irmaclient.CredentialFormat]string{
+				CredentialInstanceIds: map[CredentialFormat]string{
 					format: cred.Hash,
 				},
-				BatchInstanceCountsRemaining: map[irmaclient.CredentialFormat]*uint{
+				BatchInstanceCountsRemaining: map[CredentialFormat]*uint{
 					format: cred.InstanceCount,
 				},
 				Attributes:          attributes,
-				IssuanceDate:        cred.SignedOn,
-				ExpiryDate:          cred.Expires,
+				IssuanceDate:        time.Time(cred.SignedOn).Unix(),
+				ExpiryDate:          time.Time(cred.Expires).Unix(),
 				Revoked:             cred.Revoked,
 				RevocationSupported: cred.RevocationSupported,
 			}
