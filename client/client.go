@@ -251,7 +251,8 @@ func (client *Client) KeyshareEnroll(manager irma.SchemeManagerIdentifier, email
 }
 
 func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
-	hashContent := info.Identifier().String()
+	var hashContent strings.Builder
+	hashContent.WriteString(info.Identifier().String())
 
 	sortedKeys := []string{}
 	for key := range info.Attributes {
@@ -264,10 +265,10 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		hashContent += key + string(valueStr)
+		hashContent.WriteString(key + string(valueStr))
 	}
 
-	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent)
+	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
 }
 
 func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error) {

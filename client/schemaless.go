@@ -30,23 +30,25 @@ const (
 	AttributeType_Bool             AttributeType = "bool"
 	AttributeType_Int              AttributeType = "int"
 	AttributeType_Image            AttributeType = "image"
+	AttributeType_Base64Image      AttributeType = "base64_image"
 )
 
 type AttributeValue struct {
 	// The type of the value. This should be one of the `AttributeType`s
 	// See the table for `Value` to see what each `AttributeType` means
 	Type AttributeType
-	// | --------------------------------|-------------------------|
-	// | Attribute type                  | Data type               |
-	// | --------------------------------|-------------------------|
-	// | AttributeType_Object            | Attribute               |
-	// | AttributeType_Array             | []AttributeValue        |
-	// | AttributeType_String            | string                  |
-	// | AttributeType_TranslatedString  | TranslatedString        |
-	// | AttributeType_Bool              | bool                    |
-	// | AttributeType_Int               | int                     |
-	// | AttributeType_Image             | absolute path (string)  |
-	// | --------------------------------|-------------------------|
+	// | --------------------------------|-------------------------------|
+	// | Attribute type                  | Data type                     |
+	// | --------------------------------|-------------------------------|
+	// | AttributeType_Object            | Attribute                     |
+	// | AttributeType_Array             | []AttributeValue              |
+	// | AttributeType_String            | string                        |
+	// | AttributeType_TranslatedString  | TranslatedString              |
+	// | AttributeType_Bool              | bool                          |
+	// | AttributeType_Int               | int                           |
+	// | AttributeType_Image             | absolute path (string)        |
+	// | AttributeType_Base64Image       | base64 encoded image (string) |
+	// | --------------------------------|-------------------------------|
 	Data any
 }
 
@@ -131,15 +133,25 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 
 			for _, at := range info.AttributeTypes {
 				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
+				attrType := AttributeType_TranslatedString
+				switch at.DisplayHint {
+				case "portraitPhoto":
+					attrType = AttributeType_Base64Image
+				}
 				attributes = append(attributes, Attribute{
 					Id:          at.ID,
 					DisplayName: TranslatedString(at.Name),
 					Description: TranslatedString(at.Description),
 					Value: AttributeValue{
-						Type: AttributeType_String,
+						Type: attrType,
 						Data: attrValue,
 					},
 				})
+			}
+
+			issUrl := TranslatedString{}
+			if info.IssueURL != nil {
+				issUrl = TranslatedString(*info.IssueURL)
 			}
 
 			newCred := Credential{
@@ -150,7 +162,7 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 				Issuer: TrustedParty{
 					Id:   issuer.ID,
 					Name: TranslatedString(issuer.Name),
-					Url:  TranslatedString(*info.IssueURL),
+					Url:  issUrl,
 					// TODO: figure out where the issuer logo's come from
 					ImagePath: "",
 					// TODO: figure out what it means to be on the Yivi trust chain
