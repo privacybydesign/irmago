@@ -3,6 +3,8 @@ package client
 import (
 	"fmt"
 	"time"
+
+	"github.com/privacybydesign/irmago/irma"
 )
 
 type TranslatedString map[string]string
@@ -13,9 +15,9 @@ type TrustedParty struct {
 	// Display name for the issuer
 	Name TranslatedString
 	// Url for the issuer (which can be different per language)
-	Url TranslatedString
+	Url *TranslatedString
 	// Absolute path to the image for this issuer stored on disk
-	ImagePath string
+	ImagePath *string
 	// The trust chain for this issuer (if any)
 	Parent *TrustedParty
 }
@@ -37,9 +39,9 @@ type AttributeValue struct {
 	// The type of the value. This should be one of the `AttributeType`s
 	// See the table for `Value` to see what each `AttributeType` means
 	Type AttributeType
-	// | --------------------------------|-------------------------------|
+	// |---------------------------------|-------------------------------|
 	// | Attribute type                  | Data type                     |
-	// | --------------------------------|-------------------------------|
+	// |---------------------------------|-------------------------------|
 	// | AttributeType_Object            | Attribute                     |
 	// | AttributeType_Array             | []AttributeValue              |
 	// | AttributeType_String            | string                        |
@@ -48,7 +50,7 @@ type AttributeValue struct {
 	// | AttributeType_Int               | int                           |
 	// | AttributeType_Image             | absolute path (string)        |
 	// | AttributeType_Base64Image       | base64 encoded image (string) |
-	// | --------------------------------|-------------------------------|
+	// |---------------------------------|-------------------------------|
 	Data any
 }
 
@@ -81,7 +83,7 @@ type Credential struct {
 	BatchInstanceCountsRemaining map[CredentialFormat]*uint
 	// All the attributes and their values in this credential
 	Attributes []Attribute
-	// The data and time (unix format) at which this credential was issued
+	// The date and time (unix format) at which this credential was issued
 	IssuanceDate int64
 	// The date and time (unix format) when this credential expires
 	ExpiryDate int64
@@ -89,6 +91,105 @@ type Credential struct {
 	Revoked bool
 	// Whether or not revocation is supported for this credential
 	RevocationSupported bool
+	// Url at which this credential can be issued (if any)
+	IssueURL *TranslatedString
+}
+
+// AttributeDescriptor is a description of an attribute without a value
+type AttributeDescriptor struct {
+	Id   string
+	Name TranslatedString
+	Type AttributeType
+	// Only relevant when `Type` is `AttributeType_Object`
+	Nested []AttributeDescriptor
+}
+
+type CredentialDescriptor struct {
+	CredentialId string
+	Name         TranslatedString
+	Issuer       TrustedParty
+	Category     *TranslatedString
+	ImagePath    string
+	Attributes   []AttributeDescriptor
+	IssueURL     *TranslatedString
+}
+
+type CredentialStoreItem struct {
+	Credential CredentialDescriptor
+	Faq        Faq
+}
+
+type Faq struct {
+	Intro   *TranslatedString
+	Purpose *TranslatedString
+	Content *TranslatedString
+	HowTo   *TranslatedString
+}
+
+func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
+	irmaConfig := client.GetIrmaConfiguration()
+	result := []*CredentialStoreItem{}
+
+	for _, cred := range irmaConfig.CredentialTypes {
+		if !cred.IsInCredentialStore {
+			continue
+		}
+
+		issuerId := cred.IssuerIdentifier()
+		issuer, ok := irmaConfig.Issuers[issuerId]
+
+		if !ok {
+			return nil, fmt.Errorf("failed to get issuer info for %s", issuerId.String())
+		}
+
+		if cred.IssueURL == nil {
+			return nil, fmt.Errorf("encountered credential store item without issue url: %s", issuerId.String())
+		}
+
+		attributes := []AttributeDescriptor{}
+
+		for _, attr := range cred.AttributeTypes {
+			attributes = append(attributes, AttributeDescriptor{
+				Id:   attr.ID,
+				Name: TranslatedString(attr.Name),
+				Type: displayHintToAttributeType(attr.DisplayHint),
+			})
+		}
+
+		result = append(result, &CredentialStoreItem{
+			Credential: CredentialDescriptor{
+				CredentialId: cred.Identifier().String(),
+				Name:         TranslatedString(cred.Name),
+				Issuer: TrustedParty{
+					Id:   issuer.Identifier().String(),
+					Name: TranslatedString(issuer.Name),
+					// TODO: figure out where these should come from
+					ImagePath: nil,
+					Parent:    nil,
+				},
+				IssueURL:   convertOptionalTranslatedString(cred.IssueURL),
+				Category:   convertOptionalTranslatedString(cred.Category),
+				ImagePath:  cred.Logo(irmaConfig),
+				Attributes: attributes,
+			},
+			Faq: Faq{
+				Intro:   convertOptionalTranslatedString(cred.FAQIntro),
+				Purpose: convertOptionalTranslatedString(cred.FAQPurpose),
+				Content: convertOptionalTranslatedString(cred.FAQContent),
+				HowTo:   convertOptionalTranslatedString(cred.FAQHowto),
+			},
+		})
+	}
+
+	return result, nil
+}
+
+func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString {
+	if s == nil {
+		return nil
+	}
+	t := TranslatedString(*s)
+	return &t
 }
 
 func (client *Client) GetCredentials() ([]*Credential, error) {
@@ -133,25 +234,15 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 
 			for _, at := range info.AttributeTypes {
 				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
-				attrType := AttributeType_TranslatedString
-				switch at.DisplayHint {
-				case "portraitPhoto":
-					attrType = AttributeType_Base64Image
-				}
 				attributes = append(attributes, Attribute{
 					Id:          at.ID,
 					DisplayName: TranslatedString(at.Name),
 					Description: TranslatedString(at.Description),
 					Value: AttributeValue{
-						Type: attrType,
+						Type: displayHintToAttributeType(at.DisplayHint),
 						Data: attrValue,
 					},
 				})
-			}
-
-			issUrl := TranslatedString{}
-			if info.IssueURL != nil {
-				issUrl = TranslatedString(*info.IssueURL)
 			}
 
 			newCred := Credential{
@@ -162,9 +253,8 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 				Issuer: TrustedParty{
 					Id:   issuer.ID,
 					Name: TranslatedString(issuer.Name),
-					Url:  issUrl,
 					// TODO: figure out where the issuer logo's come from
-					ImagePath: "",
+					ImagePath: nil,
 					// TODO: figure out what it means to be on the Yivi trust chain
 					Parent: nil,
 				},
@@ -179,6 +269,7 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 				ExpiryDate:          time.Time(cred.Expires).Unix(),
 				Revoked:             cred.Revoked,
 				RevocationSupported: cred.RevocationSupported,
+				IssueURL:            convertOptionalTranslatedString(info.IssueURL),
 			}
 			intermediateResult[instanceHash] = &newCred
 		}
@@ -189,4 +280,13 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 	}
 
 	return result, nil
+}
+
+func displayHintToAttributeType(s string) AttributeType {
+	result := AttributeType_TranslatedString
+	switch s {
+	case "portraitPhoto":
+		result = AttributeType_Base64Image
+	}
+	return result
 }
