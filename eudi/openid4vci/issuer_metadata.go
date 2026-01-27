@@ -115,7 +115,7 @@ type ClaimsDescription struct {
 	Display   []Display         `json:"display,omitempty"`
 }
 
-type Translateable interface {
+type Translatable interface {
 	GetName() string
 	GetLocale() string
 }
@@ -178,8 +178,8 @@ func (d CredentialIssuerDisplay) GetLocale() string {
 	return d.Locale
 }
 
-func DisplaysToTranslateableList[T Display | CredentialDisplay | CredentialIssuerDisplay](displays []T) []Translateable {
-	result := make([]Translateable, len(displays))
+func DisplaysToTranslateableList[T Display | CredentialDisplay | CredentialIssuerDisplay](displays []T) []Translatable {
+	result := make([]Translatable, len(displays))
 	for i, d := range displays {
 		if x, ok := any(d).(Display); ok {
 			result[i] = &x
@@ -452,6 +452,9 @@ func (c *ClaimsDescription) verify() error {
 	// Validate locale, and check for duplicates
 	translations := DisplaysToTranslateableList(c.Display)
 	for _, display := range c.Display {
+		if display.Locale == "" {
+			continue
+		}
 		if err := validateLocale(translations, &display); err != nil {
 			return err
 		}
@@ -460,7 +463,7 @@ func (c *ClaimsDescription) verify() error {
 	return nil
 }
 
-func validateLocale(availableTranslations []Translateable, translation Translateable) error {
+func validateLocale(availableTranslations []Translatable, translation Translatable) error {
 	// Validate that the locale is a valid BCP 47 language tag
 	if _, err := language.Parse(translation.GetLocale()); err != nil {
 		return fmt.Errorf("invalid 'locale' tag %q in 'display' item with name %q: %w", translation.GetLocale(), translation.GetName(), err)

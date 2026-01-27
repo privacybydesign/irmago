@@ -1396,7 +1396,7 @@ func parseTestQuery(t *testing.T, query string) (result dcql.DcqlQuery) {
 	return
 }
 
-func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claims map[string]string) SdJwtVcBatchMetadata {
+func createAndStoreSdJwt(t *testing.T, storage SdJwtVcStorage, vct string, claims map[string]string) SdJwtVcBatchInstanceData {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	info, sdjwts := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, vct, "https://openid4vc.staging.yivi.app", claims, 1)
 	err := storage.StoreCredential(info, sdjwts)

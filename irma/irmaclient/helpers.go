@@ -20,7 +20,8 @@ import (
 // CreateHashForSdJwtVc creates the hash used for SD-JWTs, it's kept this simple so it can also be constructed from
 // an issuance request before the actual credential is issued
 func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, error) {
-	hashContent := credType
+	var hashContent strings.Builder
+	hashContent.WriteString(credType)
 
 	sortedKeys := []string{}
 	for key := range attributes {
@@ -33,13 +34,13 @@ func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, e
 		if err != nil {
 			return "", err
 		}
-		hashContent += key + string(valueStr)
+		hashContent.WriteString(key + string(valueStr))
 	}
 
-	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent)
+	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
 }
 
-func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
+func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) (*SdJwtVcInstanceData, *sdjwtvc.VerifiedSdJwtVc, error) {
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdJwt)
 
 	if err != nil {
@@ -66,7 +67,7 @@ func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerif
 		}
 	}
 
-	info := SdJwtVcMetadata{
+	info := SdJwtVcInstanceData{
 		Hash:           hash,
 		CredentialType: verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
 		SignedOn: irma.Timestamp(
@@ -80,16 +81,23 @@ func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerif
 	return &info, &verifiedSdJwtVc, nil
 }
 
-func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) []openid4vci.Translateable {
-	translations := make([]openid4vci.Translateable, len(displays))
+func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) []openid4vci.Translatable {
+	translations := make([]openid4vci.Translatable, len(displays))
 	for i, display := range displays {
-		translations[i] = any(display).(openid4vci.Translateable)
+		translations[i] = any(display).(openid4vci.Translatable)
 	}
 	return translations
 }
 
-func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.TranslatedString {
+func convertDisplayToTranslatedString(displays []openid4vci.Translatable) irma.TranslatedString {
 	result := irma.TranslatedString{}
+
+	// TODO: how are we gonna fix this better (spec says locale is optional)
+	if len(displays) == 1 && displays[0].GetLocale() == "" {
+		result["en"] = displays[0].GetName()
+		return result
+	}
+
 	for _, display := range displays {
 		lang, err := language.Parse(display.GetLocale())
 		if err != nil {
@@ -111,7 +119,7 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 	// TODO: check if all SD-JWTs have a unique Key-Binding public key (cnf field), if not, the SD-JWTs should be rejected
 
 	type credentialTuple struct {
-		credInfo         SdJwtVcMetadata
+		credInfo         SdJwtVcInstanceData
 		sdjwtvcInstances []sdjwtvc.SdJwtVc
 	}
 
@@ -162,7 +170,7 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 
 	// Now that we've grouped the SD-JWTs by their credential info hash, we can store them
 	for _, v := range credentialsMap {
-		batchInfo := SdJwtVcBatchMetadata{
+		batchInfo := SdJwtVcBatchInstanceData{
 			BatchSize:              uint(len(v.sdjwtvcInstances)),
 			RemainingInstanceCount: uint(len(v.sdjwtvcInstances)),
 			SignedOn:               v.credInfo.SignedOn,

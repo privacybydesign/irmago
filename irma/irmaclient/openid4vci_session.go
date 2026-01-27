@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
@@ -18,14 +19,16 @@ import (
 )
 
 type openid4vciSession struct {
-	credentialOffer          *openid4vci.CredentialOffer
-	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata
-	requestorInfo            *irma.RequestorInfo
-	credentials              []*irma.CredentialTypeInfo
-	storageClient            SdJwtVcStorageClient
-	httpClient               *http.Client
-	handler                  Handler
-	keyBinder                sdjwtvc.KeyBinder
+	credentialOffer           *openid4vci.CredentialOffer
+	credentialIssuerMetadata  *openid4vci.CredentialIssuerMetadata
+	requestorInfo             *irma.RequestorInfo
+	credentials               []*irma.CredentialTypeInfo
+	storageClient             SdJwtVcStorageClient
+	httpClient                *http.Client
+	handler                   Handler
+	keyBinder                 sdjwtvc.KeyBinder
+	credentialMetadataStorage CredentialMetadataStorage
+	issuerMetadataStorage     IssuerMetadataStorage
 
 	// Settings determined from the Credential Offer and Credential Issuer metadata
 	grantType                   openid4vci.Grant
@@ -178,7 +181,29 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
+func storeIssuerMetadata(storage IssuerMetadataStorage, metadata *openid4vci.CredentialIssuerMetadata) error {
+	name := toTranslatedValue(metadata.Display, func(display openid4vci.CredentialIssuerDisplay) (string, string) {
+		return display.Locale, display.Name
+	})
+
+	logoUri := toTranslatedValue(metadata.Display, func(display openid4vci.CredentialIssuerDisplay) (string, string) {
+		return display.Locale, display.Logo.Uri
+	})
+
+	toStore := &IssuerMetadata{
+		IssuerId: metadata.CredentialIssuer,
+		Name:     name,
+		// TODO: figure out a way to find the logo's
+		LogoPath: logoUri,
+	}
+	return storage.Add(toStore)
+}
+
 func (s *openid4vciSession) requestCredentials(accessToken string) error {
+	if err := storeIssuerMetadata(s.issuerMetadataStorage, s.credentialIssuerMetadata); err != nil {
+		return fmt.Errorf("failed to store issuer metadata: %w", err)
+	}
+
 	// If the issuer provides a Nonce endpoint, we should get a fresh c_nonce here and use it in all credential requests that require proof of possession
 	var cNonce *string
 	if s.credentialIssuerMetadata.NonceEndpoint != "" {
@@ -203,6 +228,50 @@ func (s *openid4vciSession) requestCredentials(accessToken string) error {
 	return nil
 }
 
+func toTranslatedValue[T any](displays []T, mapper func(T) (string, string)) irma.TranslatedString {
+	result := irma.TranslatedString{}
+	for _, d := range displays {
+		lang, value := mapper(d)
+		if lang == "" {
+			lang = "en"
+		}
+		result[lang] = value
+	}
+	return result
+}
+
+func storeCredentialMetadata(storage CredentialMetadataStorage, config *openid4vci.CredentialConfiguration, issuerConfig *openid4vci.CredentialIssuerMetadata) error {
+	name := toTranslatedValue(config.CredentialMetadata.Display, func(display openid4vci.CredentialDisplay) (string, string) {
+		return display.Locale, display.Name
+	})
+
+	attributes := []AttributeMetadata{}
+	for _, claim := range config.CredentialMetadata.Claims {
+		name := toTranslatedValue(claim.Display, func(display openid4vci.Display) (string, string) {
+			return display.Locale, display.Name
+		})
+		attr := AttributeMetadata{
+			// TODO: make this more dynamic
+			Id:   claim.Path[0],
+			Name: name,
+		}
+		attributes = append(attributes, attr)
+	}
+
+	metadata := CredentialMetadata{
+		CredentialId:     config.VerifiableCredentialType,
+		Name:             name,
+		IssuerId:         issuerConfig.CredentialIssuer,
+		LogoPath:         irma.TranslatedString{},
+		Attributes:       attributes,
+		CredentialFormat: Format_SdJwtVc,
+		LastUpdated:      int(time.Now().Unix()),
+		Source:           "",
+	}
+
+	return storage.Store(&metadata)
+}
+
 // requestCredential requests a credential for the given credential configuration ID. Make sure the cNonce is provided if required (Nonce Endpoint is available) and is fresh.
 func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *string, accessToken string) error {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
@@ -210,6 +279,12 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	}
 
 	credConfig := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
+
+	err := storeCredentialMetadata(s.credentialMetadataStorage, &credConfig, s.credentialIssuerMetadata)
+	if err != nil {
+		return fmt.Errorf("failed to store credential metadata")
+	}
+
 	requireCryptographicKeyBinding := len(credConfig.CryptographicBindingMethodsSupported) > 0
 
 	// TODO: fill correct fields in Credential Request..
