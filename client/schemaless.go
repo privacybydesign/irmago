@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/privacybydesign/irmago/irma"
@@ -31,8 +32,8 @@ const (
 	AttributeType_Array            AttributeType = "array"
 	AttributeType_String           AttributeType = "string"
 	AttributeType_TranslatedString AttributeType = "translated_string"
-	AttributeType_Bool             AttributeType = "bool"
-	AttributeType_Int              AttributeType = "int"
+	AttributeType_Bool             AttributeType = "boolean"
+	AttributeType_Int              AttributeType = "integer"
 	AttributeType_Image            AttributeType = "image"
 	AttributeType_Base64Image      AttributeType = "base64_image"
 )
@@ -204,6 +205,160 @@ func find[T any](slice []T, pred func(T) bool) (T, bool) {
 	return zero, false
 }
 
+func sortAttributesBasedOnMetadata(attributes []Attribute, metadata []*irmaclient.AttributeMetadata) {
+	order := make(map[string]int, len(metadata))
+	for i, a := range metadata {
+		order[a.Id] = i
+	}
+	sort.SliceStable(attributes, func(i, j int) bool {
+		oi, okI := order[attributes[i].Id]
+		oj, okJ := order[attributes[j].Id]
+
+		// If both IDs exist in listA, compare their order
+		if okI && okJ {
+			return oi < oj
+		}
+
+		// Optional behavior for missing IDs:
+		// - items missing from listA go to the end
+		if okI {
+			return true
+		}
+		if okJ {
+			return false
+		}
+
+		// If both missing, keep original order
+		return false
+	})
+}
+
+// buildAttribute converts a raw attribute value + its metadata into an Attribute,
+// recursively handling nested objects (and optionally arrays).
+func buildAttribute(
+	id string,
+	raw any,
+	meta *irmaclient.AttributeMetadata,
+) (Attribute, bool) {
+	if meta == nil {
+		return Attribute{}, false
+	}
+
+	// Helper to find nested metadata by id
+	findNestedMeta := func(nestedID string) (*irmaclient.AttributeMetadata, bool) {
+		m, ok := find(meta.Nested, func(item *irmaclient.AttributeMetadata) bool {
+			return item.Id == nestedID
+		})
+		return m, ok
+	}
+
+	// 1) Object (map)
+	if m, ok := raw.(map[string]any); ok {
+		nestedAttrs := make([]Attribute, 0, len(m))
+
+		for k, v := range m {
+			childMeta, found := findNestedMeta(k)
+			if !found {
+				// Unknown field; skip (or return error if you prefer)
+				continue
+			}
+
+			childAttr, ok := buildAttribute(k, v, childMeta)
+			if !ok {
+				continue
+			}
+			nestedAttrs = append(nestedAttrs, childAttr)
+		}
+
+		sortAttributesBasedOnMetadata(nestedAttrs, meta.Nested)
+
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_Object,
+				Data: nestedAttrs,
+			},
+		}, true
+	}
+
+	// 2) Array ([]any) - optional but recommended
+	if arr, ok := raw.([]any); ok {
+		// TODO: add support for arrays...
+		return Attribute{}, false
+		elems := make([]Attribute, 0, len(arr))
+
+		// If your metadata model supports arrays with nested schema, you may want
+		// to use meta.Nested[0] as element schema or similar. Here we treat array
+		// items as "anonymous" children.
+		for i, v := range arr {
+			// Best effort: if meta.Nested describes element fields, you need a schema decision here.
+			// For now, represent each element as an Attribute with id like "0", "1", ...
+			elemID := fmt.Sprintf("%d", i)
+
+			// Reuse meta for element unless you have element-specific metadata.
+			elemAttr, ok := buildAttribute(elemID, v, meta)
+			if !ok {
+				continue
+			}
+			elems = append(elems, elemAttr)
+		}
+
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_Array,
+				Data: elems,
+			},
+		}, true
+	}
+
+	// 3) String
+	if s, ok := raw.(string); ok {
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_String,
+				Data: s,
+			},
+		}, true
+	}
+
+	// 4) Other primitive types (bool/number/etc) — handle if you want.
+	// You can map these based on meta.Type or reflect on raw.
+	switch v := raw.(type) {
+	case bool:
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_Bool,
+				Data: v,
+			},
+		}, true
+	case float64: // json.Unmarshal uses float64 for numbers
+		// If you distinguish int vs float, add logic here.
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_Int,
+				Data: int(v),
+			},
+		}, true
+	}
+
+	// Unknown type → skip
+	return Attribute{}, false
+}
+
 func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
 	creds := client.sdjwtvcStorage.GetCredentialMetdataList()
 
@@ -233,58 +388,17 @@ func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
 			})
 			if !found {
 				continue
-				// TODO: fix this bug...
-				// return nil, fmt.Errorf("failed to get attribute metadata for: %v", key)
 			}
 
-			stringValue, isString := value.(string)
-			nestedValues, isMap := value.(map[string]any)
-
-			// TODO: make this recursive so it works for arbitrary levels of nesting
-			if isMap {
-				nestedAttributes := []Attribute{}
-				for nestedKey, nestedValue := range nestedValues {
-					nestedMetadata, found := find(attributeMetadata.Nested, func(item *irmaclient.AttributeMetadata) bool {
-						return item.Id == nestedKey
-					})
-					if !found {
-						continue
-					}
-					nestedAttributes = append(nestedAttributes, Attribute{
-						Id:          nestedKey,
-						DisplayName: TranslatedString(nestedMetadata.Name),
-						Description: TranslatedString{},
-						Value: AttributeValue{
-							Type: AttributeType_String,
-							Data: nestedValue,
-						},
-					})
-				}
-				attributes = append(attributes, Attribute{
-					Id:          key,
-					DisplayName: TranslatedString(attributeMetadata.Name),
-					Description: TranslatedString{},
-					Value: AttributeValue{
-						Type: AttributeType_Object,
-						Data: nestedAttributes,
-					},
-				})
-			}
-			if isString {
-				attributes = append(attributes, Attribute{
-					Id:          key,
-					DisplayName: TranslatedString(attributeMetadata.Name),
-					Description: TranslatedString{},
-					Value: AttributeValue{
-						Type: AttributeType_String,
-						Data: stringValue,
-					},
-				})
+			attr, ok := buildAttribute(key, value, attributeMetadata)
+			if !ok {
+				continue
 			}
 
-			irma.Logger.Infof("Attribute %v isString: %v, isMap: %v", key, isString, isMap)
-
+			attributes = append(attributes, attr)
 		}
+
+		sortAttributesBasedOnMetadata(attributes, credMetadata.Attributes)
 
 		tempImageUrl := issuerMetadata.LogoPath["en"]
 		cred := Credential{

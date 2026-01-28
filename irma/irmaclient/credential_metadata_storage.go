@@ -13,8 +13,8 @@ const (
 	AttributeType_Array            AttributeType = "array"
 	AttributeType_String           AttributeType = "string"
 	AttributeType_TranslatedString AttributeType = "translated_string"
-	AttributeType_Bool             AttributeType = "bool"
-	AttributeType_Int              AttributeType = "int"
+	AttributeType_Bool             AttributeType = "boolean"
+	AttributeType_Int              AttributeType = "integer"
 	AttributeType_Image            AttributeType = "image"
 	AttributeType_Base64Image      AttributeType = "base64_image"
 )

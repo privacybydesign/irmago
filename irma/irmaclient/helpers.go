@@ -173,7 +173,7 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 	irma.Logger.Infof("DEBUGGING: for-loop with credentialsMap: %v", len(credentialsMap))
 	// Now that we've grouped the SD-JWTs by their credential info hash, we can store them
 	for _, v := range credentialsMap {
-	irma.Logger.Infof("DEBUGGING: in for-loop with info: %v, len %v", v.credInfo, len(v.sdjwtvcInstances))
+		irma.Logger.Infof("DEBUGGING: in for-loop with info: %v, len %v", v.credInfo, len(v.sdjwtvcInstances))
 		batchInfo := SdJwtVcBatchInstanceData{
 			BatchSize:              uint(len(v.sdjwtvcInstances)),
 			RemainingInstanceCount: uint(len(v.sdjwtvcInstances)),
