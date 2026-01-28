@@ -417,6 +417,8 @@ func convertToRequestorInfo(credentialIssuerMetadata *openid4vci.CredentialIssue
 		Industry:   &irma.TranslatedString{},
 		Unverified: true,
 		Hostnames:  []string{credentialIssuerMetadata.CredentialIssuer},
+		// TODO: this is just a quick fix to get a logo in the app for demo
+		LogoPath: &credentialIssuerMetadata.Display[0].Logo.Uri,
 		//Logo:       &filename,
 		//LogoPath:   &path,
 		//ValidUntil: (*irma.Timestamp)(&endEntityCert.NotAfter),

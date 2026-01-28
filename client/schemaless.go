@@ -255,7 +255,7 @@ func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
 						},
 					}
 				}
-				attributes = append(attributes, Attribute {
+				attributes = append(attributes, Attribute{
 					Id:          key,
 					DisplayName: TranslatedString(attributeMetadata.Name),
 					Description: TranslatedString{},
@@ -281,17 +281,18 @@ func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
 
 		}
 
+		tempImageUrl := issuerMetadata.LogoPath["en"]
 		cred := Credential{
 			CredentialId: rawCred.CredentialType,
 			Hash:         rawCred.Hash,
-			ImagePath:    "",
+			ImagePath:    tempImageUrl,
 			Name:         TranslatedString(credMetadata.Name),
 			Issuer: TrustedParty{
 				Id:   credMetadata.IssuerId,
 				Name: TranslatedString(issuerMetadata.Name),
 				Url:  convertOptionalTranslatedString(&issuerMetadata.WebsiteUrl),
 				// TODO: figure out a way to get this better
-				ImagePath: nil,
+				ImagePath: &tempImageUrl,
 				Parent:    nil,
 			},
 			CredentialInstanceIds: map[CredentialFormat]string{
