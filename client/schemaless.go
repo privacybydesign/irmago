@@ -1,10 +1,12 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
 type TranslatedString map[string]string
@@ -42,7 +44,7 @@ type AttributeValue struct {
 	// |---------------------------------|-------------------------------|
 	// | Attribute type                  | Data type                     |
 	// |---------------------------------|-------------------------------|
-	// | AttributeType_Object            | Attribute                     |
+	// | AttributeType_Object            | map[string]Attribute          |
 	// | AttributeType_Array             | []AttributeValue              |
 	// | AttributeType_String            | string                        |
 	// | AttributeType_TranslatedString  | TranslatedString              |
@@ -192,7 +194,128 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString
 	return &t
 }
 
+func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
+	creds := client.sdjwtvcStorage.GetCredentialMetdataList()
+
+	result := []*Credential{}
+
+	for _, rawCred := range creds {
+		credMetadata, err := client.credentialMetadataStorage.Get(rawCred.CredentialType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get credential metadata: %w", err)
+		}
+		issuerMetadata, err := client.issuerMetadataStorage.Get(credMetadata.IssuerId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get issuer metadata: %w", err)
+		}
+
+		attributes := []Attribute{}
+
+		rawCredJson, _ := json.MarshalIndent(rawCred, "", "    ")
+		irma.Logger.Infof("raw cred: %v", string(rawCredJson))
+
+		for key, value := range rawCred.Attributes {
+			valueJson, _ := json.MarshalIndent(value, "", "    ")
+			irma.Logger.Infof("attribute %v: %v", key, string(valueJson))
+
+			// index := slices.IndexFunc(credMetadata.Attributes, func(attr irmaclient.AttributeMetadata) bool {
+			// 	return attr.Id == key
+			// })
+			// if index < 0 {
+			// 	return nil, fmt.Errorf("failed to find attribute metadata for '%v' in credential '%v'", key, rawCred.CredentialType)
+			// }
+
+			// attributeMetadata := credMetadata.Attributes[index]
+
+			attributeMetadata, ok := credMetadata.Attributes[key]
+			if !ok {
+				continue
+				// TODO: fix this bug...
+				// return nil, fmt.Errorf("failed to get attribute metadata for: %v", key)
+			}
+
+			stringValue, isString := value.(string)
+			nestedValues, isMap := value.(map[string]any)
+
+			// TODO: make this recursive so it works for arbitrary levels of nesting
+			if isMap {
+				nestedAttributes := map[string]Attribute{}
+				for nestedKey, nestedValue := range nestedValues {
+					nestedMetadata, ok := attributeMetadata.Nested[nestedKey]
+					if !ok {
+						continue
+					}
+					nestedAttributes[nestedKey] = Attribute{
+						Id:          nestedKey,
+						DisplayName: TranslatedString(nestedMetadata.Name),
+						Description: TranslatedString{},
+						Value: AttributeValue{
+							Type: AttributeType_String,
+							Data: nestedValue,
+						},
+					}
+				}
+				attributes = append(attributes, Attribute {
+					Id:          key,
+					DisplayName: TranslatedString(attributeMetadata.Name),
+					Description: TranslatedString{},
+					Value: AttributeValue{
+						Type: AttributeType_Object,
+						Data: nestedAttributes,
+					},
+				})
+			}
+			if isString {
+				attributes = append(attributes, Attribute{
+					Id:          key,
+					DisplayName: TranslatedString(attributeMetadata.Name),
+					Description: TranslatedString{},
+					Value: AttributeValue{
+						Type: AttributeType_String,
+						Data: stringValue,
+					},
+				})
+			}
+
+			irma.Logger.Infof("Attribute %v isString: %v, isMap: %v", key, isString, isMap)
+
+		}
+
+		cred := Credential{
+			CredentialId: rawCred.CredentialType,
+			Hash:         rawCred.Hash,
+			ImagePath:    "",
+			Name:         TranslatedString(credMetadata.Name),
+			Issuer: TrustedParty{
+				Id:   credMetadata.IssuerId,
+				Name: TranslatedString(issuerMetadata.Name),
+				Url:  convertOptionalTranslatedString(&issuerMetadata.WebsiteUrl),
+				// TODO: figure out a way to get this better
+				ImagePath: nil,
+				Parent:    nil,
+			},
+			CredentialInstanceIds: map[CredentialFormat]string{
+				CredentialFormat(irmaclient.Format_SdJwtVc): rawCred.Hash,
+			},
+			BatchInstanceCountsRemaining: map[CredentialFormat]*uint{
+				CredentialFormat(irmaclient.Format_SdJwtVc): &rawCred.RemainingInstanceCount,
+			},
+			Attributes:          attributes,
+			IssuanceDate:        time.Time(rawCred.SignedOn).Unix(),
+			ExpiryDate:          time.Time(rawCred.Expires).Unix(),
+			Revoked:             false,
+			RevocationSupported: false,
+			IssueURL:            nil,
+		}
+
+		result = append(result, &cred)
+	}
+
+	return result, nil
+}
+
 func (client *Client) GetCredentials() ([]*Credential, error) {
+	return client.getSdJwtCredentials()
 	result := []*Credential{}
 
 	irmaConfig := client.GetIrmaConfiguration()

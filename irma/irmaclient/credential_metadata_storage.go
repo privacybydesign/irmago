@@ -22,7 +22,7 @@ const (
 type AttributeMetadata struct {
 	Id     string
 	Name   irma.TranslatedString
-	Nested []AttributeMetadata
+	Nested map[string]*AttributeMetadata
 }
 
 type CredentialMetadata struct {
@@ -30,7 +30,7 @@ type CredentialMetadata struct {
 	Name             irma.TranslatedString
 	IssuerId         string
 	LogoPath         irma.TranslatedString
-	Attributes       []AttributeMetadata
+	Attributes       map[string]*AttributeMetadata
 	CredentialFormat CredentialFormat
 	LastUpdated      int
 	Source           string

@@ -42,6 +42,7 @@ type openid4vciSession struct {
 }
 
 func (s *openid4vciSession) perform() error {
+	irma.Logger.Info("test logging: perform()")
 	// TODO: validate all properties are correctly set
 
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
@@ -78,6 +79,7 @@ func (s *openid4vciSession) perform() error {
 
 	// Check if permission was granted
 	if permission == nil || !permission.PermissionGranted() {
+		irma.Logger.Info("permission was nil or not granted: %v", permission)
 		s.handler.Cancelled()
 		return nil
 	}
@@ -85,12 +87,14 @@ func (s *openid4vciSession) perform() error {
 	// AccessToken received;
 	err = s.requestCredentials(permission.GetAccessToken())
 	if err != nil {
+		irma.Logger.Info("could not request credentials: %w", err)
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("could not request credentials: %v", err),
 		})
 		return nil
 	}
 
+	irma.Logger.Info("openid4vci session completed")
 	s.handler.Success("openid4vci session completed")
 	return nil
 }
@@ -241,26 +245,60 @@ func toTranslatedValue[T any](displays []T, mapper func(T) (string, string)) irm
 }
 
 func storeCredentialMetadata(storage CredentialMetadataStorage, config *openid4vci.CredentialConfiguration, issuerConfig *openid4vci.CredentialIssuerMetadata) error {
-	name := toTranslatedValue(config.CredentialMetadata.Display, func(display openid4vci.CredentialDisplay) (string, string) {
-		return display.Locale, display.Name
+	credentialName := toTranslatedValue(config.CredentialMetadata.Display, func(d openid4vci.CredentialDisplay) (string, string) {
+		return d.Locale, d.Name
 	})
 
-	attributes := []AttributeMetadata{}
+	attributes := map[string]*AttributeMetadata{}
+
 	for _, claim := range config.CredentialMetadata.Claims {
-		name := toTranslatedValue(claim.Display, func(display openid4vci.Display) (string, string) {
-			return display.Locale, display.Name
+		claimName := toTranslatedValue(claim.Display, func(d openid4vci.Display) (string, string) {
+			return d.Locale, d.Name
 		})
-		attr := AttributeMetadata{
-			// TODO: make this more dynamic
-			Id:   claim.Path[0],
-			Name: name,
+
+		if len(claim.Path) == 0 {
+			continue // or error
 		}
-		attributes = append(attributes, attr)
+
+		rootKey := claim.Path[0]
+		node, ok := attributes[rootKey]
+		if !ok {
+			node = &AttributeMetadata{
+				Id:     rootKey,
+				Nested: map[string]*AttributeMetadata{},
+			}
+			attributes[rootKey] = node
+		}
+
+		// Walk down the path
+		for i := 1; i < len(claim.Path); i++ {
+			key := claim.Path[i]
+
+			child, ok := node.Nested[key]
+			if !ok {
+				child = &AttributeMetadata{
+					Id:     key,
+					Nested: map[string]*AttributeMetadata{},
+				}
+				node.Nested[key] = child
+			}
+
+			node = child
+
+			if i == len(claim.Path)-1 {
+				node.Name = claimName
+			}
+		}
+
+		// Path length 1 => name belongs on root
+		if len(claim.Path) == 1 {
+			node.Name = claimName
+		}
 	}
 
 	metadata := CredentialMetadata{
 		CredentialId:     config.VerifiableCredentialType,
-		Name:             name,
+		Name:             credentialName,
 		IssuerId:         issuerConfig.CredentialIssuer,
 		LogoPath:         irma.TranslatedString{},
 		Attributes:       attributes,
@@ -268,6 +306,9 @@ func storeCredentialMetadata(storage CredentialMetadataStorage, config *openid4v
 		LastUpdated:      int(time.Now().Unix()),
 		Source:           "",
 	}
+
+	metadataJson, _ := json.MarshalIndent(metadata, "", "    ")
+	irma.Logger.Infof("Metadata: %v", string(metadataJson))
 
 	return storage.Store(&metadata)
 }

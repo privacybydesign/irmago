@@ -183,6 +183,7 @@ func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash stri
 }
 
 func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtVcBatchInstanceData, credentials []sdjwtvc.SdJwtVc) error {
+	irma.Logger.Info("DEBUGGING: StoreCredential")
 	return s.storage.Db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket, err := tx.CreateBucketIfNotExists([]byte(sdjwtvcBucketName))
 
@@ -455,6 +456,7 @@ func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []SdJwtVcAndInfo
 }
 
 func (s *InMemorySdJwtVcStorage) StoreCredential(info SdJwtVcBatchInstanceData, credentials []sdjwtvc.SdJwtVc) error {
+	irma.Logger.Info("DEBUGGING: StoreCredential")
 	s.entries = append(s.entries, sdjwtvcStorageEntry{
 		info:           info,
 		rawCredentials: credentials,

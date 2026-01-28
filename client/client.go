@@ -237,14 +237,14 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchInst
 }
 
 func (client *Client) CredentialInfoList() irma.CredentialInfoList {
-	sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
+	// sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
 	idemix := client.irmaClient.CredentialInfoList()
 
 	result := irma.CredentialInfoList{}
 
-	for _, sdjwt := range sdjwtvcs {
-		result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwt))
-	}
+	// for _, sdjwt := range sdjwtvcs {
+	// 	result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwt))
+	// }
 
 	result = append(result, idemix...)
 
@@ -624,7 +624,9 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 }
 
 func (client *Client) GetPreferences() clientsettings.Preferences {
-	return client.Preferences
+	// TODO: revert this when bug is fixed
+	return clientsettings.Preferences{DeveloperMode: true}
+	// return client.Preferences
 }
 
 func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {

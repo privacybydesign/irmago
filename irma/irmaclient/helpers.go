@@ -41,6 +41,7 @@ func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, e
 }
 
 func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) (*SdJwtVcInstanceData, *sdjwtvc.VerifiedSdJwtVc, error) {
+	irma.Logger.Info("DEBUGGING: createCredentialInfoAndVerifiedSdJwtVc")
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdJwt)
 
 	if err != nil {
@@ -125,6 +126,7 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 
 	credentialsMap := make(map[string]*credentialTuple)
 	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(sdJwtVcKbs))
+	irma.Logger.Infof("DEBUGGING: before the for-loop (len sdjwtvckb: %v)", len(sdJwtVcKbs))
 
 	for i, sdJwtVcKb := range sdJwtVcKbs {
 		// TODO: check if the SD-JWT adheres to the requested credentials (e.g. if the credential ID and attributes etc match) ?
@@ -168,8 +170,10 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 		}
 	}
 
+	irma.Logger.Infof("DEBUGGING: for-loop with credentialsMap: %v", len(credentialsMap))
 	// Now that we've grouped the SD-JWTs by their credential info hash, we can store them
 	for _, v := range credentialsMap {
+	irma.Logger.Infof("DEBUGGING: in for-loop with info: %v, len %v", v.credInfo, len(v.sdjwtvcInstances))
 		batchInfo := SdJwtVcBatchInstanceData{
 			BatchSize:              uint(len(v.sdjwtvcInstances)),
 			RemainingInstanceCount: uint(len(v.sdjwtvcInstances)),

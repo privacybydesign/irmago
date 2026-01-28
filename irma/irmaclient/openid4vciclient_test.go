@@ -41,7 +41,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) *OpenID4VciClient {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
-	client := NewOpenID4VciClient(&http.Client{}, conf, storage, holderVerifier, keyBinder)
+	client := NewOpenID4VciClient(&http.Client{}, conf, storage, holderVerifier, keyBinder, nil, nil)
 	client.AllowInsecureHttpForTesting()
 
 	return client

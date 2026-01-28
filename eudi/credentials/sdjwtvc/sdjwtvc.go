@@ -40,7 +40,7 @@ type DisclosureContent struct {
 	Salt string
 	Key  string
 	// This value can be any type that is allowed in JSON
-	Value interface{}
+	Value any
 
 	// Processing related fields
 	isArrayElement bool
