@@ -44,7 +44,7 @@ type AttributeValue struct {
 	// |---------------------------------|-------------------------------|
 	// | Attribute type                  | Data type                     |
 	// |---------------------------------|-------------------------------|
-	// | AttributeType_Object            | map[string]Attribute          |
+	// | AttributeType_Object            | []Attribute                   |
 	// | AttributeType_Array             | []AttributeValue              |
 	// | AttributeType_String            | string                        |
 	// | AttributeType_TranslatedString  | TranslatedString              |
@@ -194,6 +194,16 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString
 	return &t
 }
 
+func find[T any](slice []T, pred func(T) bool) (T, bool) {
+	for _, v := range slice {
+		if pred(v) {
+			return v, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
 func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
 	creds := client.sdjwtvcStorage.GetCredentialMetdataList()
 
@@ -218,17 +228,10 @@ func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
 			valueJson, _ := json.MarshalIndent(value, "", "    ")
 			irma.Logger.Infof("attribute %v: %v", key, string(valueJson))
 
-			// index := slices.IndexFunc(credMetadata.Attributes, func(attr irmaclient.AttributeMetadata) bool {
-			// 	return attr.Id == key
-			// })
-			// if index < 0 {
-			// 	return nil, fmt.Errorf("failed to find attribute metadata for '%v' in credential '%v'", key, rawCred.CredentialType)
-			// }
-
-			// attributeMetadata := credMetadata.Attributes[index]
-
-			attributeMetadata, ok := credMetadata.Attributes[key]
-			if !ok {
+			attributeMetadata, found := find(credMetadata.Attributes, func(item *irmaclient.AttributeMetadata) bool {
+				return item.Id == key
+			})
+			if !found {
 				continue
 				// TODO: fix this bug...
 				// return nil, fmt.Errorf("failed to get attribute metadata for: %v", key)
@@ -239,13 +242,15 @@ func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
 
 			// TODO: make this recursive so it works for arbitrary levels of nesting
 			if isMap {
-				nestedAttributes := map[string]Attribute{}
+				nestedAttributes := []Attribute{}
 				for nestedKey, nestedValue := range nestedValues {
-					nestedMetadata, ok := attributeMetadata.Nested[nestedKey]
-					if !ok {
+					nestedMetadata, found := find(attributeMetadata.Nested, func(item *irmaclient.AttributeMetadata) bool {
+						return item.Id == nestedKey
+					})
+					if !found {
 						continue
 					}
-					nestedAttributes[nestedKey] = Attribute{
+					nestedAttributes = append(nestedAttributes, Attribute{
 						Id:          nestedKey,
 						DisplayName: TranslatedString(nestedMetadata.Name),
 						Description: TranslatedString{},
@@ -253,7 +258,7 @@ func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
 							Type: AttributeType_String,
 							Data: nestedValue,
 						},
-					}
+					})
 				}
 				attributes = append(attributes, Attribute{
 					Id:          key,

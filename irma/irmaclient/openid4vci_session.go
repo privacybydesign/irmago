@@ -79,7 +79,7 @@ func (s *openid4vciSession) perform() error {
 
 	// Check if permission was granted
 	if permission == nil || !permission.PermissionGranted() {
-		irma.Logger.Info("permission was nil or not granted: %v", permission)
+		irma.Logger.Infof("permission was nil or not granted: %v", permission)
 		s.handler.Cancelled()
 		return nil
 	}
@@ -244,12 +244,22 @@ func toTranslatedValue[T any](displays []T, mapper func(T) (string, string)) irm
 	return result
 }
 
+func find[T any](slice []T, pred func(T) bool) (T, bool) {
+	for _, v := range slice {
+		if pred(v) {
+			return v, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
 func storeCredentialMetadata(storage CredentialMetadataStorage, config *openid4vci.CredentialConfiguration, issuerConfig *openid4vci.CredentialIssuerMetadata) error {
 	credentialName := toTranslatedValue(config.CredentialMetadata.Display, func(d openid4vci.CredentialDisplay) (string, string) {
 		return d.Locale, d.Name
 	})
 
-	attributes := map[string]*AttributeMetadata{}
+	attributes := []*AttributeMetadata{}
 
 	for _, claim := range config.CredentialMetadata.Claims {
 		claimName := toTranslatedValue(claim.Display, func(d openid4vci.Display) (string, string) {
@@ -261,26 +271,26 @@ func storeCredentialMetadata(storage CredentialMetadataStorage, config *openid4v
 		}
 
 		rootKey := claim.Path[0]
-		node, ok := attributes[rootKey]
+		node, ok := find(attributes, func(a *AttributeMetadata) bool { return a.Id == rootKey })
 		if !ok {
 			node = &AttributeMetadata{
 				Id:     rootKey,
-				Nested: map[string]*AttributeMetadata{},
+				Nested: []*AttributeMetadata{},
 			}
-			attributes[rootKey] = node
+			attributes = append(attributes, node)
 		}
 
 		// Walk down the path
 		for i := 1; i < len(claim.Path); i++ {
 			key := claim.Path[i]
 
-			child, ok := node.Nested[key]
+			child, ok := find(node.Nested, func(a *AttributeMetadata) bool { return a.Id == key })
 			if !ok {
 				child = &AttributeMetadata{
 					Id:     key,
-					Nested: map[string]*AttributeMetadata{},
+					Nested: []*AttributeMetadata{},
 				}
-				node.Nested[key] = child
+				node.Nested = append(node.Nested, child)
 			}
 
 			node = child
