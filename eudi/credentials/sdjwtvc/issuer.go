@@ -23,6 +23,274 @@ type SdJwtVcBuilder struct {
 	ensureHaipCompatible   bool
 }
 
+type ClaimType string
+
+const (
+	Claim_String ClaimType = "string"
+	Claim_Int    ClaimType = "integer"
+	Claim_Bool   ClaimType = "boolean"
+	Claim_Object ClaimType = "object"
+	Claim_Array  ClaimType = "array"
+	Claim_Null   ClaimType = "null"
+)
+
+type Sd struct {
+	Salt   string
+	Digest string
+}
+
+type Null struct{}
+
+type LeafClaimDataType interface {
+	~string | ~int | ~bool | Null
+}
+
+func LeafNodeDataTypeToClaimType[T LeafClaimDataType](v T) ClaimType {
+	switch any(v).(type) {
+	case string:
+		return Claim_String
+	case int:
+		return Claim_Int
+	case bool:
+		return Claim_Bool
+	default:
+		return Claim_Null
+	}
+}
+
+type SerializedClaim interface {
+	Element()
+}
+
+type EmbeddedClaimElement struct {
+	Key         string
+	Value       json.RawMessage
+	Disclosures []EncodedDisclosure
+}
+
+func (s *EmbeddedClaimElement) Element() {}
+
+type SdClaimElement struct {
+	Digest      HashedDisclosure
+	Disclosures []EncodedDisclosure
+}
+
+func (s *SdClaimElement) Element() {}
+
+// An element in the claim tree of an sdjwt
+// Can be used to serialize the claims and create selectively disclosable parts
+type ClaimElement struct {
+	Type      ClaimType
+	Key       string
+	Value     any
+	SubClaims []*ClaimElement
+	IsSd      bool
+}
+
+func (e *ClaimElement) Encode() (SerializedClaim, error) {
+	switch e.Type {
+	case Claim_Array:
+		return e.encodeArray()
+	case Claim_Object:
+		return e.encodeObject()
+	case Claim_Bool:
+		return e.encodeLeaf()
+	case Claim_Int:
+		return e.encodeLeaf()
+	case Claim_String:
+		return e.encodeLeaf()
+	case Claim_Null:
+		return e.encodeLeaf()
+	}
+	return nil, fmt.Errorf("unsupported claim type: '%v' (%v, %v, %v)", e.Type, e.Key, e.Value, e.IsSd)
+}
+
+func (e *ClaimElement) encodeLeaf() (SerializedClaim, error) {
+	if e.IsSd {
+		disclosure, err := NewDisclosureContent(e.Key, e.Value)
+		if err != nil {
+			return nil, err
+		}
+		encodedDisclosure, err := EncodeDisclosure(disclosure)
+		if err != nil {
+			return nil, err
+		}
+		hash, err := HashEncodedDisclosure(iana.SHA256, encodedDisclosure)
+		if err != nil {
+			return nil, err
+		}
+		return &SdClaimElement{
+			Digest:      hash,
+			Disclosures: []EncodedDisclosure{encodedDisclosure},
+		}, nil
+	}
+
+	value, err := json.Marshal(e.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EmbeddedClaimElement{
+		Key:         e.Key,
+		Value:       value,
+		Disclosures: []EncodedDisclosure{},
+	}, nil
+}
+
+func (e *ClaimElement) encodeObject() (SerializedClaim, error) {
+	result := map[string]any{}
+	sd := []HashedDisclosure{}
+	disclosures := []EncodedDisclosure{}
+
+	for _, c := range e.SubClaims {
+		subClaim, err := c.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode: %w", err)
+		}
+
+		if sdClaim, ok := subClaim.(*SdClaimElement); ok {
+			sd = append(sd, sdClaim.Digest)
+			disclosures = append(disclosures, sdClaim.Disclosures...)
+		} else if emClaim, ok := subClaim.(*EmbeddedClaimElement); ok {
+			result[emClaim.Key] = emClaim.Value
+			disclosures = append(disclosures, emClaim.Disclosures...)
+		} else {
+			return nil, fmt.Errorf("somehow claim element not a valid type...")
+		}
+	}
+
+	result["_sd"] = sd
+
+	if e.IsSd {
+		disclosure, err := NewDisclosureContent(e.Key, result)
+		if err != nil {
+			return nil, err
+		}
+		encodedDisclosure, err := EncodeDisclosure(disclosure)
+		if err != nil {
+			return nil, err
+		}
+		hash, err := HashEncodedDisclosure(iana.SHA256, encodedDisclosure)
+		if err != nil {
+			return nil, err
+		}
+		disclosures = append(disclosures, encodedDisclosure)
+		return &SdClaimElement{
+			Digest:      hash,
+			Disclosures: disclosures,
+		}, nil
+
+	}
+
+	value, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EmbeddedClaimElement{
+		Key:         e.Key,
+		Value:       value,
+		Disclosures: disclosures,
+	}, nil
+}
+
+func (e *ClaimElement) encodeArray() (SerializedClaim, error) {
+	return nil, nil
+}
+
+type SdJwtBuilder struct {
+	claims          []*ClaimElement
+	issuerCertChain []string
+}
+
+func SdObject(key string, subClaims ...*ClaimElement) *ClaimElement {
+	return &ClaimElement{
+		Type:      Claim_Object,
+		Key:       key,
+		Value:     nil,
+		SubClaims: subClaims,
+		IsSd:      true,
+	}
+}
+
+func Object(key string, subClaims ...*ClaimElement) *ClaimElement {
+	return &ClaimElement{
+		Type:      Claim_Object,
+		Key:       key,
+		Value:     nil,
+		SubClaims: subClaims,
+		IsSd:      false,
+	}
+}
+
+func Claim[T LeafClaimDataType](key string, value T) *ClaimElement {
+	return &ClaimElement{
+		Type:      LeafNodeDataTypeToClaimType(value),
+		Key:       key,
+		Value:     value,
+		SubClaims: nil,
+		IsSd:      false,
+	}
+}
+
+func SdClaim[T LeafClaimDataType](key string, value T) *ClaimElement {
+	return &ClaimElement{
+		Type:      LeafNodeDataTypeToClaimType(value),
+		Key:       key,
+		Value:     value,
+		SubClaims: nil,
+		IsSd:      true,
+	}
+}
+
+func (b *SdJwtBuilder) WithPayload(claims ...*ClaimElement) *SdJwtBuilder {
+	b.claims = claims
+	return b
+}
+
+func (b *SdJwtBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtBuilder {
+	b.issuerCertChain = certChain
+	return b
+}
+
+func (b *SdJwtBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
+	rootNode := &ClaimElement{
+		Type:      Claim_Object,
+		SubClaims: b.claims,
+		IsSd:      false,
+	}
+	claims, err := rootNode.Encode()
+	if err != nil {
+		return "", fmt.Errorf("failed to encode root node: %w", err)
+	}
+
+	claimsJson, ok := claims.(*EmbeddedClaimElement)
+	if !ok {
+		return "", fmt.Errorf("root node is not of type EmbeddedClaimElement")
+	}
+
+	header := map[string]any{
+		"x5c": b.issuerCertChain,
+		"typ": "dc+sd-jwt",
+	}
+
+	result, err := jwtCreator.CreateSignedJwt(header, string(claimsJson.Value))
+
+	if err != nil {
+		return "", fmt.Errorf("failed to create issuer signed payload: %w", err)
+	}
+
+	return CreateSdJwtVc(IssuerSignedJwt(result), claimsJson.Disclosures), nil
+}
+
+func NewSdJwtBuilder() *SdJwtBuilder {
+	return &SdJwtBuilder{}
+}
+
+func (b *SdJwtVcBuilder) WithClaims(builders ...*ClaimElement) *SdJwtVcBuilder {
+	return nil
+}
+
 func NewSdJwtVcBuilder() *SdJwtVcBuilder {
 	return &SdJwtVcBuilder{}
 }

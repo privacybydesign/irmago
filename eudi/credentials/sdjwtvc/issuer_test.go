@@ -1,6 +1,7 @@
 package sdjwtvc
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -9,6 +10,33 @@ import (
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNewBuilder(t *testing.T) {
+	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
+	require.NoError(t, err)
+	sdJwt, err := NewSdJwtBuilder().
+		WithPayload(
+			Claim("iat", 13853353),
+			Claim("vct", "pbdf.sidn-pbdf.email"),
+			Claim("sd_alg", iana.SHA256),
+			SdObject("address",
+				SdClaim("street", "Schulstr 3"),
+				SdClaim("country", "Germany"),
+				// SdClaim("null", Null{}),
+			),
+			Object("personal_data",
+				SdClaim("first_name", "Gerrit"),
+				SdClaim("last_name", "Dijkstra"),
+			),
+		).
+		WithIssuerCertificateChain(irmaAppCert).
+		Build(jwtCreator)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, sdJwt)
+	fmt.Printf("sdjwt:\n%v\n\n", sdJwt)
+}
 
 func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)

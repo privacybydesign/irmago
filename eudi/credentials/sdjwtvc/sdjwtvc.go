@@ -339,7 +339,7 @@ func HashDisclosures(algorithm iana.HashingAlgorithm, disclosures []DisclosureCo
 }
 
 func makeClaimDisclosureArrayJson(claim DisclosureContent) ([]byte, error) {
-	claimArray := []interface{}{claim.Salt, claim.Key, claim.Value}
+	claimArray := []any{claim.Salt, claim.Key, claim.Value}
 	jsonBytes, err := json.Marshal(claimArray)
 	if err != nil {
 		return []byte{}, err
@@ -459,4 +459,77 @@ func CreateTestSdJwtVc() (SdJwtVc, error) {
 	}
 
 	return sdJwtVc, nil
+}
+
+// ==========================================================================
+
+type ClaimValue interface {
+	ClaimValue()
+}
+
+// The claim is an object
+type ObjectClaims struct {
+	// Selectively disclosable (sub) claims (hashes)
+	Sd []string
+	// Non-selectively disclosable (sub) claims
+	Claims map[string]ClaimValue
+}
+
+type NullClaim struct{}
+
+type IntClaim struct {
+	Value int
+}
+
+type BoolClaim struct {
+	Value bool
+}
+
+type StringClaim struct {
+	Value string
+}
+
+func (oc *ObjectClaims) ClaimValue() {}
+func (ac *ArrayClaims) ClaimValue()  {}
+
+// interface for single item in array claim
+type ArrayClaimItem interface {
+	ArrayClaimItem()
+}
+
+// The claim is an array
+type ArrayClaims struct {
+	Items []ArrayClaimItem
+}
+
+// The array item is selectively disclosable and thus the claim contains a digest/hash
+type ArrayClaimHash struct {
+	Digest string `json:"..."`
+}
+
+// The array item is non-selectively disclosable
+type ArrayClaimValue struct {
+	Value ClaimValue
+}
+
+func (v *ArrayClaimValue) ArrayClaimItem() {}
+
+// ===================================================
+
+// Decoded version of what is in a disclosure (after ~ of sdjwt)
+type DisclosureContent2 interface {
+	DisclosureContent2()
+}
+
+// Json object that is selectively disclosable
+type DisclosureContentObject struct {
+	Salt       string
+	ClaimName  string
+	ClaimValue ClaimValue
+}
+
+// Single array item that is selectively disclosable
+type DisclosureContentArrayElement struct {
+	Salt  string
+	Value ArrayClaimItem
 }
