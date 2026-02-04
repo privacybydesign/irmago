@@ -34,6 +34,43 @@ const (
 	Claim_Null   ClaimType = "null"
 )
 
+type encodeMode int
+
+const (
+	encodeFullClaim encodeMode = iota
+	encodeValueOnly
+)
+
+func sdElementFromDisclosure(content DisclosureContent, existing []EncodedDisclosure) (*SdClaimElement, []EncodedDisclosure, error) {
+	disclosure, err := EncodeDisclosure(content)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	hash, err := HashEncodedDisclosure(iana.SHA256, disclosure)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	all := append(existing, disclosure)
+	return &SdClaimElement{
+		Digest:      hash,
+		Disclosures: all,
+	}, all, nil
+}
+
+func marshalEmbedded(key string, v any, disclosures []EncodedDisclosure) (*EmbeddedClaimElement, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return &EmbeddedClaimElement{
+		Key:         key,
+		Value:       raw,
+		Disclosures: disclosures,
+	}, nil
+}
+
 type Null struct{}
 
 type LeafClaimDataType interface {
@@ -83,222 +120,139 @@ type ClaimElement struct {
 }
 
 func (e *ClaimElement) EncodeValueOnly() (SerializedClaim, error) {
-	switch e.Type {
-	case Claim_Array:
-		return e.encodeArrayValueOnly()
-	case Claim_Object:
-		return e.encodeObjectValueOnly()
-	case Claim_Bool:
-		return e.encodeLeafValueOnly()
-	case Claim_Int:
-		return e.encodeLeafValueOnly()
-	case Claim_String:
-		return e.encodeLeafValueOnly()
-	case Claim_Null:
-		return e.encodeLeafValueOnly()
-	}
-	return nil, fmt.Errorf("unsupported claim type: '%v' (%v, %v, %v)", e.Type, e.Key, e.Value, e.SelectivelyDisclosable)
+	return e.encode(encodeValueOnly)
 }
 
 func (e *ClaimElement) Encode() (SerializedClaim, error) {
+	return e.encode(encodeFullClaim)
+}
+
+func (e *ClaimElement) encode(mode encodeMode) (SerializedClaim, error) {
 	switch e.Type {
 	case Claim_Array:
-		return e.encodeArray()
+		return e.encodeArray(mode)
 	case Claim_Object:
-		return e.encodeObject()
-	case Claim_Bool:
-		return e.encodeLeaf()
-	case Claim_Int:
-		return e.encodeLeaf()
-	case Claim_String:
-		return e.encodeLeaf()
-	case Claim_Null:
-		return e.encodeLeaf()
+		return e.encodeObject(mode)
+	case Claim_String, Claim_Int, Claim_Bool, Claim_Null:
+		return e.encodeLeaf(mode)
+	default:
+		return nil, fmt.Errorf("unsupported claim type: '%v' (%v, %v, %v)",
+			e.Type, e.Key, e.Value, e.SelectivelyDisclosable)
 	}
-	return nil, fmt.Errorf("unsupported claim type: '%v' (%v, %v, %v)", e.Type, e.Key, e.Value, e.SelectivelyDisclosable)
 }
 
-func (e *ClaimElement) encodeLeaf() (SerializedClaim, error) {
+func (e *ClaimElement) encodeLeaf(mode encodeMode) (SerializedClaim, error) {
 	if e.SelectivelyDisclosable {
-		disclosure, err := NewDisclosureContent(e.Key, e.Value)
-		if err != nil {
-			return nil, err
+
+		var content DisclosureContent
+		if mode == encodeFullClaim {
+			d, err := NewDisclosureContent(e.Key, e.Value)
+			if err != nil {
+				return nil, err
+			}
+			content = d
+		} else {
+			d, err := NewArrayItemDisclosureContent(e.Value)
+			if err != nil {
+				return nil, err
+			}
+			content = d
 		}
-		encodedDisclosure, err := EncodeDisclosure(disclosure)
-		if err != nil {
-			return nil, err
-		}
-		hash, err := HashEncodedDisclosure(iana.SHA256, encodedDisclosure)
-		if err != nil {
-			return nil, err
-		}
-		return &SdClaimElement{
-			Digest:      hash,
-			Disclosures: []EncodedDisclosure{encodedDisclosure},
-		}, nil
+
+		sd, _, err := sdElementFromDisclosure(content, nil)
+		return sd, err
+
 	}
 
-	value, err := json.Marshal(e.Value)
-	if err != nil {
-		return nil, err
-	}
-
-	return &EmbeddedClaimElement{
-		Key:         e.Key,
-		Value:       value,
-		Disclosures: []EncodedDisclosure{},
-	}, nil
+	return marshalEmbedded(e.Key, e.Value, nil)
 }
 
-func (e *ClaimElement) encodeLeafValueOnly() (SerializedClaim, error) {
-	if e.SelectivelyDisclosable {
-		disclosure, err := NewArrayItemDisclosureContent(e.Value)
-		if err != nil {
-			return nil, err
-		}
-		encodedDisclosure, err := EncodeDisclosure(disclosure)
-		if err != nil {
-			return nil, err
-		}
-		hash, err := HashEncodedDisclosure(iana.SHA256, encodedDisclosure)
-		if err != nil {
-			return nil, err
-		}
-		return &SdClaimElement{
-			Digest:      hash,
-			Disclosures: []EncodedDisclosure{encodedDisclosure},
-		}, nil
-	}
-
-	value, err := json.Marshal(e.Value)
-	if err != nil {
-		return nil, err
-	}
-
-	return &EmbeddedClaimElement{
-		Key:         e.Key,
-		Value:       value,
-		Disclosures: []EncodedDisclosure{},
-	}, nil
-}
-
-func (e *ClaimElement) encodeObjectValueOnly() (SerializedClaim, error) {
-	return nil, nil
-}
-
-func (e *ClaimElement) encodeObject() (SerializedClaim, error) {
+func (e *ClaimElement) encodeObject(mode encodeMode) (SerializedClaim, error) {
 	result := map[string]any{}
-	sd := []HashedDisclosure{}
+	var sd []HashedDisclosure
 	disclosures := []EncodedDisclosure{}
 
 	for _, c := range e.SubClaims {
-		subClaim, err := c.Encode()
+		subMode := encodeFullClaim
+		subClaim, err := c.encode(subMode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode: %w", err)
 		}
 
-		if sdClaim, ok := subClaim.(*SdClaimElement); ok {
-			sd = append(sd, sdClaim.Digest)
-			disclosures = append(disclosures, sdClaim.Disclosures...)
-		} else if emClaim, ok := subClaim.(*EmbeddedClaimElement); ok {
-			result[emClaim.Key] = emClaim.Value
-			disclosures = append(disclosures, emClaim.Disclosures...)
-		} else {
-			return nil, fmt.Errorf("somehow claim element not a valid type...")
+		switch sc := subClaim.(type) {
+		case *SdClaimElement:
+			sd = append(sd, sc.Digest)
+			disclosures = append(disclosures, sc.Disclosures...)
+		case *EmbeddedClaimElement:
+			result[sc.Key] = json.RawMessage(sc.Value)
+			disclosures = append(disclosures, sc.Disclosures...)
+		default:
+			return nil, fmt.Errorf("unexpected claim type %T", subClaim)
 		}
 	}
 
-	result["_sd"] = sd
+	if len(sd) > 0 {
+		result["_sd"] = sd
+	}
 
 	if e.SelectivelyDisclosable {
-		disclosure, err := NewDisclosureContent(e.Key, result)
+		d, err := NewDisclosureContent(e.Key, result)
 		if err != nil {
 			return nil, err
 		}
-		encodedDisclosure, err := EncodeDisclosure(disclosure)
-		if err != nil {
-			return nil, err
-		}
-		hash, err := HashEncodedDisclosure(iana.SHA256, encodedDisclosure)
-		if err != nil {
-			return nil, err
-		}
-		disclosures = append(disclosures, encodedDisclosure)
-		return &SdClaimElement{
-			Digest:      hash,
-			Disclosures: disclosures,
-		}, nil
 
+		sdElem, all, err := sdElementFromDisclosure(d, disclosures)
+		if err != nil {
+			return nil, err
+		}
+		sdElem.Disclosures = all
+		return sdElem, nil
 	}
 
-	value, err := json.Marshal(result)
-	if err != nil {
-		return nil, err
-	}
-
-	return &EmbeddedClaimElement{
-		Key:         e.Key,
-		Value:       value,
-		Disclosures: disclosures,
-	}, nil
+	// value-only callers with ignore key anyway
+	return marshalEmbedded(e.Key, result, disclosures)
 }
 
 func (e *ClaimElement) encodeArrayValueOnly() (SerializedClaim, error) {
 	return nil, nil
 }
 
-func (e *ClaimElement) encodeArray() (SerializedClaim, error) {
+func (e *ClaimElement) encodeArray(mode encodeMode) (SerializedClaim, error) {
 	result := []any{}
-	disclosures := []EncodedDisclosure{}
+	var disclosures []EncodedDisclosure
 
 	for _, c := range e.SubClaims {
-		subClaim, err := c.EncodeValueOnly()
+		subClaim, err := c.encode(encodeValueOnly)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode: %w", err)
 		}
 
-		if sdClaim, ok := subClaim.(*SdClaimElement); ok {
-			result = append(result, map[string]HashedDisclosure{"...": sdClaim.Digest})
-			disclosures = append(disclosures, sdClaim.Disclosures...)
-		} else if emClaim, ok := subClaim.(*EmbeddedClaimElement); ok {
-			result = append(result, emClaim.Value)
-			disclosures = append(disclosures, emClaim.Disclosures...)
-		} else {
-			return nil, fmt.Errorf("somehow claim element not a valid type...")
+		switch sc := subClaim.(type) {
+		case *SdClaimElement:
+			result = append(result, map[string]HashedDisclosure{"...": sc.Digest})
+			disclosures = append(disclosures, sc.Disclosures...)
+		case *EmbeddedClaimElement:
+			result = append(result, json.RawMessage(sc.Value))
+			disclosures = append(disclosures, sc.Disclosures...)
+		default:
+			return nil, fmt.Errorf("unexpected claim element type %T", subClaim)
 		}
 	}
 
 	if e.SelectivelyDisclosable {
-		disclosure, err := NewDisclosureContent(e.Key, result)
+		d, err := NewDisclosureContent(e.Key, result)
 		if err != nil {
 			return nil, err
 		}
-		encodedDisclosure, err := EncodeDisclosure(disclosure)
+		sdElem, all, err := sdElementFromDisclosure(d, disclosures)
 		if err != nil {
 			return nil, err
 		}
-		hash, err := HashEncodedDisclosure(iana.SHA256, encodedDisclosure)
-		if err != nil {
-			return nil, err
-		}
-		disclosures = append(disclosures, encodedDisclosure)
-		return &SdClaimElement{
-			Digest:      hash,
-			Disclosures: disclosures,
-		}, nil
-
+		sdElem.Disclosures = all
+		return sdElem, nil
 	}
 
-	value, err := json.Marshal(result)
-	if err != nil {
-		return nil, err
-	}
-
-	return &EmbeddedClaimElement{
-		Key:         e.Key,
-		Value:       value,
-		Disclosures: disclosures,
-	}, nil
+	return marshalEmbedded(e.Key, result, disclosures)
 }
 
 type SdJwtBuilder struct {
