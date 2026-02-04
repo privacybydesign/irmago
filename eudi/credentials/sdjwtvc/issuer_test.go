@@ -29,6 +29,7 @@ func TestNewBuilder(t *testing.T) {
 				SdClaim("first_name", "Gerrit"),
 				SdClaim("last_name", "Dijkstra"),
 			),
+			Array("nationalities", Item("NL"), SdItem("FR")),
 		).
 		WithIssuerCertificateChain(irmaAppCert).
 		Build(jwtCreator)

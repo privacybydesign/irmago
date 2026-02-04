@@ -93,6 +93,18 @@ func NewDisclosureContent(key string, value any) (DisclosureContent, error) {
 	}, nil
 }
 
+func NewArrayItemDisclosureContent(value any) (DisclosureContent, error) {
+	salt, err := generateSalt(16) // 128 bit salt
+	if err != nil {
+		return DisclosureContent{}, err
+	}
+	return DisclosureContent{
+		Salt:           salt,
+		Value:          value,
+		isArrayElement: true,
+	}, nil
+}
+
 func MultipleNewDisclosureContents[T any](values map[string]T) ([]DisclosureContent, error) {
 	result := []DisclosureContent{}
 	for key, value := range values {
@@ -339,7 +351,13 @@ func HashDisclosures(algorithm iana.HashingAlgorithm, disclosures []DisclosureCo
 }
 
 func makeClaimDisclosureArrayJson(claim DisclosureContent) ([]byte, error) {
-	claimArray := []any{claim.Salt, claim.Key, claim.Value}
+	var claimArray []any
+
+	if claim.isArrayElement {
+		claimArray = []any{claim.Salt, claim.Value}
+	} else {
+		claimArray = []any{claim.Salt, claim.Key, claim.Value}
+	}
 	jsonBytes, err := json.Marshal(claimArray)
 	if err != nil {
 		return []byte{}, err

@@ -34,11 +34,6 @@ const (
 	Claim_Null   ClaimType = "null"
 )
 
-type Sd struct {
-	Salt   string
-	Digest string
-}
-
 type Null struct{}
 
 type LeafClaimDataType interface {
@@ -80,11 +75,29 @@ func (s *SdClaimElement) Element() {}
 // An element in the claim tree of an sdjwt
 // Can be used to serialize the claims and create selectively disclosable parts
 type ClaimElement struct {
-	Type      ClaimType
-	Key       string
-	Value     any
-	SubClaims []*ClaimElement
-	IsSd      bool
+	Type                   ClaimType
+	Key                    string
+	Value                  any
+	SubClaims              []*ClaimElement
+	SelectivelyDisclosable bool
+}
+
+func (e *ClaimElement) EncodeValueOnly() (SerializedClaim, error) {
+	switch e.Type {
+	case Claim_Array:
+		return e.encodeArrayValueOnly()
+	case Claim_Object:
+		return e.encodeObjectValueOnly()
+	case Claim_Bool:
+		return e.encodeLeafValueOnly()
+	case Claim_Int:
+		return e.encodeLeafValueOnly()
+	case Claim_String:
+		return e.encodeLeafValueOnly()
+	case Claim_Null:
+		return e.encodeLeafValueOnly()
+	}
+	return nil, fmt.Errorf("unsupported claim type: '%v' (%v, %v, %v)", e.Type, e.Key, e.Value, e.SelectivelyDisclosable)
 }
 
 func (e *ClaimElement) Encode() (SerializedClaim, error) {
@@ -102,11 +115,11 @@ func (e *ClaimElement) Encode() (SerializedClaim, error) {
 	case Claim_Null:
 		return e.encodeLeaf()
 	}
-	return nil, fmt.Errorf("unsupported claim type: '%v' (%v, %v, %v)", e.Type, e.Key, e.Value, e.IsSd)
+	return nil, fmt.Errorf("unsupported claim type: '%v' (%v, %v, %v)", e.Type, e.Key, e.Value, e.SelectivelyDisclosable)
 }
 
 func (e *ClaimElement) encodeLeaf() (SerializedClaim, error) {
-	if e.IsSd {
+	if e.SelectivelyDisclosable {
 		disclosure, err := NewDisclosureContent(e.Key, e.Value)
 		if err != nil {
 			return nil, err
@@ -137,6 +150,42 @@ func (e *ClaimElement) encodeLeaf() (SerializedClaim, error) {
 	}, nil
 }
 
+func (e *ClaimElement) encodeLeafValueOnly() (SerializedClaim, error) {
+	if e.SelectivelyDisclosable {
+		disclosure, err := NewArrayItemDisclosureContent(e.Value)
+		if err != nil {
+			return nil, err
+		}
+		encodedDisclosure, err := EncodeDisclosure(disclosure)
+		if err != nil {
+			return nil, err
+		}
+		hash, err := HashEncodedDisclosure(iana.SHA256, encodedDisclosure)
+		if err != nil {
+			return nil, err
+		}
+		return &SdClaimElement{
+			Digest:      hash,
+			Disclosures: []EncodedDisclosure{encodedDisclosure},
+		}, nil
+	}
+
+	value, err := json.Marshal(e.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EmbeddedClaimElement{
+		Key:         e.Key,
+		Value:       value,
+		Disclosures: []EncodedDisclosure{},
+	}, nil
+}
+
+func (e *ClaimElement) encodeObjectValueOnly() (SerializedClaim, error) {
+	return nil, nil
+}
+
 func (e *ClaimElement) encodeObject() (SerializedClaim, error) {
 	result := map[string]any{}
 	sd := []HashedDisclosure{}
@@ -161,7 +210,7 @@ func (e *ClaimElement) encodeObject() (SerializedClaim, error) {
 
 	result["_sd"] = sd
 
-	if e.IsSd {
+	if e.SelectivelyDisclosable {
 		disclosure, err := NewDisclosureContent(e.Key, result)
 		if err != nil {
 			return nil, err
@@ -194,8 +243,62 @@ func (e *ClaimElement) encodeObject() (SerializedClaim, error) {
 	}, nil
 }
 
-func (e *ClaimElement) encodeArray() (SerializedClaim, error) {
+func (e *ClaimElement) encodeArrayValueOnly() (SerializedClaim, error) {
 	return nil, nil
+}
+
+func (e *ClaimElement) encodeArray() (SerializedClaim, error) {
+	result := []any{}
+	disclosures := []EncodedDisclosure{}
+
+	for _, c := range e.SubClaims {
+		subClaim, err := c.EncodeValueOnly()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode: %w", err)
+		}
+
+		if sdClaim, ok := subClaim.(*SdClaimElement); ok {
+			result = append(result, map[string]HashedDisclosure{"...": sdClaim.Digest})
+			disclosures = append(disclosures, sdClaim.Disclosures...)
+		} else if emClaim, ok := subClaim.(*EmbeddedClaimElement); ok {
+			result = append(result, emClaim.Value)
+			disclosures = append(disclosures, emClaim.Disclosures...)
+		} else {
+			return nil, fmt.Errorf("somehow claim element not a valid type...")
+		}
+	}
+
+	if e.SelectivelyDisclosable {
+		disclosure, err := NewDisclosureContent(e.Key, result)
+		if err != nil {
+			return nil, err
+		}
+		encodedDisclosure, err := EncodeDisclosure(disclosure)
+		if err != nil {
+			return nil, err
+		}
+		hash, err := HashEncodedDisclosure(iana.SHA256, encodedDisclosure)
+		if err != nil {
+			return nil, err
+		}
+		disclosures = append(disclosures, encodedDisclosure)
+		return &SdClaimElement{
+			Digest:      hash,
+			Disclosures: disclosures,
+		}, nil
+
+	}
+
+	value, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EmbeddedClaimElement{
+		Key:         e.Key,
+		Value:       value,
+		Disclosures: disclosures,
+	}, nil
 }
 
 type SdJwtBuilder struct {
@@ -203,43 +306,67 @@ type SdJwtBuilder struct {
 	issuerCertChain []string
 }
 
+func SdItem[T LeafClaimDataType](value T) *ClaimElement {
+	return SdClaim("", value)
+}
+
+func Item[T LeafClaimDataType](value T) *ClaimElement {
+	return Claim("", value)
+}
+
+func Array(key string, items ...*ClaimElement) *ClaimElement {
+	return &ClaimElement{
+		Type:                   Claim_Array,
+		Key:                    key,
+		SubClaims:              items,
+		SelectivelyDisclosable: false,
+	}
+}
+
+func SdArray(key string, items ...*ClaimElement) *ClaimElement {
+	return &ClaimElement{
+		Type:                   Claim_Array,
+		Key:                    key,
+		SubClaims:              items,
+		SelectivelyDisclosable: true,
+	}
+}
+
 func SdObject(key string, subClaims ...*ClaimElement) *ClaimElement {
 	return &ClaimElement{
-		Type:      Claim_Object,
-		Key:       key,
-		Value:     nil,
-		SubClaims: subClaims,
-		IsSd:      true,
+		Type:                   Claim_Object,
+		Key:                    key,
+		SubClaims:              subClaims,
+		SelectivelyDisclosable: true,
 	}
 }
 
 func Object(key string, subClaims ...*ClaimElement) *ClaimElement {
 	return &ClaimElement{
-		Type:      Claim_Object,
-		Key:       key,
-		Value:     nil,
-		SubClaims: subClaims,
-		IsSd:      false,
+		Type:                   Claim_Object,
+		Key:                    key,
+		SubClaims:              subClaims,
+		SelectivelyDisclosable: false,
 	}
 }
 
 func Claim[T LeafClaimDataType](key string, value T) *ClaimElement {
 	return &ClaimElement{
-		Type:      LeafNodeDataTypeToClaimType(value),
-		Key:       key,
-		Value:     value,
-		SubClaims: nil,
-		IsSd:      false,
+		Type:                   LeafNodeDataTypeToClaimType(value),
+		Key:                    key,
+		Value:                  value,
+		SubClaims:              nil,
+		SelectivelyDisclosable: false,
 	}
 }
 
 func SdClaim[T LeafClaimDataType](key string, value T) *ClaimElement {
 	return &ClaimElement{
-		Type:      LeafNodeDataTypeToClaimType(value),
-		Key:       key,
-		Value:     value,
-		SubClaims: nil,
-		IsSd:      true,
+		Type:                   LeafNodeDataTypeToClaimType(value),
+		Key:                    key,
+		Value:                  value,
+		SubClaims:              nil,
+		SelectivelyDisclosable: true,
 	}
 }
 
@@ -255,9 +382,9 @@ func (b *SdJwtBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtBuil
 
 func (b *SdJwtBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	rootNode := &ClaimElement{
-		Type:      Claim_Object,
-		SubClaims: b.claims,
-		IsSd:      false,
+		Type:                   Claim_Object,
+		SubClaims:              b.claims,
+		SelectivelyDisclosable: false,
 	}
 	claims, err := rootNode.Encode()
 	if err != nil {
