@@ -72,13 +72,14 @@ func (session *sessionData) updateFrontendOptions(request *irma.FrontendOptionsR
 	if session.Status != irma.ServerStatusInitialized {
 		return nil, errors.New("Frontend options can only be updated when session is in initialized state")
 	}
-	if request.PairingMethod == "" {
+	switch request.PairingMethod {
+	case "":
 		return &session.Options, nil
-	} else if request.PairingMethod == irma.PairingMethodNone {
+	case irma.PairingMethodNone:
 		session.Options.PairingCode = ""
-	} else if request.PairingMethod == irma.PairingMethodPin {
+	case irma.PairingMethodPin:
 		session.Options.PairingCode = common.NewPairingCode()
-	} else {
+	default:
 		return nil, errors.New("Pairing method unknown")
 	}
 	session.Options.PairingMethod = request.PairingMethod
@@ -442,7 +443,7 @@ func copyObject[T any](object T, copy T) error {
 	return nil
 }
 
-func copyInterface(i interface{}) (interface{}, error) {
+func copyInterface(i any) (any, error) {
 	copy := reflect.New(reflect.TypeOf(i).Elem()).Interface()
 	if err := copyObject(i, copy); err != nil {
 		return nil, err
@@ -508,7 +509,7 @@ func eventServer(conf *server.Configuration) *sse.Server {
 	})
 }
 
-func errorWriter(err *irma.RemoteError, writer func(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError)) http.HandlerFunc {
+func errorWriter(err *irma.RemoteError, writer func(w http.ResponseWriter, object any, rerr *irma.RemoteError)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writer(w, nil, err)
 	}
@@ -870,23 +871,27 @@ func (session *sessionData) generateSdJwts(
 		validUntil := time.Time(*cred.Validity).Unix()
 
 		for range cred.SdJwtBatchSize {
-			disclosures, err := sdjwtvc.MultipleNewDisclosureContents(cred.Attributes)
+			holderKeyClaim, err := sdjwtvc.HolderKeyClaim(kbPubKeys[index])
 			if err != nil {
 				return nil, err
 			}
+			claims := []*sdjwtvc.ClaimElement{
+				sdjwtvc.Claim(sdjwtvc.Key_SdAlg, iana.SHA256),
+				sdjwtvc.Claim(sdjwtvc.Key_Issuer, sdJwtIssuer.IssuerUrl),
+				sdjwtvc.Claim(sdjwtvc.Key_VerifiableCredentialType, credentialType),
+				sdjwtvc.Claim(sdjwtvc.Key_ExpiryTime, validUntil),
+				sdjwtvc.Claim(sdjwtvc.Key_IssuedAt, issuanceTime),
+				holderKeyClaim,
+			}
 
-			// TODO: add choice of signature scheme to the builder
-			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
-				WithHashingAlgorithm(iana.SHA256).
-				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).
-				WithIssuerUrl(sdJwtIssuer.IssuerUrl).
-				WithVerifiableCredentialType(credentialType).
-				WithDisclosures(disclosures).
-				WithHolderKey(kbPubKeys[index]).
-				WithExpiresAt(validUntil).
-				// Make sure all SD-JWTs have the same issuance dates; we therefor use a 'static' clock
-				WithIssuedAt(issuanceTime).
-				Build(creator)
+			// add all attributes as sd claims
+			for key, value := range cred.Attributes {
+				claims = append(claims, sdjwtvc.SdClaim(key, value))
+			}
+
+			sdJwt, err := sdjwtvc.NewSdJwtBuilder().
+				WithPayload(claims...).
+				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).Build(creator)
 
 			if err != nil {
 				return nil, errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)

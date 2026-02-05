@@ -40,7 +40,7 @@ type DisclosureContent struct {
 	Salt string
 	Key  string
 	// This value can be any type that is allowed in JSON
-	Value interface{}
+	Value any
 
 	// Processing related fields
 	isArrayElement bool
@@ -433,50 +433,28 @@ func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator
 }
 
 func CreateTestSdJwtVc() (SdJwtVc, error) {
-	sdClaims, err := MultipleNewDisclosureContents(map[string]string{
-		"family_name": "Yivi",
-		"location":    "Utrecht",
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	sdClaimHashes, err := HashDisclosures(iana.SHA256, sdClaims)
-	if err != nil {
-		return "", err
-	}
-
 	holderKey, err := readHolderPublicJwk()
 	if err != nil {
 		return "", err
 	}
-
-	sdJwtClaims := IssuerSignedJwtPayload{
-		Subject:                  "6c5c0a49-b589-431d-bae7-219122a9ec2c",
-		Sd:                       sdClaimHashes,
-		SdAlg:                    iana.SHA256,
-		Issuer:                   "https://openid4vc.staging.yivi.app",
-		Confirm:                  &holderKey,
-		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   1835689661,
-		IssuedAt:                 1516239022,
-	}
-
-	signer := NewEcdsaJwtCreatorWithIssuerTestkey()
-	jwt, err := CreateIssuerSignedJwt(sdJwtClaims, signer)
-
+	holderKeyClaim, err := HolderKeyClaim(holderKey)
 	if err != nil {
 		return "", err
 	}
 
-	sdJwtVc, err := CreateSdJwtVcWithDisclosureContents(jwt, sdClaims)
-
-	if err != nil {
-		return "", err
-	}
-
-	return sdJwtVc, nil
+	return NewSdJwtBuilder().
+		WithPayload(
+			Claim(Key_Subject, "6c5c0a49-b589-431d-bae7-219122a9ec2c"),
+			Claim(Key_SdAlg, iana.SHA256),
+			Claim(Key_Issuer, "https://openid4vc.staging.yivi.app"),
+			holderKeyClaim,
+			Claim(Key_VerifiableCredentialType, "pbdf.sidn-pbdf.email"),
+			Claim(Key_ExpiryTime, 1835689661),
+			Claim(Key_IssuedAt, 1516239022),
+			SdClaim("family_name", "Yivi"),
+			SdClaim("location", "Utrecht"),
+		).
+		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
 }
 
 // ==========================================================================

@@ -1132,20 +1132,18 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 	chain, err := utils.ParsePemCertificateChainToX5cFormat(config.IssuerCert)
 	require.NoError(t, err)
 
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"email": "test@gmail.com",
-	})
-	require.NoError(t, err)
-
 	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdjwt, err := NewSdJwtVcBuilder().
-		WithExpiresAt(time.Now().Unix()).
-		WithIssuerCertificateChain(chain).
-		WithIssuerUrl(config.IssUrl).
-		WithVerifiableCredentialType("test.test.email").
-		WithDisclosures(disclosures).
-		WithHashingAlgorithm(iana.SHA256).
-		Build(creator)
+
+	sdjwt, err := NewSdJwtBuilder().
+		WithPayload(
+			Claim(Key_ExpiryTime, time.Now().Unix()),
+			Claim(Key_Issuer, config.IssUrl),
+			Claim(Key_VerifiableCredentialType, "test.test.email"),
+			Claim(Key_SdAlg, iana.SHA256),
+			SdClaim("email", "test@gmail.com"),
+		).
+		WithIssuerCertificateChain(chain).Build(creator)
+
 	require.NoError(t, err)
 
 	verifyOpts, err := utils.CreateX509VerifyOptionsFromCertChain(config.VerifierTrustedIssuerCertChain)

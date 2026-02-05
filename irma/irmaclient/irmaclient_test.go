@@ -518,11 +518,11 @@ func TestCredentialsConcurrency(t *testing.T) {
 	defer client.Close()
 	grp := sync.WaitGroup{}
 
-	for j := 0; j < 1000; j++ {
+	for range 1000 {
 		// Clear map for next iteration
 		client.credentialsCache = concmap.New[credLookup, *credential]()
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			grp.Add(1)
 			go func() {
 				_, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
@@ -548,7 +548,7 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, _ := createTestSdJwtVc(keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
-		map[string]any{
+		map[string]string{
 			"mobilephone": "+31612345678",
 		}, certChain,
 	)
@@ -596,10 +596,12 @@ func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, _ := createTestSdJwtVc(
 		keyBinder,
-		"test.test.mobilephone", "http://openid4vc.staging.yivi.app", // issuer is invalid (no HTTPS)
-		map[string]any{
+		"test.test.mobilephone",
+		"http://openid4vc.staging.yivi.app", // issuer is invalid (no HTTPS)
+		map[string]string{
 			"mobilephone": "+31612345678",
-		}, certChain,
+		},
+		certChain,
 	)
 
 	cred := irma.CredentialRequest{}
