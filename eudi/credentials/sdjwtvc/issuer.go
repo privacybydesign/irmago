@@ -74,7 +74,7 @@ func marshalEmbedded(key string, v any, disclosures []EncodedDisclosure) (*Embed
 type Null struct{}
 
 type LeafClaimDataType interface {
-	~string | ~int | ~bool | Null
+	~string | ~int | ~bool | Null | ~int64
 }
 
 func LeafNodeDataTypeToClaimType[T LeafClaimDataType](v T) ClaimType {
@@ -119,12 +119,16 @@ type ClaimElement struct {
 	SelectivelyDisclosable bool
 }
 
-func (e *ClaimElement) EncodeValueOnly() (SerializedClaim, error) {
-	return e.encode(encodeValueOnly)
-}
-
-func (e *ClaimElement) Encode() (SerializedClaim, error) {
-	return e.encode(encodeFullClaim)
+func (e *ClaimElement) isSdOrContainsSdChildren() bool {
+	if e.SelectivelyDisclosable {
+		return true
+	}
+	for _, c := range e.SubClaims {
+		if c.isSdOrContainsSdChildren() {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *ClaimElement) encode(mode encodeMode) (SerializedClaim, error) {
@@ -211,10 +215,6 @@ func (e *ClaimElement) encodeObject(mode encodeMode) (SerializedClaim, error) {
 
 	// value-only callers with ignore key anyway
 	return marshalEmbedded(e.Key, result, disclosures)
-}
-
-func (e *ClaimElement) encodeArrayValueOnly() (SerializedClaim, error) {
-	return nil, nil
 }
 
 func (e *ClaimElement) encodeArray(mode encodeMode) (SerializedClaim, error) {
@@ -335,12 +335,47 @@ func (b *SdJwtBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtBuil
 }
 
 func (b *SdJwtBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
+	vctClaimFound := false
+	var sdAlg iana.HashingAlgorithm
+	for _, c := range b.claims {
+		switch c.Key {
+		case Key_VerifiableCredentialType:
+			vctClaimFound = true
+		case Key_Issuer:
+			url, ok := c.Value.(string)
+			if !ok {
+				return "", fmt.Errorf("issuer url (iss) is provided but is not a string")
+			}
+
+			if !strings.HasPrefix(url, "https://") {
+				return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", url)
+			}
+		case Key_SdAlg:
+			alg, ok := c.Value.(iana.HashingAlgorithm)
+			if !ok {
+				return "", fmt.Errorf("provided '%v' claim not a string: %v", Key_SdAlg, c.Value)
+			}
+			sdAlg = alg
+		}
+	}
+	if !vctClaimFound {
+		return "", fmt.Errorf("'vct' claim required but not found")
+	}
+
 	rootNode := &ClaimElement{
 		Type:                   Claim_Object,
 		SubClaims:              b.claims,
 		SelectivelyDisclosable: false,
 	}
-	claims, err := rootNode.Encode()
+
+	if rootNode.isSdOrContainsSdChildren() && sdAlg == "" {
+		return "", fmt.Errorf("'%s' is required when sdjwt contains selectively disclosable claims", Key_SdAlg)
+	}
+	if sdAlg != iana.SHA256 {
+		return "", fmt.Errorf("'%s' value not supported: %v", Key_SdAlg, sdAlg)
+	}
+
+	claims, err := rootNode.encode(encodeFullClaim)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode root node: %w", err)
 	}
