@@ -29,7 +29,7 @@ func TestHolderParsing(t *testing.T) {
 				SdClaim("first_name", "Gerrit"),
 				SdClaim("last_name", "Dijkstra"),
 			),
-			Array("nationalities", Item("NL"), SdItem("FR")),
+			Array("nationalities", SdItem("NL"), SdItem("FR")),
 		).
 		WithIssuerCertificateChain(irmaAppCert).
 		Build(jwtCreator)
@@ -43,6 +43,7 @@ func TestHolderParsing(t *testing.T) {
 	d, err := parsed.CreateDisclosure([][]any{
 		{"address", "country"},
 		{"personal_data", "last_name"},
+		{"nationalities", nil},
 	})
 
 	require.NoError(t, err)

@@ -103,6 +103,8 @@ type ClaimNode struct {
 func (n *ClaimNode) getDisclosuresForClaimPath(lookup *DisclosureLookupTable, claimPath []any) ([]EncodedDisclosure, error) {
 	result := []EncodedDisclosure{}
 
+	// if this is a selectively disclosable node we need to include it, either because it's the leaf
+	// node or because it's a link in the chain to resolve to the leaf node
 	if n.Sd != nil {
 		result = append(result, lookup.Encoded[*n.Sd])
 	}
@@ -129,15 +131,58 @@ func (n *ClaimNode) getDisclosuresForClaimPath(lookup *DisclosureLookupTable, cl
 		if n.Type != Claim_Array {
 			return nil, fmt.Errorf("can't do integer lookup if claim is not an array")
 		}
+		if a := n.Array; len(a) <= k {
+			return nil, fmt.Errorf("index (%v) higher than array length (%v)", k, len(a))
+		}
+		d, err := n.Array[k].getDisclosuresForClaimPath(lookup, claimPath[1:])
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, d...)
 
 	// when it's a nil value, it has to lookup the complete array
 	case nil:
 		if n.Type != Claim_Array {
 			return nil, fmt.Errorf("can't do null lookup if claim is not an array")
 		}
+		for _, n := range n.Array {
+			d, err := n.getDisclosuresForClaimPath(lookup, claimPath[1:])
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, d...)
+		}
 	}
 
 	return result, nil
+}
+
+func getSelectivelyDisclosableArrayElement(disclosureLookup *DisclosureLookupTable, value any) (*ClaimNode, error) {
+	switch m := value.(type) {
+	case map[string]any:
+		if len(m) != 1 {
+			return nil, nil
+		}
+		hashAny, ok := m["..."]
+		if !ok {
+			return nil, nil
+		}
+		hashStr, ok := hashAny.(string)
+		if !ok {
+			return nil, nil
+		}
+
+		hash := HashedDisclosure(hashStr)
+		disclosure, ok := disclosureLookup.Contents[hash]
+		if !ok {
+			return nil, fmt.Errorf("no disclosure found for hash %v", hash)
+		}
+		node, err := parseClaimValue("", disclosure.Value, disclosureLookup)
+		node.Sd = &hash
+
+		return node, err
+	}
+	return nil, nil
 }
 
 func parseClaimValue(key string, value any, disclosureLookup *DisclosureLookupTable) (*ClaimNode, error) {
@@ -153,11 +198,21 @@ func parseClaimValue(key string, value any, disclosureLookup *DisclosureLookupTa
 	case []any:
 		arrayValues := []*ClaimNode{}
 		for _, c := range v {
-			av, err := parseClaimValue("", c, disclosureLookup)
+			sdNode, err := getSelectivelyDisclosableArrayElement(disclosureLookup, c)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse array item: %w", err)
+				return nil, err
 			}
-			arrayValues = append(arrayValues, av)
+			if sdNode != nil {
+				// if the sd node is not nil we can assume it's a sd array element
+				arrayValues = append(arrayValues, sdNode)
+			} else {
+				// else we assume it to be a normal element
+				av, err := parseClaimValue("", c, disclosureLookup)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse array item: %w", err)
+				}
+				arrayValues = append(arrayValues, av)
+			}
 		}
 		return &ClaimNode{
 			Key:   key,
