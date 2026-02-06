@@ -1,0 +1,316 @@
+package sdjwtvc
+
+import (
+	"fmt"
+
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
+)
+
+type HolderSdJwt struct {
+	IssuerSignedJwt IssuerSignedJwt
+	// OPTIONAL: The identifier of the Subject of the Verifiable Credential.
+	// The Issuer MAY use it to provide the Subject identifier known by the Issuer.
+	// There is no requirement for a binding to exist between sub and cnf claims
+	Subject string
+
+	// REQUIRED: the type of verifiable credential
+	VerifiableCredentialType string
+
+	// OPTIONAL: expiry time, must not be accepted after this moment
+	Expiry int64
+
+	// OPTIONAL: time of issuance
+	IssuedAt int64
+
+	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the Verifiable Credential
+	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
+	Issuer string
+
+	Claims      *ClaimNode
+	Disclosures *DisclosureLookupTable
+
+	// OPTIONAL: hashing algorithm to be used for the disclosure hashes in `_sd` and the hash over
+	// the complete SD-JWT VC that can be found in the key binding JWT
+	SdAlg iana.HashingAlgorithm
+
+	// OPTIONAL: Public key (JWK format) of the holder, which can be used to verify the key binding jwt
+	Confirm *CnfField
+
+	// OPTIONAL: The information on how to read the status of the verifiable credential
+	Status string
+
+	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
+	NotBefore int64
+}
+
+func (h *HolderSdJwt) CreateDisclosure(claimPaths [][]any) (SdJwtVc, error) {
+	// set of relevantDisclosures so we don't get duplicates
+	relevantDisclosures := map[EncodedDisclosure]struct{}{}
+	for _, path := range claimPaths {
+		discs, err := h.Claims.getDisclosuresForClaimPath(h.Disclosures, path)
+		if err != nil {
+			return "", err
+		}
+		for _, d := range discs {
+			relevantDisclosures[d] = struct{}{}
+		}
+	}
+	discs := ""
+	for d := range relevantDisclosures {
+		discs = fmt.Sprintf("%s%s~", discs, d)
+	}
+
+	return SdJwtVc(fmt.Sprintf("%s~%s", h.IssuerSignedJwt, discs)), nil
+}
+
+func getAndDelete[T any](claims map[string]any, key string) (T, error) {
+	claimAny, ok := claims[key]
+	var d T
+	if !ok {
+		return d, fmt.Errorf("claim '%s' is required but not present", key)
+	}
+	claim, ok := claimAny.(T)
+	if !ok {
+		return d, fmt.Errorf("claim '%s' is present but not of the required type", key)
+	}
+	delete(claims, Key_Issuer)
+	return claim, nil
+}
+
+func getAndDeleteOptional[T any](claims map[string]any, key string) (T, error) {
+	claimAny, ok := claims[key]
+	var d T
+	if !ok {
+		return d, nil
+	}
+	claim, ok := claimAny.(T)
+	if !ok {
+		return d, fmt.Errorf("claim '%s' is present but not of the required type", key)
+	}
+	delete(claims, Key_Issuer)
+	return claim, nil
+}
+
+type ClaimNode struct {
+	Key    string
+	Sd     *HashedDisclosure
+	Type   ClaimType
+	Value  any
+	Object map[string]*ClaimNode
+	Array  []*ClaimNode
+}
+
+func (n *ClaimNode) getDisclosuresForClaimPath(lookup *DisclosureLookupTable, claimPath []any) ([]EncodedDisclosure, error) {
+	result := []EncodedDisclosure{}
+
+	if n.Sd != nil {
+		result = append(result, lookup.Encoded[*n.Sd])
+	}
+	// when the path is empty we can return the result
+	if len(claimPath) == 0 {
+		return result, nil
+	}
+	key := claimPath[0]
+
+	switch k := key.(type) {
+	// when it's a string, it has to be a lookup key in an object node
+	case string:
+		if n.Type != Claim_Object {
+			return nil, fmt.Errorf("can't do lookup if claim is not object")
+		}
+		d, err := n.Object[k].getDisclosuresForClaimPath(lookup, claimPath[1:])
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, d...)
+
+	// when it's a number, it has to lookup a single value inside an array
+	case int:
+		if n.Type != Claim_Array {
+			return nil, fmt.Errorf("can't do integer lookup if claim is not an array")
+		}
+
+	// when it's a nil value, it has to lookup the complete array
+	case nil:
+		if n.Type != Claim_Array {
+			return nil, fmt.Errorf("can't do null lookup if claim is not an array")
+		}
+	}
+
+	return result, nil
+}
+
+func parseClaimValue(key string, value any, disclosureLookup *DisclosureLookupTable) (*ClaimNode, error) {
+	// regular non-sd claim
+	switch v := value.(type) {
+	case map[string]any:
+		node, err := parseClaims(v, disclosureLookup)
+		if err != nil {
+			return nil, err
+		}
+		node.Key = key
+		return node, nil
+	case []any:
+		arrayValues := []*ClaimNode{}
+		for _, c := range v {
+			av, err := parseClaimValue("", c, disclosureLookup)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse array item: %w", err)
+			}
+			arrayValues = append(arrayValues, av)
+		}
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_Array,
+			Array: arrayValues,
+		}, nil
+	case float64, float32, int:
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_Int,
+			Value: v,
+		}, nil
+	case string:
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_String,
+			Value: v,
+		}, nil
+	case bool:
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_Bool,
+			Value: v,
+		}, nil
+	case nil:
+		return &ClaimNode{
+			Key:  key,
+			Type: Claim_Null,
+		}, nil
+	default:
+		return nil, fmt.Errorf("claim %v is of unknown type (value: %v)", key, v)
+	}
+}
+
+type DisclosureLookupTable struct {
+	Contents map[HashedDisclosure]DisclosureContent
+	Encoded  map[HashedDisclosure]EncodedDisclosure
+}
+
+func parseClaims(claims map[string]any, disclosureLookup *DisclosureLookupTable) (*ClaimNode, error) {
+	result := map[string]*ClaimNode{}
+
+	for key, value := range claims {
+		if key == Key_Sd {
+			hashes, ok := value.([]any)
+			if !ok {
+				return nil, fmt.Errorf("_sd field not of type []string: %v", value)
+			}
+
+			// for each hash find the corresponding disclosure content
+			for _, hashAny := range hashes {
+				hashStr, ok := hashAny.(string)
+				if !ok {
+					return nil, fmt.Errorf("hash not of type string: %v", value)
+				}
+				hash := HashedDisclosure(hashStr)
+
+				disclosure, ok := disclosureLookup.Contents[hash]
+				if !ok {
+					return nil, fmt.Errorf("missing disclosure for %v", hashAny)
+				}
+
+				value, err := parseClaimValue(disclosure.Key, disclosure.Value, disclosureLookup)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse claim for disclosure with key %v: %w", disclosure.Key, err)
+				}
+
+				value.Sd = &hash
+				result[disclosure.Key] = value
+			}
+		} else {
+			claim, err := parseClaimValue(key, value, disclosureLookup)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse claim %v: %w", key, err)
+			}
+			result[key] = claim
+		}
+	}
+	return &ClaimNode{
+		Type:   Claim_Object,
+		Object: result,
+	}, nil
+}
+
+func createDisclosureLookupTable(
+	hashAlg iana.HashingAlgorithm,
+	disclosures []EncodedDisclosure,
+) (*DisclosureLookupTable, error) {
+	result := &DisclosureLookupTable{
+		Contents: map[HashedDisclosure]DisclosureContent{},
+		Encoded:  map[HashedDisclosure]EncodedDisclosure{},
+	}
+	for _, d := range disclosures {
+		hash, err := HashEncodedDisclosure(hashAlg, d)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash %v: %w", d, err)
+		}
+		r, err := DecodeDisclosure(d)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode %v: %w", d, err)
+		}
+		result.Contents[hash] = r
+		result.Encoded[hash] = d
+	}
+	return result, nil
+}
+
+func Parse(sdjwt SdJwtVc) (*HolderSdJwt, error) {
+	issuerSignedJwt, disclosures, err := splitSdJwtVc(sdjwt)
+	if err != nil {
+		return nil, err
+	}
+
+	header, claims, err := decodeJwtWithoutCheckingSignature(string(issuerSignedJwt))
+	if err != nil {
+		return nil, err
+	}
+
+	if header[Key_Typ] != SdJwtVcTyp {
+		return nil, fmt.Errorf("header typ not correct")
+	}
+
+	issClaim, err := getAndDelete[string](claims, Key_Issuer)
+	if err != nil {
+		return nil, err
+	}
+
+	sdAlgClaim, err := getAndDeleteOptional[string](claims, Key_SdAlg)
+	if err != nil {
+		return nil, err
+	}
+	if disclosures != nil && sdAlgClaim == "" {
+		return nil, fmt.Errorf("sd-jwt has disclosures but _sd_alg was not specified")
+	}
+	if sdAlgClaim != string(iana.SHA256) {
+		return nil, fmt.Errorf("_sd_alg claim value not supported")
+	}
+
+	disclosureLookup, err := createDisclosureLookupTable(iana.SHA256, disclosures)
+	if err != nil {
+		return nil, err
+	}
+
+	claimNode, err := parseClaims(claims, disclosureLookup)
+	if err != nil {
+		return nil, err
+	}
+
+	return &HolderSdJwt{
+		IssuerSignedJwt: issuerSignedJwt,
+		Issuer:          issClaim,
+		SdAlg:           iana.HashingAlgorithm(sdAlgClaim),
+		Claims:          claimNode,
+		Disclosures:     disclosureLookup,
+	}, nil
+}
