@@ -34,6 +34,8 @@ type SdJwtVcVerificationContext struct {
 	JwtVerifier JwtVerifier
 
 	VerifyVerifiableCredentialTypeInRequestorInfo bool
+
+	MissingDisclosuresPolicy MissingDisclosuresPolicy
 }
 
 func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationContext {
@@ -50,20 +52,10 @@ func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationCo
 	}
 }
 
-// VerifiedSdJwtVc is the decoded & verified representation of an SD-JWT VC.
-// You should only obtain one by calling `ParseAndVerifySdJwtVc()` and not make one yourself.
-type VerifiedSdJwtVc struct {
-	IssuerSignedJwtPayload IssuerSignedJwtPayload
-	Disclosures            []DisclosureContent
-	KeyBindingJwt          *KeyBindingJwtPayload
-
-	rawSdJwtVc SdJwtVc
-}
-
 type ProcessedSdJwtPayload map[string]any
 
-func (v *VerifiedSdJwtVc) GetRawSdJwtVc() SdJwtVc {
-	return v.rawSdJwtVc
+func (v *HolderSdJwt) GetRawSdJwtVc() SdJwtVc {
+	return SdJwtVc(v.IssuerSignedJwt)
 }
 
 // ============================= Base SD-JWT VC processing =====================================
@@ -76,7 +68,7 @@ type sdJwtVcProcessor struct {
 // keyBindingProcessor is an interface for processing and verifying the key binding JWT of an SD-JWT VC.
 // Implementations differ for holder and verifier processing.
 type keyBindingProcessor interface {
-	ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload IssuerSignedJwtPayload) (*KeyBindingJwtPayload, error)
+	ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, holder *HolderSdJwt) (*KeyBindingJwtPayload, error)
 }
 
 func NewSdJwtVcProcessor(verificationContext SdJwtVcVerificationContext) sdJwtVcProcessor {
@@ -86,146 +78,141 @@ func NewSdJwtVcProcessor(verificationContext SdJwtVcVerificationContext) sdJwtVc
 }
 
 // ProcessAndVerifySdJwtVc implements chapter 7.1 of the SD-JWT VC specification.
-func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(sdjwtvc SdJwtVcKb, keyBindingProcessor keyBindingProcessor) (VerifiedSdJwtVc, error) {
+func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(sdjwtvc SdJwtVcKb, keyBindingProcessor keyBindingProcessor) (*HolderSdJwt, error) {
 	issuerSignedJwt, disclosures, rawSdJwtVc, rawKbJwt, err := splitSdJwtVcKb(sdjwtvc)
 	if err != nil {
-		return VerifiedSdJwtVc{}, err
+		return nil, err
 	}
 
-	issuerSignedJwtPayload, requestorInfo, decodedDisclosures, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
+	holder, requestorInfo, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
 	if err != nil {
-		return VerifiedSdJwtVc{}, err
+		return nil, err
+	}
+	// ignore
+	_ = requestorInfo
+
+	kbJwtPayload, err := keyBindingProcessor.ProcessAndVerifyKeyBindingJwt(rawKbJwt, rawSdJwtVc, holder)
+	if err != nil {
+		return nil, err
 	}
 
-	kbJwtPayload, err := keyBindingProcessor.ProcessAndVerifyKeyBindingJwt(rawKbJwt, rawSdJwtVc, issuerSignedJwtPayload)
-	if err != nil {
-		return VerifiedSdJwtVc{}, err
-	}
+	holder.KeyBindingJwt = kbJwtPayload
 
 	// Verify the credential is allowed to be issued by the requestor
 	// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
 	// until we can issue SD-JWT VCs that fit our scheme
-	if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
-		disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
-		err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(issuerSignedJwtPayload.VerifiableCredentialType, disclosureKeys)
-		if err != nil {
-			return VerifiedSdJwtVc{}, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
-		}
-	}
+	// if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
+	// 	disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
+	// 	err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(issuerSignedJwtPayload.VerifiableCredentialType, disclosureKeys)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
+	// 	}
+	// }
 
 	// Valid SD-JWT, optionally with valid key binding JWT, depending on the key binding processor used
-	return VerifiedSdJwtVc{
-		IssuerSignedJwtPayload: issuerSignedJwtPayload,
-		Disclosures:            decodedDisclosures,
-		KeyBindingJwt:          kbJwtPayload,
-		rawSdJwtVc:             rawSdJwtVc,
-	}, nil
+
+	return holder, nil
 }
 
 func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (
-	IssuerSignedJwtPayload,
+	*HolderSdJwt,
 	*scheme.AttestationProviderRequestor,
-	[]DisclosureContent,
 	error,
 ) {
 	token, requestorInfo, err := v.decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt))
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, err
+		return nil, nil, err
+	}
+
+	result := &HolderSdJwt{}
+
+	claims := map[string]any{}
+	for _, key := range token.Keys() {
+		switch key {
+		case Key_Issuer,
+			Key_Audience,
+			Key_Confirmationkey,
+			Key_VerifiableCredentialType,
+			Key_IssuedAt,
+			Key_SdAlg,
+			Key_NotBefore,
+			Key_Status,
+			Key_ExpiryTime:
+			continue
+		default:
+			var value any
+			err := token.Get(key, &value)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get %v from token: %w", key, err)
+			}
+			claims[key] = value
+		}
+	}
+
+	disclosureLookup, err := createDisclosureLookupTable(iana.SHA256, disclosures)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	result.Claims, err = parseClaims(v.verificationContext.MissingDisclosuresPolicy, claims, disclosureLookup)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	var vct string
 	err = token.Get(Key_VerifiableCredentialType, &vct)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, errors.New("missing vct field")
+		return nil, nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
-	sub, _ := token.Subject()
-	exp, _ := token.Expiration()
-	iat, _ := token.IssuedAt()
-	nbf, _ := token.NotBefore()
+	result.Subject, _ = token.Subject()
+	result.Expiry = utils.GetOptional[int64](token, Key_ExpiryTime)
+	result.IssuedAt = utils.GetOptional[int64](token, Key_IssuedAt)
+	result.NotBefore = utils.GetOptional[int64](token, Key_NotBefore)
+
 	iss, issPresent := token.Issuer()
 
-	status := utils.GetOptional[string](token, Key_Status)
+	result.Issuer = iss
+	result.Status = utils.GetOptional[string](token, Key_Status)
 
 	if !issPresent {
-		return IssuerSignedJwtPayload{}, nil, nil, errors.New("missing iss field")
+		return nil, nil, errors.New("missing iss field")
 	}
 
 	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
-	sdAlg := iana.SHA256
+	result.SdAlg = iana.SHA256
 	if token.Has(Key_SdAlg) {
 		if h := utils.GetOptional[string](token, Key_SdAlg); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
-			sdAlg = iana.HashingAlgorithm(h)
+			result.SdAlg = iana.HashingAlgorithm(h)
 		} else {
-			return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
+			return nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
 		}
 	}
 
-	var sdRaw, cnfRaw any
-
-	var sd []HashedDisclosure
-	err = token.Get(Key_Sd, &sdRaw)
-	if err == nil {
-		sd, err = parseSdField(sdRaw)
-		if err != nil {
-			return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
-		}
-	}
-
-	var cnf *CnfField
+	var cnfRaw any
 	err = token.Get(Key_Confirmationkey, &cnfRaw)
+
 	if err == nil {
-		cnf, err = parseConfirmField(cnfRaw)
+		result.Confirm, err = parseConfirmField(cnfRaw)
 		if err != nil {
-			return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
+			return nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
-	}
-
-	// Verify and process disclosures
-	// Get structured SD-JWT claims, which we can check for embedded disclosure digests
-	issuerSignedJwtClaims, err := extractClaimsAndDisclosuresDigestsFromToken(token)
-	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
-	}
-
-	// Construct payload
-	payload := IssuerSignedJwtPayload{
-		Subject:                  sub,
-		Expiry:                   exp.Unix(),
-		IssuedAt:                 iat.Unix(),
-		NotBefore:                nbf.Unix(),
-		Issuer:                   iss,
-		VerifiableCredentialType: vct,
-		Sd:                       sd,
-		SdAlg:                    iana.HashingAlgorithm(sdAlg),
-		Confirm:                  cnf,
-		Status:                   status,
 	}
 
 	// Verify times
-	err = v.verifyTimeFields(payload)
+	err = v.verifyTimeFields(result)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, err
+		return nil, nil, err
 	}
 
-	// Parse and verify disclosures
-	// TODO: store ProcessedSdJwtPayload somewhere if needed
-	_, decodedDisclosures, err := verifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtClaims, disclosures)
-	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, err
-	}
+	result.IssuerSignedJwt = signedJwt
+	result.Disclosures = disclosureLookup
 
-	// Convert pointer to disclosures to values for return  (TODO: optimize to avoid this copy?)
-	decodedDisclosuresValues := make([]DisclosureContent, len(decodedDisclosures))
-	for i, discPtr := range decodedDisclosures {
-		decodedDisclosuresValues[i] = *discPtr
-	}
-
-	return payload, requestorInfo, decodedDisclosuresValues, nil
+	return result, requestorInfo, nil
 }
 
-func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload IssuerSignedJwtPayload) error {
+func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *HolderSdJwt) error {
 	now := v.verificationContext.Clock.Now().Unix()
 	minSkewNow := now - ClockSkewInSeconds
 	maxSkewNow := now + ClockSkewInSeconds
@@ -557,11 +544,11 @@ func NewVerifierKeyBindingProcessor(keyBindingRequired bool, verificationContext
 }
 
 // ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via the context parameter.
-func (v *VerifierVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (VerifiedSdJwtVc, error) {
+func (v *VerifierVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (*HolderSdJwt, error) {
 	return v.sdJwtVcProcessor.ProcessAndVerifySdJwtVc(sdjwtvc, &v.verifierKeyBindingProcessor)
 }
 
-func (v *verifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload IssuerSignedJwtPayload) (*KeyBindingJwtPayload, error) {
+func (v *verifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload *HolderSdJwt) (*KeyBindingJwtPayload, error) {
 	if v.keyBindingRequired && kbjwt == nil {
 		return nil, errors.New("key binding jwt is required, but not present in sdjwtvc")
 	} else if kbjwt == nil {
@@ -582,7 +569,7 @@ func (v *verifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBi
 // TODO: check against chapter 7.3 of the SD-JWT VC specification.
 func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 	sdJwtVc SdJwtVc,
-	issuerSignedJwtPayload IssuerSignedJwtPayload,
+	issuerSignedJwtPayload *HolderSdJwt,
 	kbjwt KeyBindingJwt,
 ) (*KeyBindingJwtPayload, error) {
 	header, _, err := decodeJwtWithoutCheckingSignature(string(kbjwt))
@@ -661,7 +648,7 @@ func NewHolderVerificationProcessor(verificationContext SdJwtVcVerificationConte
 
 type holderVerifierKeyBindingProcessor struct{}
 
-func (p *holderVerifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload IssuerSignedJwtPayload) (*KeyBindingJwtPayload, error) {
+func (p *holderVerifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload *HolderSdJwt) (*KeyBindingJwtPayload, error) {
 	if kbjwt != nil {
 		return nil, fmt.Errorf("key binding jwt found in SD-JWT, but holder should not receive one from the issuer")
 	}
@@ -669,7 +656,7 @@ func (p *holderVerifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt 
 }
 
 // ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via the context parameter.
-func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (VerifiedSdJwtVc, error) {
+func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (*HolderSdJwt, error) {
 	return v.sdJwtVcProcessor.ProcessAndVerifySdJwtVc(sdjwtvc, &holderVerifierKeyBindingProcessor{})
 }
 

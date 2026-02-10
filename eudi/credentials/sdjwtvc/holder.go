@@ -22,12 +22,15 @@ type HolderSdJwt struct {
 	// OPTIONAL: time of issuance
 	IssuedAt int64
 
+	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
+	NotBefore int64
+
 	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the Verifiable Credential
 	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
 	Issuer string
 
-	Claims      *ClaimNode
-	Disclosures *DisclosureLookupTable
+	Claims      *claimNode
+	Disclosures *disclosureLookupTable
 
 	// OPTIONAL: hashing algorithm to be used for the disclosure hashes in `_sd` and the hash over
 	// the complete SD-JWT VC that can be found in the key binding JWT
@@ -39,8 +42,7 @@ type HolderSdJwt struct {
 	// OPTIONAL: The information on how to read the status of the verifiable credential
 	Status string
 
-	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
-	NotBefore int64
+	KeyBindingJwt *KeyBindingJwtPayload
 }
 
 func (h *HolderSdJwt) CreateDisclosure(claimPaths [][]any) (SdJwtVc, error) {
@@ -91,16 +93,19 @@ func getAndDeleteOptional[T any](claims map[string]any, key string) (T, error) {
 	return claim, nil
 }
 
-type ClaimNode struct {
+type claimNode struct {
 	Key    string
 	Sd     *HashedDisclosure
 	Type   ClaimType
 	Value  any
-	Object map[string]*ClaimNode
-	Array  []*ClaimNode
+	Object map[string]*claimNode
+	Array  []*claimNode
 }
 
-func (n *ClaimNode) getDisclosuresForClaimPath(lookup *DisclosureLookupTable, claimPath []any) ([]EncodedDisclosure, error) {
+func (n *claimNode) getDisclosuresForClaimPath(
+	lookup *disclosureLookupTable,
+	claimPath []any,
+) ([]EncodedDisclosure, error) {
 	result := []EncodedDisclosure{}
 
 	// if this is a selectively disclosable node we need to include it, either because it's the leaf
@@ -157,7 +162,7 @@ func (n *ClaimNode) getDisclosuresForClaimPath(lookup *DisclosureLookupTable, cl
 	return result, nil
 }
 
-func getSelectivelyDisclosableArrayElement(disclosureLookup *DisclosureLookupTable, value any) (*ClaimNode, error) {
+func getSelectivelyDisclosableArrayElement(missingDisclosuresPolicy MissingDisclosuresPolicy, disclosureLookup *disclosureLookupTable, value any) (*claimNode, error) {
 	switch m := value.(type) {
 	case map[string]any:
 		if len(m) != 1 {
@@ -177,7 +182,7 @@ func getSelectivelyDisclosableArrayElement(disclosureLookup *DisclosureLookupTab
 		if !ok {
 			return nil, fmt.Errorf("no disclosure found for hash %v", hash)
 		}
-		node, err := parseClaimValue("", disclosure.Value, disclosureLookup)
+		node, err := parseClaimValue(missingDisclosuresPolicy, "", disclosure.Value, disclosureLookup)
 		node.Sd = &hash
 
 		return node, err
@@ -185,20 +190,20 @@ func getSelectivelyDisclosableArrayElement(disclosureLookup *DisclosureLookupTab
 	return nil, nil
 }
 
-func parseClaimValue(key string, value any, disclosureLookup *DisclosureLookupTable) (*ClaimNode, error) {
+func parseClaimValue(missingDisclosuresPolicy MissingDisclosuresPolicy, key string, value any, disclosureLookup *disclosureLookupTable) (*claimNode, error) {
 	// regular non-sd claim
 	switch v := value.(type) {
 	case map[string]any:
-		node, err := parseClaims(v, disclosureLookup)
+		node, err := parseClaims(missingDisclosuresPolicy, v, disclosureLookup)
 		if err != nil {
 			return nil, err
 		}
 		node.Key = key
 		return node, nil
 	case []any:
-		arrayValues := []*ClaimNode{}
+		arrayValues := []*claimNode{}
 		for _, c := range v {
-			sdNode, err := getSelectivelyDisclosableArrayElement(disclosureLookup, c)
+			sdNode, err := getSelectivelyDisclosableArrayElement(missingDisclosuresPolicy, disclosureLookup, c)
 			if err != nil {
 				return nil, err
 			}
@@ -207,38 +212,38 @@ func parseClaimValue(key string, value any, disclosureLookup *DisclosureLookupTa
 				arrayValues = append(arrayValues, sdNode)
 			} else {
 				// else we assume it to be a normal element
-				av, err := parseClaimValue("", c, disclosureLookup)
+				av, err := parseClaimValue(missingDisclosuresPolicy, "", c, disclosureLookup)
 				if err != nil {
 					return nil, fmt.Errorf("failed to parse array item: %w", err)
 				}
 				arrayValues = append(arrayValues, av)
 			}
 		}
-		return &ClaimNode{
+		return &claimNode{
 			Key:   key,
 			Type:  Claim_Array,
 			Array: arrayValues,
 		}, nil
 	case float64, float32, int:
-		return &ClaimNode{
+		return &claimNode{
 			Key:   key,
 			Type:  Claim_Int,
 			Value: v,
 		}, nil
 	case string:
-		return &ClaimNode{
+		return &claimNode{
 			Key:   key,
 			Type:  Claim_String,
 			Value: v,
 		}, nil
 	case bool:
-		return &ClaimNode{
+		return &claimNode{
 			Key:   key,
 			Type:  Claim_Bool,
 			Value: v,
 		}, nil
 	case nil:
-		return &ClaimNode{
+		return &claimNode{
 			Key:  key,
 			Type: Claim_Null,
 		}, nil
@@ -247,19 +252,32 @@ func parseClaimValue(key string, value any, disclosureLookup *DisclosureLookupTa
 	}
 }
 
-type DisclosureLookupTable struct {
+type disclosureLookupTable struct {
 	Contents map[HashedDisclosure]DisclosureContent
 	Encoded  map[HashedDisclosure]EncodedDisclosure
 }
 
-func parseClaims(claims map[string]any, disclosureLookup *DisclosureLookupTable) (*ClaimNode, error) {
-	result := map[string]*ClaimNode{}
+// policy for what to do when there's a hash in the _sd field that doesn't have a
+// corresponding disclosure
+type MissingDisclosuresPolicy int
+
+const (
+	MissingDisclosuresPolicy_Allow MissingDisclosuresPolicy = iota
+	MissingDisclosuresPolicy_Deny
+)
+
+func parseClaims(missingDisclosuresPolicy MissingDisclosuresPolicy, claims map[string]any, disclosureLookup *disclosureLookupTable) (*claimNode, error) {
+	result := map[string]*claimNode{}
 
 	for key, value := range claims {
 		if key == Key_Sd {
 			hashes, ok := value.([]any)
 			if !ok {
-				return nil, fmt.Errorf("_sd field not of type []string: %v", value)
+				return nil, fmt.Errorf("failed to parse sd field: _sd field is not an array: %v", value)
+			}
+
+			if len(hashes) == 0 {
+				return nil, fmt.Errorf("failed to parse sd field: when the _sd field is present it may not be empty")
 			}
 
 			// for each hash find the corresponding disclosure content
@@ -272,10 +290,14 @@ func parseClaims(claims map[string]any, disclosureLookup *DisclosureLookupTable)
 
 				disclosure, ok := disclosureLookup.Contents[hash]
 				if !ok {
+					if missingDisclosuresPolicy == MissingDisclosuresPolicy_Allow {
+						continue
+					}
+
 					return nil, fmt.Errorf("missing disclosure for %v", hashAny)
 				}
 
-				value, err := parseClaimValue(disclosure.Key, disclosure.Value, disclosureLookup)
+				value, err := parseClaimValue(missingDisclosuresPolicy, disclosure.Key, disclosure.Value, disclosureLookup)
 				if err != nil {
 					return nil, fmt.Errorf("failed to parse claim for disclosure with key %v: %w", disclosure.Key, err)
 				}
@@ -284,14 +306,14 @@ func parseClaims(claims map[string]any, disclosureLookup *DisclosureLookupTable)
 				result[disclosure.Key] = value
 			}
 		} else {
-			claim, err := parseClaimValue(key, value, disclosureLookup)
+			claim, err := parseClaimValue(missingDisclosuresPolicy, key, value, disclosureLookup)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse claim %v: %w", key, err)
 			}
 			result[key] = claim
 		}
 	}
-	return &ClaimNode{
+	return &claimNode{
 		Type:   Claim_Object,
 		Object: result,
 	}, nil
@@ -300,8 +322,8 @@ func parseClaims(claims map[string]any, disclosureLookup *DisclosureLookupTable)
 func createDisclosureLookupTable(
 	hashAlg iana.HashingAlgorithm,
 	disclosures []EncodedDisclosure,
-) (*DisclosureLookupTable, error) {
-	result := &DisclosureLookupTable{
+) (*disclosureLookupTable, error) {
+	result := &disclosureLookupTable{
 		Contents: map[HashedDisclosure]DisclosureContent{},
 		Encoded:  map[HashedDisclosure]EncodedDisclosure{},
 	}
@@ -320,7 +342,7 @@ func createDisclosureLookupTable(
 	return result, nil
 }
 
-func Parse(sdjwt SdJwtVc) (*HolderSdJwt, error) {
+func Parse(context SdJwtVcVerificationContext, sdjwt SdJwtVc) (*HolderSdJwt, error) {
 	issuerSignedJwt, disclosures, err := splitSdJwtVc(sdjwt)
 	if err != nil {
 		return nil, err
@@ -356,7 +378,7 @@ func Parse(sdjwt SdJwtVc) (*HolderSdJwt, error) {
 		return nil, err
 	}
 
-	claimNode, err := parseClaims(claims, disclosureLookup)
+	claimNode, err := parseClaims(MissingDisclosuresPolicy_Deny, claims, disclosureLookup)
 	if err != nil {
 		return nil, err
 	}

@@ -895,8 +895,17 @@ func Test_HolderVerificationProcessor_ValidSdJwtVc_NoDisclosures_NoKbJwt_Succeed
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoDisclosuresNoKbjwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 0)
+	require.Len(t, verifiedSdJwtVc.Disclosures.Contents, 0)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
+}
+
+func Test_MissingDisclosureWithDenyPolicy(t *testing.T) {
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.MissingDisclosuresPolicy = MissingDisclosuresPolicy_Deny
+	holderVerifier := NewHolderVerificationProcessor(context)
+
+	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoKbJwt))
+	require.ErrorContains(t, err, "missing disclosure for mWAV3IrV5auHvME0Y6dhg_U3WBgE0enLilwfvlkaA30")
 }
 
 func Test_HolderVerificationProcessor_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
@@ -906,7 +915,21 @@ func Test_HolderVerificationProcessor_ValidSdJwt_WithDisclosures_NoKbJwt_Succeed
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoKbJwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 1)
+	emailHash := HashedDisclosure("zfgldqG4CeM7XXr4xx5ngmhu1GOjLLe-AQneaEIUjnw")
+	require.Equal(t, verifiedSdJwtVc.Claims, &claimNode{
+		Type: Claim_Object,
+		Object: map[string]*claimNode{
+			"email": {
+				Key:   "email",
+				Type:  Claim_String,
+				Value: "test@gmail.com",
+				Sd:    &emailHash,
+			},
+		},
+	})
+
+	require.Len(t, verifiedSdJwtVc.Disclosures.Encoded, 1)
+	require.Len(t, verifiedSdJwtVc.Disclosures.Contents, 1)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
@@ -1030,7 +1053,29 @@ func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithoutKbJwt_Succeeds(t *te
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithoutKbJwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	emailHash := HashedDisclosure("7BG6rzIjLtwF6R9fUabwDWnFiDep3GVatPw9gOesNgY")
+	domainHash := HashedDisclosure("4JNFLkPbYsfv0VCY2xMaL6ImxSr6RgJY4onacx_J6PY")
+
+	require.Equal(t, verifiedSdJwtVc.Claims, &claimNode{
+		Type: Claim_Object,
+		Object: map[string]*claimNode{
+			"email": {
+				Key:   "email",
+				Type:  Claim_String,
+				Value: "test@gmail.com",
+				Sd:    &emailHash,
+			},
+			"domain": {
+				Key:   "domain",
+				Type:  Claim_String,
+				Value: "gmail.com",
+				Sd:    &domainHash,
+			},
+		},
+	})
+
+	require.Len(t, verifiedSdJwtVc.Disclosures.Encoded, 2)
+	require.Len(t, verifiedSdJwtVc.Disclosures.Contents, 2)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
@@ -1041,7 +1086,29 @@ func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_VcTypHeader_WithoutKbJwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	emailHash := HashedDisclosure("H2uCwp-Ew18scHzd3blJbLEMKUqsOqnTre0G4aiMmwM")
+	domainHash := HashedDisclosure("86DO9GWjMIsQmXYtSwWFNy0XCH1eriAWRX-xVEkXT2Q")
+
+	require.Equal(t, verifiedSdJwtVc.Claims, &claimNode{
+		Type: Claim_Object,
+		Object: map[string]*claimNode{
+			"email": {
+				Key:   "email",
+				Type:  Claim_String,
+				Value: "test@gmail.com",
+				Sd:    &emailHash,
+			},
+			"domain": {
+				Key:   "domain",
+				Type:  Claim_String,
+				Value: "gmail.com",
+				Sd:    &domainHash,
+			},
+		},
+	})
+
+	require.Len(t, verifiedSdJwtVc.Disclosures.Contents, 2)
+	require.Len(t, verifiedSdJwtVc.Disclosures.Encoded, 2)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 

@@ -39,7 +39,7 @@ func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, e
 	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent)
 }
 
-func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
+func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) (*SdJwtVcMetadata, *sdjwtvc.HolderSdJwt, error) {
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdJwt)
 
 	if err != nil {

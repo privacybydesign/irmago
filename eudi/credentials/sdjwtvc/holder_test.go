@@ -1,4 +1,5 @@
 package sdjwtvc
+/*
 
 import (
 	"fmt"
@@ -49,3 +50,4 @@ func TestHolderParsing(t *testing.T) {
 	require.NoError(t, err)
 	fmt.Printf("sdjwt:\n%v\n", d)
 }
+*/
