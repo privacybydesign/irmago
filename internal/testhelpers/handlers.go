@@ -219,7 +219,7 @@ func (th *UnsatisfiableTestHandler) RequestVerificationPermission(request *irma.
 	}
 }
 
-// Cancelled() overrides TestHandler.Cancelled() so we can cancel future RequestVerificationPermission() invocations
+// Cancelled overrides TestHandler.Cancelled() so we can cancel future RequestVerificationPermission() invocations
 func (th *UnsatisfiableTestHandler) Cancelled() {}
 
 // ManualTestHandler embeds a TestHandler to inherit its methods.

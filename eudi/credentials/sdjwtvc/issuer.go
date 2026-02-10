@@ -95,8 +95,8 @@ type SdClaimElement struct {
 
 func (s *SdClaimElement) Element() {}
 
-// An element in the claim tree of an sdjwt
-// Can be used to serialize the claims and create selectively disclosable parts
+// ClaimElement is an element in the claim tree of an sdjwt.
+// It can be used to serialize the claims and create selectively disclosable parts
 type ClaimElement struct {
 	Type                   ClaimType
 	Key                    string

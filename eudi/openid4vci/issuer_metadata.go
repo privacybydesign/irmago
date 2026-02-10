@@ -257,10 +257,10 @@ func (m *CredentialIssuerMetadata) Verify() error {
 		}
 	}
 
-	// --- Response encryption validation ---
-	if m.CredentialResponseEncryption != nil {
-		// TODO
-	}
+	// // --- Response encryption validation ---
+	// if m.CredentialResponseEncryption != nil {
+	// 	// TODO
+	// }
 
 	// --- Batch issuance validation ---
 	// TODO: determine if we want to support credentials WITHOUT batch issuance
@@ -632,7 +632,7 @@ func (r *RemoteImage) UnmarshalJSON(data []byte) error {
 
 func (cre *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 	// First unmarshal into map, to find out if 'jwks' is present
-	var obj map[string]interface{}
+	var obj map[string]any
 	err := json.Unmarshal(data, &obj)
 
 	if err != nil {

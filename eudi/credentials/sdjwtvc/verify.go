@@ -60,11 +60,11 @@ type VerifiedSdJwtVc struct {
 	KeyBindingJwt *KeyBindingJwtPayload
 }
 
-func (h *VerifiedSdJwtVc) CreateDisclosure(claimPaths [][]any) (SdJwtVc, error) {
+func (v *VerifiedSdJwtVc) CreateDisclosure(claimPaths [][]any) (SdJwtVc, error) {
 	// set of relevantDisclosures so we don't get duplicates
 	relevantDisclosures := map[EncodedDisclosure]struct{}{}
 	for _, path := range claimPaths {
-		discs, err := h.Claims.getDisclosuresForClaimPath(h.DisclosureLookup, path)
+		discs, err := v.Claims.getDisclosuresForClaimPath(v.DisclosureLookup, path)
 		if err != nil {
 			return "", err
 		}
@@ -77,7 +77,7 @@ func (h *VerifiedSdJwtVc) CreateDisclosure(claimPaths [][]any) (SdJwtVc, error) 
 		discs = fmt.Sprintf("%s%s~", discs, d)
 	}
 
-	return SdJwtVc(fmt.Sprintf("%s~%s", h.IssuerSignedJwt, discs)), nil
+	return SdJwtVc(fmt.Sprintf("%s~%s", v.IssuerSignedJwt, discs)), nil
 }
 
 // ClaimNode is one claim in an sdjwt. It can be a leaf element or the stem for an array or object.
@@ -270,8 +270,8 @@ type disclosureLookupTable struct {
 	Encoded  map[HashedDisclosure]EncodedDisclosure
 }
 
-// policy for what to do when there's a hash in the _sd field that doesn't have a
-// corresponding disclosure
+// MissingDisclosuresPolicy is a policy for what to do when there's a hash in the
+// _sd field that doesn't have a corresponding disclosure
 type MissingDisclosuresPolicy int
 
 const (
