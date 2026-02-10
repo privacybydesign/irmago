@@ -6,7 +6,7 @@ import (
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
-type HolderSdJwt struct {
+type VerifiedSdJwtVc struct {
 	IssuerSignedJwt IssuerSignedJwt
 	// OPTIONAL: The identifier of the Subject of the Verifiable Credential.
 	// The Issuer MAY use it to provide the Subject identifier known by the Issuer.
@@ -45,7 +45,7 @@ type HolderSdJwt struct {
 	KeyBindingJwt *KeyBindingJwtPayload
 }
 
-func (h *HolderSdJwt) CreateDisclosure(claimPaths [][]any) (SdJwtVc, error) {
+func (h *VerifiedSdJwtVc) CreateDisclosure(claimPaths [][]any) (SdJwtVc, error) {
 	// set of relevantDisclosures so we don't get duplicates
 	relevantDisclosures := map[EncodedDisclosure]struct{}{}
 	for _, path := range claimPaths {
@@ -342,7 +342,7 @@ func createDisclosureLookupTable(
 	return result, nil
 }
 
-func Parse(context SdJwtVcVerificationContext, sdjwt SdJwtVc) (*HolderSdJwt, error) {
+func Parse(context SdJwtVcVerificationContext, sdjwt SdJwtVc) (*VerifiedSdJwtVc, error) {
 	issuerSignedJwt, disclosures, err := splitSdJwtVc(sdjwt)
 	if err != nil {
 		return nil, err
@@ -383,7 +383,7 @@ func Parse(context SdJwtVcVerificationContext, sdjwt SdJwtVc) (*HolderSdJwt, err
 		return nil, err
 	}
 
-	return &HolderSdJwt{
+	return &VerifiedSdJwtVc{
 		IssuerSignedJwt: issuerSignedJwt,
 		Issuer:          issClaim,
 		SdAlg:           iana.HashingAlgorithm(sdAlgClaim),
