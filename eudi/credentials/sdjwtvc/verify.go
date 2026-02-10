@@ -198,6 +198,9 @@ func getSelectivelyDisclosableArrayElement(missingDisclosuresPolicy MissingDiscl
 			return nil, fmt.Errorf("no disclosure found for hash %v", hash)
 		}
 		node, err := parseClaimValue(missingDisclosuresPolicy, "", disclosure.Value, disclosureLookup)
+		if err != nil {
+			return nil, err
+		}
 		node.Sd = &hash
 
 		return node, err
