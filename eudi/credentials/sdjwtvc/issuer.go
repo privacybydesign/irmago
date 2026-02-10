@@ -9,20 +9,6 @@ import (
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
-type SdJwtVcBuilder struct {
-	issuerCertificateChain *[]string
-	expiry                 *int64
-	issuedAt               *int64
-	issuerUrl              *string
-	cnfPubKey              *CnfField
-	status                 *string
-	subject                *string
-	vct                    *string
-	sdAlg                  *iana.HashingAlgorithm
-	disclosures            []DisclosureContent
-	ensureHaipCompatible   bool
-}
-
 type ClaimType string
 
 const (
