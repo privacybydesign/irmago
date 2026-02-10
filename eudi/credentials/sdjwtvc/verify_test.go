@@ -1046,6 +1046,143 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 	require.NoError(t, err)
 }
 
+func Test_CreateNewSdJwtWithDisclosures(t *testing.T) {
+	testSdJwt := SdJwtVcKb(validSdJwtVc_NestedAttributes)
+
+	nameHash := HashedDisclosure("y_1ml66L5y0IVcLT-5eybzprmV_9RPUMndrpNbEBgqU")
+	addressHash := HashedDisclosure("wxLmodf8M59QNhZ5uz4uBYFN4JdM6QjjJfOqUieHp00")
+	countryHash := HashedDisclosure("Bf0ZC5slooO5n8JSB_WRkPVN0XCLa2aPRtaOkAFQcsI")
+	over18Hash := HashedDisclosure("VWcidcFjA6LkrBIvYl1yrhbegzYaJfIoqflI9kuzVAA")
+	nationalitiesHash := HashedDisclosure("2Zv-8lRAfT5z8IRS8W3fDtLtnmY8ET5dpLo43fk9qdk")
+	nlHash := HashedDisclosure("xQ7p8vG7WWDCXVJ2NTZSVDmxRjSdGKL1Q7wneN6xrpQ")
+	gbHash := HashedDisclosure("BMzxq1-Qe0GDuEBWJA1XrAD4t1mu6WKyPjB9cHNx3So")
+
+	testDisclosure(t, "no paths, empty", testSdJwt, [][]any{},
+		&ClaimNode{Type: Claim_Object, Object: map[string]*ClaimNode{}},
+	)
+
+	testDisclosure(t, "country and 18+", testSdJwt, [][]any{{"over_18"}, {"address", "country"}},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"over_18": {Key: "over_18", Type: Claim_Bool, Sd: &over18Hash, Value: true},
+				"address": {
+					Key:  "address",
+					Type: Claim_Object,
+					Sd:   &addressHash,
+					Object: map[string]*ClaimNode{
+						"country": {Key: "country", Type: Claim_String, Value: "England", Sd: &countryHash},
+					},
+				},
+			},
+		},
+	)
+
+	testDisclosure(t,
+		"all items in sd array", testSdJwt, [][]any{{"nationalities", nil}},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"nationalities": {
+					Key:  "nationalities",
+					Type: Claim_Array,
+					Sd:   &nationalitiesHash,
+					Array: []*ClaimNode{
+						{Type: Claim_String, Value: "GB", Sd: &gbHash},
+						{Type: Claim_String, Value: "NL", Sd: &nlHash},
+					},
+				},
+			},
+		},
+	)
+
+	testDisclosure(t,
+		"first nationality and name", testSdJwt, [][]any{{"nationalities", 0}, {"name"}},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"nationalities": {
+					Key:  "nationalities",
+					Type: Claim_Array,
+					Sd:   &nationalitiesHash,
+					Array: []*ClaimNode{
+						{Type: Claim_String, Value: "GB", Sd: &gbHash},
+					},
+				},
+				"name": {Key: "name", Type: Claim_String, Sd: &nameHash, Value: "Jason"},
+			},
+		},
+	)
+}
+
+func testDisclosure(t *testing.T, name string, sdjwt SdJwtVcKb, claimPaths [][]any, expectedClaims *ClaimNode) {
+	t.Run(name, func(t *testing.T) {
+		issuerCert := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+
+		context := CreateDefaultVerificationContext(issuerCert)
+		holderVerifier := NewHolderVerificationProcessor(context)
+		verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdjwt)
+		require.NoError(t, err)
+
+		disclosed, err := verifiedSdJwtVc.CreateDisclosure(claimPaths)
+		require.NoError(t, err)
+
+		parsedDisclosed, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(disclosed))
+
+		require.NoError(t, err)
+
+		require.Equal(t, parsedDisclosed.Claims, expectedClaims)
+	})
+}
+
+func Test_ValidSdJwtVc_WithNestedSdObject(t *testing.T) {
+	issuerCert := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+
+	context := CreateDefaultVerificationContext(issuerCert)
+	holderVerifier := NewHolderVerificationProcessor(context)
+	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NestedAttributes))
+	require.NoError(t, err)
+
+	nameHash := HashedDisclosure("y_1ml66L5y0IVcLT-5eybzprmV_9RPUMndrpNbEBgqU")
+	addressHash := HashedDisclosure("wxLmodf8M59QNhZ5uz4uBYFN4JdM6QjjJfOqUieHp00")
+	streetHash := HashedDisclosure("8ZylQCeoa6ZNTy1J3fwFn_XAUXmPfH5Sl4gKiyhn29s")
+	numberHash := HashedDisclosure("NiYz0ny2P4nDoQ0-JPERMCMhkpX3qmnEjBG2Nw30cp0")
+	countryHash := HashedDisclosure("Bf0ZC5slooO5n8JSB_WRkPVN0XCLa2aPRtaOkAFQcsI")
+	over18Hash := HashedDisclosure("VWcidcFjA6LkrBIvYl1yrhbegzYaJfIoqflI9kuzVAA")
+	nationalitiesHash := HashedDisclosure("2Zv-8lRAfT5z8IRS8W3fDtLtnmY8ET5dpLo43fk9qdk")
+	nlHash := HashedDisclosure("xQ7p8vG7WWDCXVJ2NTZSVDmxRjSdGKL1Q7wneN6xrpQ")
+	gbHash := HashedDisclosure("BMzxq1-Qe0GDuEBWJA1XrAD4t1mu6WKyPjB9cHNx3So")
+
+	require.Equal(t, verifiedSdJwtVc.Claims, &ClaimNode{
+		Type: Claim_Object,
+		Object: map[string]*ClaimNode{
+			"nationalities": {
+				Key:  "nationalities",
+				Type: Claim_Array,
+				Sd:   &nationalitiesHash,
+				Array: []*ClaimNode{
+					{Type: Claim_String, Value: "GB", Sd: &gbHash},
+					{Type: Claim_String, Value: "NL", Sd: &nlHash},
+				},
+			},
+			"over_18": {Key: "over_18", Type: Claim_Bool, Sd: &over18Hash, Value: true},
+			"name":    {Key: "name", Type: Claim_String, Sd: &nameHash, Value: "Jason"},
+			"address": {
+				Key:  "address",
+				Type: Claim_Object,
+				Sd:   &addressHash,
+				Object: map[string]*ClaimNode{
+					"street":  {Key: "street", Type: Claim_String, Value: "5th Avenue", Sd: &streetHash},
+					"number":  {Key: "number", Type: Claim_Int, Value: 42, Sd: &numberHash},
+					"country": {Key: "country", Type: Claim_String, Value: "England", Sd: &countryHash},
+				},
+			},
+		},
+	})
+
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Encoded, 9)
+}
+
 func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithoutKbJwt_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)

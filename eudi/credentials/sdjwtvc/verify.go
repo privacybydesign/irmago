@@ -167,35 +167,38 @@ func getSelectivelyDisclosableArrayElement(
 	missingDisclosuresPolicy MissingDisclosuresPolicy,
 	disclosureLookup *disclosureLookupTable,
 	value any,
-) (*ClaimNode, error) {
+) (node *ClaimNode, arrayAssumed bool, err error) {
 	switch m := value.(type) {
 	case map[string]any:
 		if len(m) != 1 {
-			return nil, nil
+			return nil, false, nil
 		}
 		hashAny, ok := m["..."]
 		if !ok {
-			return nil, nil
+			return nil, false, nil
 		}
 		hashStr, ok := hashAny.(string)
 		if !ok {
-			return nil, nil
+			return nil, true, fmt.Errorf("failed to parse sd array element: value in '...' not string")
 		}
 
 		hash := HashedDisclosure(hashStr)
 		disclosure, ok := disclosureLookup.Contents[hash]
 		if !ok {
-			return nil, fmt.Errorf("no disclosure found for hash %v", hash)
+			if missingDisclosuresPolicy == MissingDisclosuresPolicy_Allow {
+				return nil, true, nil
+			}
+			return nil, true, fmt.Errorf("no disclosure found for hash %v", hash)
 		}
 		node, err := parseClaimValue(missingDisclosuresPolicy, "", disclosure.Value, disclosureLookup)
 		if err != nil {
-			return nil, err
+			return nil, true, err
 		}
 		node.Sd = &hash
 
-		return node, err
+		return node, true, err
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 func parseClaimValue(
@@ -216,13 +219,17 @@ func parseClaimValue(
 	case []any:
 		arrayValues := []*ClaimNode{}
 		for _, c := range v {
-			sdNode, err := getSelectivelyDisclosableArrayElement(missingDisclosuresPolicy, disclosureLookup, c)
+			sdNode, assumeArray, err := getSelectivelyDisclosableArrayElement(missingDisclosuresPolicy, disclosureLookup, c)
 			if err != nil {
 				return nil, err
 			}
 			if sdNode != nil {
 				// if the sd node is not nil we can assume it's a sd array element
 				arrayValues = append(arrayValues, sdNode)
+			} else if assumeArray {
+				// the node is nil, but it was assumed to be an array element...
+				// therefore the element must not have been disclosed and we should not add it to the tree
+				continue
 			} else {
 				// else we assume it to be a normal element
 				av, err := parseClaimValue(missingDisclosuresPolicy, "", c, disclosureLookup)
@@ -237,11 +244,17 @@ func parseClaimValue(
 			Type:  Claim_Array,
 			Array: arrayValues,
 		}, nil
-	case float64, float32, int:
+	case int:
 		return &ClaimNode{
 			Key:   key,
 			Type:  Claim_Int,
 			Value: v,
+		}, nil
+	case float64:
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_Int,
+			Value: int(v),
 		}, nil
 	case string:
 		return &ClaimNode{
