@@ -21,6 +21,357 @@ import (
 
 // ============================ SD-JWT VC processing descriptions =====================================
 
+type VerifiedSdJwtVc struct {
+	IssuerSignedJwt IssuerSignedJwt
+	// OPTIONAL: The identifier of the Subject of the Verifiable Credential.
+	// The Issuer MAY use it to provide the Subject identifier known by the Issuer.
+	// There is no requirement for a binding to exist between sub and cnf claims
+	Subject string
+
+	// REQUIRED: the type of verifiable credential
+	VerifiableCredentialType string
+
+	// OPTIONAL: expiry time, must not be accepted after this moment
+	Expiry int64
+
+	// OPTIONAL: time of issuance
+	IssuedAt int64
+
+	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
+	NotBefore int64
+
+	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the Verifiable Credential
+	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
+	Issuer string
+
+	Claims           *ClaimNode
+	DisclosureLookup *disclosureLookupTable
+
+	// OPTIONAL: hashing algorithm to be used for the disclosure hashes in `_sd` and the hash over
+	// the complete SD-JWT VC that can be found in the key binding JWT
+	SdAlg iana.HashingAlgorithm
+
+	// OPTIONAL: Public key (JWK format) of the holder, which can be used to verify the key binding jwt
+	Confirm *CnfField
+
+	// OPTIONAL: The information on how to read the status of the verifiable credential
+	Status string
+
+	KeyBindingJwt *KeyBindingJwtPayload
+}
+
+func (v *VerifiedSdJwtVc) CreateDisclosure(claimPaths [][]any) (SdJwtVc, error) {
+	// set of relevantDisclosures so we don't get duplicates
+	relevantDisclosures := map[EncodedDisclosure]struct{}{}
+	for _, path := range claimPaths {
+		discs, err := v.Claims.getDisclosuresForClaimPath(v.DisclosureLookup, path)
+		if err != nil {
+			return "", err
+		}
+		for _, d := range discs {
+			relevantDisclosures[d] = struct{}{}
+		}
+	}
+	discs := ""
+	for d := range relevantDisclosures {
+		discs = fmt.Sprintf("%s%s~", discs, d)
+	}
+
+	return SdJwtVc(fmt.Sprintf("%s~%s", v.IssuerSignedJwt, discs)), nil
+}
+
+// ClaimNode is one claim in an sdjwt. It can be a leaf element or the stem for an array or object.
+// It can be selectively disclosure or not.
+// When it's selectively disclosable, it contains the hash that can be looked up in the disclosure lookup table.
+type ClaimNode struct {
+	// the name/key of this claim (or "" when it's an array item or root object)
+	Key string
+
+	// The hash for the corresponding selective disclosure (nil if the claim is no selectively disclosable)
+	Sd *HashedDisclosure
+
+	// Specifies what kind of claim this is
+	Type ClaimType
+
+	// (Leaf) value, only available if `Type in [Claim_Int, Claim_String, Claim_Bool, Claim_Null]`
+	Value any
+
+	// map of sub-claims, only available if `Type == Claim_Object`
+	Object map[string]*ClaimNode
+
+	// array of sub-claims, only available if `Type == Claim_Array`
+	Array []*ClaimNode
+}
+
+func (n *ClaimNode) getDisclosuresForClaimPath(
+	lookup *disclosureLookupTable,
+	claimPath []any,
+) ([]EncodedDisclosure, error) {
+	result := []EncodedDisclosure{}
+
+	// if this is a selectively disclosable node we need to include it, either because it's the leaf
+	// node or because it's a link in the chain to resolve to the leaf node
+	if n.Sd != nil {
+		result = append(result, lookup.Encoded[*n.Sd])
+	}
+	// when the path is empty we can return the result
+	if len(claimPath) == 0 {
+		return result, nil
+	}
+	key := claimPath[0]
+
+	switch k := key.(type) {
+	// when it's a string, it has to be a lookup key in an object node
+	case string:
+		if n.Type != Claim_Object {
+			return nil, fmt.Errorf("can't do lookup if claim is not object")
+		}
+		d, err := n.Object[k].getDisclosuresForClaimPath(lookup, claimPath[1:])
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, d...)
+
+	// when it's a number, it has to lookup a single value inside an array
+	case int:
+		if n.Type != Claim_Array {
+			return nil, fmt.Errorf("can't do integer lookup if claim is not an array")
+		}
+		if a := n.Array; len(a) <= k {
+			return nil, fmt.Errorf("index (%v) higher than array length (%v)", k, len(a))
+		}
+		d, err := n.Array[k].getDisclosuresForClaimPath(lookup, claimPath[1:])
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, d...)
+
+	// when it's a nil value, it has to lookup the complete array
+	case nil:
+		if n.Type != Claim_Array {
+			return nil, fmt.Errorf("can't do null lookup if claim is not an array")
+		}
+		for _, n := range n.Array {
+			d, err := n.getDisclosuresForClaimPath(lookup, claimPath[1:])
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, d...)
+		}
+	}
+
+	return result, nil
+}
+
+func getSelectivelyDisclosableArrayElement(
+	missingDisclosuresPolicy MissingDisclosuresPolicy,
+	disclosureLookup *disclosureLookupTable,
+	value any,
+) (node *ClaimNode, arrayAssumed bool, err error) {
+	switch m := value.(type) {
+	case map[string]any:
+		if len(m) != 1 {
+			return nil, false, nil
+		}
+		hashAny, ok := m["..."]
+		if !ok {
+			return nil, false, nil
+		}
+		hashStr, ok := hashAny.(string)
+		if !ok {
+			return nil, true, fmt.Errorf("failed to parse sd array element: value in '...' not string")
+		}
+
+		hash := HashedDisclosure(hashStr)
+		disclosure, ok := disclosureLookup.Contents[hash]
+		if !ok {
+			if missingDisclosuresPolicy == MissingDisclosuresPolicy_Allow {
+				return nil, true, nil
+			}
+			return nil, true, fmt.Errorf("no disclosure found for hash %v", hash)
+		}
+		node, err := parseClaimValue(missingDisclosuresPolicy, "", disclosure.Value, disclosureLookup)
+		if err != nil {
+			return nil, true, err
+		}
+		node.Sd = &hash
+
+		return node, true, err
+	}
+	return nil, false, nil
+}
+
+func parseClaimValue(
+	missingDisclosuresPolicy MissingDisclosuresPolicy,
+	key string,
+	value any,
+	disclosureLookup *disclosureLookupTable,
+) (*ClaimNode, error) {
+	// regular non-sd claim
+	switch v := value.(type) {
+	case map[string]any:
+		node, err := parseClaims(missingDisclosuresPolicy, v, disclosureLookup)
+		if err != nil {
+			return nil, err
+		}
+		node.Key = key
+		return node, nil
+	case []any:
+		arrayValues := []*ClaimNode{}
+		for _, c := range v {
+			sdNode, assumeArray, err := getSelectivelyDisclosableArrayElement(missingDisclosuresPolicy, disclosureLookup, c)
+			if err != nil {
+				return nil, err
+			}
+			if sdNode != nil {
+				// if the sd node is not nil we can assume it's a sd array element
+				arrayValues = append(arrayValues, sdNode)
+			} else if assumeArray {
+				// the node is nil, but it was assumed to be an array element...
+				// therefore the element must not have been disclosed and we should not add it to the tree
+				continue
+			} else {
+				// else we assume it to be a normal element
+				av, err := parseClaimValue(missingDisclosuresPolicy, "", c, disclosureLookup)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse array item: %w", err)
+				}
+				arrayValues = append(arrayValues, av)
+			}
+		}
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_Array,
+			Array: arrayValues,
+		}, nil
+	case int:
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_Int,
+			Value: v,
+		}, nil
+	case float64:
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_Int,
+			Value: int(v),
+		}, nil
+	case string:
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_String,
+			Value: v,
+		}, nil
+	case bool:
+		return &ClaimNode{
+			Key:   key,
+			Type:  Claim_Bool,
+			Value: v,
+		}, nil
+	case nil:
+		return &ClaimNode{
+			Key:  key,
+			Type: Claim_Null,
+		}, nil
+	default:
+		return nil, fmt.Errorf("claim %v is of unknown type (value: %v)", key, v)
+	}
+}
+
+type disclosureLookupTable struct {
+	Contents map[HashedDisclosure]DisclosureContent
+	Encoded  map[HashedDisclosure]EncodedDisclosure
+}
+
+// MissingDisclosuresPolicy is a policy for what to do when there's a hash in the
+// _sd field that doesn't have a corresponding disclosure
+type MissingDisclosuresPolicy int
+
+const (
+	MissingDisclosuresPolicy_Allow MissingDisclosuresPolicy = iota
+	MissingDisclosuresPolicy_Deny
+)
+
+func parseClaims(
+	missingDisclosuresPolicy MissingDisclosuresPolicy,
+	claims map[string]any,
+	disclosureLookup *disclosureLookupTable,
+) (*ClaimNode, error) {
+	result := map[string]*ClaimNode{}
+
+	for key, value := range claims {
+		if key == Key_Sd {
+			hashes, ok := value.([]any)
+			if !ok {
+				return nil, fmt.Errorf("failed to parse sd field: _sd field is not an array: %v", value)
+			}
+
+			if len(hashes) == 0 {
+				return nil, fmt.Errorf("failed to parse sd field: when the _sd field is present it may not be empty")
+			}
+
+			// for each hash find the corresponding disclosure content
+			for _, hashAny := range hashes {
+				hashStr, ok := hashAny.(string)
+				if !ok {
+					return nil, fmt.Errorf("hash not of type string: %v", value)
+				}
+				hash := HashedDisclosure(hashStr)
+
+				disclosure, ok := disclosureLookup.Contents[hash]
+				if !ok {
+					if missingDisclosuresPolicy == MissingDisclosuresPolicy_Allow {
+						continue
+					}
+
+					return nil, fmt.Errorf("missing disclosure for %v", hashAny)
+				}
+
+				value, err := parseClaimValue(missingDisclosuresPolicy, disclosure.Key, disclosure.Value, disclosureLookup)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse claim for disclosure with key %v: %w", disclosure.Key, err)
+				}
+
+				value.Sd = &hash
+				result[disclosure.Key] = value
+			}
+		} else {
+			claim, err := parseClaimValue(missingDisclosuresPolicy, key, value, disclosureLookup)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse claim %v: %w", key, err)
+			}
+			result[key] = claim
+		}
+	}
+	return &ClaimNode{
+		Type:   Claim_Object,
+		Object: result,
+	}, nil
+}
+
+func createDisclosureLookupTable(
+	hashAlg iana.HashingAlgorithm,
+	disclosures []EncodedDisclosure,
+) (*disclosureLookupTable, error) {
+	result := &disclosureLookupTable{
+		Contents: map[HashedDisclosure]DisclosureContent{},
+		Encoded:  map[HashedDisclosure]EncodedDisclosure{},
+	}
+	for _, d := range disclosures {
+		hash, err := HashEncodedDisclosure(hashAlg, d)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash %v: %w", d, err)
+		}
+		r, err := DecodeDisclosure(d)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode %v: %w", d, err)
+		}
+		result.Contents[hash] = r
+		result.Encoded[hash] = d
+	}
+	return result, nil
+}
+
 const ClockSkewInSeconds = 180
 
 // SdJwtVcVerificationContext contains some options and configuration for verifying SD-JWT VCs.
@@ -34,6 +385,8 @@ type SdJwtVcVerificationContext struct {
 	JwtVerifier JwtVerifier
 
 	VerifyVerifiableCredentialTypeInRequestorInfo bool
+
+	MissingDisclosuresPolicy MissingDisclosuresPolicy
 }
 
 func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationContext {
@@ -50,20 +403,10 @@ func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationCo
 	}
 }
 
-// VerifiedSdJwtVc is the decoded & verified representation of an SD-JWT VC.
-// You should only obtain one by calling `ParseAndVerifySdJwtVc()` and not make one yourself.
-type VerifiedSdJwtVc struct {
-	IssuerSignedJwtPayload IssuerSignedJwtPayload
-	Disclosures            []DisclosureContent
-	KeyBindingJwt          *KeyBindingJwtPayload
-
-	rawSdJwtVc SdJwtVc
-}
-
 type ProcessedSdJwtPayload map[string]any
 
 func (v *VerifiedSdJwtVc) GetRawSdJwtVc() SdJwtVc {
-	return v.rawSdJwtVc
+	return SdJwtVc(v.IssuerSignedJwt)
 }
 
 // ============================= Base SD-JWT VC processing =====================================
@@ -76,7 +419,11 @@ type sdJwtVcProcessor struct {
 // keyBindingProcessor is an interface for processing and verifying the key binding JWT of an SD-JWT VC.
 // Implementations differ for holder and verifier processing.
 type keyBindingProcessor interface {
-	ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload IssuerSignedJwtPayload) (*KeyBindingJwtPayload, error)
+	ProcessAndVerifyKeyBindingJwt(
+		kbjwt *KeyBindingJwt,
+		rawSdJwtVc SdJwtVc,
+		holder *VerifiedSdJwtVc,
+	) (*KeyBindingJwtPayload, error)
 }
 
 func NewSdJwtVcProcessor(verificationContext SdJwtVcVerificationContext) sdJwtVcProcessor {
@@ -86,146 +433,125 @@ func NewSdJwtVcProcessor(verificationContext SdJwtVcVerificationContext) sdJwtVc
 }
 
 // ProcessAndVerifySdJwtVc implements chapter 7.1 of the SD-JWT VC specification.
-func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(sdjwtvc SdJwtVcKb, keyBindingProcessor keyBindingProcessor) (VerifiedSdJwtVc, error) {
+func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
+	sdjwtvc SdJwtVcKb,
+	keyBindingProcessor keyBindingProcessor,
+) (*VerifiedSdJwtVc, error) {
 	issuerSignedJwt, disclosures, rawSdJwtVc, rawKbJwt, err := splitSdJwtVcKb(sdjwtvc)
 	if err != nil {
-		return VerifiedSdJwtVc{}, err
+		return nil, err
 	}
 
-	issuerSignedJwtPayload, requestorInfo, decodedDisclosures, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
+	holder, requestorInfo, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
 	if err != nil {
-		return VerifiedSdJwtVc{}, err
+		return nil, err
+	}
+	// ignore
+	_ = requestorInfo
+
+	kbJwtPayload, err := keyBindingProcessor.ProcessAndVerifyKeyBindingJwt(rawKbJwt, rawSdJwtVc, holder)
+	if err != nil {
+		return nil, err
 	}
 
-	kbJwtPayload, err := keyBindingProcessor.ProcessAndVerifyKeyBindingJwt(rawKbJwt, rawSdJwtVc, issuerSignedJwtPayload)
-	if err != nil {
-		return VerifiedSdJwtVc{}, err
-	}
+	holder.KeyBindingJwt = kbJwtPayload
 
 	// Verify the credential is allowed to be issued by the requestor
 	// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
 	// until we can issue SD-JWT VCs that fit our scheme
-	if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
-		disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
-		err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(issuerSignedJwtPayload.VerifiableCredentialType, disclosureKeys)
-		if err != nil {
-			return VerifiedSdJwtVc{}, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
-		}
-	}
+	// if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
+	// 	disclosureKeys := slices.Collect(DisclosureContents(decodedDisclosures).Keys())
+	// 	err = requestorInfo.AttestationProvider.VerifySdJwtIssuance(issuerSignedJwtPayload.VerifiableCredentialType, disclosureKeys)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
+	// 	}
+	// }
 
 	// Valid SD-JWT, optionally with valid key binding JWT, depending on the key binding processor used
-	return VerifiedSdJwtVc{
-		IssuerSignedJwtPayload: issuerSignedJwtPayload,
-		Disclosures:            decodedDisclosures,
-		KeyBindingJwt:          kbJwtPayload,
-		rawSdJwtVc:             rawSdJwtVc,
-	}, nil
+
+	return holder, nil
 }
 
 func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJwt, disclosures []EncodedDisclosure) (
-	IssuerSignedJwtPayload,
+	*VerifiedSdJwtVc,
 	*scheme.AttestationProviderRequestor,
-	[]DisclosureContent,
 	error,
 ) {
 	token, requestorInfo, err := v.decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt))
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, err
+		return nil, nil, err
 	}
 
-	var vct string
-	err = token.Get(Key_VerifiableCredentialType, &vct)
+	result := &VerifiedSdJwtVc{}
+
+	claims, err := extractClaimsAndDisclosuresDigestsFromToken(token)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, errors.New("missing vct field")
+		return nil, nil, err
+	}
+
+	disclosureLookup, err := createDisclosureLookupTable(iana.SHA256, disclosures)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	result.Claims, err = parseClaims(v.verificationContext.MissingDisclosuresPolicy, claims, disclosureLookup)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = token.Get(Key_VerifiableCredentialType, &result.VerifiableCredentialType)
+	if err != nil {
+		return nil, nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
-	sub, _ := token.Subject()
-	exp, _ := token.Expiration()
-	iat, _ := token.IssuedAt()
-	nbf, _ := token.NotBefore()
+	result.Subject, _ = token.Subject()
+	result.Expiry = utils.GetOptional[int64](token, Key_ExpiryTime)
+	result.IssuedAt = utils.GetOptional[int64](token, Key_IssuedAt)
+	result.NotBefore = utils.GetOptional[int64](token, Key_NotBefore)
+
 	iss, issPresent := token.Issuer()
 
-	status := utils.GetOptional[string](token, Key_Status)
+	result.Issuer = iss
+	result.Status = utils.GetOptional[string](token, Key_Status)
 
 	if !issPresent {
-		return IssuerSignedJwtPayload{}, nil, nil, errors.New("missing iss field")
+		return nil, nil, errors.New("missing iss field")
 	}
 
 	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
-	sdAlg := iana.SHA256
+	result.SdAlg = iana.SHA256
 	if token.Has(Key_SdAlg) {
 		if h := utils.GetOptional[string](token, Key_SdAlg); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
-			sdAlg = iana.HashingAlgorithm(h)
+			result.SdAlg = iana.HashingAlgorithm(h)
 		} else {
-			return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
+			return nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
 		}
 	}
 
-	var sdRaw, cnfRaw any
-
-	var sd []HashedDisclosure
-	err = token.Get(Key_Sd, &sdRaw)
-	if err == nil {
-		sd, err = parseSdField(sdRaw)
-		if err != nil {
-			return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
-		}
-	}
-
-	var cnf *CnfField
+	var cnfRaw any
 	err = token.Get(Key_Confirmationkey, &cnfRaw)
+
 	if err == nil {
-		cnf, err = parseConfirmField(cnfRaw)
+		result.Confirm, err = parseConfirmField(cnfRaw)
 		if err != nil {
-			return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
+			return nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
-	}
-
-	// Verify and process disclosures
-	// Get structured SD-JWT claims, which we can check for embedded disclosure digests
-	issuerSignedJwtClaims, err := extractClaimsAndDisclosuresDigestsFromToken(token)
-	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
-	}
-
-	// Construct payload
-	payload := IssuerSignedJwtPayload{
-		Subject:                  sub,
-		Expiry:                   exp.Unix(),
-		IssuedAt:                 iat.Unix(),
-		NotBefore:                nbf.Unix(),
-		Issuer:                   iss,
-		VerifiableCredentialType: vct,
-		Sd:                       sd,
-		SdAlg:                    iana.HashingAlgorithm(sdAlg),
-		Confirm:                  cnf,
-		Status:                   status,
 	}
 
 	// Verify times
-	err = v.verifyTimeFields(payload)
+	err = v.verifyTimeFields(result)
 	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, err
+		return nil, nil, err
 	}
 
-	// Parse and verify disclosures
-	// TODO: store ProcessedSdJwtPayload somewhere if needed
-	_, decodedDisclosures, err := verifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtClaims, disclosures)
-	if err != nil {
-		return IssuerSignedJwtPayload{}, nil, nil, err
-	}
+	result.IssuerSignedJwt = signedJwt
+	result.DisclosureLookup = disclosureLookup
 
-	// Convert pointer to disclosures to values for return  (TODO: optimize to avoid this copy?)
-	decodedDisclosuresValues := make([]DisclosureContent, len(decodedDisclosures))
-	for i, discPtr := range decodedDisclosures {
-		decodedDisclosuresValues[i] = *discPtr
-	}
-
-	return payload, requestorInfo, decodedDisclosuresValues, nil
+	return result, requestorInfo, nil
 }
 
-func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload IssuerSignedJwtPayload) error {
+func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *VerifiedSdJwtVc) error {
 	now := v.verificationContext.Clock.Now().Unix()
 	minSkewNow := now - ClockSkewInSeconds
 	maxSkewNow := now + ClockSkewInSeconds
@@ -363,23 +689,33 @@ func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[H
 		if arrayValue, ok := claimValue.([]any); ok {
 			processedArray := []any{}
 			for _, arrayElemValue := range arrayValue {
-				// Check if the value is a disclosure (format should be {"...":"<digest>"}) or not, and if so, verify the array element disclosure exists
+				// Check if the value is a disclosure (format should be {"...":"<digest>"}) or not, and if so,
+				// verify the array element disclosure exists
 				if valMap, ok := arrayElemValue.(map[string]any); ok {
 					if arrayElemDisclosureDigestVal, ok := valMap[Key_Ellipsis]; ok {
 						// It's an embedded disclosure digest...
 						arrayElemDisclosureDigestStr, ok := arrayElemDisclosureDigestVal.(string)
 						if !ok {
-							return fmt.Errorf("array element, which should be an embedded disclosure digest, is not a valid digest: %v", arrayElemDisclosureDigestStr)
+							return fmt.Errorf(
+								"array element, which should be an embedded disclosure digest, is not a valid digest: %v",
+								arrayElemDisclosureDigestStr,
+							)
 						}
 
 						disclosureDigest := HashedDisclosure(arrayElemDisclosureDigestStr)
 						if embeddedDisclosure, ok := decodedDisclosures[disclosureDigest]; ok {
 							// Check for array element validity (i.e. should be in format ["...": "<digest>"])
 							if embeddedDisclosure.IsTouched() {
-								return fmt.Errorf("digest %s has been referenced multiple time in the SD-JWT", disclosureDigest)
+								return fmt.Errorf(
+									"digest %s has been referenced multiple time in the SD-JWT",
+									disclosureDigest,
+								)
 							}
 							if !embeddedDisclosure.IsArrayElement() {
-								return fmt.Errorf("embedded disclosure %s is expected to be an array element, but is not", embeddedDisclosure.Key)
+								return fmt.Errorf(
+									"embedded disclosure %s is expected to be an array element, but is not",
+									embeddedDisclosure.Key,
+								)
 							}
 
 							// Otherwise, replace the array element with the actual value from the disclosure
@@ -494,7 +830,9 @@ func extractClaimsAndDisclosuresDigestsFromToken(token jwt.Token) (map[string]an
 
 // Decode the JWT into a token, verify the signature with the X.509 certificate in the header and verify the certificate is trusted (both against root/intermediate certs and CRLs).
 // Function returns the token and the requestor info from the certificate.
-func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(signedJwt []byte) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
+func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
+	signedJwt []byte,
+) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
 	keyProvider := &SdJwtKeyProvider{
 		X509KeyProvider: eudi_jwt.X509KeyProvider{},
 	}
@@ -557,11 +895,15 @@ func NewVerifierKeyBindingProcessor(keyBindingRequired bool, verificationContext
 }
 
 // ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via the context parameter.
-func (v *VerifierVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (VerifiedSdJwtVc, error) {
+func (v *VerifierVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (*VerifiedSdJwtVc, error) {
 	return v.sdJwtVcProcessor.ProcessAndVerifySdJwtVc(sdjwtvc, &v.verifierKeyBindingProcessor)
 }
 
-func (v *verifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload IssuerSignedJwtPayload) (*KeyBindingJwtPayload, error) {
+func (v *verifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(
+	kbjwt *KeyBindingJwt,
+	rawSdJwtVc SdJwtVc,
+	issuerSignedJwtPayload *VerifiedSdJwtVc,
+) (*KeyBindingJwtPayload, error) {
 	if v.keyBindingRequired && kbjwt == nil {
 		return nil, errors.New("key binding jwt is required, but not present in sdjwtvc")
 	} else if kbjwt == nil {
@@ -582,7 +924,7 @@ func (v *verifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBi
 // TODO: check against chapter 7.3 of the SD-JWT VC specification.
 func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 	sdJwtVc SdJwtVc,
-	issuerSignedJwtPayload IssuerSignedJwtPayload,
+	issuerSignedJwtPayload *VerifiedSdJwtVc,
 	kbjwt KeyBindingJwt,
 ) (*KeyBindingJwtPayload, error) {
 	header, _, err := decodeJwtWithoutCheckingSignature(string(kbjwt))
@@ -602,7 +944,12 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 	}
 
 	if typ := header["typ"]; typ != KbJwtTyp {
-		return nil, fmt.Errorf("key binding jwt header is expected to have 'typ' of '%s', but has %s (header: %v)", KbJwtTyp, typ, header)
+		return nil, fmt.Errorf(
+			"key binding jwt header is expected to have 'typ' of '%s', but has %s (header: %v)",
+			KbJwtTyp,
+			typ,
+			header,
+		)
 	}
 
 	var payload KeyBindingJwtPayload
@@ -661,7 +1008,7 @@ func NewHolderVerificationProcessor(verificationContext SdJwtVcVerificationConte
 
 type holderVerifierKeyBindingProcessor struct{}
 
-func (p *holderVerifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload IssuerSignedJwtPayload) (*KeyBindingJwtPayload, error) {
+func (p *holderVerifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt *KeyBindingJwt, rawSdJwtVc SdJwtVc, issuerSignedJwtPayload *VerifiedSdJwtVc) (*KeyBindingJwtPayload, error) {
 	if kbjwt != nil {
 		return nil, fmt.Errorf("key binding jwt found in SD-JWT, but holder should not receive one from the issuer")
 	}
@@ -669,7 +1016,7 @@ func (p *holderVerifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt 
 }
 
 // ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via the context parameter.
-func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (VerifiedSdJwtVc, error) {
+func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (*VerifiedSdJwtVc, error) {
 	return v.sdJwtVcProcessor.ProcessAndVerifySdJwtVc(sdjwtvc, &holderVerifierKeyBindingProcessor{})
 }
 
