@@ -499,8 +499,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 		return nil, nil, err
 	}
 
-	var vct string
-	err = token.Get(Key_VerifiableCredentialType, &vct)
+	err = token.Get(Key_VerifiableCredentialType, &result.VerifiableCredentialType)
 	if err != nil {
 		return nil, nil, errors.New("missing vct field")
 	}

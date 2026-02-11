@@ -928,6 +928,8 @@ func Test_HolderVerificationProcessor_ValidSdJwt_WithDisclosures_NoKbJwt_Succeed
 		},
 	})
 
+	require.Equal(t, verifiedSdJwtVc.VerifiableCredentialType, "test.test.email")
+
 	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Encoded, 1)
 	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Contents, 1)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
