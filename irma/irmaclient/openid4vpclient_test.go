@@ -121,19 +121,19 @@ func startSessionAtEudiVerifier(verifierHost string) (string, error) {
 func addTestCredentialsToStorage(t *testing.T, storage SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
 	// ignoring all errors here, since it's not production code anyway
 	mobilephoneInfo, mobilephoneEntry := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
-		map[string]any{
+		map[string]string{
 			"mobilephone": "+31612345678",
 		}, 1,
 	)
 	require.NoError(t, storage.StoreCredential(mobilephoneInfo, mobilephoneEntry))
 
-	emailInfo, emailSdjwts := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo, emailSdjwts := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	}, 1)
 	require.NoError(t, storage.StoreCredential(emailInfo, emailSdjwts))
 
-	emailInfo2, emailSdjwt2 := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo2, emailSdjwt2 := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	}, 2)

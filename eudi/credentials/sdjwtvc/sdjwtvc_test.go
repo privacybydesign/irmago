@@ -73,30 +73,15 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 	}
 }
 
-func TestCreateMultipleDisclosures(t *testing.T) {
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"name":     "Yivi",
-		"location": "Utrecht",
-		"country":  "Netherlands",
-	})
-
-	require.NoError(t, err)
-	require.Len(t, disclosures, 3)
-}
-
 func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
-	issuer := "https://example.com"
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{"family": "Yivi"})
-	require.NoError(t, err)
-
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-
-	sdjwt, err := NewSdJwtVcBuilder().
-		WithIssuerUrl(issuer).
-		WithVerifiableCredentialType("pbdf.pbdf.email").
-		WithDisclosures(disclosures).
-		WithHashingAlgorithm(iana.SHA256).
-		Build(jwtCreator)
+	sdjwt, err := NewSdJwtBuilder().
+		WithPayload(
+			Claim(Key_Issuer, "https://example.com"),
+			Claim(Key_VerifiableCredentialType, "pbdf.pbdf.email"),
+			Claim(Key_SdAlg, iana.SHA256),
+			SdClaim("family", "Yivi"),
+		).
+		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
 
 	require.NoError(t, err)
 

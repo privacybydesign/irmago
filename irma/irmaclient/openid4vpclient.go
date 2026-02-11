@@ -105,14 +105,19 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 			return
 		}
 
-		request, endEntityCert, requestorSchemeData, err := client.verifierValidator.ParseAndVerifyAuthorizationRequest(string(authRequestJwt))
+		request, endEntityCert, requestorSchemeData, err := client.verifierValidator.
+			ParseAndVerifyAuthorizationRequest(string(authRequestJwt))
+
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to verify authorization request: %v", err)
 			return
 		}
 
 		// Store the verifier logo in the cache
-		filename, path, err := client.Configuration.Verifiers.CacheLogo(endEntityCert.SerialNumber.String(), &requestorSchemeData.Organization.Logo)
+		filename, path, err := client.Configuration.Verifiers.CacheLogo(
+			endEntityCert.SerialNumber.String(),
+			&requestorSchemeData.Organization.Logo,
+		)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
 			return
