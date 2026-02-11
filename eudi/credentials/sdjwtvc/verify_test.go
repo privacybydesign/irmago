@@ -1109,8 +1109,76 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 	require.NoError(t, err)
 }
 
-func Test_CreateNewSdJwtWithDisclosures(t *testing.T) {
+func Test_CreatePresentationSdJwtWithMixedPublicAndSelectiveDisclosures(t *testing.T) {
+	testSdJwt := SdJwtVcKb(validSdJwtVc_PublicAttributes)
+	issuerCert := testdata.IssuerCertChain_irma_app_Bytes
+
+	lastNameHash := HashedDisclosure("wB2s9Cwam804qn5UozjW6o1VxIrV8gIlzve8XjJBQbM")
+	frHash := HashedDisclosure("9vHqBVeCC1tArYpowI-kz5FNmDZNyZP7cKaMd5aV3hY")
+	nonSelectiveNationalititiesHash := HashedDisclosure("Jwg1kqh55DA0Rjk-naCl1jekwAcDS0bTBEUcoC1AAz0")
+
+	testDisclosure(t, "first item in non-sd array items shows all",
+		testSdJwt,
+		[][]any{{"non_selective_nationalitities", 0}},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"birthday": {Key: "birthday", Type: Claim_String, Value: "24-02-1955"},
+				"non_selective_nationalitities": {
+					Key:  "non_selective_nationalitities",
+					Type: Claim_Array,
+					Sd:   &nonSelectiveNationalititiesHash,
+					Array: []*ClaimNode{
+						{Type: Claim_String, Value: "DE"},
+						{Type: Claim_String, Value: "UK"},
+					},
+				},
+				"selective_nationalities": {
+					Key:   "selective_nationalities",
+					Type:  Claim_Array,
+					Array: []*ClaimNode{},
+				},
+				"personal_data": {
+					Key:    "personal_data",
+					Type:   Claim_Object,
+					Object: map[string]*ClaimNode{},
+				},
+			},
+		},
+		issuerCert,
+	)
+
+	testDisclosure(t, "last name and second selective nationality", testSdJwt, [][]any{
+		{"personal_data", "last_name"},
+		{"selective_nationalities", 1},
+	},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"birthday": {Key: "birthday", Type: Claim_String, Value: "24-02-1955"},
+				"selective_nationalities": {
+					Key:  "selective_nationalities",
+					Type: Claim_Array,
+					Array: []*ClaimNode{
+						{Type: Claim_String, Value: "FR", Sd: &frHash},
+					},
+				},
+				"personal_data": {
+					Key:  "personal_data",
+					Type: Claim_Object,
+					Object: map[string]*ClaimNode{
+						"last_name": {Key: "last_name", Type: Claim_String, Value: "Dijkstra", Sd: &lastNameHash},
+					},
+				},
+			},
+		},
+		issuerCert,
+	)
+}
+
+func Test_CreatePresentationSdJwtWithNestedDisclosures(t *testing.T) {
 	testSdJwt := SdJwtVcKb(validSdJwtVc_NestedAttributes)
+	issuerCert := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
 
 	nameHash := HashedDisclosure("y_1ml66L5y0IVcLT-5eybzprmV_9RPUMndrpNbEBgqU")
 	addressHash := HashedDisclosure("wxLmodf8M59QNhZ5uz4uBYFN4JdM6QjjJfOqUieHp00")
@@ -1122,6 +1190,7 @@ func Test_CreateNewSdJwtWithDisclosures(t *testing.T) {
 
 	testDisclosure(t, "no paths, empty", testSdJwt, [][]any{},
 		&ClaimNode{Type: Claim_Object, Object: map[string]*ClaimNode{}},
+		issuerCert,
 	)
 
 	testDisclosure(t, "country and 18+", testSdJwt, [][]any{{"over_18"}, {"address", "country"}},
@@ -1139,6 +1208,7 @@ func Test_CreateNewSdJwtWithDisclosures(t *testing.T) {
 				},
 			},
 		},
+		issuerCert,
 	)
 
 	testDisclosure(t,
@@ -1157,6 +1227,7 @@ func Test_CreateNewSdJwtWithDisclosures(t *testing.T) {
 				},
 			},
 		},
+		issuerCert,
 	)
 
 	testDisclosure(t,
@@ -1175,13 +1246,12 @@ func Test_CreateNewSdJwtWithDisclosures(t *testing.T) {
 				"name": {Key: "name", Type: Claim_String, Sd: &nameHash, Value: "Jason"},
 			},
 		},
+		issuerCert,
 	)
 }
 
-func testDisclosure(t *testing.T, name string, sdjwt SdJwtVcKb, claimPaths [][]any, expectedClaims *ClaimNode) {
+func testDisclosure(t *testing.T, name string, sdjwt SdJwtVcKb, claimPaths [][]any, expectedClaims *ClaimNode, issuerCert []byte) {
 	t.Run(name, func(t *testing.T) {
-		issuerCert := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
-
 		context := CreateDefaultVerificationContext(issuerCert)
 		holderVerifier := NewHolderVerificationProcessor(context)
 		verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdjwt)
