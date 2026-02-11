@@ -157,9 +157,13 @@ func NewIrmaClient(
 	}
 
 	// Load our stuff
-	if client.Preferences, err = client.storage.dbStorage.LoadPreferences(clientsettings.GetDefaultPreferences()); err != nil {
-		return nil, fmt.Errorf("failed to load preferences: %v", err)
-	}
+	// if client.Preferences, err = client.storage.dbStorage.LoadPreferences(clientsettings.GetDefaultPreferences()); err != nil {
+	// 	return nil, fmt.Errorf("failed to load preferences: %v", err)
+	// }
+
+	// TODO: remove this line and re-enable the line above
+	client.Preferences.DeveloperMode = true
+
 	client.applyPreferences()
 
 	err = client.loadCredentialStorage()
@@ -169,7 +173,7 @@ func NewIrmaClient(
 
 	client.sessions = sessions{client: client, sessions: map[string]*session{}}
 
-	gocron.SetPanicHandler(func(jobName string, recoverData interface{}) {
+	gocron.SetPanicHandler(func(jobName string, recoverData any) {
 		var details string
 		b, err := json.Marshal(recoverData)
 		if err == nil {

@@ -1,6 +1,7 @@
 package sdjwtvc
 
 import (
+	"crypto/x509"
 	"encoding/json"
 	"testing"
 	"time"
@@ -750,6 +751,43 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures
 // - [x] clock.now - 1 minute is before iat (valid because of skew)
 // - [x] clock.now - 1 minute is before nbf (valid because of skew)
 // - [x] clock.now + 1 minute is after exp (valid because of skew)
+
+func Test_Nested_Claims(t *testing.T) {
+	sdjwt := SdJwtVc("eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiIsIng1YyI6WyJNSUlDUGpDQ0FlV2dBd0lCQWdJREFMSzlNQW9HQ0NxR1NNNDlCQU1DTURreEhqQWNCZ05WQkFNTUZVUnBaMmxrWlc1MGFYUjVJRlpESUVsemMzVmxjakVYTUJVR0ExVUVDZ3dPUVhWMGJ5MUhaVzVsY21GMFpXUXdIaGNOTWpVd056TXdNVFExTVRFNVdoY05NelV3TnpNd01UUTFNVEU1V2pBNU1SNHdIQVlEVlFRRERCVkVhV2RwWkdWdWRHbDBlU0JXUXlCSmMzTjFaWEl4RnpBVkJnTlZCQW9NRGtGMWRHOHRSMlZ1WlhKaGRHVmtNRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBEQVFjRFFnQUVFSDFjcHVtaDNNckhyZk1kY0xJaVUyQzNUUkRCd3RKSk52NjRFeUZ0clczOUk1bVhuQjNreGt2RWkwQ0wwQ0FjcTcxRDU4M05oT2lub1pGQkRTOGttYU9CMnpDQjJEQVBCZ05WSFJNQkFmOEVCVEFEQVFIL01CMEdBMVVkRGdRV0JCU3NNNkNzV01XUEZNekhuTGROVDhSK2JoUUVuakJOQmdOVkhTTUVSakJFb1Qya096QTVNUjR3SEFZRFZRUUREQlZFYVdkcFpHVnVkR2wwZVNCV1F5QkpjM04xWlhJeEZ6QVZCZ05WQkFvTURrRjFkRzh0UjJWdVpYSmhkR1ZrZ2dNQXNyMHdWd1lEVlIwUkJGQXdUb0loWVhWMGFDNWthV2RwWkdWdWRHbDBlUzF3Y21Wd2NtOWtkV04wYVc5dUxtVjFoaWxvZEhSd2N6b3ZMMkYxZEdndVpHbG5hV1JsYm5ScGRIa3RjSEpsY0hKdlpIVmpkR2x2Ymk1bGRUQUtCZ2dxaGtqT1BRUURBZ05IQURCRUFpQnUwYWo5Q3hCZ3JFVGl5V0twNHB4QmhydHI1TUc0OHp3MkYxYnE5R3ZhR2dJZ0ZvWVcvcFJodkJVQnA2V3dHTjFDYitlNjJLcGt0OHcvUUJ3SnN6cHR5RVk9Il19.eyJpc3MiOiJodHRwczovL2F1dGguZGlnaWRlbnRpdHktcHJlcHJvZHVjdGlvbi5ldSIsIm5iZiI6MTc2OTQzNjcyNywiaWF0IjoxNzY5NDM2NzI3LCJleHAiOjE4MDA5NzI3MjcsImNuZiI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJCLWZZUWpQcjZ0eWxqeWhvXy02dHhWcFU5ZUZWVmdjeksyT3I4bjRMZjYwIiwieSI6InRSV0VaOXZIdnpQb2VBVUNEdUdibENIMVpyVFlnM1Bjcm9WZkg1VWVkaDQifX0sIl9zZCI6WyJhMTRnekVzTmhOUF9lY0tsZ3g0aWhOWlN4ZFM1eEw5MDMtMmtSZTZ3T2FzIiwiOVNQYjVMOTNsV0U0blpJS0pHSUVvLXZ2b0lfaDFDSnR3QnVzeXg0ckYzWSIsIkFZVXpQTmUyOVhaam5NTTNyZXRvMVN5czNGamdKbWtvaUtuZVdISElpbGciLCIxTEJyb1hFUXJ4cU1ha3p4SmtvdHpwYXNGeWFub0ZBTTJ1aUdJenR0MjJVIl0sInZjdCI6InVybjpldWRpOnBpZDoxIiwiX3NkX2FsZyI6InNoYS0yNTYifQ.8H8wFZYYkeu8ErPuzyICAroNm23u7fUp1JtOZu1huw6Pd0UpydOGiLDhghNoElAC4lgCgzWR1HtevTFC6xcwXw~WyJCSnFNV1BpZHlkbGVfOTRWcHlWcjhRIiwiZ2l2ZW5fbmFtZSIsIkphbmUiXQ~WyIwbTlxeTdGOHVlTHpBbGp3RTVGV0ZnIiwiZmFtaWx5X25hbWUiLCJEb2UiXQ~WyJvY1VXRUd0amRRendDMkhyalF6b2tBIiwiYmlydGhkYXRlIiwiMTk5MC0wMS0wMSJd~WyIzNTlPV1RCQXd0a2ZlZExjWjhtQUVBIiwibG9jYWxpdHkiLCJEZW4gSGFhZyJd~WyI3THBmWkw5MDhFcWJJQnF6WmxycVhRIiwicGxhY2Vfb2ZfYmlydGgiLHsiX3NkIjpbIkV5VTZxeTRkQzV1b3YwcVBiNjNvNVBpLWRMMWdkcjJmTUVzN3RCWHBSNjgiXX1d~")
+
+	roots := x509.NewCertPool()
+	im := x509.NewCertPool()
+
+	issuerCert :=
+		`
+-----BEGIN CERTIFICATE-----
+MIICPjCCAeWgAwIBAgIDALK9MAoGCCqGSM49BAMCMDkxHjAcBgNVBAMMFURpZ2lkZW50aXR5IFZDIElzc3VlcjEXMBUGA1UECgwOQXV0by1HZW5lcmF0ZWQwHhcNMjUwNzMwMTQ1MTE5WhcNMzUwNzMwMTQ1MTE5WjA5MR4wHAYDVQQDDBVEaWdpZGVudGl0eSBWQyBJc3N1ZXIxFzAVBgNVBAoMDkF1dG8tR2VuZXJhdGVkMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEH1cpumh3MrHrfMdcLIiU2C3TRDBwtJJNv64EyFtrW39I5mXnB3kxkvEi0CL0CAcq71D583NhOinoZFBDS8kmaOB2zCB2DAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSsM6CsWMWPFMzHnLdNT8R+bhQEnjBNBgNVHSMERjBEoT2kOzA5MR4wHAYDVQQDDBVEaWdpZGVudGl0eSBWQyBJc3N1ZXIxFzAVBgNVBAoMDkF1dG8tR2VuZXJhdGVkggMAsr0wVwYDVR0RBFAwToIhYXV0aC5kaWdpZGVudGl0eS1wcmVwcm9kdWN0aW9uLmV1hilodHRwczovL2F1dGguZGlnaWRlbnRpdHktcHJlcHJvZHVjdGlvbi5ldTAKBggqhkjOPQQDAgNHADBEAiBu0aj9CxBgrETiyWKp4pxBhrtr5MG48zw2F1bq9GvaGgIgFoYW/pRhvBUBp6WwGN1Cb+e62Kpkt8w/QBwJszptyEY=
+-----END CERTIFICATE-----
+
+`
+	x509Cert, err := utils.ParsePemCertificateChain([]byte(issuerCert))
+	require.NoError(t, err)
+	roots.AddCert(x509Cert[0])
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: x509.VerifyOptions{
+				Roots:         roots,
+				Intermediates: im,
+				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			},
+		},
+		Clock:       &testClock{time: 1769436727},
+		JwtVerifier: NewJwxJwtVerifier(),
+	}
+
+	holderVerifier := NewHolderVerificationProcessor(context)
+	verified, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwt))
+	require.NoError(t, err)
+
+	require.Len(t, verified.IssuerSignedJwtPayload.Sd, 4)
+	require.Len(t, verified.Disclosures, 4)
+}
 
 func Test_HolderVerificationProcessor_InvalidJwtForIssuerSignedJwt_Fails(t *testing.T) {
 	sdJwt := SdJwtVc("slkjfaslkgdjaglj")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
@@ -18,14 +19,16 @@ import (
 )
 
 type openid4vciSession struct {
-	credentialOffer          *openid4vci.CredentialOffer
-	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata
-	requestorInfo            *irma.RequestorInfo
-	credentials              []*irma.CredentialTypeInfo
-	storageClient            SdJwtVcStorageClient
-	httpClient               *http.Client
-	handler                  Handler
-	keyBinder                sdjwtvc.KeyBinder
+	credentialOffer           *openid4vci.CredentialOffer
+	credentialIssuerMetadata  *openid4vci.CredentialIssuerMetadata
+	requestorInfo             *irma.RequestorInfo
+	credentials               []*irma.CredentialTypeInfo
+	storageClient             SdJwtVcStorageClient
+	httpClient                *http.Client
+	handler                   Handler
+	keyBinder                 sdjwtvc.KeyBinder
+	credentialMetadataStorage CredentialMetadataStorage
+	issuerMetadataStorage     IssuerMetadataStorage
 
 	// Settings determined from the Credential Offer and Credential Issuer metadata
 	grantType                   openid4vci.Grant
@@ -39,6 +42,7 @@ type openid4vciSession struct {
 }
 
 func (s *openid4vciSession) perform() error {
+	irma.Logger.Info("test logging: perform()")
 	// TODO: validate all properties are correctly set
 
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
@@ -75,6 +79,7 @@ func (s *openid4vciSession) perform() error {
 
 	// Check if permission was granted
 	if permission == nil || !permission.PermissionGranted() {
+		irma.Logger.Infof("permission was nil or not granted: %v", permission)
 		s.handler.Cancelled()
 		return nil
 	}
@@ -82,12 +87,14 @@ func (s *openid4vciSession) perform() error {
 	// AccessToken received;
 	err = s.requestCredentials(permission.GetAccessToken())
 	if err != nil {
+		irma.Logger.Info("could not request credentials: %w", err)
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("could not request credentials: %v", err),
 		})
 		return nil
 	}
 
+	irma.Logger.Info("openid4vci session completed")
 	s.handler.Success("openid4vci session completed")
 	return nil
 }
@@ -178,7 +185,29 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
+func storeIssuerMetadata(storage IssuerMetadataStorage, metadata *openid4vci.CredentialIssuerMetadata) error {
+	name := toTranslatedValue(metadata.Display, func(display openid4vci.CredentialIssuerDisplay) (string, string) {
+		return display.Locale, display.Name
+	})
+
+	logoUri := toTranslatedValue(metadata.Display, func(display openid4vci.CredentialIssuerDisplay) (string, string) {
+		return display.Locale, display.Logo.Uri
+	})
+
+	toStore := &IssuerMetadata{
+		IssuerId: metadata.CredentialIssuer,
+		Name:     name,
+		// TODO: figure out a way to find the logo's
+		LogoPath: logoUri,
+	}
+	return storage.Add(toStore)
+}
+
 func (s *openid4vciSession) requestCredentials(accessToken string) error {
+	if err := storeIssuerMetadata(s.issuerMetadataStorage, s.credentialIssuerMetadata); err != nil {
+		return fmt.Errorf("failed to store issuer metadata: %w", err)
+	}
+
 	// If the issuer provides a Nonce endpoint, we should get a fresh c_nonce here and use it in all credential requests that require proof of possession
 	var cNonce *string
 	if s.credentialIssuerMetadata.NonceEndpoint != "" {
@@ -203,6 +232,97 @@ func (s *openid4vciSession) requestCredentials(accessToken string) error {
 	return nil
 }
 
+func toTranslatedValue[T any](displays []T, mapper func(T) (string, string)) irma.TranslatedString {
+	result := irma.TranslatedString{}
+	for _, d := range displays {
+		lang, value := mapper(d)
+		if lang == "" {
+			lang = "en"
+		}
+		result[lang] = value
+	}
+	return result
+}
+
+func find[T any](slice []T, pred func(T) bool) (T, bool) {
+	for _, v := range slice {
+		if pred(v) {
+			return v, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
+func storeCredentialMetadata(storage CredentialMetadataStorage, config *openid4vci.CredentialConfiguration, issuerConfig *openid4vci.CredentialIssuerMetadata) error {
+	credentialName := toTranslatedValue(config.CredentialMetadata.Display, func(d openid4vci.CredentialDisplay) (string, string) {
+		return d.Locale, d.Name
+	})
+
+	attributes := []*AttributeMetadata{}
+
+	for _, claim := range config.CredentialMetadata.Claims {
+		claimName := toTranslatedValue(claim.Display, func(d openid4vci.Display) (string, string) {
+			return d.Locale, d.Name
+		})
+
+		if len(claim.Path) == 0 {
+			continue // or error
+		}
+
+		rootKey := claim.Path[0]
+		node, ok := find(attributes, func(a *AttributeMetadata) bool { return a.Id == rootKey })
+		if !ok {
+			node = &AttributeMetadata{
+				Id:     rootKey,
+				Nested: []*AttributeMetadata{},
+			}
+			attributes = append(attributes, node)
+		}
+
+		// Walk down the path
+		for i := 1; i < len(claim.Path); i++ {
+			key := claim.Path[i]
+
+			child, ok := find(node.Nested, func(a *AttributeMetadata) bool { return a.Id == key })
+			if !ok {
+				child = &AttributeMetadata{
+					Id:     key,
+					Nested: []*AttributeMetadata{},
+				}
+				node.Nested = append(node.Nested, child)
+			}
+
+			node = child
+
+			if i == len(claim.Path)-1 {
+				node.Name = claimName
+			}
+		}
+
+		// Path length 1 => name belongs on root
+		if len(claim.Path) == 1 {
+			node.Name = claimName
+		}
+	}
+
+	metadata := CredentialMetadata{
+		CredentialId:     config.VerifiableCredentialType,
+		Name:             credentialName,
+		IssuerId:         issuerConfig.CredentialIssuer,
+		LogoPath:         irma.TranslatedString{},
+		Attributes:       attributes,
+		CredentialFormat: Format_SdJwtVc,
+		LastUpdated:      int(time.Now().Unix()),
+		Source:           "",
+	}
+
+	metadataJson, _ := json.MarshalIndent(metadata, "", "    ")
+	irma.Logger.Infof("Metadata: %v", string(metadataJson))
+
+	return storage.Store(&metadata)
+}
+
 // requestCredential requests a credential for the given credential configuration ID. Make sure the cNonce is provided if required (Nonce Endpoint is available) and is fresh.
 func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *string, accessToken string) error {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
@@ -210,6 +330,12 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	}
 
 	credConfig := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
+
+	err := storeCredentialMetadata(s.credentialMetadataStorage, &credConfig, s.credentialIssuerMetadata)
+	if err != nil {
+		return fmt.Errorf("failed to store credential metadata")
+	}
+
 	requireCryptographicKeyBinding := len(credConfig.CryptographicBindingMethodsSupported) > 0
 
 	// TODO: fill correct fields in Credential Request..

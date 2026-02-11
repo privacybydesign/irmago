@@ -14,9 +14,9 @@ import (
 
 // ========================================================================
 
-// SdJwtVcBatchMetadata corresponds to a batch of SdJwtVcs that are the same in everything
+// SdJwtVcBatchInstanceData corresponds to a batch of SdJwtVcs that are the same in everything
 // except for the keybinding pub keys and disclosure salts/hashes
-type SdJwtVcBatchMetadata struct {
+type SdJwtVcBatchInstanceData struct {
 	BatchSize              uint           // number of instances originally issued
 	RemainingInstanceCount uint           // number of instances left
 	SignedOn               irma.Timestamp // Unix timestamp
@@ -26,8 +26,8 @@ type SdJwtVcBatchMetadata struct {
 	CredentialType         string         // corresponds to 'vct' field in jwt
 }
 
-// SdJwtVcMetadata corresponds to a single instance of and SdJwtVc
-type SdJwtVcMetadata struct {
+// SdJwtVcInstanceData corresponds to a single instance of and SdJwtVc
+type SdJwtVcInstanceData struct {
 	SignedOn       irma.Timestamp // Unix timestamp
 	Expires        irma.Timestamp // Unix timestamp
 	Attributes     map[string]any // Human-readable rendered attributes
@@ -48,17 +48,17 @@ type SdJwtVcStorage interface {
 	RemoveLastUsedInstanceOfCredentialByHash(hash string) error
 
 	// StoreCredential assumes each of the provided sdjwts to be linked to the credential info
-	StoreCredential(info SdJwtVcBatchMetadata, credentials []sdjwtvc.SdJwtVc) error
+	StoreCredential(info SdJwtVcBatchInstanceData, credentials []sdjwtvc.SdJwtVc) error
 
 	// GetCredentialsForId gets all instances for a credential id from the scheme
 	GetCredentialsForId(id string) []SdJwtVcAndInfo
 	GetCredentialByHash(hash string) (*SdJwtVcAndInfo, error)
-	GetCredentialMetdataList() []SdJwtVcBatchMetadata
+	GetCredentialMetdataList() []SdJwtVcBatchInstanceData
 }
 
 type SdJwtVcAndInfo struct {
 	SdJwtVc  sdjwtvc.SdJwtVc
-	Metadata SdJwtVcBatchMetadata
+	Metadata SdJwtVcBatchInstanceData
 }
 
 // ========================================================================
@@ -182,7 +182,8 @@ func (s *BboltSdJwtVcStorage) RemoveLastUsedInstanceOfCredentialByHash(hash stri
 	return err
 }
 
-func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtVcBatchMetadata, credentials []sdjwtvc.SdJwtVc) error {
+func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtVcBatchInstanceData, credentials []sdjwtvc.SdJwtVc) error {
+	irma.Logger.Info("DEBUGGING: StoreCredential")
 	return s.storage.Db.Update(func(tx *bbolt.Tx) error {
 		sdjwtBucket, err := tx.CreateBucketIfNotExists([]byte(sdjwtvcBucketName))
 
@@ -300,8 +301,8 @@ func (s *BboltSdJwtVcStorage) GetCredentialByHash(hash string) (result *SdJwtVcA
 	return result, err
 }
 
-func (s *BboltSdJwtVcStorage) GetCredentialMetdataList() []SdJwtVcBatchMetadata {
-	result := []SdJwtVcBatchMetadata{}
+func (s *BboltSdJwtVcStorage) GetCredentialMetdataList() []SdJwtVcBatchInstanceData {
+	result := []SdJwtVcBatchInstanceData{}
 	s.storage.Db.View(func(tx *bbolt.Tx) error {
 		sdjwtBucket := tx.Bucket([]byte(sdjwtvcBucketName))
 
@@ -364,14 +365,14 @@ func (s *BboltSdJwtVcStorage) getFirstCredentialInstanceFromBucket(bucket *bbolt
 	return sdjwtvc.SdJwtVc(decrypted), nil
 }
 
-func (s *BboltSdJwtVcStorage) getCredentialInfoFromBucket(bucket *bbolt.Bucket) (*SdJwtVcBatchMetadata, error) {
+func (s *BboltSdJwtVcStorage) getCredentialInfoFromBucket(bucket *bbolt.Bucket) (*SdJwtVcBatchInstanceData, error) {
 	encrypted := bucket.Get([]byte(infoKey))
 	decrypted, err := s.storage.Decrypt(encrypted)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %v", err)
 	}
 
-	var info SdJwtVcBatchMetadata
+	var info SdJwtVcBatchInstanceData
 	err = json.Unmarshal(decrypted, &info)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal: %v (%v)", err, string(decrypted))
@@ -392,7 +393,7 @@ func (s *BboltSdJwtVcStorage) getCredentialInfoFromBucket(bucket *bbolt.Bucket) 
 type sdjwtvcStorageEntry struct {
 	// A list of strings containing sdjwtvc's (with all disclosures & without kbjwt)
 	rawCredentials []sdjwtvc.SdJwtVc
-	info           SdJwtVcBatchMetadata
+	info           SdJwtVcBatchInstanceData
 }
 
 type InMemorySdJwtVcStorage struct {
@@ -430,8 +431,8 @@ func (s *InMemorySdJwtVcStorage) RemoveCredentialByHash(hash string) ([]jwk.Key,
 	return nil, nil
 }
 
-func (s *InMemorySdJwtVcStorage) GetCredentialMetdataList() []SdJwtVcBatchMetadata {
-	result := []SdJwtVcBatchMetadata{}
+func (s *InMemorySdJwtVcStorage) GetCredentialMetdataList() []SdJwtVcBatchInstanceData {
+	result := []SdJwtVcBatchInstanceData{}
 
 	for _, entry := range s.entries {
 		result = append(result, entry.info)
@@ -454,7 +455,8 @@ func (s *InMemorySdJwtVcStorage) GetCredentialsForId(id string) []SdJwtVcAndInfo
 	return result
 }
 
-func (s *InMemorySdJwtVcStorage) StoreCredential(info SdJwtVcBatchMetadata, credentials []sdjwtvc.SdJwtVc) error {
+func (s *InMemorySdJwtVcStorage) StoreCredential(info SdJwtVcBatchInstanceData, credentials []sdjwtvc.SdJwtVc) error {
+	irma.Logger.Info("DEBUGGING: StoreCredential")
 	s.entries = append(s.entries, sdjwtvcStorageEntry{
 		info:           info,
 		rawCredentials: credentials,

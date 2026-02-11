@@ -24,15 +24,17 @@ import (
 )
 
 type Client struct {
-	storage          *clientstorage.Storage
-	sdjwtvcStorage   irmaclient.SdJwtVcStorage
-	openid4vpClient  *irmaclient.OpenID4VPClient
-	openid4vciClient *irmaclient.OpenID4VciClient
-	irmaClient       *irmaclient.IrmaClient
-	logsStorage      irmaclient.LogsStorage
-	keyBinder        sdjwtvc.KeyBinder
-	scheduler        gocron.Scheduler
-	Preferences      clientsettings.Preferences
+	storage                   *clientstorage.Storage
+	sdjwtvcStorage            irmaclient.SdJwtVcStorage
+	openid4vpClient           *irmaclient.OpenID4VPClient
+	openid4vciClient          *irmaclient.OpenID4VciClient
+	irmaClient                *irmaclient.IrmaClient
+	logsStorage               irmaclient.LogsStorage
+	keyBinder                 sdjwtvc.KeyBinder
+	scheduler                 gocron.Scheduler
+	Preferences               clientsettings.Preferences
+	credentialMetadataStorage irmaclient.CredentialMetadataStorage
+	issuerMetadataStorage     irmaclient.IssuerMetadataStorage
 }
 
 func New(
@@ -79,12 +81,14 @@ func New(
 		return nil, fmt.Errorf("failed to open irma storage: %v", err)
 	}
 
-	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(storage)
+	// keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(storage)
+	keyBindingStorage := sdjwtvc.NewInMemoryKeyBindingStorage()
 	keyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
 	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &eudi.DefaultQueryValidatorFactory{})
-	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
+	// sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
+	sdjwtvcStorage, _ := irmaclient.NewInMemorySdJwtVcStorage()
 
 	openid4vpClient, err := irmaclient.NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, keyBinder, irmaStorage)
 	if err != nil {
@@ -129,7 +133,17 @@ func New(
 	}
 
 	// Initiate the OpenID4VCI client
-	openid4vciClient := irmaclient.NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci), keyBinder)
+	credentialMetadataStorage := irmaclient.NewInMemoryCredentialMetadataStorage()
+	issuerMetadataStorage := irmaclient.NewInMemoryIssuerMetadataStorage()
+	openid4vciClient := irmaclient.NewOpenID4VciClient(
+		&http.Client{},
+		eudiConf,
+		sdjwtvcStorage,
+		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci),
+		keyBinder,
+		credentialMetadataStorage,
+		issuerMetadataStorage,
+	)
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
@@ -137,14 +151,16 @@ func New(
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	return &Client{
-		storage:          storage,
-		sdjwtvcStorage:   sdjwtvcStorage,
-		openid4vpClient:  openid4vpClient,
-		openid4vciClient: openid4vciClient,
-		irmaClient:       irmaClient,
-		logsStorage:      irmaStorage,
-		keyBinder:        keyBinder,
-		scheduler:        scheduler,
+		storage:                   storage,
+		sdjwtvcStorage:            sdjwtvcStorage,
+		openid4vpClient:           openid4vpClient,
+		openid4vciClient:          openid4vciClient,
+		irmaClient:                irmaClient,
+		logsStorage:               irmaStorage,
+		keyBinder:                 keyBinder,
+		scheduler:                 scheduler,
+		credentialMetadataStorage: credentialMetadataStorage,
+		issuerMetadataStorage:     issuerMetadataStorage,
 	}, nil
 }
 
@@ -194,7 +210,7 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.irmaClient.EnrolledSchemeManagers()
 }
 
-func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMetadata) *irma.CredentialInfo {
+func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchInstanceData) *irma.CredentialInfo {
 	credIdSegments := strings.Split(metadata.CredentialType, ".")
 
 	attrs := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
@@ -221,14 +237,14 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMeta
 }
 
 func (client *Client) CredentialInfoList() irma.CredentialInfoList {
-	sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
+	// sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
 	idemix := client.irmaClient.CredentialInfoList()
 
 	result := irma.CredentialInfoList{}
 
-	for _, sdjwt := range sdjwtvcs {
-		result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwt))
-	}
+	// for _, sdjwt := range sdjwtvcs {
+	// 	result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwt))
+	// }
 
 	result = append(result, idemix...)
 
@@ -608,7 +624,9 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 }
 
 func (client *Client) GetPreferences() clientsettings.Preferences {
-	return client.Preferences
+	// TODO: revert this when bug is fixed
+	return clientsettings.Preferences{DeveloperMode: true}
+	// return client.Preferences
 }
 
 func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {

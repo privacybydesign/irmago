@@ -1,10 +1,13 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
 type TranslatedString map[string]string
@@ -29,8 +32,8 @@ const (
 	AttributeType_Array            AttributeType = "array"
 	AttributeType_String           AttributeType = "string"
 	AttributeType_TranslatedString AttributeType = "translated_string"
-	AttributeType_Bool             AttributeType = "bool"
-	AttributeType_Int              AttributeType = "int"
+	AttributeType_Bool             AttributeType = "boolean"
+	AttributeType_Int              AttributeType = "integer"
 	AttributeType_Image            AttributeType = "image"
 	AttributeType_Base64Image      AttributeType = "base64_image"
 )
@@ -42,7 +45,7 @@ type AttributeValue struct {
 	// |---------------------------------|-------------------------------|
 	// | Attribute type                  | Data type                     |
 	// |---------------------------------|-------------------------------|
-	// | AttributeType_Object            | Attribute                     |
+	// | AttributeType_Object            | []Attribute                   |
 	// | AttributeType_Array             | []AttributeValue              |
 	// | AttributeType_String            | string                        |
 	// | AttributeType_TranslatedString  | TranslatedString              |
@@ -192,7 +195,247 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString
 	return &t
 }
 
+func find[T any](slice []T, pred func(T) bool) (T, bool) {
+	for _, v := range slice {
+		if pred(v) {
+			return v, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
+func sortAttributesBasedOnMetadata(attributes []Attribute, metadata []*irmaclient.AttributeMetadata) {
+	order := make(map[string]int, len(metadata))
+	for i, a := range metadata {
+		order[a.Id] = i
+	}
+	sort.SliceStable(attributes, func(i, j int) bool {
+		oi, okI := order[attributes[i].Id]
+		oj, okJ := order[attributes[j].Id]
+
+		// If both IDs exist in listA, compare their order
+		if okI && okJ {
+			return oi < oj
+		}
+
+		// Optional behavior for missing IDs:
+		// - items missing from listA go to the end
+		if okI {
+			return true
+		}
+		if okJ {
+			return false
+		}
+
+		// If both missing, keep original order
+		return false
+	})
+}
+
+// buildAttribute converts a raw attribute value + its metadata into an Attribute,
+// recursively handling nested objects (and optionally arrays).
+func buildAttribute(
+	id string,
+	raw any,
+	meta *irmaclient.AttributeMetadata,
+) (Attribute, bool) {
+	if meta == nil {
+		return Attribute{}, false
+	}
+
+	// Helper to find nested metadata by id
+	findNestedMeta := func(nestedID string) (*irmaclient.AttributeMetadata, bool) {
+		m, ok := find(meta.Nested, func(item *irmaclient.AttributeMetadata) bool {
+			return item.Id == nestedID
+		})
+		return m, ok
+	}
+
+	// 1) Object (map)
+	if m, ok := raw.(map[string]any); ok {
+		nestedAttrs := make([]Attribute, 0, len(m))
+
+		for k, v := range m {
+			childMeta, found := findNestedMeta(k)
+			if !found {
+				// Unknown field; skip (or return error if you prefer)
+				continue
+			}
+
+			childAttr, ok := buildAttribute(k, v, childMeta)
+			if !ok {
+				continue
+			}
+			nestedAttrs = append(nestedAttrs, childAttr)
+		}
+
+		sortAttributesBasedOnMetadata(nestedAttrs, meta.Nested)
+
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_Object,
+				Data: nestedAttrs,
+			},
+		}, true
+	}
+
+	// 2) Array ([]any) - optional but recommended
+	if arr, ok := raw.([]any); ok {
+		// TODO: add support for arrays...
+		return Attribute{}, false
+		elems := make([]Attribute, 0, len(arr))
+
+		// If your metadata model supports arrays with nested schema, you may want
+		// to use meta.Nested[0] as element schema or similar. Here we treat array
+		// items as "anonymous" children.
+		for i, v := range arr {
+			// Best effort: if meta.Nested describes element fields, you need a schema decision here.
+			// For now, represent each element as an Attribute with id like "0", "1", ...
+			elemID := fmt.Sprintf("%d", i)
+
+			// Reuse meta for element unless you have element-specific metadata.
+			elemAttr, ok := buildAttribute(elemID, v, meta)
+			if !ok {
+				continue
+			}
+			elems = append(elems, elemAttr)
+		}
+
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_Array,
+				Data: elems,
+			},
+		}, true
+	}
+
+	// 3) String
+	if s, ok := raw.(string); ok {
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_String,
+				Data: s,
+			},
+		}, true
+	}
+
+	// 4) Other primitive types (bool/number/etc) — handle if you want.
+	// You can map these based on meta.Type or reflect on raw.
+	switch v := raw.(type) {
+	case bool:
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_Bool,
+				Data: v,
+			},
+		}, true
+	case float64: // json.Unmarshal uses float64 for numbers
+		// If you distinguish int vs float, add logic here.
+		return Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(meta.Name),
+			Description: TranslatedString{},
+			Value: AttributeValue{
+				Type: AttributeType_Int,
+				Data: int(v),
+			},
+		}, true
+	}
+
+	// Unknown type → skip
+	return Attribute{}, false
+}
+
+func (client *Client) getSdJwtCredentials() ([]*Credential, error) {
+	creds := client.sdjwtvcStorage.GetCredentialMetdataList()
+
+	result := []*Credential{}
+
+	for _, rawCred := range creds {
+		credMetadata, err := client.credentialMetadataStorage.Get(rawCred.CredentialType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get credential metadata: %w", err)
+		}
+		issuerMetadata, err := client.issuerMetadataStorage.Get(credMetadata.IssuerId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get issuer metadata: %w", err)
+		}
+
+		attributes := []Attribute{}
+
+		rawCredJson, _ := json.MarshalIndent(rawCred, "", "    ")
+		irma.Logger.Infof("raw cred: %v", string(rawCredJson))
+
+		for key, value := range rawCred.Attributes {
+			valueJson, _ := json.MarshalIndent(value, "", "    ")
+			irma.Logger.Infof("attribute %v: %v", key, string(valueJson))
+
+			attributeMetadata, found := find(credMetadata.Attributes, func(item *irmaclient.AttributeMetadata) bool {
+				return item.Id == key
+			})
+			if !found {
+				continue
+			}
+
+			attr, ok := buildAttribute(key, value, attributeMetadata)
+			if !ok {
+				continue
+			}
+
+			attributes = append(attributes, attr)
+		}
+
+		sortAttributesBasedOnMetadata(attributes, credMetadata.Attributes)
+
+		tempImageUrl := issuerMetadata.LogoPath["en"]
+		cred := Credential{
+			CredentialId: rawCred.CredentialType,
+			Hash:         rawCred.Hash,
+			ImagePath:    tempImageUrl,
+			Name:         TranslatedString(credMetadata.Name),
+			Issuer: TrustedParty{
+				Id:   credMetadata.IssuerId,
+				Name: TranslatedString(issuerMetadata.Name),
+				Url:  convertOptionalTranslatedString(&issuerMetadata.WebsiteUrl),
+				// TODO: figure out a way to get this better
+				ImagePath: &tempImageUrl,
+				Parent:    nil,
+			},
+			CredentialInstanceIds: map[CredentialFormat]string{
+				CredentialFormat(irmaclient.Format_SdJwtVc): rawCred.Hash,
+			},
+			BatchInstanceCountsRemaining: map[CredentialFormat]*uint{
+				CredentialFormat(irmaclient.Format_SdJwtVc): &rawCred.RemainingInstanceCount,
+			},
+			Attributes:          attributes,
+			IssuanceDate:        time.Time(rawCred.SignedOn).Unix(),
+			ExpiryDate:          time.Time(rawCred.Expires).Unix(),
+			Revoked:             false,
+			RevocationSupported: false,
+			IssueURL:            nil,
+		}
+
+		result = append(result, &cred)
+	}
+
+	return result, nil
+}
+
 func (client *Client) GetCredentials() ([]*Credential, error) {
+	return client.getSdJwtCredentials()
 	result := []*Credential{}
 
 	irmaConfig := client.GetIrmaConfiguration()

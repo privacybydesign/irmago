@@ -287,7 +287,7 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 
 func createMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
 	t *testing.T, keyBinder sdjwtvc.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
-) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
+) (SdJwtVcBatchInstanceData, []sdjwtvc.SdJwtVc) {
 	result := make([]sdjwtvc.SdJwtVc, num)
 
 	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
@@ -306,7 +306,7 @@ func createMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
 	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier, eudi.StrictSdJwtVerificationMode)
 	require.NoError(t, err)
-	return SdJwtVcBatchMetadata{
+	return SdJwtVcBatchInstanceData{
 		BatchSize:              num,
 		RemainingInstanceCount: num,
 		SignedOn:               info.SignedOn,
@@ -358,7 +358,7 @@ func createMultipleSdJwtVcs[T sdjwtvc.LeafClaimDataType](
 	claims map[string]T,
 	num uint,
 	useSingleHolderKey bool,
-) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
+) (SdJwtVcBatchInstanceData, []sdjwtvc.SdJwtVc) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 
@@ -381,7 +381,7 @@ func createMultipleSdJwtVcs[T sdjwtvc.LeafClaimDataType](
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdjwtvc.CreateDefaultVerificationContext(chain))
 	info, _, err := createCredentialInfoAndVerifiedSdJwtVc(sdjwtvc.SdJwtVcKb(result[0]), holderVerifier, eudi.StrictSdJwtVerificationMode) // Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
 	require.NoError(t, err)
-	return SdJwtVcBatchMetadata{
+	return SdJwtVcBatchInstanceData{
 		BatchSize:              num,
 		RemainingInstanceCount: num,
 		SignedOn:               info.SignedOn,

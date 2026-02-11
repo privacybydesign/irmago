@@ -183,11 +183,11 @@ func TestProofFunctionality(t *testing.T) {
 		require.NoError(t, err)
 
 		// For issuance, initially get P_t
-		_, err = c.GeneratePs(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		_, err = c.GeneratePs(secrets, jwtt, []irma.PublicKeyIdentifier{{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 		require.NoError(t, err)
 
 		// Get keyshare commitment
-		W, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
+		W, commitID, err := c.GenerateCommitments(secrets, jwtt, []irma.PublicKeyIdentifier{{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}})
 		require.NoError(t, err)
 
 		// Get keyshare response
@@ -200,7 +200,7 @@ func TestProofFunctionality(t *testing.T) {
 			ProofP *gabi.ProofP
 		}{}
 		fmt.Println(Rjwt)
-		_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (interface{}, error) {
+		_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (any, error) {
 			return &c.jwtPrivateKey.PublicKey, nil
 		})
 		require.NoError(t, err)

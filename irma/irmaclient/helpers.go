@@ -44,7 +44,7 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 	sdJwt sdjwtvc.SdJwtVcKb,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	mode eudi.SdJwtVerificationMode,
-) (*SdJwtVcMetadata, *sdjwtvc.VerifiedSdJwtVc, error) {
+) (*SdJwtVcInstanceData, *sdjwtvc.VerifiedSdJwtVc, error) {
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdJwt)
 
 	if err != nil {
@@ -79,7 +79,7 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 		}
 	}
 
-	info := SdJwtVcMetadata{
+	info := SdJwtVcInstanceData{
 		Hash:           hash,
 		CredentialType: verifiedSdJwtVc.VerifiableCredentialType,
 		SignedOn: irma.Timestamp(
@@ -94,16 +94,23 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 	return &info, verifiedSdJwtVc, nil
 }
 
-func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) []openid4vci.Translateable {
-	translations := make([]openid4vci.Translateable, len(displays))
+func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) []openid4vci.Translatable {
+	translations := make([]openid4vci.Translatable, len(displays))
 	for i, display := range displays {
-		translations[i] = any(display).(openid4vci.Translateable)
+		translations[i] = any(display).(openid4vci.Translatable)
 	}
 	return translations
 }
 
-func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.TranslatedString {
+func convertDisplayToTranslatedString(displays []openid4vci.Translatable) irma.TranslatedString {
 	result := irma.TranslatedString{}
+
+	// TODO: how are we gonna fix this better (spec says locale is optional)
+	if len(displays) == 1 && displays[0].GetLocale() == "" {
+		result["en"] = displays[0].GetName()
+		return result
+	}
+
 	for _, display := range displays {
 		lang, err := language.Parse(display.GetLocale())
 		if err != nil {
@@ -125,12 +132,13 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 	// TODO: check if all SD-JWTs have a unique Key-Binding public key (cnf field), if not, the SD-JWTs should be rejected
 
 	type credentialTuple struct {
-		credInfo         SdJwtVcMetadata
+		credInfo         SdJwtVcInstanceData
 		sdjwtvcInstances []sdjwtvc.SdJwtVc
 	}
 
 	credentialsMap := make(map[string]*credentialTuple)
 	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(sdJwtVcKbs))
+	irma.Logger.Infof("DEBUGGING: before the for-loop (len sdjwtvckb: %v)", len(sdJwtVcKbs))
 
 	for i, sdJwtVcKb := range sdJwtVcKbs {
 		// TODO: check if the SD-JWT adheres to the requested credentials (e.g. if the credential ID and attributes etc match) ?
@@ -177,9 +185,11 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 		}
 	}
 
+	irma.Logger.Infof("DEBUGGING: for-loop with credentialsMap: %v", len(credentialsMap))
 	// Now that we've grouped the SD-JWTs by their credential info hash, we can store them
 	for _, v := range credentialsMap {
-		batchInfo := SdJwtVcBatchMetadata{
+		irma.Logger.Infof("DEBUGGING: in for-loop with info: %v, len %v", v.credInfo, len(v.sdjwtvcInstances))
+		batchInfo := SdJwtVcBatchInstanceData{
 			BatchSize:              uint(len(v.sdjwtvcInstances)),
 			RemainingInstanceCount: uint(len(v.sdjwtvcInstances)),
 			SignedOn:               v.credInfo.SignedOn,

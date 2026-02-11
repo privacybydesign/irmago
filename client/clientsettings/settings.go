@@ -9,6 +9,7 @@ type Preferences struct {
 
 func GetDefaultPreferences() Preferences {
 	return Preferences{
-		DeveloperMode: false,
+		// TODO: fix the storage and revert this to false
+		DeveloperMode: true,
 	}
 }

@@ -22,12 +22,14 @@ type SdJwtVcStorageClient interface {
 }
 
 type OpenID4VciClient struct {
-	Configuration  *eudi.Configuration
-	httpClient     *http.Client
-	currentSession *openid4vciSession
-	sdJwtVcStorage SdJwtVcStorage
-	holderVerifier *sdjwtvc.HolderVerificationProcessor
-	keyBinder      sdjwtvc.KeyBinder
+	Configuration             *eudi.Configuration
+	httpClient                *http.Client
+	currentSession            *openid4vciSession
+	sdJwtVcStorage            SdJwtVcStorage
+	holderVerifier            *sdjwtvc.HolderVerificationProcessor
+	keyBinder                 sdjwtvc.KeyBinder
+	credentialMetadataStorage CredentialMetadataStorage
+	issuerMetadataStorage     IssuerMetadataStorage
 
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
@@ -38,13 +40,17 @@ func NewOpenID4VciClient(httpClient *http.Client,
 	sdJwtVcStorage SdJwtVcStorage,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	keyBinder sdjwtvc.KeyBinder,
+	credentialMetadataStorage CredentialMetadataStorage,
+	issuerMetadataStorage IssuerMetadataStorage,
 ) *OpenID4VciClient {
 	return &OpenID4VciClient{
-		httpClient:     httpClient,
-		Configuration:  eudiConf,
-		sdJwtVcStorage: sdJwtVcStorage,
-		holderVerifier: holderVerifier,
-		keyBinder:      keyBinder,
+		httpClient:                httpClient,
+		Configuration:             eudiConf,
+		sdJwtVcStorage:            sdJwtVcStorage,
+		holderVerifier:            holderVerifier,
+		keyBinder:                 keyBinder,
+		credentialMetadataStorage: credentialMetadataStorage,
+		issuerMetadataStorage:     issuerMetadataStorage,
 	}
 }
 
@@ -103,14 +109,16 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 	}
 
 	client.currentSession = &openid4vciSession{
-		credentialOffer:          credentialOffer,
-		credentialIssuerMetadata: credentialIssuerMetadata,
-		requestorInfo:            requestorInfo,
-		credentials:              creds,
-		handler:                  handler,
-		storageClient:            client,
-		httpClient:               client.httpClient,
-		keyBinder:                client.keyBinder,
+		credentialOffer:           credentialOffer,
+		credentialIssuerMetadata:  credentialIssuerMetadata,
+		requestorInfo:             requestorInfo,
+		credentials:               creds,
+		handler:                   handler,
+		storageClient:             client,
+		httpClient:                client.httpClient,
+		keyBinder:                 client.keyBinder,
+		credentialMetadataStorage: client.credentialMetadataStorage,
+		issuerMetadataStorage:     client.issuerMetadataStorage,
 		// logsStorage:              client.logsStorage,
 	}
 	defer func() {
@@ -249,6 +257,8 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 		return nil, fmt.Errorf("failed to read credential issuer metadata response body: %v", err)
 	}
 
+	eudi.Logger.Errorf("GOOO Credential issuer metadata: \n%v\n\n", string(credentialIssuerMetadataBytes))
+
 	var credentialIssuerMetadata openid4vci.CredentialIssuerMetadata
 	err = json.Unmarshal(credentialIssuerMetadataBytes, &credentialIssuerMetadata)
 	if err != nil {
@@ -322,7 +332,7 @@ func (client *OpenID4VciClient) downloadRemoteImage(remoteImage openid4vci.Remot
 func (client *OpenID4VciClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error {
 	// TODO: set the verification mode to Lax for testing purposes only
 	// adding an SD-JWT without having a credential type in the Yivi scheme will break the app in Lax mode
-	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, validateUniqueKeyBindingConfirmations, eudi.StrictSdJwtVerificationMode)
+	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, validateUniqueKeyBindingConfirmations, eudi.LaxSdJwtVerificationMode)
 }
 
 func (client *OpenID4VciClient) Dismiss() {
@@ -404,6 +414,8 @@ func convertToRequestorInfo(credentialIssuerMetadata *openid4vci.CredentialIssue
 		Industry:   &irma.TranslatedString{},
 		Unverified: true,
 		Hostnames:  []string{credentialIssuerMetadata.CredentialIssuer},
+		// TODO: this is just a quick fix to get a logo in the app for demo
+		LogoPath: &credentialIssuerMetadata.Display[0].Logo.Uri,
 		//Logo:       &filename,
 		//LogoPath:   &path,
 		//ValidUntil: (*irma.Timestamp)(&endEntityCert.NotAfter),
