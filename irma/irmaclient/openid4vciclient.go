@@ -294,11 +294,12 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 			}
 			filename := getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuerMetadata.CredentialIssuer, display.Locale)
 			_, _, err = client.Configuration.Issuers.CacheLogo(filename, &logo)
-			if err != nil {
-				// TODO: how to handle this error ? Proceed without logo ?
-				//handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
-				//return
-			}
+			_ = err
+			// TODO: how to handle this error ? Proceed without logo ?
+			// if err != nil {
+			// 	// handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
+			// 	// return
+			// }
 		}
 	}
 
@@ -313,7 +314,11 @@ func (client *OpenID4VciClient) downloadRemoteImage(remoteImage openid4vci.Remot
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("failed to download logo %s: server returned status code %d", remoteImage.Uri, response.StatusCode)
+		return nil, "", fmt.Errorf(
+			"failed to download logo %s: server returned status code %d",
+			remoteImage.Uri,
+			response.StatusCode,
+		)
 	}
 
 	bytes, err := io.ReadAll(response.Body)
@@ -394,14 +399,6 @@ func convertToAttributeList(claims []openid4vci.ClaimsDescription) map[string]ir
 		}
 	}
 	return attrs
-}
-
-func splitVct(vct string) (string, string, string, error) {
-	components := strings.Split(vct, ".")
-	if len(components) != 3 {
-		return "", "", "", fmt.Errorf("credential type %q does not have exactly 3 components, separated by dots", vct)
-	}
-	return components[0], components[1], components[2], nil
 }
 
 func convertToRequestorInfo(credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata) *irma.RequestorInfo {

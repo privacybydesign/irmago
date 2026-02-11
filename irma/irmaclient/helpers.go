@@ -40,8 +40,11 @@ func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, e
 	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
 }
 
-func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerifier *sdjwtvc.HolderVerificationProcessor, mode eudi.SdJwtVerificationMode) (*SdJwtVcInstanceData, *sdjwtvc.VerifiedSdJwtVc, error) {
-	irma.Logger.Info("DEBUGGING: createCredentialInfoAndVerifiedSdJwtVc")
+func createCredentialInfoAndVerifiedSdJwtVc(
+	sdJwt sdjwtvc.SdJwtVcKb,
+	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	mode eudi.SdJwtVerificationMode,
+) (*SdJwtVcInstanceData, *sdjwtvc.VerifiedSdJwtVc, error) {
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdJwt)
 
 	if err != nil {
@@ -49,37 +52,46 @@ func createCredentialInfoAndVerifiedSdJwtVc(sdJwt sdjwtvc.SdJwtVcKb, holderVerif
 	}
 
 	attributes := map[string]any{}
-	for _, d := range verifiedSdJwtVc.Disclosures {
-		attributes[d.Key] = d.Value
+
+	for key, value := range verifiedSdJwtVc.Claims.Object {
+		if value.Type != sdjwtvc.Claim_String {
+			return nil, nil, fmt.Errorf("attribute value not a string: %v %v", key, value.Type)
+		}
+		valStr, ok := value.Value.(string)
+		if !ok {
+			return nil, nil, fmt.Errorf("attribute value not a string: %v", key)
+		}
+		attributes[key] = valStr
 	}
 
-	hash, err := CreateHashForSdJwtVc(verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType, attributes)
+	hash, err := CreateHashForSdJwtVc(verifiedSdJwtVc.VerifiableCredentialType, attributes)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if mode == eudi.StrictSdJwtVerificationMode {
-		idComponents := strings.Split(verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
+		idComponents := strings.Split(verifiedSdJwtVc.VerifiableCredentialType, ".")
 		if num := len(idComponents); num != 3 {
 			return nil, nil, fmt.Errorf(
 				"credential id expected to have exactly 3 components, separated by dots: %s",
-				verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
+				verifiedSdJwtVc.VerifiableCredentialType,
 			)
 		}
 	}
 
 	info := SdJwtVcInstanceData{
 		Hash:           hash,
-		CredentialType: verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
+		CredentialType: verifiedSdJwtVc.VerifiableCredentialType,
 		SignedOn: irma.Timestamp(
-			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt, 0),
+			time.Unix(verifiedSdJwtVc.IssuedAt, 0),
 		),
 		Expires: irma.Timestamp(
-			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry, 0),
+			time.Unix(verifiedSdJwtVc.Expiry, 0),
 		),
 		Attributes: attributes,
 	}
-	return &info, &verifiedSdJwtVc, nil
+
+	return &info, verifiedSdJwtVc, nil
 }
 
 func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) []openid4vci.Translatable {
@@ -155,16 +167,19 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 	// Check if every SD-JWT has a unique Key-Binding public key (cnf field)
 	if validateUniqueKeyBindingConfirmations {
 		for _, verifiedSdJwtVc := range verifiedSdJwtVcs {
-			cnf := verifiedSdJwtVc.IssuerSignedJwtPayload.Confirm
+			cnf := verifiedSdJwtVc.Confirm
 			if cnf != nil {
 				duplicateCryptographicKey := slices.ContainsFunc(verifiedSdJwtVcs, func(otherSdJwtVc *sdjwtvc.VerifiedSdJwtVc) bool {
 					return otherSdJwtVc != verifiedSdJwtVc &&
-						otherSdJwtVc.IssuerSignedJwtPayload.Confirm != nil &&
-						jwk.Equal(otherSdJwtVc.IssuerSignedJwtPayload.Confirm.Jwk, cnf.Jwk)
+						otherSdJwtVc.Confirm != nil &&
+						jwk.Equal(otherSdJwtVc.Confirm.Jwk, cnf.Jwk)
 				})
 
 				if duplicateCryptographicKey {
-					return fmt.Errorf("duplicate cryptographic key binding confirmation found for SD-JWT with vct %q", verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType)
+					return fmt.Errorf(
+						"duplicate cryptographic key binding confirmation found for SD-JWT with vct %q",
+						verifiedSdJwtVc.VerifiableCredentialType,
+					)
 				}
 			}
 		}

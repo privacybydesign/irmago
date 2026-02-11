@@ -144,11 +144,11 @@ func testGetCredentialInfoListFromEmptyStorage(t *testing.T, storage SdJwtVcStor
 // Adding sets of sdjwts with the same attributes should add the sdjwts to the list of existing sdjwt instances.
 // The result should not affect the info list
 func testAddingMultipleInstancesWithSameAttributeSets(t *testing.T, storage SdJwtVcStorage) {
-	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, 5, false)
 
-	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, 5, false)
 
@@ -167,11 +167,11 @@ func testAddingMultipleInstancesWithSameAttributeSets(t *testing.T, storage SdJw
 
 // adding sets of sdjwts with differing attribute sets should result in multiple credential infos in the info list
 func testAddingMultipleAttributePairs(t *testing.T, storage SdJwtVcStorage) {
-	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo1, emailSdJwts1 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, 5, false)
 
-	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo2, emailSdJwts2 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test2@gmail.com",
 	}, 5, false)
 
@@ -186,10 +186,10 @@ func testAddingMultipleAttributePairs(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
-	emailInfo, emailSdJwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	emailInfo, emailSdJwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, 2, false)
-	mobileInfo, mobileSdJwts := createMultipleSdJwtVcs(t, "test.test.mobilephone", "https://openid4vc.staging.yivi.app", map[string]any{
+	mobileInfo, mobileSdJwts := createMultipleSdJwtVcs(t, "test.test.mobilephone", "https://openid4vc.staging.yivi.app", map[string]string{
 		"mobilephone": "1234567",
 	}, 3, false)
 
@@ -210,7 +210,7 @@ func testRemoveAllFromSdJwtVcStorage(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	}, 1, false)
@@ -225,7 +225,7 @@ func testStoringSingleSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]any{
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email": "test@gmail.com",
 	}, 2, false)
 
@@ -268,7 +268,7 @@ func testRemovingInstancesOfSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
 }
 
 func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStorage) {
-	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.mobilephone", "https://openid4vc.staging.yivi.app", map[string]any{
+	info, sdjwts := createMultipleSdJwtVcs(t, "test.test.mobilephone", "https://openid4vc.staging.yivi.app", map[string]string{
 		"mobilephone": "12345678",
 	}, 3, false)
 
@@ -285,7 +285,7 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 	require.Equal(t, len(result), 1)
 }
 
-func createMultipleSdJwtVcsWithCustomKeyBinder[T any](
+func createMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
 	t *testing.T, keyBinder sdjwtvc.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
 ) (SdJwtVcBatchInstanceData, []sdjwtvc.SdJwtVc) {
 	result := make([]sdjwtvc.SdJwtVc, num)
@@ -317,7 +317,7 @@ func createMultipleSdJwtVcsWithCustomKeyBinder[T any](
 	}, result
 }
 
-func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T, x5c []string) (sdjwtvc.SdJwtVc, error) {
+func createTestSdJwtVc[T sdjwtvc.LeafClaimDataType](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T, x5c []string) (sdjwtvc.SdJwtVc, error) {
 	holderKey, err := keyBinder.CreateKeyPairs(1)
 	if err != nil {
 		return "", fmt.Errorf("failed to create holder keys: %v", err)
@@ -326,26 +326,39 @@ func createTestSdJwtVc[T any](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string
 	return createTestSdJwtVcWithHolderKey(vct, issuerUrl, claims, x5c, holderKey[0])
 }
 
-func createTestSdJwtVcWithHolderKey[T any](vct, issuerUrl string, claims map[string]T, x5c []string, cnfHolderHey jwk.Key) (sdjwtvc.SdJwtVc, error) {
-	contents, err := sdjwtvc.MultipleNewDisclosureContents(claims)
+func createTestSdJwtVcWithHolderKey[T sdjwtvc.LeafClaimDataType](vct, issuerUrl string, claims map[string]T, x5c []string, cnfHolderHey jwk.Key) (sdjwtvc.SdJwtVc, error) {
+	holderKeyClaim, err := sdjwtvc.HolderKeyClaim(cnfHolderHey)
 	if err != nil {
 		return "", err
 	}
 
-	signer := sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey()
-	return sdjwtvc.NewSdJwtVcBuilder().
-		WithDisclosures(contents).
-		WithHolderKey(cnfHolderHey).
-		WithHashingAlgorithm(iana.SHA256).
-		WithVerifiableCredentialType(vct).
-		WithIssuerUrl(issuerUrl).
-		WithIssuedAt(sdjwtvc.NewSystemClock().Now().Unix()).
-		WithExpiresAt(sdjwtvc.NewSystemClock().Now().Unix() + 10000).
+	sdjwtClaims := []*sdjwtvc.ClaimElement{
+		holderKeyClaim,
+		sdjwtvc.Claim(sdjwtvc.Key_SdAlg, iana.SHA256),
+		sdjwtvc.Claim(sdjwtvc.Key_VerifiableCredentialType, vct),
+		sdjwtvc.Claim(sdjwtvc.Key_Issuer, issuerUrl),
+		sdjwtvc.Claim(sdjwtvc.Key_IssuedAt, sdjwtvc.NewSystemClock().Now().Unix()),
+		sdjwtvc.Claim(sdjwtvc.Key_ExpiryTime, sdjwtvc.NewSystemClock().Now().Unix()+10000),
+	}
+
+	for key, value := range claims {
+		sdjwtClaims = append(sdjwtClaims, sdjwtvc.SdClaim(key, value))
+	}
+
+	return sdjwtvc.NewSdJwtBuilder().
+		WithPayload(sdjwtClaims...).
 		WithIssuerCertificateChain(x5c).
-		Build(signer)
+		Build(sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey())
 }
 
-func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, claims map[string]T, num uint, useSingleHolderKey bool) (SdJwtVcBatchInstanceData, []sdjwtvc.SdJwtVc) {
+func createMultipleSdJwtVcs[T sdjwtvc.LeafClaimDataType](
+	t *testing.T,
+	vct string,
+	issuer string,
+	claims map[string]T,
+	num uint,
+	useSingleHolderKey bool,
+) (SdJwtVcBatchInstanceData, []sdjwtvc.SdJwtVc) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	result := []sdjwtvc.SdJwtVc{}
 
@@ -356,7 +369,7 @@ func createMultipleSdJwtVcs[T any](t *testing.T, vct string, issuer string, clai
 	}
 
 	var holderKeys []jwk.Key
-	for i := uint(0); i < num; i++ {
+	for i := range num {
 		if i == 0 || !useSingleHolderKey {
 			holderKeys, err = keyBinder.CreateKeyPairs(1)
 			require.NoError(t, err)

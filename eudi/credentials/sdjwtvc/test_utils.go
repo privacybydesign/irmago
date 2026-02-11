@@ -31,22 +31,23 @@ func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 	require.NoError(t, err)
 
 	issuer := "https://irma.app"
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"family_name": "Yivi",
-		"location":    "Utrecht",
-	})
-	require.NoError(t, err)
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 
 	holderKey, err := keyBinder.CreateKeyPairs(1)
 	require.NoError(t, err)
 
-	sdJwt, err := NewSdJwtVcBuilder().
-		WithHolderKey(holderKey[0]).
-		WithIssuerUrl(issuer).
-		WithDisclosures(disclosures).
-		WithVerifiableCredentialType("pbdf.pbdf.email").
-		WithHashingAlgorithm(iana.SHA256).
+	holderKeyClaim, err := HolderKeyClaim(holderKey[0])
+	require.NoError(t, err)
+
+	sdJwt, err := NewSdJwtBuilder().
+		WithPayload(
+			holderKeyClaim,
+			Claim(Key_Issuer, issuer),
+			Claim(Key_VerifiableCredentialType, "pbdf.pbdf.email"),
+			Claim(Key_SdAlg, iana.SHA256),
+			SdClaim("family_name", "Yivi"),
+			SdClaim("location", "Utrecht"),
+		).
 		WithIssuerCertificateChain(irmaAppCert).
 		Build(jwtCreator)
 
@@ -61,8 +62,8 @@ func createKbJwt(t *testing.T, sdjwt SdJwtVc, keyBinder KeyBinder) KeyBindingJwt
 	return kbjwt
 }
 
-func jsonToMap(t *testing.T, js string) map[string]interface{} {
-	var result map[string]interface{}
+func jsonToMap(t *testing.T, js string) map[string]any {
+	var result map[string]any
 	err := json.Unmarshal([]byte(js), &result)
 	require.NoError(t, err)
 	return result
@@ -101,9 +102,8 @@ func NewEcdsaJwtCreatorWithHolderTestKey() (*DefaultEcdsaJwtCreator, error) {
 	return &DefaultEcdsaJwtCreator{privateKey: key}, nil
 }
 
-func readHolderPublicJwk() (CnfField, error) {
-	key, err := jwk.ParseKey(testdata.HolderPubJwkBytes)
-	return CnfField{Jwk: key}, err
+func readHolderPublicJwk() (jwk.Key, error) {
+	return jwk.ParseKey(testdata.HolderPubJwkBytes)
 }
 
 // =======================================================================

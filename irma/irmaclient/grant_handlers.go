@@ -15,9 +15,9 @@ type GrantHandler interface {
 	HandleGrant(s *openid4vciSession) (AccessTokenResponse, error)
 }
 
-type authTokenRequest struct {
-	channel chan *authTokenResponse
-}
+// type authTokenRequest struct {
+// 	channel chan *authTokenResponse
+// }
 
 type AccessTokenResponse interface {
 	PermissionGranted() bool
@@ -51,7 +51,7 @@ func (r *authTokenResponse) GetRefreshToken() *string {
 type AuthorizationCodeFlowHandler struct {
 }
 
-// TODO: accept raw input, not session
+// HandleGrant TODO: accept raw input, not session
 func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (AccessTokenResponse, error) {
 	pendingAuthTokenRequestChannel := make(chan *authTokenResponse, 1)
 	defer func() {
@@ -94,7 +94,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 type PreAuthorizedCodeFlowHandler struct {
 }
 
-// TODO: accept raw input, not session
+// HandleGrant TODO: accept raw input, not session
 func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (AccessTokenResponse, error) {
 	pendingAuthTokenPermissionRequestChannel := make(chan *authTokenPermissionResponse, 1)
 	defer func() {
