@@ -908,6 +908,67 @@ func Test_MissingDisclosureWithDenyPolicy(t *testing.T) {
 	require.ErrorContains(t, err, "missing disclosure for mWAV3IrV5auHvME0Y6dhg_U3WBgE0enLilwfvlkaA30")
 }
 
+func Test_HolderVerificationOfPublicClaims(t *testing.T) {
+	context := CreateDefaultVerificationContext(testdata.IssuerCertChain_irma_app_Bytes)
+	holderVerifier := NewHolderVerificationProcessor(context)
+
+	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_PublicAttributes))
+	require.NoError(t, err)
+
+	require.Equal(t, result.VerifiableCredentialType, "pbdf.sidn-pbdf.email")
+
+	addressHash := HashedDisclosure("XwGcFzkB2-AFRdrrgl3BEC0CRPIA6L4CP3SEEZhDcus")
+	streetHash := HashedDisclosure("L9xVwlvPUf1HzTqnK1-dEU1UpmVhD95nf54RTFLB9_M")
+	countryHash := HashedDisclosure("u23y2aseB3gxFZtfHg4DZuuR0NUv0DLqgeeEMWojaes")
+	firstNameHash := HashedDisclosure("HIAjMnxbMRzzpUQA0rzfjfUeGc6Qo_VJqdCuRRqy3ks")
+	lastNameHash := HashedDisclosure("wB2s9Cwam804qn5UozjW6o1VxIrV8gIlzve8XjJBQbM")
+	nlHash := HashedDisclosure("3ygIjZD_RgV9YzBcdzVKzttr0VmW8jfYq-odKo379sE")
+	frHash := HashedDisclosure("9vHqBVeCC1tArYpowI-kz5FNmDZNyZP7cKaMd5aV3hY")
+	nonSelectiveNationalititiesHash := HashedDisclosure("Jwg1kqh55DA0Rjk-naCl1jekwAcDS0bTBEUcoC1AAz0")
+
+	require.Equal(t, result.Claims, &ClaimNode{
+		Type: Claim_Object,
+		Object: map[string]*ClaimNode{
+			"birthday": {Key: "birthday", Type: Claim_String, Value: "24-02-1955"},
+			"non_selective_nationalitities": {
+				Key:  "non_selective_nationalitities",
+				Type: Claim_Array,
+				Sd:   &nonSelectiveNationalititiesHash,
+				Array: []*ClaimNode{
+					{Type: Claim_String, Value: "DE"},
+					{Type: Claim_String, Value: "UK"},
+				},
+			},
+			"selective_nationalities": {
+				Key:  "selective_nationalities",
+				Type: Claim_Array,
+				Array: []*ClaimNode{
+					{Type: Claim_String, Value: "NL", Sd: &nlHash},
+					{Type: Claim_String, Value: "FR", Sd: &frHash},
+				},
+			},
+			"personal_data": {
+				Key:  "personal_data",
+				Type: Claim_Object,
+				Object: map[string]*ClaimNode{
+					"last_name":  {Key: "last_name", Type: Claim_String, Value: "Dijkstra", Sd: &lastNameHash},
+					"first_name": {Key: "first_name", Type: Claim_String, Value: "Gerrit", Sd: &firstNameHash},
+				},
+			},
+			"address": {
+				Key:  "address",
+				Type: Claim_Object,
+				Sd:   &addressHash,
+				Object: map[string]*ClaimNode{
+					"country": {Key: "country", Type: Claim_String, Value: "Germany", Sd: &countryHash},
+					"street":  {Key: "street", Type: Claim_String, Value: "Schulstr", Sd: &streetHash},
+					"number":  {Key: "number", Type: Claim_Int, Value: 33},
+				},
+			},
+		},
+	})
+}
+
 func Test_HolderVerificationProcessor_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
