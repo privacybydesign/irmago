@@ -192,12 +192,8 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString
 	return &t
 }
 
-func (client *Client) GetCredentials() ([]*Credential, error) {
+func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.CredentialInfoList) ([]*Credential, error) {
 	result := []*Credential{}
-
-	irmaConfig := client.GetIrmaConfiguration()
-	creds := client.CredentialInfoList()
-
 	intermediateResult := map[string]*Credential{}
 
 	// loop over all credentials and immediately combine them when they're the same
@@ -280,6 +276,12 @@ func (client *Client) GetCredentials() ([]*Credential, error) {
 	}
 
 	return result, nil
+}
+
+func (client *Client) GetCredentials() ([]*Credential, error) {
+	irmaConfig := client.GetIrmaConfiguration()
+	creds := client.CredentialInfoList()
+	return credentialInfoListToSchemaless(irmaConfig, creds)
 }
 
 func displayHintToAttributeType(s string) AttributeType {

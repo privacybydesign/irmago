@@ -193,7 +193,7 @@ func createClientWithStorageAndSigner(
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
 	clientHandler := irmaclient.NewMockClientHandler()
-	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, signer, aesKey)
+	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, nil, signer, aesKey)
 	require.NoError(t, err)
 
 	return client, clientHandler

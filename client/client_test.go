@@ -18,7 +18,7 @@ func TestInstantiateNewEmptyClient(t *testing.T) {
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
 
-	client, err := New(storagePath, irmaConfigurationPath, &testhelpers.TestClientHandler{}, test.NewSigner(t), aesKey)
+	client, err := New(storagePath, irmaConfigurationPath, &testhelpers.TestClientHandler{}, nil, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -37,7 +37,7 @@ func TestInstantiateClientWithExistingIrmaStorage(t *testing.T) {
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(path, "irma_configuration")
 
-	client, err := New(storagePath, irmaConfigurationPath, &testhelpers.TestClientHandler{}, test.NewSigner(t), aesKey)
+	client, err := New(storagePath, irmaConfigurationPath, &testhelpers.TestClientHandler{}, nil, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
 	defer client.Close()
 

@@ -169,7 +169,7 @@ func NewIrmaClient(
 
 	client.sessions = sessions{client: client, sessions: map[string]*session{}}
 
-	gocron.SetPanicHandler(func(jobName string, recoverData interface{}) {
+	gocron.SetPanicHandler(func(jobName string, recoverData any) {
 		var details string
 		b, err := json.Marshal(recoverData)
 		if err == nil {

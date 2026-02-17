@@ -33,12 +33,14 @@ type Client struct {
 	keyBinder        sdjwtvc.KeyBinder
 	scheduler        gocron.Scheduler
 	Preferences      clientsettings.Preferences
+	SessionManager   SessionManager
 }
 
 func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler irmaclient.ClientHandler,
+	sessionHandler SessionHandler,
 	signer irmaclient.Signer,
 	aesKey [32]byte,
 ) (*Client, error) {
@@ -129,7 +131,13 @@ func New(
 	}
 
 	// Initiate the OpenID4VCI client
-	openid4vciClient := irmaclient.NewOpenID4VciClient(&http.Client{}, eudiConf, sdjwtvcStorage, sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci), keyBinder)
+	openid4vciClient := irmaclient.NewOpenID4VciClient(
+		&http.Client{},
+		eudiConf,
+		sdjwtvcStorage,
+		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci),
+		keyBinder,
+	)
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
@@ -145,6 +153,11 @@ func New(
 		logsStorage:      irmaStorage,
 		keyBinder:        keyBinder,
 		scheduler:        scheduler,
+		SessionManager: SessionManager{
+			Sessions:       map[int]*Session{},
+			NextId:         0,
+			SessionHandler: sessionHandler,
+		},
 	}, nil
 }
 
@@ -157,6 +170,31 @@ func (client *Client) Close() error {
 type SessionRequestData struct {
 	irma.Qr
 	Protocol irmaclient.Protocol `json:"protocol,omitempty"`
+}
+
+func (client *Client) NewNewSession(sessionrequest string) irmaclient.SessionDismisser {
+	var sessionReq SessionRequestData
+	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
+	if err != nil {
+		irma.Logger.Errorf("failed to parse session request: %v\n", err)
+		// handler.Failure(nil)
+		return nil
+	}
+	session := client.SessionManager.NewSession()
+	state := session.State
+
+	state.Protocol = sessionReq.Protocol
+
+	switch sessionReq.Type {
+	case irma.ActionDisclosing:
+		state.Type = Type_Disclosure
+	case irma.ActionIssuing:
+		state.Type = Type_Issuance
+	case irma.ActionSigning:
+		state.Type = Type_Signature
+	}
+
+	return client.NewSession(sessionrequest, session)
 }
 
 func (client *Client) NewSession(sessionrequest string, handler irmaclient.Handler) irmaclient.SessionDismisser {

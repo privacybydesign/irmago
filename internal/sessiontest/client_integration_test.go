@@ -59,7 +59,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
@@ -90,7 +90,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 func testCredentialInstanceCount(t *testing.T) {
 	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
-	client := createClient(t)
+	client, _ := createClient(t)
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
@@ -138,7 +138,7 @@ func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performCombinedIssuanceAndDisclosureSession(t, client, irmaServer)
@@ -232,7 +232,7 @@ func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performCompletelyOptionalDisclosure(t, client, irmaServer)
@@ -280,7 +280,7 @@ func testRemoveStorageWithOnlyIdemixCredentials(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIdemixOnlyIssuanceRequest())
@@ -296,7 +296,7 @@ func testRemoveStorageEmptyClient(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	require.NoError(t, client.RemoveStorage())
@@ -309,7 +309,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		conf := IrmaServerConfigurationWithTempStorage(t)
 		irmaServer := StartIrmaServer(t, conf)
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
-		client := createClient(t)
+		client, _ := createClient(t)
 
 		performIrmaIssuanceSession(t, client, irmaServer, createMijnOverheidIssuanceRequest())
 
@@ -356,7 +356,7 @@ func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIdemixOnlyIssuanceRequest())
@@ -432,7 +432,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClientWithCustomIssuerTrustChain(t, rootCert, caCerts[0])
+	client, _ := createClientWithCustomIssuerTrustChain(t, rootCert, caCerts[0])
 	defer client.Close()
 
 	revocationListUpdateInterval := 3 * time.Second
@@ -508,7 +508,7 @@ func testIrmaDisclosureSessionLogs(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIdemixOnlyIssuanceRequest())
@@ -529,7 +529,7 @@ func testIrmaSignatureSessionLogs(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIdemixOnlyIssuanceRequest())
@@ -579,7 +579,7 @@ func testEudiSessionLogs(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	logs, err := client.LoadNewestLogs(100)
@@ -657,7 +657,7 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
@@ -682,7 +682,7 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
@@ -702,7 +702,7 @@ func testIdemixAndSdJwtCombinedIssuance(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
@@ -716,7 +716,7 @@ func testDiscloseOverOpenID4VP(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client := createClient(t)
+	client, _ := createClient(t)
 	defer client.Close()
 
 	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
@@ -869,11 +869,19 @@ func createIrmaIssuanceRequestWithSdJwts(credentialId string, attributeId string
 	return req
 }
 
-func createClient(t *testing.T) *client.Client {
+func createClient(t *testing.T) (*client.Client, *MockSessionHandler) {
 	return createClientWithIssuerChain(t, nil)
 }
 
-func createClientWithIssuerChain(t *testing.T, issuerChain []byte) *client.Client {
+type MockSessionHandler struct {
+	SessionStates []client.SessionState
+}
+
+func (mh *MockSessionHandler) UpdateSession(s client.SessionState) {
+	mh.SessionStates = append(mh.SessionStates, s)
+}
+
+func createClientWithIssuerChain(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -898,7 +906,10 @@ func createClientWithIssuerChain(t *testing.T, issuerChain []byte) *client.Clien
 	}
 
 	clientHandler := irmaclient.NewMockClientHandler()
-	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, test.NewSigner(t), aesKey)
+	sessionHandler := &MockSessionHandler{
+		SessionStates: []client.SessionState{},
+	}
+	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
@@ -906,10 +917,14 @@ func createClientWithIssuerChain(t *testing.T, issuerChain []byte) *client.Clien
 
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
-	return client
+	return client, sessionHandler
 }
 
-func createClientWithCustomIssuerTrustChain(t *testing.T, issuerRoot *x509.Certificate, issuerCert *x509.Certificate) *client.Client {
+func createClientWithCustomIssuerTrustChain(
+	t *testing.T,
+	issuerRoot *x509.Certificate,
+	issuerCert *x509.Certificate,
+) (*client.Client, *MockSessionHandler) {
 	issuerChainBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerRoot.Raw})
 	issuerChainBytes = append(issuerChainBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerCert.Raw})...)
 
