@@ -874,11 +874,11 @@ func createClient(t *testing.T) (*client.Client, *MockSessionHandler) {
 }
 
 type MockSessionHandler struct {
-	SessionStates []client.SessionState
+	SessionChan chan client.SessionState
 }
 
 func (mh *MockSessionHandler) UpdateSession(s client.SessionState) {
-	mh.SessionStates = append(mh.SessionStates, s)
+	mh.SessionChan <- s
 }
 
 func createClientWithIssuerChain(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
@@ -907,7 +907,7 @@ func createClientWithIssuerChain(t *testing.T, issuerChain []byte) (*client.Clie
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
-		SessionStates: []client.SessionState{},
+		SessionChan: make(chan client.SessionState, 10),
 	}
 	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey)
 	require.NoError(t, err)

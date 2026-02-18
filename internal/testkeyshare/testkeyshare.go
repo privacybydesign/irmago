@@ -65,6 +65,7 @@ func KeyshareServerHandler(t *testing.T, l *logrus.Logger, schemeID irma.SchemeM
 		},
 		DB:                    db,
 		JwtKeyID:              jwtKeyID,
+		JwtPinExpiry:          2 * 60,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", fmt.Sprintf("%s-kss-sk-%d.pem", schemeID, jwtKeyID)),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareAttribute:     keyshareAttr,

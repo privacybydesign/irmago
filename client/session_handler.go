@@ -1,9 +1,36 @@
 package client
 
 import (
+	"fmt"
+
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
+
+type UserInteractionType string
+
+const (
+	UI_EnteredPin UserInteractionType = "entered_pin"
+	UI_Permission UserInteractionType = "permission"
+)
+
+type SessionUserInteraction struct {
+	// The ID corresponding to the session this interaction belongs to
+	SessionID int
+	// The type of interaction performed by the user
+	Type UserInteractionType
+	// The payload for this interaction
+	Payload any
+}
+
+type IssuancePermissionInteractionPayload struct {
+	Granted bool
+}
+
+type PinInteractionPayload struct {
+	Pin     string
+	Proceed bool
+}
 
 type SessionStatus string
 type SessionType string
@@ -96,7 +123,7 @@ type Session struct {
 	client            *Client
 }
 
-func (s *Session) dispatch() {
+func (s *Session) dispatchState() {
 	s.Handler.UpdateSession(*s.State)
 }
 
@@ -109,13 +136,21 @@ type SessionManager struct {
 	Sessions       map[int]*Session
 	NextId         int
 	SessionHandler SessionHandler
+	Client         *Client
+}
+
+func (m *SessionManager) DeleteSession(id int) {
+	delete(m.Sessions, id)
 }
 
 func (m *SessionManager) NewSession() *Session {
 	m.NextId += 1
 	s := &Session{
-		State:   &SessionState{},
+		State: &SessionState{
+			Id: m.NextId,
+		},
 		Handler: m.SessionHandler,
+		client:  m.Client,
 	}
 	m.Sessions[m.NextId] = s
 	return s
@@ -125,36 +160,49 @@ type SessionHandler interface {
 	UpdateSession(session SessionState)
 }
 
-func (s *Session) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
+func (s *Session) StatusUpdate(action irma.Action, status irma.ClientStatus) {
+	fmt.Printf("status update: %v, status: %v\n", action, status)
+}
 func (s *Session) ClientReturnURLSet(clientReturnURL string) {
 	s.State.ClientReturnUrl = clientReturnURL
-	s.dispatch()
+	s.dispatchState()
 }
 
 func (s *Session) PairingRequired(pairingCode string) {
 	s.State.Status = Status_ShowPairingCode
 	s.State.PairingCode = pairingCode
-	s.dispatch()
+	s.dispatchState()
 }
 
 func (s *Session) Success(result string) {
 	s.State.Status = Status_Success
-	s.dispatch()
+	s.dispatchState()
 }
 
 func (s *Session) Cancelled() {
 	s.State.Status = Status_Dismissed
-	s.dispatch()
+	s.dispatchState()
 }
 
 func (s *Session) Failure(err *irma.SessionError) {
 	s.error(err)
 }
 
-func (s *Session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {}
-func (s *Session) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)  {}
-func (s *Session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier)     {}
-func (s *Session) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)     {}
+func (s *Session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+	fmt.Println("Keyshare blocked")
+}
+
+func (s *Session) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
+	fmt.Println("Keyshare incomplete")
+}
+
+func (s *Session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
+	fmt.Println("Keyshare missing")
+}
+
+func (s *Session) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
+	fmt.Println("Keyshare deleted")
+}
 
 func (s *Session) RequestIssuancePermission(
 	request *irma.IssuanceRequest,
@@ -178,7 +226,7 @@ func (s *Session) RequestIssuancePermission(
 	s.PermissionHandler = callback
 	s.State.Protocol = irmaclient.Protocol_Irma
 
-	s.dispatch()
+	s.dispatchState()
 }
 
 func (s *Session) RequestVerificationPermission(
@@ -190,7 +238,7 @@ func (s *Session) RequestVerificationPermission(
 ) {
 	s.State.Status = Status_AskingDisclosurePermission
 	s.State.Type = Type_Disclosure
-	s.dispatch()
+	s.dispatchState()
 }
 
 func (s *Session) RequestSignaturePermission(request *irma.SignatureRequest,
@@ -216,5 +264,5 @@ func (s *Session) RequestPreAuthorizedCodeFlowPermission(
 func (s *Session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	s.State.Status = Status_RequestPin
 	s.PinHanler = callback
-	s.dispatch()
+	s.dispatchState()
 }

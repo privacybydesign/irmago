@@ -144,7 +144,7 @@ func New(
 	// so we do this by listening for session-done events
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
-	return &Client{
+	client := &Client{
 		storage:          storage,
 		sdjwtvcStorage:   sdjwtvcStorage,
 		openid4vpClient:  openid4vpClient,
@@ -158,7 +158,10 @@ func New(
 			NextId:         0,
 			SessionHandler: sessionHandler,
 		},
-	}, nil
+	}
+
+	client.SessionManager.Client = client
+	return client, nil
 }
 
 func (client *Client) Close() error {
@@ -172,16 +175,39 @@ type SessionRequestData struct {
 	Protocol irmaclient.Protocol `json:"protocol,omitempty"`
 }
 
+func (client *Client) DeleteKeyshareTokens() {
+	client.irmaClient.DeleteKeyshareTokens()
+}
+
+func (client *Client) HandleUserInteraction(userInteraction SessionUserInteraction) error {
+	session, ok := client.SessionManager.Sessions[userInteraction.SessionID]
+	if !ok {
+		return fmt.Errorf("no session with id %v", userInteraction.SessionID)
+	}
+	switch userInteraction.Type {
+	case UI_Permission:
+		payload := userInteraction.Payload.(IssuancePermissionInteractionPayload)
+		session.PermissionHandler(payload.Granted, nil)
+	case UI_EnteredPin:
+		payload := userInteraction.Payload.(PinInteractionPayload)
+		session.PinHanler(payload.Proceed, payload.Pin)
+	}
+
+	return nil
+}
+
 func (client *Client) NewNewSession(sessionrequest string) irmaclient.SessionDismisser {
+	session := client.SessionManager.NewSession()
+	state := session.State
+
 	var sessionReq SessionRequestData
 	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
 	if err != nil {
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
-		// handler.Failure(nil)
+		session.error(err)
+		client.SessionManager.DeleteSession(session.State.Id)
 		return nil
 	}
-	session := client.SessionManager.NewSession()
-	state := session.State
 
 	state.Protocol = sessionReq.Protocol
 

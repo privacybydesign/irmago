@@ -189,6 +189,12 @@ func NewIrmaClient(
 	return client, schemeMgrErr
 }
 
+func (client *IrmaClient) DeleteKeyshareTokens() {
+	for _, kss := range client.keyshareServers {
+		kss.token = ""
+	}
+}
+
 func (client *IrmaClient) SetOnSessionDoneCallback(callback func()) {
 	client.onSessionDoneCallback = callback
 }

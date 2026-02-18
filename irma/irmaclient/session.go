@@ -540,12 +540,12 @@ func (session *session) doSession(proceed bool, choice *irma.DisclosureChoice) {
 
 // sendResponse sends the proofs of knowledge of the hidden attributes and/or the secret key, or the constructed
 // attribute-based signature, to the API server.
-func (session *session) sendResponse(message interface{}) {
+func (session *session) sendResponse(message any) {
 	var log *LogEntry
 	var err error
 	var messageJson []byte
 	var path string
-	var ourResponse interface{}
+	var ourResponse any
 	serverResponse := &irma.ServerSessionResponse{ProtocolVersion: session.Version, SessionType: session.Action}
 
 	switch session.Action {
@@ -648,8 +648,8 @@ func (session *session) getBuilders(keyshareSession *keyshareSession) (gabi.Proo
 
 // getProofs computes the disclosure proofs or secretkey-knowledge proof (in case of disclosure/signing
 // and issuing respectively) to be sent to the server.
-func (session *session) getProof() (interface{}, error) {
-	var message interface{}
+func (session *session) getProof() (any, error) {
+	var message any
 	var err error
 
 	switch session.Action {
@@ -751,7 +751,7 @@ func (session *session) recoverFromPanic() {
 	}
 }
 
-func panicToError(e interface{}) *irma.SessionError {
+func panicToError(e any) *irma.SessionError {
 	var info string
 	switch x := e.(type) {
 	case string:
@@ -762,7 +762,7 @@ func panicToError(e interface{}) *irma.SessionError {
 		info = x.String()
 	default: // nop
 	}
-	fmt.Println("Panic: " + info)
+	fmt.Printf("recovering from panic: %v\nstack trace:\n%v\n", info, string(debug.Stack()))
 	return &irma.SessionError{ErrorType: irma.ErrorPanic, Info: info + "\n\n" + string(debug.Stack())}
 }
 
@@ -818,7 +818,7 @@ func (session *session) Dismiss() {
 
 // Keyshare session handler methods
 
-func (session *session) KeyshareDone(message interface{}) {
+func (session *session) KeyshareDone(message any) {
 	switch session.Action {
 	case irma.ActionSigning:
 		fallthrough
