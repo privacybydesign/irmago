@@ -284,7 +284,7 @@ type RequestorJwt interface {
 	SessionRequest() SessionRequest
 	Requestor() string
 	Valid() error
-	Sign(jwt.SigningMethod, interface{}) (string, error)
+	Sign(jwt.SigningMethod, any) (string, error)
 }
 
 // A DisclosureChoice contains the attributes chosen to be disclosed.

@@ -14,11 +14,42 @@ import (
 )
 
 func TestClientHandler(t *testing.T) {
-	t.Run("disclosure using new session handler interface", testDisclosureWithNewHandlerInterface)
-
+	t.Run("single credential issuance", testSingleCredentialIssuance)
+	t.Run("single credential disclosure with available credential", testSingleCredentialDisclosureWithAvailableCredential)
 }
 
-func testDisclosureWithNewHandlerInterface(t *testing.T) {
+func testSingleCredentialDisclosureWithAvailableCredential(t *testing.T) {
+	conf := irmaServerConfWithSdJwtEnabled(t)
+	irmaServer := StartIrmaServer(t, conf)
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	schemalessPerformIrmaIssuanceSession(
+		t,
+		c,
+		sessionHandler,
+		irmaServer,
+		createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"),
+	)
+
+	disclosureRequest := irma.NewDisclosureRequest()
+	disclosureRequest.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+		},
+	}
+
+	schemalessPerformIrmaDisclosureSession(t, c, sessionHandler, irmaServer, disclosureRequest)
+}
+
+func testSingleCredentialIssuance(t *testing.T) {
 	conf := irmaServerConfWithSdJwtEnabled(t)
 	irmaServer := StartIrmaServer(t, conf)
 	defer irmaServer.Stop()
@@ -29,9 +60,90 @@ func testDisclosureWithNewHandlerInterface(t *testing.T) {
 	client, sessionHandler := createClient(t)
 	defer client.Close()
 
-	schemalessPerformIrmaIssuanceSession(t, client, sessionHandler, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
-	// discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPost_Host)
-	// discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPostJwt_Host)
+	schemalessPerformIrmaIssuanceSession(
+		t,
+		client,
+		sessionHandler,
+		irmaServer,
+		createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"),
+	)
+}
+
+func schemalessPerformIrmaDisclosureSession(
+	t *testing.T,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+	irmaServer *IrmaServer,
+	request *irma.DisclosureRequest,
+) {
+	c.DeleteKeyshareTokens()
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionRequestJson)
+	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 2)
+	require.Len(t, session.OfferedCredentials, 0)
+	require.NotNil(t, session.DisclosurePlan)
+
+	emailCred := session.DisclosurePlan.DisclosureMakeChoices.Required[0].OwnedOptions[0]
+
+	choice := client.DisclosureDisconSelection{
+		Credentials: []client.SelectedCredential{
+			{
+				CredentialId:   emailCred.CredentialId,
+				CredentialHash: emailCred.Hash,
+				AttributePaths: [][]any{
+					{"email"},
+				},
+			},
+		},
+	}
+
+	// give disclosure permission
+	go func() {
+		require.NoError(
+			t,
+			c.HandleUserInteraction(client.SessionUserInteraction{
+				SessionID: session.Id,
+				Type:      client.UI_Permission,
+				Payload: client.SessionPermissionInteractionPayload{
+					Granted:           true,
+					DisclosureChoices: []client.DisclosureDisconSelection{choice},
+				},
+			}),
+		)
+	}()
+
+	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_RequestPin)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 2)
+
+	// give pin
+	go func() {
+		require.NoError(
+			t,
+			c.HandleUserInteraction(client.SessionUserInteraction{
+				SessionID: session.Id,
+				Type:      client.UI_EnteredPin,
+				Payload: client.PinInteractionPayload{
+					Pin:     "12345",
+					Proceed: true,
+				},
+			}),
+		)
+	}()
+
+	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_Success)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 2)
 }
 
 func schemalessPerformIrmaIssuanceSession(
@@ -61,7 +173,7 @@ func schemalessPerformIrmaIssuanceSession(
 			c.HandleUserInteraction(client.SessionUserInteraction{
 				SessionID: session.Id,
 				Type:      client.UI_Permission,
-				Payload: client.IssuancePermissionInteractionPayload{
+				Payload: client.SessionPermissionInteractionPayload{
 					Granted: true,
 				},
 			}),

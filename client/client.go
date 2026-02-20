@@ -179,50 +179,6 @@ func (client *Client) DeleteKeyshareTokens() {
 	client.irmaClient.DeleteKeyshareTokens()
 }
 
-func (client *Client) HandleUserInteraction(userInteraction SessionUserInteraction) error {
-	session, ok := client.SessionManager.Sessions[userInteraction.SessionID]
-	if !ok {
-		return fmt.Errorf("no session with id %v", userInteraction.SessionID)
-	}
-	switch userInteraction.Type {
-	case UI_Permission:
-		payload := userInteraction.Payload.(IssuancePermissionInteractionPayload)
-		session.PermissionHandler(payload.Granted, nil)
-	case UI_EnteredPin:
-		payload := userInteraction.Payload.(PinInteractionPayload)
-		session.PinHanler(payload.Proceed, payload.Pin)
-	}
-
-	return nil
-}
-
-func (client *Client) NewNewSession(sessionrequest string) irmaclient.SessionDismisser {
-	session := client.SessionManager.NewSession()
-	state := session.State
-
-	var sessionReq SessionRequestData
-	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
-	if err != nil {
-		irma.Logger.Errorf("failed to parse session request: %v\n", err)
-		session.error(err)
-		client.SessionManager.DeleteSession(session.State.Id)
-		return nil
-	}
-
-	state.Protocol = sessionReq.Protocol
-
-	switch sessionReq.Type {
-	case irma.ActionDisclosing:
-		state.Type = Type_Disclosure
-	case irma.ActionIssuing:
-		state.Type = Type_Issuance
-	case irma.ActionSigning:
-		state.Type = Type_Signature
-	}
-
-	return client.NewSession(sessionrequest, session)
-}
-
 func (client *Client) NewSession(sessionrequest string, handler irmaclient.Handler) irmaclient.SessionDismisser {
 	var sessionReq SessionRequestData
 	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)

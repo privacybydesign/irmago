@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/privacybydesign/irmago/irma"
@@ -14,6 +15,7 @@ const (
 	UI_Permission UserInteractionType = "permission"
 )
 
+// Any interaction the user has to do with a session, like entering a pin code or giving permission
 type SessionUserInteraction struct {
 	// The ID corresponding to the session this interaction belongs to
 	SessionID int
@@ -23,8 +25,27 @@ type SessionUserInteraction struct {
 	Payload any
 }
 
-type IssuancePermissionInteractionPayload struct {
+type SessionPermissionInteractionPayload struct {
+	// Whether or not the user agreed to either sharing, siging or disclosing
 	Granted bool
+	// The list of discons for each outer con, where each discon contains a list of credentials corresponding to the inner con
+	DisclosureChoices []DisclosureDisconSelection
+}
+
+// A reference to a credential the user has picked for disclosure, including exactly which attributes will be shared
+type SelectedCredential struct {
+	// The ID for this credential (idemix id or vct)
+	CredentialId string
+	// The hash for the specific credential instance for which attributes will be shared
+	CredentialHash string
+	// List of claim path pointers to the attributes the user will share for this credential
+	// When it's Idemix these paths should have a length of only one
+	AttributePaths [][]any
+}
+
+// The list of selected credentials and attributes for a discon
+type DisclosureDisconSelection struct {
+	Credentials []SelectedCredential
 }
 
 type PinInteractionPayload struct {
@@ -49,6 +70,36 @@ const (
 	Type_Signature  SessionType = "signature"
 )
 
+type SelectableCredentialInstance struct {
+	// The id for this credential. For irma/idemix credentials this would look like
+	// `pbdf.sidn-pbdf.email`, for Eudi credentials this would be in the form of `https://example.credential.com`
+	CredentialId string
+	// Hash over all attribute values and the credential id.
+	Hash string
+	// Absolute path to the image for this credential stored on disk
+	ImagePath string
+	// The display name for this credential
+	Name TranslatedString
+	// All information about the credential issuer
+	Issuer TrustedParty
+	// The credential format for this instance
+	Format CredentialFormat
+	// The number of credential instances left for this credential instance
+	BatchInstanceCountRemaining *uint
+	// All the attributes and their values in this credential that are selectable
+	Attributes []Attribute
+	// The date and time (unix format) at which this credential was issued
+	IssuanceDate int64
+	// The date and time (unix format) when this credential expires
+	ExpiryDate int64
+	// Whether or not this credential has been revoked
+	Revoked bool
+	// Whether or not revocation is supported for this credential
+	RevocationSupported bool
+	// Url at which this credential can be issued (if any)
+	IssueURL *TranslatedString
+}
+
 type DisclosurePlan struct {
 	// What to show during issuance during disclosure.
 	// If this is nil then no issuances are required before a valid choice can be made.
@@ -58,23 +109,29 @@ type DisclosurePlan struct {
 	// show a correct stepper, even after the session state gets updated.
 	// When all are satisfied, the value should still be present in updates to the session state, so the stepper is shown correctly.
 	IssueDuringDislosure *IssueDuringDislosure
-	// What the user can pick for disclosure. This is nil during the issuance step.
+	// What the user can pick for disclosure. This should never be nil.
 	DisclosureMakeChoices *DisclosureMakeChoices
 }
 
-type DisclosureChoice struct {
+// A discon where the user needs to pick only one credential
+// TODO: What to do when there's multiple credentials in the inner con?
+// This is possible for singletons in irma condiscon and for anything in DCQL (resulting in condiscondis)
+// E.g.: you can ask for both personal data and address in the inner con, because they're both singletons and will always result in a single choice.
+// But you can't ask for both email and mobilenumber in the inner con, because they're not singletons and they could be multiple options,
+// resulting in condiscondis.
+type DisclosurePickOne struct {
 	// The (default) selected choice
-	Selected *Credential
+	Selected *SelectableCredentialInstance
 	// the user can pick one of these without having to issue
-	OwnedOptions []Credential
+	OwnedOptions []*SelectableCredentialInstance
 	// The user can issue one of these and then use it
-	ObtainableOptions []CredentialDescriptor
+	ObtainableOptions []*CredentialDescriptor
 }
 
 type DisclosureMakeChoices struct {
 	// The list of choices the user has to make.
 	// For each of the choices the user has to pick how to satisfy it.
-	Required []DisclosureChoice
+	Required []DisclosurePickOne
 }
 
 // What to show during issuance during disclosure
@@ -229,6 +286,66 @@ func (s *Session) RequestIssuancePermission(
 	s.dispatchState()
 }
 
+func findCredential(credentials []*Credential, hash string) *SelectableCredentialInstance {
+	for _, c := range credentials {
+		// each format has its own hash for the corresponding instance
+		for format, h := range c.CredentialInstanceIds {
+			if h == hash {
+				return &SelectableCredentialInstance{
+					CredentialId:                c.CredentialId,
+					Hash:                        h,
+					ImagePath:                   c.ImagePath,
+					Name:                        c.Name,
+					Issuer:                      c.Issuer,
+					Format:                      format,
+					BatchInstanceCountRemaining: c.BatchInstanceCountsRemaining[format],
+					Attributes:                  c.Attributes,
+					IssuanceDate:                c.IssuanceDate,
+					ExpiryDate:                  c.ExpiryDate,
+					Revoked:                     c.Revoked,
+					RevocationSupported:         c.RevocationSupported,
+					IssueURL:                    c.IssueURL,
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func condisconToDisclosurePlan(credentials []*Credential, candidates [][]irmaclient.DisclosureCandidates) (*DisclosurePlan, error) {
+	plan := &DisclosurePlan{
+		IssueDuringDislosure: &IssueDuringDislosure{
+			IssuedDuringSession: []Credential{},
+			LeftToIssue:         []CredentialDescriptor{},
+		},
+		DisclosureMakeChoices: &DisclosureMakeChoices{
+			Required: []DisclosurePickOne{},
+		},
+	}
+
+	for _, discon := range candidates {
+		choice := DisclosurePickOne{}
+		for _, con := range discon {
+			for _, attr := range con {
+				hash := attr.AttributeIdentifier.CredentialHash
+
+				// attribute not currently present
+				if hash == "" {
+					// need to create credential descriptor...
+				} else {
+					cred := findCredential(credentials, hash)
+					if cred == nil {
+						return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
+					}
+					choice.OwnedOptions = append(choice.OwnedOptions, cred)
+				}
+			}
+		}
+		plan.DisclosureMakeChoices.Required = append(plan.DisclosureMakeChoices.Required, choice)
+	}
+	return plan, nil
+}
+
 func (s *Session) RequestVerificationPermission(
 	request *irma.DisclosureRequest,
 	satisfiable bool,
@@ -238,6 +355,22 @@ func (s *Session) RequestVerificationPermission(
 ) {
 	s.State.Status = Status_AskingDisclosurePermission
 	s.State.Type = Type_Disclosure
+	s.PermissionHandler = callback
+
+	creds, err := s.client.GetCredentials()
+	if err != nil {
+		s.error(err)
+		return
+	}
+
+	plan, err := condisconToDisclosurePlan(creds, candidates)
+	if err != nil {
+		s.error(err)
+		return
+	}
+
+	s.State.DisclosurePlan = plan
+
 	s.dispatchState()
 }
 
@@ -265,4 +398,80 @@ func (s *Session) RequestPin(remainingAttempts int, callback irmaclient.PinHandl
 	s.State.Status = Status_RequestPin
 	s.PinHanler = callback
 	s.dispatchState()
+}
+
+// =====================================================================================
+
+func choicesToAnswer(choices []DisclosureDisconSelection) (*irma.DisclosureChoice, error) {
+	result := &irma.DisclosureChoice{
+		Attributes: [][]*irma.AttributeIdentifier{},
+	}
+
+	for _, choice := range choices {
+		attrs := []*irma.AttributeIdentifier{}
+		for _, cred := range choice.Credentials {
+			for _, attr := range cred.AttributePaths {
+				attrs = append(attrs, &irma.AttributeIdentifier{
+					// this for now assumes only a single claim path item
+					Type: irma.NewAttributeTypeIdentifier(
+						fmt.Sprintf("%s.%s", cred.CredentialId, attr[0].(string)),
+					),
+					CredentialHash: cred.CredentialHash,
+				})
+			}
+		}
+		result.Attributes = append(result.Attributes, attrs)
+	}
+
+	return result, nil
+}
+
+// =====================================================================================
+
+func (client *Client) HandleUserInteraction(userInteraction SessionUserInteraction) error {
+	session, ok := client.SessionManager.Sessions[userInteraction.SessionID]
+	if !ok {
+		return fmt.Errorf("no session with id %v", userInteraction.SessionID)
+	}
+	switch userInteraction.Type {
+	case UI_Permission:
+		payload := userInteraction.Payload.(SessionPermissionInteractionPayload)
+		choices, err := choicesToAnswer(payload.DisclosureChoices)
+		if err != nil {
+			return err
+		}
+		session.PermissionHandler(payload.Granted, choices)
+	case UI_EnteredPin:
+		payload := userInteraction.Payload.(PinInteractionPayload)
+		session.PinHanler(payload.Proceed, payload.Pin)
+	}
+
+	return nil
+}
+
+func (client *Client) NewNewSession(sessionrequest string) irmaclient.SessionDismisser {
+	session := client.SessionManager.NewSession()
+	state := session.State
+
+	var sessionReq SessionRequestData
+	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
+	if err != nil {
+		irma.Logger.Errorf("failed to parse session request: %v\n", err)
+		session.error(err)
+		client.SessionManager.DeleteSession(session.State.Id)
+		return nil
+	}
+
+	state.Protocol = sessionReq.Protocol
+
+	switch sessionReq.Type {
+	case irma.ActionDisclosing:
+		state.Type = Type_Disclosure
+	case irma.ActionIssuing:
+		state.Type = Type_Issuance
+	case irma.ActionSigning:
+		state.Type = Type_Signature
+	}
+
+	return client.NewSession(sessionrequest, session)
 }
