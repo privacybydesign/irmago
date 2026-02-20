@@ -9,26 +9,115 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 
-	// "github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClientHandler(t *testing.T) {
-	t.Run("single credential issuance", testSingleCredentialIssuance)
-	t.Run("single credential disclosure with available credential", testSingleCredentialDisclosureWithAvailableCredential)
+	runSessionTest(t, "single credential disclosure with available singleton credential", testSingleCredentialDisclosureWithAvailableSingletonCredential)
+	runSessionTest(t, "single credential single attribute disclosure with unavailable credential", testSingleCredentialDisclosureWithUnavailableCredential)
+	runSessionTest(t, "single credential single attribute disclosure with available credential", testSingleCredentialDisclosureWithAvailableCredential)
+	runSessionTest(t, "single credential issuance", testSingleCredentialIssuance)
 }
 
-func testSingleCredentialDisclosureWithAvailableCredential(t *testing.T) {
-	conf := irmaServerConfWithSdJwtEnabled(t)
-	irmaServer := StartIrmaServer(t, conf)
-	defer irmaServer.Stop()
+func testSingleCredentialDisclosureWithAvailableSingletonCredential(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	issRequest := startIrmaSessionAtServer(t, irmaServer, createMijnOverheidIssuanceRequest())
+	c.NewNewSession(issRequest)
+	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, session.Status, client.Status_AskingIssuancePermission)
 
-	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
-	defer keyshareServer.Stop()
+	c.HandleUserInteraction(client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+		},
+	})
 
-	c, sessionHandler := createClient(t)
-	defer c.Close()
+	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, session.Status, client.Status_Success)
 
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstname"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
+	}
+
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionRequestJson)
+	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 2)
+	require.Len(t, session.OfferedCredentials, 0)
+
+	plan := session.DisclosurePlan
+
+	require.NotNil(t, plan)
+	require.Len(t, plan.IssueDuringDislosure.LeftToIssue, 0)
+	require.Len(t, plan.DisclosureOptions, 1)
+
+	discon := plan.DisclosureOptions[0]
+
+	require.Len(t, discon.OwnedOptions, 1)
+	require.Len(t, discon.ObtainableOptions, 0)
+}
+
+func testSingleCredentialDisclosureWithUnavailableCredential(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+		},
+	}
+
+	c.DeleteKeyshareTokens()
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionRequestJson)
+	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 1)
+	require.Len(t, session.OfferedCredentials, 0)
+	require.NotNil(t, session.DisclosurePlan)
+
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.LeftToIssue, 1)
+	credToIssue := session.DisclosurePlan.IssueDuringDislosure.LeftToIssue[0]
+
+	require.Equal(t, credToIssue.Name, client.TranslatedString{
+		"nl": "Demo E-mailadres",
+		"en": "Demo Email address",
+	})
+	require.Equal(t, credToIssue.CredentialId, "test.test.email")
+}
+
+func testSingleCredentialDisclosureWithAvailableCredential(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
 	schemalessPerformIrmaIssuanceSession(
 		t,
 		c,
@@ -49,20 +138,10 @@ func testSingleCredentialDisclosureWithAvailableCredential(t *testing.T) {
 	schemalessPerformIrmaDisclosureSession(t, c, sessionHandler, irmaServer, disclosureRequest)
 }
 
-func testSingleCredentialIssuance(t *testing.T) {
-	conf := irmaServerConfWithSdJwtEnabled(t)
-	irmaServer := StartIrmaServer(t, conf)
-	defer irmaServer.Stop()
-
-	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
-	defer keyshareServer.Stop()
-
-	client, sessionHandler := createClient(t)
-	defer client.Close()
-
+func testSingleCredentialIssuance(t *testing.T, irmaServer *IrmaServer, c *client.Client, sessionHandler *MockSessionHandler) {
 	schemalessPerformIrmaIssuanceSession(
 		t,
-		client,
+		c,
 		sessionHandler,
 		irmaServer,
 		createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"),
@@ -89,7 +168,7 @@ func schemalessPerformIrmaDisclosureSession(
 	require.Len(t, session.OfferedCredentials, 0)
 	require.NotNil(t, session.DisclosurePlan)
 
-	emailCred := session.DisclosurePlan.DisclosureMakeChoices.Required[0].OwnedOptions[0]
+	emailCred := session.DisclosurePlan.DisclosureOptions[0].OwnedOptions[0]
 
 	choice := client.DisclosureDisconSelection{
 		Credentials: []client.SelectedCredential{
@@ -108,7 +187,7 @@ func schemalessPerformIrmaDisclosureSession(
 		require.NoError(
 			t,
 			c.HandleUserInteraction(client.SessionUserInteraction{
-				SessionID: session.Id,
+				SessionId: session.Id,
 				Type:      client.UI_Permission,
 				Payload: client.SessionPermissionInteractionPayload{
 					Granted:           true,
@@ -129,7 +208,7 @@ func schemalessPerformIrmaDisclosureSession(
 		require.NoError(
 			t,
 			c.HandleUserInteraction(client.SessionUserInteraction{
-				SessionID: session.Id,
+				SessionId: session.Id,
 				Type:      client.UI_EnteredPin,
 				Payload: client.PinInteractionPayload{
 					Pin:     "12345",
@@ -171,7 +250,7 @@ func schemalessPerformIrmaIssuanceSession(
 		require.NoError(
 			t,
 			c.HandleUserInteraction(client.SessionUserInteraction{
-				SessionID: session.Id,
+				SessionId: session.Id,
 				Type:      client.UI_Permission,
 				Payload: client.SessionPermissionInteractionPayload{
 					Granted: true,
@@ -191,7 +270,7 @@ func schemalessPerformIrmaIssuanceSession(
 		require.NoError(
 			t,
 			c.HandleUserInteraction(client.SessionUserInteraction{
-				SessionID: session.Id,
+				SessionId: session.Id,
 				Type:      client.UI_EnteredPin,
 				Payload: client.PinInteractionPayload{
 					Pin:     "12345",
@@ -218,4 +297,22 @@ func awaitWithTimeout[T any](t *testing.T, channel chan T, timeout time.Duration
 	// unreachable in theory
 	var ret T
 	return ret
+}
+
+type SessionIntegrationTest func(t *testing.T, irmaServer *IrmaServer, client *client.Client, handler *MockSessionHandler)
+
+func runSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
+	conf := IrmaServerConfigurationWithTempStorage(t)
+	irmaServer := StartIrmaServer(t, conf)
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	t.Run(name, func(t *testing.T) {
+		test(t, irmaServer, c, sessionHandler)
+	})
 }

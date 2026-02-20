@@ -18,7 +18,7 @@ const (
 // Any interaction the user has to do with a session, like entering a pin code or giving permission
 type SessionUserInteraction struct {
 	// The ID corresponding to the session this interaction belongs to
-	SessionID int
+	SessionId int
 	// The type of interaction performed by the user
 	Type UserInteractionType
 	// The payload for this interaction
@@ -110,7 +110,7 @@ type DisclosurePlan struct {
 	// When all are satisfied, the value should still be present in updates to the session state, so the stepper is shown correctly.
 	IssueDuringDislosure *IssueDuringDislosure
 	// What the user can pick for disclosure. This should never be nil.
-	DisclosureMakeChoices *DisclosureMakeChoices
+	DisclosureOptions []DisclosurePickOne
 }
 
 // A discon where the user needs to pick only one credential
@@ -128,18 +128,12 @@ type DisclosurePickOne struct {
 	ObtainableOptions []*CredentialDescriptor
 }
 
-type DisclosureMakeChoices struct {
-	// The list of choices the user has to make.
-	// For each of the choices the user has to pick how to satisfy it.
-	Required []DisclosurePickOne
-}
-
 // What to show during issuance during disclosure
 type IssueDuringDislosure struct {
 	// What has been issued during this disclosure flow
-	IssuedDuringSession []Credential
+	IssuedDuringSession []*Credential
 	// What still has to be issued during this flow before we can continue to the next step
-	LeftToIssue []CredentialDescriptor
+	LeftToIssue []*CredentialDescriptor
 }
 
 // Snapshot of the state of this session.
@@ -187,6 +181,7 @@ func (s *Session) dispatchState() {
 func (s *Session) error(err error) {
 	s.State.Status = Status_Error
 	s.State.Error = err
+	s.dispatchState()
 }
 
 type SessionManager struct {
@@ -312,36 +307,54 @@ func findCredential(credentials []*Credential, hash string) *SelectableCredentia
 	return nil
 }
 
-func condisconToDisclosurePlan(credentials []*Credential, candidates [][]irmaclient.DisclosureCandidates) (*DisclosurePlan, error) {
+func condisconToDisclosurePlan(
+	config *irma.Configuration,
+	credentials []*Credential,
+	candidates [][]irmaclient.DisclosureCandidates,
+) (*DisclosurePlan, error) {
 	plan := &DisclosurePlan{
 		IssueDuringDislosure: &IssueDuringDislosure{
-			IssuedDuringSession: []Credential{},
-			LeftToIssue:         []CredentialDescriptor{},
+			IssuedDuringSession: []*Credential{},
+			LeftToIssue:         []*CredentialDescriptor{},
 		},
-		DisclosureMakeChoices: &DisclosureMakeChoices{
-			Required: []DisclosurePickOne{},
-		},
+		DisclosureOptions: []DisclosurePickOne{},
 	}
 
 	for _, discon := range candidates {
 		choice := DisclosurePickOne{}
 		for _, con := range discon {
+			conCredInstances := map[string]*SelectableCredentialInstance{}
+			conCredToIssue := map[string]*CredentialDescriptor{}
 			for _, attr := range con {
 				hash := attr.AttributeIdentifier.CredentialHash
 
 				// attribute not currently present
 				if hash == "" {
-					// need to create credential descriptor...
+					t := attr.CredentialIdentifier().Type
+					_, contains := conCredToIssue[t.String()]
+					if !contains {
+						descriptor, err := getCredentialDescriptor(config, t)
+						if err != nil {
+							return nil, err
+						}
+						plan.IssueDuringDislosure.LeftToIssue = append(plan.IssueDuringDislosure.LeftToIssue, descriptor)
+						choice.ObtainableOptions = append(choice.ObtainableOptions, descriptor)
+						conCredToIssue[t.String()] = descriptor
+					}
 				} else {
 					cred := findCredential(credentials, hash)
 					if cred == nil {
 						return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
 					}
-					choice.OwnedOptions = append(choice.OwnedOptions, cred)
+					_, contains := conCredInstances[hash]
+					if !contains {
+						choice.OwnedOptions = append(choice.OwnedOptions, cred)
+						conCredInstances[hash] = cred
+					}
 				}
 			}
 		}
-		plan.DisclosureMakeChoices.Required = append(plan.DisclosureMakeChoices.Required, choice)
+		plan.DisclosureOptions = append(plan.DisclosureOptions, choice)
 	}
 	return plan, nil
 }
@@ -363,7 +376,7 @@ func (s *Session) RequestVerificationPermission(
 		return
 	}
 
-	plan, err := condisconToDisclosurePlan(creds, candidates)
+	plan, err := condisconToDisclosurePlan(s.client.irmaClient.Configuration, creds, candidates)
 	if err != nil {
 		s.error(err)
 		return
@@ -429,9 +442,9 @@ func choicesToAnswer(choices []DisclosureDisconSelection) (*irma.DisclosureChoic
 // =====================================================================================
 
 func (client *Client) HandleUserInteraction(userInteraction SessionUserInteraction) error {
-	session, ok := client.SessionManager.Sessions[userInteraction.SessionID]
+	session, ok := client.SessionManager.Sessions[userInteraction.SessionId]
 	if !ok {
-		return fmt.Errorf("no session with id %v", userInteraction.SessionID)
+		return fmt.Errorf("no session with id %v", userInteraction.SessionId)
 	}
 	switch userInteraction.Type {
 	case UI_Permission:

@@ -192,6 +192,43 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString
 	return &t
 }
 
+func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialTypeIdentifier) (*CredentialDescriptor, error) {
+	info, ok := irmaConfig.CredentialTypes[id]
+
+	if !ok {
+		return nil, fmt.Errorf("failed to find credential info for %s", id.String())
+	}
+
+	issuerId := info.IssuerIdentifier()
+	issuer := irmaConfig.Issuers[issuerId]
+	attributes := []AttributeDescriptor{}
+
+	for _, at := range info.AttributeTypes {
+		attributes = append(attributes, AttributeDescriptor{
+			Id:   at.ID,
+			Name: TranslatedString(at.Name),
+			Type: AttributeType_String,
+		})
+	}
+
+	return &CredentialDescriptor{
+		CredentialId: info.Identifier().String(),
+		Name:         TranslatedString(info.Name),
+		Issuer: TrustedParty{
+			Id:   issuer.ID,
+			Name: TranslatedString(issuer.Name),
+			// TODO: figure out where the issuer logo's come from
+			ImagePath: nil,
+			// TODO: figure out what it means to be on the Yivi trust chain
+			Parent: nil,
+		},
+		Category:   convertOptionalTranslatedString(info.Category),
+		ImagePath:  info.Logo(irmaConfig),
+		Attributes: attributes,
+		IssueURL:   convertOptionalTranslatedString(info.IssueURL),
+	}, nil
+}
+
 func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.CredentialInfoList) ([]*Credential, error) {
 	result := []*Credential{}
 	intermediateResult := map[string]*Credential{}
