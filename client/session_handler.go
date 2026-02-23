@@ -340,14 +340,18 @@ func condisconToDisclosurePlan(
 	for _, discon := range candidates {
 		choice := DisclosurePickOne{}
 
-		choiceTemplates := map[string]*CredentialDescriptor{}         // key: credentialId
-		choiceInstances := map[string]*SelectableCredentialInstance{} // key: credentialHash
+		choiceTemplates := map[string]*CredentialDescriptor{} // key: credentialId
+
+		// Build filtered instances per credential hash
+		filteredByHash := map[string]*SelectableCredentialInstance{} // key: credentialHash
+
+		// Track owned IDs anywhere in disclosure options (global)
+		// ownedIDs map declared outside
 
 		for _, con := range discon {
 			for _, attr := range con {
 				hash := attr.AttributeIdentifier.CredentialHash
 
-				// Missing attribute => we need a template for its credential type
 				if hash == "" {
 					t := attr.CredentialIdentifier().Type
 					id := t.String()
@@ -367,23 +371,43 @@ func condisconToDisclosurePlan(
 						// reuse the same descriptor pointer if already created for the choice
 						neededTemplates[id] = choiceTemplates[id]
 					}
-				} else {
-					// Present attribute => owned credential instance
-					cred := findCredential(credentials, hash)
-					if cred == nil {
-						return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
-					}
-
-					// Track instance per hash (avoid duplicates)
-					if _, ok := choiceInstances[hash]; !ok {
-						choiceInstances[hash] = cred
-
-						// Global: mark this credential type ID as owned somewhere in disclosure options
-						choice.OwnedOptions = append(choice.OwnedOptions, cred)
-						ownedIDs[cred.CredentialId] = struct{}{}
-					}
+					continue
 				}
+
+				// Present attribute => owned credential instance (but we filter attributes)
+				orig := findCredential(credentials, hash)
+				if orig == nil {
+					return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
+				}
+
+				// Get or create filtered instance for this credential hash
+				f, ok := filteredByHash[hash]
+				if !ok {
+					// Create a shallow copy with empty attributes
+					// Adjust these fields to match your struct definition.
+					cp := *orig
+					f = &cp
+					f.Attributes = []Attribute{}
+					filteredByHash[hash] = f
+
+					// Mark this credential type as owned somewhere (global)
+					ownedIDs[orig.CredentialId] = struct{}{}
+				}
+
+				// TODO: make this more independent and compatible with more complex claim paths
+				attrID := attr.AttributeIdentifier
+				val, ok := lookupAttrValue(orig, attrID)
+				if !ok {
+					return nil, fmt.Errorf("credential %s does not contain attribute %v", hash, attrID)
+				}
+
+				f.Attributes = append(f.Attributes, val)
 			}
+		}
+
+		// Replace OwnedOptions with the filtered instances (only requested attrs)
+		for _, inst := range filteredByHash {
+			choice.OwnedOptions = append(choice.OwnedOptions, inst)
 		}
 
 		plan.DisclosureOptions = append(plan.DisclosureOptions, choice)
@@ -398,6 +422,16 @@ func condisconToDisclosurePlan(
 	}
 
 	return plan, nil
+}
+
+func lookupAttrValue(orig *SelectableCredentialInstance, id *irma.AttributeIdentifier) (Attribute, bool) {
+	index := slices.IndexFunc(orig.Attributes, func(att Attribute) bool {
+		return att.Id == id.Type.Name()
+	})
+	if index >= 0 {
+		return orig.Attributes[index], true
+	}
+	return Attribute{}, false
 }
 
 func updateDisclosurePlan(

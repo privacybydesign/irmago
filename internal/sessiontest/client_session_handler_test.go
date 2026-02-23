@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -90,6 +91,85 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 	require.Len(t, opt.OwnedOptions, 2)
 	// both are also obtainable
 	require.Len(t, opt.ObtainableOptions, 2)
+
+	studentCard := opt.OwnedOptions[slices.IndexFunc(
+		opt.OwnedOptions,
+		func(c *client.SelectableCredentialInstance) bool { return c.CredentialId == "irma-demo.RU.studentCard" },
+	)]
+
+	require.Equal(t,
+		studentCard.Attributes,
+		[]client.Attribute{
+			{
+				Id: "university",
+				DisplayName: client.TranslatedString{
+					"en": "University",
+					"nl": "Universiteit",
+				},
+				Description: client.TranslatedString{
+					"en": "The name of the university",
+					"nl": "Naam van de universiteit",
+				},
+				Value: client.AttributeValue{
+					Type: "translated_string",
+					Data: irma.TranslatedString{
+						"":   "University of the Arts",
+						"en": "University of the Arts",
+						"nl": "University of the Arts",
+					},
+				},
+			},
+			{
+				Id: "level",
+				DisplayName: client.TranslatedString{
+					"en": "Type",
+					"nl": "Soort",
+				},
+				Description: client.TranslatedString{
+					"en": "Whether you are a regular or PhD student",
+					"nl": "Of u een gewone of PhD student bent",
+				},
+				Value: client.AttributeValue{
+					Type: "translated_string",
+					Data: irma.TranslatedString{
+						"":   "high",
+						"en": "high",
+						"nl": "high",
+					},
+				},
+			},
+		},
+	)
+
+	c.HandleUserInteraction(client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   studentCard.CredentialId,
+							CredentialHash: studentCard.Hash,
+
+							AttributePaths: [][]any{
+								{"university"},
+								{"level"},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_Success)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 3)
 }
 
 func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAfterIssuance(
