@@ -30,7 +30,7 @@ import (
 // - [x] mismatch for sd_hash field in kbjwt
 // - [x] unsupported _sd_alg
 // - [x] kbjwt doesn't contain the kb+jwt typ in header
-// - [x] failing to get issuer metadata fails the verifiction
+// - [x] failing to get issuer metadata fails the verification
 // - [x] no iss value provided
 // - [x] valid self-signed x509 certificate that doesn't match a trusted certificate
 //
