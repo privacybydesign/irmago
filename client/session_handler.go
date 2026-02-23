@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -281,6 +282,16 @@ func (s *Session) RequestIssuancePermission(
 	s.dispatchState()
 }
 
+func findCredentialsForId(credentials []*Credential, id string) []*Credential {
+	result := []*Credential{}
+	for _, c := range credentials {
+		if c.CredentialId == id {
+			result = append(result, c)
+		}
+	}
+	return result
+}
+
 func findCredential(credentials []*Credential, hash string) *SelectableCredentialInstance {
 	for _, c := range credentials {
 		// each format has its own hash for the corresponding instance
@@ -359,6 +370,33 @@ func condisconToDisclosurePlan(
 	return plan, nil
 }
 
+func (s *Session) issuedDuringDisclosure(
+	allCredentials []*Credential,
+	newPlan *DisclosurePlan,
+) *DisclosurePlan {
+	if oldPlan := s.State.DisclosurePlan; oldPlan != nil {
+		for _, oldToIssue := range oldPlan.IssueDuringDislosure.LeftToIssue {
+			// if the new disclosure plan doesn't contain the credential from the old plan anymore
+			// the credential must have been issued and so we add it to the list of credentials
+			// that have been issued during this session
+			hasBeenIssued := !slices.ContainsFunc(
+				newPlan.IssueDuringDislosure.LeftToIssue,
+				func(x *CredentialDescriptor) bool {
+					return x.CredentialId == oldToIssue.CredentialId
+				},
+			)
+
+			if hasBeenIssued {
+				newPlan.IssueDuringDislosure.IssuedDuringSession = append(
+					newPlan.IssueDuringDislosure.IssuedDuringSession,
+					findCredentialsForId(allCredentials, oldToIssue.CredentialId)...,
+				)
+			}
+		}
+	}
+	return newPlan
+}
+
 func (s *Session) RequestVerificationPermission(
 	request *irma.DisclosureRequest,
 	satisfiable bool,
@@ -382,7 +420,7 @@ func (s *Session) RequestVerificationPermission(
 		return
 	}
 
-	s.State.DisclosurePlan = plan
+	s.State.DisclosurePlan = s.issuedDuringDisclosure(creds, plan)
 
 	s.dispatchState()
 }

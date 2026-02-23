@@ -13,10 +13,118 @@ import (
 )
 
 func TestClientHandler(t *testing.T) {
-	runSessionTest(t, "single credential disclosure with available singleton credential", testSingleCredentialDisclosureWithAvailableSingletonCredential)
-	runSessionTest(t, "single credential single attribute disclosure with unavailable credential", testSingleCredentialDisclosureWithUnavailableCredential)
-	runSessionTest(t, "single credential single attribute disclosure with available credential", testSingleCredentialDisclosureWithAvailableCredential)
-	runSessionTest(t, "single credential issuance", testSingleCredentialIssuance)
+	runSessionTest(t,
+		"single credential disclosure unavailable singleton credential refresh after issuance",
+		testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAfterIssuance,
+	)
+
+	runSessionTest(t,
+		"single credential disclosure with available singleton credential",
+		testSingleCredentialDisclosureWithAvailableSingletonCredential,
+	)
+
+	runSessionTest(t,
+		"single credential single attribute disclosure with unavailable credential",
+		testSingleCredentialDisclosureWithUnavailableCredential,
+	)
+
+	runSessionTest(t,
+		"single credential single attribute disclosure with available credential",
+		testSingleCredentialDisclosureWithAvailableCredential,
+	)
+
+	runSessionTest(t,
+		"single credential issuance",
+		testSingleCredentialIssuance,
+	)
+}
+
+func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAfterIssuance(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstname"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
+	}
+
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionRequestJson)
+	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 1)
+
+	plan := session.DisclosurePlan
+
+	require.NotNil(t, plan)
+	require.Len(t, plan.IssueDuringDislosure.LeftToIssue, 1)
+	require.Len(t, plan.IssueDuringDislosure.IssuedDuringSession, 0)
+
+	toIssue := plan.IssueDuringDislosure.LeftToIssue[0]
+	require.Equal(t, toIssue.CredentialId, "irma-demo.MijnOverheid.fullName")
+	require.Equal(t, toIssue.Attributes, []client.AttributeDescriptor{
+		{
+			Id:   "firstnames",
+			Name: client.TranslatedString{"nl": "Voornamen", "en": "First names"},
+			Type: client.AttributeType_String,
+		},
+		{
+			Id:   "firstname",
+			Name: client.TranslatedString{"nl": "Voornaam", "en": "First name"},
+			Type: client.AttributeType_String,
+		},
+		{
+			Id:   "familyname",
+			Name: client.TranslatedString{"nl": "Achternaam", "en": "Family name"},
+			Type: client.AttributeType_String,
+		},
+		{
+			Id:   "prefix",
+			Name: client.TranslatedString{"nl": "Tussenvoegsel", "en": "Prefix"},
+			Type: client.AttributeType_String,
+		},
+	})
+
+	// start the issuance session
+	issRequest := startIrmaSessionAtServer(t, irmaServer, createMijnOverheidIssuanceRequest())
+	c.NewNewSession(issRequest)
+	issuanceSession := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, issuanceSession.Status, client.Status_AskingIssuancePermission)
+	require.Equal(t, issuanceSession.Id, 2)
+
+	c.HandleUserInteraction(client.SessionUserInteraction{
+		SessionId: issuanceSession.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+		},
+	})
+
+	// expect the disclosure session to get updated
+	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, session.Id, 1)
+
+	// expect the issuance session to be done
+	issuanceSession = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, issuanceSession.Id, 2)
+	require.Equal(t, issuanceSession.Status, client.Status_Success)
+
+	plan = session.DisclosurePlan
+
+	// no more credentials left to issue
+	require.Len(t, plan.IssueDuringDislosure.LeftToIssue, 0)
+	require.Len(t, plan.IssueDuringDislosure.IssuedDuringSession, 1)
 }
 
 func testSingleCredentialDisclosureWithAvailableSingletonCredential(
