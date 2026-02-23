@@ -154,6 +154,31 @@ func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
 	require.Len(t, latestLog.IssuanceLog.Credentials, 1)
 }
 
+func createEmailIssuanceRequest() *irma.IssuanceRequest {
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("test.test.email"),
+			Attributes: map[string]string{
+				"email": "test@gmail.com",
+			},
+		},
+	})
+}
+
+func createStudentCardIssuanceRequest() *irma.IssuanceRequest {
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "University of the Arts",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+}
+
 func createMijnOverheidIssuanceRequest() *irma.IssuanceRequest {
 	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{

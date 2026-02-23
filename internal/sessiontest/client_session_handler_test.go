@@ -14,6 +14,11 @@ import (
 
 func TestClientHandler(t *testing.T) {
 	runSessionTest(t,
+		"choice between two non-singleton credentials both present",
+		testChoiceBetweenTwoNonSingletonCredentialsBothPresent,
+	)
+
+	runSessionTest(t,
 		"single credential disclosure unavailable singleton credential refresh after issuance",
 		testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAfterIssuance,
 	)
@@ -37,6 +42,54 @@ func TestClientHandler(t *testing.T) {
 		"single credential issuance",
 		testSingleCredentialIssuance,
 	)
+}
+
+func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, createEmailIssuanceRequest())
+
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+		},
+	}
+
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionRequestJson)
+	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 3)
+
+	plan := session.DisclosurePlan
+
+	require.NotNil(t, plan)
+	require.Len(t, plan.IssueDuringDislosure.LeftToIssue, 0)
+
+	require.Len(t, plan.IssueDuringDislosure.IssuedDuringSession, 0)
+
+	require.Len(t, plan.DisclosureOptions, 1)
+
+	opt := plan.DisclosureOptions[0]
+	// there are two options
+	require.Len(t, opt.OwnedOptions, 2)
+	// both are also obtainable
+	require.Len(t, opt.ObtainableOptions, 2)
 }
 
 func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAfterIssuance(
@@ -125,6 +178,13 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	// no more credentials left to issue
 	require.Len(t, plan.IssueDuringDislosure.LeftToIssue, 0)
 	require.Len(t, plan.IssueDuringDislosure.IssuedDuringSession, 1)
+
+	// the disclosure options should contain the option
+	require.Len(t, plan.DisclosureOptions, 1)
+	opt := plan.DisclosureOptions[0]
+	require.Len(t, opt.OwnedOptions, 1)
+	// no new version of this is obtainable because it's a singleton
+	require.Len(t, opt.ObtainableOptions, 0)
 }
 
 func testSingleCredentialDisclosureWithAvailableSingletonCredential(
@@ -133,21 +193,7 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	issRequest := startIrmaSessionAtServer(t, irmaServer, createMijnOverheidIssuanceRequest())
-	c.NewNewSession(issRequest)
-	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
-	require.Equal(t, session.Status, client.Status_AskingIssuancePermission)
-
-	c.HandleUserInteraction(client.SessionUserInteraction{
-		SessionId: session.Id,
-		Type:      client.UI_Permission,
-		Payload: client.SessionPermissionInteractionPayload{
-			Granted: true,
-		},
-	})
-
-	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
-	require.Equal(t, session.Status, client.Status_Success)
+	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
 
 	request := irma.NewDisclosureRequest()
 	request.Disclose = irma.AttributeConDisCon{
@@ -162,7 +208,7 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
-	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
 	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
@@ -243,28 +289,8 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 		},
 	}
 
-	schemalessPerformIrmaDisclosureSession(t, c, sessionHandler, irmaServer, disclosureRequest)
-}
-
-func testSingleCredentialIssuance(t *testing.T, irmaServer *IrmaServer, c *client.Client, sessionHandler *MockSessionHandler) {
-	schemalessPerformIrmaIssuanceSession(
-		t,
-		c,
-		sessionHandler,
-		irmaServer,
-		createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"),
-	)
-}
-
-func schemalessPerformIrmaDisclosureSession(
-	t *testing.T,
-	c *client.Client,
-	sessionHandler *MockSessionHandler,
-	irmaServer *IrmaServer,
-	request *irma.DisclosureRequest,
-) {
 	c.DeleteKeyshareTokens()
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, disclosureRequest)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
@@ -276,7 +302,12 @@ func schemalessPerformIrmaDisclosureSession(
 	require.Len(t, session.OfferedCredentials, 0)
 	require.NotNil(t, session.DisclosurePlan)
 
-	emailCred := session.DisclosurePlan.DisclosureOptions[0].OwnedOptions[0]
+	plan := session.DisclosurePlan
+	require.Len(t, plan.DisclosureOptions[0].OwnedOptions, 1)
+	// it's also possible to obtain a new one, since it not a singleton
+	require.Len(t, plan.DisclosureOptions[0].ObtainableOptions, 1)
+
+	emailCred := plan.DisclosureOptions[0].OwnedOptions[0]
 
 	choice := client.DisclosureDisconSelection{
 		Credentials: []client.SelectedCredential{
@@ -331,6 +362,16 @@ func schemalessPerformIrmaDisclosureSession(
 	require.Equal(t, session.Status, client.Status_Success)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 	require.Equal(t, session.Id, 2)
+}
+
+func testSingleCredentialIssuance(t *testing.T, irmaServer *IrmaServer, c *client.Client, sessionHandler *MockSessionHandler) {
+	schemalessPerformIrmaIssuanceSession(
+		t,
+		c,
+		sessionHandler,
+		irmaServer,
+		createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"),
+	)
 }
 
 func schemalessPerformIrmaIssuanceSession(
@@ -423,4 +464,28 @@ func runSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
 	t.Run(name, func(t *testing.T) {
 		test(t, irmaServer, c, sessionHandler)
 	})
+}
+
+func issue(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+	req *irma.IssuanceRequest,
+) {
+	issRequest := startIrmaSessionAtServer(t, irmaServer, req)
+	c.NewNewSession(issRequest)
+	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, session.Status, client.Status_AskingIssuancePermission)
+
+	c.HandleUserInteraction(client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+		},
+	})
+
+	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+	require.Equal(t, session.Status, client.Status_Success)
 }

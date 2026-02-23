@@ -331,42 +331,72 @@ func condisconToDisclosurePlan(
 		DisclosureOptions: []DisclosurePickOne{},
 	}
 
+	// which credential IDs are owned anywhere in disclosure options
+	ownedIDs := map[string]struct{}{}
+
+	// which credential templates are needed anywhere (by type)
+	neededTemplates := map[string]*CredentialDescriptor{}
+
 	for _, discon := range candidates {
 		choice := DisclosurePickOne{}
+
+		choiceTemplates := map[string]*CredentialDescriptor{}         // key: credentialId
+		choiceInstances := map[string]*SelectableCredentialInstance{} // key: credentialHash
+
 		for _, con := range discon {
-			conCredInstances := map[string]*SelectableCredentialInstance{}
-			conCredToIssue := map[string]*CredentialDescriptor{}
 			for _, attr := range con {
 				hash := attr.AttributeIdentifier.CredentialHash
 
-				// attribute not currently present
+				// Missing attribute => we need a template for its credential type
 				if hash == "" {
 					t := attr.CredentialIdentifier().Type
-					_, contains := conCredToIssue[t.String()]
-					if !contains {
+					id := t.String()
+
+					// Ensure template exists once per type in this choice
+					if _, ok := choiceTemplates[id]; !ok {
 						descriptor, err := getCredentialDescriptor(config, t)
 						if err != nil {
 							return nil, err
 						}
-						plan.IssueDuringDislosure.LeftToIssue = append(plan.IssueDuringDislosure.LeftToIssue, descriptor)
+						choiceTemplates[id] = descriptor
 						choice.ObtainableOptions = append(choice.ObtainableOptions, descriptor)
-						conCredToIssue[t.String()] = descriptor
+					}
+
+					// Track globally that this type is needed somewhere
+					if _, ok := neededTemplates[id]; !ok {
+						// reuse the same descriptor pointer if already created for the choice
+						neededTemplates[id] = choiceTemplates[id]
 					}
 				} else {
+					// Present attribute => owned credential instance
 					cred := findCredential(credentials, hash)
 					if cred == nil {
 						return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
 					}
-					_, contains := conCredInstances[hash]
-					if !contains {
+
+					// Track instance per hash (avoid duplicates)
+					if _, ok := choiceInstances[hash]; !ok {
+						choiceInstances[hash] = cred
+
+						// Global: mark this credential type ID as owned somewhere in disclosure options
 						choice.OwnedOptions = append(choice.OwnedOptions, cred)
-						conCredInstances[hash] = cred
+						ownedIDs[cred.CredentialId] = struct{}{}
 					}
 				}
 			}
 		}
+
 		plan.DisclosureOptions = append(plan.DisclosureOptions, choice)
 	}
+
+	// Now enforce: LeftToIssue only if there is NO owned instance with same CredentialId anywhere
+	// Also dedupe by ID (map already does that)
+	for id, desc := range neededTemplates {
+		if _, owned := ownedIDs[id]; !owned {
+			plan.IssueDuringDislosure.LeftToIssue = append(plan.IssueDuringDislosure.LeftToIssue, desc)
+		}
+	}
+
 	return plan, nil
 }
 
