@@ -400,28 +400,27 @@ func condisconToDisclosurePlan(
 	return plan, nil
 }
 
-func (s *Session) issuedDuringDisclosure(
+func updateDisclosurePlan(
 	allCredentials []*Credential,
+	oldPlan *DisclosurePlan,
 	newPlan *DisclosurePlan,
 ) *DisclosurePlan {
-	if oldPlan := s.State.DisclosurePlan; oldPlan != nil {
-		for _, oldToIssue := range oldPlan.IssueDuringDislosure.LeftToIssue {
-			// if the new disclosure plan doesn't contain the credential from the old plan anymore
-			// the credential must have been issued and so we add it to the list of credentials
-			// that have been issued during this session
-			hasBeenIssued := !slices.ContainsFunc(
-				newPlan.IssueDuringDislosure.LeftToIssue,
-				func(x *CredentialDescriptor) bool {
-					return x.CredentialId == oldToIssue.CredentialId
-				},
-			)
+	for _, oldToIssue := range oldPlan.IssueDuringDislosure.LeftToIssue {
+		// if the new disclosure plan doesn't contain the credential from the old plan anymore
+		// the credential must have been issued and so we add it to the list of credentials
+		// that have been issued during this session
+		hasBeenIssued := !slices.ContainsFunc(
+			newPlan.IssueDuringDislosure.LeftToIssue,
+			func(x *CredentialDescriptor) bool {
+				return x.CredentialId == oldToIssue.CredentialId
+			},
+		)
 
-			if hasBeenIssued {
-				newPlan.IssueDuringDislosure.IssuedDuringSession = append(
-					newPlan.IssueDuringDislosure.IssuedDuringSession,
-					findCredentialsForId(allCredentials, oldToIssue.CredentialId)...,
-				)
-			}
+		if hasBeenIssued {
+			newPlan.IssueDuringDislosure.IssuedDuringSession = append(
+				newPlan.IssueDuringDislosure.IssuedDuringSession,
+				findCredentialsForId(allCredentials, oldToIssue.CredentialId)...,
+			)
 		}
 	}
 	return newPlan
@@ -444,13 +443,18 @@ func (s *Session) RequestVerificationPermission(
 		return
 	}
 
-	plan, err := condisconToDisclosurePlan(s.client.irmaClient.Configuration, creds, candidates)
+	newPlan, err := condisconToDisclosurePlan(s.client.irmaClient.Configuration, creds, candidates)
 	if err != nil {
 		s.error(err)
 		return
 	}
 
-	s.State.DisclosurePlan = s.issuedDuringDisclosure(creds, plan)
+	// if there already was a disclosure plan, we can use that to determine what has changed
+	if oldPlan := s.State.DisclosurePlan; oldPlan != nil {
+		s.State.DisclosurePlan = updateDisclosurePlan(creds, oldPlan, newPlan)
+	} else {
+		s.State.DisclosurePlan = newPlan
+	}
 
 	s.dispatchState()
 }
