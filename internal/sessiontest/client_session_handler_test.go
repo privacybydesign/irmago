@@ -16,6 +16,11 @@ import (
 
 func TestClientHandler(t *testing.T) {
 	runSessionTest(t,
+		"multiple steps of issuance during disclosure",
+		testMultipleStepsOfIssuanceDuringDisclosure,
+	)
+
+	runSessionTest(t,
 		"errors are correctly propagated",
 		testSessionErrorsArePropagated,
 	)
@@ -61,7 +66,125 @@ func TestClientHandler(t *testing.T) {
 	)
 }
 
+func testMultipleStepsOfIssuanceDuringDisclosure(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+		},
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstnames"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
+	}
+
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionRequestJson)
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Id, 1)
+
+	plan := session.DisclosurePlan
+
+	require.NotNil(t, plan)
+
+	// the user should get one step to issue one of two options
+	require.Len(t, plan.IssueDuringDislosure.Steps, 2)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[1].Options, 2)
+
+	// no disclosure choices overview yet since the session is not finishable
+	require.Nil(t, plan.DisclosureRequirements)
+
+	// issue email
+	issue(t, irmaServer, c, sessionHandler, createEmailIssuanceRequest())
+	session = awaitSessionState(t, sessionHandler)
+
+	// updated disclosure session
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 2)
+	require.Equal(t,
+		session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		map[string]struct{}{"test.test.email": {}},
+	)
+
+	// finished issuance session
+	_ = awaitSessionState(t, sessionHandler)
+	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
+
+	// new disclosure choices
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+
+	plan = session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 2)
+
+	// both credentials have now been issued, which means the request is satisfiable
+	require.Equal(t,
+		plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}, "test.test.email": {}},
+	)
+
+	// finish second issuance request
+	_ = awaitSessionState(t, sessionHandler)
+
+	email := plan.DisclosureRequirements[0].OwnedOptions[0]
+	overheid := plan.DisclosureRequirements[1].OwnedOptions[0]
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: 1,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   email.CredentialId,
+							CredentialHash: email.Hash,
+							AttributePaths: [][]any{{email.Attributes[0].Id}},
+						},
+					},
+				},
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   overheid.CredentialId,
+							CredentialHash: overheid.Hash,
+							AttributePaths: [][]any{{overheid.Attributes[0].Id}, {overheid.Attributes[1].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
+}
+
 func testSessionErrorsArePropagated(
+
 	t *testing.T,
 	irmaServer *IrmaServer,
 	c *client.Client,
@@ -166,10 +289,10 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 
 	// the user should get one step to issue one of two options
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Equal(t, plan.IssueDuringDislosure.CurrentStep, 0)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
 	// no disclosure choices overview yet since the session is not finishable
-	require.Nil(t, plan.DisclosureOptions)
+	require.Nil(t, plan.DisclosureRequirements)
 
 	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
 
@@ -180,16 +303,19 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 	// but the previous step should still be available for UX purposes
 	plan = session.DisclosurePlan
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Equal(t, plan.IssueDuringDislosure.CurrentStep, 1)
+	require.Equal(t,
+		plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}},
+	)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
 
 	// the disclosure choices overview should allow the user to add new versions of student card
 	// and issue the MijnOverheid credential
-	require.Len(t, plan.DisclosureOptions, 1)
-	require.Len(t, plan.DisclosureOptions[0].ObtainableOptions, 2)
+	require.Len(t, plan.DisclosureRequirements, 1)
+	require.Len(t, plan.DisclosureRequirements[0].ObtainableOptions, 2)
 
 	// only one obtained option should be available
-	require.Len(t, plan.DisclosureOptions[0].OwnedOptions, 1)
+	require.Len(t, plan.DisclosureRequirements[0].OwnedOptions, 1)
 
 	// issuance session finished
 	session = awaitSessionState(t, sessionHandler)
@@ -235,9 +361,9 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 
 	require.NotNil(t, plan)
 	require.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureOptions, 1)
+	require.Len(t, plan.DisclosureRequirements, 1)
 
-	opt := plan.DisclosureOptions[0]
+	opt := plan.DisclosureRequirements[0]
 	// there are two options
 	require.Len(t, opt.OwnedOptions, 2)
 	// both are also obtainable
@@ -350,7 +476,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	require.NotNil(t, plan)
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
-	require.Equal(t, plan.IssueDuringDislosure.CurrentStep, 0)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
 
 	toIssue := plan.IssueDuringDislosure.Steps[0].Options[0]
 	require.Equal(t, toIssue.CredentialId, "irma-demo.MijnOverheid.fullName")
@@ -404,13 +530,13 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	plan = session.DisclosurePlan
 
 	// no more credentials left to issue (but the list of issuance steps should still be available)
-	require.Equal(t, plan.IssueDuringDislosure.CurrentStep, 1)
+	require.Equal(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}})
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
 
 	// the disclosure options should contain the option
-	require.Len(t, plan.DisclosureOptions, 1)
-	opt := plan.DisclosureOptions[0]
+	require.Len(t, plan.DisclosureRequirements, 1)
+	opt := plan.DisclosureRequirements[0]
 	require.Len(t, opt.OwnedOptions, 1)
 	// no new version of this is obtainable because it's a singleton
 	require.Len(t, opt.ObtainableOptions, 0)
@@ -453,8 +579,8 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 	// no issuance steps
 	require.Nil(t, plan.IssueDuringDislosure)
 
-	require.Len(t, plan.DisclosureOptions, 1)
-	discon := plan.DisclosureOptions[0]
+	require.Len(t, plan.DisclosureRequirements, 1)
+	discon := plan.DisclosureRequirements[0]
 
 	require.Len(t, discon.OwnedOptions, 1)
 	require.Len(t, discon.ObtainableOptions, 0)
@@ -491,7 +617,7 @@ func testSingleCredentialDisclosureWithUnavailableCredential(
 	plan := session.DisclosurePlan
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
-	require.Equal(t, plan.IssueDuringDislosure.CurrentStep, 0)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
 
 	credToIssue := plan.IssueDuringDislosure.Steps[0].Options[0]
 
@@ -539,11 +665,11 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 	require.NotNil(t, session.DisclosurePlan)
 
 	plan := session.DisclosurePlan
-	require.Len(t, plan.DisclosureOptions[0].OwnedOptions, 1)
+	require.Len(t, plan.DisclosureRequirements[0].OwnedOptions, 1)
 	// it's also possible to obtain a new one, since it not a singleton
-	require.Len(t, plan.DisclosureOptions[0].ObtainableOptions, 1)
+	require.Len(t, plan.DisclosureRequirements[0].ObtainableOptions, 1)
 
-	emailCred := plan.DisclosureOptions[0].OwnedOptions[0]
+	emailCred := plan.DisclosureRequirements[0].OwnedOptions[0]
 
 	choice := client.DisclosureDisconSelection{
 		Credentials: []client.SelectedCredential{

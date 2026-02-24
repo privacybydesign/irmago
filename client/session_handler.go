@@ -112,7 +112,7 @@ type DisclosurePlan struct {
 	// When all are satisfied, the value should still be present in updates to the session state, so the stepper is shown correctly.
 	IssueDuringDislosure *IssueDuringDislosure
 	// What the user can pick for disclosure. This should never be nil.
-	DisclosureOptions []DisclosurePickOne
+	DisclosureRequirements []DisclosurePickOne
 }
 
 // A discon where the user needs to pick only one credential
@@ -122,8 +122,6 @@ type DisclosurePlan struct {
 // But you can't ask for both email and mobilenumber in the inner con, because they're not singletons and they could be multiple options,
 // resulting in condiscondis.
 type DisclosurePickOne struct {
-	// The (default) selected choice
-	Selected *SelectableCredentialInstance
 	// the user can pick one of these without having to issue
 	OwnedOptions []*SelectableCredentialInstance
 	// The user can issue one of these and then use it
@@ -139,10 +137,11 @@ type IssuanceStep struct {
 
 // What to show during issuance during disclosure
 type IssueDuringDislosure struct {
-	// The step we're currently at
-	CurrentStep int
 	// The steps to fulfill before we can continue the disclosure
 	Steps []IssuanceStep
+	// The set of credential ids that have been issued during this session
+	// in order to satisfy the issuance steps.
+	IssuedCredentialsDuringDisclosure map[string]struct{}
 }
 
 // Snapshot of the state of this session.
@@ -435,26 +434,76 @@ func createDisclosureChoicesOverview(
 	return result, nil
 }
 
+// returns the list of issued credential ids compared to the steps
+// and whether the steps are satisfied
+func getIssuedSinceOriginalPlan(
+	steps []IssuanceStep,
+	allCredentials []*Credential,
+) (issued map[string]struct{}, satisfied bool) {
+	issued = map[string]struct{}{}
+	numSatisfiedSteps := 0
+
+	for _, step := range steps {
+		for _, option := range step.Options {
+			index := slices.IndexFunc(
+				allCredentials,
+				func(c *Credential) bool { return c.CredentialId == option.CredentialId },
+			)
+			// credential has been issued
+			if index >= 0 {
+				issued[option.CredentialId] = struct{}{}
+				numSatisfiedSteps += 1
+				continue
+			}
+		}
+	}
+
+	satisfied = numSatisfiedSteps == len(steps)
+	return
+}
+
 func createDisclosurePlan(
+	oldDisclosurePlan *DisclosurePlan,
 	irmaConfig *irma.Configuration,
 	credentials []*Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
 ) (*DisclosurePlan, error) {
-	// the request is not satisfyable using only currently present credentials
-	// therefore we need to make some issuance steps
-	issuanceSteps, err := createIssuanceSteps(irmaConfig, credentials, candidates)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create issuance steps: %w", err)
+	newPlan := &DisclosurePlan{
+		IssueDuringDislosure:   nil,
+		DisclosureRequirements: []DisclosurePickOne{},
 	}
+	// there's no plan yet, so make a new one
+	if oldDisclosurePlan == nil {
+		issuanceSteps, err := createIssuanceSteps(irmaConfig, credentials, candidates)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create issuance steps: %w", err)
+		}
 
-	// the current disclosure flow is not satisfyable without issuance
-	if len(issuanceSteps) != 0 {
-		return &DisclosurePlan{
-			IssueDuringDislosure: &IssueDuringDislosure{
-				CurrentStep: 0,
-				Steps:       issuanceSteps,
-			},
-		}, nil
+		// the current disclosure flow is not satisfyable without issuance
+		if len(issuanceSteps) != 0 {
+			return &DisclosurePlan{
+				IssueDuringDislosure: &IssueDuringDislosure{
+					IssuedCredentialsDuringDisclosure: map[string]struct{}{},
+					Steps:                             issuanceSteps,
+				},
+			}, nil
+		}
+	} else {
+		// update the existing issuance plan if it exists
+		lastIssuancePlan := oldDisclosurePlan.IssueDuringDislosure
+		if lastIssuancePlan != nil {
+			issued, satisfied := getIssuedSinceOriginalPlan(lastIssuancePlan.Steps, credentials)
+			newPlan.IssueDuringDislosure = &IssueDuringDislosure{
+				Steps:                             lastIssuancePlan.Steps,
+				IssuedCredentialsDuringDisclosure: issued,
+			}
+
+			// still not satisfied, so no disclosure overview should be made
+			// return the old issuance steps with the credentials issued since starting the session
+			if !satisfied {
+				return newPlan, nil
+			}
+		}
 	}
 
 	// if the request is satisfiable we can continue to the next stage: picking disclosure choices
@@ -462,10 +511,8 @@ func createDisclosurePlan(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create disclosure choices overview: %w", err)
 	}
-
-	return &DisclosurePlan{
-		DisclosureOptions: disclosureChoices,
-	}, nil
+	newPlan.DisclosureRequirements = disclosureChoices
+	return newPlan, nil
 }
 
 func lookupAttrValue(orig *SelectableCredentialInstance, id *irma.AttributeIdentifier) (Attribute, bool) {
@@ -476,27 +523,6 @@ func lookupAttrValue(orig *SelectableCredentialInstance, id *irma.AttributeIdent
 		return orig.Attributes[index], true
 	}
 	return Attribute{}, false
-}
-
-func updateOldIssuanceSteps(oldSteps, newSteps *IssueDuringDislosure) *IssueDuringDislosure {
-	if oldSteps == nil && newSteps == nil {
-		return nil
-	}
-	// if there are no old steps the new steps are what counts
-	if oldSteps == nil {
-		return newSteps
-	}
-	// if there are no steps anymore, the old steps must all have been fulfilled
-	if newSteps == nil {
-		oldSteps.CurrentStep = len(oldSteps.Steps)
-		return oldSteps
-	}
-	// if the new steps have fewer options than the old steps then the difference in
-	// length must be the difference in steps
-	// TODO: what if the user doesn't use the issuance steps and issues outside of the issue wizard?
-	diff := len(oldSteps.Steps) - len(newSteps.Steps)
-	newSteps.CurrentStep = oldSteps.CurrentStep + diff
-	return newSteps
 }
 
 func (s *Session) RequestVerificationPermission(
@@ -516,19 +542,12 @@ func (s *Session) RequestVerificationPermission(
 		return
 	}
 
-	newPlan, err := createDisclosurePlan(s.client.irmaClient.Configuration, creds, candidates)
+	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates)
 	if err != nil {
 		s.error(err)
 		return
 	}
 
-	// if there already was a disclosure plan, we can use that to determine what has changed
-	if oldPlan := s.State.DisclosurePlan; oldPlan != nil {
-		newPlan.IssueDuringDislosure = updateOldIssuanceSteps(
-			oldPlan.IssueDuringDislosure,
-			newPlan.IssueDuringDislosure,
-		)
-	}
 	s.State.DisclosurePlan = newPlan
 
 	s.dispatchState()
