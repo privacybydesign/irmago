@@ -1,6 +1,7 @@
 package irma
 
 import (
+	"maps"
 	"encoding/xml"
 	"fmt"
 	"path/filepath"
@@ -443,9 +444,7 @@ func (contents IssueWizardContents) buildValidationPaths(conf *Configuration, cr
 				if !userHasCreds(discon[i], creds) {
 					// Copy from the original creds map to the target updatedCreds map
 					updatedCreds := map[CredentialTypeIdentifier]struct{}{}
-					for key, value := range creds {
-						updatedCreds[key] = value
-					}
+					maps.Copy(updatedCreds, creds)
 
 					// check the scenario where the user already has the cards from this discon
 					for _, item := range discon[i] {

@@ -98,7 +98,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 
 	require.Equal(t, session.Id, 1)
 	require.Equal(t, session.Type, client.Type_Issuance)
-	require.Equal(t, session.Status, client.Status_AskingIssuancePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 
 	require.Len(t, session.OfferedCredentials, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
@@ -185,7 +185,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 	require.Equal(t, session.Id, 1)
 
@@ -208,7 +208,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 
 	// updated disclosure session
 	require.Equal(t, session.Id, 1)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 2)
 	require.Equal(t,
 		session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
@@ -327,7 +327,7 @@ func testUserCanDismissSession(
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, session.Id, 1)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 
 	userInteraction(t, c, client.SessionUserInteraction{
@@ -367,7 +367,7 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 	require.Equal(t, session.Id, 1)
 
@@ -441,7 +441,7 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 	session = awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 	require.Equal(t, session.Id, 3)
 
@@ -555,7 +555,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 	require.Equal(t, session.Id, 1)
 
@@ -595,7 +595,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	issRequest := startIrmaSessionAtServer(t, irmaServer, createMijnOverheidIssuanceRequest())
 	c.NewNewSession(issRequest)
 	issuanceSession := awaitSessionState(t, sessionHandler)
-	require.Equal(t, issuanceSession.Status, client.Status_AskingIssuancePermission)
+	require.Equal(t, issuanceSession.Status, client.Status_RequestPermission)
 	require.Equal(t, issuanceSession.Id, 2)
 
 	userInteraction(t, c, client.SessionUserInteraction{
@@ -658,7 +658,7 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 	require.Equal(t, session.Id, 2)
 	require.Len(t, session.OfferedCredentials, 0)
@@ -699,7 +699,7 @@ func testSingleCredentialDisclosureWithUnavailableCredential(
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 	require.Equal(t, session.Id, 1)
 	require.Len(t, session.OfferedCredentials, 0)
@@ -749,7 +749,7 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Disclosure)
 	require.Equal(t, session.Id, 2)
 	require.Len(t, session.OfferedCredentials, 0)
@@ -841,7 +841,7 @@ func schemalessPerformIrmaIssuanceSession(
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, session.Status, client.Status_AskingIssuancePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Equal(t, session.Type, client.Type_Issuance)
 	require.Equal(t, session.Id, 1)
 	require.Len(t, session.OfferedCredentials, 1)
@@ -918,7 +918,7 @@ func issue(
 	issRequest := startIrmaSessionAtServer(t, irmaServer, req)
 	c.NewNewSession(issRequest)
 	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
-	require.Equal(t, session.Status, client.Status_AskingIssuancePermission)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
 
 	userInteraction(t, c, client.SessionUserInteraction{
 		SessionId: session.Id,

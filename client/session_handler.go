@@ -59,8 +59,7 @@ type SessionStatus string
 type SessionType string
 
 const (
-	Status_AskingIssuancePermission   SessionStatus = "issuance_permission"
-	Status_AskingDisclosurePermission SessionStatus = "disclosure_permission"
+	Status_RequestPermission          SessionStatus = "request_permission"
 	Status_ShowPairingCode            SessionStatus = "pairing_code"
 	Status_Success                    SessionStatus = "success"
 	Status_Error                      SessionStatus = "error"
@@ -283,7 +282,7 @@ func (s *Session) RequestIssuancePermission(
 	}
 
 	s.State.OfferedCredentials = offeredCredentials
-	s.State.Status = Status_AskingIssuancePermission
+	s.State.Status = Status_RequestPermission
 	s.PermissionHandler = callback
 	s.State.Protocol = irmaclient.Protocol_Irma
 
@@ -550,7 +549,7 @@ func (s *Session) RequestVerificationPermission(
 	requestorInfo *irma.RequestorInfo,
 	callback irmaclient.PermissionHandler,
 ) {
-	s.State.Status = Status_AskingDisclosurePermission
+	s.State.Status = Status_RequestPermission
 	s.State.Type = Type_Disclosure
 	s.PermissionHandler = callback
 
