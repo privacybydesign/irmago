@@ -129,12 +129,19 @@ type DisclosurePickOne struct {
 	ObtainableOptions []*CredentialDescriptor
 }
 
+// One step in the issuance wizard during disclosure flow
+type IssuanceStep struct {
+	// the list of options for the given discon
+	// the user can choose which one to issue, but only has to issue one
+	Options []*CredentialDescriptor
+}
+
 // What to show during issuance during disclosure
 type IssueDuringDislosure struct {
-	// What has been issued during this disclosure flow
-	IssuedDuringSession []*Credential
-	// What still has to be issued during this flow before we can continue to the next step
-	LeftToIssue []*CredentialDescriptor
+	// The step we're currently at
+	CurrentStep int
+	// The steps to fulfill before we can continue the disclosure
+	Steps []IssuanceStep
 }
 
 // Snapshot of the state of this session.
@@ -213,9 +220,8 @@ type SessionHandler interface {
 	UpdateSession(session SessionState)
 }
 
-func (s *Session) StatusUpdate(action irma.Action, status irma.ClientStatus) {
-	fmt.Printf("status update: %v, status: %v\n", action, status)
-}
+func (s *Session) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
+
 func (s *Session) ClientReturnURLSet(clientReturnURL string) {
 	s.State.ClientReturnUrl = clientReturnURL
 	s.dispatchState()
@@ -282,16 +288,6 @@ func (s *Session) RequestIssuancePermission(
 	s.dispatchState()
 }
 
-func findCredentialsForId(credentials []*Credential, id string) []*Credential {
-	result := []*Credential{}
-	for _, c := range credentials {
-		if c.CredentialId == id {
-			result = append(result, c)
-		}
-	}
-	return result
-}
-
 func findCredential(credentials []*Credential, hash string) *SelectableCredentialInstance {
 	for _, c := range credentials {
 		// each format has its own hash for the corresponding instance
@@ -318,35 +314,68 @@ func findCredential(credentials []*Credential, hash string) *SelectableCredentia
 	return nil
 }
 
-func condisconToDisclosurePlan(
-	config *irma.Configuration,
+func createIssuanceSteps(
+	irmaConfig *irma.Configuration,
 	credentials []*Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
-) (*DisclosurePlan, error) {
-	plan := &DisclosurePlan{
-		IssueDuringDislosure: &IssueDuringDislosure{
-			IssuedDuringSession: []*Credential{},
-			LeftToIssue:         []*CredentialDescriptor{},
-		},
-		DisclosureOptions: []DisclosurePickOne{},
+) ([]IssuanceStep, error) {
+	// for each disjunction that is not satisfiable we need to give the user the option to select
+	// from any of the options (inner cons) beloning to that disjunction
+	unsatisfiedDisjunctionIndices := []int{}
+	result := []IssuanceStep{}
+
+	for i, discon := range candidates {
+		disconSatisfied := false
+		for _, con := range discon {
+			conSatisfied := true
+			for _, attr := range con {
+				if findCredential(credentials, attr.CredentialHash) == nil {
+					conSatisfied = false
+				}
+			}
+			if conSatisfied {
+				disconSatisfied = true
+			}
+		}
+		if !disconSatisfied {
+			unsatisfiedDisjunctionIndices = append(unsatisfiedDisjunctionIndices, i)
+		}
 	}
 
-	// which credential IDs are owned anywhere in disclosure options
-	ownedIDs := map[string]struct{}{}
+	for _, i := range unsatisfiedDisjunctionIndices {
+		discon := candidates[i]
+		options := []*CredentialDescriptor{}
+		for _, con := range discon {
+			attrs := []*irma.AttributeIdentifier{}
+			for _, att := range con {
+				attrs = append(attrs, att.AttributeIdentifier)
+			}
+			descriptor, err := createCredentialDescriptor(irmaConfig, attrs)
+			if err != nil {
+				return nil, err
+			}
+			options = append(options, descriptor)
+		}
+		result = append(result, IssuanceStep{
+			Options: options,
+		})
+	}
 
-	// which credential templates are needed anywhere (by type)
-	neededTemplates := map[string]*CredentialDescriptor{}
+	return result, nil
+}
 
+func createDisclosureChoicesOverview(
+	irmaConfig *irma.Configuration,
+	credentials []*Credential,
+	candidates [][]irmaclient.DisclosureCandidates,
+) ([]DisclosurePickOne, error) {
+	result := []DisclosurePickOne{}
+	// for each discon we create a disclosure pick one
 	for _, discon := range candidates {
 		choice := DisclosurePickOne{}
 
-		choiceTemplates := map[string]*CredentialDescriptor{} // key: credentialId
-
-		// Build filtered instances per credential hash
+		choiceTemplates := map[string]*CredentialDescriptor{}        // key: credentialId
 		filteredByHash := map[string]*SelectableCredentialInstance{} // key: credentialHash
-
-		// Track owned IDs anywhere in disclosure options (global)
-		// ownedIDs map declared outside
 
 		for _, con := range discon {
 			for _, attr := range con {
@@ -358,70 +387,83 @@ func condisconToDisclosurePlan(
 
 					// Ensure template exists once per type in this choice
 					if _, ok := choiceTemplates[id]; !ok {
-						descriptor, err := getCredentialDescriptor(config, t)
+						descriptor, err := getCredentialDescriptor(irmaConfig, t)
 						if err != nil {
 							return nil, err
 						}
 						choiceTemplates[id] = descriptor
 						choice.ObtainableOptions = append(choice.ObtainableOptions, descriptor)
 					}
-
-					// Track globally that this type is needed somewhere
-					if _, ok := neededTemplates[id]; !ok {
-						// reuse the same descriptor pointer if already created for the choice
-						neededTemplates[id] = choiceTemplates[id]
+				} else {
+					// Present attribute => owned credential instance (but we filter attributes)
+					orig := findCredential(credentials, hash)
+					if orig == nil {
+						return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
 					}
-					continue
+
+					// Get or create filtered instance for this credential hash
+					f, ok := filteredByHash[hash]
+					if !ok {
+						// Create a shallow copy with empty attributes
+						// Adjust these fields to match your struct definition.
+						cp := *orig
+						f = &cp
+						f.Attributes = []Attribute{}
+						filteredByHash[hash] = f
+					}
+
+					// TODO: make this more independent and compatible with more complex claim paths
+					attrID := attr.AttributeIdentifier
+					val, ok := lookupAttrValue(orig, attrID)
+					if !ok {
+						return nil, fmt.Errorf("credential %s does not contain attribute %v", hash, attrID)
+					}
+
+					f.Attributes = append(f.Attributes, val)
 				}
-
-				// Present attribute => owned credential instance (but we filter attributes)
-				orig := findCredential(credentials, hash)
-				if orig == nil {
-					return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
-				}
-
-				// Get or create filtered instance for this credential hash
-				f, ok := filteredByHash[hash]
-				if !ok {
-					// Create a shallow copy with empty attributes
-					// Adjust these fields to match your struct definition.
-					cp := *orig
-					f = &cp
-					f.Attributes = []Attribute{}
-					filteredByHash[hash] = f
-
-					// Mark this credential type as owned somewhere (global)
-					ownedIDs[orig.CredentialId] = struct{}{}
-				}
-
-				// TODO: make this more independent and compatible with more complex claim paths
-				attrID := attr.AttributeIdentifier
-				val, ok := lookupAttrValue(orig, attrID)
-				if !ok {
-					return nil, fmt.Errorf("credential %s does not contain attribute %v", hash, attrID)
-				}
-
-				f.Attributes = append(f.Attributes, val)
 			}
 		}
-
 		// Replace OwnedOptions with the filtered instances (only requested attrs)
 		for _, inst := range filteredByHash {
 			choice.OwnedOptions = append(choice.OwnedOptions, inst)
 		}
-
-		plan.DisclosureOptions = append(plan.DisclosureOptions, choice)
+		result = append(result, choice)
 	}
 
-	// Now enforce: LeftToIssue only if there is NO owned instance with same CredentialId anywhere
-	// Also dedupe by ID (map already does that)
-	for id, desc := range neededTemplates {
-		if _, owned := ownedIDs[id]; !owned {
-			plan.IssueDuringDislosure.LeftToIssue = append(plan.IssueDuringDislosure.LeftToIssue, desc)
-		}
+	return result, nil
+}
+
+func createDisclosurePlan(
+	irmaConfig *irma.Configuration,
+	credentials []*Credential,
+	candidates [][]irmaclient.DisclosureCandidates,
+) (*DisclosurePlan, error) {
+	// the request is not satisfyable using only currently present credentials
+	// therefore we need to make some issuance steps
+	issuanceSteps, err := createIssuanceSteps(irmaConfig, credentials, candidates)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create issuance steps: %w", err)
 	}
 
-	return plan, nil
+	// the current disclosure flow is not satisfyable without issuance
+	if len(issuanceSteps) != 0 {
+		return &DisclosurePlan{
+			IssueDuringDislosure: &IssueDuringDislosure{
+				CurrentStep: 0,
+				Steps:       issuanceSteps,
+			},
+		}, nil
+	}
+
+	// if the request is satisfiable we can continue to the next stage: picking disclosure choices
+	disclosureChoices, err := createDisclosureChoicesOverview(irmaConfig, credentials, candidates)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create disclosure choices overview: %w", err)
+	}
+
+	return &DisclosurePlan{
+		DisclosureOptions: disclosureChoices,
+	}, nil
 }
 
 func lookupAttrValue(orig *SelectableCredentialInstance, id *irma.AttributeIdentifier) (Attribute, bool) {
@@ -434,30 +476,25 @@ func lookupAttrValue(orig *SelectableCredentialInstance, id *irma.AttributeIdent
 	return Attribute{}, false
 }
 
-func updateDisclosurePlan(
-	allCredentials []*Credential,
-	oldPlan *DisclosurePlan,
-	newPlan *DisclosurePlan,
-) *DisclosurePlan {
-	for _, oldToIssue := range oldPlan.IssueDuringDislosure.LeftToIssue {
-		// if the new disclosure plan doesn't contain the credential from the old plan anymore
-		// the credential must have been issued and so we add it to the list of credentials
-		// that have been issued during this session
-		hasBeenIssued := !slices.ContainsFunc(
-			newPlan.IssueDuringDislosure.LeftToIssue,
-			func(x *CredentialDescriptor) bool {
-				return x.CredentialId == oldToIssue.CredentialId
-			},
-		)
-
-		if hasBeenIssued {
-			newPlan.IssueDuringDislosure.IssuedDuringSession = append(
-				newPlan.IssueDuringDislosure.IssuedDuringSession,
-				findCredentialsForId(allCredentials, oldToIssue.CredentialId)...,
-			)
-		}
+func updateOldIssuanceSteps(oldSteps, newSteps *IssueDuringDislosure) *IssueDuringDislosure {
+	if oldSteps == nil && newSteps == nil {
+		return nil
 	}
-	return newPlan
+	// if there are no old steps the new steps are what counts
+	if oldSteps == nil {
+		return newSteps
+	}
+	// if there are no steps anymore, the old steps must all have been fulfilled
+	if newSteps == nil {
+		oldSteps.CurrentStep = len(oldSteps.Steps)
+		return oldSteps
+	}
+	// if the new steps have fewer options than the old steps then the difference in
+	// length must be the difference in steps
+	// TODO: what if the user doesn't use the issuance steps and issues outside of the issue wizard?
+	diff := len(oldSteps.Steps) - len(newSteps.Steps)
+	newSteps.CurrentStep = oldSteps.CurrentStep + diff
+	return newSteps
 }
 
 func (s *Session) RequestVerificationPermission(
@@ -477,7 +514,7 @@ func (s *Session) RequestVerificationPermission(
 		return
 	}
 
-	newPlan, err := condisconToDisclosurePlan(s.client.irmaClient.Configuration, creds, candidates)
+	newPlan, err := createDisclosurePlan(s.client.irmaClient.Configuration, creds, candidates)
 	if err != nil {
 		s.error(err)
 		return
@@ -485,10 +522,12 @@ func (s *Session) RequestVerificationPermission(
 
 	// if there already was a disclosure plan, we can use that to determine what has changed
 	if oldPlan := s.State.DisclosurePlan; oldPlan != nil {
-		s.State.DisclosurePlan = updateDisclosurePlan(creds, oldPlan, newPlan)
-	} else {
-		s.State.DisclosurePlan = newPlan
+		newPlan.IssueDuringDislosure = updateOldIssuanceSteps(
+			oldPlan.IssueDuringDislosure,
+			newPlan.IssueDuringDislosure,
+		)
 	}
+	s.State.DisclosurePlan = newPlan
 
 	s.dispatchState()
 }
