@@ -1,6 +1,7 @@
 package sessiontest
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 	"time"
@@ -14,6 +15,11 @@ import (
 )
 
 func TestClientHandler(t *testing.T) {
+	runSessionTest(t,
+		"errors are correctly propagated",
+		testSessionErrorsArePropagated,
+	)
+
 	runSessionTest(t,
 		"user can dismiss session",
 		testUserCanDismissSession,
@@ -52,6 +58,36 @@ func TestClientHandler(t *testing.T) {
 	runSessionTest(t,
 		"single credential issuance",
 		testSingleCredentialIssuance,
+	)
+}
+
+func testSessionErrorsArePropagated(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("not.existing.lol.yolo"),
+			},
+		},
+	}
+
+	sessionJson, err := json.Marshal(request)
+	require.NoError(t, err)
+
+	// use the session request (meant for irma server) directly on client: should cause error
+	c.NewNewSession(string(sessionJson))
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Error)
+	require.EqualError(t,
+		session.Error,
+		"Error type: unknownSchemeManager\nDescription: Unknown identifiers: not, not.existing, not.existing.lol\nStatus code: 0",
 	)
 }
 
