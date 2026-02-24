@@ -16,6 +16,11 @@ import (
 
 func TestClientHandler(t *testing.T) {
 	runSessionTest(t,
+		"signature request with unsatisfied disclosure",
+		testSignatureRequest,
+	)
+
+	runSessionTest(t,
 		"issuance session with unsatisfied disclosure",
 		testIssuanceSessionWithUnsatisfiedDisclosure,
 	)
@@ -71,6 +76,80 @@ func TestClientHandler(t *testing.T) {
 	)
 }
 
+func testSignatureRequest(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewSignatureRequest("Hello, World!")
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+		},
+	}
+
+	sessionJson := startIrmaSessionAtServer(t, irmaServer, request)
+	c.NewNewSession(sessionJson)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Type, client.Type_Signature)
+	require.Equal(t, session.MessageToSign, "Hello, World!")
+
+	require.Len(t, session.OfferedCredentials, 0)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
+	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+
+	issue(t, irmaServer, c, sessionHandler, createEmailIssuanceRequest())
+
+	// update disclosure candidates of signature session
+	session = awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Type, client.Type_Signature)
+	require.Equal(t, session.MessageToSign, "Hello, World!")
+
+	require.Len(t, session.OfferedCredentials, 0)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
+	require.NotNil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+
+	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   choice.CredentialId,
+							CredentialHash: choice.Hash,
+							AttributePaths: [][]any{{choice.Attributes[0].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// finish email issuance session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	// finish signature session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
+}
+
 func testIssuanceSessionWithUnsatisfiedDisclosure(
 	t *testing.T,
 	irmaServer *IrmaServer,
@@ -104,7 +183,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 2)
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
-	require.Nil(t, session.DisclosurePlan.DisclosureRequirements)
+	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
 
 	// issue MijnOverheid
 	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
@@ -121,7 +200,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
 	)
 
-	cred := session.DisclosurePlan.DisclosureRequirements[0].OwnedOptions[0]
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 
 	// give permission to disclose the MijnOverheid credential
 	userInteraction(t, c, client.SessionUserInteraction{
@@ -200,7 +279,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 	require.Len(t, plan.IssueDuringDislosure.Steps[1].Options, 2)
 
 	// no disclosure choices overview yet since the session is not finishable
-	require.Nil(t, plan.DisclosureRequirements)
+	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// issue email
 	issue(t, irmaServer, c, sessionHandler, createEmailIssuanceRequest())
@@ -235,8 +314,8 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 	// finish second issuance request
 	_ = awaitSessionState(t, sessionHandler)
 
-	email := plan.DisclosureRequirements[0].OwnedOptions[0]
-	overheid := plan.DisclosureRequirements[1].OwnedOptions[0]
+	email := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	overheid := plan.DisclosureChoicesOverview[1].OwnedOptions[0]
 
 	userInteraction(t, c, client.SessionUserInteraction{
 		SessionId: 1,
@@ -380,7 +459,7 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
 	// no disclosure choices overview yet since the session is not finishable
-	require.Nil(t, plan.DisclosureRequirements)
+	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
 
@@ -399,11 +478,11 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 
 	// the disclosure choices overview should allow the user to add new versions of student card
 	// and issue the MijnOverheid credential
-	require.Len(t, plan.DisclosureRequirements, 1)
-	require.Len(t, plan.DisclosureRequirements[0].ObtainableOptions, 2)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 2)
 
 	// only one obtained option should be available
-	require.Len(t, plan.DisclosureRequirements[0].OwnedOptions, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
 
 	// issuance session finished
 	session = awaitSessionState(t, sessionHandler)
@@ -449,9 +528,9 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 
 	require.NotNil(t, plan)
 	require.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureRequirements, 1)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
 
-	opt := plan.DisclosureRequirements[0]
+	opt := plan.DisclosureChoicesOverview[0]
 	// there are two options
 	require.Len(t, opt.OwnedOptions, 2)
 	// both are also obtainable
@@ -626,8 +705,8 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
 
 	// the disclosure options should contain the option
-	require.Len(t, plan.DisclosureRequirements, 1)
-	opt := plan.DisclosureRequirements[0]
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	opt := plan.DisclosureChoicesOverview[0]
 	require.Len(t, opt.OwnedOptions, 1)
 	// no new version of this is obtainable because it's a singleton
 	require.Len(t, opt.ObtainableOptions, 0)
@@ -670,8 +749,8 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 	// no issuance steps
 	require.Nil(t, plan.IssueDuringDislosure)
 
-	require.Len(t, plan.DisclosureRequirements, 1)
-	discon := plan.DisclosureRequirements[0]
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	discon := plan.DisclosureChoicesOverview[0]
 
 	require.Len(t, discon.OwnedOptions, 1)
 	require.Len(t, discon.ObtainableOptions, 0)
@@ -756,11 +835,11 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 	require.NotNil(t, session.DisclosurePlan)
 
 	plan := session.DisclosurePlan
-	require.Len(t, plan.DisclosureRequirements[0].OwnedOptions, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
 	// it's also possible to obtain a new one, since it not a singleton
-	require.Len(t, plan.DisclosureRequirements[0].ObtainableOptions, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 1)
 
-	emailCred := plan.DisclosureRequirements[0].OwnedOptions[0]
+	emailCred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 
 	choice := client.DisclosureDisconSelection{
 		Credentials: []client.SelectedCredential{

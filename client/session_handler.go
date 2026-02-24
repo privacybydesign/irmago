@@ -59,12 +59,12 @@ type SessionStatus string
 type SessionType string
 
 const (
-	Status_RequestPermission          SessionStatus = "request_permission"
-	Status_ShowPairingCode            SessionStatus = "pairing_code"
-	Status_Success                    SessionStatus = "success"
-	Status_Error                      SessionStatus = "error"
-	Status_Dismissed                  SessionStatus = "dismissed"
-	Status_RequestPin                 SessionStatus = "pin"
+	Status_RequestPermission SessionStatus = "request_permission"
+	Status_ShowPairingCode   SessionStatus = "pairing_code"
+	Status_Success           SessionStatus = "success"
+	Status_Error             SessionStatus = "error"
+	Status_Dismissed         SessionStatus = "dismissed"
+	Status_RequestPin        SessionStatus = "pin"
 
 	Type_Disclosure SessionType = "disclosure"
 	Type_Issuance   SessionType = "issuance"
@@ -111,7 +111,7 @@ type DisclosurePlan struct {
 	// When all are satisfied, the value should still be present in updates to the session state, so the stepper is shown correctly.
 	IssueDuringDislosure *IssueDuringDislosure
 	// What the user can pick for disclosure. This should never be nil.
-	DisclosureRequirements []DisclosurePickOne
+	DisclosureChoicesOverview []DisclosurePickOne
 }
 
 // A discon where the user needs to pick only one credential
@@ -486,8 +486,8 @@ func createDisclosurePlan(
 	candidates [][]irmaclient.DisclosureCandidates,
 ) (*DisclosurePlan, error) {
 	newPlan := &DisclosurePlan{
-		IssueDuringDislosure:   nil,
-		DisclosureRequirements: []DisclosurePickOne{},
+		IssueDuringDislosure:      nil,
+		DisclosureChoicesOverview: []DisclosurePickOne{},
 	}
 	// there's no plan yet, so make a new one
 	if oldDisclosurePlan == nil {
@@ -528,7 +528,7 @@ func createDisclosurePlan(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create disclosure choices overview: %w", err)
 	}
-	newPlan.DisclosureRequirements = disclosureChoices
+	newPlan.DisclosureChoicesOverview = disclosureChoices
 	return newPlan, nil
 }
 
@@ -575,6 +575,26 @@ func (s *Session) RequestSignaturePermission(request *irma.SignatureRequest,
 	candidates [][]irmaclient.DisclosureCandidates,
 	requestorInfo *irma.RequestorInfo,
 	callback irmaclient.PermissionHandler) {
+	s.State.Status = Status_RequestPermission
+	s.State.Type = Type_Signature
+	s.PermissionHandler = callback
+
+	creds, err := s.client.GetCredentials()
+	if err != nil {
+		s.error(err)
+		return
+	}
+
+	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates)
+	if err != nil {
+		s.error(err)
+		return
+	}
+
+	s.State.DisclosurePlan = newPlan
+	s.State.MessageToSign = request.Message
+
+	s.dispatchState()
 }
 
 func (s *Session) RequestPermissionAndPerformAuthCodeWithTokenExchange(
