@@ -16,6 +16,11 @@ import (
 
 func TestClientHandler(t *testing.T) {
 	runSessionTest(t,
+		"issuance session with pairing code",
+		testSessionWithPairingCode,
+	)
+
+	runSessionTest(t,
 		"signature request with unsatisfied disclosure",
 		testSignatureRequest,
 	)
@@ -74,6 +79,45 @@ func TestClientHandler(t *testing.T) {
 		"single credential issuance",
 		testSingleCredentialIssuance,
 	)
+}
+
+func testSessionWithPairingCode(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := createEmailIssuanceRequest()
+
+	qr, requestorToken, _, err := irmaServer.irma.StartSession(request, nil, "")
+	require.NoError(t, err)
+	sessionReq := client.SessionRequestData{
+		Qr:       *qr,
+		Protocol: irmaclient.Protocol_Irma,
+	}
+	sessionJson, err := json.Marshal(sessionReq)
+
+	frontendOptions := irma.NewFrontendOptionsRequest()
+	frontendOptions.PairingMethod = "pin"
+	require.NoError(t, err)
+	irmaServer.irma.SetFrontendOptions(requestorToken, &frontendOptions)
+
+	c.NewNewSession(string(sessionJson))
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_ShowPairingCode)
+	require.Equal(t, session.Type, client.Type_Issuance)
+	require.Len(t, session.PairingCode, 4)
+
+	// pretend the pairing was completed
+	irmaServer.irma.PairingCompleted(requestorToken)
+
+	// now the session should continue to issuance permission
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Type, client.Type_Issuance)
 }
 
 func testSignatureRequest(
