@@ -118,9 +118,10 @@ type DisclosurePlan struct {
 // A discon where the user needs to pick only one credential
 // TODO: What to do when there's multiple credentials in the inner con?
 // This is possible for singletons in irma condiscon and for anything in DCQL (resulting in condiscondis)
-// E.g.: you can ask for both personal data and address in the inner con, because they're both singletons and will always result in a single choice.
-// But you can't ask for both email and mobilenumber in the inner con, because they're not singletons and they could be multiple options,
-// resulting in condiscondis.
+// E.g.: you can ask for both personal data and address in the inner con,
+// because they're both singletons and will always result in a single choice.
+// But you can't ask for both email and mobilenumber in the inner con,
+// because they're not singletons and they could be multiple options, resulting in condiscondis.
 type DisclosurePickOne struct {
 	// the user can pick one of these without having to issue
 	OwnedOptions []*SelectableCredentialInstance
@@ -285,6 +286,23 @@ func (s *Session) RequestIssuancePermission(
 	s.State.Status = Status_AskingIssuancePermission
 	s.PermissionHandler = callback
 	s.State.Protocol = irmaclient.Protocol_Irma
+
+	// if there are also disclosures requested
+	if len(candidates) != 0 {
+		creds, err := s.client.GetCredentials()
+		if err != nil {
+			s.error(err)
+			return
+		}
+
+		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates)
+		if err != nil {
+			s.error(err)
+			return
+		}
+
+		s.State.DisclosurePlan = newPlan
+	}
 
 	s.dispatchState()
 }

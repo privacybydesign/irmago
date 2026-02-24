@@ -16,6 +16,11 @@ import (
 
 func TestClientHandler(t *testing.T) {
 	runSessionTest(t,
+		"issuance session with unsatisfied disclosure",
+		testIssuanceSessionWithUnsatisfiedDisclosure,
+	)
+
+	runSessionTest(t,
 		"multiple steps of issuance during disclosure",
 		testMultipleStepsOfIssuanceDuringDisclosure,
 	)
@@ -64,6 +69,89 @@ func TestClientHandler(t *testing.T) {
 		"single credential issuance",
 		testSingleCredentialIssuance,
 	)
+}
+
+func testIssuanceSessionWithUnsatisfiedDisclosure(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// issue email and at the same time ask for either student card or MijnOverheid
+	request := createEmailIssuanceRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstnames"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
+	}
+
+	requestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	c.NewNewSession(requestJson)
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Issuance)
+	require.Equal(t, session.Status, client.Status_AskingIssuancePermission)
+
+	require.Len(t, session.OfferedCredentials, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 2)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
+	require.Nil(t, session.DisclosurePlan.DisclosureRequirements)
+
+	// issue MijnOverheid
+	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
+
+	session = awaitSessionState(t, sessionHandler)
+	// updated the first session with new disclosure options
+	require.Equal(t, session.Id, 1)
+
+	require.Len(t, session.OfferedCredentials, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 2)
+	require.Equal(t,
+		session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
+	)
+
+	cred := session.DisclosurePlan.DisclosureRequirements[0].OwnedOptions[0]
+
+	// give permission to disclose the MijnOverheid credential
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   cred.CredentialId,
+							CredentialHash: cred.Hash,
+							AttributePaths: [][]any{{cred.Attributes[0].Id}, {cred.Attributes[1].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// finish issuance session for missing credential
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	// finish first issuance session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
 }
 
 func testMultipleStepsOfIssuanceDuringDisclosure(
@@ -530,7 +618,10 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	plan = session.DisclosurePlan
 
 	// no more credentials left to issue (but the list of issuance steps should still be available)
-	require.Equal(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}})
+	require.Equal(t,
+		plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
+	)
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
 
