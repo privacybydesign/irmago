@@ -15,6 +15,11 @@ import (
 
 func TestClientHandler(t *testing.T) {
 	runSessionTest(t,
+		"user can dismiss session",
+		testUserCanDismissSession,
+	)
+
+	runSessionTest(t,
 		"choice between two non-singleton credentials both present",
 		testChoiceBetweenTwoNonSingletonCredentialsBothPresent,
 	)
@@ -48,6 +53,45 @@ func TestClientHandler(t *testing.T) {
 		"single credential issuance",
 		testSingleCredentialIssuance,
 	)
+}
+
+func testUserCanDismissSession(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstnames"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
+	}
+
+	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionRequestJson)
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_AskingDisclosurePermission)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_DismissSession,
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Status, client.Status_Dismissed)
 }
 
 func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(

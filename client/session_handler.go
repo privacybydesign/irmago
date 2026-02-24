@@ -12,8 +12,9 @@ import (
 type UserInteractionType string
 
 const (
-	UI_EnteredPin UserInteractionType = "entered_pin"
-	UI_Permission UserInteractionType = "permission"
+	UI_EnteredPin     UserInteractionType = "entered_pin"
+	UI_Permission     UserInteractionType = "permission"
+	UI_DismissSession UserInteractionType = "dismiss"
 )
 
 // Any interaction the user has to do with a session, like entering a pin code or giving permission
@@ -180,6 +181,7 @@ type Session struct {
 	PermissionHandler irmaclient.PermissionHandler
 	PinHanler         irmaclient.PinHandler
 	client            *Client
+	dismisser         irmaclient.SessionDismisser
 }
 
 func (s *Session) dispatchState() {
@@ -602,12 +604,14 @@ func (client *Client) HandleUserInteraction(userInteraction SessionUserInteracti
 	case UI_EnteredPin:
 		payload := userInteraction.Payload.(PinInteractionPayload)
 		session.PinHanler(payload.Proceed, payload.Pin)
+	case UI_DismissSession:
+		session.dismisser.Dismiss()
 	}
 
 	return nil
 }
 
-func (client *Client) NewNewSession(sessionrequest string) irmaclient.SessionDismisser {
+func (client *Client) NewNewSession(sessionrequest string) {
 	session := client.SessionManager.NewSession()
 	state := session.State
 
@@ -617,7 +621,7 @@ func (client *Client) NewNewSession(sessionrequest string) irmaclient.SessionDis
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
 		session.error(err)
 		client.SessionManager.DeleteSession(session.State.Id)
-		return nil
+		return
 	}
 
 	state.Protocol = sessionReq.Protocol
@@ -631,5 +635,5 @@ func (client *Client) NewNewSession(sessionrequest string) irmaclient.SessionDis
 		state.Type = Type_Signature
 	}
 
-	return client.NewSession(sessionrequest, session)
+	session.dismisser = client.NewSession(sessionrequest, session)
 }
