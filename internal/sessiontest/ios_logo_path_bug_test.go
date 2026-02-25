@@ -138,7 +138,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 
 func issueSdJwtAndIdemixToClientExpectPin(t *testing.T, client *client.Client, irmaServer *IrmaServer) {
 	sessionReq := createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, sessionReq)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, sessionReq)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionRequestJson, sessionHandler)

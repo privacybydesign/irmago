@@ -1,9 +1,9 @@
 package irma
 
 import (
-	"maps"
 	"encoding/xml"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"regexp"
 	"sort"

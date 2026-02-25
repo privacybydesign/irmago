@@ -230,7 +230,7 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, client *client.Cl
 		},
 	}
 
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, combinedIssuanceRequest)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, combinedIssuanceRequest)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionRequestJson, sessionHandler)
@@ -283,7 +283,7 @@ func performCompletelyOptionalDisclosure(t *testing.T, client *client.Client, ir
 			irma.AttributeCon{},
 		},
 	}
-	sessionReqJson := startIrmaSessionAtServer(t, irmaServer, req)
+	sessionReqJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, req)
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionReqJson, sessionHandler)
 
@@ -792,7 +792,7 @@ func createIdemixOnlyIssuanceRequest() *irma.IssuanceRequest {
 
 func failIssueSdJwtAndIdemixToClient(t *testing.T, client *client.Client, irmaServer *IrmaServer) {
 	sessionReq := createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, sessionReq)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, sessionReq)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionRequestJson, sessionHandler)
@@ -803,7 +803,7 @@ func failIssueSdJwtAndIdemixToClient(t *testing.T, client *client.Client, irmaSe
 }
 
 func performIrmaIssuanceSession(t *testing.T, client *client.Client, irmaServer *IrmaServer, request *irma.IssuanceRequest) {
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionRequestJson, sessionHandler)
@@ -822,7 +822,7 @@ func performIrmaDisclosureSession(t *testing.T, client *client.Client, irmaServe
 			},
 		},
 	}
-	sessionReqJson := startIrmaSessionAtServer(t, irmaServer, req)
+	sessionReqJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, req)
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionReqJson, sessionHandler)
 
@@ -848,7 +848,7 @@ func performIrmaSignatureSession(t *testing.T, client *client.Client, irmaServer
 		},
 	}
 
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, req)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, req)
 
 	sessionHandler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(sessionRequestJson, sessionHandler)
@@ -868,12 +868,26 @@ func performIrmaSignatureSession(t *testing.T, client *client.Client, irmaServer
 	require.True(t, sessionHandler.AwaitSessionEnd())
 }
 
-func startIrmaSessionAtServer(t *testing.T, server *IrmaServer, req irma.SessionRequest) string {
+func startCrossDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req irma.SessionRequest) string {
 	qr, _, _, err := server.irma.StartSession(req, nil, "")
 	require.NoError(t, err)
 	session := client.SessionRequestData{
-		Qr:       *qr,
-		Protocol: irmaclient.Protocol_Irma,
+		Qr:                     *qr,
+		Protocol:               irmaclient.Protocol_Irma,
+		ContinueOnSecondDevice: true,
+	}
+	sessionJson, err := json.Marshal(session)
+	require.NoError(t, err)
+	return string(sessionJson)
+}
+
+func startSameDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req irma.SessionRequest) string {
+	qr, _, _, err := server.irma.StartSession(req, nil, "")
+	require.NoError(t, err)
+	session := client.SessionRequestData{
+		Qr:                     *qr,
+		Protocol:               irmaclient.Protocol_Irma,
+		ContinueOnSecondDevice: false,
 	}
 	sessionJson, err := json.Marshal(session)
 	require.NoError(t, err)

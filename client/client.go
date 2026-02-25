@@ -172,7 +172,8 @@ func (client *Client) Close() error {
 
 type SessionRequestData struct {
 	irma.Qr
-	Protocol irmaclient.Protocol `json:"protocol,omitempty"`
+	Protocol               irmaclient.Protocol `json:"protocol,omitempty"`
+	ContinueOnSecondDevice bool                `json:"continue_on_second_device"`
 }
 
 func (client *Client) DeleteKeyshareTokens() {

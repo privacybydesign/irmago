@@ -122,6 +122,9 @@ type DisclosurePlan struct {
 // But you can't ask for both email and mobilenumber in the inner con,
 // because they're not singletons and they could be multiple options, resulting in condiscondis.
 type DisclosurePickOne struct {
+	// if this is set to true the user can decide to pick none of the options
+	// because it isn't required to satisfy the disclosure
+	Optional bool
 	// the user can pick one of these without having to issue
 	OwnedOptions []*SelectableCredentialInstance
 	// The user can issue one of these and then use it
@@ -141,7 +144,7 @@ type IssueDuringDislosure struct {
 	Steps []IssuanceStep
 	// The set of credential ids that have been issued during this session
 	// in order to satisfy the issuance steps.
-	IssuedCredentialsDuringDisclosure map[string]struct{}
+	IssuedCredentialIds map[string]struct{}
 }
 
 // Snapshot of the state of this session.
@@ -172,6 +175,8 @@ type SessionState struct {
 	Error error
 	// The client return url when the app should redirect to after the session, if any
 	ClientReturnUrl string
+	// If this is true then the frontend should not return to the browser after the session is done
+	ContinueOnSecondDevice bool
 }
 
 type Session struct {
@@ -396,6 +401,12 @@ func createDisclosureChoicesOverview(
 		filteredByHash := map[string]*SelectableCredentialInstance{} // key: credentialHash
 
 		for _, con := range discon {
+			// if at least one of the cons inside of a discon is empty
+			// then the discon is satisfiable by picking no credentials at all
+			// therefore the choice is optional
+			if len(con) == 0 {
+				choice.Optional = true
+			}
 			for _, attr := range con {
 				hash := attr.AttributeIdentifier.CredentialHash
 
@@ -500,8 +511,8 @@ func createDisclosurePlan(
 		if len(issuanceSteps) != 0 {
 			return &DisclosurePlan{
 				IssueDuringDislosure: &IssueDuringDislosure{
-					IssuedCredentialsDuringDisclosure: map[string]struct{}{},
-					Steps:                             issuanceSteps,
+					IssuedCredentialIds: map[string]struct{}{},
+					Steps:               issuanceSteps,
 				},
 			}, nil
 		}
@@ -511,8 +522,8 @@ func createDisclosurePlan(
 		if lastIssuancePlan != nil {
 			issued, satisfied := getIssuedSinceOriginalPlan(lastIssuancePlan.Steps, credentials)
 			newPlan.IssueDuringDislosure = &IssueDuringDislosure{
-				Steps:                             lastIssuancePlan.Steps,
-				IssuedCredentialsDuringDisclosure: issued,
+				Steps:               lastIssuancePlan.Steps,
+				IssuedCredentialIds: issued,
 			}
 
 			// still not satisfied, so no disclosure overview should be made
@@ -681,6 +692,7 @@ func (client *Client) NewNewSession(sessionrequest string) {
 	}
 
 	state.Protocol = sessionReq.Protocol
+	state.ContinueOnSecondDevice = sessionReq.ContinueOnSecondDevice
 
 	switch sessionReq.Type {
 	case irma.ActionDisclosing:

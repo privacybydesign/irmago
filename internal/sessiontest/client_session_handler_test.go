@@ -14,10 +14,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClientHandler(t *testing.T) {
+func TestSessionHandler(t *testing.T) {
+	t.Run("disclosure", testSessionHandlerForIrmaDisclosures)
+	t.Run("issuance", testSessionHandlerForIrmaIssuance)
+	t.Run("special", testSessionHandlerEdgeCases)
+}
+
+func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	runSessionTest(t,
-		"issuance session with pairing code",
-		testSessionWithPairingCode,
+		"disclosure with optional non-present credential moves to choices overview",
+		testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosureOverview,
 	)
 
 	runSessionTest(t,
@@ -26,23 +32,8 @@ func TestClientHandler(t *testing.T) {
 	)
 
 	runSessionTest(t,
-		"issuance session with unsatisfied disclosure",
-		testIssuanceSessionWithUnsatisfiedDisclosure,
-	)
-
-	runSessionTest(t,
 		"multiple steps of issuance during disclosure",
 		testMultipleStepsOfIssuanceDuringDisclosure,
-	)
-
-	runSessionTest(t,
-		"errors are correctly propagated",
-		testSessionErrorsArePropagated,
-	)
-
-	runSessionTest(t,
-		"user can dismiss session",
-		testUserCanDismissSession,
 	)
 
 	runSessionTest(t,
@@ -74,11 +65,154 @@ func TestClientHandler(t *testing.T) {
 		"single credential single attribute disclosure with available credential",
 		testSingleCredentialDisclosureWithAvailableCredential,
 	)
+}
+
+func testSessionHandlerForIrmaIssuance(t *testing.T) {
+	runSessionTest(t,
+		"issuance session with unsatisfied disclosure",
+		testIssuanceSessionWithUnsatisfiedDisclosure,
+	)
 
 	runSessionTest(t,
 		"single credential issuance",
 		testSingleCredentialIssuance,
 	)
+}
+
+func testSessionHandlerEdgeCases(t *testing.T) {
+	runSessionTest(t,
+		"continue on second device",
+		testContinueOnSecondDevice,
+	)
+
+	runSessionTest(t,
+		"issuance session with pairing code",
+		testSessionWithPairingCode,
+	)
+
+	runSessionTest(t,
+		"errors are correctly propagated",
+		testSessionErrorsArePropagated,
+	)
+
+	runSessionTest(t,
+		"user can dismiss session",
+		testUserCanDismissSession,
+	)
+}
+
+func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosureOverview(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			// empty to signal the con above is optional
+			irma.AttributeCon{},
+		},
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstnames"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
+	}
+
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
+	c.NewNewSession(sessionJson)
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 1)
+	plan := session.DisclosurePlan
+
+	// only one step required to make the disclosure satisfiable, since the student card is optional
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// satisfy the required credential (not the optional)
+	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
+
+	// disclosure session updated
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+
+	plan = session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.Equal(t,
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
+	)
+
+	choices := plan.DisclosureChoicesOverview
+	// there's two choices, one of which is optional
+	require.Len(t, choices, 2)
+
+	optional := choices[0]
+	required := choices[1]
+
+	require.Len(t, optional.OwnedOptions, 0)
+	require.Len(t, optional.ObtainableOptions, 1)
+	require.True(t, optional.Optional)
+
+	require.False(t, required.Optional)
+	require.Len(t, required.OwnedOptions, 1)
+	// MijnOverheid is a singleton and thus not obtainable
+	require.Len(t, required.ObtainableOptions, 0)
+
+	// finish the issuance session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 2)
+
+	choice := required.OwnedOptions[0]
+	// finish the disclosure session
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: 1,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				// for the first option we don't select anything since it's optional
+				{},
+				// for the second option we select the required credential
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   choice.CredentialId,
+							CredentialHash: choice.Hash,
+							AttributePaths: [][]any{{choice.Attributes[0].Id}, {choice.Attributes[1].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
+}
+
+func testContinueOnSecondDevice(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := createEmailIssuanceRequest()
+	sesionJson := startCrossDeviceIrmaSessionAtServer(t, irmaServer, request)
+	c.NewNewSession(sesionJson)
+	session := awaitSessionState(t, sessionHandler)
+	require.True(t, session.ContinueOnSecondDevice)
 }
 
 func testSessionWithPairingCode(
@@ -109,6 +243,7 @@ func testSessionWithPairingCode(
 	require.Equal(t, session.Status, client.Status_ShowPairingCode)
 	require.Equal(t, session.Type, client.Type_Issuance)
 	require.Len(t, session.PairingCode, 4)
+	require.False(t, session.ContinueOnSecondDevice)
 
 	// pretend the pairing was completed
 	irmaServer.irma.PairingCompleted(requestorToken)
@@ -135,7 +270,7 @@ func testSignatureRequest(
 		},
 	}
 
-	sessionJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 	c.NewNewSession(sessionJson)
 
 	session := awaitSessionState(t, sessionHandler)
@@ -215,7 +350,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 		},
 	}
 
-	requestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	requestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 	c.NewNewSession(requestJson)
 	session := awaitSessionState(t, sessionHandler)
 
@@ -226,7 +361,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	require.Len(t, session.OfferedCredentials, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 2)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialIds, 0)
 	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
 
 	// issue MijnOverheid
@@ -240,7 +375,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 2)
 	require.Equal(t,
-		session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialIds,
 		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
 	)
 
@@ -302,7 +437,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 		},
 	}
 
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
@@ -318,7 +453,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 
 	// the user should get one step to issue one of two options
 	require.Len(t, plan.IssueDuringDislosure.Steps, 2)
-	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 0)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
 	require.Len(t, plan.IssueDuringDislosure.Steps[1].Options, 2)
 
@@ -334,7 +469,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 	require.Equal(t, session.Status, client.Status_RequestPermission)
 	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 2)
 	require.Equal(t,
-		session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialIds,
 		map[string]struct{}{"test.test.email": {}},
 	)
 
@@ -351,7 +486,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 
 	// both credentials have now been issued, which means the request is satisfiable
 	require.Equal(t,
-		plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		plan.IssueDuringDislosure.IssuedCredentialIds,
 		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}, "test.test.email": {}},
 	)
 
@@ -445,7 +580,7 @@ func testUserCanDismissSession(
 		},
 	}
 
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
@@ -484,7 +619,7 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 		},
 	}
 
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
@@ -500,7 +635,7 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 
 	// the user should get one step to issue one of two options
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 0)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
 	// no disclosure choices overview yet since the session is not finishable
 	require.Nil(t, plan.DisclosureChoicesOverview)
@@ -515,7 +650,7 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 	plan = session.DisclosurePlan
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Equal(t,
-		plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		plan.IssueDuringDislosure.IssuedCredentialIds,
 		map[string]struct{}{"irma-demo.RU.studentCard": {}},
 	)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
@@ -558,7 +693,7 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 		},
 	}
 
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
 	session = awaitSessionState(t, sessionHandler)
@@ -672,7 +807,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 		},
 	}
 
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
@@ -687,7 +822,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	require.NotNil(t, plan)
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
-	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 0)
 
 	toIssue := plan.IssueDuringDislosure.Steps[0].Options[0]
 	require.Equal(t, toIssue.CredentialId, "irma-demo.MijnOverheid.fullName")
@@ -715,7 +850,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	})
 
 	// start the issuance session
-	issRequest := startIrmaSessionAtServer(t, irmaServer, createMijnOverheidIssuanceRequest())
+	issRequest := startSameDeviceIrmaSessionAtServer(t, irmaServer, createMijnOverheidIssuanceRequest())
 	c.NewNewSession(issRequest)
 	issuanceSession := awaitSessionState(t, sessionHandler)
 	require.Equal(t, issuanceSession.Status, client.Status_RequestPermission)
@@ -742,7 +877,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 
 	// no more credentials left to issue (but the list of issuance steps should still be available)
 	require.Equal(t,
-		plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure,
+		plan.IssueDuringDislosure.IssuedCredentialIds,
 		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
 	)
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
@@ -775,7 +910,7 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 		},
 	}
 
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
@@ -816,7 +951,7 @@ func testSingleCredentialDisclosureWithUnavailableCredential(
 	}
 
 	c.DeleteKeyshareTokens()
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
@@ -831,7 +966,7 @@ func testSingleCredentialDisclosureWithUnavailableCredential(
 	plan := session.DisclosurePlan
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
-	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialsDuringDisclosure, 0)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 0)
 
 	credToIssue := plan.IssueDuringDislosure.Steps[0].Options[0]
 
@@ -866,7 +1001,7 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 	}
 
 	c.DeleteKeyshareTokens()
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, disclosureRequest)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
@@ -958,7 +1093,7 @@ func schemalessPerformIrmaIssuanceSession(
 ) {
 	// delete keyshare session token so the pin is required
 	c.DeleteKeyshareTokens()
-	sessionRequestJson := startIrmaSessionAtServer(t, irmaServer, request)
+	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
 	c.NewNewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
@@ -1038,7 +1173,7 @@ func issue(
 	sessionHandler *MockSessionHandler,
 	req *irma.IssuanceRequest,
 ) {
-	issRequest := startIrmaSessionAtServer(t, irmaServer, req)
+	issRequest := startSameDeviceIrmaSessionAtServer(t, irmaServer, req)
 	c.NewNewSession(issRequest)
 	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
 	require.Equal(t, session.Status, client.Status_RequestPermission)
