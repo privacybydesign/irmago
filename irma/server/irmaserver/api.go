@@ -203,16 +203,16 @@ func (s *Server) Stop() {
 // by frontend clients (i.e. browser libraries) to POST to the '/frontend' endpoints of the IRMA protocol.
 // The request parameter can be an irma.RequestorRequest, or an irma.SessionRequest, or a
 // ([]byte or string) JSON representation of one of those (for more details, see server.ParseSessionRequest().)
-func StartSession(request interface{}, handler server.SessionHandler,
+func StartSession(request any, handler server.SessionHandler,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	return s.StartSession(request, handler, "")
 }
-func (s *Server) StartSession(req interface{}, handler server.SessionHandler, requestor string,
+func (s *Server) StartSession(req any, handler server.SessionHandler, requestor string,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	return s.startNextSession(req, handler, nil, "", requestor)
 }
 func (s *Server) startNextSession(
-	req interface{}, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization, requestor string,
+	req any, handler server.SessionHandler, disclosed irma.AttributeConDisCon, FrontendAuth irma.FrontendAuthorization, requestor string,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	if s.conf.StoreType == "redis" && handler != nil {
 		return nil, "", nil, errors.New("Handlers cannot be used in combination with Redis.")

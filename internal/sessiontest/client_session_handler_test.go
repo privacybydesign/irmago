@@ -127,6 +127,153 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 		"user can dismiss session",
 		testUserCanDismissSession,
 	)
+
+	runSessionTest(t,
+		"chained session",
+		testChainedSession,
+	)
+}
+
+func testChainedSession(
+	t *testing.T,
+	_ *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	buildConfig := RequestorServerAuthConfiguration()
+
+	requestorServer := StartRequestorServer(t, buildConfig)
+
+	defer requestorServer.Stop()
+
+	nextServer := StartNextRequestServer(t,
+		&buildConfig.JwtRSAPrivateKey.PublicKey,
+		buildConfig.IrmaConfiguration.CredentialTypes,
+		irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"),
+		irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+	)
+	defer func() {
+		_ = nextServer.Close()
+	}()
+
+	qr, _, _, err := requestorServer.StartSession(createStudentCardIssuanceRequest(), nil, "")
+	require.NoError(t, err)
+
+	sessionJson, err := json.MarshalIndent(qr, "", "   ")
+	require.NoError(t, err)
+
+	c.NewNewSession(string(sessionJson))
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	// get the initial session request for the chained session
+	var request irma.ServiceProviderRequest
+	require.NoError(t, irma.NewHTTPTransport(nextSessionServerURL, false).Get("1", &request))
+	requestJson, err := json.MarshalIndent(request, "", "   ")
+	require.NoError(t, err)
+
+	// start the session at the server
+	sesPkg := startSessionAtServer(t, requestorServer, true, requestJson)
+	require.NoError(t, err)
+
+	sessionJson, err = json.MarshalIndent(sesPkg.SessionPtr, "", "   ")
+
+	c.NewNewSession(string(sessionJson))
+	session = awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Empty(t, session.OfferedCredentials)
+
+	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Equal(t, choice.CredentialId, "irma-demo.RU.studentCard")
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   choice.CredentialId,
+							CredentialHash: choice.Hash,
+							AttributePaths: [][]any{{choice.Attributes[0].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+
+	// the new (chained) session is still under the same id
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Type, client.Type_Issuance)
+	require.Len(t, session.OfferedCredentials, 1)
+	require.Equal(t, session.OfferedCredentials[0].CredentialId, "irma-demo.MijnOverheid.fullName")
+
+	// it's now an issuance session without disclosures, so no disclosure plan anymore
+	require.Nil(t, session.DisclosurePlan)
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+		},
+	})
+
+	// should now be the last session of the chain:
+	// another disclosure session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Empty(t, session.OfferedCredentials)
+
+	choice = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Equal(t, choice.CredentialId, "irma-demo.MijnOverheid.fullName")
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   choice.CredentialId,
+							CredentialHash: choice.Hash,
+							AttributePaths: [][]any{{choice.Attributes[0].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+
+	// session should now be finished
+	require.Equal(t, session.Status, client.Status_Success)
 }
 
 func testIrmaSignatureRequestorInfoCorrect(

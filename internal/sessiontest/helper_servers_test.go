@@ -120,8 +120,8 @@ func ensureSymlinks(tb testing.TB) {
 // applying the configuration function and session options in the rightmost two parameter slots of
 // the specified function.
 func apply(
-	test func(t *testing.T, conf interface{}, opts ...option),
-	conf interface{}, opts ...option,
+	test func(t *testing.T, conf any, opts ...option),
+	conf any, opts ...option,
 ) func(*testing.T) {
 	return func(t *testing.T) {
 		test(t, conf, opts...)
@@ -207,7 +207,7 @@ func chainedServerHandler(
 			jwt.RegisteredClaims
 			server.SessionResult
 		}{}
-		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (interface{}, error) {
+		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (any, error) {
 			//return &conf.JwtRSAPrivateKey.PublicKey, nil
 			return publicKey, nil
 		})

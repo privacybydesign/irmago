@@ -70,7 +70,7 @@ func (o option) enabled(opt option) bool {
 // by the parameters:
 // - If irmaServer is not nil or optionReuseServer is enabled, this function does nothing.
 // - Otherwise an IRMA server or library is started, depending on the type of conf.
-func startServer(t *testing.T, opts option, irmaServer *IrmaServer, requestorServer *requestorserver.Server, conf interface{}) (stopper, interface{}, bool) {
+func startServer(t *testing.T, opts option, irmaServer *IrmaServer, requestorServer *requestorserver.Server, conf any) (stopper, any, bool) {
 	if irmaServer != nil || requestorServer != nil {
 		if opts.enabled(optionReuseServer) {
 			require.FailNow(t, "either specify irmaServer/requestorserver or optionReuseServer, not both")
@@ -110,7 +110,7 @@ func startServer(t *testing.T, opts option, irmaServer *IrmaServer, requestorSer
 
 // startSessionAtServer starts an IRMA session using the specified session request, against an IRMA server
 // or library, as determined by the type of serv.
-func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request interface{}) *server.SessionPackage {
+func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request any) *server.SessionPackage {
 	switch s := serv.(type) {
 	case *IrmaServer:
 		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil, "")
@@ -194,7 +194,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 				jwt.RegisteredClaims
 				*server.SessionResult
 			}{}
-			_, err = jwt.ParseWithClaims(res, &claims, func(_ *jwt.Token) (interface{}, error) {
+			_, err = jwt.ParseWithClaims(res, &claims, func(_ *jwt.Token) (any, error) {
 				return &sk.PublicKey, nil
 			})
 			require.NoError(t, err)
@@ -237,7 +237,7 @@ func createSessionHandler(
 	return &handler, clientChan
 }
 
-func waitSessionFinished(t *testing.T, serv interface{}, token irma.RequestorToken, longRunning bool) {
+func waitSessionFinished(t *testing.T, serv any, token irma.RequestorToken, longRunning bool) {
 	if !longRunning {
 		// wait a bit so that server can finish processing the session
 		time.Sleep(100 * time.Millisecond)
@@ -272,13 +272,13 @@ func waitSessionFinished(t *testing.T, serv interface{}, token irma.RequestorTok
 //     parameter is of type func() *server.Configuration or func() *requestorserver.Configuration
 func doSession(
 	t *testing.T,
-	request interface{},
+	request any,
 	client *irmaclient.IrmaClient,
 	irmaServer *IrmaServer,
 	requestorServer *requestorserver.Server,
 	frontendOptionsHandler func(handler *testhelpers.TestHandler),
 	pairingHandler func(handler *testhelpers.TestHandler),
-	config interface{},
+	config any,
 	options ...option,
 ) *requestorSessionResult {
 	if client == nil {
@@ -344,7 +344,7 @@ func doSession(
 }
 
 func doChainedSessions(
-	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+	t *testing.T, conf any, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
 	storage, client, _ := parseStorage(t, opts...)
 	defer client.Close()
@@ -379,7 +379,7 @@ func doChainedSessions(
 }
 
 func doUnauthorizedChainedSession(
-	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+	t *testing.T, conf any, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
 	storage, client, _ := parseStorage(t, opts...)
 	defer client.Close()
@@ -417,7 +417,7 @@ func doUnauthorizedChainedSession(
 // Chained sessions are a requestor server feature, which is not supported by other types like keyshare.
 // They will never allow chained sessions to be authorized, which is why we need a different test function
 func doNonRequestorChainedSessions(
-	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+	t *testing.T, conf any, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
 	storage, client, _ := parseStorage(t, opts...)
 	defer client.Close()

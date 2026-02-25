@@ -881,7 +881,7 @@ func startCrossDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req i
 	return string(sessionJson)
 }
 
-func startSameDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req irma.SessionRequest) string {
+func startSameDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req any) string {
 	qr, _, _, err := server.irma.StartSession(req, nil, "")
 	require.NoError(t, err)
 	session := client.SessionRequestData{

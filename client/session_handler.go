@@ -60,11 +60,11 @@ type SessionType string
 
 const (
 	Status_RequestPermission SessionStatus = "request_permission"
-	Status_ShowPairingCode   SessionStatus = "pairing_code"
+	Status_ShowPairingCode   SessionStatus = "show_pairing_code"
 	Status_Success           SessionStatus = "success"
 	Status_Error             SessionStatus = "error"
 	Status_Dismissed         SessionStatus = "dismissed"
-	Status_RequestPin        SessionStatus = "pin"
+	Status_RequestPin        SessionStatus = "request_pin"
 
 	Type_Disclosure SessionType = "disclosure"
 	Type_Issuance   SessionType = "issuance"
@@ -301,6 +301,8 @@ func (s *Session) RequestIssuancePermission(
 	s.PermissionHandler = callback
 	s.State.Protocol = irmaclient.Protocol_Irma
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
+	s.State.Type = Type_Issuance
+	s.State.DisclosurePlan = nil
 
 	// if there are also disclosures requested
 	if len(candidates) != 0 {
@@ -575,6 +577,7 @@ func (s *Session) RequestVerificationPermission(
 	s.State.Type = Type_Disclosure
 	s.PermissionHandler = callback
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
+	s.State.OfferedCredentials = nil
 
 	creds, err := s.client.GetCredentials()
 	if err != nil {
@@ -602,6 +605,7 @@ func (s *Session) RequestSignaturePermission(request *irma.SignatureRequest,
 	s.State.Type = Type_Signature
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.PermissionHandler = callback
+	s.State.OfferedCredentials = nil
 
 	creds, err := s.client.GetCredentials()
 	if err != nil {

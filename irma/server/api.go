@@ -115,15 +115,15 @@ func RemoteError(err Error, message string) *irma.RemoteError {
 
 // JsonResponse JSON-marshals the specified object or error
 // and returns it along with a suitable HTTP status code
-func JsonResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+func JsonResponse(v any, err *irma.RemoteError) (int, []byte) {
 	return encodeValOrError(v, err, json.Marshal)
 }
 
-func BinaryResponse(v interface{}, err *irma.RemoteError) (int, []byte) {
+func BinaryResponse(v any, err *irma.RemoteError) (int, []byte) {
 	return encodeValOrError(v, err, irma.MarshalBinary)
 }
 
-func encodeValOrError(v interface{}, err *irma.RemoteError, encoder func(interface{}) ([]byte, error)) (int, []byte) {
+func encodeValOrError(v any, err *irma.RemoteError, encoder func(any) ([]byte, error)) (int, []byte) {
 	msg := v
 	status := http.StatusOK
 	if err != nil {
@@ -144,11 +144,11 @@ func WriteError(w http.ResponseWriter, err Error, msg string) {
 }
 
 // WriteJson writes the specified object as JSON to the http.ResponseWriter.
-func WriteJson(w http.ResponseWriter, object interface{}) {
+func WriteJson(w http.ResponseWriter, object any) {
 	WriteResponse(w, object, nil)
 }
 
-func WriteBinaryResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError) {
+func WriteBinaryResponse(w http.ResponseWriter, object any, rerr *irma.RemoteError) {
 	status, bts := BinaryResponse(object, rerr)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(status)
@@ -156,7 +156,7 @@ func WriteBinaryResponse(w http.ResponseWriter, object interface{}, rerr *irma.R
 }
 
 // WriteResponse writes the specified object or error as JSON to the http.ResponseWriter.
-func WriteResponse(w http.ResponseWriter, object interface{}, rerr *irma.RemoteError) {
+func WriteResponse(w http.ResponseWriter, object any, rerr *irma.RemoteError) {
 	status, bts := JsonResponse(object, rerr)
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(status)
@@ -180,7 +180,7 @@ func WriteString(w http.ResponseWriter, str string) {
 //   - RequestorRequest instances directly (ServiceProviderRequest, SignatureRequestorRequest, IdentityProviderRequest)
 //   - SessionRequest instances (DisclosureRequest, SignatureRequest, IssuanceRequest)
 //   - JSON representations ([]byte or string) of any of the above.
-func ParseSessionRequest(request interface{}) (irma.RequestorRequest, error) {
+func ParseSessionRequest(request any) (irma.RequestorRequest, error) {
 	rr, e := parseInput(request)
 	if e != nil {
 		return nil, e
@@ -190,7 +190,7 @@ func ParseSessionRequest(request interface{}) (irma.RequestorRequest, error) {
 	return rr, e
 }
 
-func parseInput(request interface{}) (irma.RequestorRequest, error) {
+func parseInput(request any) (irma.RequestorRequest, error) {
 	switch r := request.(type) {
 	case irma.RequestorRequest:
 		return r, nil
@@ -319,7 +319,7 @@ func Verbosity(level int) logrus.Level {
 	}
 }
 
-func TypeString(x interface{}) string {
+func TypeString(x any) string {
 	return reflect.TypeOf(x).String()
 }
 
@@ -357,7 +357,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 		logger.Debug("POSTing session result")
 	}
 
-	var res interface{}
+	var res any
 	if privatekey != nil {
 		var err error
 		res, err = ResultJwt(result, issuer, validity, privatekey)
@@ -447,7 +447,7 @@ func LogResponse(url string, status int, duration time.Duration, binary bool, re
 	}
 }
 
-func ToJson(o interface{}) string {
+func ToJson(o any) string {
 	bts, _ := json.Marshal(o)
 	return string(bts)
 }
@@ -580,7 +580,7 @@ func RecoverMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func ParseBody(r *http.Request, input interface{}) error {
+func ParseBody(r *http.Request, input any) error {
 	defer common.Close(r.Body)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {

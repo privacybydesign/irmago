@@ -34,7 +34,7 @@ type Server struct {
 	stopped  chan struct{}
 }
 
-func (s *Server) StartSession(req interface{}, handler server.SessionHandler, requestor string,
+func (s *Server) StartSession(req any, handler server.SessionHandler, requestor string,
 ) (*irma.Qr, irma.RequestorToken, *irma.FrontendSessionRequest, error) {
 	return s.irmaserv.StartSession(req, handler, requestor)
 }
