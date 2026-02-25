@@ -17,18 +17,31 @@ import (
 func TestSessionHandler(t *testing.T) {
 	t.Run("disclosure", testSessionHandlerForIrmaDisclosures)
 	t.Run("issuance", testSessionHandlerForIrmaIssuance)
+	t.Run("signature", testSessionHandlerForIrmaSignature)
 	t.Run("special", testSessionHandlerEdgeCases)
 }
 
-func testSessionHandlerForIrmaDisclosures(t *testing.T) {
+func testSessionHandlerForIrmaSignature(t *testing.T) {
 	runSessionTest(t,
-		"disclosure with optional non-present credential moves to choices overview",
-		testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosureOverview,
+		"irma signature requestor info correct",
+		testIrmaSignatureRequestorInfoCorrect,
 	)
 
 	runSessionTest(t,
 		"signature request with unsatisfied disclosure",
 		testSignatureRequest,
+	)
+}
+
+func testSessionHandlerForIrmaDisclosures(t *testing.T) {
+	runSessionTest(t,
+		"irma requestor info correct",
+		testIrmaDisclosureRequestorInfoCorrect,
+	)
+
+	runSessionTest(t,
+		"disclosure with optional non-present credential moves to choices overview",
+		testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosureOverview,
 	)
 
 	runSessionTest(t,
@@ -68,6 +81,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 }
 
 func testSessionHandlerForIrmaIssuance(t *testing.T) {
+	runSessionTest(t,
+		"requestor info correct",
+		testIrmaIssuanceRequestorInfoCorrect,
+	)
+
 	runSessionTest(t,
 		"permission not granted",
 		testIssuancePermissionNotGranted_SessionDismissed,
@@ -109,6 +127,86 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 		"user can dismiss session",
 		testUserCanDismissSession,
 	)
+}
+
+func testIrmaSignatureRequestorInfoCorrect(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewSignatureRequest("Hello world")
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			// empty to signal the con above is optional
+		},
+	}
+
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
+	c.NewNewSession(sessionJson)
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 1)
+
+	requestor := session.Requestor
+	require.Equal(t, requestor.Id, "test-requestors.test-requestor")
+	require.Equal(t, requestor.Name, client.TranslatedString{"nl": "Lokale IRMA server", "en": "Local IRMA server"})
+	require.True(t, requestor.Verified)
+}
+
+func testIrmaDisclosureRequestorInfoCorrect(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			// empty to signal the con above is optional
+		},
+	}
+
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
+	c.NewNewSession(sessionJson)
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 1)
+
+	requestor := session.Requestor
+	require.Equal(t, requestor.Id, "test-requestors.test-requestor")
+	require.Equal(t, requestor.Name, client.TranslatedString{"nl": "Lokale IRMA server", "en": "Local IRMA server"})
+	require.True(t, requestor.Verified)
+}
+
+func testIrmaIssuanceRequestorInfoCorrect(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	c.NewNewSession(
+		startSameDeviceIrmaSessionAtServer(
+			t,
+			irmaServer,
+			createEmailIssuanceRequest(),
+		),
+	)
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+
+	requestor := session.Requestor
+	require.Equal(t, requestor.Id, "test-requestors.test-requestor")
+	require.Equal(t, requestor.Name, client.TranslatedString{"nl": "Lokale IRMA server", "en": "Local IRMA server"})
+	require.True(t, requestor.Verified)
 }
 
 func testMultipleCredentialsIssuance(
@@ -616,7 +714,6 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 }
 
 func testSessionErrorsArePropagated(
-
 	t *testing.T,
 	irmaServer *IrmaServer,
 	c *client.Client,

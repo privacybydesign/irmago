@@ -19,7 +19,9 @@ type TrustedParty struct {
 	// Absolute path to the image for this issuer stored on disk
 	ImagePath *string
 	// The trust chain for this issuer (if any)
-	Parent *TrustedParty
+	Parent   *TrustedParty
+	// Whether this party is verified (TODO: should this be implied by the parent?)
+	Verified bool
 }
 
 type AttributeType string

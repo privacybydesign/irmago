@@ -269,6 +269,16 @@ func (s *Session) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier
 	fmt.Println("Keyshare deleted")
 }
 
+func requestorInfoToTrustedParty(info *irma.RequestorInfo) TrustedParty {
+	return TrustedParty{
+		Id:        info.ID.String(),
+		Name:      TranslatedString(info.Name),
+		ImagePath: info.Logo,
+		Parent:    nil,
+		Verified:  !info.Unverified,
+	}
+}
+
 func (s *Session) RequestIssuancePermission(
 	request *irma.IssuanceRequest,
 	satisfiable bool,
@@ -290,6 +300,7 @@ func (s *Session) RequestIssuancePermission(
 	s.State.Status = Status_RequestPermission
 	s.PermissionHandler = callback
 	s.State.Protocol = irmaclient.Protocol_Irma
+	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 
 	// if there are also disclosures requested
 	if len(candidates) != 0 {
@@ -563,6 +574,7 @@ func (s *Session) RequestVerificationPermission(
 	s.State.Status = Status_RequestPermission
 	s.State.Type = Type_Disclosure
 	s.PermissionHandler = callback
+	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 
 	creds, err := s.client.GetCredentials()
 	if err != nil {
@@ -588,6 +600,7 @@ func (s *Session) RequestSignaturePermission(request *irma.SignatureRequest,
 	callback irmaclient.PermissionHandler) {
 	s.State.Status = Status_RequestPermission
 	s.State.Type = Type_Signature
+	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.PermissionHandler = callback
 
 	creds, err := s.client.GetCredentials()
