@@ -4,12 +4,12 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
-	"io"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -55,15 +55,15 @@ func StartBadHttpServer(count uint32, timeout time.Duration, success string) {
 			badServerCount.Add(1)
 			time.Sleep(timeout)
 			return
-		} 
-		
+		}
+
 		// If the client POSTed anything, echo it.
 		if r.Method == "POST" {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
 				response = "error reading what was POSTed"
 			} else {
-				response= string(bodyBytes)
+				response = string(bodyBytes)
 			}
 		}
 
