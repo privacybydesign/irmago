@@ -186,6 +186,7 @@ type Session struct {
 	PinHanler         irmaclient.PinHandler
 	client            *Client
 	dismisser         irmaclient.SessionDismisser
+	chained           bool
 }
 
 func (s *Session) dispatchState() {
@@ -286,6 +287,12 @@ func (s *Session) RequestIssuancePermission(
 	requestorInfo *irma.RequestorInfo,
 	callback irmaclient.PermissionHandler,
 ) {
+	// if the session type wasn't an issuance session before
+	// we can assume this session to be chained and we can cache that for future permission requests
+	if s.State.Type != "" && s.State.Type != Type_Issuance {
+		s.chained = true
+	}
+
 	irmaConfig := s.client.GetIrmaConfiguration()
 	creds := request.CredentialInfoList
 
@@ -296,23 +303,19 @@ func (s *Session) RequestIssuancePermission(
 		return
 	}
 
-	s.State.OfferedCredentials = offeredCredentials
-	s.State.Status = Status_RequestPermission
-	s.PermissionHandler = callback
-	s.State.Protocol = irmaclient.Protocol_Irma
-	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
-	s.State.Type = Type_Issuance
-	s.State.DisclosurePlan = nil
+	credentials, err := s.client.GetCredentials()
+	if err != nil {
+		s.error(err)
+		return
+	}
 
-	// if there are also disclosures requested
-	if len(candidates) != 0 {
-		creds, err := s.client.GetCredentials()
-		if err != nil {
-			s.error(err)
-			return
-		}
-
-		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates)
+	// if the session is a chained session and the previous type was disclosure
+	// we don't want to update the disclosure plan and instead make a new one
+	// if the current (issuance) session has any disclosures
+	if s.chained && s.State.Type != Type_Issuance {
+		s.State.DisclosurePlan = nil
+	} else {
+		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, credentials, candidates)
 		if err != nil {
 			s.error(err)
 			return
@@ -320,6 +323,13 @@ func (s *Session) RequestIssuancePermission(
 
 		s.State.DisclosurePlan = newPlan
 	}
+
+	s.State.OfferedCredentials = offeredCredentials
+	s.State.Status = Status_RequestPermission
+	s.PermissionHandler = callback
+	s.State.Protocol = irmaclient.Protocol_Irma
+	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
+	s.State.Type = Type_Issuance
 
 	s.dispatchState()
 }

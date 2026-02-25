@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -1519,4 +1520,9 @@ func issue(
 
 func awaitSessionState(t *testing.T, sessionHandler *MockSessionHandler) client.SessionState {
 	return awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
+}
+
+func printSession(s client.SessionState) {
+	j, _ := json.MarshalIndent(s, "", "    ")
+	fmt.Println(string(j))
 }
