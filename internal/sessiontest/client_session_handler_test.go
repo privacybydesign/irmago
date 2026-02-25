@@ -69,6 +69,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 
 func testSessionHandlerForIrmaIssuance(t *testing.T) {
 	runSessionTest(t,
+		"permission not granted",
+		testIssuancePermissionNotGranted_SessionDismissed,
+	)
+
+	runSessionTest(t,
 		"issuance session with unsatisfied disclosure",
 		testIssuanceSessionWithUnsatisfiedDisclosure,
 	)
@@ -76,6 +81,11 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 	runSessionTest(t,
 		"single credential issuance",
 		testSingleCredentialIssuance,
+	)
+
+	runSessionTest(t,
+		"multiple credential issuance",
+		testMultipleCredentialsIssuance,
 	)
 }
 
@@ -99,6 +109,82 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 		"user can dismiss session",
 		testUserCanDismissSession,
 	)
+}
+
+func testMultipleCredentialsIssuance(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "",
+				"familyname": "Batsbak",
+				"prefix":     "Sir",
+			},
+		},
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "University of the Arts",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionJson)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 2)
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
+}
+
+func testIssuancePermissionNotGranted_SessionDismissed(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	requestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest())
+	c.NewNewSession(requestJson)
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: false,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Dismissed)
 }
 
 func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosureOverview(
