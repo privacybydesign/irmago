@@ -61,7 +61,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	request := &irma.AuthorizationCodeFlowAndTokenExchangeRequest{
 		CredentialInfoList: s.credentials,
 		AuthorizationRequestParameters: irma.AuthorizationRequestParameters{
-			IssuerDiscoveryUrl: getDiscoveryUrlFromIssuer(s.authorizationServer),
+			IssuerDiscoveryUrl: getDiscoveryUrlFromIssuer(s.issuerSettings.authorizationServer),
 			IssuerState:        s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
 			Resource:           s.credentialOffer.CredentialIssuer,
 			Scopes:             s.extractScopesFromCredentialOffer(),
@@ -164,7 +164,7 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession, 
 
 	// TODO: after we've added support for fetching AS metadata, we should check if we need to add Authorization Details parameter
 
-	req, err := http.NewRequest(http.MethodPost, s.authorizationServerMetadata.TokenEndpoint, strings.NewReader(values.Encode()))
+	req, err := http.NewRequest(http.MethodPost, s.issuerSettings.authorizationServerMetadata.TokenEndpoint, strings.NewReader(values.Encode()))
 	if err != nil {
 		return nil, err
 	}

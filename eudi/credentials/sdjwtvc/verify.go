@@ -398,7 +398,7 @@ func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationCo
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: *opts,
 		},
-		Clock:       NewSystemClock(),
+		Clock:       eudi_jwt.NewSystemClock(),
 		JwtVerifier: NewJwxJwtVerifier(),
 	}
 }
@@ -1034,24 +1034,4 @@ func NewJwxJwtVerifier() *JwxJwtVerifier {
 
 func (v *JwxJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err error) {
 	return jws.Verify([]byte(jwt), jws.WithKey(jwa.ES256(), keyAny))
-}
-
-// ========================================================================
-
-type SystemClock struct{}
-
-func NewSystemClock() jwt.Clock {
-	return &SystemClock{}
-}
-
-func (c *SystemClock) Now() time.Time {
-	return time.Now()
-}
-
-type StaticClock struct {
-	CurrentTime int64
-}
-
-func (c *StaticClock) Now() time.Time {
-	return time.Unix(c.CurrentTime, 0)
 }

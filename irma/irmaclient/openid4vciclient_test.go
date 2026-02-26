@@ -9,6 +9,7 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
@@ -35,7 +36,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) *OpenID4VciClient {
 
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &conf.Issuers,
-		Clock:                   sdjwtvc.NewSystemClock(),
+		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 	}
 

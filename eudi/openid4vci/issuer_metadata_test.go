@@ -8,6 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var Locale_EN = "en"
+var Locale_EN_US = "en-US"
+var Locale_EN_GB = "en-GB"
+var Locale_FR = "fr"
+var Locale_FR_FR = "fr-FR"
+var Locale_ES = "es"
+var Invalid_Locale = "invalid_locale"
+
 func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -81,7 +89,7 @@ func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *test
 				{
 					Display: Display{
 						Name:   "Test Credential",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 			},
@@ -103,7 +111,7 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Test Credential",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 			},
@@ -281,7 +289,7 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Test Credential",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 			},
@@ -627,7 +635,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 			},
@@ -639,7 +647,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: "en-US",
+						Locale: &Locale_EN_US,
 					},
 				},
 			},
@@ -651,7 +659,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 			},
@@ -659,12 +667,24 @@ func TestCredentialDisplays_verify(t *testing.T) {
 			expectedErr: "missing 'name'",
 		},
 		{
+			name: "display without locale, should be ignored",
+			displays: CredentialDisplays{
+				{
+					Display: Display{
+						Name:   "Issuer Name",
+						Locale: nil,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "invalid logo uri",
 			displays: CredentialDisplays{
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 					Logo: &RemoteImage{
 						Uri: "://invalid-url",
@@ -680,7 +700,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 					BackgroundImage: &RemoteImage{
 						Uri: "://invalid-url",
@@ -696,13 +716,13 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 				{
 					Display: Display{
 						Name:   "Another Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 			},
@@ -715,7 +735,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: "invalid_locale",
+						Locale: &Invalid_Locale,
 					},
 				},
 			},
@@ -774,7 +794,7 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 			},
@@ -786,7 +806,7 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 					Logo: &RemoteImage{
 						Uri: "https://example.com/logo.png",
@@ -801,7 +821,7 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 					Logo: &RemoteImage{
 						Uri: "://invalid-url",
@@ -817,13 +837,13 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 				{
 					Display: Display{
 						Name:   "Another Name",
-						Locale: "en",
+						Locale: &Locale_EN,
 					},
 				},
 			},
@@ -836,7 +856,7 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: "invalid_locale",
+						Locale: &Invalid_Locale,
 					},
 				},
 			},
@@ -962,7 +982,7 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 					{
 						Display: Display{
 							Name:   "Issuer Name",
-							Locale: "en",
+							Locale: &Locale_EN,
 						},
 					},
 				},
@@ -976,19 +996,19 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 					{
 						Display: Display{
 							Name:   "Issuer Name",
-							Locale: "en-US",
+							Locale: &Locale_EN_US,
 						},
 					},
 					{
 						Display: Display{
 							Name:   "Nom de l'émetteur",
-							Locale: "fr-FR",
+							Locale: &Locale_FR_FR,
 						},
 					},
 					{
 						Display: Display{
 							Name:   "Nombre del emisor",
-							Locale: "es",
+							Locale: &Locale_ES,
 						},
 					},
 				},
@@ -1002,19 +1022,19 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 					{
 						Display: Display{
 							Name:   "Issuer Name",
-							Locale: "en-US",
+							Locale: &Locale_EN_US,
 						},
 					},
 					{
 						Display: Display{
 							Name:   "Another Issuer Name",
-							Locale: "en-GB",
+							Locale: &Locale_EN_GB,
 						},
 					},
 					{
 						Display: Display{
 							Name:   "Nom de l'émetteur",
-							Locale: "fr",
+							Locale: &Locale_FR,
 						},
 					},
 				},

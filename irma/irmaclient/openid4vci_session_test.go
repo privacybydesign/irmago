@@ -237,10 +237,11 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 				"credential-config-1": *credentialConfig,
 			},
 		},
-		httpClient:    ts.Client(),
-		storageClient: mockStorageClient,
-		handler:       NewMockSessionHandler(t),
-		keyBinder:     nil,
+		httpClient:     ts.Client(),
+		storageClient:  mockStorageClient,
+		handler:        NewMockSessionHandler(t),
+		keyBinder:      nil,
+		issuerSettings: openid4vciSessionIssuerSettings{},
 	}
 
 	if opts&NonceNotRequired == NonceNotRequired {

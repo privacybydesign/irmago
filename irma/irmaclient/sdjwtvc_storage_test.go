@@ -9,6 +9,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -337,8 +338,8 @@ func createTestSdJwtVcWithHolderKey[T sdjwtvc.LeafClaimDataType](vct, issuerUrl 
 		sdjwtvc.Claim(sdjwtvc.Key_SdAlg, iana.SHA256),
 		sdjwtvc.Claim(sdjwtvc.Key_VerifiableCredentialType, vct),
 		sdjwtvc.Claim(sdjwtvc.Key_Issuer, issuerUrl),
-		sdjwtvc.Claim(sdjwtvc.Key_IssuedAt, sdjwtvc.NewSystemClock().Now().Unix()),
-		sdjwtvc.Claim(sdjwtvc.Key_ExpiryTime, sdjwtvc.NewSystemClock().Now().Unix()+10000),
+		sdjwtvc.Claim(sdjwtvc.Key_IssuedAt, eudi_jwt.NewSystemClock().Now().Unix()),
+		sdjwtvc.Claim(sdjwtvc.Key_ExpiryTime, eudi_jwt.NewSystemClock().Now().Unix()+10000),
 	}
 
 	for key, value := range claims {

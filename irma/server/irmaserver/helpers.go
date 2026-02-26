@@ -24,6 +24,7 @@ import (
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/irma"
@@ -853,7 +854,7 @@ func (session *sessionData) generateSdJwts(
 	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
 	sdJwts := make([]sdjwtvc.SdJwtVcKb, numSdJwtsRequested)
 
-	issuanceTime := sdjwtvc.NewSystemClock().Now().Unix()
+	issuanceTime := eudi_jwt.NewSystemClock().Now().Unix()
 
 	var index uint = 0
 	for _, cred := range issuanceReq.Credentials {

@@ -8,6 +8,14 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 )
 
+var Locale_EN = "en"
+var Locale_EN_US = "en-US"
+var Locale_EN_GB = "en-GB"
+var Locale_FR = "fr"
+var Locale_FR_FR = "fr-FR"
+var Locale_ES = "es"
+var Invalid_Locale = "invalid_locale"
+
 func Test_convertDisplayToTranslatedString(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -19,7 +27,7 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 			displays: []openid4vci.Display{
 				{
 					Name:   "Issuer Name",
-					Locale: "en",
+					Locale: &Locale_EN,
 				},
 			},
 			want: irma.TranslatedString{
@@ -31,15 +39,15 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 			displays: []openid4vci.Display{
 				{
 					Name:   "Issuer Name",
-					Locale: "en-US",
+					Locale: &Locale_EN_US,
 				},
 				{
 					Name:   "Nom de l'émetteur",
-					Locale: "fr-FR",
+					Locale: &Locale_FR_FR,
 				},
 				{
 					Name:   "Nombre del emisor",
-					Locale: "es",
+					Locale: &Locale_ES,
 				},
 			},
 			want: irma.TranslatedString{
@@ -53,20 +61,36 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 			displays: []openid4vci.Display{
 				{
 					Name:   "Issuer Name",
-					Locale: "en-US",
+					Locale: &Locale_EN_US,
 				},
 				{
 					Name:   "Another Issuer Name",
-					Locale: "en-GB",
+					Locale: &Locale_EN_GB,
 				},
 				{
 					Name:   "Nom de l'émetteur",
-					Locale: "fr",
+					Locale: &Locale_FR,
 				},
 			},
 			want: irma.TranslatedString{
 				"en": "Another Issuer Name", // Last one wins
 				"fr": "Nom de l'émetteur",
+			},
+		},
+		{
+			name: "display without locale, should be ignored",
+			displays: []openid4vci.Display{
+				{
+					Name:   "Issuer Name",
+					Locale: nil,
+				},
+				{
+					Name:   "Another Issuer Name",
+					Locale: &Locale_EN_US,
+				},
+			},
+			want: irma.TranslatedString{
+				"en": "Another Issuer Name",
 			},
 		},
 	}

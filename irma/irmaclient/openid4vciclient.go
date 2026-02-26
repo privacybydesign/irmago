@@ -338,8 +338,11 @@ func constructCredentialIssuerMetadataUrl(credentialIssuer url.URL) string {
 	return url.String()
 }
 
-func getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuer string, locale string) string {
-	return fmt.Sprintf("%x_%s", sha256.Sum256([]byte(credentialIssuer)), locale)
+func getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuer string, locale *string) string {
+	if locale == nil {
+		return fmt.Sprintf("%x", sha256.Sum256([]byte(credentialIssuer)))
+	}
+	return fmt.Sprintf("%x_%s", sha256.Sum256([]byte(credentialIssuer)), *locale)
 }
 
 func convertToCredentialInfoList(
