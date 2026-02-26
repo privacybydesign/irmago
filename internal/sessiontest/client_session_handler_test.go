@@ -79,6 +79,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 		"single credential single attribute disclosure with available credential",
 		testSingleCredentialDisclosureWithAvailableCredential,
 	)
+
+	runSessionTest(t,
+		"client return url",
+		testDisclosureClientReturnUrl,
+	)
 }
 
 func testSessionHandlerForIrmaIssuance(t *testing.T) {
@@ -105,6 +110,11 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 	runSessionTest(t,
 		"multiple credential issuance",
 		testMultipleCredentialsIssuance,
+	)
+
+	runSessionTest(t,
+		"client return url",
+		testIssuanceClientReturnUrl,
 	)
 }
 
@@ -133,6 +143,48 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 		"chained session",
 		testChainedSession,
 	)
+}
+
+func testDisclosureClientReturnUrl(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+		},
+	}
+	request.ClientReturnURL = "https://yivi.app"
+
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionJson)
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.ClientReturnUrl, "https://yivi.app")
+}
+
+func testIssuanceClientReturnUrl(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := createEmailIssuanceRequest()
+	request.ClientReturnURL = "https://yivi.app"
+
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
+
+	c.NewNewSession(sessionJson)
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.ClientReturnUrl, "https://yivi.app")
 }
 
 func testChainedSession(
@@ -290,7 +342,6 @@ func testIrmaSignatureRequestorInfoCorrect(
 				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
 				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
 			},
-			// empty to signal the con above is optional
 		},
 	}
 

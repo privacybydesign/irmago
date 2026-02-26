@@ -181,16 +181,16 @@ type SessionState struct {
 
 type Session struct {
 	State             *SessionState
-	Handler           SessionHandler
-	PermissionHandler irmaclient.PermissionHandler
-	PinHanler         irmaclient.PinHandler
+	handler           SessionHandler
+	permissionHandler irmaclient.PermissionHandler
+	pinHandler        irmaclient.PinHandler
 	client            *Client
 	dismisser         irmaclient.SessionDismisser
 	chained           bool
 }
 
 func (s *Session) dispatchState() {
-	s.Handler.UpdateSession(*s.State)
+	s.handler.UpdateSession(*s.State)
 }
 
 func (s *Session) error(err error) {
@@ -216,7 +216,7 @@ func (m *SessionManager) NewSession() *Session {
 		State: &SessionState{
 			Id: m.NextId,
 		},
-		Handler: m.SessionHandler,
+		handler: m.SessionHandler,
 		client:  m.Client,
 	}
 	m.Sessions[m.NextId] = s
@@ -326,7 +326,7 @@ func (s *Session) RequestIssuancePermission(
 
 	s.State.OfferedCredentials = offeredCredentials
 	s.State.Status = Status_RequestPermission
-	s.PermissionHandler = callback
+	s.permissionHandler = callback
 	s.State.Protocol = irmaclient.Protocol_Irma
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.Type = Type_Issuance
@@ -585,7 +585,7 @@ func (s *Session) RequestVerificationPermission(
 ) {
 	s.State.Status = Status_RequestPermission
 	s.State.Type = Type_Disclosure
-	s.PermissionHandler = callback
+	s.permissionHandler = callback
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.OfferedCredentials = nil
 
@@ -614,7 +614,7 @@ func (s *Session) RequestSignaturePermission(request *irma.SignatureRequest,
 	s.State.Status = Status_RequestPermission
 	s.State.Type = Type_Signature
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
-	s.PermissionHandler = callback
+	s.permissionHandler = callback
 	s.State.OfferedCredentials = nil
 
 	creds, err := s.client.GetCredentials()
@@ -650,7 +650,7 @@ func (s *Session) RequestPreAuthorizedCodeFlowPermission(
 
 func (s *Session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	s.State.Status = Status_RequestPin
-	s.PinHanler = callback
+	s.pinHandler = callback
 	s.dispatchState()
 }
 
@@ -694,10 +694,10 @@ func (client *Client) HandleUserInteraction(userInteraction SessionUserInteracti
 		if err != nil {
 			return err
 		}
-		session.PermissionHandler(payload.Granted, choices)
+		session.permissionHandler(payload.Granted, choices)
 	case UI_EnteredPin:
 		payload := userInteraction.Payload.(PinInteractionPayload)
-		session.PinHanler(payload.Proceed, payload.Pin)
+		session.pinHandler(payload.Proceed, payload.Pin)
 	case UI_DismissSession:
 		session.dismisser.Dismiss()
 	}
