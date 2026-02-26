@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fix
 - Bug that caused HTTP request body to not be sent upon retransmission
 
+## Changed
+- Add wildcard support for authorized credentials and attributes in relying party and attestation provider certificates
+
 ## [0.19.1] - 2025-10-13
 ### Fix
 - Bug in `irmaclient` that caused attributes to be stored in the wrong order in credential removal logs
