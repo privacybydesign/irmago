@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -26,10 +27,9 @@ type KeysharePinRequestor interface {
 }
 
 type keyshareSessionHandler interface {
-	KeyshareDone(message interface{})
+	KeyshareDone(message any)
 	KeyshareCancelled()
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
-	KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier)
 	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 	// In errors the manager may be nil, as not all keyshare errors have a clearly associated scheme manager
 	KeyshareError(manager *irma.SchemeManagerIdentifier, err error)
@@ -253,11 +253,8 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 			return nil, err
 		}
 		var ok bool
-		for _, method := range auth.Candidates {
-			if method == irma.KeyshareAuthMethodChallengeResponse {
-				ok = true
-				break
-			}
+		if slices.Contains(auth.Candidates, irma.KeyshareAuthMethodChallengeResponse) {
+			ok = true
 		}
 		if !ok {
 			return nil, errors.New("challenge-response authentication method not supported")

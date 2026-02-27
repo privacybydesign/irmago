@@ -118,9 +118,6 @@ func (h *backgroundIssuanceHandler) Cancelled() {
 func (h *backgroundIssuanceHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
 	h.fail(errors.New("user is blocked"))
 }
-func (h *backgroundIssuanceHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	h.fail(errors.New("keyshare registration incomplete"))
-}
 func (h *backgroundIssuanceHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
 	h.fail(errors.New("keyshare enrollment deleted"))
 }

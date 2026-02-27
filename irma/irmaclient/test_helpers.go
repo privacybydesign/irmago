@@ -177,12 +177,6 @@ func (h *MockSessionHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifie
 	}
 }
 
-func (h *MockSessionHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	if h.log {
-		fmt.Printf("keyshare enrollment incomplete: %v\n", manager)
-	}
-}
-
 func (h *MockSessionHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	if h.log {
 		fmt.Printf("keyshare enrollment missing: %v\n", manager)

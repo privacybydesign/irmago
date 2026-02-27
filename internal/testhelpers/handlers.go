@@ -87,9 +87,6 @@ type TestHandler struct {
 	FrontendTransport  *irma.HTTPTransport
 }
 
-func (th TestHandler) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	th.Failure(&irma.SessionError{Err: errors.New("KeyshareEnrollmentIncomplete")})
-}
 func (th TestHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
 	th.Failure(&irma.SessionError{Err: errors.New("KeyshareBlocked")})
 }

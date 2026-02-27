@@ -119,7 +119,15 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 }
 
 func testSessionHandlerEdgeCases(t *testing.T) {
-	t.Run("keyshare enrollment missing", testKeyshareEnrollmentMissing)
+	// this test is not working as expected...
+	// runSessionTest(t,
+	// 	"keyshare blocked",
+	// 	testKeyshareBlocked,
+	// )
+
+	t.Run("keyshare enrollment missing",
+		testKeyshareEnrollmentMissing,
+	)
 
 	runSessionTest(t,
 		"continue on second device",
@@ -145,6 +153,63 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 		"chained session",
 		testChainedSession,
 	)
+}
+
+func testKeyshareBlocked(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// make sure we don't have a valid keyshare session
+	c.DeleteKeyshareTokens()
+
+	// specifically use the test.test.email since it requires a keyshare session
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest())
+
+	c.NewNewSession(sessionJson)
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Type, client.Type_Issuance)
+
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+		},
+	})
+
+	expectedRemainingAttempts := []int{-1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	for i := range 3 {
+		session = awaitSessionState(t, sessionHandler)
+		require.Equal(t, session.Id, 1)
+		require.Equal(t, session.Status, client.Status_RequestPin)
+		require.Equal(t, session.RemainingPinAttempts, expectedRemainingAttempts[i])
+		require.Equal(t, session.Type, client.Type_Issuance)
+
+		// enter the wrong pin
+		userInteraction(t, c, client.SessionUserInteraction{
+			SessionId: session.Id,
+			Type:      client.UI_EnteredPin,
+			Payload: client.PinInteractionPayload{
+				Proceed: true,
+				Pin:     "54321",
+			},
+		})
+
+		time.Sleep(time.Second)
+	}
+
+	session = awaitSessionState(t, sessionHandler)
+
+	// after 3 attempts we expect an error
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Error)
+	require.ErrorContains(t, session.Error, "hello wolrd")
+	require.Equal(t, session.Type, client.Type_Issuance)
 }
 
 func testKeyshareEnrollmentMissing(

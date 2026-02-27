@@ -177,6 +177,8 @@ type SessionState struct {
 	ClientReturnUrl string
 	// If this is true then the frontend should not return to the browser after the session is done
 	ContinueOnSecondDevice bool
+	// The number of attempts the user still has to enter a correct pin
+	RemainingPinAttempts int
 }
 
 type Session struct {
@@ -256,10 +258,7 @@ func (s *Session) Failure(err *irma.SessionError) {
 
 func (s *Session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
 	fmt.Println("Keyshare blocked")
-}
-
-func (s *Session) KeyshareEnrollmentIncomplete(manager irma.SchemeManagerIdentifier) {
-	fmt.Println("Keyshare incomplete")
+	s.error(fmt.Errorf("session blocked"))
 }
 
 func (s *Session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
@@ -650,6 +649,7 @@ func (s *Session) RequestPreAuthorizedCodeFlowPermission(
 
 func (s *Session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	s.State.Status = Status_RequestPin
+	s.State.RemainingPinAttempts = remainingAttempts
 	s.pinHandler = callback
 	s.dispatchState()
 }
