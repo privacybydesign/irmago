@@ -920,7 +920,32 @@ func (mh *MockSessionHandler) UpdateSession(s client.SessionState) {
 	mh.SessionChan <- s
 }
 
+func createClientWithoutKeyshareEnrollment(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
+	client, _, sessionHandler := instantiateClient(t, issuerChain)
+	return client, sessionHandler
+}
+
 func createClientWithIssuerChain(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
+	client, clientHandler, sessionHandler := instantiateClient(t, issuerChain)
+	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
+
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
+
+	return client, sessionHandler
+}
+
+func createClientWithCustomIssuerTrustChain(
+	t *testing.T,
+	issuerRoot *x509.Certificate,
+	issuerCert *x509.Certificate,
+) (*client.Client, *MockSessionHandler) {
+	issuerChainBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerRoot.Raw})
+	issuerChainBytes = append(issuerChainBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerCert.Raw})...)
+
+	return createClientWithIssuerChain(t, issuerChainBytes)
+}
+
+func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -952,24 +977,8 @@ func createClientWithIssuerChain(t *testing.T, issuerChain []byte) (*client.Clie
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
-	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
-
-	require.NoError(t, clientHandler.AwaitEnrollmentResult())
-
-	return client, sessionHandler
+	return client, clientHandler, sessionHandler
 }
-
-func createClientWithCustomIssuerTrustChain(
-	t *testing.T,
-	issuerRoot *x509.Certificate,
-	issuerCert *x509.Certificate,
-) (*client.Client, *MockSessionHandler) {
-	issuerChainBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerRoot.Raw})
-	issuerChainBytes = append(issuerChainBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerCert.Raw})...)
-
-	return createClientWithIssuerChain(t, issuerChainBytes)
-}
-
 func createAuthRequestRequest() string {
 	return fmt.Sprintf(`
 		{

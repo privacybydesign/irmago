@@ -119,6 +119,8 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 }
 
 func testSessionHandlerEdgeCases(t *testing.T) {
+	t.Run("keyshare enrollment missing", testKeyshareEnrollmentMissing)
+
 	runSessionTest(t,
 		"continue on second device",
 		testContinueOnSecondDevice,
@@ -143,6 +145,30 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 		"chained session",
 		testChainedSession,
 	)
+}
+
+func testKeyshareEnrollmentMissing(
+	t *testing.T,
+) {
+	conf := IrmaServerConfigurationWithTempStorage(t)
+	irmaServer := StartIrmaServer(t, conf)
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// specifically use test.test.email because it requires a keyshare server session (irma-demo doesn't)
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest())
+	c.NewNewSession(sessionJson)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Issuance)
+	require.Equal(t, session.Status, client.Status_Error)
+	require.ErrorContains(t, session.Error, "Keyshare enrollment is missing for scheme: 'test'")
 }
 
 func testDisclosureClientReturnUrl(
