@@ -904,7 +904,7 @@ func TestIssueOptionalAttributeUpdateSchemeManager(t *testing.T) {
 			CredentialTypes:  map[irma.CredentialTypeIdentifier]struct{}{},
 			PublicKeys:       map[irma.IssuerIdentifier][]uint{},
 			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
-				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"): struct{}{},
+				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.level"): {},
 			},
 		},
 	}
@@ -978,14 +978,14 @@ func TestDisclosureNonexistingCredTypeUpdateSchemeManager(t *testing.T) {
 			RequestorSchemes: map[irma.RequestorSchemeIdentifier]struct{}{},
 			PublicKeys:       map[irma.IssuerIdentifier][]uint{},
 			Issuers: map[irma.IssuerIdentifier]struct{}{
-				irma.NewIssuerIdentifier("irma-demo.baz"): struct{}{},
+				irma.NewIssuerIdentifier("irma-demo.baz"): {},
 			},
 			CredentialTypes: map[irma.CredentialTypeIdentifier]struct{}{
-				irma.NewCredentialTypeIdentifier("irma-demo.RU.foo"):  struct{}{},
-				irma.NewCredentialTypeIdentifier("irma-demo.baz.qux"): struct{}{},
+				irma.NewCredentialTypeIdentifier("irma-demo.RU.foo"):  {},
+				irma.NewCredentialTypeIdentifier("irma-demo.baz.qux"): {},
 			},
 			AttributeTypes: map[irma.AttributeTypeIdentifier]struct{}{
-				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.xyz"): struct{}{},
+				irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.xyz"): {},
 			},
 		},
 	}

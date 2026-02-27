@@ -183,12 +183,6 @@ func (h *MockSessionHandler) KeyshareEnrollmentMissing(manager irma.SchemeManage
 	}
 }
 
-func (h *MockSessionHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
-	if h.log {
-		fmt.Printf("keyshare enrollment deleted: %v\n", manager)
-	}
-}
-
 func (h *MockSessionHandler) RequestIssuancePermission(request *irma.IssuanceRequest,
 	satisfiable bool,
 	candidates [][]DisclosureCandidates,

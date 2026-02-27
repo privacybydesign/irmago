@@ -265,10 +265,6 @@ func (s *Session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier
 	s.error(fmt.Errorf("Keyshare enrollment is missing for scheme: '%s'", manager))
 }
 
-func (s *Session) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
-	fmt.Println("Keyshare deleted")
-}
-
 func requestorInfoToTrustedParty(info *irma.RequestorInfo) TrustedParty {
 	return TrustedParty{
 		Id:        info.ID.String(),

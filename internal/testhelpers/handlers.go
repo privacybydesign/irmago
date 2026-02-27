@@ -93,9 +93,6 @@ func (th TestHandler) KeyshareBlocked(manager irma.SchemeManagerIdentifier, dura
 func (th TestHandler) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	th.Failure(&irma.SessionError{Err: errors.Errorf("Missing keyshare server %s", manager.String())})
 }
-func (th TestHandler) KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier) {
-	th.Failure(&irma.SessionError{Err: errors.Errorf("Keyshare enrollment deleted for %s", manager.String())})
-}
 func (th TestHandler) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
 func (th *TestHandler) Success(result string) {
 	th.Result = result

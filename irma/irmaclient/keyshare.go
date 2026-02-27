@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -30,7 +31,6 @@ type keyshareSessionHandler interface {
 	KeyshareDone(message any)
 	KeyshareCancelled()
 	KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int)
-	KeyshareEnrollmentDeleted(manager irma.SchemeManagerIdentifier)
 	// In errors the manager may be nil, as not all keyshare errors have a clearly associated scheme manager
 	KeyshareError(manager *irma.SchemeManagerIdentifier, err error)
 	KeysharePin()
@@ -394,9 +394,7 @@ func (ks *keyshareSession) GetCommitments() {
 			ks.sessionHandler.KeyshareError(&managerID, err)
 			return
 		}
-		for pki, c := range comms.Commitments {
-			commitments[pki] = c
-		}
+		maps.Copy(commitments, comms.Commitments)
 	}
 
 	// Merge in the commitments
