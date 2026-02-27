@@ -20,7 +20,7 @@ func (b *Builder) FromJwk(key jwk.Key) (*DIDDocument, error) {
 	}
 
 	// Base64URL encode the serialized JWK
-	encodedJwk := base64.URLEncoding.EncodeToString(jwkBytes)
+	encodedJwk := base64.RawURLEncoding.EncodeToString(jwkBytes)
 
 	// Add the "did:jwk:" prefix to the encoded string to form the DID
 	did := "did:jwk:" + encodedJwk

@@ -69,7 +69,7 @@ const (
 
 type CredentialConfiguration struct {
 	Format                               CredentialFormatIdentifier        `json:"format"`
-	Scope                                string                            `json:"scope,omitempty"`
+	Scope                                *string                           `json:"scope,omitempty"`
 	CredentialSigningAlgValuesSupported  []string                          `json:"credential_signing_alg_values_supported,omitempty"`
 	CryptographicBindingMethodsSupported []CryptographicBindingMethod      `json:"cryptographic_binding_methods_supported,omitempty"`
 	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType `json:"proof_types_supported,omitempty"`
@@ -350,7 +350,7 @@ func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
 	}
 
 	// We only support authorization requests for credential requests using the `scope` parameter, for now
-	if len(c.Scope) == 0 {
+	if c.Scope == nil || *c.Scope == "" {
 		return fmt.Errorf("missing 'scope' parameter")
 	}
 

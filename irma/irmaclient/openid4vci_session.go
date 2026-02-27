@@ -126,6 +126,8 @@ func (s *openid4vciSession) configureIssuerSettings() error {
 	s.issuerSettings.authorizationServer = authorizationServer
 	s.issuerSettings.authorizationServerMetadata = asMetadata
 
+	// TODO: verify AS supports the required features and to extract endpoints
+
 	// Determine if we need to use Credential Request Encryption
 	s.issuerSettings.useCredentialRequestEncryption = false
 	if s.credentialIssuerMetadata.CredentialRequestEncryption != nil {
@@ -201,7 +203,6 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 
 		for _, authServer := range s.credentialIssuerMetadata.AuthorizationServers {
 			if authServer == *credentialOfferedAuthServer {
-				// TODO: get metadata from the authorization server's .well-known endpoint to verify it supports the required features and to extract endpoints
 				return authServer, nil
 			}
 		}
@@ -439,11 +440,6 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	sdJwts := make([]sdjwtvc.SdJwtVcKb, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
 		sdJwts[i] = sdjwtvc.SdJwtVcKb(cred.Credential)
-
-		// TODO: remove this
-		if i == 0 {
-			irma.Logger.Printf("first credential: %s", sdJwts[i])
-		}
 	}
 
 	// Store the credentials using the storage client
@@ -481,28 +477,14 @@ func (s *openid4vciSession) requestNonce() (string, error) {
 	return nonceResponse.Nonce, nil
 }
 
+// extractScopesFromCredentialOffer finds the scopes in the issuer metadata, for the requested credential configurations from the credential offer.
 func (s *openid4vciSession) extractScopesFromCredentialOffer() []string {
 	var scopes []string
 	for _, configId := range s.credentialOffer.CredentialConfigurationIds {
 		config := s.credentialIssuerMetadata.CredentialConfigurationsSupported[configId]
-		scopes = append(scopes, config.Scope)
+		if config.Scope != nil && !slices.Contains(scopes, *config.Scope) {
+			scopes = append(scopes, *config.Scope)
+		}
 	}
 	return scopes
-}
-
-// TODO: this function is only used while we only use EUDIPLO;  we need to change the code to actually get the metadata, and fall back to /.well-known/openid-configuration if needed
-func getDiscoveryUrlFromIssuer(authServer string) string {
-	// Used for eduID
-	return fmt.Sprintf("%s/.well-known/oauth-authorization-server", authServer)
-
-	// Used for: Keycloak
-	//return fmt.Sprintf("%s/.well-known/oauth-authorization-server/", authServer)
-
-	//uri, _ := url.Parse(authServer)
-
-	// Used for: EUDIPLO
-	//return fmt.Sprintf("%s://%s/.well-known/openid-configuration", uri.Scheme, uri.Host)
-
-	//return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/", uri.Scheme, uri.Host)
-	//return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/%s", uri.Scheme, uri.Host, strings.Trim(uri.Path, "/"))
 }

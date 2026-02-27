@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/eudi/oauth2"
+	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/irma"
 )
 
@@ -15,9 +16,10 @@ type GrantHandler interface {
 	HandleGrant(s *openid4vciSession) (AccessTokenResponse, error)
 }
 
-// type authTokenRequest struct {
-// 	channel chan *authTokenResponse
-// }
+type codeResponse struct {
+	permissionGranted bool
+	code              *string
+}
 
 type AccessTokenResponse interface {
 	PermissionGranted() bool
@@ -51,44 +53,84 @@ func (r *authTokenResponse) GetRefreshToken() *string {
 type AuthorizationCodeFlowHandler struct {
 }
 
+type pkceParameters struct {
+	CodeVerifier  string
+	CodeChallenge oauth2.CodeChallenge
+}
+
 // HandleGrant TODO: accept raw input, not session
 func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (AccessTokenResponse, error) {
-	pendingAuthTokenRequestChannel := make(chan *authTokenResponse, 1)
+	// TODO: check if we want/need to use Pushed Authorization Requests here if the AS supports it
+
+	// Generate the code_challenge from the code_verifier, using a method supported by the AS (if any)
+	pkce := &pkceParameters{}
+	challengeProvider := s.issuerSettings.authorizationServerMetadata.GetCodeChallengeProvider()
+	if challengeProvider != nil {
+		pkce.CodeVerifier = oauth2.GenerateDefaultSizeVerifier()
+		pkce.CodeChallenge = challengeProvider.GenerateCodeChallenge(pkce.CodeVerifier)
+	} else {
+		irma.Logger.Info("AS does not support PKCE code challenge methods, proceeding without code challenge")
+	}
+
+	// ClientIds for testing:  how do we differentiate between them?
+	// Entra: '65d1d280-0f23-4763-bf41-ea4c17cde792'
+	// Auth0: 'FiEH7ZmdnrDphzAjvdk9scynlm0A1XV9',
+	// Keycloak: 'eudiw'
+	clientId := "eudiw" // TODO: should we allow the client_id to be configured here, or is it always the same?
+
+	scopes := s.extractScopesFromCredentialOffer()
+	if len(scopes) > 0 {
+		// TODO: either request using authorization_details or scopes, not both
+	}
+
+	var resource *string
+	if len(s.credentialIssuerMetadata.AuthorizationServers) > 0 {
+		resource = &s.credentialIssuerMetadata.CredentialIssuer
+	}
+
+	authRequestUrl := openid4vci.BuildAuthorizationRequestUrl(
+		s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint,
+		"yivi-app://callback",
+		&clientId,
+		scopes,
+		&pkce.CodeChallenge,
+		s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
+		resource,
+	)
+
+	request := &irma.AuthorizationCodeFlowRequest{
+		CredentialInfoList:      s.credentials,
+		AuthorizationRequestUrl: authRequestUrl,
+	}
+
+	pendingAuthCodeRequestChannel := make(chan *codeResponse, 1)
 	defer func() {
-		pendingAuthTokenRequestChannel = nil
+		pendingAuthCodeRequestChannel = nil
 	}()
 
-	request := &irma.AuthorizationCodeFlowAndTokenExchangeRequest{
-		CredentialInfoList: s.credentials,
-		AuthorizationRequestParameters: irma.AuthorizationRequestParameters{
-			IssuerDiscoveryUrl: getDiscoveryUrlFromIssuer(s.issuerSettings.authorizationServer),
-			IssuerState:        s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
-			Resource:           s.credentialOffer.CredentialIssuer,
-			Scopes:             s.extractScopesFromCredentialOffer(),
-		},
-	}
-	s.handler.RequestPermissionAndPerformAuthCodeWithTokenExchange(
+	s.handler.RequestAuthorizationCodeFlowPermission(
 		request,
 		s.requestorInfo,
-		TokenHandler(func(proceed bool, accessToken string, refreshToken *string) {
-			if proceed {
-				irma.Logger.Printf("received access token via authorization code flow")
-				pendingAuthTokenRequestChannel <- &authTokenResponse{
-					authTokenPermissionResponse: authTokenPermissionResponse{permissionGranted: true},
-					accessToken:                 accessToken,
-					refreshToken:                refreshToken,
-				}
-			} else {
-				irma.Logger.Printf("User cancelled authorization code flow")
-				pendingAuthTokenRequestChannel <- &authTokenResponse{
-					authTokenPermissionResponse: authTokenPermissionResponse{permissionGranted: false},
-				}
+		CodeHandler(func(proceed bool, code *string) {
+			pendingAuthCodeRequestChannel <- &codeResponse{
+				permissionGranted: proceed,
+				code:              code,
 			}
 		}),
 	)
 
+	// Wait for the code handler to be called
+	permission := <-pendingAuthCodeRequestChannel
+
+	// TODO: start exchange of code for token here, and return token response instead of code response, to avoid having to wait for the token handler to be called in a separate step after this
+
 	// Wait for the token handler to be called
-	return <-pendingAuthTokenRequestChannel, nil
+	// tokenPermission := <-pendingAuthTokenRequestChannel
+	authTokenResponse := &authTokenResponse{
+		authTokenPermissionResponse: authTokenPermissionResponse{permissionGranted: permission.permissionGranted},
+	}
+
+	return authTokenResponse, nil
 }
 
 type PreAuthorizedCodeFlowHandler struct {

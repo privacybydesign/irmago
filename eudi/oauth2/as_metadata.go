@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 )
 
 type AuthorizationServerMetadata struct {
@@ -52,6 +53,16 @@ type TokenErrorResponse struct {
 	Error            string  `json:"error"`
 	ErrorDescription *string `json:"error_description,omitempty"`
 	ErrorUri         *string `json:"error_uri,omitempty"`
+}
+
+func (as *AuthorizationServerMetadata) GetCodeChallengeProvider() CodeChallengeProvider {
+	if slices.Contains(as.CodeChallengeMethodsSupported, "S256") {
+		return &S256CodeChallengeProvider{}
+	} else if slices.Contains(as.CodeChallengeMethodsSupported, "plain") {
+		return &PlainCodeChallengeProvider{}
+	} else {
+		return nil
+	}
 }
 
 func GetOAuthMetadataUrlFromAuthorizationServer(authorizationServer string) (string, error) {
