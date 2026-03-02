@@ -15,6 +15,26 @@ import (
 	"github.com/privacybydesign/irmago/server"
 )
 
+// DNSResolver is an interface for DNS lookups, allowing injection of test doubles.
+type DNSResolver interface {
+	LookupMX(host string) ([]*net.MX, error)
+	LookupIP(host string) ([]net.IP, error)
+}
+
+// netDNSResolver is the default implementation using the net package.
+type netDNSResolver struct{}
+
+func (netDNSResolver) LookupMX(host string) ([]*net.MX, error) {
+	return net.LookupMX(host)
+}
+
+func (netDNSResolver) LookupIP(host string) ([]net.IP, error) {
+	return net.LookupIP(host)
+}
+
+// DefaultDNSResolver is the default DNS resolver used by VerifyMXRecord.
+var DefaultDNSResolver DNSResolver = netDNSResolver{}
+
 type EmailConfiguration struct {
 	EmailServer     string `json:"email_server" mapstructure:"email_server"`
 	EmailHostname   string `json:"email_hostname" mapstructure:"email_hostname"`
@@ -171,7 +191,7 @@ func VerifyMXRecord(email string) error {
 
 	host := email[strings.LastIndex(email, "@")+1:]
 
-	records, err := net.LookupMX(host)
+	records, err := DefaultDNSResolver.LookupMX(host)
 
 	if err != nil || len(records) == 0 {
 		if derr, ok := err.(*net.DNSError); ok && (derr.IsTemporary || derr.IsTimeout) {
@@ -181,10 +201,11 @@ func VerifyMXRecord(email string) error {
 		}
 
 		// Check if there is a valid A or AAAA record which is used as fallback by mailservers
-		// when there are no MX records present
-		if records, err := net.LookupIP(host); err != nil || len(records) == 0 {
+		// when there are no MX records present (implicit MX per RFC 5321 Section 5.1)
+		if records, err := DefaultDNSResolver.LookupIP(host); err != nil || len(records) == 0 {
 			return ErrInvalidEmailDomain
 		}
+		return nil
 	}
 
 	hasValidHost := false
