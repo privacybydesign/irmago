@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
 type TranslatedString map[string]string
@@ -38,22 +39,16 @@ const (
 )
 
 type AttributeValue struct {
-	// The type of the value. This should be one of the `AttributeType`s
-	// See the table for `Value` to see what each `AttributeType` means
 	Type AttributeType
-	// |---------------------------------|-------------------------------|
-	// | Attribute type                  | Data type                     |
-	// |---------------------------------|-------------------------------|
-	// | AttributeType_Object            | Attribute                     |
-	// | AttributeType_Array             | []AttributeValue              |
-	// | AttributeType_String            | string                        |
-	// | AttributeType_TranslatedString  | TranslatedString              |
-	// | AttributeType_Bool              | bool                          |
-	// | AttributeType_Int               | int                           |
-	// | AttributeType_Image             | absolute path (string)        |
-	// | AttributeType_Base64Image       | base64 encoded image (string) |
-	// |---------------------------------|-------------------------------|
-	Data any
+
+	String           *string
+	Int              *int64
+	Bool             *bool
+	TranslatedString *TranslatedString
+	Array            []AttributeValue
+	Object           *Attribute
+	ImagePath        *string
+	Base64Image      *string
 }
 
 type Attribute struct {
@@ -63,8 +58,10 @@ type Attribute struct {
 	DisplayName TranslatedString
 	// The description for this attribute if any
 	Description TranslatedString
-	// The value to be displayed to the user
-	Value AttributeValue
+	// The value that this attribute has as provided by the issuer (absent when it's just an attribute description)
+	Value *AttributeValue
+	// The value that was requested by a verifier (if any)
+	RequestedValue *AttributeValue
 }
 
 type Credential struct {
@@ -97,22 +94,14 @@ type Credential struct {
 	IssueURL *TranslatedString
 }
 
-// AttributeDescriptor is a description of an attribute without a value
-type AttributeDescriptor struct {
-	Id   string
-	Name TranslatedString
-	Type AttributeType
-	// Only relevant when `Type` is `AttributeType_Object`
-	Nested []AttributeDescriptor
-}
-
+// CredentialDescriptor describes a credential without any values for the attributes
 type CredentialDescriptor struct {
 	CredentialId string
 	Name         TranslatedString
 	Issuer       TrustedParty
 	Category     *TranslatedString
 	ImagePath    string
-	Attributes   []AttributeDescriptor
+	Attributes   []Attribute
 	IssueURL     *TranslatedString
 }
 
@@ -148,13 +137,15 @@ func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
 			return nil, fmt.Errorf("encountered credential store item without issue url: %s", issuerId.String())
 		}
 
-		attributes := []AttributeDescriptor{}
+		attributes := []Attribute{}
 
 		for _, attr := range cred.AttributeTypes {
-			attributes = append(attributes, AttributeDescriptor{
-				Id:   attr.ID,
-				Name: TranslatedString(attr.Name),
-				Type: displayHintToAttributeType(attr.DisplayHint),
+			attributes = append(attributes, Attribute{
+				Id:          attr.ID,
+				DisplayName: TranslatedString(attr.Name),
+				Value: &AttributeValue{
+					Type: displayHintToAttributeType(attr.DisplayHint),
+				},
 			})
 		}
 
@@ -194,7 +185,11 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString
 	return &t
 }
 
-func createCredentialDescriptor(irmaConfig *irma.Configuration, attrs []*irma.AttributeIdentifier) (*CredentialDescriptor, error) {
+// creates a credential descriptor containing only the attributes specified
+func createCredentialDescriptor(
+	irmaConfig *irma.Configuration,
+	attrs []*irmaclient.DisclosureCandidate,
+) (*CredentialDescriptor, error) {
 	id := attrs[0].Type.CredentialTypeIdentifier()
 	info, ok := irmaConfig.CredentialTypes[id]
 
@@ -204,14 +199,25 @@ func createCredentialDescriptor(irmaConfig *irma.Configuration, attrs []*irma.At
 
 	issuerId := info.IssuerIdentifier()
 	issuer := irmaConfig.Issuers[issuerId]
-	attributes := []AttributeDescriptor{}
+	attributes := []Attribute{}
 
-	for _, at := range info.AttributeTypes {
-		attributes = append(attributes, AttributeDescriptor{
-			Id:   at.ID,
-			Name: TranslatedString(at.Name),
-			Type: AttributeType_String,
-		})
+	// only put the requested attributes in the descriptor
+	for _, at := range attrs {
+		for _, a := range info.AttributeTypes {
+			if a.GetAttributeTypeIdentifier() == at.Type {
+				requestedValue := &AttributeValue{
+					Type: AttributeType_TranslatedString,
+				}
+				if at.Value != nil {
+					requestedValue.TranslatedString = convertOptionalTranslatedString(&at.Value)
+				}
+				attributes = append(attributes, Attribute{
+					Id:             a.ID,
+					DisplayName:    TranslatedString(a.Name),
+					RequestedValue: requestedValue,
+				})
+			}
+		}
 	}
 
 	return &CredentialDescriptor{
@@ -241,13 +247,15 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 
 	issuerId := info.IssuerIdentifier()
 	issuer := irmaConfig.Issuers[issuerId]
-	attributes := []AttributeDescriptor{}
+	attributes := []Attribute{}
 
 	for _, at := range info.AttributeTypes {
-		attributes = append(attributes, AttributeDescriptor{
-			Id:   at.ID,
-			Name: TranslatedString(at.Name),
-			Type: AttributeType_String,
+		attributes = append(attributes, Attribute{
+			Id:          at.ID,
+			DisplayName: TranslatedString(at.Name),
+			Value: &AttributeValue{
+				Type: AttributeType_String,
+			},
 		})
 	}
 
@@ -311,9 +319,9 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 					Id:          at.ID,
 					DisplayName: TranslatedString(at.Name),
 					Description: TranslatedString(at.Description),
-					Value: AttributeValue{
-						Type: displayHintToAttributeType(at.DisplayHint),
-						Data: attrValue,
+					Value: &AttributeValue{
+						Type:             displayHintToAttributeType(at.DisplayHint),
+						TranslatedString: convertOptionalTranslatedString(&attrValue),
 					},
 				})
 			}

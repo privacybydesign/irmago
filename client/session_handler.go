@@ -387,11 +387,7 @@ func createIssuanceSteps(
 		discon := candidates[i]
 		options := []*CredentialDescriptor{}
 		for _, con := range discon {
-			attrs := []*irma.AttributeIdentifier{}
-			for _, att := range con {
-				attrs = append(attrs, att.AttributeIdentifier)
-			}
-			descriptor, err := createCredentialDescriptor(irmaConfig, attrs)
+			descriptor, err := createCredentialDescriptor(irmaConfig, con)
 			if err != nil {
 				return nil, err
 			}

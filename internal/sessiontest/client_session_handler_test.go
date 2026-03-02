@@ -36,6 +36,16 @@ func testSessionHandlerForIrmaSignature(t *testing.T) {
 
 func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	runSessionTest(t,
+		"disclosure with pre-defined values",
+		testDisclosureWithPredefinedValues,
+	)
+
+	runSessionTest(t,
+		"optional attributes from same credential credential not present",
+		testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent,
+	)
+
+	runSessionTest(t,
 		"irma requestor info correct",
 		testIrmaDisclosureRequestorInfoCorrect,
 	)
@@ -153,6 +163,120 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 		"chained session",
 		testChainedSession,
 	)
+}
+
+func testDisclosureWithPredefinedValues(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	value := "Universiteit Utrecht"
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.studentID"),
+				irma.AttributeRequest{
+					Type:  irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"),
+					Value: &value,
+				},
+			},
+		},
+	}
+
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
+	c.NewNewSession(sessionJson)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	step1 := plan.IssueDuringDislosure.Steps[0]
+	require.Len(t, step1.Options, 1)
+
+	expectedValue := client.TranslatedString{
+		"":   value,
+		"nl": value,
+		"en": value,
+	}
+
+	require.Equal(t, step1.Options[0].Attributes, []client.Attribute{
+		{
+			Id: "studentID",
+			DisplayName: client.TranslatedString{
+				"nl": "Studentnummer",
+				"en": "Student number",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+		{
+			Id: "university",
+			DisplayName: client.TranslatedString{
+				"nl": "Universiteit",
+				"en": "University",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type:             client.AttributeType_TranslatedString,
+				TranslatedString: &expectedValue,
+			},
+		},
+	})
+}
+
+func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+			},
+		},
+		irma.AttributeDisCon{
+			irma.AttributeCon{},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+		},
+	}
+
+	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
+	c.NewNewSession(sessionJson)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Empty(t, session.OfferedCredentials)
+	// only attributes from one credential type is asked, so we only expect one step to obtain that one
+	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
+	require.Empty(t, session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+
+	// issue that credential
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	plan := session.DisclosurePlan
+	require.Equal(t, plan.IssueDuringDislosure.IssuedCredentialIds, map[string]struct{}{"irma-demo.RU.studentCard": {}})
+
+	// expect two disclosure choices, one is optional
+	require.Len(t, plan.DisclosureChoicesOverview, 2)
+	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+	require.True(t, plan.DisclosureChoicesOverview[1].Optional)
 }
 
 func testKeyshareBlocked(
@@ -461,7 +585,6 @@ func testIrmaDisclosureRequestorInfoCorrect(
 				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
 				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
 			},
-			// empty to signal the con above is optional
 		},
 	}
 
@@ -1206,9 +1329,9 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 					"en": "The name of the university",
 					"nl": "Naam van de universiteit",
 				},
-				Value: client.AttributeValue{
+				Value: &client.AttributeValue{
 					Type: "translated_string",
-					Data: irma.TranslatedString{
+					TranslatedString: &client.TranslatedString{
 						"":   "University of the Arts",
 						"en": "University of the Arts",
 						"nl": "University of the Arts",
@@ -1225,9 +1348,9 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 					"en": "Whether you are a regular or PhD student",
 					"nl": "Of u een gewone of PhD student bent",
 				},
-				Value: client.AttributeValue{
+				Value: &client.AttributeValue{
 					Type: "translated_string",
-					Data: irma.TranslatedString{
+					TranslatedString: &client.TranslatedString{
 						"":   "high",
 						"en": "high",
 						"nl": "high",
@@ -1299,26 +1422,21 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 
 	toIssue := plan.IssueDuringDislosure.Steps[0].Options[0]
 	require.Equal(t, toIssue.CredentialId, "irma-demo.MijnOverheid.fullName")
-	require.Equal(t, toIssue.Attributes, []client.AttributeDescriptor{
+
+	require.Equal(t, toIssue.Attributes, []client.Attribute{
 		{
-			Id:   "firstnames",
-			Name: client.TranslatedString{"nl": "Voornamen", "en": "First names"},
-			Type: client.AttributeType_String,
+			Id:          "firstname",
+			DisplayName: client.TranslatedString{"nl": "Voornaam", "en": "First name"},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
 		},
 		{
-			Id:   "firstname",
-			Name: client.TranslatedString{"nl": "Voornaam", "en": "First name"},
-			Type: client.AttributeType_String,
-		},
-		{
-			Id:   "familyname",
-			Name: client.TranslatedString{"nl": "Achternaam", "en": "Family name"},
-			Type: client.AttributeType_String,
-		},
-		{
-			Id:   "prefix",
-			Name: client.TranslatedString{"nl": "Tussenvoegsel", "en": "Prefix"},
-			Type: client.AttributeType_String,
+			Id:          "familyname",
+			DisplayName: client.TranslatedString{"nl": "Achternaam", "en": "Family name"},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
 		},
 	})
 
