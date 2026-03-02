@@ -5,12 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fix
+- Bug that keyshare regisration failed when users email domain had no MX records.
 
 ## [0.19.2] - 2026-02-26
 ### Fix
 - Bug that caused HTTP request body to not be sent upon retransmission
 
-## Changed
+### Changed
 - Add wildcard support for authorized credentials and attributes in relying party and attestation provider certificates
 
 ## [0.19.1] - 2025-10-13
