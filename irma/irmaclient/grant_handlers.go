@@ -1,6 +1,7 @@
 package irmaclient
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -51,6 +52,7 @@ func (r *authTokenResponse) GetRefreshToken() *string {
 }
 
 type AuthorizationCodeFlowHandler struct {
+	httpClient *http.Client
 }
 
 type pkceParameters struct {
@@ -76,7 +78,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	// Entra: '65d1d280-0f23-4763-bf41-ea4c17cde792'
 	// Auth0: 'FiEH7ZmdnrDphzAjvdk9scynlm0A1XV9',
 	// Keycloak: 'eudiw'
-	clientId := "eudiw" // TODO: should we allow the client_id to be configured here, or is it always the same?
+	clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
 
 	scopes := s.extractScopesFromCredentialOffer()
 	if len(scopes) > 0 {
@@ -88,19 +90,42 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 		resource = &s.credentialIssuerMetadata.CredentialIssuer
 	}
 
-	authRequestUrl := openid4vci.BuildAuthorizationRequestUrl(
-		s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint,
+	authRequest := openid4vci.BuildAuthorizationRequestValues(
 		"yivi-app://callback",
 		&clientId,
 		scopes,
 		&pkce.CodeChallenge,
 		s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
 		resource,
+		// TODO: state -> should we generate a random state here to correlate the authorization response to the session
+		// We will need a func in the client.Client that can correlate the authorization response to the session based on the state, since the authorization response will be received in the app's main activity, which does not have access to the session directly, and then pass the authorization response (or just the code) to the session that initiated the authorization request
 	)
+
+	// If the AS supports PAR, we should always use it, regardless of wether the issuer requires it or not, since it is more secure. If the AS does not support PAR, we will just use the normal authorization endpoint.
+	// From here, we can only provide the authorization request endpoint to the client, but the client should be able to figure out itself whether it needs to use PAR or not based on the AS metadata that we provide to it, and then use the correct endpoint accordingly.
+	parEndpoint := s.issuerSettings.authorizationServerMetadata.PushedAuthorizationRequestEndpoint
+	if parEndpoint != nil {
+		parResponse, err := h.pushAuthorizationRequest(*parEndpoint, authRequest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute pushed authorization request: %v", err)
+		}
+
+		// Extract the values from the PAR response and replace all values (except the client_id) in the authRequest with the values from the PAR response
+		authRequest = url.Values{}
+		authRequest.Add("client_id", clientId)
+		authRequest.Add("request_uri", parResponse.RequestUri)
+	}
+
+	// Construct the URL that the client should open in the browser to start the authorization code flow
+	authRequestUrl, err := url.Parse(s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse authorization endpoint URL: %v", err)
+	}
+	authRequestUrl.RawQuery = authRequest.Encode()
 
 	request := &irma.AuthorizationCodeFlowRequest{
 		CredentialInfoList:      s.credentials,
-		AuthorizationRequestUrl: authRequestUrl,
+		AuthorizationRequestUrl: authRequestUrl.String(),
 	}
 
 	pendingAuthCodeRequestChannel := make(chan *codeResponse, 1)
@@ -131,6 +156,48 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	}
 
 	return authTokenResponse, nil
+}
+
+func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint string, payload url.Values) (*oauth2.PushedAuthorizationResponse, error) {
+	req, err := http.NewRequest("POST", parEndpoint, bytes.NewBufferString(payload.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for pushed authorization request: %v", err)
+	}
+
+	irma.Logger.Infof("Executing Pushed Authorization Request to %s", parEndpoint)
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute pushed authorization request: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusCreated {
+		// TODO: generalize error handling for all Authorization and Token Requests
+		var errResponse oauth2.ErrorResponse
+		err := json.NewDecoder(response.Body).Decode(&errResponse)
+		if err != nil {
+			return nil, fmt.Errorf("pushed authorization request returned status code: %d, %s", response.StatusCode, err)
+		}
+		errDescription := ""
+		if errResponse.ErrorDescription != nil {
+			errDescription = *errResponse.ErrorDescription + " - "
+		}
+		errUri := ""
+		if errResponse.ErrorUri != nil {
+			errUri = " More info: " + *errResponse.ErrorUri
+		}
+		return nil, fmt.Errorf("pushed authorization request returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
+	}
+
+	var parResponse oauth2.PushedAuthorizationResponse
+	err = json.NewDecoder(response.Body).Decode(&parResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode pushed authorization response: %v", err)
+	}
+
+	return &parResponse, nil
 }
 
 type PreAuthorizedCodeFlowHandler struct {
@@ -223,7 +290,7 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession, 
 
 func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
-		var errResponse oauth2.TokenErrorResponse
+		var errResponse oauth2.ErrorResponse
 		err := json.NewDecoder(response.Body).Decode(&errResponse)
 		if err != nil {
 			return nil, fmt.Errorf("token endpoint returned status code: %d, %s", response.StatusCode, err)

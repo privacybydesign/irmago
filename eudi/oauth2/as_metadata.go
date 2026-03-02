@@ -32,6 +32,8 @@ type AuthorizationServerMetadata struct {
 	IntrospectionEndpointAuthMethodsSupported          []string `json:"introspection_endpoint_auth_methods_supported,omitempty"`
 	IntrospectionEndpointAuthSigningAlgValuesSupported []string `json:"introspection_endpoint_auth_signing_alg_values_supported,omitempty"`
 	CodeChallengeMethodsSupported                      []string `json:"code_challenge_methods_supported,omitempty"`
+	PushedAuthorizationRequestEndpoint                 *string  `json:"pushed_authorization_request_endpoint,omitempty"`
+	RequirePushedAuthorizationRequests                 bool     `json:"require_pushed_authorization_requests,omitempty"`
 
 	// RFC 9396 extension for OAuth 2.0 Rich Authorization Requests
 	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported,omitempty"`
@@ -49,10 +51,16 @@ type TokenResponse struct {
 	AuthorizationDetails *string `json:"authorization_details,omitempty"`
 }
 
-type TokenErrorResponse struct {
+type ErrorResponse struct {
 	Error            string  `json:"error"`
 	ErrorDescription *string `json:"error_description,omitempty"`
 	ErrorUri         *string `json:"error_uri,omitempty"`
+}
+
+type PushedAuthorizationResponse struct {
+	// RFC 9126 fields
+	RequestUri string `json:"request_uri"`
+	ExpiresIn  int    `json:"expires_in"`
 }
 
 func (as *AuthorizationServerMetadata) GetCodeChallengeProvider() CodeChallengeProvider {

@@ -7,15 +7,14 @@ import (
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 )
 
-func BuildAuthorizationRequestUrl(
-	authorizationEndpoint string,
+func BuildAuthorizationRequestValues(
 	redirectUri string,
 	clientId *string,
 	scope []string,
 	pkce *oauth2.CodeChallenge,
 	issuerState *string,
 	resource *string,
-) string {
+) url.Values {
 	q := url.Values{}
 	q.Add("response_type", "code")
 	q.Add("redirect_uri", redirectUri)
@@ -40,5 +39,5 @@ func BuildAuthorizationRequestUrl(
 	// The `state` parameter is handled in irmamobile, where it is used to correlate the authorization response to the session initiating the request, since we have a browser-based redirect.
 
 	// TODO: check if redirect_uri is correctly encoded here, according to application/x-www-form-urlencoded
-	return authorizationEndpoint + "?" + q.Encode()
+	return q
 }

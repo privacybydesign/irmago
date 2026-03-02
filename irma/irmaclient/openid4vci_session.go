@@ -66,7 +66,9 @@ func (s *openid4vciSession) perform() error {
 	var grantHandler GrantHandler
 	switch s.issuerSettings.grantType.GetGrantType() {
 	case openid4vci.GrantType_AuthorizationCode:
-		grantHandler = &AuthorizationCodeFlowHandler{}
+		grantHandler = &AuthorizationCodeFlowHandler{
+			httpClient: s.httpClient,
+		}
 	case openid4vci.GrantType_PreAuthorizedCode:
 		grantHandler = &PreAuthorizedCodeFlowHandler{}
 	default:
