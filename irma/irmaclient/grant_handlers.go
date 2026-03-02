@@ -13,6 +13,8 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 )
 
+const YiviAppRedirectUri = "yivi-app://callback"
+
 type GrantHandler interface {
 	HandleGrant(s *openid4vciSession) (AccessTokenResponse, error)
 }
@@ -80,26 +82,31 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	// Keycloak: 'eudiw'
 	clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
 
-	scopes := s.extractScopesFromCredentialOffer()
-	if len(scopes) > 0 {
-		// TODO: either request using authorization_details or scopes, not both
-	}
-
-	var resource *string
-	if len(s.credentialIssuerMetadata.AuthorizationServers) > 0 {
-		resource = &s.credentialIssuerMetadata.CredentialIssuer
-	}
-
 	authRequest := openid4vci.BuildAuthorizationRequestValues(
-		"yivi-app://callback",
+		YiviAppRedirectUri,
 		&clientId,
-		scopes,
 		&pkce.CodeChallenge,
 		s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
-		resource,
 		// TODO: state -> should we generate a random state here to correlate the authorization response to the session
 		// We will need a func in the client.Client that can correlate the authorization response to the session based on the state, since the authorization response will be received in the app's main activity, which does not have access to the session directly, and then pass the authorization response (or just the code) to the session that initiated the authorization request
 	)
+
+	// Add `authorization_details` if the AS supports the feature and the Credential Issuer offers multiple credentials in the Credential Offer
+	authDetails, err := s.extractAuthorizationDetailsJson()
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract authorization details from credential offer: %v", err)
+	}
+	if authDetails != nil {
+		authRequest.Add("authorization_details", *authDetails)
+	}
+
+	// Even if authorization_details will be sent, we should also add the scopes to the authorization request if the AS supports the `scope` parameter, since some ASes might require it, and it does not hurt to include it as well
+	scopes := s.extractScopesFromCredentialOffer()
+	authRequest.Add("scope", strings.Join(scopes, " "))
+
+	if len(s.credentialIssuerMetadata.AuthorizationServers) > 0 {
+		authRequest.Add("resource", s.credentialIssuerMetadata.CredentialIssuer)
+	}
 
 	// If the AS supports PAR, we should always use it, regardless of wether the issuer requires it or not, since it is more secure. If the AS does not support PAR, we will just use the normal authorization endpoint.
 	// From here, we can only provide the authorization request endpoint to the client, but the client should be able to figure out itself whether it needs to use PAR or not based on the AS metadata that we provide to it, and then use the correct endpoint accordingly.
@@ -159,7 +166,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 }
 
 func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint string, payload url.Values) (*oauth2.PushedAuthorizationResponse, error) {
-	req, err := http.NewRequest("POST", parEndpoint, bytes.NewBufferString(payload.Encode()))
+	req, err := http.NewRequest(http.MethodPost, parEndpoint, bytes.NewBufferString(payload.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for pushed authorization request: %v", err)
 	}
@@ -261,7 +268,7 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession, 
 
 	values.Add("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
 	values.Add("pre-authorized_code", s.credentialOffer.Grants.PreAuthorizedCodeGrant.PreAuthorizedCode)
-	values.Add("redirect_uri", "yivi-app://callback")
+	values.Add("redirect_uri", YiviAppRedirectUri)
 
 	// If a tx_code is required, it should be asked from the user via the TokenPermissionHandler callback
 	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {
@@ -271,8 +278,16 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession, 
 		values.Add("tx_code", *transactionCode)
 	}
 
-	// TODO: after we've added support for fetching AS metadata, we should check if we need to add Authorization Details parameter
+	// Add `authorization_details` if the AS supports the feature and the Credential Issuer offers multiple credentials in the Credential Offer
+	authDetails, err := s.extractAuthorizationDetailsJson()
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract authorization details from credential offer: %v", err)
+	}
+	if authDetails != nil {
+		values.Add("authorization_details", *authDetails)
+	}
 
+	// Initiate request
 	req, err := http.NewRequest(http.MethodPost, s.issuerSettings.authorizationServerMetadata.TokenEndpoint, strings.NewReader(values.Encode()))
 	if err != nil {
 		return nil, err

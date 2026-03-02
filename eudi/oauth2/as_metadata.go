@@ -63,6 +63,12 @@ type PushedAuthorizationResponse struct {
 	ExpiresIn  int    `json:"expires_in"`
 }
 
+type AuthorizationDetailsRecord struct {
+	Type                      string   `json:"type"`
+	CredentialConfigurationId string   `json:"credential_configuration_id"`
+	Locations                 []string `json:"locations,omitempty"`
+}
+
 func (as *AuthorizationServerMetadata) GetCodeChallengeProvider() CodeChallengeProvider {
 	if slices.Contains(as.CodeChallengeMethodsSupported, "S256") {
 		return &S256CodeChallengeProvider{}
