@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/privacybydesign/irmago/irma"
@@ -46,7 +47,7 @@ type AttributeValue struct {
 	Bool             *bool
 	TranslatedString *TranslatedString
 	Array            []AttributeValue
-	Object           *Attribute
+	Object           []Attribute
 	ImagePath        *string
 	Base64Image      *string
 }
@@ -376,4 +377,308 @@ func displayHintToAttributeType(s string) AttributeType {
 		result = AttributeType_Base64Image
 	}
 	return result
+}
+
+// SatisfiesRequestedAttributes checks that `given` contains everything needed to satisfy `requested`.
+// Returns ok + list of issues with paths (e.g. "address.street", "roles[2]").
+func SatisfiesRequestedAttributes(given, requested []Attribute) (bool, []string) {
+	var issues []string
+	checkAttributeList(&issues, "", given, requested)
+	return len(issues) == 0, issues
+}
+
+func checkAttributeList(issues *[]string, path string, given, requested []Attribute) {
+	givenByID := make(map[string]Attribute, len(given))
+	for _, g := range given {
+		givenByID[g.Id] = g
+	}
+
+	for _, r := range requested {
+		p := joinPath(path, r.Id)
+
+		g, ok := givenByID[r.Id]
+		if !ok {
+			*issues = append(*issues, fmt.Sprintf("missing attribute: %s", p))
+			continue
+		}
+
+		// No requested constraint/value => existence is enough.
+		if r.RequestedValue == nil {
+			continue
+		}
+
+		// If a constraint is requested, we need a given value.
+		if g.Value == nil {
+			*issues = append(*issues, fmt.Sprintf("missing value for attribute: %s", p))
+			continue
+		}
+
+		checkValueSatisfies(issues, p, *g.Value, *r.RequestedValue)
+	}
+}
+
+func checkValueSatisfies(issues *[]string, path string, given AttributeValue, req AttributeValue) {
+	// Enforce type when requested type is set.
+	if req.Type != "" && given.Type != req.Type {
+		*issues = append(*issues, fmt.Sprintf("type mismatch at %s: have %q want %q", path, given.Type, req.Type))
+		return
+	}
+
+	switch req.Type {
+	case AttributeType_Object:
+		// Nested attributes must satisfy nested requested constraints.
+		checkAttributeList(issues, path, given.Object, req.Object)
+
+	case AttributeType_Array:
+		checkArrayAllOfUnordered(issues, path, given.Array, req.Array)
+
+	case AttributeType_String:
+		checkString(issues, path, given.String, req.String)
+
+	case AttributeType_Int:
+		if req.Int == nil {
+			return
+		}
+		if given.Int == nil || *given.Int != *req.Int {
+			*issues = append(*issues, fmt.Sprintf("int mismatch at %s", path))
+		}
+
+	case AttributeType_Bool:
+		if req.Bool == nil {
+			return
+		}
+		if given.Bool == nil || *given.Bool != *req.Bool {
+			*issues = append(*issues, fmt.Sprintf("bool mismatch at %s", path))
+		}
+
+	case AttributeType_TranslatedString:
+		if req.TranslatedString == nil {
+			return
+		}
+		if given.TranslatedString == nil {
+			*issues = append(*issues, fmt.Sprintf("translated_string missing at %s", path))
+			return
+		}
+		// "All-of" on keys: requested languages must exist with same values.
+		for lang, want := range *req.TranslatedString {
+			have, ok := (*given.TranslatedString)[lang]
+			if !ok || have != want {
+				*issues = append(*issues, fmt.Sprintf("translated_string mismatch at %s.%s", path, lang))
+			}
+		}
+
+	case AttributeType_Image:
+		if req.ImagePath == nil {
+			return
+		}
+		if given.ImagePath == nil || *given.ImagePath != *req.ImagePath {
+			*issues = append(*issues, fmt.Sprintf("image mismatch at %s", path))
+		}
+
+	case AttributeType_Base64Image:
+		if req.Base64Image == nil {
+			return
+		}
+		if given.Base64Image == nil || *given.Base64Image != *req.Base64Image {
+			*issues = append(*issues, fmt.Sprintf("base64 image mismatch at %s", path))
+		}
+
+	default:
+		// Unknown / empty requested type => treat as "presence already checked"
+	}
+}
+
+func checkString(issues *[]string, path string, given *string, req *string) {
+	// If no specific requested string => only require presence? (or do nothing)
+	// Here: if req is nil, we accept anything (since type already matched).
+	if req == nil {
+		return
+	}
+
+	// Special rule: requested "" means "present at all".
+	if *req == "" {
+		if given == nil {
+			*issues = append(*issues, fmt.Sprintf("string missing at %s", path))
+		}
+		return
+	}
+
+	// Exact match required.
+	if given == nil || *given != *req {
+		*issues = append(*issues, fmt.Sprintf("string mismatch at %s", path))
+	}
+}
+
+// Unordered "all-of":
+// Every requested element must be satisfied by some *distinct* element in given.
+// Uses backtracking to avoid greedy mismatches.
+func checkArrayAllOfUnordered(issues *[]string, path string, given, req []AttributeValue) {
+	// If nothing requested, array type is enough.
+	if len(req) == 0 {
+		return
+	}
+	if len(given) < len(req) {
+		*issues = append(*issues, fmt.Sprintf("array too short at %s: have %d want >= %d", path, len(given), len(req)))
+		return
+	}
+
+	used := make([]bool, len(given))
+
+	var dfs func(i int) bool
+	dfs = func(i int) bool {
+		if i == len(req) {
+			return true
+		}
+
+		// Try to match req[i] with any unused given[j]
+		for j := range given {
+			if used[j] {
+				continue
+			}
+			if valueSatisfiesNoReport(given[j], req[i]) {
+				used[j] = true
+				if dfs(i + 1) {
+					return true
+				}
+				used[j] = false
+			}
+		}
+		return false
+	}
+
+	if dfs(0) {
+		return
+	}
+
+	// If it doesn't match, add a helpful (though not minimal) error.
+	*issues = append(*issues, fmt.Sprintf("array mismatch at %s: could not satisfy all requested elements (unordered all-of)", path))
+}
+
+// valueSatisfiesNoReport mirrors checkValueSatisfies but returns bool only (no side-effects).
+// This is used for array matching/backtracking.
+func valueSatisfiesNoReport(given AttributeValue, req AttributeValue) bool {
+	if req.Type != "" && given.Type != req.Type {
+		return false
+	}
+
+	switch req.Type {
+	case AttributeType_Object:
+		return attributeListSatisfiesNoReport(given.Object, req.Object)
+
+	case AttributeType_Array:
+		// Recurse into unordered all-of arrays as well.
+		return arrayAllOfUnorderedNoReport(given.Array, req.Array)
+
+	case AttributeType_String:
+		if req.String == nil {
+			return true
+		}
+		if *req.String == "" {
+			return given.String != nil
+		}
+		return given.String != nil && *given.String == *req.String
+
+	case AttributeType_Int:
+		if req.Int == nil {
+			return true
+		}
+		return given.Int != nil && *given.Int == *req.Int
+
+	case AttributeType_Bool:
+		if req.Bool == nil {
+			return true
+		}
+		return given.Bool != nil && *given.Bool == *req.Bool
+
+	case AttributeType_TranslatedString:
+		if req.TranslatedString == nil {
+			return true
+		}
+		if given.TranslatedString == nil {
+			return false
+		}
+		for lang, want := range *req.TranslatedString {
+			have, ok := (*given.TranslatedString)[lang]
+			if !ok || have != want {
+				return false
+			}
+		}
+		return true
+
+	case AttributeType_Image:
+		if req.ImagePath == nil {
+			return true
+		}
+		return given.ImagePath != nil && *given.ImagePath == *req.ImagePath
+
+	case AttributeType_Base64Image:
+		if req.Base64Image == nil {
+			return true
+		}
+		return given.Base64Image != nil && *given.Base64Image == *req.Base64Image
+
+	default:
+		return true
+	}
+}
+
+func arrayAllOfUnorderedNoReport(given, req []AttributeValue) bool {
+	if len(req) == 0 {
+		return true
+	}
+	if len(given) < len(req) {
+		return false
+	}
+
+	used := make([]bool, len(given))
+	var dfs func(i int) bool
+	dfs = func(i int) bool {
+		if i == len(req) {
+			return true
+		}
+		for j := range given {
+			if used[j] {
+				continue
+			}
+			if valueSatisfiesNoReport(given[j], req[i]) {
+				used[j] = true
+				if dfs(i + 1) {
+					return true
+				}
+				used[j] = false
+			}
+		}
+		return false
+	}
+	return dfs(0)
+}
+
+func attributeListSatisfiesNoReport(given, requested []Attribute) bool {
+	givenByID := make(map[string]Attribute, len(given))
+	for _, g := range given {
+		givenByID[g.Id] = g
+	}
+	for _, r := range requested {
+		g, ok := givenByID[r.Id]
+		if !ok {
+			return false
+		}
+		if r.RequestedValue == nil {
+			continue
+		}
+		if g.Value == nil {
+			return false
+		}
+		if !valueSatisfiesNoReport(*g.Value, *r.RequestedValue) {
+			return false
+		}
+	}
+	return true
+}
+
+func joinPath(prefix, id string) string {
+	if prefix == "" {
+		return id
+	}
+	return strings.Join([]string{prefix, id}, ".")
 }

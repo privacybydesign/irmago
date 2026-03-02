@@ -195,6 +195,7 @@ func testDisclosureWithPredefinedValues(
 
 	plan := session.DisclosurePlan
 	require.NotNil(t, plan)
+	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	step1 := plan.IssueDuringDislosure.Steps[0]
@@ -229,6 +230,82 @@ func testDisclosureWithPredefinedValues(
 			},
 		},
 	})
+
+	// issue the credential with an invalid value
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+	// updated disclosure request
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+
+	plan = session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	// since the issued credential doens't satisfy the pre-defined value, pretend like it hasn't been issued
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// make sure the previous issuance session was finished
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	// satisfy the disclosure by issuing the credential with the pre-defined value
+	issueRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Universiteit Utrecht",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, issueRequest)
+	session = awaitSessionState(t, sessionHandler)
+
+	// expect the disclosure session to be updated and satisfiable
+	require.Equal(t, session.Id, 1)
+	plan = session.DisclosurePlan
+	require.Equal(t,
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}},
+	)
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	// once satisfied, the option is no longer obtainable, since theorectially it doesn't matter
+	require.Empty(t, plan.DisclosureChoicesOverview[0].ObtainableOptions)
+	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+
+	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: 1,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   choice.CredentialId,
+							CredentialHash: choice.Hash,
+							AttributePaths: [][]any{{choice.Attributes[0].Id}, {choice.Attributes[1].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// make sure the previous issuance session is finished
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 3)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	// make sure the disclosure session is finished
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
 }
 
 func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent(

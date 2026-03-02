@@ -447,8 +447,6 @@ func createDisclosureChoicesOverview(
 					// Get or create filtered instance for this credential hash
 					f, ok := filteredByHash[hash]
 					if !ok {
-						// Create a shallow copy with empty attributes
-						// Adjust these fields to match your struct definition.
 						cp := *orig
 						f = &cp
 						f.Attributes = []Attribute{}
@@ -489,7 +487,14 @@ func getIssuedSinceOriginalPlan(
 		for _, option := range step.Options {
 			index := slices.IndexFunc(
 				allCredentials,
-				func(c *Credential) bool { return c.CredentialId == option.CredentialId },
+				func(c *Credential) bool {
+					if c.CredentialId != option.CredentialId {
+						return false
+					}
+					// now check if it satisfies the values specified in the previous issuance step
+					attsStatisfied, _ := SatisfiesRequestedAttributes(c.Attributes, option.Attributes)
+					return attsStatisfied
+				},
 			)
 			// credential has been issued
 			if index >= 0 {
@@ -510,10 +515,7 @@ func createDisclosurePlan(
 	credentials []*Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
 ) (*DisclosurePlan, error) {
-	newPlan := &DisclosurePlan{
-		IssueDuringDislosure:      nil,
-		DisclosureChoicesOverview: []DisclosurePickOne{},
-	}
+	newPlan := &DisclosurePlan{}
 	// there's no plan yet, so make a new one
 	if oldDisclosurePlan == nil {
 		issuanceSteps, err := createIssuanceSteps(irmaConfig, credentials, candidates)
