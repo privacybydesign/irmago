@@ -244,8 +244,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 2)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
+	requireIssuanceSteps(t, plan, 2, 1)
 
 	firstOption := plan.IssueDuringDislosure.Steps[0].Options[0]
 	require.Equal(t, firstOption.CredentialId, "test.test.email")
@@ -287,7 +286,6 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 		},
 	})
 
-	require.Len(t, plan.IssueDuringDislosure.Steps[1].Options, 1)
 	secondStep := plan.IssueDuringDislosure.Steps[1].Options[0]
 	require.Equal(t, secondStep.CredentialId, "irma-demo.MijnOverheid.fullName")
 	require.Equal(t, secondStep.Attributes, []client.Attribute{
@@ -345,13 +343,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 		map[string]struct{}{"irma-demo.RU.studentCard": {}, "irma-demo.MijnOverheid.fullName": {}},
 	)
-	require.Len(t, plan.DisclosureChoicesOverview, 2)
-	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 2)
-	require.False(t, plan.DisclosureChoicesOverview[1].Optional)
-	require.Len(t, plan.DisclosureChoicesOverview[1].OwnedOptions, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[1].ObtainableOptions, 1)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 2}, expectedPickOne{owned: 1, obtainable: 1})
 
 	firstChoice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 
@@ -444,8 +436,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
+	requireIssuanceSteps(t, plan, 2)
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
@@ -460,10 +451,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 	plan = session.DisclosurePlan
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 1)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 2)
-	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 2})
 
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, 1, makeDisclosureChoice(choice, choice.Attributes[0].Id))
@@ -504,10 +492,7 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	plan = session.DisclosurePlan
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 1)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 1)
-	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
 
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, 1, makeDisclosureChoice(choice, choice.Attributes[0].Id))
@@ -555,8 +540,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 	plan := session.DisclosurePlan
 	// only the required studentCard produces an issuance step;
 	// the optional fullName set is already satisfied by its empty option
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	requireIssuanceSteps(t, plan, 1)
 	require.Equal(t, "irma-demo.RU.studentCard", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
@@ -572,17 +556,9 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 		map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
-	require.Len(t, plan.DisclosureChoicesOverview, 2)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1}, expectedPickOne{optional: true, obtainable: 1})
 
 	requiredChoice := plan.DisclosureChoicesOverview[0]
-	require.False(t, requiredChoice.Optional)
-	require.Len(t, requiredChoice.OwnedOptions, 1)
-	require.Len(t, requiredChoice.ObtainableOptions, 1)
-
-	optionalChoice := plan.DisclosureChoicesOverview[1]
-	require.True(t, optionalChoice.Optional)
-	require.Empty(t, optionalChoice.OwnedOptions)
-	require.Len(t, optionalChoice.ObtainableOptions, 1)
 
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
@@ -624,8 +600,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	requireIssuanceSteps(t, plan, 1)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// the issuance step shows the predefined university value as RequestedValue
@@ -698,9 +673,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
 
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
@@ -748,8 +721,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	require.Equal(t, irmaclient.Protocol_OpenID4VP, session.Protocol)
 
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	requireIssuanceSteps(t, plan, 1)
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
@@ -789,9 +761,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 		map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
 
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
@@ -892,8 +862,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 2)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
+	requireIssuanceSteps(t, plan, 2, 1)
 
 	firstOption := plan.IssueDuringDislosure.Steps[0].Options[0]
 	require.Equal(t, firstOption.CredentialId, "test.test.email")
@@ -935,7 +904,6 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 		},
 	})
 
-	require.Len(t, plan.IssueDuringDislosure.Steps[1].Options, 1)
 	secondStep := plan.IssueDuringDislosure.Steps[1].Options[0]
 	require.Equal(t, secondStep.CredentialId, "irma-demo.MijnOverheid.fullName")
 	require.Equal(t, secondStep.Attributes, []client.Attribute{
@@ -993,13 +961,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 		map[string]struct{}{"irma-demo.RU.studentCard": {}, "irma-demo.MijnOverheid.fullName": {}},
 	)
-	require.Len(t, plan.DisclosureChoicesOverview, 2)
-	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 2)
-	require.False(t, plan.DisclosureChoicesOverview[1].Optional)
-	require.Len(t, plan.DisclosureChoicesOverview[1].OwnedOptions, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[1].ObtainableOptions, 1)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 2}, expectedPickOne{owned: 1, obtainable: 1})
 
 	firstChoice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 
@@ -1164,11 +1126,8 @@ func testDisclosureWithPredefinedValues(
 		map[string]struct{}{"irma-demo.RU.studentCard": {}},
 	)
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
 	// once satisfied, the option is no longer obtainable, since theorectially it doesn't matter
-	require.Empty(t, plan.DisclosureChoicesOverview[0].ObtainableOptions)
-	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1})
 
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, 1, makeDisclosureChoice(choice, choice.Attributes[0].Id, choice.Attributes[1].Id))
@@ -1203,17 +1162,18 @@ func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 	require.Empty(t, session.OfferedCredentials)
+	plan := session.DisclosurePlan
 	// only attributes from one credential type is asked, so we only expect one step to obtain that one
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Empty(t, session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// issue that credential
 	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, 1, session.Id)
-	plan := session.DisclosurePlan
+	plan = session.DisclosurePlan
 	require.Equal(t, map[string]struct{}{"irma-demo.RU.studentCard": {}}, plan.IssueDuringDislosure.IssuedCredentialIds)
 
 	// expect two disclosure choices, one is optional
@@ -1545,8 +1505,7 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 	plan := session.DisclosurePlan
 
 	// only one step required to make the disclosure satisfiable, since the student card is optional
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	requireIssuanceSteps(t, plan, 1)
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
@@ -1564,22 +1523,10 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
-
-	choices := plan.DisclosureChoicesOverview
 	// there's two choices, one of which is optional
-	require.Len(t, choices, 2)
+	requireDisclosureChoices(t, plan, expectedPickOne{optional: true, obtainable: 1}, expectedPickOne{owned: 1})
 
-	optional := choices[0]
-	required := choices[1]
-
-	require.Empty(t, optional.OwnedOptions)
-	require.Len(t, optional.ObtainableOptions, 1)
-	require.True(t, optional.Optional)
-
-	require.False(t, required.Optional)
-	require.Len(t, required.OwnedOptions, 1)
-	// MijnOverheid is a singleton and thus not obtainable
-	require.Empty(t, required.ObtainableOptions)
+	required := plan.DisclosureChoicesOverview[1]
 
 	// finish the issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -1663,8 +1610,9 @@ func testSignatureRequest(
 	require.Equal(t, "Hello, World!", session.MessageToSign)
 
 	require.Empty(t, session.OfferedCredentials)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	plan := session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	issue(t, irmaServer, c, sessionHandler, createEmailIssuanceRequest())
 
@@ -1674,10 +1622,11 @@ func testSignatureRequest(
 	require.Equal(t, "Hello, World!", session.MessageToSign)
 
 	require.Empty(t, session.OfferedCredentials)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.NotNil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	plan = session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.NotNil(t, plan.DisclosureChoicesOverview)
 
-	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(choice, choice.Attributes[0].Id))
 
 	// finish email issuance session
@@ -1705,10 +1654,11 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
 
 	require.Len(t, session.OfferedCredentials, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 2)
-	require.Empty(t, session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	plan := session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// issue MijnOverheid
 	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
@@ -1718,14 +1668,15 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	require.Equal(t, 1, session.Id)
 
 	require.Len(t, session.OfferedCredentials, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 2)
+	plan = session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
 	require.Equal(t,
 		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
-		session.DisclosurePlan.IssueDuringDislosure.IssuedCredentialIds,
+		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 
 	// give permission to disclose the MijnOverheid credential
 	grantPermission(t, c, session.Id,
@@ -1765,10 +1716,8 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 	require.NotNil(t, plan)
 
 	// the user should get two steps: one for email, one with choice between student card and MijnOverheid
-	require.Len(t, plan.IssueDuringDislosure.Steps, 2)
+	requireIssuanceSteps(t, plan, 1, 2)
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[1].Options, 2)
 
 	// no disclosure choices overview yet since the session is not finishable
 	require.Nil(t, plan.DisclosureChoicesOverview)
@@ -1887,9 +1836,8 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 	require.NotNil(t, plan)
 
 	// the user should get one step to issue one of two options
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	requireIssuanceSteps(t, plan, 2)
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
 	// no disclosure choices overview yet since the session is not finishable
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
@@ -2025,8 +1973,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	plan := session.DisclosurePlan
 
 	require.NotNil(t, plan)
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	requireIssuanceSteps(t, plan, 1)
 	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 0)
 
 	toIssue := plan.IssueDuringDislosure.Steps[0].Options[0]
@@ -2455,6 +2402,37 @@ func makeDisclosureChoice(option *client.SelectableCredentialInstance, attribute
 				AttributePaths: paths,
 			},
 		},
+	}
+}
+
+// expectedPickOne describes the expected shape of a DisclosurePickOne entry.
+type expectedPickOne struct {
+	optional   bool
+	owned      int
+	obtainable int
+}
+
+// requireIssuanceSteps checks plan.IssueDuringDislosure.Steps.
+// Each optionCount argument gives the expected number of Options for that step,
+// and the total number of arguments must equal the expected number of steps.
+func requireIssuanceSteps(t *testing.T, plan *client.DisclosurePlan, optionCounts ...int) {
+	t.Helper()
+	require.NotNil(t, plan.IssueDuringDislosure)
+	require.Len(t, plan.IssueDuringDislosure.Steps, len(optionCounts))
+	for i, count := range optionCounts {
+		require.Len(t, plan.IssueDuringDislosure.Steps[i].Options, count)
+	}
+}
+
+// requireDisclosureChoices checks plan.DisclosureChoicesOverview against expected values.
+func requireDisclosureChoices(t *testing.T, plan *client.DisclosurePlan, expected ...expectedPickOne) {
+	t.Helper()
+	require.Len(t, plan.DisclosureChoicesOverview, len(expected))
+	for i, exp := range expected {
+		got := plan.DisclosureChoicesOverview[i]
+		require.Equal(t, exp.optional, got.Optional)
+		require.Len(t, got.OwnedOptions, exp.owned)
+		require.Len(t, got.ObtainableOptions, exp.obtainable)
 	}
 }
 
