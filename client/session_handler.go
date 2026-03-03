@@ -178,7 +178,7 @@ type SessionState struct {
 	// If this is true then the frontend should not return to the browser after the session is done
 	ContinueOnSecondDevice bool
 	// The number of attempts the user still has to enter a correct pin
-	RemainingPinAttempts    int
+	RemainingPinAttempts  int
 	PinBlockedTimeSeconds int
 }
 

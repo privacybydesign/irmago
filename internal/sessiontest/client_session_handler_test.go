@@ -2470,4 +2470,3 @@ func startOpenID4VPSessionWithAuthRequest(
 	c.NewNewSession(string(sessionJson))
 	return awaitSessionState(t, sessionHandler)
 }
-
