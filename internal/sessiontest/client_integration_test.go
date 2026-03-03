@@ -750,7 +750,7 @@ func testDiscloseOverOpenID4VP(t *testing.T) {
 }
 
 func discloseOverOpenID4VP(t *testing.T, c *client.Client, openid4vpHost string) {
-	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(openid4vpHost, createAuthRequestRequest())
+	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
 	require.NoError(t, err)
 	session := client.SessionRequestData{
 		Qr: irma.Qr{
@@ -979,11 +979,26 @@ func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmac
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 	return client, clientHandler, sessionHandler
 }
-func createAuthRequestRequest() string {
+
+func createAuthRequestRequestWithDcql(dcql string) string {
 	return fmt.Sprintf(`
 		{
 		  "type": "vp_token",  
-		  "dcql_query": {
+		  "dcql_query": %s,
+		  "nonce": "nonce",
+		  "jar_mode": "by_reference",
+		  "request_uri_method": "post",
+		  "issuer_chain": "%s"
+		}
+		`,
+		dcql,
+		string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+	)
+}
+
+func createEmailAuthRequestRequest() string {
+	return createAuthRequestRequestWithDcql(`
+		  {
 			"credentials": [
 			  {
 				"id": "32f54163-7166-48f1-93d8-ff217bdb0653",
@@ -998,23 +1013,19 @@ func createAuthRequestRequest() string {
 				]
 			  }
 			]
-		  },
-		  "nonce": "nonce",
-		  "jar_mode": "by_reference",
-		  "request_uri_method": "post",
-		  "issuer_chain": "%s"
-		}
+		  }
 		`,
-		string(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
 	)
 }
 
 func irmaServerConfWithSdJwtEnabled(t *testing.T) *server.Configuration {
 	certDir := t.TempDir()
 	require.NoError(t, os.WriteFile(path.Join(certDir, "test.test.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes, 0644))
+	require.NoError(t, os.WriteFile(path.Join(certDir, "irma-demo.RU.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes, 0644))
 
 	privKeyDir := t.TempDir()
 	require.NoError(t, os.WriteFile(path.Join(privKeyDir, "test.test.pem"), testdata.IssuerPrivKeyBytes, 0644))
+	require.NoError(t, os.WriteFile(path.Join(privKeyDir, "irma-demo.RU.pem"), testdata.IssuerPrivKeyBytes, 0644))
 
 	conf := IrmaServerConfigurationWithTempStorage(t)
 	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{

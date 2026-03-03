@@ -11,13 +11,15 @@ import (
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/testdata"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestSessionHandler(t *testing.T) {
-	t.Run("disclosure", testSessionHandlerForIrmaDisclosures)
-	t.Run("issuance", testSessionHandlerForIrmaIssuance)
+	t.Run("disclosure/irma", testSessionHandlerForIrmaDisclosures)
+	t.Run("disclosure/openid4vp", testSessionHandlerForOpenID4VPDisclosures)
+	t.Run("issuance/irma", testSessionHandlerForIrmaIssuance)
 	t.Run("signature", testSessionHandlerForIrmaSignature)
 	t.Run("special", testSessionHandlerEdgeCases)
 }
@@ -163,6 +165,213 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 		"chained session",
 		testChainedSession,
 	)
+}
+
+func testSessionHandlerForOpenID4VPDisclosures(t *testing.T) {
+	runEudiSessionTest(t,
+		"single credential",
+		testOpenID4VP_YiviScheme_SingleCredential,
+	)
+
+	runEudiSessionTest(t,
+		"choice between two credentials",
+		testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials,
+	)
+}
+
+func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(
+		testdata.OpenID4VP_DirectPostJwt_Host,
+		createAuthRequestRequestWithDcql(`
+		  {
+			"credentials": [
+			  {
+				"id": "email",
+				"format": "dc+sd-jwt",
+				"meta": {
+					"vct_values": ["test.test.email"]
+				},
+				"claims": [
+				  { "path": ["email"] }
+				]
+			  },
+			  {
+				"id": "sc",
+				"format": "dc+sd-jwt",
+				"meta": {
+					"vct_values": ["irma-demo.RU.studentCard"]
+				},
+				"claims": [ 
+			       { "path": ["university"] },
+			       { "path": ["level"] }
+			    ]
+			  }
+			],
+			"credential_sets": [
+			  {
+			    "options": [["email"], ["sc"]]
+			  }
+			]
+		  }
+			`),
+	)
+	require.NoError(t, err)
+	sessionRequest := client.SessionRequestData{
+		Qr: irma.Qr{
+			Type: irma.ActionDisclosing,
+			URL:  sessionLink,
+		},
+		Protocol: irmaclient.Protocol_OpenID4VP,
+	}
+	sessionJson, err := json.Marshal(sessionRequest)
+	require.NoError(t, err)
+
+	c.NewNewSession(string(sessionJson))
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Protocol, irmaclient.Protocol_OpenID4VP)
+	require.Empty(t, session.OfferedCredentials)
+
+	plan := session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+
+	// get updated openid4vp session state
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Protocol, irmaclient.Protocol_OpenID4VP)
+	require.Empty(t, session.OfferedCredentials)
+
+	plan = session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 1)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 2)
+	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+
+	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: 1,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   choice.CredentialId,
+							CredentialHash: choice.Hash,
+							AttributePaths: [][]any{{choice.Attributes[0].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// expect end for issuance session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	// expect end for disclosure session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
+}
+
+func testOpenID4VP_YiviScheme_SingleCredential(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, createEmailAuthRequestRequest())
+	require.NoError(t, err)
+	sessionRequest := client.SessionRequestData{
+		Qr: irma.Qr{
+			Type: irma.ActionDisclosing,
+			URL:  sessionLink,
+		},
+		Protocol: irmaclient.Protocol_OpenID4VP,
+	}
+	sessionJson, err := json.Marshal(sessionRequest)
+	require.NoError(t, err)
+
+	c.NewNewSession(string(sessionJson))
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Protocol, irmaclient.Protocol_OpenID4VP)
+	require.Empty(t, session.OfferedCredentials)
+
+	plan := session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+
+	// get updated openid4vp session state
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Protocol, irmaclient.Protocol_OpenID4VP)
+	require.Empty(t, session.OfferedCredentials)
+
+	plan = session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 1)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 1)
+	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+
+	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: 1,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   choice.CredentialId,
+							CredentialHash: choice.Hash,
+							AttributePaths: [][]any{{choice.Attributes[0].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// expect end for issuance session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	// expect end for disclosure session
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
 }
 
 func testDisclosureWithPredefinedValues(
@@ -1817,6 +2026,21 @@ func awaitWithTimeout[T any](t *testing.T, channel chan T, timeout time.Duration
 }
 
 type SessionIntegrationTest func(t *testing.T, irmaServer *IrmaServer, client *client.Client, handler *MockSessionHandler)
+
+func runEudiSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	t.Run(name, func(t *testing.T) {
+		test(t, irmaServer, c, sessionHandler)
+	})
+}
 
 func runSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
 	conf := IrmaServerConfigurationWithTempStorage(t)
