@@ -417,10 +417,20 @@ func getCandidatesForDcqlQuery(storage SdJwtVcStorage, query dcql.DcqlQuery) (*D
 	return constructCandidatesFromCredentialQueries(query.Credentials, allAvailableCredentials)
 }
 
+// claimKey returns the claim's ID if set, otherwise its dot-joined path.
+// DCQL allows claims to omit the id field when claim_sets is absent, so we
+// need a stable, unique key that works in both cases.
+func claimKey(claim dcql.Claim) string {
+	if claim.Id != "" {
+		return claim.Id
+	}
+	return strings.Join(claim.Path, ".")
+}
+
 func constructClaimMap(claims []dcql.Claim) map[string]dcql.Claim {
 	result := map[string]dcql.Claim{}
 	for _, c := range claims {
-		result[c.Id] = c
+		result[claimKey(c)] = c
 	}
 	return result
 }
@@ -437,7 +447,7 @@ func constructEmptyDisConForQuery(query dcql.CredentialQuery) ([]DisclosureCandi
 		claimSet = query.ClaimSets[0]
 	} else {
 		for _, c := range query.Claims {
-			claimSet = append(claimSet, c.Id)
+			claimSet = append(claimSet, claimKey(c))
 		}
 	}
 
@@ -608,12 +618,12 @@ func getClaimMatches(info SdJwtVcBatchMetadata, claims []dcql.Claim) (map[string
 						},
 						Value: irma.NewTranslatedString(&requestedValueString),
 					}
-					result[claim.Id] = match
+					result[claimKey(claim)] = match
 					break
 				}
 			}
 		} else {
-			result[claim.Id] = ClaimMatch{
+			result[claimKey(claim)] = ClaimMatch{
 				Attribute: irma.AttributeIdentifier{
 					Type:           attributeType,
 					CredentialHash: info.Hash,
@@ -650,7 +660,7 @@ func filterClaimMatches(query dcql.CredentialQuery, matches map[string]ClaimMatc
 	}
 
 	for _, claim := range query.Claims {
-		if _, ok := matches[claim.Id]; !ok {
+		if _, ok := matches[claimKey(claim)]; !ok {
 			return nil
 		}
 	}
