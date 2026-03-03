@@ -165,6 +165,21 @@ func createEmailIssuanceRequest() *irma.IssuanceRequest {
 	})
 }
 
+func createStudentCardIssuanceRequestWithSdJwt() *irma.IssuanceRequest {
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "University of the Arts",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+}
+
 func createStudentCardIssuanceRequest() *irma.IssuanceRequest {
 	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
@@ -175,6 +190,21 @@ func createStudentCardIssuanceRequest() *irma.IssuanceRequest {
 				"studentID":         "67890",
 				"level":             "high",
 			},
+		},
+	})
+}
+
+func createMijnOverheidIssuanceRequestWithSdJwt() *irma.IssuanceRequest {
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "",
+				"familyname": "Batsbak",
+				"prefix":     "Sir",
+			},
+			SdJwtBatchSize: 10,
 		},
 	})
 }
@@ -1022,10 +1052,12 @@ func irmaServerConfWithSdJwtEnabled(t *testing.T) *server.Configuration {
 	certDir := t.TempDir()
 	require.NoError(t, os.WriteFile(path.Join(certDir, "test.test.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes, 0644))
 	require.NoError(t, os.WriteFile(path.Join(certDir, "irma-demo.RU.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes, 0644))
+	require.NoError(t, os.WriteFile(path.Join(certDir, "irma-demo.MijnOverheid.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes, 0644))
 
 	privKeyDir := t.TempDir()
 	require.NoError(t, os.WriteFile(path.Join(privKeyDir, "test.test.pem"), testdata.IssuerPrivKeyBytes, 0644))
 	require.NoError(t, os.WriteFile(path.Join(privKeyDir, "irma-demo.RU.pem"), testdata.IssuerPrivKeyBytes, 0644))
+	require.NoError(t, os.WriteFile(path.Join(privKeyDir, "irma-demo.MijnOverheid.pem"), testdata.IssuerPrivKeyBytes, 0644))
 
 	conf := IrmaServerConfigurationWithTempStorage(t)
 	conf.SdJwtIssuanceSettings = &server.SdJwtIssuanceSettings{

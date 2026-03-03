@@ -177,6 +177,282 @@ func testSessionHandlerForOpenID4VPDisclosures(t *testing.T) {
 		"choice between two credentials",
 		testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials,
 	)
+
+	runEudiSessionTest(t,
+		"complex choices",
+		testOpenID4VP_YiviScheme_ComplexChoices,
+	)
+}
+
+func testOpenID4VP_YiviScheme_ComplexChoices(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(
+		testdata.OpenID4VP_DirectPostJwt_Host,
+		// (email || studencard) && name
+		createAuthRequestRequestWithDcql(`
+		  {
+			"credentials": [
+			  {
+				"id": "email",
+				"format": "dc+sd-jwt",
+				"meta": {
+					"vct_values": ["test.test.email"]
+				},
+				"claims": [
+					{ "id": "1", "path": ["email"] }
+				]
+			  },
+			  {
+				"id": "sc",
+				"format": "dc+sd-jwt",
+				"meta": {
+					"vct_values": ["irma-demo.RU.studentCard"]
+				},
+				"claims": [ 
+					{ "id": "2", "path": ["university"] },
+					{ "id": "3", "path": ["level"] }
+			    ]
+			  },
+			  {
+				"id": "name",
+				"format": "dc+sd-jwt",
+				"meta": {
+					"vct_values": ["irma-demo.MijnOverheid.fullName"]
+				},
+				"claims": [
+				  { "id": "4", "path": ["firstname"] },
+				  { "id": "5", "path": ["familyname"] }
+				]
+			  }
+			],
+			"credential_sets": [
+			  {
+			    "options": [["email"], ["sc"]]
+			  },
+			  {
+			    "options": [["name"]]
+			  }
+			]
+		  }
+			`),
+	)
+	require.NoError(t, err)
+	sessionRequest := client.SessionRequestData{
+		Qr: irma.Qr{
+			Type: irma.ActionDisclosing,
+			URL:  sessionLink,
+		},
+		Protocol: irmaclient.Protocol_OpenID4VP,
+	}
+	sessionJson, err := json.Marshal(sessionRequest)
+	require.NoError(t, err)
+
+	c.NewNewSession(string(sessionJson))
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Type, client.Type_Disclosure)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Equal(t, session.Protocol, irmaclient.Protocol_OpenID4VP)
+	require.Empty(t, session.OfferedCredentials)
+
+	plan := session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 2)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
+
+	firstOption := plan.IssueDuringDislosure.Steps[0].Options[0]
+	require.Equal(t, firstOption.CredentialId, "test.test.email")
+	require.Equal(t, firstOption.Attributes, []client.Attribute{
+		{
+			Id: "email",
+			DisplayName: client.TranslatedString{
+				"en": "Email address",
+				"nl": "E-mailadres",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+	})
+
+	secondOption := plan.IssueDuringDislosure.Steps[0].Options[1]
+	require.Equal(t, secondOption.CredentialId, "irma-demo.RU.studentCard")
+	require.Equal(t, secondOption.Attributes, []client.Attribute{
+		{
+			Id: "university",
+			DisplayName: client.TranslatedString{
+				"en": "University",
+				"nl": "Universiteit",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+		{
+			Id: "level",
+			DisplayName: client.TranslatedString{
+				"en": "Type",
+				"nl": "Soort",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+	})
+
+	require.Len(t, plan.IssueDuringDislosure.Steps[1].Options, 1)
+	secondStep := plan.IssueDuringDislosure.Steps[1].Options[0]
+	require.Equal(t, secondStep.CredentialId, "irma-demo.MijnOverheid.fullName")
+	require.Equal(t, secondStep.Attributes, []client.Attribute{
+		{
+			Id: "firstname",
+			DisplayName: client.TranslatedString{
+				"en": "First name",
+				"nl": "Voornaam",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+		{
+			Id: "familyname",
+			DisplayName: client.TranslatedString{
+				"en": "Family name",
+				"nl": "Achternaam",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+	})
+
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	require.Empty(t, session.OfferedCredentials)
+
+	plan = session.DisclosurePlan
+	require.Equal(t,
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}},
+	)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// expect issuance session end
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 2)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequestWithSdJwt())
+	session = awaitSessionState(t, sessionHandler)
+
+	// expect disclosure session to be updated
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_RequestPermission)
+	plan = session.DisclosurePlan
+	require.Equal(t,
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}, "irma-demo.MijnOverheid.fullName": {}},
+	)
+	require.Len(t, plan.DisclosureChoicesOverview, 2)
+	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].ObtainableOptions, 2)
+	require.False(t, plan.DisclosureChoicesOverview[1].Optional)
+	require.Len(t, plan.DisclosureChoicesOverview[1].OwnedOptions, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[1].ObtainableOptions, 1)
+
+	firstChoice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+
+	require.Equal(t, firstChoice.CredentialId, "irma-demo.RU.studentCard")
+	require.Equal(t, firstChoice.Attributes, []client.Attribute{
+		{
+			Id: "university",
+			DisplayName: client.TranslatedString{
+				"en": "University",
+				"nl": "Universiteit",
+			},
+			Description: client.TranslatedString{
+				"en": "The name of the university",
+				"nl": "Naam van de universiteit",
+			},
+			Value: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+				TranslatedString: &client.TranslatedString{
+					"":   "University of the Arts",
+					"en": "University of the Arts",
+					"nl": "University of the Arts",
+				},
+			},
+		},
+		{
+			Id: "level",
+			DisplayName: client.TranslatedString{
+				"en": "Type",
+				"nl": "Soort",
+			},
+			Description: client.TranslatedString{
+				"en": "Whether you are a regular or PhD student",
+				"nl": "Of u een gewone of PhD student bent",
+			},
+			Value: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+				TranslatedString: &client.TranslatedString{
+					"":   "high",
+					"en": "high",
+					"nl": "high",
+				},
+			},
+		},
+	})
+
+	secondChoice := plan.DisclosureChoicesOverview[1].OwnedOptions[0]
+
+	// give permission to disclose
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload: client.SessionPermissionInteractionPayload{
+			Granted: true,
+			DisclosureChoices: []client.DisclosureDisconSelection{
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   firstChoice.CredentialId,
+							CredentialHash: firstChoice.Hash,
+							AttributePaths: [][]any{{firstChoice.Attributes[0].Id}, {firstChoice.Attributes[1].Id}},
+						},
+					},
+				},
+				{
+					Credentials: []client.SelectedCredential{
+						{
+							CredentialId:   secondChoice.CredentialId,
+							CredentialHash: secondChoice.Hash,
+							AttributePaths: [][]any{{secondChoice.Attributes[0].Id}, {secondChoice.Attributes[1].Id}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// expect issuance session to be done
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 3)
+	require.Equal(t, session.Status, client.Status_Success)
+
+	// expect disclosure session to be done
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Status, client.Status_Success)
 }
 
 func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
@@ -2085,5 +2361,7 @@ func awaitSessionState(t *testing.T, sessionHandler *MockSessionHandler) client.
 
 func printSession(s client.SessionState) {
 	j, _ := json.MarshalIndent(s, "", "    ")
+	fmt.Println("-----------------------------")
 	fmt.Println(string(j))
+	fmt.Println("-----------------------------")
 }
