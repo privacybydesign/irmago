@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -659,13 +657,15 @@ func filterClaimMatches(query dcql.CredentialQuery, matches map[string]ClaimMatc
 		return nil
 	}
 
+	result := []ClaimMatch{}
 	for _, claim := range query.Claims {
-		if _, ok := matches[claimKey(claim)]; !ok {
+		match, ok := matches[claimKey(claim)]
+		if !ok {
 			return nil
 		}
+		result = append(result, match)
 	}
-
-	return slices.Collect(maps.Values(matches))
+	return result
 }
 
 // Only returns the credential instances that have ALL attributes required by the list of claims

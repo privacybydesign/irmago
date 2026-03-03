@@ -197,6 +197,11 @@ func testSessionHandlerForOpenID4VPDisclosures(t *testing.T) {
 		"complex choices without claim ids",
 		testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds,
 	)
+
+	runEudiSessionTest(t,
+		"claim sets",
+		testOpenID4VP_YiviScheme_ClaimSets,
+	)
 }
 
 func testOpenID4VP_YiviScheme_ComplexChoices(
@@ -703,6 +708,139 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 
 	// grant permission to disclose the credential with the correct value
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, 1,
+		makeDisclosureChoice(choice, choice.Attributes[0].Id, choice.Attributes[1].Id),
+	)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+}
+
+func testOpenID4VP_YiviScheme_ClaimSets(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// The verifier accepts either (university + level) OR just (studentID) from a studentCard.
+	// claim_sets provides OR logic for which claims to disclose within a credential.
+	dcql := `{
+		"credentials": [
+		  {
+			"id": "sc",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["irma-demo.RU.studentCard"] },
+			"claims": [
+			  { "id": "univ", "path": ["university"] },
+			  { "id": "lvl",  "path": ["level"] },
+			  { "id": "sid",  "path": ["studentID"] }
+			],
+			"claim_sets": [
+			  ["univ", "lvl"],
+			  ["sid"]
+			]
+		  }
+		]
+	}`
+
+	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+	require.Equal(t, irmaclient.Protocol_OpenID4VP, session.Protocol)
+
+	plan := session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// the issuance step shows the first claim_set (university + level), not studentID
+	require.Equal(t, "irma-demo.RU.studentCard", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
+	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []client.Attribute{
+		{
+			Id: "university",
+			DisplayName: client.TranslatedString{
+				"en": "University",
+				"nl": "Universiteit",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+		{
+			Id: "level",
+			DisplayName: client.TranslatedString{
+				"en": "Type",
+				"nl": "Soort",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+	})
+
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+
+	// disclosure session updated
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Equal(t,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}},
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+	)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+
+	// issuance session ended
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Issuance, client.Status_Success)
+
+	// the first satisfied claim_set (university + level) is offered for disclosure
+	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Equal(t, "irma-demo.RU.studentCard", choice.CredentialId)
+	require.Equal(t, choice.Attributes, []client.Attribute{
+		{
+			Id: "university",
+			DisplayName: client.TranslatedString{
+				"en": "University",
+				"nl": "Universiteit",
+			},
+			Description: client.TranslatedString{
+				"en": "The name of the university",
+				"nl": "Naam van de universiteit",
+			},
+			Value: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+				TranslatedString: &client.TranslatedString{
+					"":   "University of the Arts",
+					"en": "University of the Arts",
+					"nl": "University of the Arts",
+				},
+			},
+		},
+		{
+			Id: "level",
+			DisplayName: client.TranslatedString{
+				"en": "Type",
+				"nl": "Soort",
+			},
+			Description: client.TranslatedString{
+				"en": "Whether you are a regular or PhD student",
+				"nl": "Of u een gewone of PhD student bent",
+			},
+			Value: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+				TranslatedString: &client.TranslatedString{
+					"":   "high",
+					"en": "high",
+					"nl": "high",
+				},
+			},
+		},
+	})
+
 	grantPermission(t, c, 1,
 		makeDisclosureChoice(choice, choice.Attributes[0].Id, choice.Attributes[1].Id),
 	)
