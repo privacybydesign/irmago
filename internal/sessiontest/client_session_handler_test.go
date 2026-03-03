@@ -182,6 +182,16 @@ func testSessionHandlerForOpenID4VPDisclosures(t *testing.T) {
 		"complex choices",
 		testOpenID4VP_YiviScheme_ComplexChoices,
 	)
+
+	runEudiSessionTest(t,
+		"optional credential",
+		testOpenID4VP_YiviScheme_OptionalCredential,
+	)
+
+	runEudiSessionTest(t,
+		"predefined claim values",
+		testOpenID4VP_YiviScheme_PredefinedClaimValues,
+	)
 }
 
 func testOpenID4VP_YiviScheme_ComplexChoices(
@@ -497,6 +507,201 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	requireSessionState(t, session, 2, client.Type_Issuance, client.Status_Success)
 
 	// expect end for disclosure session
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+}
+
+func testOpenID4VP_YiviScheme_OptionalCredential(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// required: studentCard; optional: fullName
+	dcql := `{
+		"credentials": [
+		  {
+			"id": "sc",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["irma-demo.RU.studentCard"] },
+			"claims": [ { "path": ["university"] } ]
+		  },
+		  {
+			"id": "name",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["irma-demo.MijnOverheid.fullName"] },
+			"claims": [ { "path": ["firstname"] } ]
+		  }
+		],
+		"credential_sets": [
+		  { "options": [["sc"]] },
+		  { "options": [["name"]], "required": false }
+		]
+	}`
+
+	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	// only the required studentCard produces an issuance step;
+	// the optional fullName set is already satisfied by its empty option
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.Equal(t, "irma-demo.RU.studentCard", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+
+	// updated disclosure session
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Equal(t,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}},
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+	)
+	require.Len(t, plan.DisclosureChoicesOverview, 2)
+
+	requiredChoice := plan.DisclosureChoicesOverview[0]
+	require.False(t, requiredChoice.Optional)
+	require.Len(t, requiredChoice.OwnedOptions, 1)
+	require.Len(t, requiredChoice.ObtainableOptions, 1)
+
+	optionalChoice := plan.DisclosureChoicesOverview[1]
+	require.True(t, optionalChoice.Optional)
+	require.Empty(t, optionalChoice.OwnedOptions)
+	require.Len(t, optionalChoice.ObtainableOptions, 1)
+
+	// issuance session ended
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Issuance, client.Status_Success)
+
+	// grant permission with only the required credential; skip the optional one with an empty selection
+	sc := requiredChoice.OwnedOptions[0]
+	grantPermission(t, c, 1,
+		makeDisclosureChoice(sc, sc.Attributes[0].Id),
+		client.DisclosureDisconSelection{},
+	)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+}
+
+func testOpenID4VP_YiviScheme_PredefinedClaimValues(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// request studentCard with a specific required university value
+	dcql := `{
+		"credentials": [
+		  {
+			"id": "sc",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["irma-demo.RU.studentCard"] },
+			"claims": [
+			  { "id": "1", "path": ["university"], "values": ["University of the Arts"] },
+			  { "id": "2", "path": ["level"] }
+			]
+		  }
+		]
+	}`
+
+	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// the issuance step shows the predefined university value as RequestedValue
+	expectedUniversityValue := client.TranslatedString{
+		"":   "University of the Arts",
+		"en": "University of the Arts",
+		"nl": "University of the Arts",
+	}
+	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []client.Attribute{
+		{
+			Id: "university",
+			DisplayName: client.TranslatedString{
+				"en": "University",
+				"nl": "Universiteit",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type:             client.AttributeType_TranslatedString,
+				TranslatedString: &expectedUniversityValue,
+			},
+		},
+		{
+			Id: "level",
+			DisplayName: client.TranslatedString{
+				"en": "Type",
+				"nl": "Soort",
+			},
+			RequestedValue: &client.AttributeValue{
+				Type: client.AttributeType_TranslatedString,
+			},
+		},
+	})
+
+	// issue a credential with a non-matching university value
+	wrongUniversityRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Some Other University",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, wrongUniversityRequest)
+
+	// disclosure session updated, but the credential does not satisfy the predefined value
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// issuance session ended
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Issuance, client.Status_Success)
+
+	// issue a credential with the correct university value
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+
+	// disclosure session updated with the satisfying credential
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Equal(t,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}},
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+	)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.False(t, plan.DisclosureChoicesOverview[0].Optional)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+
+	// issuance session ended
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, client.Type_Issuance, client.Status_Success)
+
+	// grant permission to disclose the credential with the correct value
+	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, 1,
+		makeDisclosureChoice(choice, choice.Attributes[0].Id, choice.Attributes[1].Id),
+	)
+
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
 }
