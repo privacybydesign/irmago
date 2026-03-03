@@ -132,10 +132,10 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 
 func testSessionHandlerEdgeCases(t *testing.T) {
 	// this test is not working as expected...
-	// runSessionTest(t,
-	// 	"keyshare blocked",
-	// 	testKeyshareBlocked,
-	// )
+	runSessionTest(t,
+		"keyshare blocked",
+		testKeyshareBlocked,
+	)
 
 	t.Run("keyshare enrollment missing",
 		testKeyshareEnrollmentMissing,
@@ -676,9 +676,7 @@ func testKeyshareBlocked(
 	c.NewNewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
-	require.Equal(t, session.Id, 1)
-	require.Equal(t, session.Status, client.Status_RequestPermission)
-	require.Equal(t, session.Type, client.Type_Issuance)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
 
 	userInteraction(t, c, client.SessionUserInteraction{
 		SessionId: session.Id,
@@ -688,13 +686,11 @@ func testKeyshareBlocked(
 		},
 	})
 
-	expectedRemainingAttempts := []int{-1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
-	for i := range 3 {
+	expectedRemainingAttempts := []int{-1, 2, 1, 0}
+	for _, expected := range expectedRemainingAttempts {
 		session = awaitSessionState(t, sessionHandler)
-		require.Equal(t, session.Id, 1)
-		require.Equal(t, session.Status, client.Status_RequestPin)
-		require.Equal(t, session.RemainingPinAttempts, expectedRemainingAttempts[i])
-		require.Equal(t, session.Type, client.Type_Issuance)
+		requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPin)
+		require.Equal(t, expected, session.RemainingPinAttempts)
 
 		// enter the wrong pin
 		userInteraction(t, c, client.SessionUserInteraction{
@@ -705,17 +701,13 @@ func testKeyshareBlocked(
 				Pin:     "54321",
 			},
 		})
-
-		time.Sleep(time.Second)
 	}
 
 	session = awaitSessionState(t, sessionHandler)
 
 	// after 3 attempts we expect an error
-	require.Equal(t, session.Id, 1)
-	require.Equal(t, session.Status, client.Status_Error)
-	require.ErrorContains(t, session.Error, "hello wolrd")
-	require.Equal(t, session.Type, client.Type_Issuance)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Error)
+	require.ErrorContains(t, session.Error, "session blocked")
 }
 
 func testKeyshareEnrollmentMissing(

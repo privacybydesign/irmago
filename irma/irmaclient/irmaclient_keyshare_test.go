@@ -148,5 +148,5 @@ func verifyWrongPin(t *testing.T, client *IrmaClient) {
 	require.NoError(t, err)
 	require.False(t, succeeded)
 	require.Zero(t, blocked)
-	require.Equal(t, 1, tries)
+	require.Equal(t, 2, tries)
 }

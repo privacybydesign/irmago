@@ -11,13 +11,19 @@ import (
 // keyshare server database. It does not provide full functionality, instead
 // mocking some behaviour, as noted on the specific functions.
 
+const memoryDBMaxPinTries = 3
+
 type memoryDB struct {
 	sync.Mutex
-	users map[string]UserSecrets
+	users       map[string]UserSecrets
+	pinCounters map[string]int
 }
 
 func NewMemoryDB() DB {
-	return &memoryDB{users: map[string]UserSecrets{}}
+	return &memoryDB{
+		users:       map[string]UserSecrets{},
+		pinCounters: map[string]int{},
+	}
 }
 
 func (db *memoryDB) user(_ context.Context, username string) (*User, error) {
@@ -61,13 +67,24 @@ func (db *memoryDB) updateUser(_ context.Context, user *User) error {
 	return nil
 }
 
-func (db *memoryDB) reservePinTry(_ context.Context, _ *User) (bool, int, int64, error) {
-	// Since this is a testing DB, implementing anything more than always allow creates hastle
-	return true, 1, 0, nil
+func (db *memoryDB) reservePinTry(_ context.Context, user *User) (bool, int, int64, error) {
+	db.Lock()
+	defer db.Unlock()
+
+	db.pinCounters[user.Username]++
+	counter := db.pinCounters[user.Username]
+
+	if counter > memoryDBMaxPinTries {
+		return false, 0, 1, nil
+	}
+	return true, memoryDBMaxPinTries - counter, 0, nil
 }
 
-func (db *memoryDB) resetPinTries(_ context.Context, _ *User) error {
-	// Since this is a testing DB, implementing anything more than always allow creates hastle
+func (db *memoryDB) resetPinTries(_ context.Context, user *User) error {
+	db.Lock()
+	defer db.Unlock()
+
+	delete(db.pinCounters, user.Username)
 	return nil
 }
 
