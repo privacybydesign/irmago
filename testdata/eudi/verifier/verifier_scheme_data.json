@@ -24,7 +24,7 @@
 				]
 			},
 			{
-				"credential": "irma-demo.MijnOverheid.studentCard",
+				"credential": "irma-demo.MijnOverheid.fullName",
 				"attributes": [
 					"firstname",
 					"firstnames",
