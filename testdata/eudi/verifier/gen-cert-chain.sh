@@ -3,20 +3,20 @@ SCHEME=http://
 HOST=localhost
 
 # generate verifier priv key
-openssl ecparam -name prime256v1 -genkey -noout -out verifier_ec_priv.pem
+# openssl ecparam -name prime256v1 -genkey -noout -out verifier_ec_priv.pem
 
 # generate verifier pub key
-openssl ec -in verifier_ec_priv.pem -pubout -out verifier_ec_pub.pem
+# openssl ec -in verifier_ec_priv.pem -pubout -out verifier_ec_pub.pem
 
 # generate CA priv key
-openssl ecparam -name prime256v1 -genkey -noout -out ca_ec_priv.pem
+# openssl ecparam -name prime256v1 -genkey -noout -out ca_ec_priv.pem
 
 # generate CA pub key
-openssl ec -in ca_ec_priv.pem -pubout -out ca_ec_pub.pem
+# openssl ec -in ca_ec_priv.pem -pubout -out ca_ec_pub.pem
 
 # create root/ca certificate
-openssl req -x509 -new -key ca_ec_priv.pem -sha256 -days 3650 -out ca.crt \
-  -subj "/C=NL/O=Demo Verifier CA/CN=Demo Requestors Root"
+# openssl req -x509 -new -key ca_ec_priv.pem -sha256 -days 3650 -out ca.crt \
+#   -subj "/C=NL/O=Demo Verifier CA/CN=Demo Requestors Root"
 
 # create verifier certificate request
 openssl req -new -key verifier_ec_priv.pem -out verifier.csr \
