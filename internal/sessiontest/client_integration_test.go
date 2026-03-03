@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 
@@ -66,29 +65,25 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	info := c.CredentialInfoList()
-	require.Len(t, info, 3)
-
-	creds := collectCredentialsWithId(info, "test.test.email")
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
 	require.Len(t, creds, 2)
 
-	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
-
-	require.Equal(t, 10, int(*cred.InstanceCount))
+	emailCred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, emailCred)
+	require.Equal(t, 10, int(*emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
 
 	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
 
-	info = c.CredentialInfoList()
-	require.Len(t, info, 3)
-
-	creds = collectCredentialsWithId(info, "test.test.email")
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
 	require.Len(t, creds, 2)
 
-	cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
-
-	require.Equal(t, 10, int(*cred.InstanceCount))
+	emailCred = findCredentialById(creds, "test.test.email")
+	require.NotNil(t, emailCred)
+	require.Equal(t, 10, int(*emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
 }
 
 func testCredentialInstanceCount(t *testing.T) {
@@ -100,40 +95,32 @@ func testCredentialInstanceCount(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	info := c.CredentialInfoList()
-	require.Len(t, info, 3)
-
-	creds := collectCredentialsWithId(info, "test.test.email")
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
 	require.Len(t, creds, 2)
 
-	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+	emailCred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, emailCred)
 
 	numInstances := uint(10)
 
-	require.Equal(t, numInstances, *cred.InstanceCount)
+	require.Equal(t, numInstances, *emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)])
 
 	for i := range numInstances {
 		discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
 
-		info = c.CredentialInfoList()
-		require.Len(t, info, 3)
-
-		creds = collectCredentialsWithId(info, "test.test.email")
+		creds, err = c.GetCredentials()
+		require.NoError(t, err)
 		require.Len(t, creds, 2)
 
-		cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
-		require.Equal(t, numInstances-1-i, *cred.InstanceCount)
+		emailCred = findCredentialById(creds, "test.test.email")
+		require.NotNil(t, emailCred)
+		require.Equal(t, numInstances-1-i, *emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)])
 	}
 
 	c.Close()
 	keyshareServer.Stop()
 	irmaServer.Stop()
-}
-
-func getCredWithFormat(creds []*irma.CredentialInfo, format irmaclient.CredentialFormat) *irma.CredentialInfo {
-	return creds[slices.IndexFunc(creds, func(c *irma.CredentialInfo) bool {
-		return irmaclient.CredentialFormat(c.CredentialFormat) == format
-	})]
 }
 
 func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
@@ -389,10 +376,12 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 
 		awaitSessionState(t, sessionHandler)
 
-		credentials := c.CredentialInfoList()
-		emailCreds := collectCredentialsWithId(credentials, "irma-demo.MijnOverheid.fullName")
+		credentials, err := c.GetCredentials()
+		require.NoError(t, err)
+		fullNameCred := findCredentialById(credentials, "irma-demo.MijnOverheid.fullName")
+		require.NotNil(t, fullNameCred)
 
-		require.NoError(t, c.RemoveCredentialsByHash(hashByFormat(emailCreds)))
+		require.NoError(t, c.RemoveCredentialsByHash(credentialHashByFormat(fullNameCred)))
 
 		logs, err := c.LoadNewestLogs(100)
 		require.NoError(t, err)
@@ -439,10 +428,12 @@ func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	credentials := c.CredentialInfoList()
-	emailCreds := collectCredentialsWithId(credentials, "test.test.email")
+	credentials, err := c.GetCredentials()
+	require.NoError(t, err)
+	emailCred := findCredentialById(credentials, "test.test.email")
+	require.NotNil(t, emailCred)
 
-	require.NoError(t, c.RemoveCredentialsByHash(hashByFormat(emailCreds)))
+	require.NoError(t, c.RemoveCredentialsByHash(credentialHashByFormat(emailCred)))
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -523,15 +514,14 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	awaitSessionState(t, sessionHandler)
 
-	info := c.CredentialInfoList()
-	require.Len(t, info, 3)
-
-	creds := collectCredentialsWithId(info, "test.test.email")
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
 	require.Len(t, creds, 2)
 
-	cred := getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+	cred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
 
-	require.Equal(t, 10, int(*cred.InstanceCount))
+	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
 
 	// Revoke the issuer certificate, wait for the client to pick up the new CRL and try to issue again
 	crlTemplate.Number = crlTemplate.Number.Add(crl.Number, mathBig.NewInt(1))
@@ -555,15 +545,14 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	// TODO: how to check that it failed?
 	failIssueSdJwtAndIdemixToClient(t, c, sessionHandler, irmaServer)
 
-	info = c.CredentialInfoList()
-	require.Len(t, info, 3)
-
-	creds = collectCredentialsWithId(info, "test.test.email")
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
 	require.Len(t, creds, 2)
 
-	cred = getCredWithFormat(creds, irmaclient.Format_SdJwtVc)
+	cred = findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
 
-	require.Equal(t, 10, int(*cred.InstanceCount))
+	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
 }
 
 func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log irmaclient.LogInfo) {
@@ -749,16 +738,18 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	credentialInfoList := c.CredentialInfoList()
-	require.Len(t, credentialInfoList, 3)
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	require.Len(t, creds, 2)
 
-	emailCreds := collectCredentialsWithId(credentialInfoList, "test.test.email")
-	require.Len(t, emailCreds, 2)
+	emailCred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, emailCred)
 
-	require.NoError(t, c.RemoveCredentialsByHash(hashByFormat(emailCreds)))
+	require.NoError(t, c.RemoveCredentialsByHash(credentialHashByFormat(emailCred)))
 
-	credentialInfoList = c.CredentialInfoList()
-	require.Len(t, credentialInfoList, 1)
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	require.Len(t, creds, 1)
 }
 
 func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
@@ -776,11 +767,13 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 
 	awaitSessionState(t, sessionHandler)
 
-	credentialInfoList := c.CredentialInfoList()
-	require.Len(t, credentialInfoList, 3)
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	require.Len(t, creds, 2)
 
-	emailCreds := collectCredentialsWithId(credentialInfoList, "test.test.email")
-	require.Len(t, emailCreds, 2)
+	emailCred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, emailCred)
+	require.Len(t, emailCred.CredentialInstanceIds, 2)
 }
 
 func testIdemixAndSdJwtCombinedIssuance(t *testing.T) {
@@ -1084,20 +1077,19 @@ func irmaServerConfWithSdJwtEnabledWithoutCerts(t *testing.T) *server.Configurat
 	return conf
 }
 
-func collectCredentialsWithId(credentials irma.CredentialInfoList, id string) []*irma.CredentialInfo {
-	result := []*irma.CredentialInfo{}
+func findCredentialById(credentials []*client.Credential, id string) *client.Credential {
 	for _, cred := range credentials {
-		if cred.Identifier() == irma.NewCredentialTypeIdentifier(id) {
-			result = append(result, cred)
+		if cred.CredentialId == id {
+			return cred
 		}
 	}
-	return result
+	return nil
 }
 
-func hashByFormat(credentials []*irma.CredentialInfo) map[irmaclient.CredentialFormat]string {
+func credentialHashByFormat(cred *client.Credential) map[irmaclient.CredentialFormat]string {
 	result := map[irmaclient.CredentialFormat]string{}
-	for _, cred := range credentials {
-		result[irmaclient.CredentialFormat(cred.CredentialFormat)] = cred.Hash
+	for format, hash := range cred.CredentialInstanceIds {
+		result[irmaclient.CredentialFormat(format)] = hash
 	}
 	return result
 }

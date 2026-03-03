@@ -241,7 +241,7 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMeta
 	}
 }
 
-func (client *Client) CredentialInfoList() irma.CredentialInfoList {
+func (client *Client) credentialInfoList() irma.CredentialInfoList {
 	sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
 	idemix := client.irmaClient.CredentialInfoList()
 
@@ -306,7 +306,7 @@ func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error
 }
 
 func (client *Client) RemoveCredentialsByHash(hashByFormat map[irmaclient.CredentialFormat]string) error {
-	allCreds := client.CredentialInfoList()
+	allCreds := client.credentialInfoList()
 	relevantCreds := []*irma.CredentialInfo{}
 	for _, hash := range hashByFormat {
 		relevantCreds = append(relevantCreds, allCreds[slices.IndexFunc(allCreds, func(info *irma.CredentialInfo) bool {

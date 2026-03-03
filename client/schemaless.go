@@ -366,7 +366,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 
 func (client *Client) GetCredentials() ([]*Credential, error) {
 	irmaConfig := client.GetIrmaConfiguration()
-	creds := client.CredentialInfoList()
+	creds := client.credentialInfoList()
 	return credentialInfoListToSchemaless(irmaConfig, creds)
 }
 

@@ -22,7 +22,8 @@ func TestInstantiateNewEmptyClient(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	credentials := client.CredentialInfoList()
+	credentials, err := client.GetCredentials()
+	require.NoError(t, err)
 	require.Empty(t, credentials)
 
 	client.GetIrmaConfiguration()
@@ -41,7 +42,8 @@ func TestInstantiateClientWithExistingIrmaStorage(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	credentials := client.CredentialInfoList()
+	credentials, err := client.GetCredentials()
+	require.NoError(t, err)
 	require.NotEmpty(t, credentials)
 
 	client.GetIrmaConfiguration()
