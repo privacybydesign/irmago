@@ -910,9 +910,10 @@ func testKeyshareBlocked(
 
 	session = awaitSessionState(t, sessionHandler)
 
-	// after 3 attempts we expect an error
+	// after 3 attempts we expect an error with a non-zero block duration (in seconds)
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Error)
 	require.ErrorContains(t, session.Error, "session blocked")
+	require.Equal(t, session.PinBlockedTimeSeconds, 1)
 }
 
 func testKeyshareEnrollmentMissing(
