@@ -725,5 +725,5 @@ func (client *Client) NewNewSession(sessionrequest string) {
 		state.Type = Type_Signature
 	}
 
-	session.dismisser = client.NewSession(sessionrequest, session)
+	session.dismisser = client.newSession(sessionrequest, session)
 }

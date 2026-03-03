@@ -19,10 +19,12 @@ func testSchemaless(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client, _ := createClient(t)
+	client, sessionHandler := createClient(t)
 	defer client.Close()
 
-	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, client, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+
+	awaitSessionState(t, sessionHandler)
 
 	creds, err := client.GetCredentials()
 	require.NoError(t, err)

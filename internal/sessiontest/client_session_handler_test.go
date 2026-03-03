@@ -1252,7 +1252,7 @@ func testKeyshareEnrollmentMissing(
 	require.Equal(t, session.Id, 1)
 	require.Equal(t, session.Type, client.Type_Issuance)
 	require.Equal(t, session.Status, client.Status_Error)
-	require.ErrorContains(t, session.Error, "Keyshare enrollment is missing for scheme: 'test'")
+	require.ErrorContains(t, session.Error, "keyshare enrollment is missing for scheme: 'test'")
 }
 
 func testDisclosureClientReturnUrl(

@@ -180,7 +180,7 @@ func (client *Client) DeleteKeyshareTokens() {
 	client.irmaClient.DeleteKeyshareTokens()
 }
 
-func (client *Client) NewSession(sessionrequest string, handler irmaclient.Handler) irmaclient.SessionDismisser {
+func (client *Client) newSession(sessionrequest string, handler irmaclient.Handler) irmaclient.SessionDismisser {
 	var sessionReq SessionRequestData
 	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
 	if err != nil {
