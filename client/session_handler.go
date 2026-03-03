@@ -17,7 +17,7 @@ const (
 	UI_DismissSession UserInteractionType = "dismiss"
 )
 
-// Any interaction the user has to do with a session, like entering a pin code or giving permission
+// SessionUserInteraction is any interaction the user has to do with a session, like entering a pin code or giving permission
 type SessionUserInteraction struct {
 	// The ID corresponding to the session this interaction belongs to
 	SessionId int
@@ -34,7 +34,7 @@ type SessionPermissionInteractionPayload struct {
 	DisclosureChoices []DisclosureDisconSelection
 }
 
-// A reference to a credential the user has picked for disclosure, including exactly which attributes will be shared
+// SelectedCredential is a reference to a credential the user has picked for disclosure, including exactly which attributes will be shared
 type SelectedCredential struct {
 	// The ID for this credential (idemix id or vct)
 	CredentialId string
@@ -45,7 +45,7 @@ type SelectedCredential struct {
 	AttributePaths [][]any
 }
 
-// The list of selected credentials and attributes for a discon
+// DisclosureDisconSelection is the list of selected credentials and attributes for a discon
 type DisclosureDisconSelection struct {
 	Credentials []SelectedCredential
 }
@@ -114,7 +114,7 @@ type DisclosurePlan struct {
 	DisclosureChoicesOverview []DisclosurePickOne
 }
 
-// A discon where the user needs to pick only one credential
+// DisclosurePickOne is a discon where the user needs to pick only one credential
 // TODO: What to do when there's multiple credentials in the inner con?
 // This is possible for singletons in irma condiscon and for anything in DCQL (resulting in condiscondis)
 // E.g.: you can ask for both personal data and address in the inner con,
@@ -131,14 +131,14 @@ type DisclosurePickOne struct {
 	ObtainableOptions []*CredentialDescriptor
 }
 
-// One step in the issuance wizard during disclosure flow
+// IssuanceStep is one step in the issuance wizard during disclosure flow
 type IssuanceStep struct {
 	// the list of options for the given discon
 	// the user can choose which one to issue, but only has to issue one
 	Options []*CredentialDescriptor
 }
 
-// What to show during issuance during disclosure
+// IssueDuringDislosure is what to show during issuance during disclosure
 type IssueDuringDislosure struct {
 	// The steps to fulfill before we can continue the disclosure
 	Steps []IssuanceStep
@@ -147,7 +147,7 @@ type IssueDuringDislosure struct {
 	IssuedCredentialIds map[string]struct{}
 }
 
-// Snapshot of the state of this session.
+// SessionState is a snapshot of the state of this session.
 // When the session state changes it should create a new instance.
 // It has been setup in such a way that it contains all relevant state for
 // displaying all stages for this session to the user
@@ -263,7 +263,7 @@ func (s *Session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration
 }
 
 func (s *Session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
-	s.error(fmt.Errorf("Keyshare enrollment is missing for scheme: '%s'", manager))
+	s.error(fmt.Errorf("keyshare enrollment is missing for scheme: '%s'", manager))
 }
 
 func requestorInfoToTrustedParty(info *irma.RequestorInfo) TrustedParty {

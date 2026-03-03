@@ -2,7 +2,6 @@ package sessiontest
 
 import (
 	"encoding/json"
-	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -1333,6 +1332,7 @@ func testChainedSession(
 	require.NoError(t, err)
 
 	sessionJson, err = json.MarshalIndent(sesPkg.SessionPtr, "", "   ")
+	require.NoError(t, err)
 
 	c.NewNewSession(string(sessionJson))
 	session = awaitSessionState(t, sessionHandler)
@@ -2471,9 +2471,3 @@ func startOpenID4VPSessionWithAuthRequest(
 	return awaitSessionState(t, sessionHandler)
 }
 
-func printSession(s client.SessionState) {
-	j, _ := json.MarshalIndent(s, "", "    ")
-	fmt.Println("-----------------------------")
-	fmt.Println(string(j))
-	fmt.Println("-----------------------------")
-}
