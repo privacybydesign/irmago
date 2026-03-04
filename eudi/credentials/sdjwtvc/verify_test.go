@@ -768,7 +768,7 @@ func Test_HolderVerificationProcessor_MissingSdAlg_FallbackToSha256_Succeeds(t *
 }
 
 func Test_HolderVerificationProcessor_IssuerSignedJwt_WithKeyBindingJwt_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 
 	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_VcTypHeader_WithKbJwt))
@@ -777,7 +777,7 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithKeyBindingJwt_Fails(t 
 }
 
 func Test_HolderVerificationProcessor_IssuerSignedJwt_WithInvalidTypHeader_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 
 	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(wrongIssuerSignedJwtTypHeader))
@@ -786,7 +786,7 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithInvalidTypHeader_Fails
 }
 
 func Test_HolderVerificationProcessor_InvalidSdJwtVc_MissingTrailingTilde_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(invalidSdJwtVc_MissingTrailingTilde))
@@ -889,7 +889,7 @@ func Test_HolderVerificationProcessor_UnsupportedSdAlg_Fails(t *testing.T) {
 }
 
 func Test_HolderVerificationProcessor_ValidSdJwtVc_NoDisclosures_NoKbJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoDisclosuresNoKbjwt))
@@ -900,7 +900,7 @@ func Test_HolderVerificationProcessor_ValidSdJwtVc_NoDisclosures_NoKbJwt_Succeed
 }
 
 func Test_MissingDisclosureWithDenyPolicy(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	context.MissingDisclosuresPolicy = MissingDisclosuresPolicy_Deny
 	holderVerifier := NewHolderVerificationProcessor(context)
 
@@ -909,7 +909,7 @@ func Test_MissingDisclosureWithDenyPolicy(t *testing.T) {
 }
 
 func Test_HolderVerificationOfPublicClaims(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCertChain_irma_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_irma_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_PublicAttributes))
@@ -970,7 +970,7 @@ func Test_HolderVerificationOfPublicClaims(t *testing.T) {
 }
 
 func Test_HolderVerificationProcessor_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoKbJwt))
@@ -1052,7 +1052,7 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeIat_Give
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
-			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now - 60},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -1074,7 +1074,7 @@ func Test_HolderVerificationProcessor_VerificationPlusOneMinuteIsAfterExp_GivenC
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
-			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now + 60},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -1096,7 +1096,7 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
-			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now - 60},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -1178,7 +1178,7 @@ func Test_CreatePresentationSdJwtWithMixedPublicAndSelectiveDisclosures(t *testi
 
 func Test_CreatePresentationSdJwtWithNestedDisclosures(t *testing.T) {
 	testSdJwt := SdJwtVcKb(validSdJwtVc_NestedAttributes)
-	issuerCert := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	issuerCert := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
 
 	nameHash := HashedDisclosure("y_1ml66L5y0IVcLT-5eybzprmV_9RPUMndrpNbEBgqU")
 	addressHash := HashedDisclosure("wxLmodf8M59QNhZ5uz4uBYFN4JdM6QjjJfOqUieHp00")
@@ -1269,7 +1269,7 @@ func testDisclosure(t *testing.T, name string, sdjwt SdJwtVcKb, claimPaths [][]a
 }
 
 func Test_ValidSdJwtVc_WithNestedSdObject(t *testing.T) {
-	issuerCert := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	issuerCert := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
 
 	context := CreateDefaultVerificationContext(issuerCert)
 	holderVerifier := NewHolderVerificationProcessor(context)
@@ -1317,7 +1317,7 @@ func Test_ValidSdJwtVc_WithNestedSdObject(t *testing.T) {
 }
 
 func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithoutKbJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithoutKbJwt))
@@ -1350,7 +1350,7 @@ func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithoutKbJwt_Succeeds(t *te
 }
 
 func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_VcTypHeader_WithoutKbJwt))
@@ -1396,14 +1396,14 @@ func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
 // - [ ]
 
 func Test_VerifierVerificationProcessor_RequiredKbJwt_NoKbJwtInSdJwt_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithoutKbJwt))
 	require.ErrorContains(t, err, "key binding jwt is required, but not present in sdjwtvc")
 }
 
 func Test_VerifierVerificationProcessor_InvalidSdJwtVc_WrongKbJwtTypHeader_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewVerifierVerificationProcessor(true, context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(invalidSdJwtVC_WrongKbTypHeader))
 	require.Error(t, err)
@@ -1426,14 +1426,14 @@ func Test_VerifierVerificationProcessor_NoCnfFieldInIssuerSignedJwt_WithKbJwt_Fa
 }
 
 func Test_VerifierVerificationProcessor_RequiredKbJwt_WithKbJwtInSdJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithKbJwt))
 	require.NoError(t, err)
 }
 
 func Test_VerifierVerificationProcessor_NonRequiredKbJwt_NoKbJwtInSdJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(false, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithoutKbJwt))
 	require.NoError(t, err)
@@ -1443,7 +1443,7 @@ func Test_VerifierVerificationProcessor_NonRequiredKbJwt_NoKbJwtInSdJwt_Succeeds
 
 func errorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.ErrorContains(t, err, message)
@@ -1451,7 +1451,7 @@ func errorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message string
 
 func noErrorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.NoError(t, err, message)
@@ -1459,7 +1459,7 @@ func noErrorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message stri
 
 func errorTestCaseVerifier(t *testing.T, config *testSdJwtVcKbConfig, message string) {
 	sdjwtvc := createTestSdJwtVcKb(t, config)
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.ErrorContains(t, err, message)

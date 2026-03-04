@@ -219,7 +219,7 @@ func newWorkingSdJwtVcTestConfig() *testSdJwtVcConfig {
 	}
 
 	return newEmptyTestConfig().
-		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuerCertificateChainBytes(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes).
 		withHolderPrivateKey(holderKey).
 		withIssuerPrivateKey(issuerKey).
 		withVct("test.test.email").
