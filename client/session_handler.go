@@ -629,10 +629,11 @@ func (s *Session) RequestSignaturePermission(request *irma.SignatureRequest,
 	s.dispatchState()
 }
 
-func (s *Session) RequestPermissionAndPerformAuthCodeWithTokenExchange(
-	request *irma.AuthorizationCodeFlowAndTokenExchangeRequest,
+func (s *Session) RequestAuthorizationCodeFlowPermission(
+	request *irma.AuthorizationCodeFlowRequest,
 	requestorInfo *irma.RequestorInfo,
-	callback irmaclient.TokenHandler) {
+	callback irmaclient.CodeHandler,
+) {
 }
 
 func (s *Session) RequestPreAuthorizedCodeFlowPermission(

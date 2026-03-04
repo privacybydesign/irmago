@@ -54,22 +54,28 @@ type Handler interface {
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
-		callback PermissionHandler)
+		callback PermissionHandler,
+	)
+
 	RequestVerificationPermission(request *irma.DisclosureRequest,
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
-		callback PermissionHandler)
+		callback PermissionHandler,
+	)
+
 	RequestSignaturePermission(request *irma.SignatureRequest,
 		satisfiable bool,
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
-		callback PermissionHandler)
+		callback PermissionHandler,
+	)
 
 	RequestAuthorizationCodeFlowPermission(
 		request *irma.AuthorizationCodeFlowRequest,
 		requestorInfo *irma.RequestorInfo,
-		callback CodeHandler)
+		callback CodeHandler,
+	)
 
 	RequestPreAuthorizedCodeFlowPermission(
 		request *irma.PreAuthorizedCodeFlowPermissionRequest,
