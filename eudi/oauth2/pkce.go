@@ -64,7 +64,7 @@ func GenerateVerifier(byteSize uint) (string, error) {
 	buf := make([]byte, byteSize)
 	_, err := io.ReadFull(rand.Reader, buf)
 	if err != nil {
-		return "", fmt.Errorf("Could not generate random bytes: %v", err)
+		return "", fmt.Errorf("could not generate random bytes: %v", err)
 	}
 
 	return hex.EncodeToString(buf), nil
