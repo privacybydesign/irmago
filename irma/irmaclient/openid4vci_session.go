@@ -177,7 +177,7 @@ func getCredentialRequestPreferences(c openid4vci.CredentialConfiguration) *open
 	if len(c.CryptographicBindingMethodsSupported) > 0 {
 		var cryptoBindingMethod openid4vci.CryptographicBindingMethod
 
-		// Order of prefered cryptographic binding methods: JWK > DID > COSE, based on ease of implementation and expected level of support among issuers
+		// Order of preferred cryptographic binding methods: JWK > DID > COSE, based on ease of implementation and expected level of support among issuers
 		if slices.Contains(c.CryptographicBindingMethodsSupported, openid4vci.CryptographicBindingMethod_JWK) {
 			cryptoBindingMethod = openid4vci.CryptographicBindingMethod_JWK
 		} else if slices.Contains(c.CryptographicBindingMethodsSupported, openid4vci.CryptographicBindingMethod_DID_KEY) {
