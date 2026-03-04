@@ -155,7 +155,7 @@ func New(
 		keyBinder:        keyBinder,
 		scheduler:        scheduler,
 		SessionManager: SessionManager{
-			Sessions:       map[int]*Session{},
+			Sessions:       map[int]*session{},
 			NextId:         0,
 			SessionHandler: sessionHandler,
 		},

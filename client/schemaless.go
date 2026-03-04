@@ -13,17 +13,17 @@ type TranslatedString map[string]string
 type CredentialFormat string
 
 type TrustedParty struct {
-	Id string
+	Id string `json:"id"`
 	// Display name for the issuer
-	Name TranslatedString
+	Name TranslatedString `json:"name"`
 	// Url for the issuer (which can be different per language)
-	Url *TranslatedString
+	Url *TranslatedString `json:"url"`
 	// Absolute path to the image for this issuer stored on disk
-	ImagePath *string
+	ImagePath *string `json:"image_path"`
 	// The trust chain for this issuer (if any)
-	Parent *TrustedParty
+	Parent *TrustedParty `json:"parent"`
 	// Whether this party is verified (TODO: should this be implied by the parent?)
-	Verified bool
+	Verified bool `json:"verified"`
 }
 
 type AttributeType string
@@ -40,82 +40,82 @@ const (
 )
 
 type AttributeValue struct {
-	Type AttributeType
+	Type AttributeType `json:"type"`
 
-	String           *string
-	Int              *int64
-	Bool             *bool
-	TranslatedString *TranslatedString
-	Array            []AttributeValue
-	Object           []Attribute
-	ImagePath        *string
-	Base64Image      *string
+	String           *string           `json:"string"`
+	Int              *int64            `json:"int"`
+	Bool             *bool             `json:"bool"`
+	TranslatedString *TranslatedString `json:"translated_string"`
+	Array            []AttributeValue  `json:"array"`
+	Object           []Attribute       `json:"object"`
+	ImagePath        *string           `json:"image_path"`
+	Base64Image      *string           `json:"base64_image"`
 }
 
 type Attribute struct {
 	// Id for this attribute (only the last part in case of irma/idemix)
-	Id string
+	Id string `json:"id"`
 	// The name for this attribute as displayed to the end user
-	DisplayName TranslatedString
+	DisplayName TranslatedString `json:"display_name"`
 	// The description for this attribute if any
-	Description TranslatedString
+	Description TranslatedString `json:"description"`
 	// The value that this attribute has as provided by the issuer (absent when it's just an attribute description)
-	Value *AttributeValue
+	Value *AttributeValue `json:"value"`
 	// The value that was requested by a verifier (if any)
-	RequestedValue *AttributeValue
+	RequestedValue *AttributeValue `json:"requested_value"`
 }
 
 type Credential struct {
 	// The id for this credential. For irma/idemix credentials this would look like
 	// `pbdf.sidn-pbdf.email`, for Eudi credentials this would be in the form of `https://example.credential.com`
-	CredentialId string
+	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
-	Hash string
+	Hash string `json:"hash"`
 	// Absolute path to the image for this credential stored on disk
-	ImagePath string
+	ImagePath string `json:"image_path"`
 	// The display name for this credential
-	Name TranslatedString
+	Name TranslatedString `json:"name"`
 	// All information about the credential issuer
-	Issuer TrustedParty
+	Issuer TrustedParty `json:"issuer"`
 	// The IDs for all instances of this credential in all different formats it's available in.
-	CredentialInstanceIds map[CredentialFormat]string
+	CredentialInstanceIds map[CredentialFormat]string `json:"credential_instance_ids"`
 	// The number of credential instances left per credential format (in case they were issued in batches)
-	BatchInstanceCountsRemaining map[CredentialFormat]*uint
+	BatchInstanceCountsRemaining map[CredentialFormat]*uint `json:"batch_instance_counts_remaining"`
 	// All the attributes and their values in this credential
-	Attributes []Attribute
+	Attributes []Attribute `json:"attributes"`
 	// The date and time (unix format) at which this credential was issued
-	IssuanceDate int64
+	IssuanceDate int64 `json:"issuance_date"`
 	// The date and time (unix format) when this credential expires
-	ExpiryDate int64
+	ExpiryDate int64 `json:"expiry_date"`
 	// Whether or not this credential has been revoked
-	Revoked bool
+	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential
-	RevocationSupported bool
+	RevocationSupported bool `json:"revocation_supported"`
 	// Url at which this credential can be issued (if any)
-	IssueURL *TranslatedString
+	IssueURL *TranslatedString `json:"issue_url"`
 }
 
 // CredentialDescriptor describes a credential without any values for the attributes
 type CredentialDescriptor struct {
-	CredentialId string
-	Name         TranslatedString
-	Issuer       TrustedParty
-	Category     *TranslatedString
-	ImagePath    string
-	Attributes   []Attribute
-	IssueURL     *TranslatedString
+	CredentialId string            `json:"credential_id"`
+	Name         TranslatedString  `json:"name"`
+	Issuer       TrustedParty      `json:"issuer"`
+	Category     *TranslatedString `json:"category"`
+	ImagePath    string            `json:"image_path"`
+	Attributes   []Attribute       `json:"attributes"`
+	IssueURL     *TranslatedString `json:"issue_url"`
 }
 
 type CredentialStoreItem struct {
-	Credential CredentialDescriptor
-	Faq        Faq
+	Credential CredentialDescriptor `json:"credential"`
+	Faq        Faq                  `json:"faq"`
 }
 
 type Faq struct {
-	Intro   *TranslatedString
-	Purpose *TranslatedString
-	Content *TranslatedString
-	HowTo   *TranslatedString
+	Intro   *TranslatedString `json:"intro"`
+	Purpose *TranslatedString `json:"purpose"`
+	Content *TranslatedString `json:"content"`
+	HowTo   *TranslatedString `json:"how_to"`
 }
 
 func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {

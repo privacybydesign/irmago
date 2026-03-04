@@ -20,39 +20,39 @@ const (
 // SessionUserInteraction is any interaction the user has to do with a session, like entering a pin code or giving permission
 type SessionUserInteraction struct {
 	// The ID corresponding to the session this interaction belongs to
-	SessionId int
+	SessionId int `json:"session_id"`
 	// The type of interaction performed by the user
-	Type UserInteractionType
+	Type UserInteractionType `json:"type"`
 	// The payload for this interaction
-	Payload any
+	Payload any `json:"payload"`
 }
 
 type SessionPermissionInteractionPayload struct {
 	// Whether or not the user agreed to either sharing, siging or disclosing
-	Granted bool
+	Granted bool `json:"granted"`
 	// The list of discons for each outer con, where each discon contains a list of credentials corresponding to the inner con
-	DisclosureChoices []DisclosureDisconSelection
+	DisclosureChoices []DisclosureDisconSelection `json:"disclosure_choices"`
 }
 
 // SelectedCredential is a reference to a credential the user has picked for disclosure, including exactly which attributes will be shared
 type SelectedCredential struct {
 	// The ID for this credential (idemix id or vct)
-	CredentialId string
+	CredentialId string `json:"credential_id"`
 	// The hash for the specific credential instance for which attributes will be shared
-	CredentialHash string
+	CredentialHash string `json:"credential_hash"`
 	// List of claim path pointers to the attributes the user will share for this credential
 	// When it's Idemix these paths should have a length of only one
-	AttributePaths [][]any
+	AttributePaths [][]any `json:"attribute_paths"`
 }
 
 // DisclosureDisconSelection is the list of selected credentials and attributes for a discon
 type DisclosureDisconSelection struct {
-	Credentials []SelectedCredential
+	Credentials []SelectedCredential `json:"credentials"`
 }
 
 type PinInteractionPayload struct {
-	Pin     string
-	Proceed bool
+	Pin     string `json:"pin"`
+	Proceed bool   `json:"proceed"`
 }
 
 type SessionStatus string
@@ -74,31 +74,31 @@ const (
 type SelectableCredentialInstance struct {
 	// The id for this credential. For irma/idemix credentials this would look like
 	// `pbdf.sidn-pbdf.email`, for Eudi credentials this would be in the form of `https://example.credential.com`
-	CredentialId string
+	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
-	Hash string
+	Hash string `json:"hash"`
 	// Absolute path to the image for this credential stored on disk
-	ImagePath string
+	ImagePath string `json:"image_path"`
 	// The display name for this credential
-	Name TranslatedString
+	Name TranslatedString `json:"name"`
 	// All information about the credential issuer
-	Issuer TrustedParty
+	Issuer TrustedParty `json:"issuer"`
 	// The credential format for this instance
-	Format CredentialFormat
+	Format CredentialFormat `json:"format"`
 	// The number of credential instances left for this credential instance
-	BatchInstanceCountRemaining *uint
+	BatchInstanceCountRemaining *uint `json:"batch_instance_count_remaining"`
 	// All the attributes and their values in this credential that are selectable
-	Attributes []Attribute
+	Attributes []Attribute `json:"attributes"`
 	// The date and time (unix format) at which this credential was issued
-	IssuanceDate int64
+	IssuanceDate int64 `json:"issuance_date"`
 	// The date and time (unix format) when this credential expires
-	ExpiryDate int64
+	ExpiryDate int64 `json:"expiry_date"`
 	// Whether or not this credential has been revoked
-	Revoked bool
+	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential
-	RevocationSupported bool
+	RevocationSupported bool `json:"revocation_supported"`
 	// Url at which this credential can be issued (if any)
-	IssueURL *TranslatedString
+	IssueURL *TranslatedString `json:"issue_url"`
 }
 
 type DisclosurePlan struct {
@@ -109,9 +109,9 @@ type DisclosurePlan struct {
 	// as well as the credentials left to issuer in order to proceed. This is done to make it possible to
 	// show a correct stepper, even after the session state gets updated.
 	// When all are satisfied, the value should still be present in updates to the session state, so the stepper is shown correctly.
-	IssueDuringDislosure *IssueDuringDislosure
+	IssueDuringDislosure *IssueDuringDislosure `json:"issue_during_dislosure"`
 	// What the user can pick for disclosure. This should never be nil.
-	DisclosureChoicesOverview []DisclosurePickOne
+	DisclosureChoicesOverview []DisclosurePickOne `json:"disclosure_choices_overview"`
 }
 
 // DisclosurePickOne is a discon where the user needs to pick only one credential
@@ -124,27 +124,27 @@ type DisclosurePlan struct {
 type DisclosurePickOne struct {
 	// if this is set to true the user can decide to pick none of the options
 	// because it isn't required to satisfy the disclosure
-	Optional bool
+	Optional bool `json:"optional"`
 	// the user can pick one of these without having to issue
-	OwnedOptions []*SelectableCredentialInstance
+	OwnedOptions []*SelectableCredentialInstance `json:"owned_options"`
 	// The user can issue one of these and then use it
-	ObtainableOptions []*CredentialDescriptor
+	ObtainableOptions []*CredentialDescriptor `json:"obtainable_options"`
 }
 
 // IssuanceStep is one step in the issuance wizard during disclosure flow
 type IssuanceStep struct {
 	// the list of options for the given discon
 	// the user can choose which one to issue, but only has to issue one
-	Options []*CredentialDescriptor
+	Options []*CredentialDescriptor `json:"options"`
 }
 
 // IssueDuringDislosure is what to show during issuance during disclosure
 type IssueDuringDislosure struct {
 	// The steps to fulfill before we can continue the disclosure
-	Steps []IssuanceStep
+	Steps []IssuanceStep `json:"steps"`
 	// The set of credential ids that have been issued during this session
 	// in order to satisfy the issuance steps.
-	IssuedCredentialIds map[string]struct{}
+	IssuedCredentialIds map[string]struct{} `json:"issued_credential_ids"`
 }
 
 // SessionState is a snapshot of the state of this session.
@@ -153,36 +153,36 @@ type IssueDuringDislosure struct {
 // displaying all stages for this session to the user
 type SessionState struct {
 	// The identifier for this session
-	Id int
+	Id int `json:"id"`
 	// The protocol used for this session
-	Protocol irmaclient.Protocol
+	Protocol irmaclient.Protocol `json:"protocol"`
 	// The type of session this is
-	Type SessionType
+	Type SessionType `json:"type"`
 	// In what stage this session currently is
-	Status SessionStatus
+	Status SessionStatus `json:"status"`
 	// Who started this session
-	Requestor TrustedParty
+	Requestor TrustedParty `json:"requestor"`
 	// The pairing code to show to the user when the status is pairing
-	PairingCode string
+	PairingCode string `json:"pairing_code"`
 	// The list of credentials offered to the user. The user has no choice other than accepting or denying them.
-	OfferedCredentials []*Credential
+	OfferedCredentials []*Credential `json:"offered_credentials"`
 	// The plan for disclosing credentials to satisfy this disclosure session
 	// Nil when no disclosure has to be done. Can also be present during issuance session.
-	DisclosurePlan *DisclosurePlan
+	DisclosurePlan *DisclosurePlan `json:"disclosure_plan"`
 	// The message that should be signed during this session, if any
-	MessageToSign string
+	MessageToSign string `json:"message_to_sign"`
 	// The error when this session has an error
-	Error error
+	Error error `json:"error"`
 	// The client return url when the app should redirect to after the session, if any
-	ClientReturnUrl string
+	ClientReturnUrl string `json:"client_return_url"`
 	// If this is true then the frontend should not return to the browser after the session is done
-	ContinueOnSecondDevice bool
+	ContinueOnSecondDevice bool `json:"continue_on_second_device"`
 	// The number of attempts the user still has to enter a correct pin
-	RemainingPinAttempts  int
-	PinBlockedTimeSeconds int
+	RemainingPinAttempts  int `json:"remaining_pin_attempts"`
+	PinBlockedTimeSeconds int `json:"pin_blocked_time_seconds"`
 }
 
-type Session struct {
+type session struct {
 	State             *SessionState
 	handler           SessionHandler
 	permissionHandler irmaclient.PermissionHandler
@@ -192,18 +192,18 @@ type Session struct {
 	chained           bool
 }
 
-func (s *Session) dispatchState() {
+func (s *session) dispatchState() {
 	s.handler.UpdateSession(*s.State)
 }
 
-func (s *Session) error(err error) {
+func (s *session) error(err error) {
 	s.State.Status = Status_Error
 	s.State.Error = err
 	s.dispatchState()
 }
 
 type SessionManager struct {
-	Sessions       map[int]*Session
+	Sessions       map[int]*session
 	NextId         int
 	SessionHandler SessionHandler
 	Client         *Client
@@ -213,9 +213,9 @@ func (m *SessionManager) DeleteSession(id int) {
 	delete(m.Sessions, id)
 }
 
-func (m *SessionManager) NewSession() *Session {
+func (m *SessionManager) NewSession() *session {
 	m.NextId += 1
-	s := &Session{
+	s := &session{
 		State: &SessionState{
 			Id: m.NextId,
 		},
@@ -230,39 +230,39 @@ type SessionHandler interface {
 	UpdateSession(session SessionState)
 }
 
-func (s *Session) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
+func (s *session) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
 
-func (s *Session) ClientReturnURLSet(clientReturnURL string) {
+func (s *session) ClientReturnURLSet(clientReturnURL string) {
 	s.State.ClientReturnUrl = clientReturnURL
 	s.dispatchState()
 }
 
-func (s *Session) PairingRequired(pairingCode string) {
+func (s *session) PairingRequired(pairingCode string) {
 	s.State.Status = Status_ShowPairingCode
 	s.State.PairingCode = pairingCode
 	s.dispatchState()
 }
 
-func (s *Session) Success(result string) {
+func (s *session) Success(result string) {
 	s.State.Status = Status_Success
 	s.dispatchState()
 }
 
-func (s *Session) Cancelled() {
+func (s *session) Cancelled() {
 	s.State.Status = Status_Dismissed
 	s.dispatchState()
 }
 
-func (s *Session) Failure(err *irma.SessionError) {
+func (s *session) Failure(err *irma.SessionError) {
 	s.error(err)
 }
 
-func (s *Session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
+func (s *session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
 	s.State.PinBlockedTimeSeconds = duration
 	s.error(fmt.Errorf("session blocked for %v seconds for scheme '%s'", duration, manager))
 }
 
-func (s *Session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
+func (s *session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
 	s.error(fmt.Errorf("keyshare enrollment is missing for scheme: '%s'", manager))
 }
 
@@ -276,7 +276,7 @@ func requestorInfoToTrustedParty(info *irma.RequestorInfo) TrustedParty {
 	}
 }
 
-func (s *Session) RequestIssuancePermission(
+func (s *session) RequestIssuancePermission(
 	request *irma.IssuanceRequest,
 	satisfiable bool,
 	candidates [][]irmaclient.DisclosureCandidates,
@@ -570,7 +570,7 @@ func lookupAttrValue(orig *SelectableCredentialInstance, id *irma.AttributeIdent
 	return Attribute{}, false
 }
 
-func (s *Session) RequestVerificationPermission(
+func (s *session) RequestVerificationPermission(
 	request *irma.DisclosureRequest,
 	satisfiable bool,
 	candidates [][]irmaclient.DisclosureCandidates,
@@ -600,7 +600,7 @@ func (s *Session) RequestVerificationPermission(
 	s.dispatchState()
 }
 
-func (s *Session) RequestSignaturePermission(request *irma.SignatureRequest,
+func (s *session) RequestSignaturePermission(request *irma.SignatureRequest,
 	satisfiable bool,
 	candidates [][]irmaclient.DisclosureCandidates,
 	requestorInfo *irma.RequestorInfo,
@@ -629,21 +629,21 @@ func (s *Session) RequestSignaturePermission(request *irma.SignatureRequest,
 	s.dispatchState()
 }
 
-func (s *Session) RequestAuthorizationCodeFlowPermission(
+func (s *session) RequestAuthorizationCodeFlowPermission(
 	request *irma.AuthorizationCodeFlowRequest,
 	requestorInfo *irma.RequestorInfo,
 	callback irmaclient.CodeHandler,
 ) {
 }
 
-func (s *Session) RequestPreAuthorizedCodeFlowPermission(
+func (s *session) RequestPreAuthorizedCodeFlowPermission(
 	request *irma.PreAuthorizedCodeFlowPermissionRequest,
 	requestorInfo *irma.RequestorInfo,
 	callback irmaclient.TokenPermissionHandler,
 ) {
 }
 
-func (s *Session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
+func (s *session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	s.State.Status = Status_RequestPin
 	s.State.RemainingPinAttempts = remainingAttempts
 	s.pinHandler = callback
