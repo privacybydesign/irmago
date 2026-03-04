@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/irma"
@@ -27,19 +30,28 @@ type openid4vciSession struct {
 	handler                  Handler
 	keyBinder                sdjwtvc.KeyBinder
 
-	// Settings determined from the Credential Offer and Credential Issuer metadata
+	issuerSettings openid4vciSessionIssuerSettings
+}
+
+// openid4vciSessionIssuerSettings contains all settings related to the Credential Issuer and Credential Offer that are required to perform the session, extracted from the Credential Offer and Credential Issuer metadata
+type openid4vciSessionIssuerSettings struct {
 	grantType                   openid4vci.Grant
 	authorizationServer         string
 	authorizationServerMetadata *oauth2.AuthorizationServerMetadata
 
-	// Credential Request encryption settings
 	useCredentialRequestEncryption bool
 	credentialRequestEncryptionAlg *jwa.ContentEncryptionAlgorithm
 	credentialRequestEncryptionKey *jwk.Key
 }
 
+// openid4vciSessionCredentialRequestPreferences contains wallet-based preferences related to the credential that will be requested
+// We define this struct, so that we apply logic to the credential metadata, and choose the preferences from the available options, in case multiple options are offered by the issuer metadata (e.g. multiple supported encryption algorithms, or multiple supported key binding methods)
+type openid4vciSessionCredentialRequestPreferences struct {
+	cryptographicBindingMethod *openid4vci.CryptographicBindingMethod
+}
+
 func (s *openid4vciSession) perform() error {
-	// TODO: validate all properties are correctly set
+	// TODO: validate all openid4vciSession properties are correctly set
 
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
 	err := s.configureIssuerSettings()
@@ -52,9 +64,11 @@ func (s *openid4vciSession) perform() error {
 
 	// Based on the grant type, perform the appropriate flow
 	var grantHandler GrantHandler
-	switch s.grantType.GetGrantType() {
+	switch s.issuerSettings.grantType.GetGrantType() {
 	case openid4vci.GrantType_AuthorizationCode:
-		grantHandler = &AuthorizationCodeFlowHandler{}
+		grantHandler = &AuthorizationCodeFlowHandler{
+			httpClient: s.httpClient,
+		}
 	case openid4vci.GrantType_PreAuthorizedCode:
 		grantHandler = &PreAuthorizedCodeFlowHandler{}
 	default:
@@ -95,9 +109,9 @@ func (s *openid4vciSession) perform() error {
 func (s *openid4vciSession) configureIssuerSettings() error {
 	// Determine which grant-type to use (Authorization Code is preferred over Pre-Authorized Code)
 	if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
-		s.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
+		s.issuerSettings.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
 	} else if s.credentialOffer.Grants.PreAuthorizedCodeGrant != nil {
-		s.grantType = s.credentialOffer.Grants.PreAuthorizedCodeGrant
+		s.issuerSettings.grantType = s.credentialOffer.Grants.PreAuthorizedCodeGrant
 	} else {
 		return fmt.Errorf("no supported grant type found in credential offer")
 	}
@@ -111,26 +125,27 @@ func (s *openid4vciSession) configureIssuerSettings() error {
 	if err != nil {
 		return fmt.Errorf("could not fetch authorization server metadata: %v", err)
 	}
-	s.authorizationServer = authorizationServer
-	s.authorizationServerMetadata = asMetadata
+	s.issuerSettings.authorizationServer = authorizationServer
+	s.issuerSettings.authorizationServerMetadata = asMetadata
+
+	// TODO: verify AS supports the required features and to extract endpoints
 
 	// Determine if we need to use Credential Request Encryption
-	s.useCredentialRequestEncryption = false
+	s.issuerSettings.useCredentialRequestEncryption = false
 	if s.credentialIssuerMetadata.CredentialRequestEncryption != nil {
 		requestEncryption := *s.credentialIssuerMetadata.CredentialRequestEncryption
 
 		if requestEncryption.EncryptionRequired {
-			s.useCredentialRequestEncryption = true
+			s.issuerSettings.useCredentialRequestEncryption = true
 
 			// Determine which encryption algorithm to use
 			for _, algName := range requestEncryption.EncValuesSupported {
 				if alg, ok := jwa.LookupContentEncryptionAlgorithm(algName); ok {
-					//if alg, ok := jwa.LookupKeyEncryptionAlgorithm(algName); ok {
-					s.credentialRequestEncryptionAlg = &alg
+					s.issuerSettings.credentialRequestEncryptionAlg = &alg
 					break
 				}
 			}
-			if s.credentialRequestEncryptionAlg == nil {
+			if s.issuerSettings.credentialRequestEncryptionAlg == nil {
 				return fmt.Errorf("no supported encryption algorithm found for credential request encryption")
 			}
 
@@ -140,15 +155,15 @@ func (s *openid4vciSession) configureIssuerSettings() error {
 					keyAlg, keyAlgPresent := key.Algorithm()
 					keyUsage, keyUsagePresent := key.KeyUsage()
 
-					if keyAlgPresent && keyAlg.String() == s.credentialRequestEncryptionAlg.String() && keyUsagePresent && keyUsage == "enc" {
-						s.credentialRequestEncryptionKey = &key
+					if keyAlgPresent && keyAlg.String() == s.issuerSettings.credentialRequestEncryptionAlg.String() && keyUsagePresent && keyUsage == "enc" {
+						s.issuerSettings.credentialRequestEncryptionKey = &key
 					}
 				} else {
 					break
 				}
 			}
-			if s.credentialRequestEncryptionKey == nil {
-				return fmt.Errorf("no suitable key found in credential request encryption for algorithm %s", s.credentialRequestEncryptionAlg.String())
+			if s.issuerSettings.credentialRequestEncryptionKey == nil {
+				return fmt.Errorf("no suitable key found in credential request encryption for algorithm %s", s.issuerSettings.credentialRequestEncryptionAlg.String())
 			}
 		}
 	}
@@ -156,12 +171,32 @@ func (s *openid4vciSession) configureIssuerSettings() error {
 	return nil
 }
 
+func getCredentialRequestPreferences(c openid4vci.CredentialConfiguration) *openid4vciSessionCredentialRequestPreferences {
+	s := &openid4vciSessionCredentialRequestPreferences{}
+
+	if len(c.CryptographicBindingMethodsSupported) > 0 {
+		var cryptoBindingMethod openid4vci.CryptographicBindingMethod
+
+		// Order of prefered cryptographic binding methods: JWK > DID > COSE, based on ease of implementation and expected level of support among issuers
+		if slices.Contains(c.CryptographicBindingMethodsSupported, openid4vci.CryptographicBindingMethod_JWK) {
+			cryptoBindingMethod = openid4vci.CryptographicBindingMethod_JWK
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, openid4vci.CryptographicBindingMethod_DID_KEY) {
+			cryptoBindingMethod = openid4vci.CryptographicBindingMethod_DID_KEY
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, openid4vci.CryptographicBindingMethod_COSE) {
+			cryptoBindingMethod = openid4vci.CryptographicBindingMethod_COSE
+		}
+		s.cryptographicBindingMethod = &cryptoBindingMethod
+	}
+
+	return s
+}
+
 func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 	if len(s.credentialIssuerMetadata.AuthorizationServers) == 0 {
 		// Use the credential issuer as the authorization server if no authorization servers are listed in the metadata
 		return s.credentialOffer.CredentialIssuer, nil
 	} else {
-		credentialOfferedAuthServer := s.grantType.GetAuthorizationServer()
+		credentialOfferedAuthServer := s.issuerSettings.grantType.GetAuthorizationServer()
 
 		// Try to match the authorization server from the offer to the metadata, or just pick the first one if no hint is given in the offer
 		if credentialOfferedAuthServer == nil {
@@ -170,7 +205,6 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 
 		for _, authServer := range s.credentialIssuerMetadata.AuthorizationServers {
 			if authServer == *credentialOfferedAuthServer {
-				// TODO: get metadata from the authorization server's .well-known endpoint to verify it supports the required features and to extract endpoints
 				return authServer, nil
 			}
 		}
@@ -209,8 +243,12 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		return fmt.Errorf("credential request requires nonce but none was provided")
 	}
 
-	credConfig := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
-	requireCryptographicKeyBinding := len(credConfig.CryptographicBindingMethodsSupported) > 0
+	credentialConfig := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
+
+	// TODO: determine credential specific settings (like cryptographic key binding requirements) based on the credential configuration metadata, and pass those to the requestCredential function
+	credentialRequestPreferences := getCredentialRequestPreferences(credentialConfig)
+
+	requireCryptographicKeyBinding := len(credentialConfig.CryptographicBindingMethodsSupported) > 0
 
 	// TODO: fill correct fields in Credential Request..
 	// For now, we only support the credential_configuration_id parameter, no credential_identifier from authorization details
@@ -220,59 +258,69 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
 	// TODO: disabled check for testing with Digidentity
-	//if requireCryptographicKeyBinding {
-	// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
-	num := uint(1)
-	if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
-		num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
-	}
+	if requireCryptographicKeyBinding {
+		// Make sure the determined preference is set
+		if credentialRequestPreferences.cryptographicBindingMethod == nil {
+			return fmt.Errorf("credential configuration requires cryptographic key binding, but no supported cryptographic binding method was found in the credential configuration metadata")
+		}
 
-	// Since we now only support JWT proofs (and the issuer supports this, as checked with ValidateSupportedFeatures), we can directly use that to create the key pairs with JWT proofs
-	proofType := credConfig.ProofTypesSupported[openid4vci.ProofTypeIdentifier_JWT]
+		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
+		num := uint(1)
+		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
+			num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
+		}
 
-	// Determine signing algorithm for key binding proofs
-	var alg jwa.SignatureAlgorithm
-	for _, algName := range proofType.ProofSigningAlgValuesSupported {
-		foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
-		if ok {
-			alg = foundAlg
-			break
+		// Since we now only support JWT proofs (and the issuer supports this, as checked with ValidateSupportedFeatures), we can directly use that to create the key pairs with JWT proofs
+		proofType := credentialConfig.ProofTypesSupported[openid4vci.ProofTypeIdentifier_JWT]
+
+		// Determine signing algorithm for key binding proofs
+		var alg jwa.SignatureAlgorithm
+		for _, algName := range proofType.ProofSigningAlgValuesSupported {
+			foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
+			if ok {
+				alg = foundAlg
+				break
+			}
+		}
+
+		// According to the spec, the 'issuer' should be an identifier which identifies the wallet TYPE, not the wallet INSTANCE
+		// Fow now, we just use our applicationId as a fixed value
+		// TODO: replace with value from wallet attestation?
+		issuer := "org.irmacard.cardemu"
+
+		// Create a Proof builder, matching the `proofType` from the supported proof types
+		proofBuilder := credentials.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
+
+		proofJwts, err := s.keyBinder.CreateKeyPairsWithProofs(num, proofBuilder)
+		//proofJwts, err := s.keyBinder.CreateKeyPairsWithJwtProofs(num, alg, issuer, *credentialRequestPreferences.cryptographicBindingMethod, s.credentialIssuerMetadata.CredentialIssuer, cNonce)
+		if err != nil {
+			return fmt.Errorf("could not create key pairs: %v", err)
+		}
+
+		// Use unsafe to convert []string to []any without allocations
+		// If we use type-safe conversion, we would need to allocate and copy each element
+		// which is costly when dealing with many key bindings
+		// x := *(*[]any)(unsafe.Pointer(&proofJwts))
+		// x = x[:len(proofJwts)]
+		x := make([]any, len(proofJwts))
+		for i, v := range proofJwts {
+			x[i] = v
+		}
+
+		request.Proofs = &openid4vci.Proofs{
+			openid4vci.ProofTypeIdentifier_JWT: x,
 		}
 	}
-
-	// According to the spec, the 'issuer' should be an identifier which identifies the wallet TYPE, not the wallet INSTANCE
-	// Fow now, we just use our applicationId as a fixed value
-	// TODO: replace with value from wallet attestation?
-	issuer := "org.irmacard.cardemu"
-	proofJwts, err := s.keyBinder.CreateKeyPairsWithJwtProofs(num, alg, issuer, s.credentialIssuerMetadata.CredentialIssuer, cNonce)
-	if err != nil {
-		return fmt.Errorf("could not create key pairs: %v", err)
-	}
-
-	// Use unsafe to convert []string to []any without allocations
-	// If we use type-safe conversion, we would need to allocate and copy each element
-	// which is costly when dealing with many key bindings
-	// x := *(*[]any)(unsafe.Pointer(&proofJwts))
-	// x = x[:len(proofJwts)]
-	x := make([]any, len(proofJwts))
-	for i, v := range proofJwts {
-		x[i] = v
-	}
-
-	request.Proofs = &openid4vci.Proofs{
-		openid4vci.ProofTypeIdentifier_JWT: x,
-	}
-	//}
 
 	// If the issuer requires encryption of the credential request, we need to handle that here
 	var requestBody []byte
 	var contentType string
-	if s.useCredentialRequestEncryption {
+	if s.issuerSettings.useCredentialRequestEncryption {
 		contentType = "application/jwt"
 
 		// TODO: handle alg/key errors
-		alg, _ := (*s.credentialRequestEncryptionKey).Algorithm()
-		key, _ := (*s.credentialRequestEncryptionKey).PublicKey()
+		alg, _ := (*s.issuerSettings.credentialRequestEncryptionKey).Algorithm()
+		key, _ := (*s.issuerSettings.credentialRequestEncryptionKey).PublicKey()
 
 		token, err := jwt.NewBuilder().
 			Claim("credential_configuration_id", request.CredentialConfigurationId).
@@ -394,11 +442,6 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	sdJwts := make([]sdjwtvc.SdJwtVcKb, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
 		sdJwts[i] = sdjwtvc.SdJwtVcKb(cred.Credential)
-
-		// TODO: remove this
-		if i == 0 {
-			irma.Logger.Printf("first credential: %s", sdJwts[i])
-		}
 	}
 
 	// Store the credentials using the storage client
@@ -436,25 +479,39 @@ func (s *openid4vciSession) requestNonce() (string, error) {
 	return nonceResponse.Nonce, nil
 }
 
+// extractScopesFromCredentialOffer finds the scopes in the issuer metadata, for the requested credential configurations from the credential offer.
 func (s *openid4vciSession) extractScopesFromCredentialOffer() []string {
 	var scopes []string
 	for _, configId := range s.credentialOffer.CredentialConfigurationIds {
 		config := s.credentialIssuerMetadata.CredentialConfigurationsSupported[configId]
-		scopes = append(scopes, config.Scope)
+		if config.Scope != nil && !slices.Contains(scopes, *config.Scope) {
+			scopes = append(scopes, *config.Scope)
+		}
 	}
 	return scopes
 }
 
-// TODO: this function is only used while we only use EUDIPLO;  we need to change the code to actually get the metadata, and fall back to /.well-known/openid-configuration if needed
-func getDiscoveryUrlFromIssuer(authServer string) string {
-	// Used for: Keycloak
-	return fmt.Sprintf("%s/.well-known/oauth-authorization-server/", authServer)
+// extractAuthorizationDetailsJson extracts the authorization details from the credential offer and issuer metadata, and returns it as a JSON string to be included in the authorization request, if needed. If no authorization details are needed, it returns nil.
+func (s *openid4vciSession) extractAuthorizationDetailsJson() (*string, error) {
+	if len(s.issuerSettings.authorizationServerMetadata.AuthorizationDetailsTypesSupported) > 0 && len(s.credentialOffer.CredentialConfigurationIds) > 1 {
+		authDetails := make([]oauth2.AuthorizationDetailsRecord, len(s.credentialOffer.CredentialConfigurationIds))
+		for i, credential := range s.credentialOffer.CredentialConfigurationIds {
+			authDetails[i] = oauth2.AuthorizationDetailsRecord{
+				Type:                      "openid_credential",
+				CredentialConfigurationId: credential,
+			}
 
-	//uri, _ := url.Parse(authServer)
+			if len(s.credentialIssuerMetadata.AuthorizationServers) > 0 {
+				authDetails[i].Locations[0] = s.credentialIssuerMetadata.CredentialIssuer
+			}
+		}
+		authDetailsJsonBytes, err := json.Marshal(authDetails)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal authorization details: %v", err)
+		}
 
-	// Used for: EUDIPLO
-	//return fmt.Sprintf("%s://%s/.well-known/openid-configuration", uri.Scheme, uri.Host)
-
-	//return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/", uri.Scheme, uri.Host)
-	//return fmt.Sprintf("%s://%s/.well-known/oauth-authorization-server/%s", uri.Scheme, uri.Host, strings.Trim(uri.Path, "/"))
+		authDetailsJson := string(authDetailsJsonBytes)
+		return &authDetailsJson, nil
+	}
+	return nil, nil
 }

@@ -1490,7 +1490,7 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: *verifyOpts,
 		},
-		Clock:       NewSystemClock(),
+		Clock:       eudi_jwt.NewSystemClock(),
 		JwtVerifier: NewJwxJwtVerifier(),
 	}
 

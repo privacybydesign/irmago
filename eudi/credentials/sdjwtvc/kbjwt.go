@@ -8,10 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials"
+	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
@@ -116,8 +116,8 @@ type KeyBinder interface {
 	// Creates a batch of key pairs and returns the pub keys.
 	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
 	CreateKeyPairs(num uint) ([]jwk.Key, error)
-	// Creates a batch of key pairs and returns the proofs in JWT format (with embedded pubkey JWK).
-	CreateKeyPairsWithJwtProofs(num uint, alg jwa.SignatureAlgorithm, issuer string, audience string, nonce *string) ([]string, error)
+	// Creates a batch of key pairs and returns the proofs using the provided ProofBuilder.
+	CreateKeyPairsWithProofs(num uint, proofBuilder credentials.ProofBuilder) ([]string, error)
 	// Takes in the hash over the issuer signed JWT and the selected disclosures
 	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
 	// Takes in a list of pub keys for which it should delete the corresponding private keys
@@ -133,7 +133,7 @@ type DefaultKeyBinder struct {
 
 func NewDefaultKeyBinder(storage KeyBindingStorage) KeyBinder {
 	return &DefaultKeyBinder{
-		clock:   NewSystemClock(),
+		clock:   eudi_jwt.NewSystemClock(),
 		storage: storage,
 	}
 }
@@ -142,7 +142,7 @@ func NewDefaultKeyBinderWithInMemoryStorage() KeyBinder {
 	return NewDefaultKeyBinder(NewInMemoryKeyBindingStorage())
 }
 
-// CreateKeyPairs will be deprecated in favor of CreateKeyPairsWithJwtProofs when SD-JWT VC issuance over IRMA protocol is removed.
+// CreateKeyPairs will be deprecated in favor of CreateKeyPairsWithProofs when SD-JWT VC issuance over IRMA protocol is removed.
 func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	result := make([]jwk.Key, num)
 	privKeys := make([]*ecdsa.PrivateKey, num)
@@ -174,54 +174,29 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	return result, nil
 }
 
-func (c *DefaultKeyBinder) CreateKeyPairsWithJwtProofs(num uint, alg jwa.SignatureAlgorithm, issuer string, audience string, nonce *string) ([]string, error) {
+func (c *DefaultKeyBinder) CreateKeyPairsWithProofs(num uint, proofBuilder credentials.ProofBuilder) ([]string, error) {
 	privKeys := make([]*ecdsa.PrivateKey, num)
-	proofBuilder := jwt.NewBuilder()
 	proofs := make([]string, num)
 
 	for i := range num {
+		// TODO: base the choice key type on the supported algorithms in the credential configuration (proof_types_supported / proof_signing_alg_values_supported)
 		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ecdsa private key: %v", err)
 		}
 
-		privJwk, err := jwk.Import(privKey)
+		proof, err := proofBuilder.Build(privKey)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert ecdsa priv key to jwk: %v", err)
+			return nil, fmt.Errorf("failed to build proof: %v", err)
 		}
 
-		pubJwk, err := privJwk.PublicKey()
-		if err != nil {
-			return nil, fmt.Errorf("failed to obtain pub key from priv key jwk: %v", err)
+		// TODO: this currently only supports the proof builder returning a string (which is the case for the JwtProofBuilder), but we need to support other types of proof in the future
+		if proofStr, ok := proof.(string); ok {
+			proofs[i] = proofStr
+		} else {
+			return nil, fmt.Errorf("proof builder did not return a string")
 		}
 
-		// Build the proof JWT
-		proofBuilder = proofBuilder.
-			Issuer(issuer).
-			Audience([]string{audience}).
-			IssuedAt(c.clock.Now())
-
-		if nonce != nil {
-			proofBuilder = proofBuilder.Claim("nonce", *nonce)
-		}
-
-		proofPayload, err := proofBuilder.Build()
-		if err != nil {
-			return nil, fmt.Errorf("failed to build proof payload: %v", err)
-		}
-
-		proofHeaders := jws.NewHeaders()
-		proofHeaders.Set(jws.AlgorithmKey, alg.String())
-		proofHeaders.Set(jws.TypeKey, "openid4vci-proof+jwt")
-		proofHeaders.Set(jws.JWKKey, pubJwk)
-
-		serializedJwt, err := jwt.Sign(proofPayload, jwt.WithKey(alg, privJwk, jws.WithProtectedHeaders(proofHeaders)))
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign proof jwt: %v", err)
-		}
-
-		proofs[i] = string(serializedJwt)
 		privKeys[i] = privKey
 	}
 

@@ -17,6 +17,8 @@ import (
 	"golang.org/x/text/language"
 )
 
+const FallbackLocale = "en"
+
 // CreateHashForSdJwtVc creates the hash used for SD-JWTs, it's kept this simple so it can also be constructed from
 // an issuance request before the actual credential is issued
 func CreateHashForSdJwtVc(credType string, attributes map[string]any) (string, error) {
@@ -104,8 +106,18 @@ func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | o
 
 func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.TranslatedString {
 	result := irma.TranslatedString{}
+	var nonLocaleValue *string = nil
+
 	for _, display := range displays {
-		lang, err := language.Parse(display.GetLocale())
+		locale := display.GetLocale()
+		if locale == nil {
+			result[""] = display.GetName() // If no locale is provided, we can still include the translation with an empty string as the key, but it won't be used for display
+			t := display.GetName()         // Store the non-locale value to use as fallback if no translation for the fallback locale is provided
+			nonLocaleValue = &t
+			continue
+		}
+
+		lang, err := language.Parse(*locale)
 		if err != nil {
 			continue
 		}
@@ -114,6 +126,10 @@ func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.
 
 		// TODO: this overwrites translations for the same base language (i.e. en-US would overwrite en-GB), because the app only handles base languages
 		result[base.String()] = display.GetName()
+	}
+
+	if _, exists := result[FallbackLocale]; !exists && nonLocaleValue != nil {
+		result[FallbackLocale] = *nonLocaleValue
 	}
 
 	return result

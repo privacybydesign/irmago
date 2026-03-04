@@ -98,7 +98,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*clientstorage.St
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: *x509Options,
 		},
-		Clock:       sdjwtvc.NewSystemClock(),
+		Clock:       eudi_jwt.NewSystemClock(),
 		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),
 	}
 

@@ -68,6 +68,7 @@ type MockSessionHandler struct {
 	permissionChannel             chan *MockPermissionRequest
 	sessionEndChannel             chan bool // true if successful
 	pinRequestChannel             chan PinHandler
+	codeRequestChannel            chan CodeHandler
 	tokenRequestChannel           chan TokenHandler
 	tokenPermissionRequestChannel chan TokenPermissionHandler
 	log                           bool
@@ -79,6 +80,7 @@ func NewMockSessionHandler(t *testing.T) *MockSessionHandler {
 		permissionChannel:             make(chan *MockPermissionRequest, 1),
 		sessionEndChannel:             make(chan bool, 1),
 		pinRequestChannel:             make(chan PinHandler, 1),
+		codeRequestChannel:            make(chan CodeHandler, 1),
 		tokenRequestChannel:           make(chan TokenHandler, 1),
 		tokenPermissionRequestChannel: make(chan TokenPermissionHandler, 1),
 		log:                           false,
@@ -219,9 +221,9 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	}
 }
 
-func (h *MockSessionHandler) RequestPermissionAndPerformAuthCodeWithTokenExchange(request *irma.AuthorizationCodeFlowAndTokenExchangeRequest,
+func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *irma.AuthorizationCodeFlowRequest,
 	requestorInfo *irma.RequestorInfo,
-	callback TokenHandler,
+	callback CodeHandler,
 ) {
 	if h.log {
 		issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
@@ -229,7 +231,7 @@ func (h *MockSessionHandler) RequestPermissionAndPerformAuthCodeWithTokenExchang
 		fmt.Printf("OpenId4VciIssuanceRequest: %v\n", string(issuanceRequestJson))
 	}
 
-	h.tokenRequestChannel <- callback
+	h.codeRequestChannel <- callback
 }
 
 func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(

@@ -25,6 +25,9 @@ import (
 // and specifying the attributes to be disclosed.
 type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 
+// CodeHandler is a callback for providing the authorization code from the app side
+type CodeHandler func(proceed bool, code *string)
+
 // TokenHandler is a callback for providing the access token (and optionally refresh token)
 // from the app side when the authorization has completed, the code was exchanged for an access token and the flow is hereby returned to the app.
 type TokenHandler func(proceed bool, accessToken string, refreshToken *string)
@@ -63,10 +66,10 @@ type Handler interface {
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler)
 
-	RequestPermissionAndPerformAuthCodeWithTokenExchange(
-		request *irma.AuthorizationCodeFlowAndTokenExchangeRequest,
+	RequestAuthorizationCodeFlowPermission(
+		request *irma.AuthorizationCodeFlowRequest,
 		requestorInfo *irma.RequestorInfo,
-		callback TokenHandler)
+		callback CodeHandler)
 
 	RequestPreAuthorizedCodeFlowPermission(
 		request *irma.PreAuthorizedCodeFlowPermissionRequest,

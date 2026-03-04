@@ -106,8 +106,9 @@ func (h *backgroundIssuanceHandler) RequestSignaturePermission(request *irma.Sig
 func (h *backgroundIssuanceHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(false)
 }
-func (h *backgroundIssuanceHandler) RequestPermissionAndPerformAuthCodeWithTokenExchange(request *irma.AuthorizationCodeFlowAndTokenExchangeRequest, serverName *irma.RequestorInfo, callback TokenHandler) {
-	callback(false, "test-access-token", nil)
+func (h *backgroundIssuanceHandler) RequestAuthorizationCodeFlowPermission(request *irma.AuthorizationCodeFlowRequest, serverName *irma.RequestorInfo, callback CodeHandler) {
+	x := "test-code"
+	callback(false, &x)
 }
 func (h *backgroundIssuanceHandler) RequestPreAuthorizedCodeFlowPermission(request *irma.PreAuthorizedCodeFlowPermissionRequest, requestorInfo *irma.RequestorInfo, callback TokenPermissionHandler) {
 	callback(false, nil)
