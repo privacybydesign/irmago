@@ -700,7 +700,7 @@ func (client *Client) HandleUserInteraction(userInteraction SessionUserInteracti
 	return nil
 }
 
-func (client *Client) NewNewSession(sessionrequest string) {
+func (client *Client) NewSession(sessionrequest string) {
 	session := client.SessionManager.NewSession()
 	state := session.State
 

@@ -1043,7 +1043,7 @@ func testDisclosureWithPredefinedValues(
 		},
 	}
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 
@@ -1157,7 +1157,7 @@ func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent
 		},
 	}
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 	require.Empty(t, session.OfferedCredentials)
@@ -1193,7 +1193,7 @@ func testKeyshareBlocked(
 	// specifically use the test.test.email since it requires a keyshare session
 	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest())
 
-	c.NewNewSession(sessionJson)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
@@ -1246,7 +1246,7 @@ func testKeyshareEnrollmentMissing(
 
 	// specifically use test.test.email because it requires a keyshare server session (irma-demo doesn't)
 	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest())
-	c.NewNewSession(sessionJson)
+	c.NewSession(sessionJson)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, session.Id, 1)
@@ -1265,7 +1265,7 @@ func testDisclosureClientReturnUrl(
 	request.Disclose = studentCardDisclosure()
 	request.ClientReturnURL = "https://yivi.app"
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, "https://yivi.app", session.ClientReturnUrl)
@@ -1280,7 +1280,7 @@ func testIssuanceClientReturnUrl(
 	request := createEmailIssuanceRequest()
 	request.ClientReturnURL = "https://yivi.app"
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, "https://yivi.app", session.ClientReturnUrl)
@@ -1310,7 +1310,7 @@ func testChainedSession(
 	sessionJson, err := json.MarshalIndent(qr, "", "   ")
 	require.NoError(t, err)
 
-	c.NewNewSession(string(sessionJson))
+	c.NewSession(string(sessionJson))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, client.Status_RequestPermission, session.Status)
@@ -1334,7 +1334,7 @@ func testChainedSession(
 	sessionJson, err = json.MarshalIndent(sesPkg.SessionPtr, "", "   ")
 	require.NoError(t, err)
 
-	c.NewNewSession(string(sessionJson))
+	c.NewSession(string(sessionJson))
 	session = awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 2, session.Id)
@@ -1384,7 +1384,7 @@ func testIrmaSignatureRequestorInfoCorrect(
 	request := irma.NewSignatureRequest("Hello world")
 	request.Disclose = studentCardDisclosure()
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -1400,7 +1400,7 @@ func testIrmaDisclosureRequestorInfoCorrect(
 	request := irma.NewDisclosureRequest()
 	request.Disclose = studentCardDisclosure()
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -1413,7 +1413,7 @@ func testIrmaIssuanceRequestorInfoCorrect(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -1447,7 +1447,7 @@ func testMultipleCredentialsIssuance(
 		},
 	})
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -1466,7 +1466,7 @@ func testIssuancePermissionNotGranted_SessionDismissed(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -1498,7 +1498,7 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 		mijnOverheidDisclosure()[0],
 	}
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -1552,7 +1552,7 @@ func testContinueOnSecondDevice(
 ) {
 	request := createEmailIssuanceRequest()
 	sesionJson := startCrossDeviceIrmaSessionAtServer(t, irmaServer, request)
-	c.NewNewSession(sesionJson)
+	c.NewSession(sesionJson)
 	session := awaitSessionState(t, sessionHandler)
 	require.True(t, session.ContinueOnSecondDevice)
 }
@@ -1576,7 +1576,7 @@ func testSessionWithPairingCode(
 	frontendOptions.PairingMethod = "pin"
 	irmaServer.irma.SetFrontendOptions(requestorToken, &frontendOptions)
 
-	c.NewNewSession(string(sessionJson))
+	c.NewSession(string(sessionJson))
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_ShowPairingCode)
@@ -1604,7 +1604,7 @@ func testSignatureRequest(
 		},
 	}
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Signature, client.Status_RequestPermission)
 	require.Equal(t, "Hello, World!", session.MessageToSign)
@@ -1648,7 +1648,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	request := createEmailIssuanceRequest()
 	request.Disclose = studentCardOrMijnOverheidDisclosure()
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
@@ -1706,7 +1706,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 		studentCardOrMijnOverheidDisclosure()[0],
 	}
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
@@ -1784,7 +1784,7 @@ func testSessionErrorsArePropagated(
 	require.NoError(t, err)
 
 	// use the session request (meant for irma server) directly on client: should cause error
-	c.NewNewSession(string(sessionJson))
+	c.NewSession(string(sessionJson))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -1804,7 +1804,7 @@ func testUserCanDismissSession(
 	request := irma.NewDisclosureRequest()
 	request.Disclose = studentCardOrMijnOverheidDisclosure()
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 
@@ -1826,7 +1826,7 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 	request := irma.NewDisclosureRequest()
 	request.Disclose = studentCardOrMijnOverheidDisclosure()
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
@@ -1891,7 +1891,7 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 		},
 	}
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
@@ -1962,7 +1962,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 
 	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
-	c.NewNewSession(sessionRequestJson)
+	c.NewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
@@ -1998,7 +1998,7 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 
 	// start the issuance session
 	issRequest := startSameDeviceIrmaSessionAtServer(t, irmaServer, createMijnOverheidIssuanceRequest())
-	c.NewNewSession(issRequest)
+	c.NewSession(issRequest)
 	issuanceSession := awaitSessionState(t, sessionHandler)
 	require.Equal(t, issuanceSession.Status, client.Status_RequestPermission)
 	require.Equal(t, issuanceSession.Id, 2)
@@ -2057,7 +2057,7 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 		},
 	}
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
@@ -2091,7 +2091,7 @@ func testSingleCredentialDisclosureWithUnavailableCredential(
 	}
 
 	c.DeleteKeyshareTokens()
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
@@ -2128,7 +2128,7 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 	}
 
 	c.DeleteKeyshareTokens()
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
@@ -2190,7 +2190,7 @@ func schemalessPerformIrmaIssuanceSession(
 	c.DeleteKeyshareTokens()
 	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
-	c.NewNewSession(sessionRequestJson)
+	c.NewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, irmaclient.Protocol_Irma)
@@ -2284,7 +2284,7 @@ func issue(
 	req *irma.IssuanceRequest,
 ) {
 	issRequest := startSameDeviceIrmaSessionAtServer(t, irmaServer, req)
-	c.NewNewSession(issRequest)
+	c.NewSession(issRequest)
 	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
 	require.Equal(t, session.Status, client.Status_RequestPermission)
 
@@ -2467,6 +2467,6 @@ func startOpenID4VPSessionWithAuthRequest(
 	sessionJson, err := json.Marshal(sessionRequest)
 	require.NoError(t, err)
 
-	c.NewNewSession(string(sessionJson))
+	c.NewSession(string(sessionJson))
 	return awaitSessionState(t, sessionHandler)
 }

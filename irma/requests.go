@@ -906,7 +906,7 @@ func (sr *SignatureRequest) GetNonce(timestamp *atum.Timestamp) *big.Int {
 	return ASN1ConvertSignatureNonce(sr.Message, sr.BaseRequest.GetNonce(nil), timestamp)
 }
 
-func (sr *SignatureRequest) SignatureFromMessage(message interface{}, timestamp *atum.Timestamp) (*SignedMessage, error) {
+func (sr *SignatureRequest) SignatureFromMessage(message any, timestamp *atum.Timestamp) (*SignedMessage, error) {
 	signature, ok := message.(*Disclosure)
 
 	if !ok {
@@ -1141,15 +1141,15 @@ func (claims *SignatureRequestorJwt) SessionRequest() SessionRequest { return cl
 // SessionRequest returns an IRMA session object.
 func (claims *IdentityProviderJwt) SessionRequest() SessionRequest { return claims.Request.Request }
 
-func (claims *ServiceProviderJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+func (claims *ServiceProviderJwt) Sign(method jwt.SigningMethod, key any) (string, error) {
 	return jwt.NewWithClaims(method, claims).SignedString(key)
 }
 
-func (claims *SignatureRequestorJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+func (claims *SignatureRequestorJwt) Sign(method jwt.SigningMethod, key any) (string, error) {
 	return jwt.NewWithClaims(method, claims).SignedString(key)
 }
 
-func (claims *IdentityProviderJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+func (claims *IdentityProviderJwt) Sign(method jwt.SigningMethod, key any) (string, error) {
 	return jwt.NewWithClaims(method, claims).SignedString(key)
 }
 
@@ -1197,7 +1197,7 @@ func (claims *RevocationJwt) Valid() error {
 	return nil
 }
 
-func (claims *RevocationJwt) Sign(method jwt.SigningMethod, key interface{}) (string, error) {
+func (claims *RevocationJwt) Sign(method jwt.SigningMethod, key any) (string, error) {
 	return jwt.NewWithClaims(method, claims).SignedString(key)
 }
 
@@ -1207,7 +1207,7 @@ func (claims *SignatureRequestorJwt) Action() Action { return ActionSigning }
 
 func (claims *IdentityProviderJwt) Action() Action { return ActionIssuing }
 
-func SignSessionRequest(request SessionRequest, alg jwt.SigningMethod, key interface{}, name string) (string, error) {
+func SignSessionRequest(request SessionRequest, alg jwt.SigningMethod, key any, name string) (string, error) {
 	var jwtcontents RequestorJwt
 	switch r := request.(type) {
 	case *IssuanceRequest:
@@ -1220,7 +1220,7 @@ func SignSessionRequest(request SessionRequest, alg jwt.SigningMethod, key inter
 	return jwtcontents.Sign(alg, key)
 }
 
-func SignRequestorRequest(request RequestorRequest, alg jwt.SigningMethod, key interface{}, name string) (string, error) {
+func SignRequestorRequest(request RequestorRequest, alg jwt.SigningMethod, key any, name string) (string, error) {
 	var jwtcontents RequestorJwt
 	switch r := request.(type) {
 	case *IdentityProviderRequest:

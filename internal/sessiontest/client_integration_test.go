@@ -256,7 +256,7 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, c *client.Client,
 	}
 
 	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, combinedIssuanceRequest)
-	c.NewNewSession(sessionRequestJson)
+	c.NewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, client.Status_RequestPermission, session.Status)
 
@@ -320,7 +320,7 @@ func performCompletelyOptionalDisclosure(t *testing.T, c *client.Client, session
 			irma.AttributeCon{},
 		},
 	}
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, client.Status_RequestPermission, session.Status)
 
@@ -823,7 +823,7 @@ func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionHandler *MockS
 	sessionJson, err := json.Marshal(sessionReq)
 	require.NoError(t, err)
 
-	c.NewNewSession(string(sessionJson))
+	c.NewSession(string(sessionJson))
 	sessionState := awaitSessionState(t, sessionHandler)
 	require.Equal(t, client.Status_RequestPermission, sessionState.Status)
 
@@ -846,7 +846,7 @@ func createIdemixOnlyIssuanceRequest() *irma.IssuanceRequest {
 }
 
 func failIssueSdJwtAndIdemixToClient(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, client.Status_RequestPermission, session.Status)
 
@@ -865,7 +865,7 @@ func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionHandler
 			},
 		},
 	}
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, client.Status_RequestPermission, session.Status)
 
@@ -886,7 +886,7 @@ func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionHandler 
 		},
 	}
 
-	c.NewNewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, client.Status_RequestPermission, session.Status)
 

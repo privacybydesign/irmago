@@ -1,5 +1,4 @@
 //go:build !local_tests
-// +build !local_tests
 
 // Workaround debug directive for https://github.com/microsoft/mssql-docker/issues/895
 //go:debug x509negativeserial=1
@@ -623,7 +622,7 @@ func testRevocationAll(t *testing.T, dbType string) {
 		// check that the events of the update message match our issuance records
 		require.Len(t, update[revocationPkCounter].Events, 4)
 		require.Equal(t, 0, update[revocationPkCounter].Events[0].E.Cmp(big.NewInt(1)))
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			require.Equal(t, 0, update[revocationPkCounter].Events[i+1].E.Cmp((*big.Int)(r[i].Attr)))
 		}
 	})
@@ -876,7 +875,7 @@ func fakeMultipleRevocations(t *testing.T, count uint64, conf *irma.RevocationSt
 	require.NotEmpty(t, u[revocationPkCounter].Events)
 	event := u[revocationPkCounter].Events[len(u[revocationPkCounter].Events)-1]
 
-	for i := uint64(0); i < count; i++ {
+	for i := range count {
 		witness, err := revocation.RandomWitness(sk, acc)
 		require.NoError(t, err)
 		acc, event, err = acc.Remove(sk, witness.E, event)
