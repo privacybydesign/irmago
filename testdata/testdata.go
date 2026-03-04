@@ -47,6 +47,7 @@ var IssuerPubJwkBytes []byte
 var IssuerCert_openid4vc_staging_yivi_app_Bytes []byte
 
 // this one is specifically for sdjwtvc tests
+//
 //go:embed eudi/sdjwtvc/issuer_cert_openid4vc_staging_yivi_app.pem
 var SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes []byte
 
