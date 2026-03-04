@@ -76,7 +76,7 @@ func (s *Storage) BucketExists(name []byte) bool {
 	}) == nil
 }
 
-func (s *Storage) TxStore(tx *Transaction, bucketName string, key string, value interface{}) error {
+func (s *Storage) TxStore(tx *Transaction, bucketName string, key string, value any) error {
 	b, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 	if err != nil {
 		return err
@@ -103,7 +103,7 @@ func (s *Storage) TxDelete(tx *Transaction, bucketName string, key string) error
 	return b.Delete([]byte(key))
 }
 
-func (s *Storage) TxLoad(tx *Transaction, bucketName string, key string, dest interface{}) (found bool, err error) {
+func (s *Storage) TxLoad(tx *Transaction, bucketName string, key string, dest any) (found bool, err error) {
 	b := tx.Bucket([]byte(bucketName))
 	if b == nil {
 		return false, nil
@@ -122,7 +122,7 @@ func (s *Storage) TxLoad(tx *Transaction, bucketName string, key string, dest in
 	return true, json.Unmarshal(plaintext, dest)
 }
 
-func (s *Storage) Load(bucketName string, key string, dest interface{}) (found bool, err error) {
+func (s *Storage) Load(bucketName string, key string, dest any) (found bool, err error) {
 	err = s.Db.View(func(tx *bbolt.Tx) error {
 		found, err = s.TxLoad(&Transaction{tx}, bucketName, key, dest)
 		return err
@@ -142,14 +142,25 @@ func (s *Storage) StorePreferences(prefs clientsettings.Preferences) error {
 	})
 }
 
+type legacyPreferencesStorageFormat struct {
+	DeveloperMode bool
+}
+
 func (s *Storage) TxStorePreferences(tx *Transaction, prefs clientsettings.Preferences) error {
-	return s.TxStore(tx, UserdataBucket, PreferencesKey, prefs)
+	toStore := legacyPreferencesStorageFormat{
+		DeveloperMode: prefs.DeveloperMode,
+	}
+	return s.TxStore(tx, UserdataBucket, PreferencesKey, toStore)
 }
 
 func (s *Storage) LoadPreferences(defaultPreferences clientsettings.Preferences) (clientsettings.Preferences, error) {
-	config := defaultPreferences
-	_, err := s.Load(UserdataBucket, PreferencesKey, &config)
-	return config, err
+	data := legacyPreferencesStorageFormat{
+		DeveloperMode: defaultPreferences.DeveloperMode,
+	}
+	_, err := s.Load(UserdataBucket, PreferencesKey, &data)
+	return clientsettings.Preferences{
+		DeveloperMode: data.DeveloperMode,
+	}, err
 }
 
 func (s *Storage) TxDeleteUserdata(tx *Transaction) error {

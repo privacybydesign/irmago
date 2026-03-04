@@ -4,7 +4,7 @@ package clientsettings
 // TODO: consider if we should save irmamobile preferences here, because they would automatically
 // be part of any backup and syncing solution we implement at a later time
 type Preferences struct {
-	DeveloperMode bool
+	DeveloperMode bool `json:"developer_mode"`
 }
 
 func GetDefaultPreferences() Preferences {

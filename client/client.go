@@ -33,8 +33,8 @@ type Client struct {
 	logsStorage      irmaclient.LogsStorage
 	keyBinder        sdjwtvc.KeyBinder
 	scheduler        gocron.Scheduler
+	sessionManager   sessionManager
 	Preferences      clientsettings.Preferences
-	SessionManager   SessionManager
 }
 
 func New(
@@ -154,14 +154,14 @@ func New(
 		logsStorage:      irmaStorage,
 		keyBinder:        keyBinder,
 		scheduler:        scheduler,
-		SessionManager: SessionManager{
+		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			NextId:         0,
 			SessionHandler: sessionHandler,
 		},
 	}
 
-	client.SessionManager.Client = client
+	client.sessionManager.Client = client
 	return client, nil
 }
 
@@ -179,25 +179,6 @@ type SessionRequestData struct {
 
 func (client *Client) DeleteKeyshareTokens() {
 	client.irmaClient.DeleteKeyshareTokens()
-}
-
-func (client *Client) newSession(sessionrequest string, handler irmaclient.Handler) irmaclient.SessionDismisser {
-	var sessionReq SessionRequestData
-	err := json.Unmarshal([]byte(sessionrequest), &sessionReq)
-	if err != nil {
-		irma.Logger.Errorf("failed to parse session request: %v\n", err)
-		handler.Failure(nil)
-		return nil
-	}
-
-	switch sessionReq.Protocol {
-	case irmaclient.Protocol_OpenID4VP:
-		return client.openid4vpClient.NewSession(sessionReq.URL, handler)
-	case irmaclient.Protocol_OpenID4VCI:
-		return client.openid4vciClient.NewSession(sessionReq.URL, handler)
-	}
-
-	return client.irmaClient.NewSession(sessionrequest, handler)
 }
 
 func (client *Client) GetIrmaConfiguration() *irma.Configuration {

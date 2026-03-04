@@ -30,41 +30,41 @@ const (
 
 // LogInfo is meant for credential format & protocol agnostic logs
 type LogInfo struct {
-	ID               uint64
-	Type             LogType           // The type of action
-	Time             irma.Timestamp    // Time at which the action occurred
-	RemovalLog       *RemovalLog       `json:",omitempty"` // when Type==LogType_CredentialRemoval
-	IssuanceLog      *IssuanceLog      `json:",omitempty"` // when Type==LogType_Issuance
-	DisclosureLog    *DisclosureLog    `json:",omitempty"` // when Type==LogType_Disclosure
-	SignedMessageLog *SignedMessageLog `json:",omitempty"` // when Type==LogType_Signature
+	ID               uint64            `json:"id"`
+	Type             LogType           `json:"type"`                         // The type of action
+	Time             irma.Timestamp    `json:"time"`                         // Time at which the action occurred
+	RemovalLog       *RemovalLog       `json:"removal_log,omitempty"`        // when Type==LogType_CredentialRemoval
+	IssuanceLog      *IssuanceLog      `json:"issuance_log,omitempty"`       // when Type==LogType_Issuance
+	DisclosureLog    *DisclosureLog    `json:"disclosure_log,omitempty"`     // when Type==LogType_Disclosure
+	SignedMessageLog *SignedMessageLog `json:"signed_message_log,omitempty"` // when Type==LogType_Signature
 }
 
 type SignedMessageLog struct {
 	DisclosureLog
-	Message string
+	Message string `json:"message"`
 }
 
 type IssuanceLog struct {
-	Protocol             Protocol
-	Credentials          []CredentialLog
-	DisclosedCredentials []CredentialLog
-	Issuer               *irma.RequestorInfo
+	Protocol             Protocol            `json:"protocol"`
+	Credentials          []CredentialLog     `json:"credentials"`
+	DisclosedCredentials []CredentialLog     `json:"disclosed_credentials"`
+	Issuer               *irma.RequestorInfo `json:"issuer"`
 }
 
 type DisclosureLog struct {
-	Protocol    Protocol
-	Credentials []CredentialLog
-	Verifier    *irma.RequestorInfo
+	Protocol    Protocol            `json:"protocol"`
+	Credentials []CredentialLog     `json:"credentials"`
+	Verifier    *irma.RequestorInfo `json:"verifier"`
 }
 
 type RemovalLog struct {
-	Credentials []CredentialLog
+	Credentials []CredentialLog `json:"credentials"`
 }
 
 type CredentialLog struct {
-	Formats        []CredentialFormat
-	CredentialType string
-	Attributes     map[string]string
+	Formats        []CredentialFormat `json:"formats"`
+	CredentialType string             `json:"credential_type"`
+	Attributes     map[string]string  `json:"attributes"`
 }
 
 // ===========================================================================
@@ -199,7 +199,7 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 	}, nil
 }
 
-func (session *session) createLogEntry(response interface{}) (*LogEntry, error) {
+func (session *session) createLogEntry(response any) (*LogEntry, error) {
 	entry := &LogEntry{
 		Type:       session.Action,
 		Time:       irma.Timestamp(time.Now()),

@@ -202,18 +202,18 @@ func (s *session) error(err error) {
 	s.dispatchState()
 }
 
-type SessionManager struct {
+type sessionManager struct {
 	Sessions       map[int]*session
 	NextId         int
 	SessionHandler SessionHandler
 	Client         *Client
 }
 
-func (m *SessionManager) DeleteSession(id int) {
+func (m *sessionManager) DeleteSession(id int) {
 	delete(m.Sessions, id)
 }
 
-func (m *SessionManager) NewSession() *session {
+func (m *sessionManager) NewSession() *session {
 	m.NextId += 1
 	s := &session{
 		State: &SessionState{
@@ -679,7 +679,7 @@ func choicesToAnswer(choices []DisclosureDisconSelection) (*irma.DisclosureChoic
 // =====================================================================================
 
 func (client *Client) HandleUserInteraction(userInteraction SessionUserInteraction) error {
-	session, ok := client.SessionManager.Sessions[userInteraction.SessionId]
+	session, ok := client.sessionManager.Sessions[userInteraction.SessionId]
 	if !ok {
 		return fmt.Errorf("no session with id %v", userInteraction.SessionId)
 	}
@@ -702,7 +702,7 @@ func (client *Client) HandleUserInteraction(userInteraction SessionUserInteracti
 }
 
 func (client *Client) NewSession(sessionrequest string) {
-	session := client.SessionManager.NewSession()
+	session := client.sessionManager.NewSession()
 	state := session.State
 
 	var sessionReq SessionRequestData
@@ -710,7 +710,7 @@ func (client *Client) NewSession(sessionrequest string) {
 	if err != nil {
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
 		session.error(err)
-		client.SessionManager.DeleteSession(session.State.Id)
+		client.sessionManager.DeleteSession(session.State.Id)
 		return
 	}
 
@@ -726,5 +726,12 @@ func (client *Client) NewSession(sessionrequest string) {
 		state.Type = Type_Signature
 	}
 
-	session.dismisser = client.newSession(sessionrequest, session)
+	switch sessionReq.Protocol {
+	case irmaclient.Protocol_OpenID4VP:
+		session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, session)
+	case irmaclient.Protocol_OpenID4VCI:
+		session.dismisser = client.openid4vciClient.NewSession(sessionReq.URL, session)
+	default:
+		session.dismisser = client.irmaClient.NewSession(sessionrequest, session)
+	}
 }
