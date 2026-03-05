@@ -33,7 +33,6 @@ type AttributeType string
 const (
 	AttributeType_Object           AttributeType = "object"
 	AttributeType_Array            AttributeType = "array"
-	AttributeType_String           AttributeType = "string"
 	AttributeType_TranslatedString AttributeType = "translated_string"
 	AttributeType_Bool             AttributeType = "bool"
 	AttributeType_Int              AttributeType = "int"
@@ -44,7 +43,6 @@ const (
 type AttributeValue struct {
 	Type AttributeType `json:"type"`
 
-	String           *string           `json:"string,omitempty"`
 	Int              *int64            `json:"int,omitempty"`
 	Bool             *bool             `json:"bool,omitempty"`
 	TranslatedString *TranslatedString `json:"translated_string,omitempty"`
@@ -257,7 +255,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 			Id:          at.ID,
 			DisplayName: TranslatedString(at.Name),
 			Value: &AttributeValue{
-				Type: AttributeType_String,
+				Type: AttributeType_TranslatedString,
 			},
 		})
 	}
@@ -434,9 +432,6 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 	case AttributeType_Array:
 		checkArrayAllOfUnordered(issues, path, given.Array, req.Array)
 
-	case AttributeType_String:
-		checkString(issues, path, given.String, req.String)
-
 	case AttributeType_Int:
 		if req.Int == nil {
 			return
@@ -487,27 +482,6 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 
 	default:
 		// Unknown / empty requested type => treat as "presence already checked"
-	}
-}
-
-func checkString(issues *[]string, path string, given *string, req *string) {
-	// If no specific requested string => only require presence? (or do nothing)
-	// Here: if req is nil, we accept anything (since type already matched).
-	if req == nil {
-		return
-	}
-
-	// Special rule: requested "" means "present at all".
-	if *req == "" {
-		if given == nil {
-			*issues = append(*issues, fmt.Sprintf("string missing at %s", path))
-		}
-		return
-	}
-
-	// Exact match required.
-	if given == nil || *given != *req {
-		*issues = append(*issues, fmt.Sprintf("string mismatch at %s", path))
 	}
 }
 
@@ -570,15 +544,6 @@ func valueSatisfiesNoReport(given AttributeValue, req AttributeValue) bool {
 	case AttributeType_Array:
 		// Recurse into unordered all-of arrays as well.
 		return arrayAllOfUnorderedNoReport(given.Array, req.Array)
-
-	case AttributeType_String:
-		if req.String == nil {
-			return true
-		}
-		if *req.String == "" {
-			return given.String != nil
-		}
-		return given.String != nil && *given.String == *req.String
 
 	case AttributeType_Int:
 		if req.Int == nil {

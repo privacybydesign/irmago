@@ -705,8 +705,8 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 				DisplayName: TranslatedString(atType.Name),
 				Description: TranslatedString(atType.Description),
 				Value: &AttributeValue{
-					Type:   displayHintToAttributeType(atType.DisplayHint),
-					String: &v,
+					Type:             displayHintToAttributeType(atType.DisplayHint),
+					TranslatedString: &TranslatedString{"": v},
 				},
 			})
 		}

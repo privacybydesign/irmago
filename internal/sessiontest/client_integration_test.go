@@ -566,18 +566,16 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
 }
 
-// getLogAttrValue finds an attribute by ID and returns its raw string value,
-// checking both String and TranslatedString value types.
+// getLogAttrValue finds an attribute by ID and returns its string value.
+// For TranslatedString values, it prefers the English translation, falling back to any available value.
 func getLogAttrValue(attrs []client.Attribute, id string) string {
 	for _, a := range attrs {
-		if a.Id == id && a.Value != nil {
-			if a.Value.String != nil {
-				return *a.Value.String
+		if a.Id == id && a.Value != nil && a.Value.TranslatedString != nil {
+			if v, ok := (*a.Value.TranslatedString)["en"]; ok {
+				return v
 			}
-			if a.Value.TranslatedString != nil {
-				for _, v := range *a.Value.TranslatedString {
-					return v
-				}
+			for _, v := range *a.Value.TranslatedString {
+				return v
 			}
 		}
 	}
