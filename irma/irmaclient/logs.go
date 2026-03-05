@@ -28,39 +28,7 @@ const (
 	Format_Idemix  CredentialFormat = "idemix"
 )
 
-// LogInfo is meant for credential format & protocol agnostic logs
-type LogInfo struct {
-	ID               uint64            `json:"id"`
-	Type             LogType           `json:"type"`                         // The type of action
-	Time             irma.Timestamp    `json:"time"`                         // Time at which the action occurred
-	RemovalLog       *RemovalLog       `json:"removal_log,omitempty"`        // when Type==LogType_CredentialRemoval
-	IssuanceLog      *IssuanceLog      `json:"issuance_log,omitempty"`       // when Type==LogType_Issuance
-	DisclosureLog    *DisclosureLog    `json:"disclosure_log,omitempty"`     // when Type==LogType_Disclosure
-	SignedMessageLog *SignedMessageLog `json:"signed_message_log,omitempty"` // when Type==LogType_Signature
-}
-
-type SignedMessageLog struct {
-	DisclosureLog
-	Message string `json:"message"`
-}
-
-type IssuanceLog struct {
-	Protocol             Protocol            `json:"protocol"`
-	Credentials          []CredentialLog     `json:"credentials"`
-	DisclosedCredentials []CredentialLog     `json:"disclosed_credentials"`
-	Issuer               *irma.RequestorInfo `json:"issuer"`
-}
-
-type DisclosureLog struct {
-	Protocol    Protocol            `json:"protocol"`
-	Credentials []CredentialLog     `json:"credentials"`
-	Verifier    *irma.RequestorInfo `json:"verifier"`
-}
-
-type RemovalLog struct {
-	Credentials []CredentialLog `json:"credentials"`
-}
-
+// CredentialLog is the internal storage format for a credential in a log entry.
 type CredentialLog struct {
 	Formats        []CredentialFormat `json:"formats"`
 	CredentialType string             `json:"credential_type"`

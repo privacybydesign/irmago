@@ -46,7 +46,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	log := logs[0].DisclosureLog
 
 	// make sure we have the correct OpenID4VP log
-	require.Contains(t, log.Credentials[0].CredentialType, "test.test.email")
+	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
 	require.Contains(t, log.Protocol, irmaclient.Protocol_OpenID4VP)
 
 	// require the logo of the requestor to be an existing file
@@ -73,7 +73,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	log = logs[1].DisclosureLog
 
 	// make sure we have the correct OpenID4VP log
-	require.Contains(t, log.Credentials[0].CredentialType, "test.test.email")
+	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
 	require.Contains(t, log.Protocol, irmaclient.Protocol_OpenID4VP)
 
 	// require the logo of the requestor to be an existing file
@@ -103,7 +103,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	log := logs[0].IssuanceLog
 
 	// make sure we have the correct log
-	require.Contains(t, log.Credentials[0].CredentialType, "test.test.email")
+	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
 	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_Idemix)
 	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_SdJwtVc)
 
@@ -130,7 +130,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	// need the second to last one, because that log used the previous storage
 	log = logs[1].IssuanceLog
 
-	require.Contains(t, log.Credentials[0].CredentialType, "test.test.email")
+	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
 	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_Idemix)
 	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_SdJwtVc)
 

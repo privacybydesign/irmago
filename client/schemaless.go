@@ -10,7 +10,9 @@ import (
 )
 
 type TranslatedString map[string]string
-type CredentialFormat string
+
+// CredentialFormat is a type alias for irmaclient.CredentialFormat so the two packages share the same type.
+type CredentialFormat = irmaclient.CredentialFormat
 
 type TrustedParty struct {
 	Id string `json:"id"`
