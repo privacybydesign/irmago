@@ -44,14 +44,14 @@ const (
 type AttributeValue struct {
 	Type AttributeType `json:"type"`
 
-	String           *string           `json:"string"`
-	Int              *int64            `json:"int"`
-	Bool             *bool             `json:"bool"`
-	TranslatedString *TranslatedString `json:"translated_string"`
-	Array            []AttributeValue  `json:"array"`
-	Object           []Attribute       `json:"object"`
-	ImagePath        *string           `json:"image_path"`
-	Base64Image      *string           `json:"base64_image"`
+	String           *string           `json:"string,omitempty"`
+	Int              *int64            `json:"int,omitempty"`
+	Bool             *bool             `json:"bool,omitempty"`
+	TranslatedString *TranslatedString `json:"translated_string,omitempty"`
+	Array            []AttributeValue  `json:"array,omitempty"`
+	Object           []Attribute       `json:"object,omitempty"`
+	ImagePath        *string           `json:"image_path,omitempty"`
+	Base64Image      *string           `json:"base64_image,omitempty"`
 }
 
 type Attribute struct {
