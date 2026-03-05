@@ -395,11 +395,24 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		credential := removalLog.Credentials[0]
 
 		require.Contains(t, credential.Formats, irmaclient.Format_Idemix)
+		require.Equal(t, "irma-demo.MijnOverheid.fullName", credential.CredentialId)
+		require.Equal(t, "Demo Name", credential.Name["en"])
+		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
 
 		require.Equal(t, "Barry", getLogAttrValue(credential.Attributes, "firstnames"))
 		require.Equal(t, "", getLogAttrValue(credential.Attributes, "firstname"))
 		require.Equal(t, "Batsbak", getLogAttrValue(credential.Attributes, "familyname"))
 		require.Equal(t, "Sir", getLogAttrValue(credential.Attributes, "prefix"))
+
+		firstnamesAttr := getLogAttr(credential.Attributes, "firstnames")
+		require.NotNil(t, firstnamesAttr)
+		require.Equal(t, "First names", firstnamesAttr.DisplayName["en"])
+		require.Equal(t, "All of your first names", firstnamesAttr.Description["en"])
+
+		familynameAttr := getLogAttr(credential.Attributes, "familyname")
+		require.NotNil(t, familynameAttr)
+		require.Equal(t, "Family name", familynameAttr.DisplayName["en"])
+		require.Equal(t, "Your family name", familynameAttr.Description["en"])
 
 		c.Close()
 		keyshareServer.Stop()
@@ -571,13 +584,30 @@ func getLogAttrValue(attrs []client.Attribute, id string) string {
 	return ""
 }
 
+// getLogAttr finds an attribute by ID and returns it, or nil if not found.
+func getLogAttr(attrs []client.Attribute, id string) *client.Attribute {
+	for i := range attrs {
+		if attrs[i].Id == id {
+			return &attrs[i]
+		}
+	}
+	return nil
+}
+
 func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log client.LogInfo) {
 	require.Equal(t, log.Type, irmaclient.LogType_CredentialRemoval)
 	require.Len(t, log.RemovalLog.Credentials, 1)
 	cred := log.RemovalLog.Credentials[0]
 	require.Equal(t, []client.CredentialFormat{irmaclient.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
+	require.Equal(t, "Demo Email address", cred.Name["en"])
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+
+	emailAttr := getLogAttr(cred.Attributes, "email")
+	require.NotNil(t, emailAttr)
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
+	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
+	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
 }
 
 func testIrmaDisclosureSessionLogs(t *testing.T) {
@@ -633,7 +663,14 @@ func requireIrmaDisclosureLog(t *testing.T, log client.LogInfo) {
 	cred := log.DisclosureLog.Credentials[0]
 	require.Equal(t, []client.CredentialFormat{irmaclient.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
+	require.Equal(t, "Demo Email address", cred.Name["en"])
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+
+	emailAttr := getLogAttr(cred.Attributes, "email")
+	require.NotNil(t, emailAttr)
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
+	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
+	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
 }
 
 func requireSignatureLog(t *testing.T, log client.LogInfo) {
@@ -644,7 +681,14 @@ func requireSignatureLog(t *testing.T, log client.LogInfo) {
 	cred := log.SignedMessageLog.Credentials[0]
 	require.Equal(t, []client.CredentialFormat{irmaclient.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
+	require.Equal(t, "Demo Email address", cred.Name["en"])
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+
+	emailAttr := getLogAttr(cred.Attributes, "email")
+	require.NotNil(t, emailAttr)
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
+	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
+	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
 }
 
 func testEudiSessionLogs(t *testing.T) {
@@ -696,7 +740,14 @@ func requireOpenID4VPLog(t *testing.T, log client.LogInfo) {
 	cred := log.DisclosureLog.Credentials[0]
 	require.Equal(t, []client.CredentialFormat{irmaclient.Format_SdJwtVc}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
+	require.Equal(t, "Demo Email address", cred.Name["en"])
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+
+	emailAttr := getLogAttr(cred.Attributes, "email")
+	require.NotNil(t, emailAttr)
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
+	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
+	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
 }
 
 func requireRegularIrmaIssuanceLog(t *testing.T, log client.LogInfo) {
@@ -719,7 +770,14 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log client.LogInfo) {
 	require.Contains(t, cred.Formats, irmaclient.Format_Idemix)
 
 	require.Equal(t, "test.test.email", cred.CredentialId)
+	require.Equal(t, "Demo Email address", cred.Name["en"])
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+
+	emailAttr := getLogAttr(cred.Attributes, "email")
+	require.NotNil(t, emailAttr)
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
+	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
+	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
 }
 
 func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {

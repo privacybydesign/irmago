@@ -424,7 +424,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 			Time: entry.Time,
 			DisclosureLog: &DisclosureLog{
 				Protocol:    irmaclient.Protocol_OpenID4VP,
-				Credentials: openid4vpCredentialLogsToLogCredentials(entry.OpenID4VP.DisclosedCredentials),
+				Credentials: openid4vpCredentialLogsToLogCredentials(client.GetIrmaConfiguration(), entry.OpenID4VP.DisclosedCredentials),
 				Verifier:    requestor,
 			},
 		}, nil
@@ -677,23 +677,35 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 }
 
 // openid4vpCredentialLogsToLogCredentials converts stored SD-JWT credential logs (name→value map)
-// to LogCredential list. No irmaConfig metadata is available for EUDI credentials, so only
-// the credential ID, formats, and raw attribute name/value pairs are populated.
-func openid4vpCredentialLogsToLogCredentials(logs []irmaclient.CredentialLog) []LogCredential {
+// to LogCredential list, enriched with display metadata from irmaConfig.
+func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, logs []irmaclient.CredentialLog) []LogCredential {
 	result := []LogCredential{}
 	for _, log := range logs {
+		credTypeId := irma.NewCredentialTypeIdentifier(log.CredentialType)
+		credTypeInfo := irmaConfig.CredentialTypes[credTypeId]
+		issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
+
 		formats := make([]CredentialFormat, len(log.Formats))
 		for i, f := range log.Formats {
 			formats[i] = CredentialFormat(f)
 		}
 
 		attributes := []Attribute{}
-		for name, value := range log.Attributes {
-			v := value
+		for _, atType := range credTypeInfo.AttributeTypes {
+			if atType.RevocationAttribute {
+				continue
+			}
+			rawVal, disclosed := log.Attributes[atType.ID]
+			if !disclosed {
+				continue
+			}
+			v := rawVal
 			attributes = append(attributes, Attribute{
-				Id: name,
+				Id:          atType.ID,
+				DisplayName: TranslatedString(atType.Name),
+				Description: TranslatedString(atType.Description),
 				Value: &AttributeValue{
-					Type:   AttributeType_String,
+					Type:   displayHintToAttributeType(atType.DisplayHint),
 					String: &v,
 				},
 			})
@@ -702,7 +714,14 @@ func openid4vpCredentialLogsToLogCredentials(logs []irmaclient.CredentialLog) []
 		result = append(result, LogCredential{
 			CredentialId: log.CredentialType,
 			Formats:      formats,
-			Attributes:   attributes,
+			ImagePath:    credTypeInfo.Logo(irmaConfig),
+			Name:         TranslatedString(credTypeInfo.Name),
+			Issuer: TrustedParty{
+				Id:   issuer.Identifier().String(),
+				Name: TranslatedString(issuer.Name),
+			},
+			Attributes: attributes,
+			IssueURL:   convertOptionalTranslatedString(credTypeInfo.IssueURL),
 		})
 	}
 	return result
