@@ -119,7 +119,7 @@ type Faq struct {
 }
 
 func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
-	irmaConfig := client.GetIrmaConfiguration()
+	irmaConfig := client.irmaClient.Configuration
 	result := []*CredentialStoreItem{}
 
 	for _, cred := range irmaConfig.CredentialTypes {
@@ -365,9 +365,8 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 }
 
 func (client *Client) GetCredentials() ([]*Credential, error) {
-	irmaConfig := client.GetIrmaConfiguration()
 	creds := client.credentialInfoList()
-	return credentialInfoListToSchemaless(irmaConfig, creds)
+	return credentialInfoListToSchemaless(client.irmaClient.Configuration, creds)
 }
 
 func displayHintToAttributeType(s string) AttributeType {

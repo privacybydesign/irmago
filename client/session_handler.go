@@ -289,7 +289,7 @@ func (s *session) RequestIssuancePermission(
 		s.chained = true
 	}
 
-	irmaConfig := s.client.GetIrmaConfiguration()
+	irmaConfig := s.client.irmaClient.Configuration
 	creds := request.CredentialInfoList
 
 	offeredCredentials, err := credentialInfoListToSchemaless(irmaConfig, creds)
@@ -311,7 +311,7 @@ func (s *session) RequestIssuancePermission(
 	if s.chained && s.State.Type != Type_Issuance {
 		s.State.DisclosurePlan = nil
 	} else {
-		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, credentials, candidates)
+		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, irmaConfig, credentials, candidates)
 		if err != nil {
 			s.error(err)
 			return
