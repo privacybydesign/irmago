@@ -252,11 +252,8 @@ func (kss *keyshareServer) doChallengeResponse(signer Signer, transport *irma.HT
 		if err != nil {
 			return nil, err
 		}
-		var ok bool
-		if slices.Contains(auth.Candidates, irma.KeyshareAuthMethodChallengeResponse) {
-			ok = true
-		}
-		if !ok {
+
+		if !slices.Contains(auth.Candidates, irma.KeyshareAuthMethodChallengeResponse) {
 			return nil, errors.New("challenge-response authentication method not supported")
 		}
 
