@@ -46,11 +46,11 @@ type SignedMessageLog struct {
 
 // LogInfo is a credential format & protocol agnostic log entry with full credential metadata.
 type LogInfo struct {
-	ID               uint64               `json:"id"`
-	Type             irmaclient.LogType   `json:"type"`
-	Time             irma.Timestamp       `json:"time"`
-	RemovalLog       *RemovalLog          `json:"removal_log,omitempty"`
-	IssuanceLog      *IssuanceLog         `json:"issuance_log,omitempty"`
-	DisclosureLog    *DisclosureLog       `json:"disclosure_log,omitempty"`
-	SignedMessageLog *SignedMessageLog    `json:"signed_message_log,omitempty"`
+	ID               uint64             `json:"id"`
+	Type             irmaclient.LogType `json:"type"`
+	Time             irma.Timestamp     `json:"time"`
+	RemovalLog       *RemovalLog        `json:"removal_log,omitempty"`
+	IssuanceLog      *IssuanceLog       `json:"issuance_log,omitempty"`
+	DisclosureLog    *DisclosureLog     `json:"disclosure_log,omitempty"`
+	SignedMessageLog *SignedMessageLog  `json:"signed_message_log,omitempty"`
 }
