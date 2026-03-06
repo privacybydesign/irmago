@@ -30,9 +30,9 @@ const (
 
 // CredentialLog is the internal storage format for a credential in a log entry.
 type CredentialLog struct {
-	Formats        []CredentialFormat `json:"formats"`
-	CredentialType string             `json:"credential_type"`
-	Attributes     map[string]string  `json:"attributes"`
+	Formats        []CredentialFormat
+	CredentialType string
+	Attributes     map[string]string
 }
 
 // ===========================================================================
@@ -57,26 +57,26 @@ type LogEntry struct {
 	Time irma.Timestamp // Time at which the session was completed
 
 	// Credential removal
-	Removed        map[irma.CredentialTypeIdentifier][]irma.TranslatedString `json:",omitempty"`
-	RemovedFormats []CredentialFormat                                        `json:",omitempty"`
+	Removed        map[irma.CredentialTypeIdentifier][]irma.TranslatedString
+	RemovedFormats []CredentialFormat
 
 	// Signature sessions
-	SignedMessage          []byte          `json:",omitempty"`
-	Timestamp              *atum.Timestamp `json:",omitempty"`
-	SignedMessageLDContext string          `json:",omitempty"`
+	SignedMessage          []byte
+	Timestamp              *atum.Timestamp
+	SignedMessageLDContext string
 
 	// Issuance sessions
-	IssueCommitment *irma.IssueCommitmentMessage `json:",omitempty"`
+	IssueCommitment *irma.IssueCommitmentMessage
 
 	// All session types
-	ServerName *irma.RequestorInfo   `json:",omitempty"`
-	Version    *irma.ProtocolVersion `json:",omitempty"`
-	Disclosure *irma.Disclosure      `json:",omitempty"`
-	Request    json.RawMessage       `json:",omitempty"` // Message that started the session
-	request    irma.SessionRequest   // cached parsed version of Request; get with LogEntry.SessionRequest()
+	ServerName *irma.RequestorInfo
+	Version    *irma.ProtocolVersion
+	Disclosure *irma.Disclosure
+	Request    json.RawMessage     // Message that started the session
+	request    irma.SessionRequest // cached parsed version of Request; get with LogEntry.SessionRequest()
 
 	// Eudi logs
-	OpenID4VP *OpenID4VPDisclosureLog `json:",omitempty"`
+	OpenID4VP *OpenID4VPDisclosureLog
 }
 
 const ActionRemoval = irma.Action("removal")
