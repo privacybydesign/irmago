@@ -604,7 +604,8 @@ func (s *session) RequestSignaturePermission(request *irma.SignatureRequest,
 	satisfiable bool,
 	candidates [][]irmaclient.DisclosureCandidates,
 	requestorInfo *irma.RequestorInfo,
-	callback irmaclient.PermissionHandler) {
+	callback irmaclient.PermissionHandler,
+) {
 	s.State.Status = Status_RequestPermission
 	s.State.Type = Type_Signature
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
