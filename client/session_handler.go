@@ -305,7 +305,7 @@ func (s *session) RequestIssuancePermission(
 		return
 	}
 
-	// if the session is a chained session and the previous type was disclosure
+	// if the session is a chained session and the previous type was disclosure or signature
 	// we don't want to update the disclosure plan and instead make a new one
 	// if the current (issuance) session has any disclosures
 	if s.chained && s.State.Type != Type_Issuance {
