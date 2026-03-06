@@ -135,7 +135,6 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 }
 
 func testSessionHandlerEdgeCases(t *testing.T) {
-	// this test is not working as expected...
 	runSessionTest(t,
 		"keyshare blocked",
 		testKeyshareBlocked,
