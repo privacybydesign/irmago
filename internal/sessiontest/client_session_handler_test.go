@@ -67,6 +67,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"choice between email and student card credentials both present",
+		testChoiceBetweenEmailAndStudentCardBothPresent,
+	)
+
+	runSessionTest(t,
 		"choice between singleton and non-singleton credentials none present",
 		testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent,
 	)
@@ -1938,6 +1943,81 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 	)
 
 	grantPermission(t, c, session.Id, makeDisclosureChoice(studentCard, "university", "level"))
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
+	requireSessionState(t, session, 3, client.Type_Disclosure, client.Status_Success)
+}
+
+func testChoiceBetweenEmailAndStudentCardBothPresent(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	issue(t, irmaServer, c, sessionHandler, createEmailIssuanceRequest())
+	_ = awaitSessionState(t, sessionHandler)
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+	_ = awaitSessionState(t, sessionHandler)
+
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{irma.NewAttributeRequest("test.test.email.email")},
+			irma.AttributeCon{irma.NewAttributeRequest("irma-demo.RU.studentCard.university")},
+		},
+	}
+
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
+	requireSessionState(t, session, 3, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Nil(t, plan.IssueDuringDislosure)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+
+	opt := plan.DisclosureChoicesOverview[0]
+	// both credentials are owned
+	require.Len(t, opt.OwnedOptions, 2)
+
+	emailOption := opt.OwnedOptions[slices.IndexFunc(
+		opt.OwnedOptions,
+		func(c *client.SelectableCredentialInstance) bool { return c.CredentialId == "test.test.email" },
+	)]
+	require.Equal(t, "test.test.email", emailOption.CredentialId)
+	require.Equal(t, []client.Attribute{
+		{
+			Id:          "email",
+			DisplayName: client.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: client.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value: &client.AttributeValue{
+				Type:             client.AttributeType_TranslatedString,
+				TranslatedString: &client.TranslatedString{"": "test@gmail.com", "en": "test@gmail.com", "nl": "test@gmail.com"},
+			},
+		},
+	}, emailOption.Attributes)
+
+	studentCardOption := opt.OwnedOptions[slices.IndexFunc(
+		opt.OwnedOptions,
+		func(c *client.SelectableCredentialInstance) bool { return c.CredentialId == "irma-demo.RU.studentCard" },
+	)]
+	require.Equal(t, "irma-demo.RU.studentCard", studentCardOption.CredentialId)
+	require.Equal(t, []client.Attribute{
+		{
+			Id:          "university",
+			DisplayName: client.TranslatedString{"en": "University", "nl": "Universiteit"},
+			Description: client.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+			Value: &client.AttributeValue{
+				Type:             client.AttributeType_TranslatedString,
+				TranslatedString: &client.TranslatedString{"": "University of the Arts", "en": "University of the Arts", "nl": "University of the Arts"},
+			},
+		},
+	}, studentCardOption.Attributes)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailOption, "email"))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, irmaclient.Protocol_Irma, session.Protocol)
