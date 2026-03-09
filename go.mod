@@ -23,7 +23,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/privacybydesign/gabi v0.0.0-20221212095008-68a086907750
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.1
 	github.com/spf13/cast v1.5.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5
