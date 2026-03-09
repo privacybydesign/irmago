@@ -88,6 +88,7 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	innerTransport := &http.Transport{
 		TLSClientConfig:       tlsClientConfig,
 		ForceAttemptHTTP2:     true,
+		Proxy:                 http.ProxyFromEnvironment, //  Proxy support via env vars
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
