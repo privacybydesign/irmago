@@ -248,14 +248,21 @@ func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
 	h.tokenPermissionRequestChannel <- callback
 }
 
-func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (string, error) {
+// EudiVerifierSession holds the session link and transaction ID from starting a session at the EUDI verifier.
+type EudiVerifierSession struct {
+	SessionLink   string
+	TransactionId string
+	Host          string
+}
+
+func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest string) (EudiVerifierSession, error) {
 	apiUrl := fmt.Sprintf("%s/ui/presentations", openid4vpHost)
 	response, err := http.Post(apiUrl,
 		"application/json",
 		bytes.NewReader([]byte(startSessionRequest)))
 
 	if err != nil {
-		return "", fmt.Errorf("failed to post session request to eudi verifier: %v", err)
+		return EudiVerifierSession{}, fmt.Errorf("failed to post session request to eudi verifier: %v", err)
 	}
 
 	defer response.Body.Close()
@@ -263,15 +270,17 @@ func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest st
 	body, err := io.ReadAll(response.Body)
 
 	if err != nil {
-		return "", fmt.Errorf("failed to read body of response from eudi verifier while starting session: %v", err)
+		return EudiVerifierSession{}, fmt.Errorf("failed to read body of response from eudi verifier while starting session: %v", err)
 	}
 
 	var requestRequest map[string]string
 
 	err = json.Unmarshal(body, &requestRequest)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse request request body into json: %v (%v)", err, string(body))
+		return EudiVerifierSession{}, fmt.Errorf("failed to parse request request body into json: %v (%v)", err, string(body))
 	}
+
+	transactionId := requestRequest["transaction_id"]
 
 	queryParams := url.Values{}
 
@@ -279,12 +288,42 @@ func StartTestSessionAtEudiVerifier(openid4vpHost string, startSessionRequest st
 		queryParams.Add(key, value)
 	}
 
-	url := url.URL{
+	sessionUrl := url.URL{
 		Scheme:   "eudi-openid4vp://",
 		RawQuery: queryParams.Encode(),
 	}
 
-	return url.String(), nil
+	return EudiVerifierSession{
+		SessionLink:   sessionUrl.String(),
+		TransactionId: transactionId,
+		Host:          openid4vpHost,
+	}, nil
+}
+
+// GetWalletResponseFromEudiVerifier fetches the wallet response (disclosed VP token) from the EUDI verifier.
+func GetWalletResponseFromEudiVerifier(session EudiVerifierSession) (map[string]any, error) {
+	apiUrl := fmt.Sprintf("%s/ui/presentations/%s", session.Host, session.TransactionId)
+	response, err := http.Get(apiUrl)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get wallet response from eudi verifier: %v", err)
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read wallet response body: %v", err)
+	}
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d from eudi verifier: %s", response.StatusCode, string(body))
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse wallet response: %v (%s)", err, string(body))
+	}
+
+	return result, nil
 }
 
 type MockSdJwtVcStorageClient struct {

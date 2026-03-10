@@ -1,8 +1,10 @@
 package sessiontest
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -251,7 +253,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 		]
 	}`
 
-	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 	require.Equal(t, irmaclient.Protocol_OpenID4VP, session.Protocol)
 	require.Empty(t, session.OfferedCredentials)
@@ -417,6 +420,11 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	// expect disclosure session to be done
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+
+	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
+		"sc":   {"university": "University of the Arts", "level": "high"},
+		"name": {"firstname": "", "familyname": "Batsbak"},
+	})
 }
 
 func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
@@ -443,7 +451,8 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 		"credential_sets": [ { "options": [["email"], ["sc"]] } ]
 	}`
 
-	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 	require.Equal(t, irmaclient.Protocol_OpenID4VP, session.Protocol)
 	require.Empty(t, session.OfferedCredentials)
@@ -476,6 +485,10 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 	// expect end for disclosure session
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+
+	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
+		"email": {"email": "test@gmail.com"},
+	})
 }
 
 func testOpenID4VP_YiviScheme_SingleCredential(
@@ -484,7 +497,8 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	session := startOpenID4VPSessionWithAuthRequest(t, c, sessionHandler, createEmailAuthRequestRequest())
+	testSession := startOpenID4VPSessionWithAuthRequest(t, c, sessionHandler, createEmailAuthRequestRequest())
+	session := testSession.ClientSession
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 	require.Equal(t, irmaclient.Protocol_OpenID4VP, session.Protocol)
 	require.Empty(t, session.OfferedCredentials)
@@ -517,6 +531,10 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	// expect end for disclosure session
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+
+	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
+		"32f54163-7166-48f1-93d8-ff217bdb0653": {"email": "test@gmail.com"},
+	})
 }
 
 func testOpenID4VP_YiviScheme_OptionalCredential(
@@ -547,7 +565,8 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 		]
 	}`
 
-	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 
 	plan := session.DisclosurePlan
@@ -586,6 +605,10 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+
+	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
+		"sc": {"university": "University of the Arts"},
+	})
 }
 
 func testOpenID4VP_YiviScheme_PredefinedClaimValues(
@@ -609,7 +632,8 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		]
 	}`
 
-	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 
 	plan := session.DisclosurePlan
@@ -700,6 +724,10 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+
+	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
+		"sc": {"university": "University of the Arts", "level": "high"},
+	})
 }
 
 func testOpenID4VP_YiviScheme_ClaimSets(
@@ -729,7 +757,8 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 		]
 	}`
 
-	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 	require.Equal(t, irmaclient.Protocol_OpenID4VP, session.Protocol)
 
@@ -830,6 +859,10 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+
+	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
+		"sc": {"university": "University of the Arts", "level": "high"},
+	})
 }
 
 func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
@@ -869,7 +902,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 		]
 	}`
 
-	session := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 	require.Equal(t, irmaclient.Protocol_OpenID4VP, session.Protocol)
 	require.Empty(t, session.OfferedCredentials)
@@ -1035,6 +1069,11 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	// expect disclosure session to be done
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+
+	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
+		"sc":   {"university": "University of the Arts", "level": "high"},
+		"name": {"firstname": "", "familyname": "Batsbak"},
+	})
 }
 
 func testDisclosureWithPredefinedValues(
@@ -2590,13 +2629,19 @@ func requireDisclosureChoices(t *testing.T, plan *client.DisclosurePlan, expecte
 	}
 }
 
+// openID4VPTestSession holds both the client session state and verifier session info
+type openID4VPTestSession struct {
+	ClientSession   client.SessionState
+	VerifierSession irmaclient.EudiVerifierSession
+}
+
 // startOpenID4VPSession starts an OpenID4VP session with DCQL and returns the initial session state
 func startOpenID4VPSession(
 	t *testing.T,
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 	dcql string,
-) client.SessionState {
+) openID4VPTestSession {
 	t.Helper()
 	return startOpenID4VPSessionWithAuthRequest(t, c, sessionHandler, createAuthRequestRequestWithDcql(dcql))
 }
@@ -2607,14 +2652,14 @@ func startOpenID4VPSessionWithAuthRequest(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 	authRequestJson string,
-) client.SessionState {
+) openID4VPTestSession {
 	t.Helper()
-	sessionLink, err := irmaclient.StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, authRequestJson)
+	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(testdata.OpenID4VP_DirectPostJwt_Host, authRequestJson)
 	require.NoError(t, err)
 	sessionRequest := client.SessionRequestData{
 		Qr: irma.Qr{
 			Type: irma.ActionDisclosing,
-			URL:  sessionLink,
+			URL:  verifierSession.SessionLink,
 		},
 		Protocol: irmaclient.Protocol_OpenID4VP,
 	}
@@ -2622,5 +2667,93 @@ func startOpenID4VPSessionWithAuthRequest(
 	require.NoError(t, err)
 
 	c.NewSession(string(sessionJson))
-	return awaitSessionState(t, sessionHandler)
+	return openID4VPTestSession{
+		ClientSession:   awaitSessionState(t, sessionHandler),
+		VerifierSession: verifierSession,
+	}
+}
+
+// expectedVpToken maps DCQL query IDs to the claims expected to be disclosed for that query.
+type expectedVpToken map[string]expectedClaims
+
+// expectedClaims maps claim names to their expected values.
+type expectedClaims map[string]string
+
+// requireVerifierResult fetches the wallet response from the EUDI verifier and checks that
+// the vp_token contains the expected DCQL query IDs with the expected disclosed claims.
+func requireVerifierResult(t *testing.T, verifierSession irmaclient.EudiVerifierSession, expectedCredentials expectedVpToken) {
+	t.Helper()
+
+	result, err := irmaclient.GetWalletResponseFromEudiVerifier(verifierSession)
+	require.NoError(t, err)
+
+	require.Nil(t, result["error"], "verifier returned error: %v", result["error_description"])
+
+	vpToken, ok := result["vp_token"].(map[string]any)
+	require.True(t, ok, "vp_token should be a JSON object, got: %T", result["vp_token"])
+
+	require.Len(t, vpToken, len(expectedCredentials), "vp_token should have %d query IDs", len(expectedCredentials))
+
+	for queryID, expectedClaims := range expectedCredentials {
+		credArray, ok := vpToken[queryID].([]any)
+		require.True(t, ok, "vp_token[%q] should be an array", queryID)
+		require.NotEmpty(t, credArray, "vp_token[%q] should contain at least one credential", queryID)
+
+		// Parse disclosed claims from the first SD-JWT in the array
+		sdJwtStr, ok := credArray[0].(string)
+		require.True(t, ok, "credential should be a string")
+
+		disclosedClaims := extractDisclosedClaims(t, sdJwtStr)
+
+		for expectedName, expectedValue := range expectedClaims {
+			actualValue, found := disclosedClaims[expectedName]
+			require.True(t, found,
+				"query %q: expected disclosed claim %q not found in %v", queryID, expectedName, disclosedClaims)
+			require.Equal(t, expectedValue, actualValue,
+				"query %q: claim %q has wrong value", queryID, expectedName)
+		}
+	}
+}
+
+// extractDisclosedClaims parses an SD-JWT presentation string and returns the disclosed claims
+// as a map of claim name -> claim value.
+// An SD-JWT has the format: <issuer-jwt>~<disclosure1>~<disclosure2>~...~<kb-jwt>
+// Each disclosure is a base64url-encoded JSON array: [salt, claim-name, claim-value]
+func extractDisclosedClaims(t *testing.T, sdJwt string) map[string]string {
+	t.Helper()
+
+	parts := strings.Split(sdJwt, "~")
+	// An SD-JWT-KB has the format: <issuer-jwt>~<disc1>~<disc2>~...~<kb-jwt>
+	// With no disclosures it's just: <issuer-jwt>~<kb-jwt> (2 parts)
+	require.GreaterOrEqual(t, len(parts), 2, "SD-JWT should have at least 2 parts (issuer JWT and KB JWT)")
+
+	claims := make(map[string]string)
+	// Disclosures are in parts[1..len-2] (between the issuer JWT and KB JWT)
+	for _, disclosure := range parts[1 : len(parts)-1] {
+		if disclosure == "" {
+			continue
+		}
+		decoded, err := base64.RawURLEncoding.DecodeString(disclosure)
+		require.NoError(t, err, "failed to decode disclosure: %s", disclosure)
+
+		var arr []any
+		require.NoError(t, json.Unmarshal(decoded, &arr), "failed to parse disclosure JSON")
+		require.Len(t, arr, 3, "disclosure should be [salt, name, value]")
+
+		name, ok := arr[1].(string)
+		require.True(t, ok, "disclosure name should be a string")
+
+		// Claim values are typically strings, but could be other JSON types
+		value, ok := arr[2].(string)
+		if !ok {
+			// Fall back to JSON representation for non-string values
+			valueBytes, err := json.Marshal(arr[2])
+			require.NoError(t, err)
+			value = string(valueBytes)
+		}
+
+		claims[name] = value
+	}
+
+	return claims
 }
