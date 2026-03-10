@@ -400,7 +400,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
 
 		require.Equal(t, "Barry", getLogAttrValue(credential.Attributes, "firstnames"))
-		require.Equal(t, "", getLogAttrValue(credential.Attributes, "firstname"))
+		require.Equal(t, "Bar", getLogAttrValue(credential.Attributes, "firstname"))
 		require.Equal(t, "Batsbak", getLogAttrValue(credential.Attributes, "familyname"))
 		require.Equal(t, "Sir", getLogAttrValue(credential.Attributes, "prefix"))
 

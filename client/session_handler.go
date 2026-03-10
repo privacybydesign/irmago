@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -172,7 +173,7 @@ type SessionState struct {
 	// The message that should be signed during this session, if any
 	MessageToSign string `json:"message_to_sign"`
 	// The error when this session has an error
-	Error error `json:"error"`
+	Error *irma.SessionError `json:"error"`
 	// The client return url when the app should redirect to after the session, if any
 	ClientReturnUrl string `json:"client_return_url"`
 	// If this is true then the frontend should not return to the browser after the session is done
@@ -198,7 +199,12 @@ func (s *session) dispatchState() {
 
 func (s *session) error(err error) {
 	s.State.Status = Status_Error
-	s.State.Error = err
+	var sessionErr *irma.SessionError
+	if errors.As(err, &sessionErr) {
+		s.State.Error = sessionErr
+	} else {
+		s.State.Error = &irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()}
+	}
 	s.dispatchState()
 }
 
