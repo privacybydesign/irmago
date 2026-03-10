@@ -800,6 +800,17 @@ func (ct *CredentialType) Logo(conf *Configuration) string {
 	return path
 }
 
+// Logo returns the absolute path to the issuer's logo, or empty string if not present.
+func (id *Issuer) Logo(conf *Configuration) string {
+	scheme := conf.SchemeManagers[id.SchemeManagerIdentifier()]
+	path := filepath.Join(scheme.path(), id.ID, "logo.png")
+	exists, err := common.PathExists(path)
+	if err != nil || !exists {
+		return ""
+	}
+	return path
+}
+
 // Identifier returns the identifier of the specified issuer description.
 func (id *Issuer) Identifier() IssuerIdentifier {
 	return NewIssuerIdentifier(id.SchemeManagerID + "." + id.ID)

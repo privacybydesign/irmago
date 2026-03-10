@@ -24,7 +24,7 @@ type TrustedParty struct {
 	ImagePath *string `json:"image_path"`
 	// The trust chain for this issuer (if any)
 	Parent *TrustedParty `json:"parent"`
-	// Whether this party is verified (TODO: should this be implied by the parent?)
+	// Whether this party is verified by the scheme manager
 	Verified bool `json:"verified"`
 }
 
@@ -154,17 +154,11 @@ func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
 			Credential: CredentialDescriptor{
 				CredentialId: cred.Identifier().String(),
 				Name:         TranslatedString(cred.Name),
-				Issuer: TrustedParty{
-					Id:   issuer.Identifier().String(),
-					Name: TranslatedString(issuer.Name),
-					// TODO: figure out where these should come from
-					ImagePath: nil,
-					Parent:    nil,
-				},
-				IssueURL:   convertOptionalTranslatedString(cred.IssueURL),
-				Category:   convertOptionalTranslatedString(cred.Category),
-				ImagePath:  cred.Logo(irmaConfig),
-				Attributes: attributes,
+				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
+				IssueURL:     convertOptionalTranslatedString(cred.IssueURL),
+				Category:     convertOptionalTranslatedString(cred.Category),
+				ImagePath:    cred.Logo(irmaConfig),
+				Attributes:   attributes,
 			},
 			Faq: Faq{
 				Intro:   convertOptionalTranslatedString(cred.FAQIntro),
@@ -184,6 +178,31 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString
 	}
 	t := TranslatedString(*s)
 	return &t
+}
+
+func optionalString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo
+// and the scheme manager as parent.
+func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer) TrustedParty {
+	scheme := irmaConfig.SchemeManagers[issuer.SchemeManagerIdentifier()]
+	parent := TrustedParty{
+		Id:       scheme.Identifier().String(),
+		Name:     TranslatedString(scheme.Name),
+		Verified: scheme.Status == irma.SchemeManagerStatusValid,
+	}
+	return TrustedParty{
+		Id:        issuer.Identifier().String(),
+		Name:      TranslatedString(issuer.Name),
+		ImagePath: optionalString(issuer.Logo(irmaConfig)),
+		Verified:  scheme.Status == irma.SchemeManagerStatusValid,
+		Parent:    &parent,
+	}
 }
 
 // creates a credential descriptor containing only the attributes specified
@@ -224,18 +243,11 @@ func createCredentialDescriptor(
 	return &CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
 		Name:         TranslatedString(info.Name),
-		Issuer: TrustedParty{
-			Id:   issuer.ID,
-			Name: TranslatedString(issuer.Name),
-			// TODO: figure out where the issuer logo's come from
-			ImagePath: nil,
-			// TODO: figure out what it means to be on the Yivi trust chain
-			Parent: nil,
-		},
-		Category:   convertOptionalTranslatedString(info.Category),
-		ImagePath:  info.Logo(irmaConfig),
-		Attributes: attributes,
-		IssueURL:   convertOptionalTranslatedString(info.IssueURL),
+		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
+		Category:     convertOptionalTranslatedString(info.Category),
+		ImagePath:    info.Logo(irmaConfig),
+		Attributes:   attributes,
+		IssueURL:     convertOptionalTranslatedString(info.IssueURL),
 	}, nil
 }
 
@@ -263,18 +275,11 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 	return &CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
 		Name:         TranslatedString(info.Name),
-		Issuer: TrustedParty{
-			Id:   issuer.ID,
-			Name: TranslatedString(issuer.Name),
-			// TODO: figure out where the issuer logo's come from
-			ImagePath: nil,
-			// TODO: figure out what it means to be on the Yivi trust chain
-			Parent: nil,
-		},
-		Category:   convertOptionalTranslatedString(info.Category),
-		ImagePath:  info.Logo(irmaConfig),
-		Attributes: attributes,
-		IssueURL:   convertOptionalTranslatedString(info.IssueURL),
+		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
+		Category:     convertOptionalTranslatedString(info.Category),
+		ImagePath:    info.Logo(irmaConfig),
+		Attributes:   attributes,
+		IssueURL:     convertOptionalTranslatedString(info.IssueURL),
 	}, nil
 }
 
@@ -297,7 +302,6 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 		if existing, ok := intermediateResult[instanceHash]; ok {
 			existing.BatchInstanceCountsRemaining[format] = cred.InstanceCount
 			existing.CredentialInstanceIds[format] = cred.Hash
-			// TODO: potentially add this informatino into format specific fields too
 			existing.Revoked = existing.Revoked || cred.Revoked
 			existing.RevocationSupported = existing.RevocationSupported || cred.RevocationSupported
 		} else
@@ -332,14 +336,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				Hash:         instanceHash,
 				ImagePath:    info.Logo(irmaConfig),
 				Name:         TranslatedString(info.Name),
-				Issuer: TrustedParty{
-					Id:   issuer.ID,
-					Name: TranslatedString(issuer.Name),
-					// TODO: figure out where the issuer logo's come from
-					ImagePath: nil,
-					// TODO: figure out what it means to be on the Yivi trust chain
-					Parent: nil,
-				},
+				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 				CredentialInstanceIds: map[CredentialFormat]string{
 					format: cred.Hash,
 				},

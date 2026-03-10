@@ -270,7 +270,7 @@ func requestorInfoToTrustedParty(info *irma.RequestorInfo) TrustedParty {
 	return TrustedParty{
 		Id:        info.ID.String(),
 		Name:      TranslatedString(info.Name),
-		ImagePath: info.Logo,
+		ImagePath: info.LogoPath,
 		Parent:    nil,
 		Verified:  !info.Unverified,
 	}

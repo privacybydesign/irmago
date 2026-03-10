@@ -52,6 +52,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"trusted party logo paths not empty during disclosure",
+		testDisclosureTrustedPartyLogoPaths,
+	)
+
+	runSessionTest(t,
 		"disclosure with optional non-present credential moves to choices overview",
 		testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosureOverview,
 	)
@@ -106,6 +111,11 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 	runSessionTest(t,
 		"requestor info correct",
 		testIrmaIssuanceRequestorInfoCorrect,
+	)
+
+	runSessionTest(t,
+		"trusted party logo paths not empty during issuance",
+		testIssuanceTrustedPartyLogoPaths,
 	)
 
 	runSessionTest(t,
@@ -1422,6 +1432,71 @@ func testIrmaIssuanceRequestorInfoCorrect(
 
 	require.Equal(t, 1, session.Id)
 	requireRequestorInfo(t, session)
+}
+
+func testIssuanceTrustedPartyLogoPaths(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, client.Status_RequestPermission, session.Status)
+
+	// Requestor should have a logo that exists on disk
+	require.NotNil(t, session.Requestor.ImagePath, "requestor ImagePath should not be nil")
+	require.FileExists(t, *session.Requestor.ImagePath)
+
+	// Each offered credential's issuer should have a logo that exists on disk
+	require.NotEmpty(t, session.OfferedCredentials, "expected at least one offered credential")
+	for _, cred := range session.OfferedCredentials {
+		require.NotNil(t, cred.Issuer.ImagePath, "issuer ImagePath for %s should not be nil", cred.CredentialId)
+		require.FileExists(t, *cred.Issuer.ImagePath)
+	}
+}
+
+func testDisclosureTrustedPartyLogoPaths(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// First issue a credential so we have something to disclose
+	schemalessPerformIrmaIssuanceSession(t, c, sessionHandler, irmaServer,
+		createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"),
+	)
+
+	// Now start a disclosure session for that credential
+	disclosureRequest := irma.NewDisclosureRequest()
+	disclosureRequest.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{irma.NewAttributeRequest("test.test.email.email")},
+		},
+	}
+
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
+	session := awaitSessionState(t, sessionHandler)
+
+	require.Equal(t, client.Status_RequestPermission, session.Status)
+
+	// Requestor should have a logo that exists on disk
+	require.NotNil(t, session.Requestor.ImagePath, "requestor ImagePath should not be nil")
+	require.FileExists(t, *session.Requestor.ImagePath)
+
+	// Disclosure plan credential issuers should have logos that exist on disk
+	require.NotNil(t, session.DisclosurePlan)
+	for _, choice := range session.DisclosurePlan.DisclosureChoicesOverview {
+		for _, opt := range choice.OwnedOptions {
+			require.NotNil(t, opt.Issuer.ImagePath, "issuer ImagePath for %s should not be nil", opt.CredentialId)
+			require.FileExists(t, *opt.Issuer.ImagePath)
+		}
+		for _, opt := range choice.ObtainableOptions {
+			require.NotNil(t, opt.Issuer.ImagePath, "issuer ImagePath for %s should not be nil", opt.CredentialId)
+			require.FileExists(t, *opt.Issuer.ImagePath)
+		}
+	}
 }
 
 func testMultipleCredentialsIssuance(
