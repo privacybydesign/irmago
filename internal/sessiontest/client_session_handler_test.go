@@ -3,6 +3,7 @@ package sessiontest
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -423,7 +424,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 
 	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
 		"sc":   {"university": "University of the Arts", "level": "high"},
-		"name": {"firstname": "", "familyname": "Batsbak"},
+		"name": {"firstname": "Bar", "familyname": "Batsbak"},
 	})
 }
 
@@ -1072,7 +1073,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 
 	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
 		"sc":   {"university": "University of the Arts", "level": "high"},
-		"name": {"firstname": "", "familyname": "Batsbak"},
+		"name": {"firstname": "Bar", "familyname": "Batsbak"},
 	})
 }
 
@@ -2704,6 +2705,8 @@ func requireVerifierResult(t *testing.T, verifierSession irmaclient.EudiVerifier
 		require.True(t, ok, "credential should be a string")
 
 		disclosedClaims := extractDisclosedClaims(t, sdJwtStr)
+		vpJson, _ := json.MarshalIndent(disclosedClaims, "", "    ")
+		fmt.Println("queryID ", queryID, ": ", string(vpJson))
 
 		for expectedName, expectedValue := range expectedClaims {
 			actualValue, found := disclosedClaims[expectedName]

@@ -193,7 +193,7 @@ func createMijnOverheidIssuanceRequestWithSdJwt() *irma.IssuanceRequest {
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
 			Attributes: map[string]string{
 				"firstnames": "Barry",
-				"firstname":  "",
+				"firstname":  "Bar",
 				"familyname": "Batsbak",
 				"prefix":     "Sir",
 			},
@@ -208,7 +208,7 @@ func createMijnOverheidIssuanceRequest() *irma.IssuanceRequest {
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
 			Attributes: map[string]string{
 				"firstnames": "Barry",
-				"firstname":  "",
+				"firstname":  "Bar",
 				"familyname": "Batsbak",
 				"prefix":     "Sir",
 			},
