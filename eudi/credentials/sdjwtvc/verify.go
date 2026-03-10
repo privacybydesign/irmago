@@ -406,7 +406,8 @@ func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationCo
 type ProcessedSdJwtPayload map[string]any
 
 func (v *VerifiedSdJwtVc) GetRawSdJwtVc() SdJwtVc {
-	return SdJwtVc(v.IssuerSignedJwt)
+	allDisclosures := slices.Collect(maps.Values(v.DisclosureLookup.Encoded))
+	return SdJwtVc(CreateSdJwtVc(v.IssuerSignedJwt, allDisclosures))
 }
 
 // ============================= Base SD-JWT VC processing =====================================
