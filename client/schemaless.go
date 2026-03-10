@@ -363,7 +363,27 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 
 func (client *Client) GetCredentials() ([]*Credential, error) {
 	creds := client.credentialInfoList()
+	creds = filterOutKeyshareCredentials(client.irmaClient.Configuration, creds)
 	return credentialInfoListToSchemaless(client.irmaClient.Configuration, creds)
+}
+
+// filterOutKeyshareCredentials removes credentials that are used for keyshare server enrollment.
+func filterOutKeyshareCredentials(conf *irma.Configuration, creds irma.CredentialInfoList) irma.CredentialInfoList {
+	keyshareCredTypes := make(map[irma.CredentialTypeIdentifier]struct{})
+	for _, scheme := range conf.SchemeManagers {
+		if scheme.KeyshareAttribute != "" {
+			credType := irma.NewAttributeTypeIdentifier(scheme.KeyshareAttribute).CredentialTypeIdentifier()
+			keyshareCredTypes[credType] = struct{}{}
+		}
+	}
+
+	filtered := make(irma.CredentialInfoList, 0, len(creds))
+	for _, cred := range creds {
+		if _, isKeyshare := keyshareCredTypes[cred.Identifier()]; !isKeyshare {
+			filtered = append(filtered, cred)
+		}
+	}
+	return filtered
 }
 
 func displayHintToAttributeType(s string) AttributeType {

@@ -67,7 +67,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
-	require.Len(t, creds, 2)
+	require.Len(t, creds, 1)
 
 	emailCred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, emailCred)
@@ -79,7 +79,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	creds, err = c.GetCredentials()
 	require.NoError(t, err)
-	require.Len(t, creds, 2)
+	require.Len(t, creds, 1)
 
 	emailCred = findCredentialById(creds, "test.test.email")
 	require.NotNil(t, emailCred)
@@ -97,7 +97,7 @@ func testCredentialInstanceCount(t *testing.T) {
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
-	require.Len(t, creds, 2)
+	require.Len(t, creds, 1)
 
 	emailCred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, emailCred)
@@ -111,7 +111,7 @@ func testCredentialInstanceCount(t *testing.T) {
 
 		creds, err = c.GetCredentials()
 		require.NoError(t, err)
-		require.Len(t, creds, 2)
+		require.Len(t, creds, 1)
 
 		emailCred = findCredentialById(creds, "test.test.email")
 		require.NotNil(t, emailCred)
@@ -527,7 +527,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
-	require.Len(t, creds, 2)
+	require.Len(t, creds, 1)
 
 	cred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, cred)
@@ -558,7 +558,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 
 	creds, err = c.GetCredentials()
 	require.NoError(t, err)
-	require.Len(t, creds, 2)
+	require.Len(t, creds, 1)
 
 	cred = findCredentialById(creds, "test.test.email")
 	require.NotNil(t, cred)
@@ -795,7 +795,7 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
-	require.Len(t, creds, 2)
+	require.Len(t, creds, 1)
 
 	emailCred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, emailCred)
@@ -804,7 +804,7 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 
 	creds, err = c.GetCredentials()
 	require.NoError(t, err)
-	require.Len(t, creds, 1)
+	require.Len(t, creds, 0)
 }
 
 func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
@@ -824,7 +824,7 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
-	require.Len(t, creds, 2)
+	require.Len(t, creds, 1)
 
 	emailCred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, emailCred)
