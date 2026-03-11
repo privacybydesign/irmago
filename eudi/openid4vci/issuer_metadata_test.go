@@ -61,7 +61,7 @@ func TestValidateCredentialConfiguration_UnsupportedFormat(t *testing.T) {
 func TestValidateCredentialConfiguration_SdJwtVc_InvalidCredentialMetadata(t *testing.T) {
 	c := &CredentialConfiguration{
 		Format:                              CredentialFormatIdentifier_SdJwtVc,
-		CredentialSigningAlgValuesSupported: []string{"ES256"},
+		CredentialSigningAlgValuesSupported: []any{"ES256"},
 		CredentialMetadata: &CredentialMetadata{
 			Display: []CredentialDisplay{
 				{
@@ -84,7 +84,7 @@ func TestValidateCredentialConfiguration_SdJwtVc_InvalidCredentialMetadata(t *te
 func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *testing.T) {
 	c := &CredentialConfiguration{
 		Format:                              CredentialFormatIdentifier_SdJwtVc,
-		CredentialSigningAlgValuesSupported: []string{"ES256"},
+		CredentialSigningAlgValuesSupported: []any{"ES256"},
 		CredentialMetadata: &CredentialMetadata{
 			Display: []CredentialDisplay{
 				{
@@ -106,7 +106,7 @@ func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *test
 func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 	validCredentialConfig := CredentialConfiguration{
 		Format:                              CredentialFormatIdentifier_SdJwtVc,
-		CredentialSigningAlgValuesSupported: []string{"ES256"},
+		CredentialSigningAlgValuesSupported: []any{"ES256"},
 		CredentialMetadata: &CredentialMetadata{
 			Display: []CredentialDisplay{
 				{
@@ -284,7 +284,7 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 	validCredentialConfig := CredentialConfiguration{
 		Format:                              CredentialFormatIdentifier_SdJwtVc,
-		CredentialSigningAlgValuesSupported: []string{"ES256"},
+		CredentialSigningAlgValuesSupported: []any{"ES256"},
 		CredentialMetadata: &CredentialMetadata{
 			Display: []CredentialDisplay{
 				{
@@ -425,7 +425,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
 			CryptographicBindingMethod_JWK,
 		},
-		CredentialSigningAlgValuesSupported: []string{"ES256"},
+		CredentialSigningAlgValuesSupported: []any{"ES256"},
 		ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
 			ProofTypeIdentifier_JWT: {
 				ProofSigningAlgValuesSupported: []string{"ES256"},
@@ -471,7 +471,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format:                              CredentialFormatIdentifier_SdJwtVc,
 				Scope:                               &scope,
-				CredentialSigningAlgValuesSupported: []string{},
+				CredentialSigningAlgValuesSupported: []any{},
 			},
 			wantErr: false,
 		},
@@ -480,7 +480,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format:                              CredentialFormatIdentifier_SdJwtVc,
 				Scope:                               &scope,
-				CredentialSigningAlgValuesSupported: []string{"invalid-alg"},
+				CredentialSigningAlgValuesSupported: []any{"invalid-alg"},
 			},
 			wantErr:     true,
 			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported'",
@@ -490,7 +490,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format:                              CredentialFormatIdentifier_SdJwtVc,
 				Scope:                               &scope,
-				CredentialSigningAlgValuesSupported: []string{"ES256"},
+				CredentialSigningAlgValuesSupported: []any{"ES256"},
 			},
 			wantErr: false,
 		},
@@ -499,7 +499,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format:                              CredentialFormatIdentifier_SdJwtVc,
 				Scope:                               &scope,
-				CredentialSigningAlgValuesSupported: []string{"ES256", "invalid-alg"},
+				CredentialSigningAlgValuesSupported: []any{"ES256", "invalid-alg"},
 			},
 			wantErr: false,
 		},

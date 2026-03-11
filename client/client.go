@@ -33,7 +33,8 @@ type Client struct {
 	keyBinder        sdjwtvc.KeyBinder
 	scheduler        gocron.Scheduler
 	sessionManager   sessionManager
-	Preferences      clientsettings.Preferences
+	// TODO: move preferences from IrmaClient to here
+	//Preferences      clientsettings.Preferences
 }
 
 func New(
@@ -755,7 +756,7 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 }
 
 func (client *Client) GetPreferences() clientsettings.Preferences {
-	return client.Preferences
+	return client.irmaClient.Preferences
 }
 
 func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {

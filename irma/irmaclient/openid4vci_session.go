@@ -493,25 +493,26 @@ func (s *openid4vciSession) extractScopesFromCredentialOffer() []string {
 
 // extractAuthorizationDetailsJson extracts the authorization details from the credential offer and issuer metadata, and returns it as a JSON string to be included in the authorization request, if needed. If no authorization details are needed, it returns nil.
 func (s *openid4vciSession) extractAuthorizationDetailsJson() (*string, error) {
-	if len(s.issuerSettings.authorizationServerMetadata.AuthorizationDetailsTypesSupported) > 0 && len(s.credentialOffer.CredentialConfigurationIds) > 1 {
-		authDetails := make([]oauth2.AuthorizationDetailsRecord, len(s.credentialOffer.CredentialConfigurationIds))
-		for i, credential := range s.credentialOffer.CredentialConfigurationIds {
-			authDetails[i] = oauth2.AuthorizationDetailsRecord{
-				Type:                      "openid_credential",
-				CredentialConfigurationId: credential,
-			}
-
-			if len(s.credentialIssuerMetadata.AuthorizationServers) > 0 {
-				authDetails[i].Locations[0] = s.credentialIssuerMetadata.CredentialIssuer
-			}
-		}
-		authDetailsJsonBytes, err := json.Marshal(authDetails)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal authorization details: %v", err)
-		}
-
-		authDetailsJson := string(authDetailsJsonBytes)
-		return &authDetailsJson, nil
+	if len(s.issuerSettings.authorizationServerMetadata.AuthorizationDetailsTypesSupported) == 0 || len(s.credentialOffer.CredentialConfigurationIds) == 1 {
+		return nil, nil
 	}
-	return nil, nil
+
+	authDetails := make([]oauth2.AuthorizationDetailsRequestRecord, len(s.credentialOffer.CredentialConfigurationIds))
+	for i, credential := range s.credentialOffer.CredentialConfigurationIds {
+		authDetails[i] = oauth2.AuthorizationDetailsRequestRecord{
+			Type:                      "openid_credential",
+			CredentialConfigurationId: credential,
+		}
+
+		if len(s.credentialIssuerMetadata.AuthorizationServers) > 0 {
+			authDetails[i].Locations[0] = s.credentialIssuerMetadata.CredentialIssuer
+		}
+	}
+	authDetailsJsonBytes, err := json.Marshal(authDetails)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal authorization details: %v", err)
+	}
+
+	authDetailsJson := string(authDetailsJsonBytes)
+	return &authDetailsJson, nil
 }

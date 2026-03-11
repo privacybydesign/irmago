@@ -261,7 +261,8 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 		return nil, fmt.Errorf("failed to validate credential issuer metadata: %v", err)
 	}
 
-	// Validate the metadata against the Credential Offer
+	// Validate the metadata against the offered credentials in the Credential Offer
+	// This way, any unsupported credential configurations will be filtered and don't raise a validation error
 	err = credentialIssuerMetadata.ValidateAgainstCredentialOffer(credentialOffer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate credential issuer metadata against credential offer: %v", err)
