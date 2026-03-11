@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,7 +14,8 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 )
 
-const YiviAppRedirectUri = "yivi-app://callback"
+const YiviAppRedirectUri = "yivi-app://auth-callback"
+const YiviClientId = "yivi-wallet"
 
 type GrantHandler interface {
 	HandleGrant(s *openid4vciSession) (AccessTokenResponse, error)
@@ -24,21 +26,23 @@ type codeResponse struct {
 	code              *string
 }
 
+// TODO: we need to handle the authorization of MULTIPLE instances of the same credential configuration
+// i.e. we might have 2+ of the same credentials available, with different claim values.
+// The user needs to choose which credential(s) to add to the wallet?
 type AccessTokenResponse interface {
 	PermissionGranted() bool
 	GetAccessToken() string
 	GetRefreshToken() *string
 }
 
-type authTokenPermissionResponse struct {
+type preAuthPermissionResponse struct {
 	permissionGranted bool
 	transactionCode   *string
 }
 
 type authTokenResponse struct {
-	authTokenPermissionResponse
-	accessToken  string
-	refreshToken *string
+	permissionGranted bool
+	token             *oauth2.TokenResponse
 }
 
 func (r *authTokenResponse) PermissionGranted() bool {
@@ -46,11 +50,11 @@ func (r *authTokenResponse) PermissionGranted() bool {
 }
 
 func (r *authTokenResponse) GetAccessToken() string {
-	return r.accessToken
+	return r.token.AccessToken
 }
 
 func (r *authTokenResponse) GetRefreshToken() *string {
-	return r.refreshToken
+	return r.token.RefreshToken
 }
 
 type AuthorizationCodeFlowHandler struct {
@@ -64,7 +68,7 @@ type pkceParameters struct {
 
 // HandleGrant TODO: accept raw input, not session
 func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (AccessTokenResponse, error) {
-	// TODO: check if we want/need to use Pushed Authorization Requests here if the AS supports it
+	// TODO: split this func into doCodeRequest + doTokenRequest
 
 	// Generate the code_challenge from the code_verifier, using a method supported by the AS (if any)
 	pkce := &pkceParameters{}
@@ -80,7 +84,8 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	// Entra: '65d1d280-0f23-4763-bf41-ea4c17cde792'
 	// Auth0: 'FiEH7ZmdnrDphzAjvdk9scynlm0A1XV9',
 	// Keycloak: 'eudiw'
-	clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
+	//clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
+	clientId := YiviClientId
 
 	authRequest := openid4vci.BuildAuthorizationRequestValues(
 		YiviAppRedirectUri,
@@ -102,7 +107,9 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 
 	// Even if authorization_details will be sent, we should also add the scopes to the authorization request if the AS supports the `scope` parameter, since some ASes might require it, and it does not hurt to include it as well
 	scopes := s.extractScopesFromCredentialOffer()
-	authRequest.Add("scope", strings.Join(scopes, " "))
+	if len(scopes) > 0 {
+		authRequest.Add("scope", strings.Join(scopes, " "))
+	}
 
 	if len(s.credentialIssuerMetadata.AuthorizationServers) > 0 {
 		authRequest.Add("resource", s.credentialIssuerMetadata.CredentialIssuer)
@@ -152,17 +159,16 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	)
 
 	// Wait for the code handler to be called
-	permission := <-pendingAuthCodeRequestChannel
+	userInteraction := <-pendingAuthCodeRequestChannel
 
-	// TODO: start exchange of code for token here, and return token response instead of code response, to avoid having to wait for the token handler to be called in a separate step after this
-
-	// Wait for the token handler to be called
-	// tokenPermission := <-pendingAuthTokenRequestChannel
-	authTokenResponse := &authTokenResponse{
-		authTokenPermissionResponse: authTokenPermissionResponse{permissionGranted: permission.permissionGranted},
+	if !userInteraction.permissionGranted {
+		// User cancelled or denied the code request
+		return nil, fmt.Errorf("authorization has been cancelled or denied by user")
 	}
 
-	return authTokenResponse, nil
+	// Exchange of code for token and return token response
+	return h.doTokenRequest(s.issuerSettings.authorizationServerMetadata.TokenEndpoint,
+		*userInteraction.code, pkce, scopes, authDetails)
 }
 
 func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint string, payload url.Values) (*oauth2.PushedAuthorizationResponse, error) {
@@ -171,7 +177,7 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 		return nil, fmt.Errorf("failed to create request for pushed authorization request: %v", err)
 	}
 
-	irma.Logger.Infof("Executing Pushed Authorization Request to %s", parEndpoint)
+	irma.Logger.Infof("Sending PAR request: %s", payload.Encode())
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := h.httpClient.Do(req)
@@ -180,10 +186,17 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 	}
 	defer response.Body.Close()
 
-	if response.StatusCode != http.StatusCreated {
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PAR response body: %v", err)
+	}
+	irma.Logger.Infof("PAR response body: %s", string(responseBody))
+
+	// We accept both 201 + 200, where the specs require 201
+	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
 		// TODO: generalize error handling for all Authorization and Token Requests
 		var errResponse oauth2.ErrorResponse
-		err := json.NewDecoder(response.Body).Decode(&errResponse)
+		err := json.NewDecoder(bytes.NewReader(responseBody)).Decode(&errResponse)
 		if err != nil {
 			return nil, fmt.Errorf("pushed authorization request returned status code: %d, %s", response.StatusCode, err)
 		}
@@ -199,7 +212,7 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 	}
 
 	var parResponse oauth2.PushedAuthorizationResponse
-	err = json.NewDecoder(response.Body).Decode(&parResponse)
+	err = json.NewDecoder(bytes.NewReader(responseBody)).Decode(&parResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode pushed authorization response: %v", err)
 	}
@@ -207,12 +220,55 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 	return &parResponse, nil
 }
 
+func (h *AuthorizationCodeFlowHandler) doTokenRequest(
+	tokenEndpoint string,
+	code string,
+	pkce *pkceParameters,
+	scopes []string,
+	authDetails *string,
+) (AccessTokenResponse, error) {
+	payload := url.Values{}
+
+	payload.Add("grant_type", "authorization_code")
+	payload.Add("code", code)
+	payload.Add("client_id", YiviClientId)
+	payload.Add("redirect_uri", YiviAppRedirectUri)
+
+	if pkce != nil {
+		payload.Add("code_verifier", pkce.CodeVerifier)
+	}
+
+	if len(scopes) > 0 {
+		payload.Add("scope", strings.Join(scopes, " "))
+	}
+
+	if authDetails != nil {
+		payload.Add("authorization_details", *authDetails)
+	}
+
+	irma.Logger.Infof("Sending token request: %s", payload.Encode())
+
+	req, err := http.NewRequest(http.MethodPost, tokenEndpoint, bytes.NewBufferString(payload.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for token request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute token request: %v", err)
+	}
+	defer response.Body.Close()
+
+	return handleTokenResponse(response)
+}
+
 type PreAuthorizedCodeFlowHandler struct {
 }
 
-// HandleGrant TODO: accept raw input, not session
+// HandleGrant TODO: accept raw input, not session?
 func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (AccessTokenResponse, error) {
-	pendingAuthTokenPermissionRequestChannel := make(chan *authTokenPermissionResponse, 1)
+	pendingAuthTokenPermissionRequestChannel := make(chan *preAuthPermissionResponse, 1)
 	defer func() {
 		pendingAuthTokenPermissionRequestChannel = nil
 	}()
@@ -243,10 +299,10 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 		TokenPermissionHandler(func(proceed bool, transactionCode *string) {
 			if proceed {
 				irma.Logger.Printf("received access token via authorization code flow")
-				pendingAuthTokenPermissionRequestChannel <- &authTokenPermissionResponse{permissionGranted: true, transactionCode: transactionCode}
+				pendingAuthTokenPermissionRequestChannel <- &preAuthPermissionResponse{permissionGranted: true, transactionCode: transactionCode}
 			} else {
 				irma.Logger.Printf("user cancelled authorization code flow")
-				pendingAuthTokenPermissionRequestChannel <- &authTokenPermissionResponse{permissionGranted: false}
+				pendingAuthTokenPermissionRequestChannel <- &preAuthPermissionResponse{permissionGranted: false}
 			}
 		}),
 	)
@@ -255,15 +311,13 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	permission := <-pendingAuthTokenPermissionRequestChannel
 
 	if !permission.permissionGranted {
-		return &authTokenResponse{
-			authTokenPermissionResponse: *permission,
-		}, nil
+		return &authTokenResponse{permissionGranted: false}, nil
 	}
 
-	return h.requestAccessToken(s, permission.transactionCode)
+	return h.doTokenRequest(s, permission.transactionCode)
 }
 
-func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession, transactionCode *string) (AccessTokenResponse, error) {
+func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *openid4vciSession, transactionCode *string) (AccessTokenResponse, error) {
 	values := url.Values{}
 
 	values.Add("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
@@ -288,7 +342,7 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession, 
 	}
 
 	// Initiate request
-	req, err := http.NewRequest(http.MethodPost, s.issuerSettings.authorizationServerMetadata.TokenEndpoint, strings.NewReader(values.Encode()))
+	req, err := http.NewRequest(http.MethodPost, s.issuerSettings.authorizationServerMetadata.TokenEndpoint, bytes.NewBufferString(values.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -304,9 +358,15 @@ func (h *PreAuthorizedCodeFlowHandler) requestAccessToken(s *openid4vciSession, 
 }
 
 func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read token response body: %v", err)
+	}
+	irma.Logger.Infof("Token response body: %s", string(responseBody))
+
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
 		var errResponse oauth2.ErrorResponse
-		err := json.NewDecoder(response.Body).Decode(&errResponse)
+		err := json.NewDecoder(bytes.NewReader(responseBody)).Decode(&errResponse)
 		if err != nil {
 			return nil, fmt.Errorf("token endpoint returned status code: %d, %s", response.StatusCode, err)
 		}
@@ -322,14 +382,13 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 	}
 
 	var tokenResponse oauth2.TokenResponse
-	err := json.NewDecoder(response.Body).Decode(&tokenResponse)
+	err = json.NewDecoder(bytes.NewReader(responseBody)).Decode(&tokenResponse)
 	if err != nil {
 		return nil, err
 	}
 
 	return &authTokenResponse{
-		authTokenPermissionResponse: authTokenPermissionResponse{permissionGranted: true},
-		accessToken:                 tokenResponse.AccessToken,
-		refreshToken:                tokenResponse.RefreshToken,
+		permissionGranted: true,
+		token:             &tokenResponse,
 	}, nil
 }

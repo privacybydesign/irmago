@@ -10,6 +10,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/internal/arrays"
 	"golang.org/x/text/language"
 )
 
@@ -70,7 +71,7 @@ const (
 type CredentialConfiguration struct {
 	Format                               CredentialFormatIdentifier        `json:"format"`
 	Scope                                *string                           `json:"scope,omitempty"`
-	CredentialSigningAlgValuesSupported  []string                          `json:"credential_signing_alg_values_supported,omitempty"`
+	CredentialSigningAlgValuesSupported  []any                             `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or objects for ISO mDoc
 	CryptographicBindingMethodsSupported []CryptographicBindingMethod      `json:"cryptographic_binding_methods_supported,omitempty"`
 	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType `json:"proof_types_supported,omitempty"`
 	CredentialMetadata                   *CredentialMetadata               `json:"credential_metadata,omitempty"`
@@ -268,13 +269,6 @@ func (m *CredentialIssuerMetadata) Verify() error {
 		return fmt.Errorf("'batch_size' in 'batch_credential_issuance' must be > 1")
 	}
 
-	// --- Credential configurations supported validation ---
-	for name, credConfig := range m.CredentialConfigurationsSupported {
-		if err := credConfig.Verify(); err != nil {
-			return fmt.Errorf("invalid credential configuration %q: %w", name, err)
-		}
-	}
-
 	// --- Verify display information ---
 	if err := m.Display.verify(); err != nil {
 		return err
@@ -293,6 +287,11 @@ func (m *CredentialIssuerMetadata) ValidateAgainstCredentialOffer(credentialOffe
 	// If the credential offer contains credential configuration IDs not present in the metadata, we cannot process the offer
 	for _, credConfigId := range credentialOffer.CredentialConfigurationIds {
 		if credConfig, ok := m.CredentialConfigurationsSupported[credConfigId]; ok {
+			// Verify the issuer metadata for this credential configuration
+			if err := credConfig.Verify(); err != nil {
+				return fmt.Errorf("invalid credential configuration %q: %w", credConfigId, err)
+			}
+
 			// Validate that we support the credential configuration
 			if err := credConfig.ValidateSupportedFeatures(); err != nil {
 				return fmt.Errorf("credential configuration %q is not supported: %v", credConfigId, err)
@@ -354,9 +353,13 @@ func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
 		return fmt.Errorf("missing 'scope' parameter")
 	}
 
-	// Validate at least one credential signing algorithms is supported
+	// Validate at least one credential signing algorithms is supported (which should be string values for SD-JWTs)
+	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
+		str, ok := v.(string)
+		return str, ok
+	})
 	if len(c.CredentialSigningAlgValuesSupported) != 0 &&
-		len(getSupportedSignatureAlgorithms(c.CredentialSigningAlgValuesSupported)) == 0 {
+		len(getSupportedSignatureAlgorithms(credentialSigningAlgValuesStrings)) == 0 {
 		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
 	}
 

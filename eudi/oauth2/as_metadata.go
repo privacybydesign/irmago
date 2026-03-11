@@ -48,7 +48,7 @@ type TokenResponse struct {
 	Scope        *string `json:"scope,omitempty"`
 
 	// RFC 9396 extension for OAuth 2.0 Rich Authorization Requests
-	AuthorizationDetails *string `json:"authorization_details,omitempty"`
+	AuthorizationDetails []AuthorizationDetailsResponseRecord `json:"authorization_details,omitempty"`
 }
 
 type ErrorResponse struct {
@@ -63,10 +63,16 @@ type PushedAuthorizationResponse struct {
 	ExpiresIn  int    `json:"expires_in"`
 }
 
-type AuthorizationDetailsRecord struct {
+type AuthorizationDetailsRequestRecord struct {
 	Type                      string   `json:"type"`
 	CredentialConfigurationId string   `json:"credential_configuration_id"`
 	Locations                 []string `json:"locations,omitempty"`
+}
+
+type AuthorizationDetailsResponseRecord struct {
+	Type                      string   `json:"type"`
+	CredentialConfigurationId string   `json:"credential_configuration_id"`
+	CredentialIdentifiers     []string `json:"credential_identifiers,omitempty"`
 }
 
 func (as *AuthorizationServerMetadata) GetCodeChallengeProvider() CodeChallengeProvider {
