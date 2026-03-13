@@ -384,6 +384,8 @@ func (client *Client) RemoveStorage() error {
 		return fmt.Errorf("failed to remove all holder private keys: %v", err)
 	}
 
+	client.sessionManager.Clear()
+
 	return client.irmaClient.RemoveStorage()
 }
 

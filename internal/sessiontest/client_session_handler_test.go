@@ -3,7 +3,6 @@ package sessiontest
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -217,6 +216,11 @@ func testSessionHandlerForOpenID4VPDisclosures(t *testing.T) {
 	runEudiSessionTest(t,
 		"claim sets",
 		testOpenID4VP_YiviScheme_ClaimSets,
+	)
+
+	runEudiSessionTest(t,
+		"multiple instances attribute ordering",
+		testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering,
 	)
 }
 
@@ -712,6 +716,33 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
 	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
+
+	// the obtainable option shows the predefined university value as RequestedValue,
+	// and level as a requested attribute without a specific value
+	obtainable := plan.DisclosureChoicesOverview[0].ObtainableOptions[0]
+	require.Equal(t, "irma-demo.RU.studentCard", obtainable.CredentialId)
+	// Find the requested attributes (university and level) and verify their RequestedValue
+	var universityAttr, levelAttr *client.Attribute
+	for i := range obtainable.Attributes {
+		switch obtainable.Attributes[i].Id {
+		case "university":
+			universityAttr = &obtainable.Attributes[i]
+		case "level":
+			levelAttr = &obtainable.Attributes[i]
+		}
+	}
+	require.NotNil(t, universityAttr)
+	require.NotNil(t, universityAttr.RequestedValue)
+	require.Equal(t, &client.AttributeValue{
+		Type:             client.AttributeType_TranslatedString,
+		TranslatedString: &expectedUniversityValue,
+	}, universityAttr.RequestedValue)
+
+	require.NotNil(t, levelAttr)
+	require.NotNil(t, levelAttr.RequestedValue)
+	require.Equal(t, &client.AttributeValue{
+		Type: client.AttributeType_TranslatedString,
+	}, levelAttr.RequestedValue)
 
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
@@ -2705,8 +2736,6 @@ func requireVerifierResult(t *testing.T, verifierSession irmaclient.EudiVerifier
 		require.True(t, ok, "credential should be a string")
 
 		disclosedClaims := extractDisclosedClaims(t, sdJwtStr)
-		vpJson, _ := json.MarshalIndent(disclosedClaims, "", "    ")
-		fmt.Println("queryID ", queryID, ": ", string(vpJson))
 
 		for expectedName, expectedValue := range expectedClaims {
 			actualValue, found := disclosedClaims[expectedName]
@@ -2759,4 +2788,102 @@ func extractDisclosedClaims(t *testing.T, sdJwt string) map[string]string {
 	}
 
 	return claims
+}
+
+// testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering issues 3 studentCard credentials
+// with different attribute values, then starts an OpenID4VP disclosure requesting all attributes.
+// It verifies that every owned option presents its attributes in the scheme-defined order:
+// university, studentCardNumber, studentID, level.
+func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	studentCards := []map[string]string{
+		{"university": "University of Amsterdam", "studentCardNumber": "11111", "studentID": "AAA", "level": "bachelor"},
+		{"university": "Delft University", "studentCardNumber": "22222", "studentID": "BBB", "level": "master"},
+		{"university": "Leiden University", "studentCardNumber": "33333", "studentID": "CCC", "level": "phd"},
+	}
+
+	for _, attrs := range studentCards {
+		req := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+			{
+				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+				Attributes:       attrs,
+				SdJwtBatchSize:   10,
+			},
+		})
+		issue(t, irmaServer, c, sessionHandler, req)
+		session := awaitSessionState(t, sessionHandler)
+		require.Equal(t, client.Status_Success, session.Status)
+	}
+
+	dcql := `{
+		"credentials": [
+		  {
+			"id": "sc",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["irma-demo.RU.studentCard"] },
+			"claims": [
+				{ "path": ["university"] },
+				{ "path": ["studentCardNumber"] },
+				{ "path": ["studentID"] },
+				{ "path": ["level"] }
+			]
+		  }
+		]
+	}`
+
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
+	requireSessionState(t, session, 4, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan.DisclosureChoicesOverview)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+
+	pick := plan.DisclosureChoicesOverview[0]
+	require.Len(t, pick.OwnedOptions, 3, "should have 3 owned credential instances")
+
+	expectedOrder := []string{"university", "studentCardNumber", "studentID", "level"}
+
+	for i, option := range pick.OwnedOptions {
+		require.Equal(t, "irma-demo.RU.studentCard", option.CredentialId)
+		require.Len(t, option.Attributes, 4, "option %d should have 4 attributes", i)
+
+		actualOrder := make([]string, len(option.Attributes))
+		for j, attr := range option.Attributes {
+			actualOrder[j] = attr.Id
+		}
+		require.Equal(t, expectedOrder, actualOrder,
+			"option %d: attributes should be in scheme-defined order", i)
+	}
+
+	// Verify that each issued credential is present (order of owned options may differ from issuance order)
+	foundUniversities := map[string]bool{}
+	for _, option := range pick.OwnedOptions {
+		foundUniversities[(*option.Attributes[0].Value.TranslatedString)["en"]] = true
+	}
+	for _, attrs := range studentCards {
+		require.True(t, foundUniversities[attrs["university"]],
+			"credential with university %q should be present", attrs["university"])
+	}
+
+	// Disclose the first option and verify the result
+	chosen := pick.OwnedOptions[0]
+	grantPermission(t, c, session.Id,
+		makeDisclosureChoice(chosen, "university", "studentCardNumber", "studentID", "level"),
+	)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 4, client.Type_Disclosure, client.Status_Success)
+
+	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
+		"sc": {
+			"university":        (*chosen.Attributes[0].Value.TranslatedString)[""],
+			"studentCardNumber": (*chosen.Attributes[1].Value.TranslatedString)[""],
+			"studentID":         (*chosen.Attributes[2].Value.TranslatedString)[""],
+			"level":             (*chosen.Attributes[3].Value.TranslatedString)[""],
+		},
+	})
 }

@@ -215,6 +215,11 @@ type sessionManager struct {
 	Client         *Client
 }
 
+func (m *sessionManager) Clear() {
+	m.Sessions = map[int]*session{}
+	m.NextId = 0
+}
+
 func (m *sessionManager) DeleteSession(id int) {
 	delete(m.Sessions, id)
 }
@@ -420,6 +425,7 @@ func createDisclosureChoicesOverview(
 
 		choiceTemplates := map[string]*CredentialDescriptor{}        // key: credentialId
 		filteredByHash := map[string]*SelectableCredentialInstance{} // key: credentialHash
+		ownedOrder := []string{}                                     // preserves insertion order of hashes
 
 		for _, con := range discon {
 			// if at least one of the cons inside of a discon is empty
@@ -444,6 +450,21 @@ func createDisclosureChoicesOverview(
 						choiceTemplates[id] = descriptor
 						choice.ObtainableOptions = append(choice.ObtainableOptions, descriptor)
 					}
+
+					// Populate RequestedValue for the requested attribute
+					attrName := attr.AttributeIdentifier.Type.Name()
+					for i := range choiceTemplates[id].Attributes {
+						if choiceTemplates[id].Attributes[i].Id == attrName {
+							requestedValue := &AttributeValue{
+								Type: AttributeType_TranslatedString,
+							}
+							if attr.Value != nil {
+								requestedValue.TranslatedString = convertOptionalTranslatedString(&attr.Value)
+							}
+							choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
+							break
+						}
+					}
 				} else {
 					// Present attribute => owned credential instance (but we filter attributes)
 					orig := findCredential(credentials, hash)
@@ -458,6 +479,7 @@ func createDisclosureChoicesOverview(
 						f = &cp
 						f.Attributes = []Attribute{}
 						filteredByHash[hash] = f
+						ownedOrder = append(ownedOrder, hash)
 					}
 
 					// TODO: make this more independent and compatible with more complex claim paths
@@ -471,9 +493,9 @@ func createDisclosureChoicesOverview(
 				}
 			}
 		}
-		// Replace OwnedOptions with the filtered instances (only requested attrs)
-		for _, inst := range filteredByHash {
-			choice.OwnedOptions = append(choice.OwnedOptions, inst)
+		// Collect OwnedOptions in the order candidates were encountered.
+		for _, hash := range ownedOrder {
+			choice.OwnedOptions = append(choice.OwnedOptions, filteredByHash[hash])
 		}
 		result = append(result, choice)
 	}
