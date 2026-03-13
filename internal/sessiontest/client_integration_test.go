@@ -746,6 +746,12 @@ func requireOpenID4VPLog(t *testing.T, log client.LogInfo) {
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
 	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
 	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
+
+	// Verify that attribute value translations are present for OpenID4VP disclosures
+	require.NotNil(t, emailAttr.Value.TranslatedString)
+	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)["en"], "attribute value should have 'en' translation")
+	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)["nl"], "attribute value should have 'nl' translation")
+	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)[""], "attribute value should have raw value")
 }
 
 func requireRegularIrmaIssuanceLog(t *testing.T, log client.LogInfo) {
