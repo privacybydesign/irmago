@@ -150,7 +150,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	s.handler.RequestAuthorizationCodeFlowPermission(
 		request,
 		s.requestorInfo,
-		CodeHandler(func(proceed bool, code *string) {
+		AuthCodeHandler(func(proceed bool, code *string) {
 			pendingAuthCodeRequestChannel <- &codeResponse{
 				permissionGranted: proceed,
 				code:              code,
@@ -297,12 +297,9 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 		request,
 		s.requestorInfo,
 		TokenPermissionHandler(func(proceed bool, transactionCode *string) {
-			if proceed {
-				irma.Logger.Printf("received access token via authorization code flow")
-				pendingAuthTokenPermissionRequestChannel <- &preAuthPermissionResponse{permissionGranted: true, transactionCode: transactionCode}
-			} else {
-				irma.Logger.Printf("user cancelled authorization code flow")
-				pendingAuthTokenPermissionRequestChannel <- &preAuthPermissionResponse{permissionGranted: false}
+			pendingAuthTokenPermissionRequestChannel <- &preAuthPermissionResponse{
+				permissionGranted: proceed,
+				transactionCode:   transactionCode,
 			}
 		}),
 	)
@@ -362,7 +359,6 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read token response body: %v", err)
 	}
-	irma.Logger.Infof("Token response body: %s", string(responseBody))
 
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
 		var errResponse oauth2.ErrorResponse

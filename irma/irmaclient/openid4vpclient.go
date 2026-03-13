@@ -97,7 +97,6 @@ func (client *OpenID4VPClient) handleSessionAsync(fullUrl string, handler Handle
 		defer response.Body.Close()
 
 		authRequestJwt, err := io.ReadAll(response.Body)
-
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to read authorization request body: %v", err)
 			return

@@ -13,9 +13,11 @@ import (
 type UserInteractionType string
 
 const (
-	UI_EnteredPin     UserInteractionType = "entered_pin"
-	UI_Permission     UserInteractionType = "permission"
-	UI_DismissSession UserInteractionType = "dismiss"
+	UI_EnteredPin        UserInteractionType = "entered_pin"
+	UI_Permission        UserInteractionType = "permission"
+	UI_DismissSession    UserInteractionType = "dismiss"
+	UI_AuthorizationCode UserInteractionType = "authorization_code"
+	UI_PreAuthorizedCode UserInteractionType = "pre_authorized_code"
 )
 
 // SessionUserInteraction is any interaction the user has to do with a session, like entering a pin code or giving permission
@@ -56,16 +58,28 @@ type PinInteractionPayload struct {
 	Proceed bool   `json:"proceed"`
 }
 
+type SessionAuthCodeInteractionPayload struct {
+	Code    *string `json:"code,omitempty"`
+	Proceed bool    `json:"proceed"`
+}
+
+type SessionPreAuthorizedCodeInteractionPayload struct {
+	TransactionCode *string `json:"transaction_code,omitempty"`
+	Proceed         bool    `json:"proceed"`
+}
+
 type SessionStatus string
 type SessionType string
 
 const (
-	Status_RequestPermission SessionStatus = "request_permission"
-	Status_ShowPairingCode   SessionStatus = "show_pairing_code"
-	Status_Success           SessionStatus = "success"
-	Status_Error             SessionStatus = "error"
-	Status_Dismissed         SessionStatus = "dismissed"
-	Status_RequestPin        SessionStatus = "request_pin"
+	Status_RequestPermission        SessionStatus = "request_permission"
+	Status_ShowPairingCode          SessionStatus = "show_pairing_code"
+	Status_Success                  SessionStatus = "success"
+	Status_Error                    SessionStatus = "error"
+	Status_Dismissed                SessionStatus = "dismissed"
+	Status_RequestPin               SessionStatus = "request_pin"
+	Status_RequestPreAuthorizedCode SessionStatus = "request_pre_authorized_code"
+	Status_RequestAuthorizationCode SessionStatus = "request_authorization_code"
 
 	Type_Disclosure SessionType = "disclosure"
 	Type_Issuance   SessionType = "issuance"
@@ -181,16 +195,22 @@ type SessionState struct {
 	// The number of attempts the user still has to enter a correct pin
 	RemainingPinAttempts  int `json:"remaining_pin_attempts"`
 	PinBlockedTimeSeconds int `json:"pin_blocked_time_seconds"`
+
+	// OID4VCI specific fields
+	OfferedCredentialTypes    irma.CredentialTypeInfoList                      `json:"offered_credential_types"`
+	TransactionCodeParameters *irma.PreAuthorizedCodeTransactionCodeParameters `json:"transaction_code_parameters"`
 }
 
 type session struct {
-	State             *SessionState
-	handler           SessionHandler
-	permissionHandler irmaclient.PermissionHandler
-	pinHandler        irmaclient.PinHandler
-	client            *Client
-	dismisser         irmaclient.SessionDismisser
-	chained           bool
+	State                    *SessionState
+	handler                  SessionHandler
+	permissionHandler        irmaclient.PermissionHandler
+	pinHandler               irmaclient.PinHandler
+	client                   *Client
+	dismisser                irmaclient.SessionDismisser
+	chained                  bool
+	authCodeHandler          irmaclient.AuthCodeHandler
+	preAuthorizedCodeHandler irmaclient.TokenPermissionHandler
 }
 
 func (s *session) dispatchState() {
@@ -225,6 +245,7 @@ func (m *sessionManager) DeleteSession(id int) {
 }
 
 func (m *sessionManager) NewSession() *session {
+	// TODO: use locking here to update the session ID
 	m.NextId += 1
 	s := &session{
 		State: &SessionState{
@@ -661,8 +682,14 @@ func (s *session) RequestSignaturePermission(request *irma.SignatureRequest,
 func (s *session) RequestAuthorizationCodeFlowPermission(
 	request *irma.AuthorizationCodeFlowRequest,
 	requestorInfo *irma.RequestorInfo,
-	callback irmaclient.CodeHandler,
+	callback irmaclient.AuthCodeHandler,
 ) {
+	s.State.Status = Status_RequestAuthorizationCode
+	s.State.Type = Type_Issuance
+	s.State.OfferedCredentialTypes = request.CredentialInfoList
+	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
+	s.authCodeHandler = callback
+	s.dispatchState()
 }
 
 func (s *session) RequestPreAuthorizedCodeFlowPermission(
@@ -670,6 +697,13 @@ func (s *session) RequestPreAuthorizedCodeFlowPermission(
 	requestorInfo *irma.RequestorInfo,
 	callback irmaclient.TokenPermissionHandler,
 ) {
+	s.State.Status = Status_RequestPreAuthorizedCode
+	s.State.Type = Type_Issuance
+	s.State.OfferedCredentialTypes = request.CredentialInfoList
+	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
+	s.State.TransactionCodeParameters = request.TransactionCodeParameters
+	s.preAuthorizedCodeHandler = callback
+	s.dispatchState()
 }
 
 func (s *session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
@@ -725,6 +759,12 @@ func (client *Client) HandleUserInteraction(userInteraction SessionUserInteracti
 		session.pinHandler(payload.Proceed, payload.Pin)
 	case UI_DismissSession:
 		session.dismisser.Dismiss()
+	case UI_PreAuthorizedCode:
+		payload := userInteraction.Payload.(SessionPreAuthorizedCodeInteractionPayload)
+		session.preAuthorizedCodeHandler(payload.Proceed, payload.TransactionCode)
+	case UI_AuthorizationCode:
+		payload := userInteraction.Payload.(SessionAuthCodeInteractionPayload)
+		session.authCodeHandler(payload.Proceed, payload.Code)
 	}
 
 	return nil

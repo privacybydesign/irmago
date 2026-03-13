@@ -26,7 +26,7 @@ import (
 type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 
 // CodeHandler is a callback for providing the authorization code from the app side
-type CodeHandler func(proceed bool, code *string)
+type AuthCodeHandler func(proceed bool, code *string)
 
 // TokenHandler is a callback for providing the access token (and optionally refresh token)
 // from the app side when the authorization has completed, the code was exchanged for an access token and the flow is hereby returned to the app.
@@ -74,7 +74,7 @@ type Handler interface {
 	RequestAuthorizationCodeFlowPermission(
 		request *irma.AuthorizationCodeFlowRequest,
 		requestorInfo *irma.RequestorInfo,
-		callback CodeHandler,
+		callback AuthCodeHandler,
 	)
 
 	RequestPreAuthorizedCodeFlowPermission(

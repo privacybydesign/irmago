@@ -57,7 +57,9 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 
 	for key, value := range verifiedSdJwtVc.Claims.Object {
 		if value.Type != sdjwtvc.Claim_String {
-			return nil, nil, fmt.Errorf("attribute value not a string: %v %v", key, value.Type)
+			//return nil, nil, fmt.Errorf("attribute value not a string: %v %v", key, value.Type)
+			irma.Logger.Warnf("attribute value not a string, skipping attribute: %v %v", key, value.Type)
+			continue
 		}
 		valStr, ok := value.Value.(string)
 		if !ok {

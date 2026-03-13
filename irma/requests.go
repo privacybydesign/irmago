@@ -100,9 +100,9 @@ type PreAuthorizedCodeFlowPermissionRequest struct {
 }
 
 type PreAuthorizedCodeTransactionCodeParameters struct {
-	InputMode   string
-	Length      *int
-	Description *string
+	InputMode   string  `json:"input_mode"`
+	Length      *int    `json:"length,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 type AuthorizationCodeFlowRequest struct {

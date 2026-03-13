@@ -73,7 +73,8 @@ func (s *openid4vciSession) perform() error {
 		grantHandler = &PreAuthorizedCodeFlowHandler{}
 	default:
 		s.handler.Failure(&irma.SessionError{
-			Err: fmt.Errorf("unsupported grant type"),
+			ErrorType: irma.ErrorInvalidRequest,
+			Err:       fmt.Errorf("unsupported grant type"),
 		})
 		return nil
 	}
@@ -96,6 +97,7 @@ func (s *openid4vciSession) perform() error {
 	// AccessToken received;
 	err = s.requestCredentials(permission.GetAccessToken())
 	if err != nil {
+		irma.Logger.Infof("error requesting credentials: ", err)
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("could not request credentials: %v", err),
 		})
@@ -442,6 +444,11 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 	sdJwts := make([]sdjwtvc.SdJwtVcKb, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
 		sdJwts[i] = sdjwtvc.SdJwtVcKb(cred.Credential)
+
+		if i == 0 {
+			// Log the first credential for debugging purposes
+			irma.Logger.Infof("Received credential (first from batch only): %s", string(cred.Credential))
+		}
 	}
 
 	// Store the credentials using the storage client

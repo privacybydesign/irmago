@@ -106,7 +106,7 @@ func (h *backgroundIssuanceHandler) RequestSignaturePermission(request *irma.Sig
 func (h *backgroundIssuanceHandler) RequestSchemeManagerPermission(manager *irma.SchemeManager, callback func(proceed bool)) {
 	callback(false)
 }
-func (h *backgroundIssuanceHandler) RequestAuthorizationCodeFlowPermission(request *irma.AuthorizationCodeFlowRequest, serverName *irma.RequestorInfo, callback CodeHandler) {
+func (h *backgroundIssuanceHandler) RequestAuthorizationCodeFlowPermission(request *irma.AuthorizationCodeFlowRequest, serverName *irma.RequestorInfo, callback AuthCodeHandler) {
 	x := "test-code"
 	callback(false, &x)
 }
