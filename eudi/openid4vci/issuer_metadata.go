@@ -10,6 +10,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/internal/arrays"
 	"golang.org/x/text/language"
 )
 
@@ -62,15 +63,15 @@ type CryptographicBindingMethod string
 type ProofTypeIdentifier string
 
 const (
-	CryptographicBindingMethod_JWK  CryptographicBindingMethod = "jwk"
-	CryptographicBindingMethod_DID  CryptographicBindingMethod = "did"
-	CryptographicBindingMethod_COSE CryptographicBindingMethod = "cose_key"
+	CryptographicBindingMethod_JWK     CryptographicBindingMethod = "jwk"
+	CryptographicBindingMethod_DID_KEY CryptographicBindingMethod = "did:key"
+	CryptographicBindingMethod_COSE    CryptographicBindingMethod = "cose_key"
 )
 
 type CredentialConfiguration struct {
 	Format                               CredentialFormatIdentifier        `json:"format"`
-	Scope                                string                            `json:"scope,omitempty"`
-	CredentialSigningAlgValuesSupported  []string                          `json:"credential_signing_alg_values_supported,omitempty"`
+	Scope                                *string                           `json:"scope,omitempty"`
+	CredentialSigningAlgValuesSupported  []any                             `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or objects for ISO mDoc
 	CryptographicBindingMethodsSupported []CryptographicBindingMethod      `json:"cryptographic_binding_methods_supported,omitempty"`
 	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType `json:"proof_types_supported,omitempty"`
 	CredentialMetadata                   *CredentialMetadata               `json:"credential_metadata,omitempty"`
@@ -117,12 +118,12 @@ type ClaimsDescription struct {
 
 type Translateable interface {
 	GetName() string
-	GetLocale() string
+	GetLocale() *string
 }
 
 type Display struct {
-	Name   string `json:"name,omitempty"`
-	Locale string `json:"locale,omitempty"`
+	Name   string  `json:"name,omitempty"`
+	Locale *string `json:"locale,omitempty"`
 }
 
 type W3CCredentialDefinition struct {
@@ -161,20 +162,20 @@ const (
 func (d Display) GetName() string {
 	return d.Name
 }
-func (d Display) GetLocale() string {
+func (d Display) GetLocale() *string {
 	return d.Locale
 }
 
 func (d CredentialDisplay) GetName() string {
 	return d.Name
 }
-func (d CredentialDisplay) GetLocale() string {
+func (d CredentialDisplay) GetLocale() *string {
 	return d.Locale
 }
 func (d CredentialIssuerDisplay) GetName() string {
 	return d.Name
 }
-func (d CredentialIssuerDisplay) GetLocale() string {
+func (d CredentialIssuerDisplay) GetLocale() *string {
 	return d.Locale
 }
 
@@ -257,22 +258,15 @@ func (m *CredentialIssuerMetadata) Verify() error {
 		}
 	}
 
-	// --- Response encryption validation ---
-	if m.CredentialResponseEncryption != nil {
-		// TODO
-	}
+	// // --- Response encryption validation ---
+	// if m.CredentialResponseEncryption != nil {
+	// 	// TODO
+	// }
 
 	// --- Batch issuance validation ---
 	// TODO: determine if we want to support credentials WITHOUT batch issuance
 	if m.BatchCredentialIssuance != nil && m.BatchCredentialIssuance.BatchSize <= 1 {
 		return fmt.Errorf("'batch_size' in 'batch_credential_issuance' must be > 1")
-	}
-
-	// --- Credential configurations supported validation ---
-	for name, credConfig := range m.CredentialConfigurationsSupported {
-		if err := credConfig.Verify(); err != nil {
-			return fmt.Errorf("invalid credential configuration %q: %w", name, err)
-		}
 	}
 
 	// --- Verify display information ---
@@ -293,6 +287,11 @@ func (m *CredentialIssuerMetadata) ValidateAgainstCredentialOffer(credentialOffe
 	// If the credential offer contains credential configuration IDs not present in the metadata, we cannot process the offer
 	for _, credConfigId := range credentialOffer.CredentialConfigurationIds {
 		if credConfig, ok := m.CredentialConfigurationsSupported[credConfigId]; ok {
+			// Verify the issuer metadata for this credential configuration
+			if err := credConfig.Verify(); err != nil {
+				return fmt.Errorf("invalid credential configuration %q: %w", credConfigId, err)
+			}
+
 			// Validate that we support the credential configuration
 			if err := credConfig.ValidateSupportedFeatures(); err != nil {
 				return fmt.Errorf("credential configuration %q is not supported: %v", credConfigId, err)
@@ -350,19 +349,24 @@ func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
 	}
 
 	// We only support authorization requests for credential requests using the `scope` parameter, for now
-	if len(c.Scope) == 0 {
+	if c.Scope == nil || *c.Scope == "" {
 		return fmt.Errorf("missing 'scope' parameter")
 	}
 
-	// Validate at least one credential signing algorithms is supported
+	// Validate at least one credential signing algorithms is supported (which should be string values for SD-JWTs)
+	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
+		str, ok := v.(string)
+		return str, ok
+	})
 	if len(c.CredentialSigningAlgValuesSupported) != 0 &&
-		len(getSupportedSignatureAlgorithms(c.CredentialSigningAlgValuesSupported)) == 0 {
+		len(getSupportedSignatureAlgorithms(credentialSigningAlgValuesStrings)) == 0 {
 		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
 	}
 
-	// We only support JWK cryptographic binding method, for now
+	// We only support JWK and DID cryptographic binding method, for now
 	if len(c.CryptographicBindingMethodsSupported) > 0 {
-		if !slices.Contains(c.CryptographicBindingMethodsSupported, CryptographicBindingMethod_JWK) {
+		if !slices.Contains(c.CryptographicBindingMethodsSupported, CryptographicBindingMethod_JWK) &&
+			!slices.Contains(c.CryptographicBindingMethodsSupported, CryptographicBindingMethod_DID_KEY) {
 			return fmt.Errorf("unsupported cryptographic binding method(s) %q", c.CryptographicBindingMethodsSupported)
 		}
 
@@ -461,20 +465,25 @@ func (c *ClaimsDescription) verify() error {
 }
 
 func validateLocale(availableTranslations []Translateable, translation Translateable) error {
+	locale := translation.GetLocale()
+	if locale == nil {
+		return nil
+	}
+
 	// Validate that the locale is a valid BCP 47 language tag
-	if _, err := language.Parse(translation.GetLocale()); err != nil {
-		return fmt.Errorf("invalid 'locale' tag %q in 'display' item with name %q: %w", translation.GetLocale(), translation.GetName(), err)
+	if _, err := language.Parse(*locale); err != nil {
+		return fmt.Errorf("invalid 'locale' tag %q in 'display' item with name %q: %w", *locale, translation.GetName(), err)
 	}
 
 	// Validate that the locale is present only once in the list of translations
 	counter := 0
 	for _, existingTranslation := range availableTranslations {
-		if existingTranslation.GetLocale() == translation.GetLocale() {
+		if existingTranslation.GetLocale() != nil && *existingTranslation.GetLocale() == *locale {
 			counter++
 		}
 
 		if counter > 1 {
-			return fmt.Errorf("duplicate 'locale' tag %q in 'display' item with name %q", translation.GetLocale(), translation.GetName())
+			return fmt.Errorf("duplicate 'locale' tag %q in 'display' item with name %q", *locale, translation.GetName())
 		}
 	}
 
@@ -490,7 +499,7 @@ func (d CredentialIssuerDisplays) verify() error {
 			}
 		}
 
-		if display.Locale != "" {
+		if display.Locale != nil && *display.Locale != "" {
 			if err := validateLocale(translations, &display); err != nil {
 				return err
 			}
@@ -518,7 +527,7 @@ func (d CredentialDisplays) verify() error {
 		}
 
 		// Validate locale, and check for duplicates
-		if display.Locale != "" {
+		if display.Locale != nil && *display.Locale != "" {
 			if err := validateLocale(translations, &display); err != nil {
 				return err
 			}
@@ -567,8 +576,8 @@ func (m CredentialIssuerMetadata) GetAllBaseLanguages() []string {
 
 	// Credential issuer display languages
 	for _, display := range m.Display {
-		if display.Locale != "" {
-			baseLang, err := language.Parse(display.Locale)
+		if display.Locale != nil && *display.Locale != "" {
+			baseLang, err := language.Parse(*display.Locale)
 			if err != nil {
 				continue
 			}
@@ -588,8 +597,8 @@ func (m CredentialIssuerMetadata) GetAllLanguages() []string {
 
 	// Credential issuer display languages
 	for i, display := range m.Display {
-		if display.Locale != "" {
-			languageSet[i] = display.Locale
+		if display.Locale != nil && *display.Locale != "" {
+			languageSet[i] = *display.Locale
 		}
 	}
 
@@ -632,7 +641,7 @@ func (r *RemoteImage) UnmarshalJSON(data []byte) error {
 
 func (cre *CredentialRequestEncryption) UnmarshalJSON(data []byte) error {
 	// First unmarshal into map, to find out if 'jwks' is present
-	var obj map[string]interface{}
+	var obj map[string]any
 	err := json.Unmarshal(data, &obj)
 
 	if err != nil {

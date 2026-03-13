@@ -25,8 +25,8 @@ services:
     depends_on:
       - postgres
     volumes:
-      - ./server/keyshare/schema.sql:/schema.sql
-      - ./server/keyshare/cleanup.sql:/cleanup.sql
+      - ./irma/server/keyshare/schema.sql:/schema.sql
+      - ./irma/server/keyshare/cleanup.sql:/cleanup.sql
     # We have to wait until the database is up and running.
     # Database might already be running, so we need to do a cleanup first.
     command: /bin/sh -c "sleep 5 && psql -f cleanup.sql && psql -f schema.sql"
@@ -98,9 +98,9 @@ services:
     command: ./...
 
   # Service to run the 'irma' command line tool
-  irma:
+  yivi:
     build: .
-    image: privacybydesign/irma:latest
+    image: privacybydesign/yivi:latest
     # Add a run profile to prevent this service to be included when running docker-compose up.
     profiles:
       - run

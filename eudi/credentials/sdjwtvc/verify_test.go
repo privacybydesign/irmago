@@ -768,7 +768,7 @@ func Test_HolderVerificationProcessor_MissingSdAlg_FallbackToSha256_Succeeds(t *
 }
 
 func Test_HolderVerificationProcessor_IssuerSignedJwt_WithKeyBindingJwt_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 
 	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_VcTypHeader_WithKbJwt))
@@ -777,7 +777,7 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithKeyBindingJwt_Fails(t 
 }
 
 func Test_HolderVerificationProcessor_IssuerSignedJwt_WithInvalidTypHeader_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 
 	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(wrongIssuerSignedJwtTypHeader))
@@ -786,7 +786,7 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithInvalidTypHeader_Fails
 }
 
 func Test_HolderVerificationProcessor_InvalidSdJwtVc_MissingTrailingTilde_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(invalidSdJwtVc_MissingTrailingTilde))
@@ -878,7 +878,7 @@ func Test_HolderVerificationProcessor_VerificationIsBeforeNotBefore_Fails(t *tes
 
 func Test_HolderVerificationProcessor_EmptyButNotMissingSdField_Fails(t *testing.T) {
 	emptyNotMissingSdField := newWorkingSdJwtVcTestConfig().
-		withSdClaims([]DisclosureContent{}).
+		withSdClaims([]DisclosureContent{}, iana.SHA256).
 		withDisclosures([]DisclosureContent{})
 	errorTestCaseHolder(t, emptyNotMissingSdField, "failed to parse sd field: when the _sd field is present it may not be empty")
 }
@@ -889,24 +889,110 @@ func Test_HolderVerificationProcessor_UnsupportedSdAlg_Fails(t *testing.T) {
 }
 
 func Test_HolderVerificationProcessor_ValidSdJwtVc_NoDisclosures_NoKbJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoDisclosuresNoKbjwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 0)
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Contents, 0)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
+func Test_MissingDisclosureWithDenyPolicy(t *testing.T) {
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.MissingDisclosuresPolicy = MissingDisclosuresPolicy_Deny
+	holderVerifier := NewHolderVerificationProcessor(context)
+
+	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoKbJwt))
+	require.ErrorContains(t, err, "missing disclosure for mWAV3IrV5auHvME0Y6dhg_U3WBgE0enLilwfvlkaA30")
+}
+
+func Test_HolderVerificationOfPublicClaims(t *testing.T) {
+	context := CreateDefaultVerificationContext(testdata.IssuerCert_irma_app_Bytes)
+	holderVerifier := NewHolderVerificationProcessor(context)
+
+	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_PublicAttributes))
+	require.NoError(t, err)
+
+	require.Equal(t, result.VerifiableCredentialType, "pbdf.sidn-pbdf.email")
+
+	addressHash := HashedDisclosure("XwGcFzkB2-AFRdrrgl3BEC0CRPIA6L4CP3SEEZhDcus")
+	streetHash := HashedDisclosure("L9xVwlvPUf1HzTqnK1-dEU1UpmVhD95nf54RTFLB9_M")
+	countryHash := HashedDisclosure("u23y2aseB3gxFZtfHg4DZuuR0NUv0DLqgeeEMWojaes")
+	firstNameHash := HashedDisclosure("HIAjMnxbMRzzpUQA0rzfjfUeGc6Qo_VJqdCuRRqy3ks")
+	lastNameHash := HashedDisclosure("wB2s9Cwam804qn5UozjW6o1VxIrV8gIlzve8XjJBQbM")
+	nlHash := HashedDisclosure("3ygIjZD_RgV9YzBcdzVKzttr0VmW8jfYq-odKo379sE")
+	frHash := HashedDisclosure("9vHqBVeCC1tArYpowI-kz5FNmDZNyZP7cKaMd5aV3hY")
+	nonSelectiveNationalititiesHash := HashedDisclosure("Jwg1kqh55DA0Rjk-naCl1jekwAcDS0bTBEUcoC1AAz0")
+
+	require.Equal(t, result.Claims, &ClaimNode{
+		Type: Claim_Object,
+		Object: map[string]*ClaimNode{
+			"birthday": {Key: "birthday", Type: Claim_String, Value: "24-02-1955"},
+			"non_selective_nationalitities": {
+				Key:  "non_selective_nationalitities",
+				Type: Claim_Array,
+				Sd:   &nonSelectiveNationalititiesHash,
+				Array: []*ClaimNode{
+					{Type: Claim_String, Value: "DE"},
+					{Type: Claim_String, Value: "UK"},
+				},
+			},
+			"selective_nationalities": {
+				Key:  "selective_nationalities",
+				Type: Claim_Array,
+				Array: []*ClaimNode{
+					{Type: Claim_String, Value: "NL", Sd: &nlHash},
+					{Type: Claim_String, Value: "FR", Sd: &frHash},
+				},
+			},
+			"personal_data": {
+				Key:  "personal_data",
+				Type: Claim_Object,
+				Object: map[string]*ClaimNode{
+					"last_name":  {Key: "last_name", Type: Claim_String, Value: "Dijkstra", Sd: &lastNameHash},
+					"first_name": {Key: "first_name", Type: Claim_String, Value: "Gerrit", Sd: &firstNameHash},
+				},
+			},
+			"address": {
+				Key:  "address",
+				Type: Claim_Object,
+				Sd:   &addressHash,
+				Object: map[string]*ClaimNode{
+					"country": {Key: "country", Type: Claim_String, Value: "Germany", Sd: &countryHash},
+					"street":  {Key: "street", Type: Claim_String, Value: "Schulstr", Sd: &streetHash},
+					"number":  {Key: "number", Type: Claim_Int, Value: 33},
+				},
+			},
+		},
+	})
+}
+
 func Test_HolderVerificationProcessor_ValidSdJwt_WithDisclosures_NoKbJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NoKbJwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	emailHash := HashedDisclosure("zfgldqG4CeM7XXr4xx5ngmhu1GOjLLe-AQneaEIUjnw")
+	require.Equal(t, verifiedSdJwtVc.Claims, &ClaimNode{
+		Type: Claim_Object,
+		Object: map[string]*ClaimNode{
+			"email": {
+				Key:   "email",
+				Type:  Claim_String,
+				Value: "test@gmail.com",
+				Sd:    &emailHash,
+			},
+		},
+	})
+
+	require.Equal(t, verifiedSdJwtVc.VerifiableCredentialType, "test.test.email")
+
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Encoded, 1)
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Contents, 1)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
@@ -966,7 +1052,7 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeIat_Give
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
-			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now - 60},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -988,7 +1074,7 @@ func Test_HolderVerificationProcessor_VerificationPlusOneMinuteIsAfterExp_GivenC
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
-			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now + 60},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -1010,7 +1096,7 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
-			VerifyOpts: newWorkingVerifyOptions(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
 		},
 		Clock:       &testClock{time: now - 60},
 		JwtVerifier: NewJwxJwtVerifier(),
@@ -1023,25 +1109,276 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 	require.NoError(t, err)
 }
 
+func Test_CreatePresentationSdJwtWithMixedPublicAndSelectiveDisclosures(t *testing.T) {
+	testSdJwt := SdJwtVcKb(validSdJwtVc_PublicAttributes)
+	issuerCert := testdata.IssuerCertChain_irma_app_Bytes
+
+	lastNameHash := HashedDisclosure("wB2s9Cwam804qn5UozjW6o1VxIrV8gIlzve8XjJBQbM")
+	frHash := HashedDisclosure("9vHqBVeCC1tArYpowI-kz5FNmDZNyZP7cKaMd5aV3hY")
+	nonSelectiveNationalititiesHash := HashedDisclosure("Jwg1kqh55DA0Rjk-naCl1jekwAcDS0bTBEUcoC1AAz0")
+
+	testDisclosure(t, "first item in non-sd array items shows all",
+		testSdJwt,
+		[][]any{{"non_selective_nationalitities", 0}},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"birthday": {Key: "birthday", Type: Claim_String, Value: "24-02-1955"},
+				"non_selective_nationalitities": {
+					Key:  "non_selective_nationalitities",
+					Type: Claim_Array,
+					Sd:   &nonSelectiveNationalititiesHash,
+					Array: []*ClaimNode{
+						{Type: Claim_String, Value: "DE"},
+						{Type: Claim_String, Value: "UK"},
+					},
+				},
+				"selective_nationalities": {
+					Key:   "selective_nationalities",
+					Type:  Claim_Array,
+					Array: []*ClaimNode{},
+				},
+				"personal_data": {
+					Key:    "personal_data",
+					Type:   Claim_Object,
+					Object: map[string]*ClaimNode{},
+				},
+			},
+		},
+		issuerCert,
+	)
+
+	testDisclosure(t, "last name and second selective nationality", testSdJwt, [][]any{
+		{"personal_data", "last_name"},
+		{"selective_nationalities", 1},
+	},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"birthday": {Key: "birthday", Type: Claim_String, Value: "24-02-1955"},
+				"selective_nationalities": {
+					Key:  "selective_nationalities",
+					Type: Claim_Array,
+					Array: []*ClaimNode{
+						{Type: Claim_String, Value: "FR", Sd: &frHash},
+					},
+				},
+				"personal_data": {
+					Key:  "personal_data",
+					Type: Claim_Object,
+					Object: map[string]*ClaimNode{
+						"last_name": {Key: "last_name", Type: Claim_String, Value: "Dijkstra", Sd: &lastNameHash},
+					},
+				},
+			},
+		},
+		issuerCert,
+	)
+}
+
+func Test_CreatePresentationSdJwtWithNestedDisclosures(t *testing.T) {
+	testSdJwt := SdJwtVcKb(validSdJwtVc_NestedAttributes)
+	issuerCert := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
+
+	nameHash := HashedDisclosure("y_1ml66L5y0IVcLT-5eybzprmV_9RPUMndrpNbEBgqU")
+	addressHash := HashedDisclosure("wxLmodf8M59QNhZ5uz4uBYFN4JdM6QjjJfOqUieHp00")
+	countryHash := HashedDisclosure("Bf0ZC5slooO5n8JSB_WRkPVN0XCLa2aPRtaOkAFQcsI")
+	over18Hash := HashedDisclosure("VWcidcFjA6LkrBIvYl1yrhbegzYaJfIoqflI9kuzVAA")
+	nationalitiesHash := HashedDisclosure("2Zv-8lRAfT5z8IRS8W3fDtLtnmY8ET5dpLo43fk9qdk")
+	nlHash := HashedDisclosure("xQ7p8vG7WWDCXVJ2NTZSVDmxRjSdGKL1Q7wneN6xrpQ")
+	gbHash := HashedDisclosure("BMzxq1-Qe0GDuEBWJA1XrAD4t1mu6WKyPjB9cHNx3So")
+
+	testDisclosure(t, "no paths, empty", testSdJwt, [][]any{},
+		&ClaimNode{Type: Claim_Object, Object: map[string]*ClaimNode{}},
+		issuerCert,
+	)
+
+	testDisclosure(t, "country and 18+", testSdJwt, [][]any{{"over_18"}, {"address", "country"}},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"over_18": {Key: "over_18", Type: Claim_Bool, Sd: &over18Hash, Value: true},
+				"address": {
+					Key:  "address",
+					Type: Claim_Object,
+					Sd:   &addressHash,
+					Object: map[string]*ClaimNode{
+						"country": {Key: "country", Type: Claim_String, Value: "England", Sd: &countryHash},
+					},
+				},
+			},
+		},
+		issuerCert,
+	)
+
+	testDisclosure(t,
+		"all items in sd array", testSdJwt, [][]any{{"nationalities", nil}},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"nationalities": {
+					Key:  "nationalities",
+					Type: Claim_Array,
+					Sd:   &nationalitiesHash,
+					Array: []*ClaimNode{
+						{Type: Claim_String, Value: "GB", Sd: &gbHash},
+						{Type: Claim_String, Value: "NL", Sd: &nlHash},
+					},
+				},
+			},
+		},
+		issuerCert,
+	)
+
+	testDisclosure(t,
+		"first nationality and name", testSdJwt, [][]any{{"nationalities", 0}, {"name"}},
+		&ClaimNode{
+			Type: Claim_Object,
+			Object: map[string]*ClaimNode{
+				"nationalities": {
+					Key:  "nationalities",
+					Type: Claim_Array,
+					Sd:   &nationalitiesHash,
+					Array: []*ClaimNode{
+						{Type: Claim_String, Value: "GB", Sd: &gbHash},
+					},
+				},
+				"name": {Key: "name", Type: Claim_String, Sd: &nameHash, Value: "Jason"},
+			},
+		},
+		issuerCert,
+	)
+}
+
+func testDisclosure(t *testing.T, name string, sdjwt SdJwtVcKb, claimPaths [][]any, expectedClaims *ClaimNode, issuerCert []byte) {
+	t.Run(name, func(t *testing.T) {
+		context := CreateDefaultVerificationContext(issuerCert)
+		holderVerifier := NewHolderVerificationProcessor(context)
+		verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(sdjwt)
+		require.NoError(t, err)
+
+		disclosed, err := verifiedSdJwtVc.CreateDisclosure(claimPaths)
+		require.NoError(t, err)
+
+		parsedDisclosed, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(disclosed))
+
+		require.NoError(t, err)
+
+		require.Equal(t, parsedDisclosed.Claims, expectedClaims)
+	})
+}
+
+func Test_ValidSdJwtVc_WithNestedSdObject(t *testing.T) {
+	issuerCert := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
+
+	context := CreateDefaultVerificationContext(issuerCert)
+	holderVerifier := NewHolderVerificationProcessor(context)
+	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_NestedAttributes))
+	require.NoError(t, err)
+
+	nameHash := HashedDisclosure("y_1ml66L5y0IVcLT-5eybzprmV_9RPUMndrpNbEBgqU")
+	addressHash := HashedDisclosure("wxLmodf8M59QNhZ5uz4uBYFN4JdM6QjjJfOqUieHp00")
+	streetHash := HashedDisclosure("8ZylQCeoa6ZNTy1J3fwFn_XAUXmPfH5Sl4gKiyhn29s")
+	numberHash := HashedDisclosure("NiYz0ny2P4nDoQ0-JPERMCMhkpX3qmnEjBG2Nw30cp0")
+	countryHash := HashedDisclosure("Bf0ZC5slooO5n8JSB_WRkPVN0XCLa2aPRtaOkAFQcsI")
+	over18Hash := HashedDisclosure("VWcidcFjA6LkrBIvYl1yrhbegzYaJfIoqflI9kuzVAA")
+	nationalitiesHash := HashedDisclosure("2Zv-8lRAfT5z8IRS8W3fDtLtnmY8ET5dpLo43fk9qdk")
+	nlHash := HashedDisclosure("xQ7p8vG7WWDCXVJ2NTZSVDmxRjSdGKL1Q7wneN6xrpQ")
+	gbHash := HashedDisclosure("BMzxq1-Qe0GDuEBWJA1XrAD4t1mu6WKyPjB9cHNx3So")
+
+	require.Equal(t, verifiedSdJwtVc.Claims, &ClaimNode{
+		Type: Claim_Object,
+		Object: map[string]*ClaimNode{
+			"nationalities": {
+				Key:  "nationalities",
+				Type: Claim_Array,
+				Sd:   &nationalitiesHash,
+				Array: []*ClaimNode{
+					{Type: Claim_String, Value: "GB", Sd: &gbHash},
+					{Type: Claim_String, Value: "NL", Sd: &nlHash},
+				},
+			},
+			"over_18": {Key: "over_18", Type: Claim_Bool, Sd: &over18Hash, Value: true},
+			"name":    {Key: "name", Type: Claim_String, Sd: &nameHash, Value: "Jason"},
+			"address": {
+				Key:  "address",
+				Type: Claim_Object,
+				Sd:   &addressHash,
+				Object: map[string]*ClaimNode{
+					"street":  {Key: "street", Type: Claim_String, Value: "5th Avenue", Sd: &streetHash},
+					"number":  {Key: "number", Type: Claim_Int, Value: 42, Sd: &numberHash},
+					"country": {Key: "country", Type: Claim_String, Value: "England", Sd: &countryHash},
+				},
+			},
+		},
+	})
+
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Encoded, 9)
+}
+
 func Test_ValidSdJwt_WithDcTypHeader_WithDisclosures_WithoutKbJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithoutKbJwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	emailHash := HashedDisclosure("7BG6rzIjLtwF6R9fUabwDWnFiDep3GVatPw9gOesNgY")
+	domainHash := HashedDisclosure("4JNFLkPbYsfv0VCY2xMaL6ImxSr6RgJY4onacx_J6PY")
+
+	require.Equal(t, verifiedSdJwtVc.Claims, &ClaimNode{
+		Type: Claim_Object,
+		Object: map[string]*ClaimNode{
+			"email": {
+				Key:   "email",
+				Type:  Claim_String,
+				Value: "test@gmail.com",
+				Sd:    &emailHash,
+			},
+			"domain": {
+				Key:   "domain",
+				Type:  Claim_String,
+				Value: "gmail.com",
+				Sd:    &domainHash,
+			},
+		},
+	})
+
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Encoded, 2)
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Contents, 2)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
 func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 
 	verifiedSdJwtVc, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_VcTypHeader_WithoutKbJwt))
 	require.NoError(t, err)
 
-	require.Len(t, verifiedSdJwtVc.Disclosures, 2)
+	emailHash := HashedDisclosure("H2uCwp-Ew18scHzd3blJbLEMKUqsOqnTre0G4aiMmwM")
+	domainHash := HashedDisclosure("86DO9GWjMIsQmXYtSwWFNy0XCH1eriAWRX-xVEkXT2Q")
+
+	require.Equal(t, verifiedSdJwtVc.Claims, &ClaimNode{
+		Type: Claim_Object,
+		Object: map[string]*ClaimNode{
+			"email": {
+				Key:   "email",
+				Type:  Claim_String,
+				Value: "test@gmail.com",
+				Sd:    &emailHash,
+			},
+			"domain": {
+				Key:   "domain",
+				Type:  Claim_String,
+				Value: "gmail.com",
+				Sd:    &domainHash,
+			},
+		},
+	})
+
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Contents, 2)
+	require.Len(t, verifiedSdJwtVc.DisclosureLookup.Encoded, 2)
 	require.Nil(t, verifiedSdJwtVc.KeyBindingJwt)
 }
 
@@ -1059,14 +1396,14 @@ func Test_ValidSdJwtVc_WithKbJwt_WithLegacyVcHeader_Succeeds(t *testing.T) {
 // - [ ]
 
 func Test_VerifierVerificationProcessor_RequiredKbJwt_NoKbJwtInSdJwt_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithoutKbJwt))
 	require.ErrorContains(t, err, "key binding jwt is required, but not present in sdjwtvc")
 }
 
 func Test_VerifierVerificationProcessor_InvalidSdJwtVc_WrongKbJwtTypHeader_Fails(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewVerifierVerificationProcessor(true, context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(invalidSdJwtVC_WrongKbTypHeader))
 	require.Error(t, err)
@@ -1089,14 +1426,14 @@ func Test_VerifierVerificationProcessor_NoCnfFieldInIssuerSignedJwt_WithKbJwt_Fa
 }
 
 func Test_VerifierVerificationProcessor_RequiredKbJwt_WithKbJwtInSdJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithKbJwt))
 	require.NoError(t, err)
 }
 
 func Test_VerifierVerificationProcessor_NonRequiredKbJwt_NoKbJwtInSdJwt_Succeeds(t *testing.T) {
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(false, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithoutKbJwt))
 	require.NoError(t, err)
@@ -1106,7 +1443,7 @@ func Test_VerifierVerificationProcessor_NonRequiredKbJwt_NoKbJwtInSdJwt_Succeeds
 
 func errorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.ErrorContains(t, err, message)
@@ -1114,7 +1451,7 @@ func errorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message string
 
 func noErrorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message string) {
 	sdjwtvc := createTestSdJwtVc(t, config)
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.NoError(t, err, message)
@@ -1122,7 +1459,7 @@ func noErrorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message stri
 
 func errorTestCaseVerifier(t *testing.T, config *testSdJwtVcKbConfig, message string) {
 	sdjwtvc := createTestSdJwtVcKb(t, config)
-	context := CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.ErrorContains(t, err, message)
@@ -1132,20 +1469,18 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 	chain, err := utils.ParsePemCertificateChainToX5cFormat(config.IssuerCert)
 	require.NoError(t, err)
 
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"email": "test@gmail.com",
-	})
-	require.NoError(t, err)
-
 	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
-	sdjwt, err := NewSdJwtVcBuilder().
-		WithExpiresAt(time.Now().Unix()).
-		WithIssuerCertificateChain(chain).
-		WithIssuerUrl(config.IssUrl).
-		WithVerifiableCredentialType("test.test.email").
-		WithDisclosures(disclosures).
-		WithHashingAlgorithm(iana.SHA256).
-		Build(creator)
+
+	sdjwt, err := NewSdJwtBuilder().
+		WithPayload(
+			Claim(Key_ExpiryTime, time.Now().Unix()),
+			Claim(Key_Issuer, config.IssUrl),
+			Claim(Key_VerifiableCredentialType, "test.test.email"),
+			Claim(Key_SdAlg, iana.SHA256),
+			SdClaim("email", "test@gmail.com"),
+		).
+		WithIssuerCertificateChain(chain).Build(creator)
+
 	require.NoError(t, err)
 
 	verifyOpts, err := utils.CreateX509VerifyOptionsFromCertChain(config.VerifierTrustedIssuerCertChain)
@@ -1155,7 +1490,7 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
 			VerifyOpts: *verifyOpts,
 		},
-		Clock:       NewSystemClock(),
+		Clock:       eudi_jwt.NewSystemClock(),
 		JwtVerifier: NewJwxJwtVerifier(),
 	}
 

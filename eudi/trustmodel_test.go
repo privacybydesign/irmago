@@ -193,7 +193,7 @@ func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBoth
 	require.NoError(t, err)
 
 	// The expired root (+intermediates) should not be added to the pools
-	require.Len(t, tm.trustedRootCertificates.Subjects(), 2)
+	require.Len(t, tm.trustedRootCertificates.Subjects(), 1)
 	require.Len(t, tm.trustedIntermediateCertificates.Subjects(), 1)
 }
 
@@ -225,6 +225,7 @@ func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t 
 	// Create a root cert and a CA cert, but write them in reversed order
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
+
 	// Write to disk in reversed order
 	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), caCerts[0], rootCert)
 

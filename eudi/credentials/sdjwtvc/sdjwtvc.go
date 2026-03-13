@@ -40,7 +40,7 @@ type DisclosureContent struct {
 	Salt string
 	Key  string
 	// This value can be any type that is allowed in JSON
-	Value interface{}
+	Value any
 
 	// Processing related fields
 	isArrayElement bool
@@ -90,6 +90,18 @@ func NewDisclosureContent(key string, value any) (DisclosureContent, error) {
 		Salt:  salt,
 		Key:   key,
 		Value: value,
+	}, nil
+}
+
+func NewArrayItemDisclosureContent(value any) (DisclosureContent, error) {
+	salt, err := generateSalt(16) // 128 bit salt
+	if err != nil {
+		return DisclosureContent{}, err
+	}
+	return DisclosureContent{
+		Salt:           salt,
+		Value:          value,
+		isArrayElement: true,
 	}, nil
 }
 
@@ -164,7 +176,7 @@ type CnfField struct {
 // IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
 // taking into account some sdjwtvc specific rules
 func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, error) {
-	jsonValues := make(map[string]interface{})
+	jsonValues := make(map[string]any)
 
 	if !strings.HasPrefix(payload.Issuer, "https://") {
 		return "", fmt.Errorf("issuer (`iss`) field is required to be an https link, but is %s", payload.Issuer)
@@ -178,7 +190,7 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 		jsonValues[Key_SdAlg] = payload.SdAlg
 	}
 
-	if payload.Confirm.Jwk != nil {
+	if payload.Confirm != nil && payload.Confirm.Jwk != nil {
 		jsonValues[Key_Confirmationkey] = payload.Confirm
 	}
 
@@ -339,7 +351,13 @@ func HashDisclosures(algorithm iana.HashingAlgorithm, disclosures []DisclosureCo
 }
 
 func makeClaimDisclosureArrayJson(claim DisclosureContent) ([]byte, error) {
-	claimArray := []interface{}{claim.Salt, claim.Key, claim.Value}
+	var claimArray []any
+
+	if claim.isArrayElement {
+		claimArray = []any{claim.Salt, claim.Value}
+	} else {
+		claimArray = []any{claim.Salt, claim.Key, claim.Value}
+	}
 	jsonBytes, err := json.Marshal(claimArray)
 	if err != nil {
 		return []byte{}, err
@@ -415,48 +433,26 @@ func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator
 }
 
 func CreateTestSdJwtVc() (SdJwtVc, error) {
-	sdClaims, err := MultipleNewDisclosureContents(map[string]string{
-		"family_name": "Yivi",
-		"location":    "Utrecht",
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	sdClaimHashes, err := HashDisclosures(iana.SHA256, sdClaims)
-	if err != nil {
-		return "", err
-	}
-
 	holderKey, err := readHolderPublicJwk()
 	if err != nil {
 		return "", err
 	}
-
-	sdJwtClaims := IssuerSignedJwtPayload{
-		Subject:                  "6c5c0a49-b589-431d-bae7-219122a9ec2c",
-		Sd:                       sdClaimHashes,
-		SdAlg:                    iana.SHA256,
-		Issuer:                   "https://openid4vc.staging.yivi.app",
-		Confirm:                  &holderKey,
-		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   1835689661,
-		IssuedAt:                 1516239022,
-	}
-
-	signer := NewEcdsaJwtCreatorWithIssuerTestkey()
-	jwt, err := CreateIssuerSignedJwt(sdJwtClaims, signer)
-
+	holderKeyClaim, err := HolderKeyClaim(holderKey)
 	if err != nil {
 		return "", err
 	}
 
-	sdJwtVc, err := CreateSdJwtVcWithDisclosureContents(jwt, sdClaims)
-
-	if err != nil {
-		return "", err
-	}
-
-	return sdJwtVc, nil
+	return NewSdJwtBuilder().
+		WithPayload(
+			Claim(Key_Subject, "6c5c0a49-b589-431d-bae7-219122a9ec2c"),
+			Claim(Key_SdAlg, iana.SHA256),
+			Claim(Key_Issuer, "https://openid4vc.staging.yivi.app"),
+			holderKeyClaim,
+			Claim(Key_VerifiableCredentialType, "pbdf.sidn-pbdf.email"),
+			Claim(Key_ExpiryTime, 1835689661),
+			Claim(Key_IssuedAt, 1516239022),
+			SdClaim("family_name", "Yivi"),
+			SdClaim("location", "Utrecht"),
+		).
+		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
 }

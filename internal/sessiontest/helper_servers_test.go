@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/irmaserver"
-	"github.com/privacybydesign/irmago/server/requestorserver"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/irmaserver"
+	"github.com/privacybydesign/irmago/irma/server/requestorserver"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
@@ -120,8 +120,8 @@ func ensureSymlinks(tb testing.TB) {
 // applying the configuration function and session options in the rightmost two parameter slots of
 // the specified function.
 func apply(
-	test func(t *testing.T, conf interface{}, opts ...option),
-	conf interface{}, opts ...option,
+	test func(t *testing.T, conf any, opts ...option),
+	conf any, opts ...option,
 ) func(*testing.T) {
 	return func(t *testing.T) {
 		test(t, conf, opts...)
@@ -207,7 +207,7 @@ func chainedServerHandler(
 			jwt.RegisteredClaims
 			server.SessionResult
 		}{}
-		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (interface{}, error) {
+		_, err = jwt.ParseWithClaims(string(bts), claims, func(_ *jwt.Token) (any, error) {
 			//return &conf.JwtRSAPrivateKey.PublicKey, nil
 			return publicKey, nil
 		})
@@ -324,7 +324,7 @@ func IrmaServerConfiguration() *server.Configuration {
 			revKeyshareSecondTestCred: {RevocationServerURL: revocationServerURL},
 		},
 		JwtPrivateKeyFile: jwtPrivkeyPath,
-		StaticSessions: map[string]interface{}{
+		StaticSessions: map[string]any{
 			"staticsession": irma.ServiceProviderRequest{
 				RequestorBaseRequest: irma.RequestorBaseRequest{
 					CallbackURL: staticSessionServerURL,

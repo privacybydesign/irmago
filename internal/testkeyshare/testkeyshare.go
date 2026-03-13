@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/keyshare/keyshareserver"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/keyshare/keyshareserver"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,6 +65,7 @@ func KeyshareServerHandler(t *testing.T, l *logrus.Logger, schemeID irma.SchemeM
 		},
 		DB:                    db,
 		JwtKeyID:              jwtKeyID,
+		JwtPinExpiry:          2 * 60,
 		JwtPrivateKeyFile:     filepath.Join(testdataPath, "jwtkeys", fmt.Sprintf("%s-kss-sk-%d.pem", schemeID, jwtKeyID)),
 		StoragePrimaryKeyFile: filepath.Join(testdataPath, "keyshareStorageTestkey"),
 		KeyshareAttribute:     keyshareAttr,

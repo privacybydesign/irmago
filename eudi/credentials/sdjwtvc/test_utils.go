@@ -31,22 +31,23 @@ func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 	require.NoError(t, err)
 
 	issuer := "https://irma.app"
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"family_name": "Yivi",
-		"location":    "Utrecht",
-	})
-	require.NoError(t, err)
 	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
 
 	holderKey, err := keyBinder.CreateKeyPairs(1)
 	require.NoError(t, err)
 
-	sdJwt, err := NewSdJwtVcBuilder().
-		WithHolderKey(holderKey[0]).
-		WithIssuerUrl(issuer).
-		WithDisclosures(disclosures).
-		WithVerifiableCredentialType("pbdf.pbdf.email").
-		WithHashingAlgorithm(iana.SHA256).
+	holderKeyClaim, err := HolderKeyClaim(holderKey[0])
+	require.NoError(t, err)
+
+	sdJwt, err := NewSdJwtBuilder().
+		WithPayload(
+			holderKeyClaim,
+			Claim(Key_Issuer, issuer),
+			Claim(Key_VerifiableCredentialType, "pbdf.pbdf.email"),
+			Claim(Key_SdAlg, iana.SHA256),
+			SdClaim("family_name", "Yivi"),
+			SdClaim("location", "Utrecht"),
+		).
 		WithIssuerCertificateChain(irmaAppCert).
 		Build(jwtCreator)
 
@@ -61,8 +62,8 @@ func createKbJwt(t *testing.T, sdjwt SdJwtVc, keyBinder KeyBinder) KeyBindingJwt
 	return kbjwt
 }
 
-func jsonToMap(t *testing.T, js string) map[string]interface{} {
-	var result map[string]interface{}
+func jsonToMap(t *testing.T, js string) map[string]any {
+	var result map[string]any
 	err := json.Unmarshal([]byte(js), &result)
 	require.NoError(t, err)
 	return result
@@ -101,9 +102,8 @@ func NewEcdsaJwtCreatorWithHolderTestKey() (*DefaultEcdsaJwtCreator, error) {
 	return &DefaultEcdsaJwtCreator{privateKey: key}, nil
 }
 
-func readHolderPublicJwk() (CnfField, error) {
-	key, err := jwk.ParseKey(testdata.HolderPubJwkBytes)
-	return CnfField{Jwk: key}, err
+func readHolderPublicJwk() (jwk.Key, error) {
+	return jwk.ParseKey(testdata.HolderPubJwkBytes)
 }
 
 // =======================================================================
@@ -219,7 +219,7 @@ func newWorkingSdJwtVcTestConfig() *testSdJwtVcConfig {
 	}
 
 	return newEmptyTestConfig().
-		withIssuerCertificateChainBytes(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes).
+		withIssuerCertificateChainBytes(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes).
 		withHolderPrivateKey(holderKey).
 		withIssuerPrivateKey(issuerKey).
 		withVct("test.test.email").
@@ -227,9 +227,7 @@ func newWorkingSdJwtVcTestConfig() *testSdJwtVcConfig {
 		withIssuedAt(1745394126).
 		withExpiryTime(1945394126).
 		withNotBefore(50).
-		withCnf(createHolderCnfField()).
-		withSdAlg(iana.SHA256).
-		withSdClaims(disclosures).
+		withSdClaims(disclosures, iana.SHA256).
 		withDisclosures(disclosures).
 		withTypHeader(SdJwtVcTyp)
 }
@@ -243,6 +241,9 @@ func newWorkingSdJwtVcKbTestConfig() *testSdJwtVcKbConfig {
 		withKbNonce("nonce").
 		withValidSdHash().
 		withKbIssuedAt(1745394126)
+
+	// Set the cnf to match the holder key used in the KeyBindingJwt
+	config.testSdJwtVcConfig.withCnf(createHolderCnfField())
 
 	return config
 }
@@ -293,13 +294,18 @@ func (c *testSdJwtVcConfig) withNotBefore(time int64) *testSdJwtVcConfig {
 	return c
 }
 
-func (c *testSdJwtVcConfig) withSdClaims(claims []DisclosureContent) *testSdJwtVcConfig {
-	alg := iana.SHA256
+func (c *testSdJwtVcConfig) withSdClaims(claims []DisclosureContent, alg iana.HashingAlgorithm) *testSdJwtVcConfig {
 	hashes, err := HashDisclosures(alg, claims)
 	if err != nil {
 		log.Fatalf("failed to create hashes: %v", err)
 	}
 	c.sdClaims = &hashes
+	return c
+}
+
+func (c *testSdJwtVcConfig) withoutSdClaims() *testSdJwtVcConfig {
+	c.sdClaims = nil
+	c.sdAlg = nil
 	return c
 }
 
