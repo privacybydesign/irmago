@@ -49,6 +49,7 @@ func TestEudiClient(t *testing.T) {
 	t.Run("disclose single sdjwtvc over openid4vp", testDiscloseOverOpenID4VP)
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
+	t.Run("optional empty attributes excluded from GetCredentials", testOptionalEmptyAttributesExcludedFromGetCredentials)
 }
 
 func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
@@ -1182,4 +1183,130 @@ func IrmaServerConfigurationWithTempStorage(t *testing.T) *server.Configuration 
 	conf.IssuerPrivateKeysPath = filepath.Join(storageFolder, "privatekeys")
 
 	return conf
+}
+
+func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	// Issue two fullName credentials: one without and one with the optional "prefix" attribute
+	reqWithoutPrefix := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "Bar",
+				"familyname": "Batsbak",
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+	reqWithPrefix := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "Bar",
+				"familyname": "Batsbak",
+				"prefix":     "Sir",
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+
+	issue(t, irmaServer, c, sessionHandler, reqWithoutPrefix)
+	awaitSessionState(t, sessionHandler)
+	issue(t, irmaServer, c, sessionHandler, reqWithPrefix)
+	awaitSessionState(t, sessionHandler)
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	// Find both credentials and distinguish them by attribute count
+	var credWithoutPrefix, credWithPrefix *client.Credential
+	for _, cred := range creds {
+		if cred.CredentialId != "irma-demo.MijnOverheid.fullName" {
+			continue
+		}
+		hasPrefix := false
+		for _, attr := range cred.Attributes {
+			if attr.Id == "prefix" {
+				hasPrefix = true
+				break
+			}
+		}
+		if hasPrefix {
+			credWithPrefix = cred
+		} else {
+			credWithoutPrefix = cred
+		}
+	}
+
+	// Credential without prefix: optional empty attribute should be excluded
+	require.NotNil(t, credWithoutPrefix)
+	attrIds := make([]string, len(credWithoutPrefix.Attributes))
+	for i, attr := range credWithoutPrefix.Attributes {
+		attrIds[i] = attr.Id
+	}
+	require.Equal(t, []string{"firstnames", "firstname", "familyname"}, attrIds,
+		"empty optional attribute 'prefix' should not be included")
+
+	// Credential with prefix: optional non-empty attribute should be included
+	require.NotNil(t, credWithPrefix)
+	attrIds = make([]string, len(credWithPrefix.Attributes))
+	for i, attr := range credWithPrefix.Attributes {
+		attrIds[i] = attr.Id
+	}
+	require.Equal(t, []string{"firstnames", "firstname", "familyname", "prefix"}, attrIds,
+		"non-empty optional attribute 'prefix' should be included")
+	require.Equal(t, "Sir", (*credWithPrefix.Attributes[3].Value.TranslatedString)["en"])
+
+	// Issue a credential with an empty non-optional attribute ("firstname" = "")
+	// Non-optional attributes should always be included, even when empty.
+	reqEmptyNonOptional := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.fullName"),
+			Attributes: map[string]string{
+				"firstnames": "Barry",
+				"firstname":  "",
+				"familyname": "Batsbak",
+			},
+			SdJwtBatchSize: 10,
+		},
+	})
+
+	issue(t, irmaServer, c, sessionHandler, reqEmptyNonOptional)
+	awaitSessionState(t, sessionHandler)
+
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+
+	// Find the credential with empty firstname (distinct from the others by its attribute values)
+	var credEmptyFirstname *client.Credential
+	for _, cred := range creds {
+		if cred.CredentialId != "irma-demo.MijnOverheid.fullName" {
+			continue
+		}
+		for _, attr := range cred.Attributes {
+			if attr.Id == "firstname" && attr.Value != nil &&
+				attr.Value.TranslatedString != nil && (*attr.Value.TranslatedString)[""] == "" {
+				credEmptyFirstname = cred
+				break
+			}
+		}
+	}
+
+	require.NotNil(t, credEmptyFirstname, "credential with empty firstname should exist")
+	attrIds = make([]string, len(credEmptyFirstname.Attributes))
+	for i, attr := range credEmptyFirstname.Attributes {
+		attrIds[i] = attr.Id
+	}
+	require.Equal(t, []string{"firstnames", "firstname", "familyname"}, attrIds,
+		"empty non-optional attribute 'firstname' should still be included")
 }
