@@ -320,6 +320,9 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 
 			for _, at := range info.AttributeTypes {
 				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
+				if at.IsOptional() && len(attrValue) == 0 {
+					continue
+				}
 				attributes = append(attributes, Attribute{
 					Id:          at.ID,
 					DisplayName: TranslatedString(at.Name),
