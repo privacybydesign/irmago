@@ -1109,6 +1109,35 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 	require.NoError(t, err)
 }
 
+func Test_HolderVerificationProcessor_TimeFieldsAreParsedCorrectly(t *testing.T) {
+	now := time.Now().Unix()
+	exp := now + 86400 // 1 day from now
+	nbf := now - 60
+
+	config := newWorkingSdJwtVcTestConfig().
+		withIssuedAt(now).
+		withExpiryTime(exp).
+		withNotBefore(nbf)
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		},
+		Clock:       &testClock{time: now},
+		JwtVerifier: NewJwxJwtVerifier(),
+	}
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	holderVerifier := NewHolderVerificationProcessor(context)
+
+	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+
+	require.Equal(t, now, result.IssuedAt, "IssuedAt should match the iat claim")
+	require.Equal(t, exp, result.Expiry, "Expiry should match the exp claim")
+	require.Equal(t, nbf, result.NotBefore, "NotBefore should match the nbf claim")
+}
+
 func Test_CreatePresentationSdJwtWithMixedPublicAndSelectiveDisclosures(t *testing.T) {
 	testSdJwt := SdJwtVcKb(validSdJwtVc_PublicAttributes)
 	issuerCert := testdata.IssuerCertChain_irma_app_Bytes

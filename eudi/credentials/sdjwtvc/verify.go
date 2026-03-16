@@ -507,9 +507,9 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 
 	// Get optional fields
 	result.Subject, _ = token.Subject()
-	result.Expiry = utils.GetOptional[int64](token, Key_ExpiryTime)
-	result.IssuedAt = utils.GetOptional[int64](token, Key_IssuedAt)
-	result.NotBefore = utils.GetOptional[int64](token, Key_NotBefore)
+	result.Expiry = getOptionalTimeAsUnix(token, Key_ExpiryTime)
+	result.IssuedAt = getOptionalTimeAsUnix(token, Key_IssuedAt)
+	result.NotBefore = getOptionalTimeAsUnix(token, Key_NotBefore)
 
 	iss, issPresent := token.Issuer()
 
@@ -550,6 +550,18 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	result.DisclosureLookup = disclosureLookup
 
 	return result, requestorInfo, nil
+}
+
+// getOptionalTimeAsUnix reads a JWT time claim (exp, iat, nbf) as a time.Time
+// and returns its Unix timestamp. Returns 0 if the claim is absent.
+// This is needed because lestrrat-go/jwx v3 stores registered time claims as
+// time.Time, so token.Get(key, &int64Value) fails.
+func getOptionalTimeAsUnix(token jwt.Token, key string) int64 {
+	t := utils.GetOptional[time.Time](token, key)
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
 }
 
 func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *VerifiedSdJwtVc) error {
