@@ -376,7 +376,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"en": "University",
 				"nl": "Universiteit",
 			},
-			Description: client.TranslatedString{
+			Description: &client.TranslatedString{
 				"en": "The name of the university",
 				"nl": "Naam van de universiteit",
 			},
@@ -395,7 +395,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"en": "Type",
 				"nl": "Soort",
 			},
-			Description: client.TranslatedString{
+			Description: &client.TranslatedString{
 				"en": "Whether you are a regular or PhD student",
 				"nl": "Of u een gewone of PhD student bent",
 			},
@@ -851,7 +851,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 				"en": "University",
 				"nl": "Universiteit",
 			},
-			Description: client.TranslatedString{
+			Description: &client.TranslatedString{
 				"en": "The name of the university",
 				"nl": "Naam van de universiteit",
 			},
@@ -870,7 +870,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 				"en": "Type",
 				"nl": "Soort",
 			},
-			Description: client.TranslatedString{
+			Description: &client.TranslatedString{
 				"en": "Whether you are a regular or PhD student",
 				"nl": "Of u een gewone of PhD student bent",
 			},
@@ -1052,7 +1052,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"en": "University",
 				"nl": "Universiteit",
 			},
-			Description: client.TranslatedString{
+			Description: &client.TranslatedString{
 				"en": "The name of the university",
 				"nl": "Naam van de universiteit",
 			},
@@ -1071,7 +1071,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"en": "Type",
 				"nl": "Soort",
 			},
-			Description: client.TranslatedString{
+			Description: &client.TranslatedString{
 				"en": "Whether you are a regular or PhD student",
 				"nl": "Of u een gewone of PhD student bent",
 			},
@@ -2068,7 +2068,7 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 			{
 				Id:          "university",
 				DisplayName: client.TranslatedString{"en": "University", "nl": "Universiteit"},
-				Description: client.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+				Description: &client.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
 				Value: &client.AttributeValue{
 					Type:             "translated_string",
 					TranslatedString: &client.TranslatedString{"": "University of the Arts", "en": "University of the Arts", "nl": "University of the Arts"},
@@ -2077,7 +2077,7 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 			{
 				Id:          "level",
 				DisplayName: client.TranslatedString{"en": "Type", "nl": "Soort"},
-				Description: client.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+				Description: &client.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
 				Value: &client.AttributeValue{
 					Type:             "translated_string",
 					TranslatedString: &client.TranslatedString{"": "high", "en": "high", "nl": "high"},
@@ -2137,7 +2137,7 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 		{
 			Id:          "email",
 			DisplayName: client.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: client.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Description: &client.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
 			Value: &client.AttributeValue{
 				Type:             client.AttributeType_TranslatedString,
 				TranslatedString: &client.TranslatedString{"": "test@gmail.com", "en": "test@gmail.com", "nl": "test@gmail.com"},
@@ -2154,7 +2154,7 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 		{
 			Id:          "university",
 			DisplayName: client.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Description: client.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+			Description: &client.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
 			Value: &client.AttributeValue{
 				Type:             client.AttributeType_TranslatedString,
 				TranslatedString: &client.TranslatedString{"": "University of the Arts", "en": "University of the Arts", "nl": "University of the Arts"},

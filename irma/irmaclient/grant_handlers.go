@@ -138,7 +138,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	authRequestUrl.RawQuery = authRequest.Encode()
 
 	request := &irma.AuthorizationCodeFlowRequest{
-		CredentialInfoList:      s.credentials,
+		CredentialTypeInfoList:  s.credentials,
 		AuthorizationRequestUrl: authRequestUrl.String(),
 	}
 
@@ -290,7 +290,7 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	}
 
 	request := &irma.PreAuthorizedCodeFlowPermissionRequest{
-		CredentialInfoList:        s.credentials,
+		CredentialTypeInfoList:    s.credentials,
 		TransactionCodeParameters: transactionCodeParameters,
 	}
 	s.handler.RequestPreAuthorizedCodeFlowPermission(

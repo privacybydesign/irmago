@@ -197,7 +197,7 @@ type SessionState struct {
 	PinBlockedTimeSeconds int `json:"pin_blocked_time_seconds"`
 
 	// OID4VCI specific fields
-	OfferedCredentialTypes    irma.CredentialTypeInfoList                      `json:"offered_credential_types"`
+	OfferedCredentialTypes    []CredentialDescriptor                           `json:"offered_credential_types"`
 	TransactionCodeParameters *irma.PreAuthorizedCodeTransactionCodeParameters `json:"transaction_code_parameters"`
 }
 
@@ -686,7 +686,7 @@ func (s *session) RequestAuthorizationCodeFlowPermission(
 ) {
 	s.State.Status = Status_RequestAuthorizationCode
 	s.State.Type = Type_Issuance
-	s.State.OfferedCredentialTypes = request.CredentialInfoList
+	s.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.authCodeHandler = callback
 	s.dispatchState()
@@ -699,7 +699,7 @@ func (s *session) RequestPreAuthorizedCodeFlowPermission(
 ) {
 	s.State.Status = Status_RequestPreAuthorizedCode
 	s.State.Type = Type_Issuance
-	s.State.OfferedCredentialTypes = request.CredentialInfoList
+	s.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.TransactionCodeParameters = request.TransactionCodeParameters
 	s.preAuthorizedCodeHandler = callback

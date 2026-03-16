@@ -526,10 +526,11 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 					continue
 				}
 				tsVal := TranslatedString(attributeValues[index])
+				description := TranslatedString(atType.Description)
 				attributes = append(attributes, Attribute{
 					Id:          atType.ID,
 					DisplayName: TranslatedString(atType.Name),
-					Description: TranslatedString(atType.Description),
+					Description: &description,
 					Value: &AttributeValue{
 						Type:             displayHintToAttributeType(atType.DisplayHint),
 						TranslatedString: &tsVal,
@@ -597,10 +598,11 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 				continue
 			}
 			tsVal := TranslatedString(attr.Value)
+			description := TranslatedString(atType.Description)
 			attributes = append(attributes, Attribute{
 				Id:          atType.ID,
 				DisplayName: TranslatedString(atType.Name),
-				Description: TranslatedString(atType.Description),
+				Description: &description,
 				Value: &AttributeValue{
 					Type:             displayHintToAttributeType(atType.DisplayHint),
 					TranslatedString: &tsVal,
@@ -648,10 +650,11 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 				continue
 			}
 			attrVal := TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
+			description := TranslatedString(atType.Description)
 			attributes = append(attributes, Attribute{
 				Id:          atType.ID,
 				DisplayName: TranslatedString(atType.Name),
-				Description: TranslatedString(atType.Description),
+				Description: &description,
 				Value: &AttributeValue{
 					Type:             displayHintToAttributeType(atType.DisplayHint),
 					TranslatedString: &attrVal,
@@ -704,10 +707,11 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			}
 			v := rawVal
 			tsVal := TranslatedString(irma.NewTranslatedString(&v))
+			description := TranslatedString(atType.Description)
 			attributes = append(attributes, Attribute{
 				Id:          atType.ID,
 				DisplayName: TranslatedString(atType.Name),
-				Description: TranslatedString(atType.Description),
+				Description: &description,
 				Value: &AttributeValue{
 					Type:             displayHintToAttributeType(atType.DisplayHint),
 					TranslatedString: &tsVal,

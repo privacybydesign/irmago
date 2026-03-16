@@ -58,11 +58,11 @@ type Attribute struct {
 	// The name for this attribute as displayed to the end user
 	DisplayName TranslatedString `json:"display_name"`
 	// The description for this attribute if any
-	Description TranslatedString `json:"description"`
+	Description *TranslatedString `json:"description,omitempty"`
 	// The value that this attribute has as provided by the issuer (absent when it's just an attribute description)
-	Value *AttributeValue `json:"value"`
+	Value *AttributeValue `json:"value,omitempty"`
 	// The value that was requested by a verifier (if any)
-	RequestedValue *AttributeValue `json:"requested_value"`
+	RequestedValue *AttributeValue `json:"requested_value,omitempty"`
 }
 
 type Credential struct {
@@ -100,10 +100,10 @@ type CredentialDescriptor struct {
 	CredentialId string            `json:"credential_id"`
 	Name         TranslatedString  `json:"name"`
 	Issuer       TrustedParty      `json:"issuer"`
-	Category     *TranslatedString `json:"category"`
-	ImagePath    string            `json:"image_path"`
+	Category     *TranslatedString `json:"category,omitempty"`
+	ImagePath    *string           `json:"image_path,omitempty"`
 	Attributes   []Attribute       `json:"attributes"`
-	IssueURL     *TranslatedString `json:"issue_url"`
+	IssueURL     *TranslatedString `json:"issue_url,omitempty"`
 }
 
 type CredentialStoreItem struct {
@@ -157,7 +157,7 @@ func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
 				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 				IssueURL:     convertOptionalTranslatedString(cred.IssueURL),
 				Category:     convertOptionalTranslatedString(cred.Category),
-				ImagePath:    cred.Logo(irmaConfig),
+				ImagePath:    optionalString(cred.Logo(irmaConfig)),
 				Attributes:   attributes,
 			},
 			Faq: Faq{
@@ -245,7 +245,7 @@ func createCredentialDescriptor(
 		Name:         TranslatedString(info.Name),
 		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 		Category:     convertOptionalTranslatedString(info.Category),
-		ImagePath:    info.Logo(irmaConfig),
+		ImagePath:    optionalString(info.Logo(irmaConfig)),
 		Attributes:   attributes,
 		IssueURL:     convertOptionalTranslatedString(info.IssueURL),
 	}, nil
@@ -277,7 +277,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		Name:         TranslatedString(info.Name),
 		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 		Category:     convertOptionalTranslatedString(info.Category),
-		ImagePath:    info.Logo(irmaConfig),
+		ImagePath:    optionalString(info.Logo(irmaConfig)),
 		Attributes:   attributes,
 		IssueURL:     convertOptionalTranslatedString(info.IssueURL),
 	}, nil
@@ -320,10 +320,11 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 
 			for _, at := range info.AttributeTypes {
 				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
+				description := TranslatedString(at.Description)
 				attributes = append(attributes, Attribute{
 					Id:          at.ID,
 					DisplayName: TranslatedString(at.Name),
-					Description: TranslatedString(at.Description),
+					Description: &description,
 					Value: &AttributeValue{
 						Type:             displayHintToAttributeType(at.DisplayHint),
 						TranslatedString: convertOptionalTranslatedString(&attrValue),
@@ -664,4 +665,32 @@ func joinPath(prefix, id string) string {
 		return id
 	}
 	return strings.Join([]string{prefix, id}, ".")
+}
+
+func credentialTypeInfoListToSchemaless(infoList irma.CredentialTypeInfoList) []CredentialDescriptor {
+	descriptors := make([]CredentialDescriptor, len(infoList))
+	for i, info := range infoList {
+		descriptors[i] = CredentialDescriptor{
+			CredentialId: info.VerifiableCredentialType,
+			Name:         TranslatedString(info.Name),
+			Issuer: TrustedParty{
+				Name: TranslatedString(info.IssuerName),
+			},
+			Attributes: credentialTypeInfoAttributesToSchemaless(info.Attributes),
+		}
+	}
+	return descriptors
+}
+
+func credentialTypeInfoAttributesToSchemaless(attributes map[string]irma.TranslatedString) []Attribute {
+	attrs := make([]Attribute, len(attributes))
+	i := 0
+	for id, name := range attributes {
+		attrs[i] = Attribute{
+			Id:          id,
+			DisplayName: TranslatedString(name),
+		}
+		i++
+	}
+	return attrs
 }

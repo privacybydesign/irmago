@@ -95,7 +95,7 @@ type IssuanceRequest struct {
 }
 
 type PreAuthorizedCodeFlowPermissionRequest struct {
-	CredentialInfoList        CredentialTypeInfoList
+	CredentialTypeInfoList    CredentialTypeInfoList
 	TransactionCodeParameters *PreAuthorizedCodeTransactionCodeParameters
 }
 
@@ -106,7 +106,7 @@ type PreAuthorizedCodeTransactionCodeParameters struct {
 }
 
 type AuthorizationCodeFlowRequest struct {
-	CredentialInfoList      CredentialTypeInfoList
+	CredentialTypeInfoList  CredentialTypeInfoList
 	AuthorizationRequestUrl string
 }
 

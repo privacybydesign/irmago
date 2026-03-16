@@ -406,13 +406,17 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 
 		firstnamesAttr := getLogAttr(credential.Attributes, "firstnames")
 		require.NotNil(t, firstnamesAttr)
+		require.NotNil(t, firstnamesAttr.Description)
+		firstNameDescription := *firstnamesAttr.Description
 		require.Equal(t, "First names", firstnamesAttr.DisplayName["en"])
-		require.Equal(t, "All of your first names", firstnamesAttr.Description["en"])
+		require.Equal(t, "All of your first names", firstNameDescription["en"])
 
 		familynameAttr := getLogAttr(credential.Attributes, "familyname")
 		require.NotNil(t, familynameAttr)
+		require.NotNil(t, familynameAttr.Description)
+		familyNameDescription := *familynameAttr.Description
 		require.Equal(t, "Family name", familynameAttr.DisplayName["en"])
-		require.Equal(t, "Your family name", familynameAttr.Description["en"])
+		require.Equal(t, "Your family name", familyNameDescription["en"])
 
 		c.Close()
 		keyshareServer.Stop()
@@ -603,9 +607,11 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log client.LogInfo) {
 
 	emailAttr := getLogAttr(cred.Attributes, "email")
 	require.NotNil(t, emailAttr)
+	require.NotNil(t, emailAttr.Description)
+	emailDescription := *emailAttr.Description
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
 	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
+	require.Equal(t, "Your verified email address", emailDescription["en"])
 }
 
 func testIrmaDisclosureSessionLogs(t *testing.T) {
@@ -666,9 +672,11 @@ func requireIrmaDisclosureLog(t *testing.T, log client.LogInfo) {
 
 	emailAttr := getLogAttr(cred.Attributes, "email")
 	require.NotNil(t, emailAttr)
+	require.NotNil(t, emailAttr.Description)
+	emailDescription := *emailAttr.Description
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
 	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
+	require.Equal(t, "Your verified email address", emailDescription["en"])
 }
 
 func requireSignatureLog(t *testing.T, log client.LogInfo) {
@@ -684,9 +692,11 @@ func requireSignatureLog(t *testing.T, log client.LogInfo) {
 
 	emailAttr := getLogAttr(cred.Attributes, "email")
 	require.NotNil(t, emailAttr)
+	require.NotNil(t, emailAttr.Description)
+	emailDescription := *emailAttr.Description
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
 	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
+	require.Equal(t, "Your verified email address", emailDescription["en"])
 }
 
 func testEudiSessionLogs(t *testing.T) {
@@ -743,9 +753,11 @@ func requireOpenID4VPLog(t *testing.T, log client.LogInfo) {
 
 	emailAttr := getLogAttr(cred.Attributes, "email")
 	require.NotNil(t, emailAttr)
+	require.NotNil(t, emailAttr.Description)
+	emailDescription := *emailAttr.Description
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
 	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
+	require.Equal(t, "Your verified email address", emailDescription["en"])
 
 	// Verify that attribute value translations are present for OpenID4VP disclosures
 	require.NotNil(t, emailAttr.Value.TranslatedString)
@@ -779,9 +791,11 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log client.LogInfo) {
 
 	emailAttr := getLogAttr(cred.Attributes, "email")
 	require.NotNil(t, emailAttr)
+	require.NotNil(t, emailAttr.Description)
+	emailDescription := *emailAttr.Description
 	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
 	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailAttr.Description["en"])
+	require.Equal(t, "Your verified email address", emailDescription["en"])
 }
 
 func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
