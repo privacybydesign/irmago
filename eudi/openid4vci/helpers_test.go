@@ -1,33 +1,32 @@
-package irmaclient
+package openid4vci
 
 import (
 	"reflect"
 	"testing"
 
-	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/irma"
 )
 
-var Locale_EN = "en"
-var Locale_EN_US = "en-US"
-var Locale_EN_GB = "en-GB"
-var Locale_FR = "fr"
-var Locale_FR_FR = "fr-FR"
-var Locale_ES = "es"
-var Invalid_Locale = "invalid_locale"
+var locale_EN = "en"
+var locale_EN_US = "en-US"
+var locale_EN_GB = "en-GB"
+var locale_FR = "fr"
+var locale_FR_FR = "fr-FR"
+var locale_ES = "es"
+var invalid_Locale = "invalid_locale"
 
 func Test_convertDisplayToTranslatedString(t *testing.T) {
 	tests := []struct {
 		name     string
-		displays []openid4vci.Display
+		displays []Display
 		want     irma.TranslatedString
 	}{
 		{
 			name: "single display, single locale",
-			displays: []openid4vci.Display{
+			displays: []Display{
 				{
 					Name:   "Issuer Name",
-					Locale: &Locale_EN,
+					Locale: &locale_EN,
 				},
 			},
 			want: irma.TranslatedString{
@@ -36,18 +35,18 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 		},
 		{
 			name: "multiple displays, multiple locales",
-			displays: []openid4vci.Display{
+			displays: []Display{
 				{
 					Name:   "Issuer Name",
-					Locale: &Locale_EN_US,
+					Locale: &locale_EN_US,
 				},
 				{
 					Name:   "Nom de l'émetteur",
-					Locale: &Locale_FR_FR,
+					Locale: &locale_FR_FR,
 				},
 				{
 					Name:   "Nombre del emisor",
-					Locale: &Locale_ES,
+					Locale: &locale_ES,
 				},
 			},
 			want: irma.TranslatedString{
@@ -58,18 +57,18 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 		},
 		{
 			name: "displays with duplicate base languages",
-			displays: []openid4vci.Display{
+			displays: []Display{
 				{
 					Name:   "Issuer Name",
-					Locale: &Locale_EN_US,
+					Locale: &locale_EN_US,
 				},
 				{
 					Name:   "Another Issuer Name",
-					Locale: &Locale_EN_GB,
+					Locale: &locale_EN_GB,
 				},
 				{
 					Name:   "Nom de l'émetteur",
-					Locale: &Locale_FR,
+					Locale: &locale_FR,
 				},
 			},
 			want: irma.TranslatedString{
@@ -79,17 +78,18 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 		},
 		{
 			name: "display without locale, should be ignored",
-			displays: []openid4vci.Display{
+			displays: []Display{
 				{
 					Name:   "Issuer Name",
 					Locale: nil,
 				},
 				{
 					Name:   "Another Issuer Name",
-					Locale: &Locale_EN_US,
+					Locale: &locale_EN_US,
 				},
 			},
 			want: irma.TranslatedString{
+				"":   "Issuer Name",
 				"en": "Another Issuer Name",
 			},
 		},

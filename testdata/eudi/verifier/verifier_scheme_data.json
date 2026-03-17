@@ -34,8 +34,8 @@
 			}
 		],
 		"purpose": {
-			"en": "Age verification",
-			"nl": "Leeftijdsverificatie"
+			"en": "Unit testing",
+			"nl": "Unit testen"
 		}
 	},
 	"registration": "https://portal.yivi.app/organizations/yivi",

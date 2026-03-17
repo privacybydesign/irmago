@@ -72,13 +72,14 @@ func testParseAndVerifyAuthorizationRequestSuccess(t *testing.T) {
 	require.NotEmpty(t, requestorSchemeData.Organization.Logo.Data)
 
 	require.NotEmpty(t, requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets)
-	require.Equal(t, "pbdf.gemeente.personalData", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Credential)
+	require.Equal(t, "test.test.email", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Credential)
 	require.NotEmpty(t, requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes)
-	require.Equal(t, "over18", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes[0])
+	require.Equal(t, "email", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes[0])
+	require.Equal(t, "domain", requestorSchemeData.RelyingParty.AuthorizedQueryableAttributeSets[0].Attributes[1])
 
 	require.NotEmpty(t, requestorSchemeData.RelyingParty.RequestPurpose)
-	require.Equal(t, "Age verification", requestorSchemeData.RelyingParty.RequestPurpose["en"])
-	require.Equal(t, "Leeftijdsverificatie", requestorSchemeData.RelyingParty.RequestPurpose["nl"])
+	require.Equal(t, "Unit testing", requestorSchemeData.RelyingParty.RequestPurpose["en"])
+	require.Equal(t, "Unit testen", requestorSchemeData.RelyingParty.RequestPurpose["nl"])
 }
 
 func testParseAndVerifyAuthorizationRequestFailureForInvalidClientID(t *testing.T) {

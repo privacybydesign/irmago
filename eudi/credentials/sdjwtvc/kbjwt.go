@@ -10,7 +10,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
-	"github.com/privacybydesign/irmago/eudi/credentials"
+	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -117,7 +117,7 @@ type KeyBinder interface {
 	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
 	CreateKeyPairs(num uint) ([]jwk.Key, error)
 	// Creates a batch of key pairs and returns the proofs using the provided ProofBuilder.
-	CreateKeyPairsWithProofs(num uint, proofBuilder credentials.ProofBuilder) ([]string, error)
+	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) ([]string, error)
 	// Takes in the hash over the issuer signed JWT and the selected disclosures
 	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
 	// Takes in a list of pub keys for which it should delete the corresponding private keys
@@ -174,7 +174,7 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	return result, nil
 }
 
-func (c *DefaultKeyBinder) CreateKeyPairsWithProofs(num uint, proofBuilder credentials.ProofBuilder) ([]string, error) {
+func (c *DefaultKeyBinder) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) ([]string, error) {
 	privKeys := make([]*ecdsa.PrivateKey, num)
 	proofs := make([]string, num)
 

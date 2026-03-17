@@ -1,4 +1,4 @@
-package irmaclient
+package openid4vci
 
 import (
 	"bytes"
@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/eudi/oauth2"
-	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/irma"
 )
 
@@ -87,7 +86,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	//clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
 	clientId := YiviClientId
 
-	authRequest := openid4vci.BuildAuthorizationRequestValues(
+	authRequest := BuildAuthorizationRequestValues(
 		YiviAppRedirectUri,
 		&clientId,
 		&pkce.CodeChallenge,

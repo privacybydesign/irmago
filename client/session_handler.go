@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -209,8 +210,8 @@ type session struct {
 	client                   *Client
 	dismisser                irmaclient.SessionDismisser
 	chained                  bool
-	authCodeHandler          irmaclient.AuthCodeHandler
-	preAuthorizedCodeHandler irmaclient.TokenPermissionHandler
+	authCodeHandler          openid4vci.AuthCodeHandler
+	preAuthorizedCodeHandler openid4vci.TokenPermissionHandler
 }
 
 func (s *session) dispatchState() {
@@ -682,7 +683,7 @@ func (s *session) RequestSignaturePermission(request *irma.SignatureRequest,
 func (s *session) RequestAuthorizationCodeFlowPermission(
 	request *irma.AuthorizationCodeFlowRequest,
 	requestorInfo *irma.RequestorInfo,
-	callback irmaclient.AuthCodeHandler,
+	callback openid4vci.AuthCodeHandler,
 ) {
 	s.State.Status = Status_RequestAuthorizationCode
 	s.State.Type = Type_Issuance
@@ -695,7 +696,7 @@ func (s *session) RequestAuthorizationCodeFlowPermission(
 func (s *session) RequestPreAuthorizedCodeFlowPermission(
 	request *irma.PreAuthorizedCodeFlowPermissionRequest,
 	requestorInfo *irma.RequestorInfo,
-	callback irmaclient.TokenPermissionHandler,
+	callback openid4vci.TokenPermissionHandler,
 ) {
 	s.State.Status = Status_RequestPreAuthorizedCode
 	s.State.Type = Type_Issuance

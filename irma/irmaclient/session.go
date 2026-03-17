@@ -25,16 +25,6 @@ import (
 // and specifying the attributes to be disclosed.
 type PermissionHandler func(proceed bool, choice *irma.DisclosureChoice)
 
-// CodeHandler is a callback for providing the authorization code from the app side
-type AuthCodeHandler func(proceed bool, code *string)
-
-// TokenHandler is a callback for providing the access token (and optionally refresh token)
-// from the app side when the authorization has completed, the code was exchanged for an access token and the flow is hereby returned to the app.
-type TokenHandler func(proceed bool, accessToken string, refreshToken *string)
-
-// TokenPermissionHandler is a callback for providing permission for an Pre-Authorized Code issuance session to proceed.
-type TokenPermissionHandler func(proceed bool, transactionCode *string)
-
 // PinHandler is used to provide the user's PIN code.
 type PinHandler func(proceed bool, pin string)
 
@@ -69,18 +59,6 @@ type Handler interface {
 		candidates [][]DisclosureCandidates,
 		requestorInfo *irma.RequestorInfo,
 		callback PermissionHandler,
-	)
-
-	RequestAuthorizationCodeFlowPermission(
-		request *irma.AuthorizationCodeFlowRequest,
-		requestorInfo *irma.RequestorInfo,
-		callback AuthCodeHandler,
-	)
-
-	RequestPreAuthorizedCodeFlowPermission(
-		request *irma.PreAuthorizedCodeFlowPermissionRequest,
-		requestorInfo *irma.RequestorInfo,
-		callback TokenPermissionHandler,
 	)
 
 	RequestPin(remainingAttempts int, callback PinHandler)

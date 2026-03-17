@@ -64,26 +64,20 @@ func (h *MockClientHandler) ReportError(err error) {
 // =============================================================================
 
 type MockSessionHandler struct {
-	t                             *testing.T
-	permissionChannel             chan *MockPermissionRequest
-	sessionEndChannel             chan bool // true if successful
-	pinRequestChannel             chan PinHandler
-	authCodeRequestChannel        chan AuthCodeHandler
-	tokenRequestChannel           chan TokenHandler
-	tokenPermissionRequestChannel chan TokenPermissionHandler
-	log                           bool
+	t                 *testing.T
+	permissionChannel chan *MockPermissionRequest
+	sessionEndChannel chan bool // true if successful
+	pinRequestChannel chan PinHandler
+	log               bool
 }
 
 func NewMockSessionHandler(t *testing.T) *MockSessionHandler {
 	return &MockSessionHandler{
-		t:                             t,
-		permissionChannel:             make(chan *MockPermissionRequest, 1),
-		sessionEndChannel:             make(chan bool, 1),
-		pinRequestChannel:             make(chan PinHandler, 1),
-		authCodeRequestChannel:        make(chan AuthCodeHandler, 1),
-		tokenRequestChannel:           make(chan TokenHandler, 1),
-		tokenPermissionRequestChannel: make(chan TokenPermissionHandler, 1),
-		log:                           false,
+		t:                 t,
+		permissionChannel: make(chan *MockPermissionRequest, 1),
+		sessionEndChannel: make(chan bool, 1),
+		pinRequestChannel: make(chan PinHandler, 1),
+		log:               false,
 	}
 }
 
@@ -99,21 +93,12 @@ func (h *MockSessionHandler) AwaitPinRequest() PinHandler {
 	return <-h.pinRequestChannel
 }
 
-func (h *MockSessionHandler) AwaitAuthCodeRequest() TokenHandler {
-	return <-h.tokenRequestChannel
-}
-
 type MockPermissionRequest struct {
 	Satisfiable       bool
 	Candidates        [][]DisclosureCandidates
 	RequestorInfo     *irma.RequestorInfo
 	PermissionHandler PermissionHandler
-	TokenHandler      TokenHandler
 	SignedMessage     string
-}
-
-type MockAuthCodePermissionRequest struct {
-	PermissionHandler TokenHandler
 }
 
 func (h *MockSessionHandler) RequestVerificationPermission(request *irma.DisclosureRequest,
@@ -221,33 +206,6 @@ func (h *MockSessionHandler) RequestSignaturePermission(request *irma.SignatureR
 	}
 }
 
-func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *irma.AuthorizationCodeFlowRequest,
-	requestorInfo *irma.RequestorInfo,
-	callback AuthCodeHandler,
-) {
-	if h.log {
-		issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
-		require.NoError(h.t, err)
-		fmt.Printf("OpenId4VciIssuanceRequest: %v\n", string(issuanceRequestJson))
-	}
-
-	h.authCodeRequestChannel <- callback
-}
-
-func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
-	request *irma.PreAuthorizedCodeFlowPermissionRequest,
-	requestorInfo *irma.RequestorInfo,
-	callback TokenPermissionHandler,
-) {
-	if h.log {
-		//issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
-		//require.NoError(h.t, err)
-		fmt.Printf("OpenId4VciPreAuthorizedCodeTokenRequest")
-	}
-
-	h.tokenPermissionRequestChannel <- callback
-}
-
 // EudiVerifierSession holds the session link and transaction ID from starting a session at the EUDI verifier.
 type EudiVerifierSession struct {
 	SessionLink   string
@@ -327,10 +285,10 @@ func GetWalletResponseFromEudiVerifier(session EudiVerifierSession) (map[string]
 }
 
 type MockSdJwtVcStorageClient struct {
-	sdjwts []sdjwtvc.SdJwtVcKb
+	Sdjwts []sdjwtvc.SdJwtVcKb
 }
 
 func (m *MockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error {
-	m.sdjwts = sdjwts
+	m.Sdjwts = sdjwts
 	return nil
 }

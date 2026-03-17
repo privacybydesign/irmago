@@ -11,13 +11,9 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/irma"
-	"golang.org/x/text/language"
 )
-
-const FallbackLocale = "en"
 
 // CreateHashForSdJwtVc creates the hash used for SD-JWTs, it's kept this simple so it can also be constructed from
 // an issuance request before the actual credential is issued
@@ -98,48 +94,10 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 	return &info, verifiedSdJwtVc, nil
 }
 
-func ToTranslateableList[T openid4vci.Display | openid4vci.CredentialDisplay | openid4vci.CredentialIssuerDisplay](displays []T) []openid4vci.Translateable {
-	translations := make([]openid4vci.Translateable, len(displays))
-	for i, display := range displays {
-		translations[i] = any(display).(openid4vci.Translateable)
-	}
-	return translations
-}
-
-func convertDisplayToTranslatedString(displays []openid4vci.Translateable) irma.TranslatedString {
-	result := irma.TranslatedString{}
-	var nonLocaleValue *string = nil
-
-	for _, display := range displays {
-		locale := display.GetLocale()
-		if locale == nil {
-			result[""] = display.GetName() // If no locale is provided, we can still include the translation with an empty string as the key, but it won't be used for display
-			t := display.GetName()         // Store the non-locale value to use as fallback if no translation for the fallback locale is provided
-			nonLocaleValue = &t
-			continue
-		}
-
-		lang, err := language.Parse(*locale)
-		if err != nil {
-			continue
-		}
-
-		base, _ := lang.Base()
-
-		// TODO: this overwrites translations for the same base language (i.e. en-US would overwrite en-GB), because the app only handles base languages
-		result[base.String()] = display.GetName()
-	}
-
-	if _, exists := result[FallbackLocale]; !exists && nonLocaleValue != nil {
-		result[FallbackLocale] = *nonLocaleValue
-	}
-
-	return result
-}
-
 // verifyAndStoreSdJwts verifies the SD-JWTs and stores them in the SdJwtVcStorage.
 // SD-JWTs that are batch-issued should all have the exact same credential info (issuer, id, signedOn, expires, etc.), otherwise they cannot be stored together correctly.
-func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJwtVcStorage, holderVerifier *sdjwtvc.HolderVerificationProcessor, validateUniqueKeyBindingConfirmations bool, mode eudi.SdJwtVerificationMode) error {
+func VerifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJwtVcStorage, holderVerifier *sdjwtvc.HolderVerificationProcessor, validateUniqueKeyBindingConfirmations bool, mode eudi.SdJwtVerificationMode) error {
+	// TODO: this function should be private, but it's currently needed for both IRMA and OID4VCI. Once the storage is split between IRMA and OID4VCI, this function should be made private and moved to the appropriate package, and the OID4VCI code should not call the IRMA client code to store the SD-JWTs in the storage
 	// TODO: check if all SD-JWTs have a unique Key-Binding public key (cnf field), if not, the SD-JWTs should be rejected
 
 	type credentialTuple struct {
@@ -214,23 +172,4 @@ func verifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 	}
 
 	return nil
-}
-
-// isUniqueStrings checks if all strings in the slice are unique (case-sensitive or insensitive)
-func isUniqueStrings(slice []string, caseInsensitive bool) bool {
-	seen := make(map[string]bool)
-
-	for _, str := range slice {
-		// Normalize case if case-insensitive check is required
-		key := str
-		if caseInsensitive {
-			key = strings.ToLower(str)
-		}
-
-		if seen[key] {
-			return false // Duplicate found
-		}
-		seen[key] = true
-	}
-	return true
 }

@@ -1,4 +1,4 @@
-package irmaclient
+package openid4vci
 
 import (
 	"net/http"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/openid4vci"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
@@ -196,7 +196,7 @@ func Test_openid4vciSession_requestCredential_succesResponses(t *testing.T) {
 				t.Errorf("Expected no error, got %v", err)
 			} else {
 				// Validate that credentials were stored
-				require.ElementsMatch(t, tt.expectedCredentials, mockStorageClient.sdjwts)
+				require.ElementsMatch(t, tt.expectedCredentials, mockStorageClient.Sdjwts)
 			}
 		})
 	}
@@ -211,35 +211,35 @@ const (
 
 func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credEndpointHandler http.Handler) (
 	*openid4vciSession,
-	*MockSdJwtVcStorageClient,
+	*irmaclient.MockSdJwtVcStorageClient,
 	*httptest.Server,
 ) {
 	ts := httptest.NewServer(credEndpointHandler)
 
-	credentialConfig := &openid4vci.CredentialConfiguration{
-		Format: openid4vci.CredentialFormatIdentifier_SdJwtVc,
+	credentialConfig := &CredentialConfiguration{
+		Format: CredentialFormatIdentifier_SdJwtVc,
 	}
 
 	if opts&CredentialConfigurationWithUnsupportedFeature == CredentialConfigurationWithUnsupportedFeature {
 		// Configure unsupported format to force 'unsupported'
-		credentialConfig.Format = openid4vci.CredentialFormatIdentifier_W3CVC
+		credentialConfig.Format = CredentialFormatIdentifier_W3CVC
 	}
 
-	mockStorageClient := &MockSdJwtVcStorageClient{}
+	mockStorageClient := &irmaclient.MockSdJwtVcStorageClient{}
 	session := &openid4vciSession{
-		credentialOffer: &openid4vci.CredentialOffer{
+		credentialOffer: &CredentialOffer{
 			CredentialConfigurationIds: []string{"credential-config-1"},
 		},
-		credentialIssuerMetadata: &openid4vci.CredentialIssuerMetadata{
+		credentialIssuerMetadata: &CredentialIssuerMetadata{
 			CredentialEndpoint: ts.URL,
 			NonceEndpoint:      "https://nonce-endpoint",
-			CredentialConfigurationsSupported: map[string]openid4vci.CredentialConfiguration{
+			CredentialConfigurationsSupported: map[string]CredentialConfiguration{
 				"credential-config-1": *credentialConfig,
 			},
 		},
 		httpClient:     ts.Client(),
 		storageClient:  mockStorageClient,
-		handler:        NewMockSessionHandler(t),
+		handler:        newMockSessionHandler(t),
 		keyBinder:      nil,
 		issuerSettings: openid4vciSessionIssuerSettings{},
 	}

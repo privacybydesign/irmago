@@ -1,0 +1,86 @@
+package openid4vci
+
+import (
+	"encoding/json"
+	"fmt"
+	"testing"
+
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/stretchr/testify/require"
+)
+
+type MockSessionHandler struct {
+	t                             *testing.T
+	sessionEndChannel             chan bool // true if successful
+	authCodeRequestChannel        chan AuthCodeHandler
+	tokenRequestChannel           chan TokenHandler
+	tokenPermissionRequestChannel chan TokenPermissionHandler
+	log                           bool
+}
+
+func newMockSessionHandler(t *testing.T) *MockSessionHandler {
+	return &MockSessionHandler{
+		t:                             t,
+		sessionEndChannel:             make(chan bool, 1),
+		authCodeRequestChannel:        make(chan AuthCodeHandler, 1),
+		tokenRequestChannel:           make(chan TokenHandler, 1),
+		tokenPermissionRequestChannel: make(chan TokenPermissionHandler, 1),
+		log:                           false,
+	}
+}
+
+func (h *MockSessionHandler) AwaitSessionEnd() bool {
+	return <-h.sessionEndChannel
+}
+
+func (h *MockSessionHandler) AwaitAuthCodeRequest() TokenHandler {
+	return <-h.tokenRequestChannel
+}
+
+func (h *MockSessionHandler) Success(result string) {
+	if h.log {
+		fmt.Printf("session success: %s\n", result)
+	}
+	h.sessionEndChannel <- true
+}
+
+func (h *MockSessionHandler) Cancelled() {
+	if h.log {
+		fmt.Println("session cancelled")
+	}
+	h.sessionEndChannel <- false
+}
+
+func (h *MockSessionHandler) Failure(err *irma.SessionError) {
+	if h.log {
+		fmt.Printf("session failed, err: %v\n\n", err.Error())
+	}
+	h.sessionEndChannel <- false
+}
+
+func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *irma.AuthorizationCodeFlowRequest,
+	requestorInfo *irma.RequestorInfo,
+	callback AuthCodeHandler,
+) {
+	if h.log {
+		issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
+		require.NoError(h.t, err)
+		fmt.Printf("OpenId4VciIssuanceRequest: %v\n", string(issuanceRequestJson))
+	}
+
+	h.authCodeRequestChannel <- callback
+}
+
+func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
+	request *irma.PreAuthorizedCodeFlowPermissionRequest,
+	requestorInfo *irma.RequestorInfo,
+	callback TokenPermissionHandler,
+) {
+	if h.log {
+		//issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
+		//require.NoError(h.t, err)
+		fmt.Printf("OpenId4VciPreAuthorizedCodeTokenRequest")
+	}
+
+	h.tokenPermissionRequestChannel <- callback
+}

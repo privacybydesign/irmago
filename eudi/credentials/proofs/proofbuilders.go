@@ -1,4 +1,4 @@
-package credentials
+package proofs
 
 import (
 	"crypto/ecdsa"
@@ -9,7 +9,14 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/did"
-	"github.com/privacybydesign/irmago/eudi/openid4vci"
+)
+
+type CryptographicBindingMethod string
+
+const (
+	CryptographicBindingMethod_JWK     CryptographicBindingMethod = "jwk"
+	CryptographicBindingMethod_DID_KEY CryptographicBindingMethod = "did:key"
+	CryptographicBindingMethod_COSE    CryptographicBindingMethod = "cose_key"
 )
 
 type ProofBuilder interface {
@@ -25,10 +32,10 @@ type JwtProofBuilder struct {
 	nonce    *string
 	alg      jwa.SignatureAlgorithm
 	clock    jwt.Clock
-	method   openid4vci.CryptographicBindingMethod
+	method   CryptographicBindingMethod
 }
 
-func NewJwtProofBuilder(issuer string, audience string, alg jwa.SignatureAlgorithm, nonce *string, clock jwt.Clock, method openid4vci.CryptographicBindingMethod) *JwtProofBuilder {
+func NewJwtProofBuilder(issuer string, audience string, alg jwa.SignatureAlgorithm, nonce *string, clock jwt.Clock, method CryptographicBindingMethod) *JwtProofBuilder {
 	return &JwtProofBuilder{
 		issuer:   issuer,
 		audience: audience,
@@ -78,10 +85,10 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (interface{}, error) 
 	headers.Set(jws.TypeKey, "openid4vci-proof+jwt")
 
 	switch b.method {
-	case openid4vci.CryptographicBindingMethod_JWK:
+	case CryptographicBindingMethod_JWK:
 		// For JWK method, include the public key in the JWT header
 		headers.Set(jws.JWKKey, pubJwk)
-	case openid4vci.CryptographicBindingMethod_DID_KEY:
+	case CryptographicBindingMethod_DID_KEY:
 		// TODO: should we store the DID (or at least the generated b64url value) as the identifier in the key storage, so that we can easily retrieve the correct private key when given the DID in the request?
 
 		// TODO: the issuer should be a `did:web:...` reference. We need to perform some kind of check somewhere to ensure that the issuer DID is actually controlled by the issuer, otherwise an attacker could generate a random DID and include it in the proof JWT to trick the client into using a key that is not actually controlled by the issuer

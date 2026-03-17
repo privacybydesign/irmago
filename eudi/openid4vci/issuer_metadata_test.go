@@ -5,16 +5,10 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/stretchr/testify/require"
 )
 
-var Locale_EN = "en"
-var Locale_EN_US = "en-US"
-var Locale_EN_GB = "en-GB"
-var Locale_FR = "fr"
-var Locale_FR_FR = "fr-FR"
-var Locale_ES = "es"
-var Invalid_Locale = "invalid_locale"
 var scope = "https://pid-issuer/vct/pid"
 
 func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
@@ -90,7 +84,7 @@ func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *test
 				{
 					Display: Display{
 						Name:   "Test Credential",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -112,7 +106,7 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Test Credential",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -241,19 +235,6 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 			wantErr: "",
 		},
 		{
-			name: "invalid credential configuration",
-			metadata: CredentialIssuerMetadata{
-				CredentialIssuer:   "https://issuer.example.com",
-				CredentialEndpoint: "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{
-					"test": {
-						Format: "invalid_format",
-					},
-				},
-			},
-			wantErr: `invalid credential configuration "test": unsupported credential format "invalid_format"`,
-		},
-		{
 			name: "valid metadata",
 			metadata: CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
@@ -290,7 +271,7 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Test Credential",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -369,8 +350,8 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 func TestCredentialConfiguration_Verify(t *testing.T) {
 	validConfiguration := CredentialConfiguration{
 		Format: CredentialFormatIdentifier_SdJwtVc,
-		CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-			CryptographicBindingMethod_JWK,
+		CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+			proofs.CryptographicBindingMethod_JWK,
 		},
 		ProofTypesSupported:      map[ProofTypeIdentifier]ProofType{ProofTypeIdentifier_JWT: {ProofSigningAlgValuesSupported: []string{"test"}}},
 		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
@@ -386,8 +367,8 @@ func TestCredentialConfiguration_Verify(t *testing.T) {
 			name: "cryptographic_binding_methods_supported present, missing 'proof_types_supported'",
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
-				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-					CryptographicBindingMethod_JWK,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_JWK,
 				},
 			},
 			wantErr:     true,
@@ -422,8 +403,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 	validFullConfiguration := CredentialConfiguration{
 		Format: CredentialFormatIdentifier_SdJwtVc,
 		Scope:  &scope,
-		CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-			CryptographicBindingMethod_JWK,
+		CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+			proofs.CryptographicBindingMethod_JWK,
 		},
 		CredentialSigningAlgValuesSupported: []any{"ES256"},
 		ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
@@ -508,8 +489,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-					CryptographicBindingMethod_COSE,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_COSE,
 				},
 			},
 			wantErr:     true,
@@ -520,8 +501,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-					CryptographicBindingMethod_JWK,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_JWK,
 				},
 			},
 			wantErr:     true,
@@ -532,8 +513,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-					CryptographicBindingMethod_JWK,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_JWK,
 				},
 				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
 					ProofTypeIdentifier_DIVP: {
@@ -549,8 +530,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-					CryptographicBindingMethod_JWK,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_JWK,
 				},
 				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
 					ProofTypeIdentifier_JWT: {
@@ -566,8 +547,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-					CryptographicBindingMethod_JWK,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_JWK,
 				},
 				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
 					ProofTypeIdentifier_JWT: {
@@ -582,8 +563,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			config: CredentialConfiguration{
 				Format: CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
-				CryptographicBindingMethodsSupported: []CryptographicBindingMethod{
-					CryptographicBindingMethod_JWK,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_JWK,
 				},
 				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
 					ProofTypeIdentifier_JWT: {
@@ -636,7 +617,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -648,7 +629,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: &Locale_EN_US,
+						Locale: &locale_EN_US,
 					},
 				},
 			},
@@ -660,7 +641,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -685,7 +666,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 					Logo: &RemoteImage{
 						Uri: "://invalid-url",
@@ -701,7 +682,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 					BackgroundImage: &RemoteImage{
 						Uri: "://invalid-url",
@@ -717,13 +698,13 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 				{
 					Display: Display{
 						Name:   "Another Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -736,7 +717,7 @@ func TestCredentialDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Credential Name",
-						Locale: &Invalid_Locale,
+						Locale: &invalid_Locale,
 					},
 				},
 			},
@@ -795,7 +776,7 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -807,7 +788,7 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 					Logo: &RemoteImage{
 						Uri: "https://example.com/logo.png",
@@ -822,7 +803,7 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 					Logo: &RemoteImage{
 						Uri: "://invalid-url",
@@ -838,13 +819,13 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 				{
 					Display: Display{
 						Name:   "Another Name",
-						Locale: &Locale_EN,
+						Locale: &locale_EN,
 					},
 				},
 			},
@@ -857,7 +838,7 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 				{
 					Display: Display{
 						Name:   "Issuer Name",
-						Locale: &Invalid_Locale,
+						Locale: &invalid_Locale,
 					},
 				},
 			},
@@ -983,7 +964,7 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 					{
 						Display: Display{
 							Name:   "Issuer Name",
-							Locale: &Locale_EN,
+							Locale: &locale_EN,
 						},
 					},
 				},
@@ -997,19 +978,19 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 					{
 						Display: Display{
 							Name:   "Issuer Name",
-							Locale: &Locale_EN_US,
+							Locale: &locale_EN_US,
 						},
 					},
 					{
 						Display: Display{
 							Name:   "Nom de l'émetteur",
-							Locale: &Locale_FR_FR,
+							Locale: &locale_FR_FR,
 						},
 					},
 					{
 						Display: Display{
 							Name:   "Nombre del emisor",
-							Locale: &Locale_ES,
+							Locale: &locale_ES,
 						},
 					},
 				},
@@ -1023,19 +1004,19 @@ func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
 					{
 						Display: Display{
 							Name:   "Issuer Name",
-							Locale: &Locale_EN_US,
+							Locale: &locale_EN_US,
 						},
 					},
 					{
 						Display: Display{
 							Name:   "Another Issuer Name",
-							Locale: &Locale_EN_GB,
+							Locale: &locale_EN_GB,
 						},
 					},
 					{
 						Display: Display{
 							Name:   "Nom de l'émetteur",
-							Locale: &Locale_FR,
+							Locale: &locale_FR,
 						},
 					},
 				},

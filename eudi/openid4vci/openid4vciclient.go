@@ -1,4 +1,4 @@
-package irmaclient
+package openid4vci
 
 import (
 	"crypto/sha256"
@@ -12,9 +12,9 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
 type SdJwtVcStorageClient interface {
@@ -25,7 +25,7 @@ type OpenID4VciClient struct {
 	Configuration  *eudi.Configuration
 	httpClient     *http.Client
 	currentSession *openid4vciSession
-	sdJwtVcStorage SdJwtVcStorage
+	sdJwtVcStorage irmaclient.SdJwtVcStorage
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 	keyBinder      sdjwtvc.KeyBinder
 
@@ -35,7 +35,7 @@ type OpenID4VciClient struct {
 
 func NewOpenID4VciClient(httpClient *http.Client,
 	eudiConf *eudi.Configuration,
-	sdJwtVcStorage SdJwtVcStorage,
+	sdJwtVcStorage irmaclient.SdJwtVcStorage,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	keyBinder sdjwtvc.KeyBinder,
 ) *OpenID4VciClient {
@@ -52,7 +52,7 @@ func (client *OpenID4VciClient) AllowInsecureHttpForTesting() {
 	client.allowInsecureHttp = true
 }
 
-func (client *OpenID4VciClient) NewSession(credentialOfferEndpointUrl string, handler Handler) SessionDismisser {
+func (client *OpenID4VciClient) NewSession(credentialOfferEndpointUrl string, handler Handler) irmaclient.SessionDismisser {
 	client.handleSessionAsync(credentialOfferEndpointUrl, handler)
 	return client
 }
@@ -92,8 +92,8 @@ func (client *OpenID4VciClient) handleSessionAsync(credentialOfferEndpointUrl st
 }
 
 func (client *OpenID4VciClient) handleCredentialOffer(
-	credentialOffer *openid4vci.CredentialOffer,
-	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata,
+	credentialOffer *CredentialOffer,
+	credentialIssuerMetadata *CredentialIssuerMetadata,
 	handler Handler,
 ) error {
 	requestorInfo := convertToRequestorInfo(credentialIssuerMetadata)
@@ -161,8 +161,8 @@ func (client *OpenID4VciClient) validateCredentialOfferEndpointAndObtainCredenti
 	return credentialOffer, nil
 }
 
-func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJson string) (*openid4vci.CredentialOffer, error) {
-	var credentialOffer openid4vci.CredentialOffer
+func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJson string) (*CredentialOffer, error) {
+	var credentialOffer CredentialOffer
 	err := json.Unmarshal([]byte(credentialOfferJson), &credentialOffer)
 
 	if err != nil {
@@ -196,7 +196,7 @@ func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJ
 	return &credentialOffer, nil
 }
 
-func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialOffer *openid4vci.CredentialOffer) (*openid4vci.CredentialIssuerMetadata, error) {
+func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialOffer *CredentialOffer) (*CredentialIssuerMetadata, error) {
 	parsedCredentialIssuerUri, err := url.Parse(credentialOffer.CredentialIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse credential issuer URI: %v", err)
@@ -249,7 +249,7 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 		return nil, fmt.Errorf("failed to read credential issuer metadata response body: %v", err)
 	}
 
-	var credentialIssuerMetadata openid4vci.CredentialIssuerMetadata
+	var credentialIssuerMetadata CredentialIssuerMetadata
 	err = json.Unmarshal(credentialIssuerMetadataBytes, &credentialIssuerMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal credential issuer metadata: %v", err)
@@ -297,7 +297,7 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 	return &credentialIssuerMetadata, nil
 }
 
-func (client *OpenID4VciClient) downloadRemoteImage(remoteImage openid4vci.RemoteImage) ([]byte, string, error) {
+func (client *OpenID4VciClient) downloadRemoteImage(remoteImage RemoteImage) ([]byte, string, error) {
 	response, err := client.httpClient.Get(remoteImage.Uri)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download image %s: %v", remoteImage.Uri, err)
@@ -323,7 +323,7 @@ func (client *OpenID4VciClient) downloadRemoteImage(remoteImage openid4vci.Remot
 func (client *OpenID4VciClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error {
 	// TODO: set the verification mode to Lax for testing purposes only
 	// adding an SD-JWT without having a credential type in the Yivi scheme will break the app in Lax mode
-	return verifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, validateUniqueKeyBindingConfirmations, eudi.StrictSdJwtVerificationMode)
+	return irmaclient.VerifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, validateUniqueKeyBindingConfirmations, eudi.StrictSdJwtVerificationMode)
 }
 
 func (client *OpenID4VciClient) Dismiss() {
@@ -348,13 +348,13 @@ func getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuer string, lo
 
 func convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
-	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata,
+	credentialIssuerMetadata *CredentialIssuerMetadata,
 	issuerName irma.TranslatedString,
 ) ([]*irma.CredentialTypeInfo, error) {
 	credentialInfoList := make([]*irma.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
-			if config.Format != openid4vci.CredentialFormatIdentifier_SdJwtVc {
+			if config.Format != CredentialFormatIdentifier_SdJwtVc {
 				// We only support SD-JWT VCs for now
 				continue
 			}
@@ -380,7 +380,7 @@ func convertToCredentialInfoList(
 	return credentialInfoList, nil
 }
 
-func convertToAttributeList(claims []openid4vci.ClaimsDescription) map[string]irma.TranslatedString {
+func convertToAttributeList(claims []ClaimsDescription) map[string]irma.TranslatedString {
 	attrs := map[string]irma.TranslatedString{}
 	for _, claim := range claims {
 		for _, path := range claim.Path {
@@ -395,7 +395,7 @@ func convertToAttributeList(claims []openid4vci.ClaimsDescription) map[string]ir
 	return attrs
 }
 
-func convertToRequestorInfo(credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata) *irma.RequestorInfo {
+func convertToRequestorInfo(credentialIssuerMetadata *CredentialIssuerMetadata) *irma.RequestorInfo {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 	// TODO: we need to know which language to use, in order to get the correct logo
 	displays := ToTranslateableList(credentialIssuerMetadata.Display)
@@ -413,4 +413,11 @@ func convertToRequestorInfo(credentialIssuerMetadata *openid4vci.CredentialIssue
 		//ValidUntil: (*irma.Timestamp)(&endEntityCert.NotAfter),
 		//Description: credentialIssuerMetadata.Description,
 	}
+}
+
+func handleFailure(handler Handler, message string, fmtArgs ...any) {
+	irma.Logger.Errorf(message, fmtArgs...)
+	handler.Failure(&irma.SessionError{
+		Err: fmt.Errorf(message, fmtArgs...),
+	})
 }

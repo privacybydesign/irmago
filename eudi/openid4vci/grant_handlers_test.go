@@ -1,4 +1,4 @@
-package irmaclient
+package openid4vci
 
 import (
 	"bytes"

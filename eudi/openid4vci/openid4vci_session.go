@@ -1,4 +1,4 @@
-package irmaclient
+package openid4vci
 
 import (
 	"bytes"
@@ -12,17 +12,16 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
-	"github.com/privacybydesign/irmago/eudi/credentials"
+	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
-	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/irma"
 )
 
 type openid4vciSession struct {
-	credentialOffer          *openid4vci.CredentialOffer
-	credentialIssuerMetadata *openid4vci.CredentialIssuerMetadata
+	credentialOffer          *CredentialOffer
+	credentialIssuerMetadata *CredentialIssuerMetadata
 	requestorInfo            *irma.RequestorInfo
 	credentials              []*irma.CredentialTypeInfo
 	storageClient            SdJwtVcStorageClient
@@ -35,7 +34,7 @@ type openid4vciSession struct {
 
 // openid4vciSessionIssuerSettings contains all settings related to the Credential Issuer and Credential Offer that are required to perform the session, extracted from the Credential Offer and Credential Issuer metadata
 type openid4vciSessionIssuerSettings struct {
-	grantType                   openid4vci.Grant
+	grantType                   Grant
 	authorizationServer         string
 	authorizationServerMetadata *oauth2.AuthorizationServerMetadata
 
@@ -47,7 +46,7 @@ type openid4vciSessionIssuerSettings struct {
 // openid4vciSessionCredentialRequestPreferences contains wallet-based preferences related to the credential that will be requested
 // We define this struct, so that we apply logic to the credential metadata, and choose the preferences from the available options, in case multiple options are offered by the issuer metadata (e.g. multiple supported encryption algorithms, or multiple supported key binding methods)
 type openid4vciSessionCredentialRequestPreferences struct {
-	cryptographicBindingMethod *openid4vci.CryptographicBindingMethod
+	cryptographicBindingMethod *proofs.CryptographicBindingMethod
 }
 
 func (s *openid4vciSession) perform() error {
@@ -65,11 +64,11 @@ func (s *openid4vciSession) perform() error {
 	// Based on the grant type, perform the appropriate flow
 	var grantHandler GrantHandler
 	switch s.issuerSettings.grantType.GetGrantType() {
-	case openid4vci.GrantType_AuthorizationCode:
+	case GrantType_AuthorizationCode:
 		grantHandler = &AuthorizationCodeFlowHandler{
 			httpClient: s.httpClient,
 		}
-	case openid4vci.GrantType_PreAuthorizedCode:
+	case GrantType_PreAuthorizedCode:
 		grantHandler = &PreAuthorizedCodeFlowHandler{}
 	default:
 		s.handler.Failure(&irma.SessionError{
@@ -97,7 +96,7 @@ func (s *openid4vciSession) perform() error {
 	// AccessToken received;
 	err = s.requestCredentials(permission.GetAccessToken())
 	if err != nil {
-		irma.Logger.Infof("error requesting credentials: ", err)
+		irma.Logger.Infof("error requesting credentials: %v", err)
 		s.handler.Failure(&irma.SessionError{
 			Err: fmt.Errorf("could not request credentials: %v", err),
 		})
@@ -173,19 +172,19 @@ func (s *openid4vciSession) configureIssuerSettings() error {
 	return nil
 }
 
-func getCredentialRequestPreferences(c openid4vci.CredentialConfiguration) *openid4vciSessionCredentialRequestPreferences {
+func getCredentialRequestPreferences(c CredentialConfiguration) *openid4vciSessionCredentialRequestPreferences {
 	s := &openid4vciSessionCredentialRequestPreferences{}
 
 	if len(c.CryptographicBindingMethodsSupported) > 0 {
-		var cryptoBindingMethod openid4vci.CryptographicBindingMethod
+		var cryptoBindingMethod proofs.CryptographicBindingMethod
 
 		// Order of preferred cryptographic binding methods: JWK > DID > COSE, based on ease of implementation and expected level of support among issuers
-		if slices.Contains(c.CryptographicBindingMethodsSupported, openid4vci.CryptographicBindingMethod_JWK) {
-			cryptoBindingMethod = openid4vci.CryptographicBindingMethod_JWK
-		} else if slices.Contains(c.CryptographicBindingMethodsSupported, openid4vci.CryptographicBindingMethod_DID_KEY) {
-			cryptoBindingMethod = openid4vci.CryptographicBindingMethod_DID_KEY
-		} else if slices.Contains(c.CryptographicBindingMethodsSupported, openid4vci.CryptographicBindingMethod_COSE) {
-			cryptoBindingMethod = openid4vci.CryptographicBindingMethod_COSE
+		if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_JWK) {
+			cryptoBindingMethod = proofs.CryptographicBindingMethod_JWK
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) {
+			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_KEY
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_COSE) {
+			cryptoBindingMethod = proofs.CryptographicBindingMethod_COSE
 		}
 		s.cryptographicBindingMethod = &cryptoBindingMethod
 	}
@@ -254,7 +253,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 
 	// TODO: fill correct fields in Credential Request..
 	// For now, we only support the credential_configuration_id parameter, no credential_identifier from authorization details
-	request := &openid4vci.CredentialRequest{
+	request := &CredentialRequest{
 		CredentialConfigurationId: &credConfigId,
 	}
 
@@ -273,7 +272,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		}
 
 		// Since we now only support JWT proofs (and the issuer supports this, as checked with ValidateSupportedFeatures), we can directly use that to create the key pairs with JWT proofs
-		proofType := credentialConfig.ProofTypesSupported[openid4vci.ProofTypeIdentifier_JWT]
+		proofType := credentialConfig.ProofTypesSupported[ProofTypeIdentifier_JWT]
 
 		// Determine signing algorithm for key binding proofs
 		var alg jwa.SignatureAlgorithm
@@ -291,7 +290,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		issuer := "org.irmacard.cardemu"
 
 		// Create a Proof builder, matching the `proofType` from the supported proof types
-		proofBuilder := credentials.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
+		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
 
 		proofJwts, err := s.keyBinder.CreateKeyPairsWithProofs(num, proofBuilder)
 		//proofJwts, err := s.keyBinder.CreateKeyPairsWithJwtProofs(num, alg, issuer, *credentialRequestPreferences.cryptographicBindingMethod, s.credentialIssuerMetadata.CredentialIssuer, cNonce)
@@ -309,8 +308,8 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 			x[i] = v
 		}
 
-		request.Proofs = &openid4vci.Proofs{
-			openid4vci.ProofTypeIdentifier_JWT: x,
+		request.Proofs = &Proofs{
+			ProofTypeIdentifier_JWT: x,
 		}
 	}
 
@@ -418,7 +417,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		}
 		return fmt.Errorf("credential request unauthorized")
 	} else if resp.StatusCode == http.StatusBadRequest {
-		var errorResponse openid4vci.CredentialErrorResponse
+		var errorResponse CredentialErrorResponse
 		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
 		if err != nil {
 			return fmt.Errorf("could not decode credential error response: %v", err)
@@ -429,7 +428,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		return fmt.Errorf("credential request failed: %s", resp.Status)
 	}
 
-	var credentialResponse openid4vci.CredentialResponse
+	var credentialResponse CredentialResponse
 	err = json.NewDecoder(resp.Body).Decode(&credentialResponse)
 	if err != nil {
 		return fmt.Errorf("could not decode credential response: %v", err)
@@ -477,7 +476,7 @@ func (s *openid4vciSession) requestNonce() (string, error) {
 		return "", fmt.Errorf("nonce request failed: %s", resp.Status)
 	}
 
-	var nonceResponse openid4vci.NonceResponse
+	var nonceResponse NonceResponse
 	err = json.NewDecoder(resp.Body).Decode(&nonceResponse)
 	if err != nil {
 		return "", fmt.Errorf("could not decode nonce response: %v", err)

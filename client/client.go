@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -27,7 +28,7 @@ type Client struct {
 	storage          *clientstorage.Storage
 	sdjwtvcStorage   irmaclient.SdJwtVcStorage
 	openid4vpClient  *irmaclient.OpenID4VPClient
-	openid4vciClient *irmaclient.OpenID4VciClient
+	openid4vciClient *openid4vci.OpenID4VciClient
 	irmaClient       *irmaclient.IrmaClient
 	logsStorage      irmaclient.LogsStorage
 	keyBinder        sdjwtvc.KeyBinder
@@ -132,7 +133,7 @@ func New(
 	}
 
 	// Initiate the OpenID4VCI client
-	openid4vciClient := irmaclient.NewOpenID4VciClient(
+	openid4vciClient := openid4vci.NewOpenID4VciClient(
 		&http.Client{},
 		eudiConf,
 		sdjwtvcStorage,

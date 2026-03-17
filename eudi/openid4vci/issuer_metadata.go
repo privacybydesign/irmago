@@ -10,6 +10,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/internal/arrays"
 	"golang.org/x/text/language"
 )
@@ -59,22 +60,15 @@ type RemoteImage struct {
 
 type CredentialFormatIdentifier string
 type CredentialSigningAlgorithm string
-type CryptographicBindingMethod string
 type ProofTypeIdentifier string
 
-const (
-	CryptographicBindingMethod_JWK     CryptographicBindingMethod = "jwk"
-	CryptographicBindingMethod_DID_KEY CryptographicBindingMethod = "did:key"
-	CryptographicBindingMethod_COSE    CryptographicBindingMethod = "cose_key"
-)
-
 type CredentialConfiguration struct {
-	Format                               CredentialFormatIdentifier        `json:"format"`
-	Scope                                *string                           `json:"scope,omitempty"`
-	CredentialSigningAlgValuesSupported  []any                             `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or objects for ISO mDoc
-	CryptographicBindingMethodsSupported []CryptographicBindingMethod      `json:"cryptographic_binding_methods_supported,omitempty"`
-	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType `json:"proof_types_supported,omitempty"`
-	CredentialMetadata                   *CredentialMetadata               `json:"credential_metadata,omitempty"`
+	Format                               CredentialFormatIdentifier          `json:"format"`
+	Scope                                *string                             `json:"scope,omitempty"`
+	CredentialSigningAlgValuesSupported  []any                               `json:"credential_signing_alg_values_supported,omitempty"` // Can be string values for SD-JWTs, or objects for ISO mDoc
+	CryptographicBindingMethodsSupported []proofs.CryptographicBindingMethod `json:"cryptographic_binding_methods_supported,omitempty"`
+	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType   `json:"proof_types_supported,omitempty"`
+	CredentialMetadata                   *CredentialMetadata                 `json:"credential_metadata,omitempty"`
 
 	// The following fields are present/absent, depending on the credential format
 	VerifiableCredentialType string                   `json:"vct,omitempty"`                   // SD-JWT VC
@@ -365,8 +359,8 @@ func (c *CredentialConfiguration) ValidateSupportedFeatures() error {
 
 	// We only support JWK and DID cryptographic binding method, for now
 	if len(c.CryptographicBindingMethodsSupported) > 0 {
-		if !slices.Contains(c.CryptographicBindingMethodsSupported, CryptographicBindingMethod_JWK) &&
-			!slices.Contains(c.CryptographicBindingMethodsSupported, CryptographicBindingMethod_DID_KEY) {
+		if !slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_JWK) &&
+			!slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) {
 			return fmt.Errorf("unsupported cryptographic binding method(s) %q", c.CryptographicBindingMethodsSupported)
 		}
 
