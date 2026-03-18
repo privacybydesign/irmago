@@ -19,6 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	Key_SdHash   string = "sd_hash"
+	Key_Nonce    string = "nonce"
+	Key_Audience string = "aud"
+)
+
 type x509TestConfig struct {
 	IssuerCert                     []byte
 	VerifierTrustedIssuerCertChain []byte

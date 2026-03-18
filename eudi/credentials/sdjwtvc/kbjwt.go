@@ -33,12 +33,6 @@ type KeyBindingJwtPayload struct {
 	Audience string `json:"aud"`
 }
 
-const (
-	Key_SdHash   string = "sd_hash"
-	Key_Nonce    string = "nonce"
-	Key_Audience string = "aud"
-)
-
 type KeyBindingStorage interface {
 	StorePrivateKeys(keys []*ecdsa.PrivateKey) error
 	GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error)
