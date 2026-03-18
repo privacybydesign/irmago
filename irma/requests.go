@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"strconv"
@@ -107,7 +108,8 @@ type PreAuthorizedCodeTransactionCodeParameters struct {
 
 type AuthorizationCodeFlowRequest struct {
 	CredentialTypeInfoList  CredentialTypeInfoList
-	AuthorizationRequestUrl string
+	AuthorizationEndpoint   string
+	AuthorizationParameters url.Values
 }
 
 // DefaultSdJwtIssueAmount is what you get when the requestor does not specify how many SD-JWTs to issue in a batch.

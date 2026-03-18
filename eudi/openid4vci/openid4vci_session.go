@@ -353,7 +353,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 		requestBody = jsonRequest
 	}
 
-	irma.Logger.Tracef("Sending credential request: %s", string(requestBody))
+	irma.Logger.Infof("Sending credential request: %s = %s", contentType, string(requestBody))
 
 	// Send the request
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))

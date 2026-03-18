@@ -51,8 +51,8 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (interface{}, error) 
 
 	// Build the proof JWT
 	proofBuilder = proofBuilder.
-		Issuer(b.issuer).
 		Audience([]string{b.audience}).
+		Issuer(b.issuer).
 		IssuedAt(b.clock.Now())
 
 	if b.nonce != nil {
@@ -63,6 +63,9 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (interface{}, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build proof payload: %v", err)
 	}
+
+	// Flatten the "aud" claim to a single string if it contains only one value, to be compliant with the OID4VCI JWT proof spec
+	proofPayload.Options().Enable(jwt.FlattenAudience)
 
 	privJwk, err := jwk.Import(privKey)
 	if err != nil {

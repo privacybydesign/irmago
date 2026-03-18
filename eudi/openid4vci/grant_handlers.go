@@ -129,16 +129,10 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 		authRequest.Add("request_uri", parResponse.RequestUri)
 	}
 
-	// Construct the URL that the client should open in the browser to start the authorization code flow
-	authRequestUrl, err := url.Parse(s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse authorization endpoint URL: %v", err)
-	}
-	authRequestUrl.RawQuery = authRequest.Encode()
-
 	request := &irma.AuthorizationCodeFlowRequest{
 		CredentialTypeInfoList:  s.credentials,
-		AuthorizationRequestUrl: authRequestUrl.String(),
+		AuthorizationEndpoint:   s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint,
+		AuthorizationParameters: authRequest,
 	}
 
 	pendingAuthCodeRequestChannel := make(chan *codeResponse, 1)

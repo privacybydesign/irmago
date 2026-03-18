@@ -1,10 +1,14 @@
 package client
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
+	"strconv"
 
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/irma"
@@ -188,7 +192,7 @@ type SessionState struct {
 	// The message that should be signed during this session, if any
 	MessageToSign string `json:"message_to_sign"`
 	// The error when this session has an error
-	Error *irma.SessionError `json:"error"`
+	Error *irma.SessionError `json:"error,omitempty"`
 	// The client return url when the app should redirect to after the session, if any
 	ClientReturnUrl string `json:"client_return_url"`
 	// If this is true then the frontend should not return to the browser after the session is done
@@ -198,8 +202,15 @@ type SessionState struct {
 	PinBlockedTimeSeconds int `json:"pin_blocked_time_seconds"`
 
 	// OID4VCI specific fields
-	OfferedCredentialTypes    []CredentialDescriptor                           `json:"offered_credential_types"`
-	TransactionCodeParameters *irma.PreAuthorizedCodeTransactionCodeParameters `json:"transaction_code_parameters"`
+	OfferedCredentialTypes []CredentialDescriptor `json:"offered_credential_types"`
+
+	// OID4VCI - Authorization Code Flow parameters
+	stateSalt               []byte
+	Oid4VciState            string `json:"oid4_vci_state,omitempty"`
+	AuthorizationRequestUrl string `json:"authorization_request_url,omitempty"`
+
+	// OID4VCI - Pre-Authorized Code Flow parameters
+	TransactionCodeParameters *irma.PreAuthorizedCodeTransactionCodeParameters `json:"transaction_code_parameters,omitempty"`
 }
 
 type session struct {
@@ -685,12 +696,45 @@ func (s *session) RequestAuthorizationCodeFlowPermission(
 	requestorInfo *irma.RequestorInfo,
 	callback openid4vci.AuthCodeHandler,
 ) {
+	s.setPseudoRandomOpenIdState()
+
+	// Add the state to the authorization parameters so it will be send to the authorization server and back to us, to verify the response belongs to this session
+	request.AuthorizationParameters.Add("state", s.State.Oid4VciState)
+
+	// Construct the URL that the client should open in the browser to start the authorization code flow
+	authRequestUrl, err := url.Parse(request.AuthorizationEndpoint)
+	if err != nil {
+		panic(fmt.Errorf("failed to parse authorization endpoint URL: %v", err))
+	}
+	authRequestUrl.RawQuery = request.AuthorizationParameters.Encode()
+
 	s.State.Status = Status_RequestAuthorizationCode
 	s.State.Type = Type_Issuance
 	s.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
+	s.State.AuthorizationRequestUrl = authRequestUrl.String()
 	s.authCodeHandler = callback
+
+	// Quick fix for OID4VCI flow, to open the correct success-screen after issuance
+	s.State.ContinueOnSecondDevice = true
+
 	s.dispatchState()
+}
+
+func (s *session) setPseudoRandomOpenIdState() {
+	if len(s.State.stateSalt) == 0 {
+		salt := [16]byte{}
+		_, err := rand.Read(salt[:])
+		if err != nil {
+			panic(fmt.Sprintf("failed to generate random state salt: %v", err))
+		}
+
+		s.State.stateSalt = salt[:]
+	}
+
+	stateBytes := append(s.State.stateSalt, []byte(strconv.Itoa(s.State.Id))...)
+
+	s.State.Oid4VciState = fmt.Sprintf("%x", sha256.Sum256(stateBytes))
 }
 
 func (s *session) RequestPreAuthorizedCodeFlowPermission(
@@ -704,6 +748,10 @@ func (s *session) RequestPreAuthorizedCodeFlowPermission(
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.TransactionCodeParameters = request.TransactionCodeParameters
 	s.preAuthorizedCodeHandler = callback
+
+	// Quick fix for OID4VCI flow, to open the correct success-screen after issuance
+	s.State.ContinueOnSecondDevice = true
+
 	s.dispatchState()
 }
 
