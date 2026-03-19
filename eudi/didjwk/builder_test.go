@@ -1,4 +1,4 @@
-package did
+package didjwk
 
 import (
 	"testing"
@@ -27,7 +27,7 @@ func Test_FromJwk_Given_AsymmetricKeyWithSignatureKeyUsage_Succeeds(t *testing.T
 	}
 
 	// Act
-	b := &Builder{}
+	b := &DocumentBuilder{}
 	doc, err := b.FromJwk(key)
 
 	// Assert
@@ -74,7 +74,7 @@ func Test_FromJwk_Given_AsymmetricKeyWithEncryptionKeyUsage_Succeeds(t *testing.
 	}
 
 	// Act
-	b := &Builder{}
+	b := &DocumentBuilder{}
 	doc, err := b.FromJwk(key)
 
 	// Assert

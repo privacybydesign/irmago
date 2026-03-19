@@ -11,7 +11,7 @@ import (
 )
 
 type SdJwtKeyProvider struct {
-	eudi_jwt.X509KeyProvider
+	innerKeyProvider jws.KeyProvider
 }
 
 // FetchKeys fetches the keys for verifying the SD-JWT VC issuer signed jwt, but not before validating the 'typ' header.
@@ -22,7 +22,20 @@ func (p *SdJwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig 
 		return fmt.Errorf("invalid 'typ' header: %v", typ)
 	}
 
-	return p.X509KeyProvider.FetchKeys(ctx, sink, sig, msg)
+	// Basic header validation passed, now fetch the keys depending on the key reference in the header (e.g. x5c or kid)
+	if x5c, x5cPresent := sig.ProtectedHeaders().X509CertChain(); x5cPresent && x5c != nil {
+		p.innerKeyProvider = eudi_jwt.NewX509KeyProvider(x5c)
+	}
+
+	if kid, kidPresent := sig.ProtectedHeaders().KeyID(); kidPresent && kid != "" {
+		p.innerKeyProvider = eudi_jwt.NewKidKeyProvider(kid)
+	}
+
+	if p.innerKeyProvider == nil {
+		return fmt.Errorf("no supported key reference header (x5c or kid) present in the signature")
+	}
+
+	return p.innerKeyProvider.FetchKeys(ctx, sink, sig, msg)
 }
 
 // splitSdJwtVc splits the sdjwt at the ~ characters and returns the individual components.

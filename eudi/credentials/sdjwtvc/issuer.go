@@ -312,7 +312,7 @@ func SdClaim[T LeafClaimDataType](key string, value T) *ClaimElement {
 
 func HolderKeyClaim(key jwk.Key) (*ClaimElement, error) {
 	x := CnfField{
-		Jwk: key,
+		Jwk: &key,
 	}
 	j, err := json.Marshal(x)
 	if err != nil {

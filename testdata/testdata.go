@@ -63,6 +63,9 @@ var VerifierCertSchemeData string
 //go:embed eudi/issuer/well_known_configuration_response.json
 var OpenID4VciIssuerWellKnownConfigurationResponse string
 
+//go:embed didweb/eduid-did-document.json
+var ValidDidDocument []byte
+
 type PkiGenerationOptions int
 
 const (

@@ -51,7 +51,7 @@ type VerifiedSdJwtVc struct {
 	// the complete SD-JWT VC that can be found in the key binding JWT
 	SdAlg iana.HashingAlgorithm
 
-	// OPTIONAL: Public key (JWK format) of the holder, which can be used to verify the key binding jwt
+	// OPTIONAL: Public key (JWK or kid with did:jwk method) of the holder, which can be used to verify the key binding jwt
 	Confirm *CnfField
 
 	// OPTIONAL: The information on how to read the status of the verifiable credential
@@ -612,19 +612,30 @@ func parseConfirmField(value any) (*CnfField, error) {
 	if !ok {
 		return nil, fmt.Errorf("failed to parse as anymap: %v", value)
 	}
-	keyAny, ok := anyMap["jwk"]
-	if !ok {
-		return nil, errors.New("failed to get jwk field from cnf field")
+
+	// We support jwk and kid (with did:jwk method) confirmations.
+	jwkAny, ok := anyMap["jwk"]
+	if ok {
+		jwkJson, err := json.Marshal(jwkAny)
+		if err != nil {
+			return nil, err
+		}
+		key, err := jwk.ParseKey(jwkJson)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse key (%v) from json: %v", value, err)
+		}
+		return &CnfField{Jwk: &key}, nil
 	}
-	keyJson, err := json.Marshal(keyAny)
-	if err != nil {
-		return nil, err
+	kidAny, ok := anyMap["kid"]
+	if ok {
+		kidStr, ok := kidAny.(string)
+		if !ok {
+			return nil, fmt.Errorf("failed to parse kid field as string: %v", kidAny)
+		}
+		return &CnfField{Kid: &kidStr}, nil
 	}
-	key, err := jwk.ParseKey(keyJson)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse key (%v) from json: %v", value, err)
-	}
-	return &CnfField{Jwk: key}, nil
+
+	return nil, fmt.Errorf("failed to parse cnf field: unsupported confirmation method, expected jwk or did:jwk: %v", value)
 }
 
 func verifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,
@@ -846,36 +857,37 @@ func extractClaimsAndDisclosuresDigestsFromToken(token jwt.Token) (map[string]an
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
 ) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
-	keyProvider := &SdJwtKeyProvider{
-		X509KeyProvider: eudi_jwt.X509KeyProvider{},
-	}
+	keyProvider := SdJwtKeyProvider{}
 
 	// Create a context for the verification where we can retrieve the requestor info back
 	token, err := jwt.Parse(signedJwt,
-		jwt.WithKeyProvider(keyProvider),
+		jwt.WithKeyProvider(&keyProvider),
 		jwt.WithClock(v.verificationContext.Clock),
 		jwt.WithAcceptableSkew(ClockSkewInSeconds*time.Second),
+		jwt.WithVerify(true),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
 	}
 
-	// Get requestor info from cert
-	cert := keyProvider.X509KeyProvider.GetCert()
-	err = eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
-	}
-
-	// Verify the SD-JWT against the credentials the issuer is authorized to issue
-	// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
-	// until we can issue SD-JWT VCs that fit our scheme
-	if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
-		requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
+	// If the key provider used was a X509KeyProvider, we can get the certificate and verify it against the trusted roots/intermediates and CRLs.
+	if x509KeyProvider, ok := keyProvider.innerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
+		cert := x509KeyProvider.GetCert()
+		err = eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
+			return nil, nil, fmt.Errorf("failed to verify certificate: %v", err)
 		}
-		return token, requestorInfo, nil
+
+		// Verify the SD-JWT against the credentials the issuer is authorized to issue
+		// TODO: temporarily disable verification of the VCT against what is allowed in the requestor certificate
+		// until we can issue SD-JWT VCs that fit our scheme
+		if v.verificationContext.VerifyVerifiableCredentialTypeInRequestorInfo {
+			requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.AttestationProviderRequestor](cert)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
+			}
+			return token, requestorInfo, nil
+		}
 	}
 
 	return token, nil, nil

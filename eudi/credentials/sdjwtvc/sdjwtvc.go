@@ -170,7 +170,9 @@ type EncodedDisclosure string
 type HashedDisclosure string
 
 type CnfField struct {
-	Jwk jwk.Key `json:"jwk"`
+	Jwk *jwk.Key `json:"jwk,omitempty"`
+	// Note: kid can be any value, but for now we only support the did:jwk method, so it should be a string did:jwk reference to a key in the database with keybinding keys
+	Kid *string `json:"kid,omitempty"`
 }
 
 // IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
@@ -277,7 +279,7 @@ type IssuerSignedJwtPayload struct {
 	// the complete SD-JWT VC that can be found in the key binding JWT
 	SdAlg iana.HashingAlgorithm
 
-	// OPTIONAL: Public key (JWK format) of the holder, which can be used to verify the key binding jwt
+	// OPTIONAL: Public key (JWK or kid with did:jwk method) of the holder, which can be used to verify the key binding jwt
 	Confirm *CnfField
 
 	// OPTIONAL: The information on how to read the status of the verifiable credential

@@ -1,0 +1,38 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "id": "did:web:issuer.dev.eduid.nl",
+  "verificationMethod": [
+    {
+      "id": "did:web:issuer.dev.eduid.nl#0",
+      "type": "JsonWebKey2020",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "kid": "0256fe6c7e79fbe457cff176e8df7acbd4183086604d54f84592536076d67d5bd5",
+        "use": "sig",
+        "key_ops": [
+          "verify"
+        ],
+        "alg": "ES256",
+        "x": "Vv5sfnn75FfP8Xbo33rL1BgwhmBNVPhFklNgdtZ9W9U",
+        "y": "cMvoWnMV3LgfvDan1eimpZHRJ1mGXygY5I-HTSpgjzw"
+      },
+      "controller": "did:web:issuer.dev.eduid.nl"
+    }
+  ],
+  "authentication": [
+    "did:web:issuer.dev.eduid.nl#0"
+  ],
+  "assertionMethod": [
+    "did:web:issuer.dev.eduid.nl#0"
+  ],
+  "capabilityDelegation": [
+    "did:web:issuer.dev.eduid.nl#0"
+  ],
+  "capabilityInvocation": [
+    "did:web:issuer.dev.eduid.nl#0"
+  ]
+}

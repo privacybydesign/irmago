@@ -136,19 +136,22 @@ func VerifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 	if validateUniqueKeyBindingConfirmations {
 		for _, verifiedSdJwtVc := range verifiedSdJwtVcs {
 			cnf := verifiedSdJwtVc.Confirm
-			if cnf != nil {
-				duplicateCryptographicKey := slices.ContainsFunc(verifiedSdJwtVcs, func(otherSdJwtVc *sdjwtvc.VerifiedSdJwtVc) bool {
-					return otherSdJwtVc != verifiedSdJwtVc &&
-						otherSdJwtVc.Confirm != nil &&
-						jwk.Equal(otherSdJwtVc.Confirm.Jwk, cnf.Jwk)
-				})
+			if cnf == nil {
+				continue
+			}
 
-				if duplicateCryptographicKey {
-					return fmt.Errorf(
-						"duplicate cryptographic key binding confirmation found for SD-JWT with vct %q",
-						verifiedSdJwtVc.VerifiableCredentialType,
-					)
-				}
+			duplicateCryptographicKey := slices.ContainsFunc(verifiedSdJwtVcs, func(otherSdJwtVc *sdjwtvc.VerifiedSdJwtVc) bool {
+				return otherSdJwtVc != verifiedSdJwtVc &&
+					otherSdJwtVc.Confirm != nil &&
+					((cnf.Jwk != nil && otherSdJwtVc.Confirm.Jwk != nil && jwk.Equal(*otherSdJwtVc.Confirm.Jwk, *cnf.Jwk)) ||
+						(cnf.Kid != nil && otherSdJwtVc.Confirm.Kid != nil && *otherSdJwtVc.Confirm.Kid == *cnf.Kid))
+			})
+
+			if duplicateCryptographicKey {
+				return fmt.Errorf(
+					"duplicate cryptographic key binding confirmation found for SD-JWT with vct %q",
+					verifiedSdJwtVc.VerifiableCredentialType,
+				)
 			}
 		}
 	}

@@ -8,7 +8,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
-	"github.com/privacybydesign/irmago/eudi/did"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 )
 
 type CryptographicBindingMethod string
@@ -95,7 +95,7 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (interface{}, error) 
 		// TODO: should we store the DID (or at least the generated b64url value) as the identifier in the key storage, so that we can easily retrieve the correct private key when given the DID in the request?
 
 		// TODO: the issuer should be a `did:web:...` reference. We need to perform some kind of check somewhere to ensure that the issuer DID is actually controlled by the issuer, otherwise an attacker could generate a random DID and include it in the proof JWT to trick the client into using a key that is not actually controlled by the issuer
-		didBuilder := did.Builder{}
+		didBuilder := didjwk.DocumentBuilder{}
 		did, err := didBuilder.FromJwk(pubJwk)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create did from jwk: %v", err)

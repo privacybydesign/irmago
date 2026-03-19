@@ -177,8 +177,9 @@ func newEmptyTestConfigWithKbJwt() *testSdJwtVcKbConfig {
 // ========================================================================
 
 func createHolderCnfField() CnfField {
+	jwk := testdata.ParseHolderPubJwk()
 	return CnfField{
-		Jwk: testdata.ParseHolderPubJwk(),
+		Jwk: &jwk,
 	}
 }
 
