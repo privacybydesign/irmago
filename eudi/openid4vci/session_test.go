@@ -88,47 +88,47 @@ func Test_openid4vciSession_requestCredential_errorResponses(t *testing.T) {
 		}
 	})
 
-	session, _, ts := setupTestEnvironment(t, 0, credEndpointHandler)
+	s, _, ts := setupTestEnvironment(t, 0, credEndpointHandler)
 	defer ts.Close()
 
 	tests := []struct {
 		name        string
-		s           *openid4vciSession
+		s           *session
 		accessToken string
 		nonce       *string
 		expectedErr string
 	}{
 		{
 			name:        "test deferred credential response not supported yet",
-			s:           session,
+			s:           s,
 			accessToken: "valid_token::deferred_response",
 			nonce:       &nonce,
 			expectedErr: "wallet does not accept deferred credential responses",
 		},
 		{
 			name:        "test unauthorized token, no error in header",
-			s:           session,
+			s:           s,
 			accessToken: "unauthorized_token::no_error",
 			nonce:       &nonce,
 			expectedErr: "credential request unauthorized",
 		},
 		{
 			name:        "test unauthorized token, with error in header",
-			s:           session,
+			s:           s,
 			accessToken: "unauthorized_token::with_error",
 			nonce:       &nonce,
 			expectedErr: "credential request failed with error invalid_token: The access token expired",
 		},
 		{
 			name:        "test forbidden token (missing scope), with error in header",
-			s:           session,
+			s:           s,
 			accessToken: "forbidden_token::missing_scope_with_error",
 			nonce:       &nonce,
 			expectedErr: "credential request failed with error insufficient_scope: The request requires higher privileges (required scope: yivi.read)",
 		},
 		{
 			name:        "test bad request (invalid request)",
-			s:           session,
+			s:           s,
 			accessToken: "invalid_request",
 			nonce:       &nonce,
 			expectedErr: "credential request failed with error invalid_request: The request is invalid (missing field XYZ)",
@@ -170,19 +170,19 @@ func Test_openid4vciSession_requestCredential_succesResponses(t *testing.T) {
 		}
 	})
 
-	session, mockStorageClient, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
+	s, mockStorageClient, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
 	defer ts.Close()
 
 	tests := []struct {
 		name                string
-		s                   *openid4vciSession
+		s                   *session
 		accessToken         string
 		expectedErr         string
 		expectedCredentials []sdjwtvc.SdJwtVcKb
 	}{
 		{
 			name:                "test successful credential request - unencrypted - no keybinding",
-			s:                   session,
+			s:                   s,
 			accessToken:         "valid_token::unencrypted",
 			expectedCredentials: []sdjwtvc.SdJwtVcKb{"cred1", "cred2"},
 		},
@@ -210,7 +210,7 @@ const (
 )
 
 func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credEndpointHandler http.Handler) (
-	*openid4vciSession,
+	*session,
 	*irmaclient.MockSdJwtVcStorageClient,
 	*httptest.Server,
 ) {
@@ -226,7 +226,7 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	}
 
 	mockStorageClient := &irmaclient.MockSdJwtVcStorageClient{}
-	session := &openid4vciSession{
+	s := &session{
 		credentialOffer: &CredentialOffer{
 			CredentialConfigurationIds: []string{"credential-config-1"},
 		},
@@ -245,8 +245,8 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	}
 
 	if opts&NonceNotRequired == NonceNotRequired {
-		session.credentialIssuerMetadata.NonceEndpoint = ""
+		s.credentialIssuerMetadata.NonceEndpoint = ""
 	}
 
-	return session, mockStorageClient, ts
+	return s, mockStorageClient, ts
 }

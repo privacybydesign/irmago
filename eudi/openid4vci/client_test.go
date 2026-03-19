@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createOpenID4VCiClientForTesting(t *testing.T) *OpenID4VciClient {
+func createOpenID4VCiClientForTesting(t *testing.T) *Client {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	storage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)

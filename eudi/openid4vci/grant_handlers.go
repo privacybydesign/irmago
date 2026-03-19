@@ -17,7 +17,7 @@ const YiviAppRedirectUri = "yivi-app://auth-callback"
 const YiviClientId = "yivi-wallet"
 
 type GrantHandler interface {
-	HandleGrant(s *openid4vciSession) (AccessTokenResponse, error)
+	HandleGrant(s *session) (AccessTokenResponse, error)
 }
 
 type codeResponse struct {
@@ -66,7 +66,7 @@ type pkceParameters struct {
 }
 
 // HandleGrant TODO: accept raw input, not session
-func (h *AuthorizationCodeFlowHandler) HandleGrant(s *openid4vciSession) (AccessTokenResponse, error) {
+func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenResponse, error) {
 	// TODO: split this func into doCodeRequest + doTokenRequest
 
 	// Generate the code_challenge from the code_verifier, using a method supported by the AS (if any)
@@ -260,7 +260,7 @@ type PreAuthorizedCodeFlowHandler struct {
 }
 
 // HandleGrant TODO: accept raw input, not session?
-func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (AccessTokenResponse, error) {
+func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenResponse, error) {
 	pendingAuthTokenPermissionRequestChannel := make(chan *preAuthPermissionResponse, 1)
 	defer func() {
 		pendingAuthTokenPermissionRequestChannel = nil
@@ -307,7 +307,7 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *openid4vciSession) (Access
 	return h.doTokenRequest(s, permission.transactionCode)
 }
 
-func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *openid4vciSession, transactionCode *string) (AccessTokenResponse, error) {
+func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCode *string) (AccessTokenResponse, error) {
 	values := url.Values{}
 
 	values.Add("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")

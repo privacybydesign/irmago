@@ -19,7 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 )
 
-type openid4vciSession struct {
+type session struct {
 	credentialOffer          *CredentialOffer
 	credentialIssuerMetadata *CredentialIssuerMetadata
 	requestorInfo            *irma.RequestorInfo
@@ -43,14 +43,14 @@ type openid4vciSessionIssuerSettings struct {
 	credentialRequestEncryptionKey *jwk.Key
 }
 
-// openid4vciSessionCredentialRequestPreferences contains wallet-based preferences related to the credential that will be requested
+// sessionCredentialRequestPreferences contains wallet-based preferences related to the credential that will be requested
 // We define this struct, so that we apply logic to the credential metadata, and choose the preferences from the available options, in case multiple options are offered by the issuer metadata (e.g. multiple supported encryption algorithms, or multiple supported key binding methods)
-type openid4vciSessionCredentialRequestPreferences struct {
+type sessionCredentialRequestPreferences struct {
 	cryptographicBindingMethod *proofs.CryptographicBindingMethod
 }
 
-func (s *openid4vciSession) perform() error {
-	// TODO: validate all openid4vciSession properties are correctly set
+func (s *session) perform() error {
+	// TODO: validate all session properties are correctly set
 
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
 	err := s.configureIssuerSettings()
@@ -107,7 +107,7 @@ func (s *openid4vciSession) perform() error {
 	return nil
 }
 
-func (s *openid4vciSession) configureIssuerSettings() error {
+func (s *session) configureIssuerSettings() error {
 	// Determine which grant-type to use (Authorization Code is preferred over Pre-Authorized Code)
 	if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
 		s.issuerSettings.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
@@ -172,8 +172,8 @@ func (s *openid4vciSession) configureIssuerSettings() error {
 	return nil
 }
 
-func getCredentialRequestPreferences(c CredentialConfiguration) *openid4vciSessionCredentialRequestPreferences {
-	s := &openid4vciSessionCredentialRequestPreferences{}
+func getCredentialRequestPreferences(c CredentialConfiguration) *sessionCredentialRequestPreferences {
+	s := &sessionCredentialRequestPreferences{}
 
 	if len(c.CryptographicBindingMethodsSupported) > 0 {
 		var cryptoBindingMethod proofs.CryptographicBindingMethod
@@ -192,7 +192,7 @@ func getCredentialRequestPreferences(c CredentialConfiguration) *openid4vciSessi
 	return s
 }
 
-func (s *openid4vciSession) getAuthorizationServer() (string, error) {
+func (s *session) getAuthorizationServer() (string, error) {
 	if len(s.credentialIssuerMetadata.AuthorizationServers) == 0 {
 		// Use the credential issuer as the authorization server if no authorization servers are listed in the metadata
 		return s.credentialOffer.CredentialIssuer, nil
@@ -213,7 +213,7 @@ func (s *openid4vciSession) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
-func (s *openid4vciSession) requestCredentials(accessToken string) error {
+func (s *session) requestCredentials(accessToken string) error {
 	// If the issuer provides a Nonce endpoint, we should get a fresh c_nonce here and use it in all credential requests that require proof of possession
 	var cNonce *string
 	if s.credentialIssuerMetadata.NonceEndpoint != "" {
@@ -239,7 +239,7 @@ func (s *openid4vciSession) requestCredentials(accessToken string) error {
 }
 
 // requestCredential requests a credential for the given credential configuration ID. Make sure the cNonce is provided if required (Nonce Endpoint is available) and is fresh.
-func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *string, accessToken string) error {
+func (s *session) requestCredential(credConfigId string, cNonce *string, accessToken string) error {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
 		return fmt.Errorf("credential request requires nonce but none was provided")
 	}
@@ -455,7 +455,7 @@ func (s *openid4vciSession) requestCredential(credConfigId string, cNonce *strin
 }
 
 // requestNonce requests a fresh nonce from the issuer's nonce endpoint
-func (s *openid4vciSession) requestNonce() (string, error) {
+func (s *session) requestNonce() (string, error) {
 	// TODO: implement use of DPoP nonce
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.NonceEndpoint, bytes.NewBuffer([]byte{}))
 	if err != nil {
@@ -486,7 +486,7 @@ func (s *openid4vciSession) requestNonce() (string, error) {
 }
 
 // extractScopesFromCredentialOffer finds the scopes in the issuer metadata, for the requested credential configurations from the credential offer.
-func (s *openid4vciSession) extractScopesFromCredentialOffer() []string {
+func (s *session) extractScopesFromCredentialOffer() []string {
 	var scopes []string
 	for _, configId := range s.credentialOffer.CredentialConfigurationIds {
 		config := s.credentialIssuerMetadata.CredentialConfigurationsSupported[configId]
@@ -498,7 +498,7 @@ func (s *openid4vciSession) extractScopesFromCredentialOffer() []string {
 }
 
 // extractAuthorizationDetailsJson extracts the authorization details from the credential offer and issuer metadata, and returns it as a JSON string to be included in the authorization request, if needed. If no authorization details are needed, it returns nil.
-func (s *openid4vciSession) extractAuthorizationDetailsJson() (*string, error) {
+func (s *session) extractAuthorizationDetailsJson() (*string, error) {
 	if len(s.issuerSettings.authorizationServerMetadata.AuthorizationDetailsTypesSupported) == 0 || len(s.credentialOffer.CredentialConfigurationIds) == 1 {
 		return nil, nil
 	}

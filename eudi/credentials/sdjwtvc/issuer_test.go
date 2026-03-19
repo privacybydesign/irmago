@@ -1,7 +1,6 @@
 package sdjwtvc
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -36,7 +35,6 @@ func TestNewBuilder(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotEmpty(t, sdJwt)
-	fmt.Printf("sdjwt:\n%v\n\n", sdJwt)
 }
 
 func Test_BuildSdJwtVc_ValidX509_Success(t *testing.T) {

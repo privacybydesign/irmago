@@ -28,7 +28,7 @@ type Client struct {
 	storage          *clientstorage.Storage
 	sdjwtvcStorage   irmaclient.SdJwtVcStorage
 	openid4vpClient  *irmaclient.OpenID4VPClient
-	openid4vciClient *openid4vci.OpenID4VciClient
+	openid4vciClient *openid4vci.Client
 	irmaClient       *irmaclient.IrmaClient
 	logsStorage      irmaclient.LogsStorage
 	keyBinder        sdjwtvc.KeyBinder

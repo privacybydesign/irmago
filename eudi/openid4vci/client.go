@@ -21,10 +21,10 @@ type SdJwtVcStorageClient interface {
 	VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error
 }
 
-type OpenID4VciClient struct {
+type Client struct {
 	Configuration  *eudi.Configuration
 	httpClient     *http.Client
-	currentSession *openid4vciSession
+	currentSession *session
 	sdJwtVcStorage irmaclient.SdJwtVcStorage
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 	keyBinder      sdjwtvc.KeyBinder
@@ -38,8 +38,8 @@ func NewOpenID4VciClient(httpClient *http.Client,
 	sdJwtVcStorage irmaclient.SdJwtVcStorage,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	keyBinder sdjwtvc.KeyBinder,
-) *OpenID4VciClient {
-	return &OpenID4VciClient{
+) *Client {
+	return &Client{
 		httpClient:     httpClient,
 		Configuration:  eudiConf,
 		sdJwtVcStorage: sdJwtVcStorage,
@@ -48,16 +48,16 @@ func NewOpenID4VciClient(httpClient *http.Client,
 	}
 }
 
-func (client *OpenID4VciClient) AllowInsecureHttpForTesting() {
+func (client *Client) AllowInsecureHttpForTesting() {
 	client.allowInsecureHttp = true
 }
 
-func (client *OpenID4VciClient) NewSession(credentialOfferEndpointUrl string, handler Handler) irmaclient.SessionDismisser {
+func (client *Client) NewSession(credentialOfferEndpointUrl string, handler Handler) irmaclient.SessionDismisser {
 	client.handleSessionAsync(credentialOfferEndpointUrl, handler)
 	return client
 }
 
-func (client *OpenID4VciClient) handleSessionAsync(credentialOfferEndpointUrl string, handler Handler) {
+func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, handler Handler) {
 	go func() {
 		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
 
@@ -91,7 +91,7 @@ func (client *OpenID4VciClient) handleSessionAsync(credentialOfferEndpointUrl st
 	}()
 }
 
-func (client *OpenID4VciClient) handleCredentialOffer(
+func (client *Client) handleCredentialOffer(
 	credentialOffer *CredentialOffer,
 	credentialIssuerMetadata *CredentialIssuerMetadata,
 	handler Handler,
@@ -102,7 +102,7 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 		return fmt.Errorf("failed to convert credential info list: %v", err)
 	}
 
-	client.currentSession = &openid4vciSession{
+	client.currentSession = &session{
 		credentialOffer:          credentialOffer,
 		credentialIssuerMetadata: credentialIssuerMetadata,
 		requestorInfo:            requestorInfo,
@@ -122,7 +122,7 @@ func (client *OpenID4VciClient) handleCredentialOffer(
 	return client.currentSession.perform()
 }
 
-func (client *OpenID4VciClient) validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialEndpointUrl string) (string, error) {
+func (client *Client) validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialEndpointUrl string) (string, error) {
 	parsedUrl, err := url.Parse(credentialEndpointUrl)
 
 	if err != nil {
@@ -161,7 +161,7 @@ func (client *OpenID4VciClient) validateCredentialOfferEndpointAndObtainCredenti
 	return credentialOffer, nil
 }
 
-func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJson string) (*CredentialOffer, error) {
+func (client *Client) ParseAndValidateCredentialOffer(credentialOfferJson string) (*CredentialOffer, error) {
 	var credentialOffer CredentialOffer
 	err := json.Unmarshal([]byte(credentialOfferJson), &credentialOffer)
 
@@ -196,7 +196,7 @@ func (client *OpenID4VciClient) ParseAndValidateCredentialOffer(credentialOfferJ
 	return &credentialOffer, nil
 }
 
-func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialOffer *CredentialOffer) (*CredentialIssuerMetadata, error) {
+func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *CredentialOffer) (*CredentialIssuerMetadata, error) {
 	parsedCredentialIssuerUri, err := url.Parse(credentialOffer.CredentialIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse credential issuer URI: %v", err)
@@ -297,7 +297,7 @@ func (client *OpenID4VciClient) GetAndVerifyCredentialIssuerMetadata(credentialO
 	return &credentialIssuerMetadata, nil
 }
 
-func (client *OpenID4VciClient) downloadRemoteImage(remoteImage RemoteImage) ([]byte, string, error) {
+func (client *Client) downloadRemoteImage(remoteImage RemoteImage) ([]byte, string, error) {
 	response, err := client.httpClient.Get(remoteImage.Uri)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download image %s: %v", remoteImage.Uri, err)
@@ -320,13 +320,13 @@ func (client *OpenID4VciClient) downloadRemoteImage(remoteImage RemoteImage) ([]
 	return bytes, response.Header.Get("Content-Type"), nil
 }
 
-func (client *OpenID4VciClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error {
+func (client *Client) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error {
 	// TODO: set the verification mode to Lax for testing purposes only
 	// adding an SD-JWT without having a credential type in the Yivi scheme will break the app in Lax mode
 	return irmaclient.VerifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, validateUniqueKeyBindingConfirmations, eudi.StrictSdJwtVerificationMode)
 }
 
-func (client *OpenID4VciClient) Dismiss() {
+func (client *Client) Dismiss() {
 	irma.Logger.Info("openid4vci: session dismissed")
 }
 

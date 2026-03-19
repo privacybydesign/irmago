@@ -962,7 +962,7 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 	}
 
 	holderKey := issuerSignedJwtPayload.Confirm.Jwk
-	payloadJson, err := v.verificationContext.JwtVerifier.Verify(string(kbjwt), holderKey)
+	payloadJson, err := v.verificationContext.JwtVerifier.Verify(string(kbjwt), *holderKey)
 
 	if err != nil {
 		return nil, fmt.Errorf("invalid kbjwt signature: %v (holder key: %v)", err, holderKey)
