@@ -2021,9 +2021,45 @@ func testWrongCredentialIssuedDuringDisclosure(
 		},
 	}, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes[0].RequestedValue)
 
-	// Finish the issuance session
+	// Finish the first wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, client.Type_Issuance, client.Status_Success)
+
+	// Issue a second credential with a different non-matching university value
+	wrongRequest2 := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Open University",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, wrongRequest2)
+
+	// Disclosure session updates again, still not satisfied
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// The frontend should show the latest wrongly issued credential, not the first one
+	wrongCred = plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
+	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
+	universityIdx = slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
+		return a.Id == "university"
+	})
+	require.GreaterOrEqual(t, universityIdx, 0)
+	require.Equal(t, "Open University", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+
+	// Finish the second wrong issuance session
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, client.Type_Issuance, client.Status_Success)
 
 	// Now issue the correct credential
 	correctRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
@@ -2054,7 +2090,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 
 	// Finish issuance session
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 3, client.Type_Issuance, client.Status_Success)
+	requireSessionState(t, session, 4, client.Type_Issuance, client.Status_Success)
 
 	// Grant permission and complete
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]

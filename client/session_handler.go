@@ -544,11 +544,14 @@ func createDisclosureChoicesOverview(
 }
 
 // returns the list of issued credential ids compared to the steps,
-// the last credential with the right type but wrong attribute values (only for unsatisfied steps),
-// and whether the steps are satisfied.
+// the most recently issued credential with the right type but wrong attribute values
+// (only for unsatisfied steps), and whether the steps are satisfied.
+// previousWrongHash is the hash of the wrong credential from the previous plan update,
+// used to prefer a newer wrong credential when issuance dates are equal.
 func getIssuedSinceOriginalPlan(
 	steps []IssuanceStep,
 	allCredentials []*Credential,
+	previousWrongHash string,
 ) (issued map[string]struct{}, lastWrongCredential *Credential, satisfied bool) {
 	issued = map[string]struct{}{}
 	numSatisfiedSteps := 0
@@ -568,8 +571,15 @@ func getIssuedSinceOriginalPlan(
 					break
 				}
 				// A credential with the right type exists but has wrong attribute values.
-				// Keep the last one seen so the frontend can show the most recent mismatch.
-				lastWrongCredential = c
+				// Keep the most recently issued one so the frontend can show it.
+				// When issuance dates are equal, prefer a credential that differs from the
+				// previously reported wrong credential, as it is more likely to be newly issued.
+				if lastWrongCredential == nil || c.IssuanceDate > lastWrongCredential.IssuanceDate {
+					lastWrongCredential = c
+				} else if c.IssuanceDate == lastWrongCredential.IssuanceDate &&
+					lastWrongCredential.Hash == previousWrongHash && c.Hash != previousWrongHash {
+					lastWrongCredential = c
+				}
 			}
 			if hasSatisfyingMatch {
 				issued[option.CredentialId] = struct{}{}
@@ -614,7 +624,11 @@ func createDisclosurePlan(
 		// update the existing issuance plan if it exists
 		lastIssuancePlan := oldDisclosurePlan.IssueDuringDislosure
 		if lastIssuancePlan != nil {
-			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(lastIssuancePlan.Steps, credentials)
+			var previousWrongHash string
+			if lastIssuancePlan.WrongCredentialIssued != nil {
+				previousWrongHash = lastIssuancePlan.WrongCredentialIssued.Hash
+			}
+			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(lastIssuancePlan.Steps, credentials, previousWrongHash)
 			newPlan.IssueDuringDislosure = &IssueDuringDislosure{
 				Steps:                 lastIssuancePlan.Steps,
 				IssuedCredentialIds:   issued,
