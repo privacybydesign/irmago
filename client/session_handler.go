@@ -165,12 +165,13 @@ type IssueDuringDislosure struct {
 	// The set of credential ids that have been issued during this session
 	// in order to satisfy the issuance steps.
 	IssuedCredentialIds map[string]struct{} `json:"issued_credential_ids"`
-	// Credentials that were issued with the correct type but with attribute values
+	// The last credential that was issued with the correct type but with attribute values
 	// that do not match the required/preset values from the issuance steps.
-	// The frontend can compare these credentials' attribute values against the
+	// The frontend can compare this credential's attribute values against the
 	// RequestedValue in the corresponding step option (matched by CredentialId)
-	// to show the user what went wrong.
-	WrongCredentialsIssued []*Credential `json:"wrong_credentials_issued"`
+	// to show the user what went wrong. Nil when no wrong credential has been issued,
+	// or when the step has since been satisfied by a correct credential.
+	WrongCredentialIssued *Credential `json:"wrong_credential_issued"`
 }
 
 // SessionState is a snapshot of the state of this session.
@@ -543,19 +544,17 @@ func createDisclosureChoicesOverview(
 }
 
 // returns the list of issued credential ids compared to the steps,
-// credentials with the right type but wrong attribute values (only for unsatisfied steps),
+// the last credential with the right type but wrong attribute values (only for unsatisfied steps),
 // and whether the steps are satisfied.
 func getIssuedSinceOriginalPlan(
 	steps []IssuanceStep,
 	allCredentials []*Credential,
-) (issued map[string]struct{}, wrongCredentials []*Credential, satisfied bool) {
+) (issued map[string]struct{}, lastWrongCredential *Credential, satisfied bool) {
 	issued = map[string]struct{}{}
-	seenWrong := map[string]struct{}{}
 	numSatisfiedSteps := 0
 
 	for _, step := range steps {
 		stepSatisfied := false
-		var stepWrongCredentials []*Credential
 		for _, option := range step.Options {
 			hasSatisfyingMatch := false
 			for _, c := range allCredentials {
@@ -568,11 +567,9 @@ func getIssuedSinceOriginalPlan(
 					hasSatisfyingMatch = true
 					break
 				}
-				// A credential with the right type exists but has wrong attribute values
-				if _, seen := seenWrong[c.Hash]; !seen {
-					seenWrong[c.Hash] = struct{}{}
-					stepWrongCredentials = append(stepWrongCredentials, c)
-				}
+				// A credential with the right type exists but has wrong attribute values.
+				// Keep the last one seen so the frontend can show the most recent mismatch.
+				lastWrongCredential = c
 			}
 			if hasSatisfyingMatch {
 				issued[option.CredentialId] = struct{}{}
@@ -581,9 +578,8 @@ func getIssuedSinceOriginalPlan(
 		}
 		if stepSatisfied {
 			numSatisfiedSteps += 1
-		} else {
-			// Only report wrong credentials for steps that are not yet satisfied
-			wrongCredentials = append(wrongCredentials, stepWrongCredentials...)
+			// Clear the wrong credential if this step is now satisfied
+			lastWrongCredential = nil
 		}
 	}
 
@@ -618,11 +614,11 @@ func createDisclosurePlan(
 		// update the existing issuance plan if it exists
 		lastIssuancePlan := oldDisclosurePlan.IssueDuringDislosure
 		if lastIssuancePlan != nil {
-			issued, wrongCredentials, satisfied := getIssuedSinceOriginalPlan(lastIssuancePlan.Steps, credentials)
+			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(lastIssuancePlan.Steps, credentials)
 			newPlan.IssueDuringDislosure = &IssueDuringDislosure{
-				Steps:                  lastIssuancePlan.Steps,
-				IssuedCredentialIds:    issued,
-				WrongCredentialsIssued: wrongCredentials,
+				Steps:                 lastIssuancePlan.Steps,
+				IssuedCredentialIds:   issued,
+				WrongCredentialIssued: lastWrongCredential,
 			}
 
 			// still not satisfied, so no disclosure overview should be made

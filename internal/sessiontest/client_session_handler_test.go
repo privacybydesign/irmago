@@ -705,8 +705,8 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// the wrong credential should be reported with the full credential instance
-	require.Len(t, plan.IssueDuringDislosure.WrongCredentialsIssued, 1)
-	wrongCred := plan.IssueDuringDislosure.WrongCredentialsIssued[0]
+	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
 		return a.Id == "university"
@@ -731,7 +731,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
 	// once satisfied, the wrong credential notification should be cleared
-	require.Empty(t, plan.IssueDuringDislosure.WrongCredentialsIssued)
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
 	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
 
 	// the obtainable option shows the predefined university value as RequestedValue,
@@ -1200,8 +1200,8 @@ func testDisclosureWithPredefinedValues(
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// the wrong credential should be reported with the full credential instance
-	require.Len(t, plan.IssueDuringDislosure.WrongCredentialsIssued, 1)
-	wrongCred := plan.IssueDuringDislosure.WrongCredentialsIssued[0]
+	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 	// verify the wrong credential contains the actual (non-matching) attribute value
 	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
@@ -1239,7 +1239,7 @@ func testDisclosureWithPredefinedValues(
 	)
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
 	// once satisfied, the wrong credential notification should be cleared
-	require.Empty(t, plan.IssueDuringDislosure.WrongCredentialsIssued)
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
 	// once satisfied, the option is no longer obtainable, since theorectially it doesn't matter
 	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1})
 
@@ -1975,7 +1975,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 	plan := session.DisclosurePlan
 	require.NotNil(t, plan)
 	requireIssuanceSteps(t, plan, 1)
-	require.Empty(t, plan.IssueDuringDislosure.WrongCredentialsIssued)
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
 
 	// Issue a credential with a non-matching university value
 	wrongRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
@@ -2000,8 +2000,8 @@ func testWrongCredentialIssuedDuringDisclosure(
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// The frontend is notified about the wrong credential with its full instance
-	require.Len(t, plan.IssueDuringDislosure.WrongCredentialsIssued, 1)
-	wrongCred := plan.IssueDuringDislosure.WrongCredentialsIssued[0]
+	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 
 	// Verify the credential contains all its attributes with actual values
@@ -2049,7 +2049,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
 	// Wrong credential notification is cleared once the step is satisfied
-	require.Empty(t, plan.IssueDuringDislosure.WrongCredentialsIssued)
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
 	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1})
 
 	// Finish issuance session
