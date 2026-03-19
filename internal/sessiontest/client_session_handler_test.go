@@ -69,6 +69,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"wrong credential issued during disclosure notifies frontend",
+		testWrongCredentialIssuedDuringDisclosure,
+	)
+
+	runSessionTest(t,
 		"choice between two non-singleton credentials both present",
 		testChoiceBetweenTwoNonSingletonCredentialsBothPresent,
 	)
@@ -699,6 +704,16 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
+	// the wrong credential should be reported with the full credential instance
+	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
+	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
+	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
+		return a.Id == "university"
+	})
+	require.GreaterOrEqual(t, universityIdx, 0)
+	require.Equal(t, "Some Other University", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, client.Type_Issuance, client.Status_Success)
@@ -715,6 +730,8 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		plan.IssueDuringDislosure.IssuedCredentialIds,
 	)
+	// once satisfied, the wrong credential notification should be cleared
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
 	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
 
 	// the obtainable option shows the predefined university value as RequestedValue,
@@ -1178,9 +1195,20 @@ func testDisclosureWithPredefinedValues(
 
 	plan = session.DisclosurePlan
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	// since the issued credential doens't satisfy the pre-defined value, pretend like it hasn't been issued
+	// since the issued credential doesn't satisfy the pre-defined value, pretend like it hasn't been issued
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// the wrong credential should be reported with the full credential instance
+	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
+	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
+	// verify the wrong credential contains the actual (non-matching) attribute value
+	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
+		return a.Id == "university"
+	})
+	require.GreaterOrEqual(t, universityIdx, 0)
+	require.Equal(t, "University of the Arts", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
 
 	// make sure the previous issuance session was finished
 	session = awaitSessionState(t, sessionHandler)
@@ -1210,6 +1238,8 @@ func testDisclosureWithPredefinedValues(
 		map[string]struct{}{"irma-demo.RU.studentCard": {}},
 	)
 	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	// once satisfied, the wrong credential notification should be cleared
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
 	// once satisfied, the option is no longer obtainable, since theorectially it doesn't matter
 	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1})
 
@@ -1912,6 +1942,159 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 		makeDisclosureChoice(email, email.Attributes[0].Id),
 		makeDisclosureChoice(overheid, overheid.Attributes[0].Id, overheid.Attributes[1].Id),
 	)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+}
+
+func testWrongCredentialIssuedDuringDisclosure(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Request a student card with a specific university value
+	requiredValue := "Radboud University"
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.AttributeRequest{
+					Type:  irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"),
+					Value: &requiredValue,
+				},
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+		},
+	}
+
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	requireIssuanceSteps(t, plan, 1)
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
+
+	// Issue a credential with a non-matching university value
+	wrongRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "University of the Arts",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, wrongRequest)
+
+	// Disclosure session updates but the credential doesn't satisfy the required value
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// The frontend is notified about the wrong credential with its full instance
+	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
+	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
+
+	// Verify the credential contains all its attributes with actual values
+	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
+		return a.Id == "university"
+	})
+	require.GreaterOrEqual(t, universityIdx, 0)
+	require.Equal(t, "University of the Arts", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+
+	// The step option still shows the required value so the frontend can compare
+	require.Equal(t, &client.AttributeValue{
+		Type: client.AttributeType_TranslatedString,
+		TranslatedString: &client.TranslatedString{
+			"":   requiredValue,
+			"nl": requiredValue,
+			"en": requiredValue,
+		},
+	}, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes[0].RequestedValue)
+
+	// Finish the first wrong issuance session
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Issuance, client.Status_Success)
+
+	// Issue a second credential with a different non-matching university value
+	wrongRequest2 := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Open University",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, wrongRequest2)
+
+	// Disclosure session updates again, still not satisfied
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// The frontend should show the latest wrongly issued credential, not the first one
+	wrongCred = plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
+	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
+	universityIdx = slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
+		return a.Id == "university"
+	})
+	require.GreaterOrEqual(t, universityIdx, 0)
+	require.Equal(t, "Open University", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+
+	// Finish the second wrong issuance session
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, client.Type_Issuance, client.Status_Success)
+
+	// Now issue the correct credential
+	correctRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Radboud University",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, correctRequest)
+
+	// Disclosure session now satisfiable
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Equal(t,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}},
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+	)
+	// Wrong credential notification is cleared once the step is satisfied
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1})
+
+	// Finish issuance session
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 4, client.Type_Issuance, client.Status_Success)
+
+	// Grant permission and complete
+	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, 1, makeDisclosureChoice(choice, choice.Attributes[0].Id, choice.Attributes[1].Id))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
