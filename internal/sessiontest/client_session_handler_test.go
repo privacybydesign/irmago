@@ -155,6 +155,11 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 		testIssuanceClientReturnUrl,
 	)
 
+	runSessionTest(t,
+		"random blind attributes excluded from offered credentials",
+		testRandomBlindAttributesExcludedFromOfferedCredentials,
+	)
+
 	t.Run("revocation attributes excluded from credentials", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, "postgres")
 		defer revServer.Stop()
@@ -2230,6 +2235,107 @@ func testPreExistingWrongCredentialNotReported(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_Success)
+}
+
+func testRandomBlindAttributesExcludedFromOfferedCredentials(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Issue a credential with a random blind attribute (irma-demo.stemmen.stempas)
+	issueRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas"),
+		Attributes: map[string]string{
+			"election": "plantsoen",
+		},
+	}})
+
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, issueRequest))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
+
+	// The OfferedCredentials should not include the random blind attribute "votingnumber"
+	require.Len(t, session.OfferedCredentials, 1)
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "irma-demo.stemmen.stempas", offered.CredentialId)
+	for _, attr := range offered.Attributes {
+		require.NotEqual(t, "votingnumber", attr.Id,
+			"random blind attribute should not be included in offered credentials")
+	}
+	require.Len(t, offered.Attributes, 1, "should only have election attribute, not votingnumber")
+	require.Equal(t, "election", offered.Attributes[0].Id)
+
+	// Accept the issuance
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload:   client.SessionPermissionInteractionPayload{Granted: true},
+	})
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Success)
+
+	// GetCredentials SHOULD include the random blind attribute (it has a value after issuance)
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	var stempasCred *client.Credential
+	for _, cred := range creds {
+		if cred.CredentialId == "irma-demo.stemmen.stempas" {
+			stempasCred = cred
+			break
+		}
+	}
+	require.NotNil(t, stempasCred, "should have irma-demo.stemmen.stempas credential")
+	require.Len(t, stempasCred.Attributes, 2, "GetCredentials should include both election and votingnumber")
+	attrIds := []string{stempasCred.Attributes[0].Id, stempasCred.Attributes[1].Id}
+	require.Contains(t, attrIds, "election")
+	require.Contains(t, attrIds, "votingnumber")
+
+	// Start a disclosure session for the election attribute
+	disclosureRequest := irma.NewDisclosureRequest()
+	disclosureRequest.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.stemmen.stempas.election"),
+			},
+		},
+	}
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_RequestPermission)
+
+	// The owned option shows only the requested attribute (election)
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan.DisclosureChoicesOverview)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
+	require.Len(t, owned.Attributes, 1)
+	require.Equal(t, "election", owned.Attributes[0].Id)
+
+	// Now request the votingnumber attribute directly — it should be disclosable
+	disclosureRequest2 := irma.NewDisclosureRequest()
+	disclosureRequest2.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.stemmen.stempas.votingnumber"),
+			},
+		},
+	}
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest2))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, client.Type_Disclosure, client.Status_RequestPermission)
+
+	// The random blind attribute should appear as an owned option when requested
+	plan = session.DisclosurePlan
+	require.NotNil(t, plan.DisclosureChoicesOverview)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	owned = plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
+	require.Len(t, owned.Attributes, 1)
+	require.Equal(t, "votingnumber", owned.Attributes[0].Id)
 }
 
 func testRevocationAttributesExcludedFromCredentials(
