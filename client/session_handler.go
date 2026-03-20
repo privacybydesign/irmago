@@ -171,6 +171,8 @@ type IssueDuringDislosure struct {
 	// RequestedValue in the corresponding step option (matched by CredentialId)
 	// to show the user what went wrong. Nil when no wrong credential has been issued,
 	// or when the step has since been satisfied by a correct credential.
+	// Only credentials issued during this disclosure session are considered;
+	// pre-existing credentials are excluded.
 	WrongCredentialIssued *Credential `json:"wrong_credential_issued"`
 }
 
@@ -230,10 +232,26 @@ type session struct {
 	chained                  bool
 	authCodeHandler          openid4vci.AuthCodeHandler
 	preAuthorizedCodeHandler openid4vci.TokenPermissionHandler
+	// Hashes of credentials that already existed when the disclosure plan was first created.
+	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
+	preExistingCredentialHashes map[string]struct{}
 }
 
 func (s *session) dispatchState() {
 	s.handler.UpdateSession(*s.State)
+}
+
+// snapshotPreExistingCredentials records the hashes of all credentials that exist
+// before issuance-during-disclosure begins. Only called once per session; subsequent
+// calls are no-ops so the snapshot reflects the state at plan creation time.
+func (s *session) snapshotPreExistingCredentials(credentials []*Credential) {
+	if s.preExistingCredentialHashes != nil {
+		return
+	}
+	s.preExistingCredentialHashes = make(map[string]struct{}, len(credentials))
+	for _, c := range credentials {
+		s.preExistingCredentialHashes[c.Hash] = struct{}{}
+	}
 }
 
 func (s *session) error(err error) {
@@ -362,7 +380,8 @@ func (s *session) RequestIssuancePermission(
 	if s.chained && s.State.Type != Type_Issuance {
 		s.State.DisclosurePlan = nil
 	} else {
-		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, irmaConfig, credentials, candidates)
+		s.snapshotPreExistingCredentials(credentials)
+		newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, irmaConfig, credentials, candidates, s.preExistingCredentialHashes)
 		if err != nil {
 			s.error(err)
 			return
@@ -546,11 +565,14 @@ func createDisclosureChoicesOverview(
 // returns the list of issued credential ids compared to the steps,
 // the most recently issued credential with the right type but wrong attribute values
 // (only for unsatisfied steps), and whether the steps are satisfied.
+// preExistingHashes contains hashes of credentials that existed before the disclosure session,
+// which are excluded from wrong credential detection.
 // previousWrongHash is the hash of the wrong credential from the previous plan update,
 // used to prefer a newer wrong credential when issuance dates are equal.
 func getIssuedSinceOriginalPlan(
 	steps []IssuanceStep,
 	allCredentials []*Credential,
+	preExistingHashes map[string]struct{},
 	previousWrongHash string,
 ) (issued map[string]struct{}, lastWrongCredential *Credential, satisfied bool) {
 	issued = map[string]struct{}{}
@@ -569,6 +591,11 @@ func getIssuedSinceOriginalPlan(
 				if attsStatisfied {
 					hasSatisfyingMatch = true
 					break
+				}
+				// Skip credentials that existed before the disclosure session started;
+				// only credentials issued during this session should be reported as wrong.
+				if _, preExisting := preExistingHashes[c.Hash]; preExisting {
+					continue
 				}
 				// A credential with the right type exists but has wrong attribute values.
 				// Keep the most recently issued one so the frontend can show it.
@@ -602,6 +629,7 @@ func createDisclosurePlan(
 	irmaConfig *irma.Configuration,
 	credentials []*Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
+	preExistingCredentialHashes map[string]struct{},
 ) (*DisclosurePlan, error) {
 	newPlan := &DisclosurePlan{}
 	// there's no plan yet, so make a new one
@@ -628,7 +656,9 @@ func createDisclosurePlan(
 			if lastIssuancePlan.WrongCredentialIssued != nil {
 				previousWrongHash = lastIssuancePlan.WrongCredentialIssued.Hash
 			}
-			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(lastIssuancePlan.Steps, credentials, previousWrongHash)
+			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(
+				lastIssuancePlan.Steps, credentials, preExistingCredentialHashes, previousWrongHash,
+			)
 			newPlan.IssueDuringDislosure = &IssueDuringDislosure{
 				Steps:                 lastIssuancePlan.Steps,
 				IssuedCredentialIds:   issued,
@@ -681,7 +711,8 @@ func (s *session) RequestVerificationPermission(
 		return
 	}
 
-	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates)
+	s.snapshotPreExistingCredentials(creds)
+	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates, s.preExistingCredentialHashes)
 	if err != nil {
 		s.error(err)
 		return
@@ -710,7 +741,8 @@ func (s *session) RequestSignaturePermission(request *irma.SignatureRequest,
 		return
 	}
 
-	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates)
+	s.snapshotPreExistingCredentials(creds)
+	newPlan, err := createDisclosurePlan(s.State.DisclosurePlan, s.client.irmaClient.Configuration, creds, candidates, s.preExistingCredentialHashes)
 	if err != nil {
 		s.error(err)
 		return

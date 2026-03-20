@@ -74,6 +74,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"pre-existing wrong credential is not reported as wrongly issued",
+		testPreExistingWrongCredentialNotReported,
+	)
+
+	runSessionTest(t,
 		"choice between two non-singleton credentials both present",
 		testChoiceBetweenTwoNonSingletonCredentialsBothPresent,
 	)
@@ -2098,6 +2103,128 @@ func testWrongCredentialIssuedDuringDisclosure(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Success)
+}
+
+func testPreExistingWrongCredentialNotReported(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Pre-issue a credential with a non-matching university value BEFORE the disclosure session
+	preExistingRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "University of the Arts",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, preExistingRequest)
+
+	// Finish the issuance session
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Success)
+
+	// Now start a disclosure session that requires a specific university value
+	requiredValue := "Radboud University"
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.AttributeRequest{
+					Type:  irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.university"),
+					Value: &requiredValue,
+				},
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+		},
+	}
+
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	requireIssuanceSteps(t, plan, 1)
+
+	// The pre-existing credential with the wrong value should NOT be reported as wrongly issued
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
+
+	// Now issue another wrong credential DURING the disclosure session
+	wrongDuringSession := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Open University",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, wrongDuringSession)
+
+	// Disclosure session updates
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Nil(t, plan.DisclosureChoicesOverview)
+
+	// Only the newly issued wrong credential should be reported, not the pre-existing one
+	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
+	require.NotNil(t, wrongCred)
+	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
+	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
+		return a.Id == "university"
+	})
+	require.GreaterOrEqual(t, universityIdx, 0)
+	require.Equal(t, "Open University", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+
+	// Finish the wrong issuance session
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, client.Type_Issuance, client.Status_Success)
+
+	// Issue the correct credential to complete the flow
+	correctRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+		{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
+			Attributes: map[string]string{
+				"university":        "Radboud University",
+				"studentCardNumber": "12345",
+				"studentID":         "67890",
+				"level":             "high",
+			},
+		},
+	})
+	issue(t, irmaServer, c, sessionHandler, correctRequest)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_RequestPermission)
+
+	plan = session.DisclosurePlan
+	require.Equal(t,
+		map[string]struct{}{"irma-demo.RU.studentCard": {}},
+		plan.IssueDuringDislosure.IssuedCredentialIds,
+	)
+	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
+	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1})
+
+	// Finish issuance and complete disclosure
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 4, client.Type_Issuance, client.Status_Success)
+
+	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, 2, makeDisclosureChoice(choice, choice.Attributes[0].Id, choice.Attributes[1].Id))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_Success)
 }
 
 func testSessionErrorsArePropagated(
