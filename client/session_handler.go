@@ -602,10 +602,10 @@ func getIssuedSinceOriginalPlan(
 				// When issuance dates are equal, prefer a credential that differs from the
 				// previously reported wrong credential, as it is more likely to be newly issued.
 				if lastWrongCredential == nil || c.IssuanceDate > lastWrongCredential.IssuanceDate {
-					lastWrongCredential = c
+					lastWrongCredential = filterCredentialToMismatchedAttributes(c, option.Attributes)
 				} else if c.IssuanceDate == lastWrongCredential.IssuanceDate &&
 					lastWrongCredential.Hash == previousWrongHash && c.Hash != previousWrongHash {
-					lastWrongCredential = c
+					lastWrongCredential = filterCredentialToMismatchedAttributes(c, option.Attributes)
 				}
 			}
 			if hasSatisfyingMatch {
@@ -622,6 +622,43 @@ func getIssuedSinceOriginalPlan(
 
 	satisfied = numSatisfiedSteps == len(steps)
 	return
+}
+
+// filterCredentialToMismatchedAttributes returns a copy of the credential containing only
+// the attributes that have a pre-defined requested value that doesn't match the credential's
+// actual value. Each included attribute gets the RequestedValue from the option so the
+// frontend can show both the actual and expected values side by side.
+func filterCredentialToMismatchedAttributes(cred *Credential, requestedAttrs []Attribute) *Credential {
+	requestedByID := make(map[string]*Attribute, len(requestedAttrs))
+	for i := range requestedAttrs {
+		requestedByID[requestedAttrs[i].Id] = &requestedAttrs[i]
+	}
+
+	var filtered []Attribute
+	for _, attr := range cred.Attributes {
+		req, ok := requestedByID[attr.Id]
+		if !ok || req.RequestedValue == nil || !req.RequestedValue.hasValue() {
+			continue
+		}
+		// Check if the actual value doesn't match the requested value
+		satisfied, _ := SatisfiesRequestedAttributes(
+			[]Attribute{attr},
+			[]Attribute{*req},
+		)
+		if !satisfied {
+			filtered = append(filtered, Attribute{
+				Id:             attr.Id,
+				DisplayName:    attr.DisplayName,
+				Description:    attr.Description,
+				Value:          attr.Value,
+				RequestedValue: req.RequestedValue,
+			})
+		}
+	}
+
+	result := *cred
+	result.Attributes = filtered
+	return &result
 }
 
 func createDisclosurePlan(

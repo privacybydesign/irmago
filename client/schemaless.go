@@ -52,6 +52,13 @@ type AttributeValue struct {
 	Base64Image      *string           `json:"base64_image,omitempty"`
 }
 
+// hasValue returns true if this AttributeValue carries an actual value
+// (not just a type constraint).
+func (v *AttributeValue) hasValue() bool {
+	return v.Int != nil || v.Bool != nil || v.TranslatedString != nil ||
+		len(v.Array) > 0 || len(v.Object) > 0 || v.ImagePath != nil || v.Base64Image != nil
+}
+
 type Attribute struct {
 	// Id for this attribute (only the last part in case of irma/idemix)
 	Id string `json:"id"`

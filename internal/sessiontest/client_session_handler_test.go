@@ -709,15 +709,15 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
-	// the wrong credential should be reported with the full credential instance
+	// only the mismatched pre-defined attribute should be reported
 	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
-	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
-		return a.Id == "university"
-	})
-	require.GreaterOrEqual(t, universityIdx, 0)
-	require.Equal(t, "Some Other University", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+	// only university (which has a pre-defined value that doesn't match), not level
+	require.Len(t, wrongCred.Attributes, 1)
+	require.Equal(t, "university", wrongCred.Attributes[0].Id)
+	require.Equal(t, "Some Other University", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
+	require.Equal(t, &expectedUniversityValue, wrongCred.Attributes[0].RequestedValue.TranslatedString)
 
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
@@ -1204,16 +1204,15 @@ func testDisclosureWithPredefinedValues(
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
-	// the wrong credential should be reported with the full credential instance
+	// only the mismatched pre-defined attribute should be reported
 	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
-	// verify the wrong credential contains the actual (non-matching) attribute value
-	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
-		return a.Id == "university"
-	})
-	require.GreaterOrEqual(t, universityIdx, 0)
-	require.Equal(t, "University of the Arts", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+	// only university (which has a pre-defined value that doesn't match), not studentID
+	require.Len(t, wrongCred.Attributes, 1)
+	require.Equal(t, "university", wrongCred.Attributes[0].Id)
+	require.Equal(t, "University of the Arts", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
+	require.Equal(t, &expectedValue, wrongCred.Attributes[0].RequestedValue.TranslatedString)
 
 	// make sure the previous issuance session was finished
 	session = awaitSessionState(t, sessionHandler)
@@ -2004,27 +2003,20 @@ func testWrongCredentialIssuedDuringDisclosure(
 	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
-	// The frontend is notified about the wrong credential with its full instance
+	// Only the mismatched pre-defined attribute should be reported
 	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
-
-	// Verify the credential contains all its attributes with actual values
-	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
-		return a.Id == "university"
-	})
-	require.GreaterOrEqual(t, universityIdx, 0)
-	require.Equal(t, "University of the Arts", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
-
-	// The step option still shows the required value so the frontend can compare
-	require.Equal(t, &client.AttributeValue{
-		Type: client.AttributeType_TranslatedString,
-		TranslatedString: &client.TranslatedString{
-			"":   requiredValue,
-			"nl": requiredValue,
-			"en": requiredValue,
-		},
-	}, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes[0].RequestedValue)
+	// only university (which has a pre-defined value that doesn't match), not level
+	require.Len(t, wrongCred.Attributes, 1)
+	require.Equal(t, "university", wrongCred.Attributes[0].Id)
+	require.Equal(t, "University of the Arts", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
+	expectedRequiredValue := client.TranslatedString{
+		"":   requiredValue,
+		"nl": requiredValue,
+		"en": requiredValue,
+	}
+	require.Equal(t, &expectedRequiredValue, wrongCred.Attributes[0].RequestedValue.TranslatedString)
 
 	// Finish the first wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -2056,11 +2048,9 @@ func testWrongCredentialIssuedDuringDisclosure(
 	wrongCred = plan.IssueDuringDislosure.WrongCredentialIssued
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
-	universityIdx = slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
-		return a.Id == "university"
-	})
-	require.GreaterOrEqual(t, universityIdx, 0)
-	require.Equal(t, "Open University", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+	require.Len(t, wrongCred.Attributes, 1)
+	require.Equal(t, "university", wrongCred.Attributes[0].Id)
+	require.Equal(t, "Open University", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
 
 	// Finish the second wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -2181,11 +2171,9 @@ func testPreExistingWrongCredentialNotReported(
 	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
-	universityIdx := slices.IndexFunc(wrongCred.Attributes, func(a client.Attribute) bool {
-		return a.Id == "university"
-	})
-	require.GreaterOrEqual(t, universityIdx, 0)
-	require.Equal(t, "Open University", (*wrongCred.Attributes[universityIdx].Value.TranslatedString)["en"])
+	require.Len(t, wrongCred.Attributes, 1)
+	require.Equal(t, "university", wrongCred.Attributes[0].Id)
+	require.Equal(t, "Open University", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
 
 	// Finish the wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
