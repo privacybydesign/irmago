@@ -148,6 +148,9 @@ func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
 		attributes := []Attribute{}
 
 		for _, attr := range cred.AttributeTypes {
+			if attr.RevocationAttribute {
+				continue
+			}
 			attributes = append(attributes, Attribute{
 				Id:          attr.ID,
 				DisplayName: TranslatedString(attr.Name),
@@ -270,6 +273,9 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 	attributes := []Attribute{}
 
 	for _, at := range info.AttributeTypes {
+		if at.RevocationAttribute {
+			continue
+		}
 		attributes = append(attributes, Attribute{
 			Id:          at.ID,
 			DisplayName: TranslatedString(at.Name),
@@ -326,6 +332,9 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 			attributes := []Attribute{}
 
 			for _, at := range info.AttributeTypes {
+				if at.RevocationAttribute {
+					continue
+				}
 				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
 				description := TranslatedString(at.Description)
 				if at.IsOptional() && len(attrValue) == 0 {

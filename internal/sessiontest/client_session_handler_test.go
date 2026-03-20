@@ -154,6 +154,23 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 		"client return url",
 		testIssuanceClientReturnUrl,
 	)
+
+	t.Run("revocation attributes excluded from credentials", func(t *testing.T) {
+		revServer := startRevocationServer(t, true, "postgres")
+		defer revServer.Stop()
+
+		conf := IrmaServerConfigurationWithTempStorage(t)
+		irmaServer := StartIrmaServer(t, conf)
+		defer irmaServer.Stop()
+
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+		defer keyshareServer.Stop()
+
+		c, sessionHandler := createClient(t)
+		defer c.Close()
+
+		testRevocationAttributesExcludedFromCredentials(t, irmaServer, revServer, c, sessionHandler)
+	})
 }
 
 func testSessionHandlerEdgeCases(t *testing.T) {
@@ -2213,6 +2230,96 @@ func testPreExistingWrongCredentialNotReported(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_Success)
+}
+
+func testRevocationAttributesExcludedFromCredentials(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	revServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Issue a revocable credential (irma-demo.MijnOverheid.root with RevocationKey)
+	issueRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+		RevocationKey:    "testkey",
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root"),
+		Attributes: map[string]string{
+			"BSN": "299792458",
+		},
+	}})
+	issue(t, irmaServer, c, sessionHandler, issueRequest)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Success)
+
+	// Get the credential via GetCredentials and check that the revocation attribute is present
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	var rootCred *client.Credential
+	for _, cred := range creds {
+		if cred.CredentialId == "irma-demo.MijnOverheid.root" {
+			rootCred = cred
+			break
+		}
+	}
+	require.NotNil(t, rootCred, "should have irma-demo.MijnOverheid.root credential")
+
+	// Prove that the revocation attribute (with empty ID) is currently included in the attributes
+	for _, attr := range rootCred.Attributes {
+		require.NotEmpty(t, attr.Id,
+			"revocation attribute (empty ID) should not be visible to the user")
+	}
+	require.Len(t, rootCred.Attributes, 1, "should only have BSN attribute, not the revocation attribute")
+	require.Equal(t, "BSN", rootCred.Attributes[0].Id)
+
+	// Revoke the credential on the server
+	revocationTestCred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
+	require.NoError(t, revServer.irma.Revoke(revocationTestCred, "testkey", time.Time{}))
+
+	// Trigger a disclosure session with revocation check so the client syncs its revocation state
+	bsnAttr := irma.NewAttributeTypeIdentifier("irma-demo.MijnOverheid.root.BSN")
+	disclosureRequest := irma.NewDisclosureRequest(bsnAttr)
+	disclosureRequest.Revocation = irma.NonRevocationParameters{
+		revocationTestCred: {},
+	}
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, revServer, disclosureRequest))
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, 2, session.Id)
+	require.Equal(t, client.Status_RequestPermission, session.Status)
+
+	// During disclosure permission, the owned option should show revocation status
+	// and should not include the revocation attribute
+	disclosurePlan := session.DisclosurePlan
+	require.NotNil(t, disclosurePlan.DisclosureChoicesOverview)
+	choice := disclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Equal(t, "irma-demo.MijnOverheid.root", choice.CredentialId)
+	require.True(t, choice.Revoked, "owned option should show credential as revoked during disclosure permission")
+	for _, attr := range choice.Attributes {
+		require.NotEmpty(t, attr.Id,
+			"revocation attribute (empty ID) should not be included in disclosure permission")
+	}
+
+	// Grant permission — the client will attempt to construct a proof and discover the revocation
+	grantPermission(t, c, 2, makeDisclosureChoice(choice, choice.Attributes[0].Id))
+
+	// The session should fail because the credential is revoked
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, 2, session.Id)
+	require.Equal(t, client.Status_Error, session.Status)
+
+	// After the client has synced, GetCredentials should show the credential as revoked
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+
+	rootCred = nil
+	for _, cred := range creds {
+		if cred.CredentialId == "irma-demo.MijnOverheid.root" {
+			rootCred = cred
+			break
+		}
+	}
+	require.NotNil(t, rootCred, "revoked credential should still be in GetCredentials")
+	require.True(t, rootCred.Revoked, "credential should be marked as revoked")
 }
 
 func testSessionErrorsArePropagated(
