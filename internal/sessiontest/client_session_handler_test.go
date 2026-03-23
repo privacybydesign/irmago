@@ -165,6 +165,11 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 		testTrustedPartyLogoPathsInLogs,
 	)
 
+	runSessionTest(t,
+		"attributes are ordered by displayIndex",
+		testAttributesOrderedByDisplayIndex,
+	)
+
 	t.Run("revocation attributes excluded from credentials", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, "postgres")
 		defer revServer.Stop()
@@ -2247,6 +2252,56 @@ func testPreExistingWrongCredentialNotReported(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_Success)
+}
+
+func testAttributesOrderedByDisplayIndex(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// irma-demo.RU.studentCard has displayIndex set:
+	// university=3, studentCardNumber=2, studentID=1, level=0
+	// So the expected display order is: level, studentID, studentCardNumber, university
+	expectedOrder := []string{"level", "studentID", "studentCardNumber", "university"}
+
+	// Issue the credential
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Success)
+
+	// Check GetCredentials returns attributes in displayIndex order
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	var studentCard *client.Credential
+	for _, cred := range creds {
+		if cred.CredentialId == "irma-demo.RU.studentCard" {
+			studentCard = cred
+			break
+		}
+	}
+	require.NotNil(t, studentCard)
+	require.Len(t, studentCard.Attributes, 4)
+	attrIds := make([]string, len(studentCard.Attributes))
+	for i, attr := range studentCard.Attributes {
+		attrIds[i] = attr.Id
+	}
+	require.Equal(t, expectedOrder, attrIds,
+		"GetCredentials should return attributes ordered by displayIndex")
+
+	// Check OfferedCredentials during issuance also respects displayIndex
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createStudentCardIssuanceRequest()))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Issuance, client.Status_RequestPermission)
+
+	require.Len(t, session.OfferedCredentials, 1)
+	offered := session.OfferedCredentials[0]
+	offeredAttrIds := make([]string, len(offered.Attributes))
+	for i, attr := range offered.Attributes {
+		offeredAttrIds[i] = attr.Id
+	}
+	require.Equal(t, expectedOrder, offeredAttrIds,
+		"OfferedCredentials should return attributes ordered by displayIndex")
 }
 
 func testTrustedPartyLogoPathsInLogs(
