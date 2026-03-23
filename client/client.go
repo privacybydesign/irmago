@@ -530,16 +530,13 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 				if atType.RevocationAttribute {
 					continue
 				}
-				tsVal := TranslatedString(attributeValues[atType.Index])
+				rawVal := irma.TranslatedString(attributeValues[atType.Index])
 				description := TranslatedString(atType.Description)
 				attributes = append(attributes, Attribute{
 					Id:          atType.ID,
 					DisplayName: TranslatedString(atType.Name),
 					Description: &description,
-					Value: &AttributeValue{
-						Type:             displayHintToAttributeType(atType.DisplayHint),
-						TranslatedString: &tsVal,
-					},
+					Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 				})
 			}
 
@@ -602,16 +599,13 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 			if !disclosed {
 				continue
 			}
-			tsVal := TranslatedString(attr.Value)
+			rawVal := irma.TranslatedString(attr.Value)
 			description := TranslatedString(atType.Description)
 			attributes = append(attributes, Attribute{
 				Id:          atType.ID,
 				DisplayName: TranslatedString(atType.Name),
 				Description: &description,
-				Value: &AttributeValue{
-					Type:             displayHintToAttributeType(atType.DisplayHint),
-					TranslatedString: &tsVal,
-				},
+				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 			})
 		}
 
@@ -651,16 +645,13 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 			if atType.RevocationAttribute {
 				continue
 			}
-			attrVal := TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
+			rawVal := irma.TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
 			description := TranslatedString(atType.Description)
 			attributes = append(attributes, Attribute{
 				Id:          atType.ID,
 				DisplayName: TranslatedString(atType.Name),
 				Description: &description,
-				Value: &AttributeValue{
-					Type:             displayHintToAttributeType(atType.DisplayHint),
-					TranslatedString: &attrVal,
-				},
+				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 			})
 		}
 
@@ -705,16 +696,13 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 				continue
 			}
 			v := rawVal
-			tsVal := TranslatedString(irma.NewTranslatedString(&v))
+			irmaVal := irma.NewTranslatedString(&v)
 			description := TranslatedString(atType.Description)
 			attributes = append(attributes, Attribute{
 				Id:          atType.ID,
 				DisplayName: TranslatedString(atType.Name),
 				Description: &description,
-				Value: &AttributeValue{
-					Type:             displayHintToAttributeType(atType.DisplayHint),
-					TranslatedString: &tsVal,
-				},
+				Value:       buildAttributeValue(atType.DisplayHint, &irmaVal),
 			})
 		}
 

@@ -10,29 +10,6 @@ import (
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
-// sortedAttributeTypes returns attribute types sorted by DisplayIndex.
-// Attributes with a DisplayIndex come first (ordered by index), followed by
-// those without (in their original schema order).
-func sortedAttributeTypes(attrs []*irma.AttributeType) []*irma.AttributeType {
-	sorted := make([]*irma.AttributeType, len(attrs))
-	copy(sorted, attrs)
-	slices.SortStableFunc(sorted, func(a, b *irma.AttributeType) int {
-		aHas := a.DisplayIndex != nil
-		bHas := b.DisplayIndex != nil
-		if aHas && bHas {
-			return *a.DisplayIndex - *b.DisplayIndex
-		}
-		if aHas {
-			return -1
-		}
-		if bHas {
-			return 1
-		}
-		return 0
-	})
-	return sorted
-}
-
 type TranslatedString map[string]string
 
 // CredentialFormat is a type alias for irmaclient.CredentialFormat so the two packages share the same type.
@@ -368,10 +345,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 					Id:          at.ID,
 					DisplayName: TranslatedString(at.Name),
 					Description: &description,
-					Value: &AttributeValue{
-						Type:             displayHintToAttributeType(at.DisplayHint),
-						TranslatedString: convertOptionalTranslatedString(&attrValue),
-					},
+					Value:       buildAttributeValue(at.DisplayHint, &attrValue),
 				})
 			}
 
@@ -437,6 +411,29 @@ func displayHintToAttributeType(s string) AttributeType {
 		result = AttributeType_Base64Image
 	}
 	return result
+}
+
+// buildAttributeValue creates an AttributeValue with the value in the correct field
+// based on the attribute's display hint.
+func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *AttributeValue {
+	attrType := displayHintToAttributeType(displayHint)
+	val := &AttributeValue{Type: attrType}
+	if rawValue == nil {
+		return val
+	}
+	switch attrType {
+	case AttributeType_Base64Image:
+		// For base64 images, use the untranslated value
+		s := (*rawValue)["en"]
+		if s == "" {
+			s = (*rawValue)[""]
+		}
+		val.Base64Image = &s
+	default:
+		ts := TranslatedString(*rawValue)
+		val.TranslatedString = &ts
+	}
+	return val
 }
 
 // SatisfiesRequestedAttributes checks that `given` contains everything needed to satisfy `requested`.
@@ -736,4 +733,27 @@ func credentialTypeInfoAttributesToSchemaless(attributes map[string]irma.Transla
 		i++
 	}
 	return attrs
+}
+
+// sortedAttributeTypes returns attribute types sorted by DisplayIndex.
+// Attributes with a DisplayIndex come first (ordered by index), followed by
+// those without (in their original schema order).
+func sortedAttributeTypes(attrs []*irma.AttributeType) []*irma.AttributeType {
+	sorted := make([]*irma.AttributeType, len(attrs))
+	copy(sorted, attrs)
+	slices.SortStableFunc(sorted, func(a, b *irma.AttributeType) int {
+		aHas := a.DisplayIndex != nil
+		bHas := b.DisplayIndex != nil
+		if aHas && bHas {
+			return *a.DisplayIndex - *b.DisplayIndex
+		}
+		if aHas {
+			return -1
+		}
+		if bHas {
+			return 1
+		}
+		return 0
+	})
+	return sorted
 }
