@@ -665,11 +665,11 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 		}
 
 		result = append(result, LogCredential{
-			CredentialId: credTypeId.String(),
-			Formats:      formats,
-			ImagePath:    credTypeInfo.Logo(irmaConfig),
-			Name:         TranslatedString(credTypeInfo.Name),
-			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
+			CredentialId:        credTypeId.String(),
+			Formats:             formats,
+			ImagePath:           credTypeInfo.Logo(irmaConfig),
+			Name:                TranslatedString(credTypeInfo.Name),
+			Issuer:              buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:          attributes,
 			IssuanceDate:        time.Time(cred.SignedOn).Unix(),
 			ExpiryDate:          time.Time(cred.Expires).Unix(),
@@ -724,8 +724,8 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			ImagePath:    credTypeInfo.Logo(irmaConfig),
 			Name:         TranslatedString(credTypeInfo.Name),
 			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
-			Attributes: attributes,
-			IssueURL:   convertOptionalTranslatedString(credTypeInfo.IssueURL),
+			Attributes:   attributes,
+			IssueURL:     convertOptionalTranslatedString(credTypeInfo.IssueURL),
 		})
 	}
 	return result
