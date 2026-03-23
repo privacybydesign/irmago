@@ -155,6 +155,16 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 		testIssuanceClientReturnUrl,
 	)
 
+	runSessionTest(t,
+		"random blind attributes excluded from offered credentials",
+		testRandomBlindAttributesExcludedFromOfferedCredentials,
+	)
+
+	runSessionTest(t,
+		"trusted party logo paths in issuance and disclosure logs",
+		testTrustedPartyLogoPathsInLogs,
+	)
+
 	t.Run("revocation attributes excluded from credentials", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, "postgres")
 		defer revServer.Stop()
@@ -248,6 +258,11 @@ func testSessionHandlerForOpenID4VPDisclosures(t *testing.T) {
 	runEudiSessionTest(t,
 		"multiple instances attribute ordering",
 		testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering,
+	)
+
+	runEudiSessionTest(t,
+		"unknown credential type results in error",
+		testOpenID4VP_YiviScheme_UnknownCredentialError,
 	)
 }
 
@@ -1363,7 +1378,8 @@ func testKeyshareBlocked(
 
 	// after 3 attempts we expect an error with a non-zero block duration (in seconds)
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Error)
-	require.ErrorContains(t, session.Error, "session blocked")
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "session blocked")
 	require.Equal(t, session.PinBlockedTimeSeconds, 1)
 }
 
@@ -1388,7 +1404,8 @@ func testKeyshareEnrollmentMissing(
 	require.Equal(t, session.Id, 1)
 	require.Equal(t, session.Type, client.Type_Issuance)
 	require.Equal(t, session.Status, client.Status_Error)
-	require.ErrorContains(t, session.Error, "keyshare enrollment is missing for scheme: 'test'")
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "keyshare enrollment is missing for scheme: 'test'")
 }
 
 func testDisclosureClientReturnUrl(
@@ -2232,6 +2249,173 @@ func testPreExistingWrongCredentialNotReported(
 	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_Success)
 }
 
+func testTrustedPartyLogoPathsInLogs(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Issue a credential
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Success)
+
+	// Do a disclosure session
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+			},
+		},
+	}
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_RequestPermission)
+
+	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, 2, makeDisclosureChoice(choice, choice.Attributes[0].Id))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_Success)
+
+	// Load logs and verify logo paths
+	logs, err := c.LoadNewestLogs(10)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(logs), 2)
+
+	// Find the issuance and disclosure logs
+	var issuanceLog *client.IssuanceLog
+	var disclosureLog *client.DisclosureLog
+	for i := range logs {
+		if logs[i].IssuanceLog != nil {
+			issuanceLog = logs[i].IssuanceLog
+		}
+		if logs[i].DisclosureLog != nil {
+			disclosureLog = logs[i].DisclosureLog
+		}
+	}
+
+	require.NotNil(t, issuanceLog, "should have an issuance log")
+	require.NotNil(t, disclosureLog, "should have a disclosure log")
+
+	// The credential issuer's image path should be set in the issuance log
+	require.NotEmpty(t, issuanceLog.Credentials, "issuance log should have credentials")
+	issuedCred := issuanceLog.Credentials[0]
+	require.NotNil(t, issuedCred.Issuer.ImagePath,
+		"issued credential's issuer image path should not be nil")
+	require.FileExists(t, *issuedCred.Issuer.ImagePath,
+		"issued credential's issuer image path should point to an existing file")
+
+	// The credential issuer's image path should be set in the disclosure log
+	require.NotEmpty(t, disclosureLog.Credentials, "disclosure log should have credentials")
+	disclosedCred := disclosureLog.Credentials[0]
+	require.NotNil(t, disclosedCred.Issuer.ImagePath,
+		"disclosed credential's issuer image path should not be nil")
+	require.FileExists(t, *disclosedCred.Issuer.ImagePath,
+		"disclosed credential's issuer image path should point to an existing file")
+}
+
+func testRandomBlindAttributesExcludedFromOfferedCredentials(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Issue a credential with a random blind attribute (irma-demo.stemmen.stempas)
+	issueRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{{
+		CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas"),
+		Attributes: map[string]string{
+			"election": "plantsoen",
+		},
+	}})
+
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, issueRequest))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
+
+	// The OfferedCredentials should not include the random blind attribute "votingnumber"
+	require.Len(t, session.OfferedCredentials, 1)
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "irma-demo.stemmen.stempas", offered.CredentialId)
+	for _, attr := range offered.Attributes {
+		require.NotEqual(t, "votingnumber", attr.Id,
+			"random blind attribute should not be included in offered credentials")
+	}
+	require.Len(t, offered.Attributes, 1, "should only have election attribute, not votingnumber")
+	require.Equal(t, "election", offered.Attributes[0].Id)
+
+	// Accept the issuance
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload:   client.SessionPermissionInteractionPayload{Granted: true},
+	})
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Success)
+
+	// GetCredentials SHOULD include the random blind attribute (it has a value after issuance)
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	var stempasCred *client.Credential
+	for _, cred := range creds {
+		if cred.CredentialId == "irma-demo.stemmen.stempas" {
+			stempasCred = cred
+			break
+		}
+	}
+	require.NotNil(t, stempasCred, "should have irma-demo.stemmen.stempas credential")
+	require.Len(t, stempasCred.Attributes, 2, "GetCredentials should include both election and votingnumber")
+	attrIds := []string{stempasCred.Attributes[0].Id, stempasCred.Attributes[1].Id}
+	require.Contains(t, attrIds, "election")
+	require.Contains(t, attrIds, "votingnumber")
+
+	// Start a disclosure session for the election attribute
+	disclosureRequest := irma.NewDisclosureRequest()
+	disclosureRequest.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.stemmen.stempas.election"),
+			},
+		},
+	}
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_RequestPermission)
+
+	// The owned option shows only the requested attribute (election)
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan.DisclosureChoicesOverview)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
+	require.Len(t, owned.Attributes, 1)
+	require.Equal(t, "election", owned.Attributes[0].Id)
+
+	// Now request the votingnumber attribute directly — it should be disclosable
+	disclosureRequest2 := irma.NewDisclosureRequest()
+	disclosureRequest2.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.stemmen.stempas.votingnumber"),
+			},
+		},
+	}
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest2))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, client.Type_Disclosure, client.Status_RequestPermission)
+
+	// The random blind attribute should appear as an owned option when requested
+	plan = session.DisclosurePlan
+	require.NotNil(t, plan.DisclosureChoicesOverview)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
+	owned = plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
+	require.Len(t, owned.Attributes, 1)
+	require.Equal(t, "votingnumber", owned.Attributes[0].Id)
+}
+
 func testRevocationAttributesExcludedFromCredentials(
 	t *testing.T,
 	irmaServer *IrmaServer,
@@ -2344,10 +2528,9 @@ func testSessionErrorsArePropagated(
 
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, client.Status_Error, session.Status)
-	require.EqualError(t,
-		session.Error,
-		"Error type: unknownSchemeManager\nDescription: Unknown identifiers: not, not.existing, not.existing.lol\nStatus code: 0",
-	)
+	require.NotNil(t, session.Error)
+	require.Equal(t, irma.ErrorType("unknownSchemeManager"), session.Error.ErrorType)
+	require.Equal(t, "Unknown identifiers: not, not.existing, not.existing.lol", session.Error.WrappedError)
 }
 
 func testUserCanDismissSession(
@@ -3291,4 +3474,32 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 			"level":             (*chosen.Attributes[3].Value.TranslatedString)[""],
 		},
 	})
+}
+
+func testOpenID4VP_YiviScheme_UnknownCredentialError(
+	t *testing.T,
+	_ *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	dcql := `{
+		"credentials": [
+		  {
+			"id": "unknown",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.test"] },
+			"claims": [
+			  { "id": "1", "path": ["test"] }
+			]
+		  }
+		]
+	}`
+
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
+
+	require.Equal(t, 1, session.Id)
+	require.Equal(t, client.Status_Error, session.Status)
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "test.test.test")
 }
