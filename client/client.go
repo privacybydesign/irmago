@@ -349,8 +349,8 @@ func createRemovalLog(
 ) (*irmaclient.LogEntry, error) {
 	attrs := []irma.TranslatedString{}
 
-	// loop over it in the order as defined in the scheme
-	for _, t := range irmaConfiguration.CredentialTypes[credentialType].AttributeTypes {
+	// loop over it in display order
+	for _, t := range sortedAttributeTypes(irmaConfiguration.CredentialTypes[credentialType].AttributeTypes) {
 		id := t.GetAttributeTypeIdentifier()
 		attrs = append(attrs, attributes[id])
 	}
@@ -526,11 +526,11 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 			}
 
 			attributes := []Attribute{}
-			for index, atType := range credTypeInfo.AttributeTypes {
+			for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 				if atType.RevocationAttribute {
 					continue
 				}
-				tsVal := TranslatedString(attributeValues[index])
+				tsVal := TranslatedString(attributeValues[atType.Index])
 				description := TranslatedString(atType.Description)
 				attributes = append(attributes, Attribute{
 					Id:          atType.ID,
@@ -592,9 +592,9 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 		credTypeInfo := irmaConfig.CredentialTypes[credTypeId]
 		issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
 
-		// Build attributes in schema-defined order, only for those that were disclosed
+		// Build attributes in display order, only for those that were disclosed
 		attributes := []Attribute{}
-		for _, atType := range credTypeInfo.AttributeTypes {
+		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 			if atType.RevocationAttribute {
 				continue
 			}
@@ -647,7 +647,7 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 		}
 
 		attributes := []Attribute{}
-		for _, atType := range credTypeInfo.AttributeTypes {
+		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 			if atType.RevocationAttribute {
 				continue
 			}
@@ -696,7 +696,7 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 		}
 
 		attributes := []Attribute{}
-		for _, atType := range credTypeInfo.AttributeTypes {
+		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 			if atType.RevocationAttribute {
 				continue
 			}

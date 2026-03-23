@@ -2,12 +2,36 @@ package client
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
+
+// sortedAttributeTypes returns attribute types sorted by DisplayIndex.
+// Attributes with a DisplayIndex come first (ordered by index), followed by
+// those without (in their original schema order).
+func sortedAttributeTypes(attrs []*irma.AttributeType) []*irma.AttributeType {
+	sorted := make([]*irma.AttributeType, len(attrs))
+	copy(sorted, attrs)
+	slices.SortStableFunc(sorted, func(a, b *irma.AttributeType) int {
+		aHas := a.DisplayIndex != nil
+		bHas := b.DisplayIndex != nil
+		if aHas && bHas {
+			return *a.DisplayIndex - *b.DisplayIndex
+		}
+		if aHas {
+			return -1
+		}
+		if bHas {
+			return 1
+		}
+		return 0
+	})
+	return sorted
+}
 
 type TranslatedString map[string]string
 
@@ -147,7 +171,7 @@ func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
 
 		attributes := []Attribute{}
 
-		for _, attr := range cred.AttributeTypes {
+		for _, attr := range sortedAttributeTypes(cred.AttributeTypes) {
 			if attr.RevocationAttribute {
 				continue
 			}
@@ -272,7 +296,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 	issuer := irmaConfig.Issuers[issuerId]
 	attributes := []Attribute{}
 
-	for _, at := range info.AttributeTypes {
+	for _, at := range sortedAttributeTypes(info.AttributeTypes) {
 		if at.RevocationAttribute {
 			continue
 		}
@@ -331,7 +355,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 			issuer := irmaConfig.Issuers[issuerId]
 			attributes := []Attribute{}
 
-			for _, at := range info.AttributeTypes {
+			for _, at := range sortedAttributeTypes(info.AttributeTypes) {
 				if at.RevocationAttribute {
 					continue
 				}
