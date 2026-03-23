@@ -977,6 +977,12 @@ func (client *Client) HandleUserInteraction(userInteraction SessionUserInteracti
 		session.pinHandler(payload.Proceed, payload.Pin)
 	case UI_DismissSession:
 		session.dismisser.Dismiss()
+		// Ensure the session is always marked as dismissed, regardless of protocol.
+		// Some protocol implementations (e.g. OpenID4VP) don't call Cancelled() from Dismiss().
+		if session.State.Status != Status_Dismissed {
+			session.State.Status = Status_Dismissed
+			session.dispatchState()
+		}
 	case UI_PreAuthorizedCode:
 		payload := userInteraction.Payload.(SessionPreAuthorizedCodeInteractionPayload)
 		session.preAuthorizedCodeHandler(payload.Proceed, payload.TransactionCode)

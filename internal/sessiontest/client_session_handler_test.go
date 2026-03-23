@@ -219,6 +219,16 @@ func testSessionHandlerEdgeCases(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"user can dismiss session during pin entry",
+		testUserCanDismissSessionDuringPinEntry,
+	)
+
+	runEudiSessionTest(t,
+		"user can dismiss openid4vp session",
+		testUserCanDismissOpenID4VPSession,
+	)
+
+	runSessionTest(t,
 		"chained session",
 		testChainedSession,
 	)
@@ -2601,6 +2611,73 @@ func testUserCanDismissSession(
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
 
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_DismissSession,
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_Dismissed)
+}
+
+func testUserCanDismissSessionDuringPinEntry(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Delete keyshare tokens to force a fresh keyshare authentication (pin entry)
+	c.DeleteKeyshareTokens()
+
+	// Start an issuance session that requires keyshare (test scheme)
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
+
+	// Grant permission — this will trigger a pin request from the keyshare server
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_Permission,
+		Payload:   client.SessionPermissionInteractionPayload{Granted: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPin)
+
+	// Dismiss the session while waiting for pin entry
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_DismissSession,
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Dismissed)
+}
+
+func testUserCanDismissOpenID4VPSession(
+	t *testing.T,
+	_ *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	dcql := `{
+		"credentials": [
+		  {
+			"id": "sc",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["irma-demo.RU.studentCard"] },
+			"claims": [
+			  { "id": "1", "path": ["university"] }
+			]
+		  }
+		]
+	}`
+
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
+	requireSessionState(t, session, 1, client.Type_Disclosure, client.Status_RequestPermission)
+
+	// Dismiss the OpenID4VP session
 	userInteraction(t, c, client.SessionUserInteraction{
 		SessionId: session.Id,
 		Type:      client.UI_DismissSession,
