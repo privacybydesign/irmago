@@ -201,7 +201,7 @@ type SessionState struct {
 	// The message that should be signed during this session, if any
 	MessageToSign string `json:"message_to_sign"`
 	// The error when this session has an error
-	Error *irma.SessionError `json:"error,omitempty"`
+	Error *SessionError `json:"error,omitempty"`
 	// The client return url when the app should redirect to after the session, if any
 	ClientReturnUrl string `json:"client_return_url"`
 	// If this is true then the frontend should not return to the browser after the session is done
@@ -237,6 +237,29 @@ type session struct {
 	preExistingCredentialHashes map[string]struct{}
 }
 
+// SessionError is a frontend-friendly representation of irma.SessionError.
+// Unlike irma.SessionError, the Err field is serialized as a string (WrappedError)
+// so it is available to frontends.
+type SessionError struct {
+	ErrorType    irma.ErrorType    `json:"error_type"`
+	WrappedError string            `json:"wrapped_error"`
+	Info         string            `json:"info"`
+	RemoteError  *irma.RemoteError `json:"remote_error,omitempty"`
+	RemoteStatus int               `json:"remote_status"`
+	Stack        string            `json:"stack"`
+}
+
+func newSessionError(err *irma.SessionError) *SessionError {
+	return &SessionError{
+		ErrorType:    err.ErrorType,
+		WrappedError: err.WrappedError(),
+		Info:         err.Info,
+		RemoteError:  err.RemoteError,
+		RemoteStatus: err.RemoteStatus,
+		Stack:        err.Stack(),
+	}
+}
+
 func (s *session) dispatchState() {
 	s.handler.UpdateSession(*s.State)
 }
@@ -256,11 +279,11 @@ func (s *session) snapshotPreExistingCredentials(credentials []*Credential) {
 
 func (s *session) error(err error) {
 	s.State.Status = Status_Error
-	var sessionErr *irma.SessionError
-	if errors.As(err, &sessionErr) {
-		s.State.Error = sessionErr
+	var irmaErr *irma.SessionError
+	if errors.As(err, &irmaErr) {
+		s.State.Error = newSessionError(irmaErr)
 	} else {
-		s.State.Error = &irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()}
+		s.State.Error = newSessionError(&irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()})
 	}
 	s.dispatchState()
 }

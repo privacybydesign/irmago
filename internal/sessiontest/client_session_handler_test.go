@@ -254,6 +254,11 @@ func testSessionHandlerForOpenID4VPDisclosures(t *testing.T) {
 		"multiple instances attribute ordering",
 		testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering,
 	)
+
+	runEudiSessionTest(t,
+		"unknown credential type results in error",
+		testOpenID4VP_YiviScheme_UnknownCredentialError,
+	)
 }
 
 func testOpenID4VP_YiviScheme_ComplexChoices(
@@ -1368,7 +1373,8 @@ func testKeyshareBlocked(
 
 	// after 3 attempts we expect an error with a non-zero block duration (in seconds)
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Error)
-	require.ErrorContains(t, session.Error, "session blocked")
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "session blocked")
 	require.Equal(t, session.PinBlockedTimeSeconds, 1)
 }
 
@@ -1393,7 +1399,8 @@ func testKeyshareEnrollmentMissing(
 	require.Equal(t, session.Id, 1)
 	require.Equal(t, session.Type, client.Type_Issuance)
 	require.Equal(t, session.Status, client.Status_Error)
-	require.ErrorContains(t, session.Error, "keyshare enrollment is missing for scheme: 'test'")
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "keyshare enrollment is missing for scheme: 'test'")
 }
 
 func testDisclosureClientReturnUrl(
@@ -2450,10 +2457,9 @@ func testSessionErrorsArePropagated(
 
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, client.Status_Error, session.Status)
-	require.EqualError(t,
-		session.Error,
-		"Error type: unknownSchemeManager\nDescription: Unknown identifiers: not, not.existing, not.existing.lol\nStatus code: 0",
-	)
+	require.NotNil(t, session.Error)
+	require.Equal(t, irma.ErrorType("unknownSchemeManager"), session.Error.ErrorType)
+	require.Equal(t, "Unknown identifiers: not, not.existing, not.existing.lol", session.Error.WrappedError)
 }
 
 func testUserCanDismissSession(
@@ -3397,4 +3403,32 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 			"level":             (*chosen.Attributes[3].Value.TranslatedString)[""],
 		},
 	})
+}
+
+func testOpenID4VP_YiviScheme_UnknownCredentialError(
+	t *testing.T,
+	_ *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	dcql := `{
+		"credentials": [
+		  {
+			"id": "unknown",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.test"] },
+			"claims": [
+			  { "id": "1", "path": ["test"] }
+			]
+		  }
+		]
+	}`
+
+	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	session := testSession.ClientSession
+
+	require.Equal(t, 1, session.Id)
+	require.Equal(t, client.Status_Error, session.Status)
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "test.test.test")
 }
