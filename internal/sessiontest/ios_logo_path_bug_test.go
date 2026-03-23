@@ -50,7 +50,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	require.Contains(t, log.Protocol, irmaclient.Protocol_OpenID4VP)
 
 	// require the logo of the requestor to be an existing file
-	require.FileExists(t, *log.Verifier.LogoPath)
+	require.FileExists(t, *log.Verifier.ImagePath)
 
 	c.Close()
 
@@ -77,7 +77,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	require.Contains(t, log.Protocol, irmaclient.Protocol_OpenID4VP)
 
 	// require the logo of the requestor to be an existing file
-	require.FileExists(t, *log.Verifier.LogoPath)
+	require.FileExists(t, *log.Verifier.ImagePath)
 
 	newClient.Close()
 }
@@ -108,7 +108,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_SdJwtVc)
 
 	// require the logo of the requestor to be an existing file
-	require.FileExists(t, *log.Issuer.LogoPath)
+	require.FileExists(t, *log.Issuer.ImagePath)
 
 	c.Close()
 
@@ -135,7 +135,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_SdJwtVc)
 
 	// require the logo of the requestor to be an existing file
-	require.FileExists(t, *log.Issuer.LogoPath)
+	require.FileExists(t, *log.Issuer.ImagePath)
 
 	newClient.Close()
 }

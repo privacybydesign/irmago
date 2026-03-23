@@ -25,14 +25,14 @@ type LogCredential struct {
 type DisclosureLog struct {
 	Protocol    irmaclient.Protocol `json:"protocol"`
 	Credentials []LogCredential     `json:"credentials"`
-	Verifier    *irma.RequestorInfo `json:"verifier"`
+	Verifier    *TrustedParty       `json:"verifier"`
 }
 
 type IssuanceLog struct {
 	Protocol             irmaclient.Protocol `json:"protocol"`
 	Credentials          []LogCredential     `json:"credentials"`
 	DisclosedCredentials []LogCredential     `json:"disclosed_credentials"`
-	Issuer               *irma.RequestorInfo `json:"issuer"`
+	Issuer               *TrustedParty       `json:"issuer"`
 }
 
 type RemovalLog struct {

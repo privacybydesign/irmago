@@ -433,7 +433,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 			DisclosureLog: &DisclosureLog{
 				Protocol:    irmaclient.Protocol_OpenID4VP,
 				Credentials: openid4vpCredentialLogsToLogCredentials(client.GetIrmaConfiguration(), entry.OpenID4VP.DisclosedCredentials),
-				Verifier:    requestor,
+				Verifier:    requestorInfoToTrustedPartyPtr(requestor),
 			},
 		}, nil
 	}
@@ -463,7 +463,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 		disclosureLog := &DisclosureLog{
 			Protocol:    irmaclient.Protocol_Irma,
 			Credentials: credLog,
-			Verifier:    requestor,
+			Verifier:    requestorInfoToTrustedPartyPtr(requestor),
 		}
 
 		if entry.Type == irma.ActionSigning {
@@ -509,7 +509,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 				Protocol:             irmaclient.Protocol_Irma,
 				Credentials:          issuedLog,
 				DisclosedCredentials: credLog,
-				Issuer:               requestor,
+				Issuer:               requestorInfoToTrustedPartyPtr(requestor),
 			},
 		}, nil
 

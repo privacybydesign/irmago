@@ -308,7 +308,7 @@ func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
 	require.Equal(t, latestLog.Type, irmaclient.LogType_Disclosure)
 	require.Empty(t, latestLog.DisclosureLog.Credentials)
 	require.Equal(t, latestLog.DisclosureLog.Protocol, irmaclient.Protocol_Irma)
-	require.Equal(t, latestLog.DisclosureLog.Verifier.ID, irma.NewRequestorIdentifier("test-requestors.test-requestor"))
+	require.Equal(t, latestLog.DisclosureLog.Verifier.Id, "test-requestors.test-requestor")
 }
 
 func performCompletelyOptionalDisclosure(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {

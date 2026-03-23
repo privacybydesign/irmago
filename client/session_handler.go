@@ -368,6 +368,14 @@ func requestorInfoToTrustedParty(info *irma.RequestorInfo) TrustedParty {
 	}
 }
 
+func requestorInfoToTrustedPartyPtr(info *irma.RequestorInfo) *TrustedParty {
+	if info == nil {
+		return nil
+	}
+	tp := requestorInfoToTrustedParty(info)
+	return &tp
+}
+
 func (s *session) RequestIssuancePermission(
 	request *irma.IssuanceRequest,
 	satisfiable bool,
