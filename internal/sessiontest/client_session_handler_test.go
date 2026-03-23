@@ -1362,7 +1362,7 @@ func testKeyshareBlocked(
 		},
 	})
 
-	expectedRemainingAttempts := []int{-1, 2, 1, 0}
+	expectedRemainingAttempts := []*int{nil, intPtr(2), intPtr(1), intPtr(0)}
 	for _, expected := range expectedRemainingAttempts {
 		session = awaitSessionState(t, sessionHandler)
 		requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPin)
@@ -1381,11 +1381,11 @@ func testKeyshareBlocked(
 
 	session = awaitSessionState(t, sessionHandler)
 
-	// after 3 attempts we expect an error with a non-zero block duration (in seconds)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Error)
-	require.NotNil(t, session.Error)
-	require.Contains(t, session.Error.WrappedError, "session blocked")
-	require.Equal(t, session.PinBlockedTimeSeconds, 1)
+	// after 3 attempts we expect a pin request with a non-zero block duration (in seconds)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPin)
+	require.Nil(t, session.Error)
+	require.NotNil(t, session.PinBlockedTimeSeconds)
+	require.Equal(t, 1, *session.PinBlockedTimeSeconds)
 }
 
 func testKeyshareEnrollmentMissing(
@@ -3257,6 +3257,8 @@ func denyPermission(t *testing.T, c *client.Client, sessionId int) {
 }
 
 // makeDisclosureChoice creates a disclosure selection from an owned option
+func intPtr(v int) *int { return &v }
+
 func makeDisclosureChoice(option *client.SelectableCredentialInstance, attributeIds ...string) client.DisclosureDisconSelection {
 	paths := make([][]any, len(attributeIds))
 	for i, id := range attributeIds {

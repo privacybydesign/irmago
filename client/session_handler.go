@@ -207,8 +207,8 @@ type SessionState struct {
 	// If this is true then the frontend should not return to the browser after the session is done
 	ContinueOnSecondDevice bool `json:"continue_on_second_device"`
 	// The number of attempts the user still has to enter a correct pin
-	RemainingPinAttempts  int `json:"remaining_pin_attempts"`
-	PinBlockedTimeSeconds int `json:"pin_blocked_time_seconds"`
+	RemainingPinAttempts  *int `json:"remaining_pin_attempts,omitempty"`
+	PinBlockedTimeSeconds *int `json:"pin_blocked_time_seconds,omitempty"`
 
 	// OID4VCI specific fields
 	OfferedCredentialTypes []CredentialDescriptor `json:"offered_credential_types"`
@@ -350,8 +350,9 @@ func (s *session) Failure(err *irma.SessionError) {
 }
 
 func (s *session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
-	s.State.PinBlockedTimeSeconds = duration
-	s.error(fmt.Errorf("session blocked for %v seconds for scheme '%s'", duration, manager))
+	s.State.PinBlockedTimeSeconds = &duration
+	s.State.Status = Status_RequestPin
+	s.dispatchState()
 }
 
 func (s *session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier) {
@@ -921,7 +922,11 @@ func (s *session) RequestPreAuthorizedCodeFlowPermission(
 
 func (s *session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
 	s.State.Status = Status_RequestPin
-	s.State.RemainingPinAttempts = remainingAttempts
+	if remainingAttempts >= 0 {
+		s.State.RemainingPinAttempts = &remainingAttempts
+	} else {
+		s.State.RemainingPinAttempts = nil
+	}
 	s.pinHandler = callback
 	s.dispatchState()
 }
