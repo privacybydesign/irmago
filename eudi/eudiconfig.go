@@ -10,6 +10,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const dbFilename = "yivi.db"
+
 type SdJwtVerificationMode int
 
 const (
@@ -68,89 +70,93 @@ func NewConfiguration(path string) (conf *Configuration, err error) {
 	return
 }
 
-func (conf *Configuration) EnableStagingTrustAnchors() {
-	conf.useStagingTrustAnchors = true
+func (c *Configuration) FullDatabasePath() string {
+	return filepath.Join(c.path, dbFilename)
 }
 
-func (conf *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {
-	conf.Issuers.SetCertificateVerificationMode(mode)
-	conf.Verifiers.SetCertificateVerificationMode(mode)
+func (c *Configuration) EnableStagingTrustAnchors() {
+	c.useStagingTrustAnchors = true
+}
+
+func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {
+	c.Issuers.SetCertificateVerificationMode(mode)
+	c.Verifiers.SetCertificateVerificationMode(mode)
 }
 
 // Reload assumes the latest files (trust anchors and certificate revocation lists) are downloaded.
 // Reload (re)populates the Configuration by loading the pinned trust anchors, followed by the downloaded ones.
 // Intermediate certificates are checked against the revocation list of the root certificates befor being added to the trust model.
-func (conf *Configuration) Reload() error {
-	conf.Issuers.clear()
-	conf.Verifiers.clear()
+func (c *Configuration) Reload() error {
+	c.Issuers.clear()
+	c.Verifiers.clear()
 
-	if err := conf.addProductionTrustAnchors(); err != nil {
+	if err := c.addProductionTrustAnchors(); err != nil {
 		return err
 	}
 
-	if conf.useStagingTrustAnchors {
-		if err := conf.addStagingTrustAnchors(); err != nil {
+	if c.useStagingTrustAnchors {
+		if err := c.addStagingTrustAnchors(); err != nil {
 			return err
 		}
 	}
 
 	// Read the trust anchors from storage
-	if err := conf.Issuers.Reload(); err != nil {
+	if err := c.Issuers.Reload(); err != nil {
 		return fmt.Errorf("failed to load issuer trust model: %v", err)
 	}
 
-	if err := conf.Verifiers.Reload(); err != nil {
+	if err := c.Verifiers.Reload(); err != nil {
 		return fmt.Errorf("failed to load verifier trust model: %v", err)
 	}
 
 	return nil
 }
 
-func (conf *Configuration) addProductionTrustAnchors() error {
-	conf.Issuers.addRevocationListDistributionPoints(
+func (c *Configuration) addProductionTrustAnchors() error {
+	c.Issuers.addRevocationListDistributionPoints(
 		Production_Yivi_RootCertificateRevocationListDistributionPoint,
 		Production_Yivi_IssuerCaCertificateRevocationListDistributionPoint,
 	)
 
-	conf.Verifiers.addRevocationListDistributionPoints(
+	c.Verifiers.addRevocationListDistributionPoints(
 		Production_Yivi_RootCertificateRevocationListDistributionPoint,
 		Production_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
 	)
 
 	// Read the hardcoded trust anchors
-	if err := conf.Issuers.addTrustAnchors([]byte(Production_Yivi_IssuerTrustAnchor)); err != nil {
+	if err := c.Issuers.addTrustAnchors([]byte(Production_Yivi_IssuerTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production issuer trust anchors: %v", err)
 	}
-	if err := conf.Verifiers.addTrustAnchors([]byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
+	if err := c.Verifiers.addTrustAnchors([]byte(Production_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add yivi production verifier trust anchors: %v", err)
 	}
 	return nil
 }
 
-func (conf *Configuration) addStagingTrustAnchors() error {
-	conf.Issuers.addRevocationListDistributionPoints(
+func (c *Configuration) addStagingTrustAnchors() error {
+	c.Issuers.addRevocationListDistributionPoints(
 		Staging_Yivi_RootCertificateRevocationListDistributionPoint,
 		Staging_Yivi_IssuerCaCertificateRevocationListDistributionPoint,
 	)
 
-	conf.Verifiers.addRevocationListDistributionPoints(
+	c.Verifiers.addRevocationListDistributionPoints(
 		Staging_Yivi_RootCertificateRevocationListDistributionPoint,
 		Staging_Yivi_VerifierCaCertificateRevocationListDistributionPoint,
 	)
 
 	// Read the hardcoded trust anchors
-	if err := conf.Issuers.addTrustAnchors([]byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
+	if err := c.Issuers.addTrustAnchors([]byte(Staging_Yivi_IssuerTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging issuer trust anchors: %v", err)
 	}
-	if err := conf.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
+	if err := c.Verifiers.addTrustAnchors([]byte(Staging_Yivi_VerifierTrustAnchor)); err != nil {
 		return fmt.Errorf("failed to add Yivi staging verifier trust anchors: %v", err)
 	}
 
 	return nil
 }
 
-func (conf *Configuration) ResolveVerifierLogoPath(filename string) (string, error) {
-	path := filepath.Join(conf.Verifiers.GetLogosPath(), filename)
+func (c *Configuration) ResolveVerifierLogoPath(filename string) (string, error) {
+	path := filepath.Join(c.Verifiers.GetLogosPath(), filename)
 	exists, err := common.PathExists(path)
 	if err != nil {
 		return "", err
@@ -161,18 +167,18 @@ func (conf *Configuration) ResolveVerifierLogoPath(filename string) (string, err
 	return path, nil
 }
 
-func (conf *Configuration) UpdateCertificateRevocationLists() error {
+func (c *Configuration) UpdateCertificateRevocationLists() error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	go updateWorker(conf.Issuers.syncCertificateRevocationLists, &wg)
-	go updateWorker(conf.Verifiers.syncCertificateRevocationLists, &wg)
+	go updateWorker(c.Issuers.syncCertificateRevocationLists, &wg)
+	go updateWorker(c.Verifiers.syncCertificateRevocationLists, &wg)
 
 	wg.Wait()
 
 	// TODO: implement locking on the config to pause/start the job.
 	// We should not update if we are in the middle of handling a session, because it might disrupt the session.
-	return conf.Reload()
+	return c.Reload()
 }
 
 func updateWorker(worker func(), wg *sync.WaitGroup) {

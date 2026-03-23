@@ -84,13 +84,13 @@ func New(
 	}
 
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(storage)
-	keyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
+	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
 	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &eudi.DefaultQueryValidatorFactory{})
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
 
-	openid4vpClient, err := irmaclient.NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, keyBinder, irmaStorage)
+	openid4vpClient, err := irmaclient.NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, irmaKeyBinder, irmaStorage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -103,7 +103,7 @@ func New(
 		VerifyVerifiableCredentialTypeInRequestorInfo: true,
 	}
 
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, handler, signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, keyBinder)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, handler, signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
@@ -133,13 +133,17 @@ func New(
 	}
 
 	// Initiate the OpenID4VCI client
-	openid4vciClient := openid4vci.NewOpenID4VciClient(
+	openid4vciClient, err := openid4vci.NewClient(
 		&http.Client{},
+		aesKey,
 		eudiConf,
 		sdjwtvcStorage,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci),
-		keyBinder,
 	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate openid4vci client: %v", err)
+	}
 
 	// When IRMA issuance sessions are done, an inprogress OpenID4VP session
 	// should again ask for verification permission,
@@ -153,7 +157,7 @@ func New(
 		openid4vciClient: openid4vciClient,
 		irmaClient:       irmaClient,
 		logsStorage:      irmaStorage,
-		keyBinder:        keyBinder,
+		keyBinder:        irmaKeyBinder,
 		scheduler:        scheduler,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},

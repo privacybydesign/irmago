@@ -240,7 +240,6 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 		httpClient:     ts.Client(),
 		storageClient:  mockStorageClient,
 		handler:        newMockSessionHandler(t),
-		keyBinder:      nil,
 		issuerSettings: openid4vciSessionIssuerSettings{},
 	}
 

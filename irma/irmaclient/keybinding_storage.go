@@ -63,6 +63,7 @@ func (s *BboltKeyBindingStorage) StorePrivateKeys(keys []*ecdsa.PrivateKey) erro
 				return fmt.Errorf("failed to encrypt private key: %v", err)
 			}
 
+			// Note: this will potentially overwrite existing keys with the same thumbprint without warning, but this should be very unlikely to happen in practice since thumbprints are based on the public key, and the chance of two different keys having the same thumbprint is negligible. If this does become an issue, we could add a check here to see if a key with the same thumbprint already exists and return an error if it does.
 			err = bucket.Put(thumbprint, encryptedPrivKey)
 
 			if err != nil {

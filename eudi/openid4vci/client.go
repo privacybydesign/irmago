@@ -12,6 +12,7 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/internal/storage"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -26,26 +27,39 @@ type Client struct {
 	httpClient     *http.Client
 	currentSession *session
 	sdJwtVcStorage irmaclient.SdJwtVcStorage
+	storage        *storage.Storage
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
-	keyBinder      sdjwtvc.KeyBinder
 
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
 }
 
-func NewOpenID4VciClient(httpClient *http.Client,
-	eudiConf *eudi.Configuration,
+func NewClient(httpClient *http.Client,
+	aesKey [32]byte,
+	config *eudi.Configuration,
 	sdJwtVcStorage irmaclient.SdJwtVcStorage,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
-	keyBinder sdjwtvc.KeyBinder,
-) *Client {
+) (*Client, error) {
+	if config == nil {
+		return nil, fmt.Errorf("configuration cannot be nil")
+	}
+
+	// Initialize an encrypted SQLite connection for storing EUDI related data, using the same AES key as the IrmaStorage
+	storage, err := storage.NewStorage(aesKey, config.FullDatabasePath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize eudi storage: %v", err)
+	}
+
+	// Create a KeyBinder which uses the EUDI storage
+	//keyBinder := services.NewHolderBindingKeyService(eudi.NewKeyBindingStorage(eudiStorage))
+
 	return &Client{
 		httpClient:     httpClient,
-		Configuration:  eudiConf,
+		Configuration:  config,
 		sdJwtVcStorage: sdJwtVcStorage,
+		storage:        storage,
 		holderVerifier: holderVerifier,
-		keyBinder:      keyBinder,
-	}
+	}, nil
 }
 
 func (client *Client) AllowInsecureHttpForTesting() {
@@ -110,7 +124,8 @@ func (client *Client) handleCredentialOffer(
 		handler:                  handler,
 		storageClient:            client,
 		httpClient:               client.httpClient,
-		keyBinder:                client.keyBinder,
+		storage:                  client.storage,
+		//keyBinder:                client.keyBinder,
 		// logsStorage:              client.logsStorage,
 	}
 	defer func() {

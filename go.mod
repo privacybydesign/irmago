@@ -37,7 +37,7 @@ require (
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/driver/postgres v1.5.3
 	gorm.io/driver/sqlserver v1.5.2
-	gorm.io/gorm v1.25.5
+	gorm.io/gorm v1.30.0
 )
 
 require (
@@ -77,6 +77,7 @@ require (
 	github.com/magiconair/properties v1.8.6 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/microsoft/go-mssqldb v1.6.0 // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect
@@ -105,5 +106,6 @@ require (
 	gopkg.in/ini.v1 v1.66.6 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gorm.io/driver/sqlite v1.6.0 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )

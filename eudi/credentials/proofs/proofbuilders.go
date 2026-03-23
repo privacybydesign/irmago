@@ -77,7 +77,7 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (interface{}, error) 
 		return nil, fmt.Errorf("failed to obtain pub key from priv key jwk: %v", err)
 	}
 
-	// Set public key metadata
+	// Set public key metadata that this key is meant for signature verification
 	err = pubJwk.Set(jwk.KeyUsageKey, jwk.ForSignature)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set key usage on pub jwk: %v", err)

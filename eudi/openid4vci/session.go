@@ -14,6 +14,8 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/internal/services"
+	"github.com/privacybydesign/irmago/eudi/internal/storage"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 	"github.com/privacybydesign/irmago/irma"
@@ -27,7 +29,8 @@ type session struct {
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler
-	keyBinder                sdjwtvc.KeyBinder
+	storage                  *storage.Storage
+	//keyBinder                sdjwtvc.KeyBinder
 
 	issuerSettings openid4vciSessionIssuerSettings
 }
@@ -292,8 +295,9 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 		// Create a Proof builder, matching the `proofType` from the supported proof types
 		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
 
-		proofJwts, err := s.keyBinder.CreateKeyPairsWithProofs(num, proofBuilder)
-		//proofJwts, err := s.keyBinder.CreateKeyPairsWithJwtProofs(num, alg, issuer, *credentialRequestPreferences.cryptographicBindingMethod, s.credentialIssuerMetadata.CredentialIssuer, cNonce)
+		uow := storage.NewUnitOfWork(s.storage)
+		keyBindingService := services.NewHolderBindingKeyService(uow)
+		proofJwts, err := keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
 		if err != nil {
 			return fmt.Errorf("could not create key pairs: %v", err)
 		}

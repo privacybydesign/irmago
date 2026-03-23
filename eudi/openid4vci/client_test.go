@@ -25,10 +25,10 @@ import (
 
 func createOpenID4VCiClientForTesting(t *testing.T) *Client {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	storage, err := irmaclient.NewInMemorySdJwtVcStorage()
+	sdJwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
-	addTestCredentialsToStorage(t, storage, keyBinder)
+	addTestCredentialsToStorage(t, sdJwtStorage, keyBinder)
 
 	storageFolder := test.CreateTestStorage(t)
 	testStoragePath := test.FindTestdataFolder(t)
@@ -49,7 +49,11 @@ func createOpenID4VCiClientForTesting(t *testing.T) *Client {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
-	client := NewOpenID4VciClient(&http.Client{}, conf, storage, holderVerifier, keyBinder)
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+
+	client, err := NewClient(&http.Client{}, aesKey, conf, sdJwtStorage, holderVerifier)
+	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 
 	return client
@@ -191,7 +195,6 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 
 	for key, value := range verifiedSdJwtVc.Claims.Object {
 		if value.Type != sdjwtvc.Claim_String {
-			//return nil, nil, fmt.Errorf("attribute value not a string: %v %v", key, value.Type)
 			irma.Logger.Infof("attribute value not a string, skipping attribute: %v %v", key, value.Type)
 			continue
 		}

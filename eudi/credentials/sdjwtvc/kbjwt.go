@@ -169,37 +169,7 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 }
 
 func (c *DefaultKeyBinder) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) ([]string, error) {
-	privKeys := make([]*ecdsa.PrivateKey, num)
-	proofs := make([]string, num)
-
-	for i := range num {
-		// TODO: base the choice key type on the supported algorithms in the credential configuration (proof_types_supported / proof_signing_alg_values_supported)
-		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate ecdsa private key: %v", err)
-		}
-
-		proof, err := proofBuilder.Build(privKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build proof: %v", err)
-		}
-
-		// TODO: this currently only supports the proof builder returning a string (which is the case for the JwtProofBuilder), but we need to support other types of proof in the future
-		if proofStr, ok := proof.(string); ok {
-			proofs[i] = proofStr
-		} else {
-			return nil, fmt.Errorf("proof builder did not return a string")
-		}
-
-		privKeys[i] = privKey
-	}
-
-	err := c.storage.StorePrivateKeys(privKeys)
-	if err != nil {
-		return nil, fmt.Errorf("failed to storage private keys: %v", err)
-	}
-
-	return proofs, nil
+	return nil, fmt.Errorf("func is not implemented on purpose")
 }
 
 func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error) {
