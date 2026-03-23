@@ -616,10 +616,7 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 			Formats:      []CredentialFormat{irmaclient.Format_Idemix},
 			ImagePath:    credTypeInfo.Logo(irmaConfig),
 			Name:         TranslatedString(credTypeInfo.Name),
-			Issuer: TrustedParty{
-				Id:   issuer.Identifier().String(),
-				Name: TranslatedString(issuer.Name),
-			},
+			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:   attributes,
 			IssuanceDate: issuanceTimes[credTypeId],
 			IssueURL:     convertOptionalTranslatedString(credTypeInfo.IssueURL),
@@ -668,10 +665,7 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 			Formats:      formats,
 			ImagePath:    credTypeInfo.Logo(irmaConfig),
 			Name:         TranslatedString(credTypeInfo.Name),
-			Issuer: TrustedParty{
-				Id:   issuer.Identifier().String(),
-				Name: TranslatedString(issuer.Name),
-			},
+			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:          attributes,
 			IssuanceDate:        time.Time(cred.SignedOn).Unix(),
 			ExpiryDate:          time.Time(cred.Expires).Unix(),
@@ -725,10 +719,7 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			Formats:      formats,
 			ImagePath:    credTypeInfo.Logo(irmaConfig),
 			Name:         TranslatedString(credTypeInfo.Name),
-			Issuer: TrustedParty{
-				Id:   issuer.Identifier().String(),
-				Name: TranslatedString(issuer.Name),
-			},
+			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes: attributes,
 			IssueURL:   convertOptionalTranslatedString(credTypeInfo.IssueURL),
 		})

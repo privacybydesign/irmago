@@ -160,6 +160,11 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 		testRandomBlindAttributesExcludedFromOfferedCredentials,
 	)
 
+	runSessionTest(t,
+		"trusted party logo paths in issuance and disclosure logs",
+		testTrustedPartyLogoPathsInLogs,
+	)
+
 	t.Run("revocation attributes excluded from credentials", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, "postgres")
 		defer revServer.Stop()
@@ -2242,6 +2247,72 @@ func testPreExistingWrongCredentialNotReported(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_Success)
+}
+
+func testTrustedPartyLogoPathsInLogs(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Issue a credential
+	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Success)
+
+	// Do a disclosure session
+	request := irma.NewDisclosureRequest()
+	request.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+			},
+		},
+	}
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_RequestPermission)
+
+	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, 2, makeDisclosureChoice(choice, choice.Attributes[0].Id))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, client.Type_Disclosure, client.Status_Success)
+
+	// Load logs and verify logo paths
+	logs, err := c.LoadNewestLogs(10)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(logs), 2)
+
+	// Find the issuance and disclosure logs
+	var issuanceLog *client.IssuanceLog
+	var disclosureLog *client.DisclosureLog
+	for i := range logs {
+		if logs[i].IssuanceLog != nil {
+			issuanceLog = logs[i].IssuanceLog
+		}
+		if logs[i].DisclosureLog != nil {
+			disclosureLog = logs[i].DisclosureLog
+		}
+	}
+
+	require.NotNil(t, issuanceLog, "should have an issuance log")
+	require.NotNil(t, disclosureLog, "should have a disclosure log")
+
+	// The credential issuer's image path should be set in the issuance log
+	require.NotEmpty(t, issuanceLog.Credentials, "issuance log should have credentials")
+	issuedCred := issuanceLog.Credentials[0]
+	require.NotNil(t, issuedCred.Issuer.ImagePath,
+		"issued credential's issuer image path should not be nil")
+	require.FileExists(t, *issuedCred.Issuer.ImagePath,
+		"issued credential's issuer image path should point to an existing file")
+
+	// The credential issuer's image path should be set in the disclosure log
+	require.NotEmpty(t, disclosureLog.Credentials, "disclosure log should have credentials")
+	disclosedCred := disclosureLog.Credentials[0]
+	require.NotNil(t, disclosedCred.Issuer.ImagePath,
+		"disclosed credential's issuer image path should not be nil")
+	require.FileExists(t, *disclosedCred.Issuer.ImagePath,
+		"disclosed credential's issuer image path should point to an existing file")
 }
 
 func testRandomBlindAttributesExcludedFromOfferedCredentials(
