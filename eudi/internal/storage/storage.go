@@ -8,7 +8,6 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
 	"github.com/privacybydesign/irmago/internal/common"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -21,12 +20,15 @@ type Storage struct {
 // NewStorage opens (or creates) a SQLite database at path, then auto-migrates all registered models.
 // Note: the default transaction has been DISABLED, which means, any Create or Update operation should be wrapped in a transaction (either directly or using the UnitOfWork) to ensure data integrity.
 func NewStorage(aesKey [32]byte, storagePath string) (*Storage, error) {
-	// Ensure the database file exists before opening the connection (file does not always create automatically, depending on the SQLite version and OS)
+	// Ensure the database file exists before opening the connection (file does not always create automatically,
+	// depending on the SQLite version and OS)
 	if err := common.EnsureFileExists(storagePath); err != nil {
 		return nil, fmt.Errorf("failed to ensure database file exists: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(storagePath), &gorm.Config{
+	passphrase := string(aesKey[:])
+	dsn := SQLCipherDSN(storagePath, passphrase)
+	db, err := gorm.Open(Dialector{DSN: dsn}, &gorm.Config{
 		SkipDefaultTransaction: true,
 	})
 	if err != nil {

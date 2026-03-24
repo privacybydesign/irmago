@@ -7,13 +7,16 @@ import (
 	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func newTestStore(t *testing.T) (HolderBindingKeyStore, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+
+	const passphrase = "super-secret-key-123"
+
+	dsn := SQLCipherDSN(":memory:", passphrase)
+	db, err := gorm.Open(Dialector{DSN: dsn}, &gorm.Config{})
 	require.NoError(t, err)
 
 	err = db.AutoMigrate(&models.HolderBindingKey{}, &models.ECDSAKeyMetadata{}, &models.RSAKeyMetadata{})
