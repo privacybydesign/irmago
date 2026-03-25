@@ -1,11 +1,12 @@
 package storage
 
 /*
-#cgo !android pkg-config: sqlcipher
-#cgo CFLAGS: -DSQLITE_HAS_CODEC
+#cgo !android,!windows pkg-config: sqlcipher
+#cgo windows CFLAGS: -DSQLITE_HAS_CODEC -IC://msys64/mingw64/include/sqlcipher -Wno-builtin-declaration-mismatch
+#cgo windows LDFLAGS: -LC://msys64/mingw64/lib -lsqlcipher -lcrypto -lws2_32
 #cgo android LDFLAGS: -lsqlcipher -lcrypto
-#include <sqlite3.h>
 #include <stdlib.h>
+#include <sqlite3.h>
 */
 import "C"
 
