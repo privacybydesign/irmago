@@ -205,7 +205,8 @@ func (s *sqlcipherStmt) bind(args []driver.Value) error {
 			if len(v) == 0 {
 				rc = C.sqlite3_bind_zeroblob(s.stmt, idx, 0)
 			} else {
-				rc = C.sqlite3_bind_blob(s.stmt, idx, unsafe.Pointer(&v[0]), C.int(len(v)), (*[0]byte)(C.free))
+				cBlob := C.CBytes(v)
+				rc = C.sqlite3_bind_blob(s.stmt, idx, cBlob, C.int(len(v)), (*[0]byte)(C.free))
 			}
 		default:
 			return fmt.Errorf("unsupported bind type: %T", arg)

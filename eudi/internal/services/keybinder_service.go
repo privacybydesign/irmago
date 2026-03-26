@@ -105,10 +105,8 @@ func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) error {
 			if err != nil {
 				return fmt.Errorf("failed to marshal private key to bytes: %v", err)
 			}
-			encryptedPrivKey, err := s.uow.Storage().Encrypt(privKeyBytes)
-			if err != nil {
-				return fmt.Errorf("failed to encrypt private key: %v", err)
-			}
+
+			// TODO: does not need to be encrypted anymore, as we introduced encryption at rest at the database level.
 			thumbprint, err := key.jwkPubKey.Thumbprint(crypto.SHA256)
 			if err != nil {
 				return fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
@@ -116,7 +114,7 @@ func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) error {
 
 			keyModel := &models.HolderBindingKey{
 				Algorithm:           models.KeyAlgorithmECDSA,
-				PrivateKeyEncrypted: encryptedPrivKey,
+				PrivateKey:          privKeyBytes,
 				PublicKeyThumbprint: hex.EncodeToString(thumbprint),
 				ECDSA: &models.ECDSAKeyMetadata{
 					CurveName: key.privKey.Curve.Params().Name,
