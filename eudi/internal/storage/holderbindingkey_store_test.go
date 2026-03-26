@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
+	"github.com/privacybydesign/irmago/eudi/internal/storage/sqlcipher"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -15,8 +16,8 @@ func newTestStore(t *testing.T) (HolderBindingKeyStore, *gorm.DB) {
 
 	const passphrase = "super-secret-key-123"
 
-	dsn := SQLCipherDSN(":memory:", passphrase)
-	db, err := gorm.Open(Dialector{DSN: dsn}, &gorm.Config{})
+	dsn := sqlcipher.DSN(":memory:", passphrase)
+	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
 	require.NoError(t, err)
 
 	err = db.AutoMigrate(&models.HolderBindingKey{}, &models.ECDSAKeyMetadata{}, &models.RSAKeyMetadata{})

@@ -8,6 +8,7 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/internal/storage"
 	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
+	"github.com/privacybydesign/irmago/eudi/internal/storage/sqlcipher"
 	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/gorm"
 )
@@ -28,8 +29,8 @@ func NewStorage(aesKey [32]byte, storagePath string) (*Storage, error) {
 	}
 
 	passphrase := string(aesKey[:])
-	dsn := storage.SQLCipherDSN(storagePath, passphrase)
-	db, err := gorm.Open(storage.Dialector{DSN: dsn}, &gorm.Config{
+	dsn := sqlcipher.DSN(storagePath, passphrase)
+	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{
 		SkipDefaultTransaction: true,
 	})
 	if err != nil {

@@ -1,4 +1,4 @@
-package storage
+package sqlcipher
 
 /*
 #cgo !android,!windows pkg-config: sqlcipher
@@ -344,8 +344,8 @@ func parseDateTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("not a datetime")
 }
 
-// DSN helper for building connection strings.
-func SQLCipherDSN(path, key string) string {
+// DSN builds a SQLCipher connection string. If key is empty, no encryption is used.
+func DSN(path, key string) string {
 	if key == "" {
 		return path
 	}
