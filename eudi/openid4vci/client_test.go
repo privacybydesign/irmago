@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createOpenID4VCiClientForTesting(t *testing.T) *Client {
+func createOpenID4VCiClientForTesting(t *testing.T) (*eudi.Storage, *Client) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdJwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
@@ -52,11 +52,14 @@ func createOpenID4VCiClientForTesting(t *testing.T) *Client {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	client, err := NewClient(&http.Client{}, aesKey, conf, sdJwtStorage, holderVerifier)
+	storage, err := eudi.NewStorage(aesKey, filepath.Join(storageFolder, "eudi_storage.db"))
+	require.NoError(t, err)
+
+	client, err := NewClient(&http.Client{}, storage, conf, sdJwtStorage, holderVerifier)
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 
-	return client
+	return storage, client
 }
 
 func TestOpenID4VciClient(t *testing.T) {
@@ -82,7 +85,7 @@ func TestOpenID4VciClient(t *testing.T) {
 }
 
 func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl string) {
-	client := createOpenID4VCiClientForTesting(t)
+	storage, client := createOpenID4VCiClientForTesting(t)
 
 	handler := newMockSessionHandler(t)
 	client.NewSession(credentialOfferEndpointUrl, handler)
@@ -95,6 +98,8 @@ func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl stri
 	success := handler.AwaitSessionEnd()
 
 	require.True(t, success)
+
+	storage.Close()
 }
 
 func addTestCredentialsToStorage(t *testing.T, storage irmaclient.SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {

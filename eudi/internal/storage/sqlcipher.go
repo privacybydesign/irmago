@@ -13,12 +13,6 @@ package storage
 // which can change internal struct sizes and cause crashes with Go 1.25+ cgo.
 int sqlite3_key(sqlite3 *db, const void *pKey, int nKey);
 
-// SQLITE_TRANSIENT is a macro casting -1 to a destructor function pointer,
-// which tells SQLite to make its own copy of the data. CGO cannot use the
-// macro directly, so we wrap it in a helper.
-static int bind_blob_transient(sqlite3_stmt *stmt, int idx, const void *data, int n) {
-    return sqlite3_bind_blob(stmt, idx, data, n, SQLITE_TRANSIENT);
-}
 */
 import "C"
 
@@ -224,9 +218,8 @@ func (s *sqlcipherStmt) bind(args []driver.Value) error {
 			if len(v) == 0 {
 				rc = C.sqlite3_bind_zeroblob(s.stmt, idx, 0)
 			} else {
-				// Use bind_blob_transient (SQLITE_TRANSIENT) to have SQLite copy the data,
-				// since v is Go-managed memory that must not be freed with C.free.
-				rc = C.bind_blob_transient(s.stmt, C.int(idx), unsafe.Pointer(&v[0]), C.int(len(v)))
+				cBlob := C.CBytes(v)
+				rc = C.sqlite3_bind_blob(s.stmt, idx, cBlob, C.int(len(v)), (*[0]byte)(C.free))
 			}
 		default:
 			return fmt.Errorf("unsupported bind type: %T", arg)

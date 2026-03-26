@@ -29,7 +29,7 @@ type session struct {
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler
-	storage                  *storage.Storage
+	storage                  storage.Storage
 	//keyBinder                sdjwtvc.KeyBinder
 
 	issuerSettings openid4vciSessionIssuerSettings

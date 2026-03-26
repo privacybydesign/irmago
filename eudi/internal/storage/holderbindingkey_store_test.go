@@ -29,7 +29,7 @@ func newECDSAKey() *models.HolderBindingKey {
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmECDSA,
 		PublicKeyThumbprint: "test-thumbprint-ecdsa",
-		PrivateKeyEncrypted: []byte("encrypted-private-key"),
+		PrivateKey:          []byte("encrypted-private-key"),
 		ECDSA: &models.ECDSAKeyMetadata{
 			CurveName: "P-256",
 		},
@@ -40,7 +40,7 @@ func newRSAKey() *models.HolderBindingKey {
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmRSA,
 		PublicKeyThumbprint: "test-thumbprint-rsa",
-		PrivateKeyEncrypted: []byte("encrypted-private-key"),
+		PrivateKey:          []byte("encrypted-private-key"),
 		RSA: &models.RSAKeyMetadata{
 			ModulusBits:    2048,
 			PublicExponent: 65537,
@@ -115,7 +115,7 @@ func TestStoreKey_ValidationFailsWithoutPrivateKey(t *testing.T) {
 	store, db := newTestStore(t)
 
 	key := newECDSAKey()
-	key.PrivateKeyEncrypted = nil
+	key.PrivateKey = nil
 
 	err := store.StoreKey(db, key)
 	require.Error(t, err)
