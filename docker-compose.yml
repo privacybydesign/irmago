@@ -114,7 +114,64 @@ services:
     networks:
       - irma-net
 
-  # Eudi openid4vp verifier service 
+  # OpenID4VCI issuer for integration tests (surf-veramo-agent)
+  openid4vci_issuer_postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: testpassword
+    networks:
+      irma-net:
+        aliases:
+          - openid4vci-postgres.localhost
+    ports:
+      - 5434:5432
+
+  openid4vci_issuer_postgres_init:
+    image: postgres:16-bookworm
+    environment:
+      PGHOST: openid4vci-postgres.localhost
+      PGUSER: postgres
+      PGPASSWORD: testpassword
+      PGDATABASE: postgres
+    networks:
+      - irma-net
+    depends_on:
+      - openid4vci_issuer_postgres
+    command: /bin/sh -c "sleep 3 && psql -c 'CREATE SCHEMA IF NOT EXISTS agent'"
+
+  openid4vci_issuer:
+    build:
+      context: https://github.com/eduwallet/veramo-agent.git#v1.4.1
+    command: ["yarn", "start"]
+    depends_on:
+      openid4vci_issuer_postgres_init:
+        condition: service_completed_successfully
+    volumes:
+      - ./testdata/openid4vci-issuer/conf:/app/conf
+    environment:
+      NODE_ENV: development
+      DB_TYPE: postgres
+      DB_HOST: openid4vci-postgres.localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: testpassword
+      DB_NAME: postgres
+      DB_SCHEMA: agent
+      PORT: 3000
+      LISTEN_ADDRESS: 0.0.0.0
+      BASEURL: http://localhost:8880
+      PASSPHRASE: abcdefghijklmnopqrstuvwxyz012345
+      CONF_PATH: conf
+    networks:
+      irma-net:
+        aliases:
+          - openid4vci-issuer.localhost
+    ports:
+      - 8880:3000
+
+  # Eudi openid4vp verifier service
   eudi_verifier:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.6.0
     container_name: eudi_verifier

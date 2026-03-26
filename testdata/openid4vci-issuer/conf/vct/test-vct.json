@@ -1,0 +1,23 @@
+{
+  "path": "/vct/test",
+  "credentials": [
+    "TestCredentialSdJwt"
+  ],
+  "document": {
+    "name": "Test Credential (SD-JWT)",
+    "description": "VCT metadata for integration test SD-JWT credential",
+    "language": "en",
+    "display": [
+      {
+        "lang": "en",
+        "name": "Test Credential (SD-JWT)"
+      }
+    ],
+    "claims": [
+      { "path": ["given_name"], "sd": "allowed" },
+      { "path": ["family_name"], "sd": "allowed" },
+      { "path": ["email"], "sd": "allowed" }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

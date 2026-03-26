@@ -155,16 +155,14 @@ func (client *Client) validateCredentialOfferEndpointAndObtainCredentialOfferPar
 	} else if credentialOfferUri != "" {
 		// Perform HTTP GET on the URI to obtain the Credential Offer parameters
 		response, err := client.httpClient.Get(credentialOfferUri)
-		defer func() {
-			err = response.Body.Close()
-			if err != nil {
-				irma.Logger.Warnf("failed to close credential offer response body: %v", err)
-			}
-		}()
-
 		if err != nil {
 			return "", fmt.Errorf("failed to get credential offer from Credential Offer URI: %v", err)
 		}
+		defer func() {
+			if closeErr := response.Body.Close(); closeErr != nil {
+				irma.Logger.Warnf("failed to close credential offer response body: %v", closeErr)
+			}
+		}()
 
 		credentialOfferBytes, err := io.ReadAll(response.Body)
 		if err != nil {

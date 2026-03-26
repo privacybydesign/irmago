@@ -734,6 +734,7 @@ func (client *Client) rawLogEntriesToLogInfo(entries []*irmaclient.LogEntry) ([]
 func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 	client.irmaClient.SetPreferences(prefs)
 	if prefs.DeveloperMode {
+		client.openid4vciClient.AllowInsecureHttpForTesting()
 		client.openid4vciClient.Configuration.SetCertificateVerificationMode(eudi.DeveloperModeCertificateVerification)
 		client.openid4vpClient.Configuration.EnableStagingTrustAnchors()
 

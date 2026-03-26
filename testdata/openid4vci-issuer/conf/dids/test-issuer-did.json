@@ -1,0 +1,6 @@
+{
+  "alias": "test-issuer-did",
+  "provider": "did:jwk",
+  "type": "ed25519",
+  "services": []
+}
