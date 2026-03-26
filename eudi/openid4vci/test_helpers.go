@@ -33,8 +33,8 @@ func (h *MockSessionHandler) AwaitSessionEnd() bool {
 	return <-h.sessionEndChannel
 }
 
-func (h *MockSessionHandler) AwaitAuthCodeRequest() TokenHandler {
-	return <-h.tokenRequestChannel
+func (h *MockSessionHandler) AwaitAuthCodeRequest() AuthCodeHandler {
+	return <-h.authCodeRequestChannel
 }
 
 func (h *MockSessionHandler) Success(result string) {
