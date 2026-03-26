@@ -94,7 +94,7 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 	return &info, verifiedSdJwtVc, nil
 }
 
-// verifyAndStoreSdJwts verifies the SD-JWTs and stores them in the SdJwtVcStorage.
+// VerifyAndStoreSdJwtVcKbs verifies the SD-JWTs and stores them in the SdJwtVcStorage.
 // SD-JWTs that are batch-issued should all have the exact same credential info (issuer, id, signedOn, expires, etc.), otherwise they cannot be stored together correctly.
 func VerifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJwtVcStorage, holderVerifier *sdjwtvc.HolderVerificationProcessor, validateUniqueKeyBindingConfirmations bool, mode eudi.SdJwtVerificationMode) error {
 	// TODO: this function should be private, but it's currently needed for both IRMA and OID4VCI. Once the storage is split between IRMA and OID4VCI, this function should be made private and moved to the appropriate package, and the OID4VCI code should not call the IRMA client code to store the SD-JWTs in the storage

@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// For now, we implement the KeyBinder interface, so we can easily get started.
+// HolderBindingKeyService implements the KeyBinder interface.
 // This will be refactored later to use the HolderBindingKeyStore and be more decoupled from the sdjwtvc package, so we can also use it for other purposes if needed.
 type HolderBindingKeyService interface {
 }

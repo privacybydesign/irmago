@@ -25,6 +25,7 @@ type codeResponse struct {
 	code              *string
 }
 
+// AccessTokenResponse handles the authorization of credential configurations.
 // TODO: we need to handle the authorization of MULTIPLE instances of the same credential configuration
 // i.e. we might have 2+ of the same credentials available, with different claim values.
 // The user needs to choose which credential(s) to add to the wallet?

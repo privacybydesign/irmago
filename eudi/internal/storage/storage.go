@@ -35,7 +35,7 @@ func NewStorage(aesKey [32]byte, storagePath string) (*Storage, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// TODO: seperate the migration logic from the storage initialization logic, so that we can run migrations without needing to initialize the whole storage
+	// TODO: separate the migration logic from the storage initialization logic, so that we can run migrations without needing to initialize the whole storage
 	// This will also save us from executing migrations every time we're creating UnitOfWork instances (which will create new repositories, which will otherwise auto-migrate their models if needed)
 
 	db.AutoMigrate(

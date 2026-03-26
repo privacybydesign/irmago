@@ -2,7 +2,7 @@ package openid4vci
 
 import "github.com/privacybydesign/irmago/irma"
 
-// CodeHandler is a callback for providing the authorization code from the app side
+// AuthCodeHandler is a callback for providing the authorization code from the app side.
 type AuthCodeHandler func(proceed bool, code *string)
 
 // TokenHandler is a callback for providing the access token (and optionally refresh token)
