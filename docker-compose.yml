@@ -141,13 +141,30 @@ services:
       - openid4vci_issuer_postgres
     command: /bin/sh -c "sleep 3 && psql -c 'CREATE SCHEMA IF NOT EXISTS agent'"
 
+  openid4vci_mock_authorization_server:
+    build:
+      context: ./testdata/openid4vci-issuer/mock-as
+    environment:
+      LISTEN_ADDR: "0.0.0.0:9090"
+      EXTERNAL_URL: "http://localhost:9090"
+    networks:
+      irma-net:
+        aliases:
+          - mock-authorization-server.localhost
+    ports:
+      - 9090:9090
+
   openid4vci_issuer:
     build:
       context: https://github.com/eduwallet/veramo-agent.git#v1.4.1
     command: ["yarn", "start"]
+    extra_hosts:
+      - "localhost:host-gateway"
     depends_on:
       openid4vci_issuer_postgres_init:
         condition: service_completed_successfully
+      openid4vci_mock_authorization_server:
+        condition: service_started
     volumes:
       - ./testdata/openid4vci-issuer/conf:/app/conf
     environment:
