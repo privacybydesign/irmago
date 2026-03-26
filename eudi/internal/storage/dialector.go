@@ -34,6 +34,10 @@ func (d Dialector) Initialize(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	// SQLite/SQLCipher requires a single connection to avoid issues with
+	// in-memory databases (each connection gets its own database) and
+	// to prevent concurrent access crashes.
+	sqlDB.SetMaxOpenConns(1)
 	db.ConnPool = sqlDB
 
 	// Verify the connection works (triggers key validation)

@@ -7,6 +7,11 @@ package storage
 #cgo android LDFLAGS: -lsqlcipher -lcrypto
 #include <stdlib.h>
 #include <sqlite3.h>
+
+// sqlite3_key is declared behind #ifdef SQLITE_HAS_CODEC in sqlcipher's sqlite3.h.
+// We declare it explicitly here to avoid defining SQLITE_HAS_CODEC globally,
+// which can change internal struct sizes and cause crashes with Go 1.25+ cgo.
+int sqlite3_key(sqlite3 *db, const void *pKey, int nKey);
 */
 import "C"
 
@@ -162,7 +167,12 @@ type sqlcipherStmt struct {
 }
 
 func (s *sqlcipherStmt) Close() error {
-	rc := C.sqlite3_finalize(s.stmt)
+	if s.stmt == nil {
+		return nil
+	}
+	stmt := s.stmt
+	s.stmt = nil
+	rc := C.sqlite3_finalize(stmt)
 	if rc != C.SQLITE_OK {
 		return fmt.Errorf("finalize: %s", C.GoString(C.sqlite3_errmsg(s.conn.handle)))
 	}
