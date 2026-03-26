@@ -25,9 +25,9 @@ func (d Dialector) Name() string {
 func (d Dialector) Initialize(db *gorm.DB) error {
 	// Register callbacks
 	callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{
-		CreateClauses: []string{"INSERT", "VALUES", "ON CONFLICT", "RETURNING"},
-		UpdateClauses: []string{"UPDATE", "SET", "FROM", "WHERE", "RETURNING"},
-		DeleteClauses: []string{"DELETE", "FROM", "WHERE", "RETURNING"},
+		CreateClauses: []string{"INSERT", "VALUES", "ON CONFLICT"},
+		UpdateClauses: []string{"UPDATE", "SET", "FROM", "WHERE"},
+		DeleteClauses: []string{"DELETE", "FROM", "WHERE"},
 	})
 
 	sqlDB, err := sql.Open("sqlcipher", d.DSN)
