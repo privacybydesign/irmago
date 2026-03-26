@@ -247,7 +247,14 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 		return fmt.Errorf("credential request requires nonce but none was provided")
 	}
 
-	credentialConfig := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
+	credentialConfig, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
+	if !ok {
+		return fmt.Errorf("credential configuration %q not found in issuer metadata", credConfigId)
+	}
+
+	if err := credentialConfig.ValidateSupportedFeatures(); err != nil {
+		return fmt.Errorf("credential configuration %q is not supported: %v", credConfigId, err)
+	}
 
 	// TODO: determine credential specific settings (like cryptographic key binding requirements) based on the credential configuration metadata, and pass those to the requestCredential function
 	credentialRequestPreferences := getCredentialRequestPreferences(credentialConfig)
