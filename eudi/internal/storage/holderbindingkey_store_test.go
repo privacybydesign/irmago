@@ -5,15 +5,19 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
+	"github.com/privacybydesign/irmago/eudi/internal/storage/sqlcipher"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func newTestStore(t *testing.T) (HolderBindingKeyStore, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+
+	const passphrase = "super-secret-key-123"
+
+	dsn := sqlcipher.DSN(":memory:", passphrase)
+	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
 	require.NoError(t, err)
 
 	err = db.AutoMigrate(&models.HolderBindingKey{}, &models.ECDSAKeyMetadata{}, &models.RSAKeyMetadata{})
@@ -26,7 +30,7 @@ func newECDSAKey() *models.HolderBindingKey {
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmECDSA,
 		PublicKeyThumbprint: "test-thumbprint-ecdsa",
-		PrivateKeyEncrypted: []byte("encrypted-private-key"),
+		PrivateKey:          []byte("encrypted-private-key"),
 		ECDSA: &models.ECDSAKeyMetadata{
 			CurveName: "P-256",
 		},
@@ -37,7 +41,7 @@ func newRSAKey() *models.HolderBindingKey {
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmRSA,
 		PublicKeyThumbprint: "test-thumbprint-rsa",
-		PrivateKeyEncrypted: []byte("encrypted-private-key"),
+		PrivateKey:          []byte("encrypted-private-key"),
 		RSA: &models.RSAKeyMetadata{
 			ModulusBits:    2048,
 			PublicExponent: 65537,
@@ -112,7 +116,7 @@ func TestStoreKey_ValidationFailsWithoutPrivateKey(t *testing.T) {
 	store, db := newTestStore(t)
 
 	key := newECDSAKey()
-	key.PrivateKeyEncrypted = nil
+	key.PrivateKey = nil
 
 	err := store.StoreKey(db, key)
 	require.Error(t, err)

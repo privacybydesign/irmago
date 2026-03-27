@@ -29,6 +29,43 @@ You can run the `irma keyshare` services locally using the test configuration in
     # To run the MyIRMA backend server
     docker-compose run -p 8081:8081 yivi irma keyshare myirmaserver -c ./testdata/configurations/myirmaserver.yml
 
+## Prerequisites
+
+### SQLCipher
+
+The EUDI (European Digital Identity) client code uses [SQLCipher](https://www.zetetic.net/sqlcipher/) to provide encrypted-at-rest SQLite storage for sensitive data such as holder binding keys and key metadata. SQLCipher encrypts the entire database file, ensuring credentials and cryptographic material are protected when not in use.
+
+This prerequisite is only relevant if you are building or developing the EUDI client library (`client`). If you are only running the `yivi` server or command line tool, you can skip this section.
+
+Because SQLCipher relies on CGO bindings, you need to have the SQLCipher library and its development headers installed on your system before building.
+
+**macOS** (using Homebrew):
+
+    brew install sqlcipher
+
+**Debian/Ubuntu**:
+
+    sudo apt-get install libsqlcipher-dev
+
+**Fedora/RHEL**:
+
+    sudo dnf install sqlcipher-devel
+
+You can verify the installation by running:
+
+    pkg-config --libs sqlcipher
+
+## SQLCipher on Windows
+
+    Installing SQLCipher for Windows can be done in 2 steps:
+    - Install MSYS2 via https://github.com/msys2/msys2-installer/, make sure the install path is `C:\msys64\`
+    - Add the path `C:\msys64\user\bin` to your PATH environment variable
+    - Install SQLCipher using `pacman`:  `pacman -S mingw-w64-x86_64-sqlcipher`
+    - Verify installation by running `sqlcipher` in a new CMD/PowerShell windows
+
+
+> **Note:** Pre-compiled release binaries are built with `CGO_ENABLED=0` and do not include SQLCipher. This prerequisite only applies when building from source.
+
 ## Installing
 ### Using Go
 To install the latest released version of the `yivi` command line tool using Go, you do the following.

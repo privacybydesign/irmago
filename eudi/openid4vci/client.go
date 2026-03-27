@@ -12,7 +12,6 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/internal/storage"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -27,7 +26,7 @@ type Client struct {
 	httpClient     *http.Client
 	currentSession *session
 	sdJwtVcStorage irmaclient.SdJwtVcStorage
-	storage        *storage.Storage
+	storage        *eudi.Storage
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
 	// Allow non-HTTPS for testing purposes
@@ -35,19 +34,13 @@ type Client struct {
 }
 
 func NewClient(httpClient *http.Client,
-	aesKey [32]byte,
+	storage *eudi.Storage,
 	config *eudi.Configuration,
 	sdJwtVcStorage irmaclient.SdJwtVcStorage,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
-	}
-
-	// Initialize an encrypted SQLite connection for storing EUDI related data, using the same AES key as the IrmaStorage
-	storage, err := storage.NewStorage(aesKey, config.FullDatabasePath())
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize eudi storage: %v", err)
 	}
 
 	// Create a KeyBinder which uses the EUDI storage

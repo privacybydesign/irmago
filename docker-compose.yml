@@ -78,7 +78,8 @@ services:
 
   # Service to run unit tests
   test:
-    image: golang:1
+    build:
+      dockerfile: Dockerfile.test
     # Add a test profile to prevent this service to be included when running docker-compose up.
     profiles:
       - test

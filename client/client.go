@@ -26,6 +26,7 @@ import (
 
 type Client struct {
 	storage          *clientstorage.Storage
+	eudiStorage      *eudi.Storage
 	sdjwtvcStorage   irmaclient.SdJwtVcStorage
 	openid4vpClient  *irmaclient.OpenID4VPClient
 	openid4vciClient *openid4vci.Client
@@ -132,10 +133,16 @@ func New(
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
 	}
 
+	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
+	eudiStorage, err := eudi.NewStorage(aesKey, eudiConf.FullDatabasePath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
+	}
+
 	// Initiate the OpenID4VCI client
 	openid4vciClient, err := openid4vci.NewClient(
 		&http.Client{},
-		aesKey,
+		eudiStorage,
 		eudiConf,
 		sdjwtvcStorage,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci),
@@ -153,6 +160,7 @@ func New(
 	client := &Client{
 		storage:          storage,
 		sdjwtvcStorage:   sdjwtvcStorage,
+		eudiStorage:      eudiStorage,
 		openid4vpClient:  openid4vpClient,
 		openid4vciClient: openid4vciClient,
 		irmaClient:       irmaClient,
@@ -173,6 +181,7 @@ func New(
 func (client *Client) Close() error {
 	client.scheduler.Shutdown()
 	client.irmaClient.Close()
+	client.eudiStorage.Close()
 	return client.storage.Close()
 }
 
