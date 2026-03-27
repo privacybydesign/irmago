@@ -83,10 +83,20 @@ func didWebToURL(didWeb string) (string, error) {
 		return "", fmt.Errorf("did:web: failed to decode host %q: %w", parts[0], err)
 	}
 
+	// Use HTTP for localhost (development/testing), HTTPS for everything else.
+	scheme := "https"
+	hostname := host
+	if colonIdx := strings.LastIndex(host, ":"); colonIdx != -1 {
+		hostname = host[:colonIdx]
+	}
+	if hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1" {
+		scheme = "http"
+	}
+
 	var rawURL string
 	if len(parts) == 1 {
 		// No explicit path → use well-known location.
-		rawURL = "https://" + host + "/.well-known/did.json"
+		rawURL = scheme + "://" + host + "/.well-known/did.json"
 	} else {
 		// Percent-decode each path segment and join with "/".
 		pathSegments := make([]string, 0, len(parts)-1)
@@ -98,7 +108,7 @@ func didWebToURL(didWeb string) (string, error) {
 			pathSegments = append(pathSegments, decoded)
 		}
 		path := strings.Join(pathSegments, "/")
-		rawURL = "https://" + host + "/" + path + "/did.json"
+		rawURL = scheme + "://" + host + "/" + path + "/did.json"
 	}
 
 	// Validate the resulting URL.

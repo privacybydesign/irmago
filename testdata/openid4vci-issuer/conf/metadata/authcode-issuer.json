@@ -6,6 +6,13 @@
       "format": "vc+sd-jwt",
       "scope": "TestCredentialSdJwt",
       "extends": "TestCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
       "display": [
         {
           "name": "Test Credential (SD-JWT, Auth Code)",

@@ -39,6 +39,21 @@ func Test_didWebToURL(t *testing.T) {
 			expectedURL: "https://example.com/issuer/did.json",
 		},
 		{
+			name:        "localhost uses HTTP",
+			did:         "did:web:localhost%3A8880",
+			expectedURL: "http://localhost:8880/.well-known/did.json",
+		},
+		{
+			name:        "localhost with path uses HTTP",
+			did:         "did:web:localhost%3A8880:issuer",
+			expectedURL: "http://localhost:8880/issuer/did.json",
+		},
+		{
+			name:        "127.0.0.1 uses HTTP",
+			did:         "did:web:127.0.0.1%3A8880",
+			expectedURL: "http://127.0.0.1:8880/.well-known/did.json",
+		},
+		{
 			name:        "missing did:web prefix",
 			did:         "did:jwk:abc",
 			expectError: true,

@@ -57,7 +57,7 @@ func testOpenId4VciPreAuthFlowReachesPermission(t *testing.T) {
 	offer := createPreAuthOffer(t)
 
 	startOpenID4VCISession(t, c, offer.URI)
-	session := awaitWithTimeout(t, sessionHandler.SessionChan, 30*time.Second)
+	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, irmaclient.Protocol_OpenID4VCI, session.Protocol)
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
@@ -68,9 +68,10 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	defer c.Close()
 
 	offer := createPreAuthOffer(t)
+	fmt.Printf("offer: %v\n", offer)
 
 	startOpenID4VCISession(t, c, offer.URI)
-	session := awaitWithTimeout(t, sessionHandler.SessionChan, 30*time.Second)
+	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
 
 	userInteraction(t, c, client.SessionUserInteraction{
@@ -79,13 +80,14 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		Payload:   client.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
 	})
 
-	// The test issuer uses did:jwk which is not yet fully supported for credential
-	// verification, so the client session errors after receiving the credential.
-	// Verify the server-side flow completed successfully.
-	_ = awaitWithTimeout(t, sessionHandler.SessionChan, 30*time.Second)
+	// The test issuer uses did:web, so full credential verification should work.
+	session = awaitSessionState(t, sessionHandler)
+	fmt.Printf("error: %v\n", session.Error)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
+
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
-		"server should have issued the credential, even if client verification fails")
+		"server should have issued the credential via pre-authorized code flow")
 }
 
 func testOpenId4VciPreAuthFlowCanBeDismissed(t *testing.T) {
@@ -146,7 +148,7 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		},
 	})
 
-	// Credential verification will fail (did:jwk), but the server-side flow should complete.
+	// The authcode issuer uses did:web, so full credential verification should work.
 	_ = awaitWithTimeout(t, sessionHandler.SessionChan, 30*time.Second)
 	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
