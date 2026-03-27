@@ -114,7 +114,9 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 	})
 
 	// The test issuer uses did:web, so full credential verification should work.
-	_ = awaitWithTimeout(t, sessionHandler.SessionChan, 30*time.Second)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
+
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
 		"server should have issued the credential via pre-authorized code flow with tx_code")
@@ -141,10 +143,12 @@ func testOpenId4VciPreAuthFlowWithWrongTxCode(t *testing.T) {
 		},
 	})
 
-	session = awaitStatus(t, sessionHandler, client.Status_Error)
-	require.NotNil(t, session.Error, "session should have an error")
-	require.Contains(t, session.Error.WrappedError, "token",
-		"error should indicate token exchange failure")
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Error)
+	require.Contains(t,
+		session.Error.WrappedError,
+		"could not obtain permission to continue issuance session: token endpoint returned status code 400, invalid_request.",
+	)
 }
 
 func testOpenId4VciPreAuthFlowCanBeDismissed(t *testing.T) {
