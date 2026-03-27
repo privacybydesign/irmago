@@ -33,6 +33,8 @@ func TestOpenID4VCISessionHandler(t *testing.T) {
 	t.Run("pre-authorized code flow", func(t *testing.T) {
 		t.Run("reaches permission request", testOpenId4VciPreAuthFlowReachesPermission)
 		t.Run("grants permission and exchanges token", testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken)
+		t.Run("with tx_code grants permission and exchanges token", testOpenId4VciPreAuthFlowWithTxCode)
+		t.Run("with wrong tx_code fails", testOpenId4VciPreAuthFlowWithWrongTxCode)
 		t.Run("can be dismissed", testOpenId4VciPreAuthFlowCanBeDismissed)
 	})
 
@@ -87,6 +89,62 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
 		"server should have issued the credential via pre-authorized code flow")
+}
+
+func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createPreAuthOfferWithTxCode(t)
+	require.NotEmpty(t, offer.TxCode, "offer should include a tx_code")
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
+	require.NotNil(t, session.TransactionCodeParameters, "session should include transaction code parameters")
+
+	txCode := offer.TxCode
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_PreAuthorizedCode,
+		Payload: client.SessionPreAuthorizedCodeInteractionPayload{
+			Proceed:         true,
+			TransactionCode: &txCode,
+		},
+	})
+
+	// The test issuer uses did:web, so full credential verification should work.
+	_ = awaitWithTimeout(t, sessionHandler.SessionChan, 30*time.Second)
+	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
+	require.Equal(t, "CREDENTIAL_ISSUED", status,
+		"server should have issued the credential via pre-authorized code flow with tx_code")
+}
+
+func testOpenId4VciPreAuthFlowWithWrongTxCode(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createPreAuthOfferWithTxCode(t)
+	require.NotEmpty(t, offer.TxCode, "offer should include a tx_code")
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
+
+	wrongCode := "000000"
+	userInteraction(t, c, client.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      client.UI_PreAuthorizedCode,
+		Payload: client.SessionPreAuthorizedCodeInteractionPayload{
+			Proceed:         true,
+			TransactionCode: &wrongCode,
+		},
+	})
+
+	session = awaitStatus(t, sessionHandler, client.Status_Error)
+	require.NotNil(t, session.Error, "session should have an error")
+	require.Contains(t, session.Error.WrappedError, "token",
+		"error should indicate token exchange failure")
 }
 
 func testOpenId4VciPreAuthFlowCanBeDismissed(t *testing.T) {
@@ -254,6 +312,27 @@ func createPreAuthOffer(t *testing.T) oid4vciOfferResponse {
 			"given_name": "Test",
 			"family_name": "User",
 			"email": "test@example.com"
+		}
+	}`)
+}
+
+func createPreAuthOfferWithTxCode(t *testing.T) oid4vciOfferResponse {
+	t.Helper()
+	return postOffer(t, preAuthIssuerURL, preAuthAdminToken, `{
+		"credentials": ["TestCredentialSdJwt"],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate",
+				"tx_code": {
+					"input_mode": "numeric",
+					"length": 6
+				}
+			}
+		},
+		"credentialDataSupplierInput": {
+			"given_name": "Test",
+			"family_name": "TxCode",
+			"email": "txcode@example.com"
 		}
 	}`)
 }
