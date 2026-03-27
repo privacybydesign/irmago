@@ -5,7 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Changed
 - Introduces `yivi` command, which encapsulates the current `irma` command.
+
+### Fix
+- Bug that keyshare regisration failed when users email domain had no MX records.
+
+## [0.19.2] - 2026-02-26
+### Fix
+- Bug that caused HTTP request body to not be sent upon retransmission
+
+### Changed
+- Add wildcard support for authorized credentials and attributes in relying party and attestation provider certificates
 
 ## [0.19.1] - 2025-10-13
 ### Fix
@@ -585,6 +596,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[0.19.2]: https://github.com/privacybydesign/irmago/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/privacybydesign/irmago/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/privacybydesign/irmago/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/privacybydesign/irmago/compare/v0.18.0...v0.18.1
