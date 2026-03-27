@@ -103,7 +103,7 @@ func Test_openid4vciSession_requestCredential_errorResponses(t *testing.T) {
 			s:           s,
 			accessToken: "valid_token::deferred_response",
 			nonce:       &nonce,
-			expectedErr: "wallet does not accept deferred credential responses",
+			expectedErr: "wallet does not accept deferred credential responses for now",
 		},
 		{
 			name:        "test unauthorized token, no error in header",
@@ -216,8 +216,10 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 ) {
 	ts := httptest.NewServer(credEndpointHandler)
 
+	scope := "test-scope"
 	credentialConfig := &CredentialConfiguration{
 		Format: CredentialFormatIdentifier_SdJwtVc,
+		Scope:  &scope,
 	}
 
 	if opts&CredentialConfigurationWithUnsupportedFeature == CredentialConfigurationWithUnsupportedFeature {

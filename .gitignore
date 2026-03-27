@@ -1,4 +1,5 @@
 *.test
+!Dockerfile.test
 .DS_STORE
 .idea/
 testdata/tmp/*

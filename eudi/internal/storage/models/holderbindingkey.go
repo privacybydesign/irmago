@@ -24,8 +24,8 @@ type HolderBindingKey struct {
 	// Secondary lookup, not primary identity.
 	PublicKeyThumbprint string `gorm:"type:text;not null;uniqueIndex" json:"public_key_thumbprint"`
 
-	// Encrypted private key bytes, preferably encrypted PKCS#8.
-	PrivateKeyEncrypted []byte `gorm:"type:bytea;not null" json:"private_key_encrypted"`
+	// Private key bytes, preferably PKCS#8.
+	PrivateKey []byte `gorm:"type:bytea;not null" json:"private_key"`
 
 	// One-to-one algorithm-specific metadata.
 	ECDSA *ECDSAKeyMetadata `gorm:"constraint:OnDelete:CASCADE;foreignKey:KeyID;references:ID" json:"ecdsa,omitempty"`
@@ -96,8 +96,8 @@ func (k *HolderBindingKey) validate() error {
 	if k.PublicKeyThumbprint == "" {
 		return fmt.Errorf("public_key_thumbprint is required")
 	}
-	if len(k.PrivateKeyEncrypted) == 0 {
-		return fmt.Errorf("private_key_encrypted is required")
+	if len(k.PrivateKey) == 0 {
+		return fmt.Errorf("private_key is required")
 	}
 
 	switch k.Algorithm {
