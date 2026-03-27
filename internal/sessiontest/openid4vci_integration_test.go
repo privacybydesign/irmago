@@ -68,7 +68,6 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	defer c.Close()
 
 	offer := createPreAuthOffer(t)
-	fmt.Printf("offer: %v\n", offer)
 
 	startOpenID4VCISession(t, c, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
@@ -149,7 +148,8 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	})
 
 	// The authcode issuer uses did:web, so full credential verification should work.
-	_ = awaitWithTimeout(t, sessionHandler.SessionChan, 30*time.Second)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
 	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
 		"server should have issued the credential via authorization code flow")

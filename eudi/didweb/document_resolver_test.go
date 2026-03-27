@@ -39,21 +39,6 @@ func Test_didWebToURL(t *testing.T) {
 			expectedURL: "https://example.com/issuer/did.json",
 		},
 		{
-			name:        "localhost uses HTTP",
-			did:         "did:web:localhost%3A8880",
-			expectedURL: "http://localhost:8880/.well-known/did.json",
-		},
-		{
-			name:        "localhost with path uses HTTP",
-			did:         "did:web:localhost%3A8880:issuer",
-			expectedURL: "http://localhost:8880/issuer/did.json",
-		},
-		{
-			name:        "127.0.0.1 uses HTTP",
-			did:         "did:web:127.0.0.1%3A8880",
-			expectedURL: "http://127.0.0.1:8880/.well-known/did.json",
-		},
-		{
 			name:        "missing did:web prefix",
 			did:         "did:jwk:abc",
 			expectError: true,
@@ -76,6 +61,34 @@ func Test_didWebToURL(t *testing.T) {
 			require.Equal(t, tt.expectedURL, got)
 		})
 	}
+}
+
+func Test_Resolve_AllowInsecure_FallsBackToHTTP(t *testing.T) {
+	doc := did.Document{
+		Context: []string{"https://www.w3.org/ns/did/v1"},
+		ID:      "did:web:example.com",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/did+json")
+		_ = json.NewEncoder(w).Encode(doc)
+	}))
+	defer server.Close()
+
+	resolver := &DocumentResolver{
+		HTTPClient: &http.Client{
+			Transport: &hostOverrideTransport{
+				base:       http.DefaultTransport,
+				targetHost: server.Listener.Addr().String(),
+				useHTTP:    true,
+			},
+		},
+		AllowInsecure: true,
+	}
+
+	result, err := resolver.Resolve("did:web:example.com")
+	require.NoError(t, err)
+	require.Equal(t, "did:web:example.com", result.ID)
 }
 
 func Test_Resolve_ReturnsDocument(t *testing.T) {

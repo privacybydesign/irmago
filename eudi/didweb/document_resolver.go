@@ -16,6 +16,9 @@ import (
 type DocumentResolver struct {
 	// HTTPClient is the HTTP client used to fetch DID documents. If nil, http.DefaultClient is used.
 	HTTPClient *http.Client
+	// AllowInsecure additionally allows resolving did:web DIDs over HTTP when
+	// the HTTPS request fails. This should only be enabled in developer mode.
+	AllowInsecure bool
 }
 
 // Resolve fetches and parses the DID Document for the given did:web DID.
@@ -25,6 +28,19 @@ func (r *DocumentResolver) Resolve(didWeb string) (*did.Document, error) {
 		return nil, err
 	}
 
+	doc, err := r.fetchDocument(docURL)
+	if err != nil && r.AllowInsecure {
+		httpURL := strings.Replace(docURL, "https://", "http://", 1)
+		doc, err = r.fetchDocument(httpURL)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return doc, nil
+}
+
+func (r *DocumentResolver) fetchDocument(docURL string) (*did.Document, error) {
 	client := r.HTTPClient
 	if client == nil {
 		client = http.DefaultClient
@@ -83,20 +99,10 @@ func didWebToURL(didWeb string) (string, error) {
 		return "", fmt.Errorf("did:web: failed to decode host %q: %w", parts[0], err)
 	}
 
-	// Use HTTP for localhost (development/testing), HTTPS for everything else.
-	scheme := "https"
-	hostname := host
-	if colonIdx := strings.LastIndex(host, ":"); colonIdx != -1 {
-		hostname = host[:colonIdx]
-	}
-	if hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1" {
-		scheme = "http"
-	}
-
 	var rawURL string
 	if len(parts) == 1 {
 		// No explicit path → use well-known location.
-		rawURL = scheme + "://" + host + "/.well-known/did.json"
+		rawURL = "https://" + host + "/.well-known/did.json"
 	} else {
 		// Percent-decode each path segment and join with "/".
 		pathSegments := make([]string, 0, len(parts)-1)
@@ -108,7 +114,7 @@ func didWebToURL(didWeb string) (string, error) {
 			pathSegments = append(pathSegments, decoded)
 		}
 		path := strings.Join(pathSegments, "/")
-		rawURL = scheme + "://" + host + "/" + path + "/did.json"
+		rawURL = "https://" + host + "/" + path + "/did.json"
 	}
 
 	// Validate the resulting URL.

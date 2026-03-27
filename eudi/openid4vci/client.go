@@ -57,6 +57,7 @@ func NewClient(httpClient *http.Client,
 
 func (client *Client) AllowInsecureHttpForTesting() {
 	client.allowInsecureHttp = true
+	client.holderVerifier.SetAllowInsecureDidWeb(true)
 }
 
 func (client *Client) NewSession(credentialOfferEndpointUrl string, handler Handler) irmaclient.SessionDismisser {

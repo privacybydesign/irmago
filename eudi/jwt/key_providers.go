@@ -60,13 +60,15 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 }
 
 type KidKeyProvider struct {
-	kidHeader  string
-	httpClient *http.Client
+	kidHeader     string
+	httpClient    *http.Client
+	allowInsecure bool
 }
 
-func NewKidKeyProvider(kidHeader string) *KidKeyProvider {
+func NewKidKeyProvider(kidHeader string, allowInsecure bool) *KidKeyProvider {
 	return &KidKeyProvider{
-		kidHeader: kidHeader,
+		kidHeader:     kidHeader,
+		allowInsecure: allowInsecure,
 	}
 }
 
@@ -87,7 +89,8 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 	fullKid := fmt.Sprintf("%s%s", issClaim, p.kidHeader)
 
 	documentResolver := didweb.DocumentResolver{
-		HTTPClient: p.httpClient,
+		HTTPClient:    p.httpClient,
+		AllowInsecure: p.allowInsecure,
 	}
 	doc, err := documentResolver.Resolve(issClaim)
 	if err != nil {
