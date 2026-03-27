@@ -2,7 +2,9 @@ package scheme
 
 import (
 	"fmt"
+	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -96,9 +98,32 @@ func isQueryAuthorized(query dcql.CredentialQuery, authorizedAttributeSets []Aut
 }
 
 func isCredentialAuthorized(requestedCredential string, requestedAttributes []string, authorizedAttributeSets []AuthorizedAttributeSet) error {
+	authorizedCredFunc := func(authorizedCredential string, requestedCredential string) bool {
+		// If the requested credential is a URL, perform equality check (schemaless)
+		// Make sure to check the URL scheme, as 'pbdf.abc.def' is considered a valid URL without a scheme
+		parsedUrl, err := url.Parse(requestedCredential)
+		if err == nil && parsedUrl.Scheme != "" {
+			return authorizedCredential == requestedCredential
+		} else {
+			// If not, perform wildcard matching on the credential identifier parts (e.g., pbdf.issuer1.cred) to allow for more flexible authorization (Yivi scheme)
+			authorizedCredentialParts := strings.Split(authorizedCredential, ".")
+			requestedCredentialParts := strings.Split(requestedCredential, ".")
+
+			for i, requestedCredentialPart := range requestedCredentialParts {
+				if authorizedCredentialParts[i] == "*" {
+					return true
+				}
+				if authorizedCredentialParts[i] != requestedCredentialPart {
+					return false
+				}
+			}
+			return true
+		}
+	}
+
 	authorizedCredential := false
 	for _, authorizedSet := range authorizedAttributeSets {
-		if authorizedSet.Credential == requestedCredential {
+		if authorizedCredFunc(authorizedSet.Credential, requestedCredential) {
 			authorizedCredential = true
 
 			// Credential is authorized, validate the query claims against the attributes
@@ -117,6 +142,11 @@ func isCredentialAuthorized(requestedCredential string, requestedAttributes []st
 }
 
 func isSubset(subset []string, superset []string) error {
+	// If the superset contains a wildcard, all subsets are authorized
+	if slices.Contains(superset, "*") {
+		return nil
+	}
+
 	for _, s := range subset {
 		if !slices.Contains(superset, s) {
 			return fmt.Errorf("requested attribute %v is not in the authorized set", s)

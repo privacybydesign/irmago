@@ -164,6 +164,19 @@ func TestRetryHTTPRequest(t *testing.T) {
 	require.Equal(t, "42\n", string(bts))
 }
 
+func TestRetryPost(t *testing.T) {
+	test.StartBadHttpServer(2, 1*time.Second, "42")
+	defer test.StopBadHttpServer()
+
+	transport := NewHTTPTransport("http://localhost:48682", false)
+	transport.client.HTTPClient.Timeout = 500 * time.Millisecond
+	resp := ""
+	// The BadHttpServer echoes back what's posted when POST is used.
+	err := transport.Post("", &resp, "\"37\"")
+	require.NoError(t, err)
+	require.Equal(t, "\"37\"\n", string(resp))
+}
+
 func TestHTTPTransportCookieJar(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/setcookie", func(w http.ResponseWriter, r *http.Request) {
