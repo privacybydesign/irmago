@@ -20,11 +20,18 @@ import (
 
 type KeyshareServer struct {
 	http.Server
-	t *testing.T
+	DB *keyshareserver.MemoryDB
+	t  *testing.T
 }
 
 func KeyshareServerHandler(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) (handler http.Handler, host string) {
-	db := keyshareserver.NewMemoryDB()
+	db, handler, host := KeyshareServerHandlerWithDB(t, l, schemeID, jwtKeyID)
+	_ = db
+	return handler, host
+}
+
+func KeyshareServerHandlerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) (db *keyshareserver.MemoryDB, handler http.Handler, host string) {
+	db = keyshareserver.NewMemoryDB()
 	err := db.AddUser(context.Background(), &keyshareserver.User{
 		Username: "",
 		Secrets:  keyshareserver.UserSecrets{},
@@ -71,16 +78,28 @@ func KeyshareServerHandler(t *testing.T, l *logrus.Logger, schemeID irma.SchemeM
 		KeyshareAttribute:     keyshareAttr,
 	})
 	require.NoError(t, err)
-	return s.Handler(), parsedURL.Host
+	return db, s.Handler(), parsedURL.Host
 }
 
 func StartKeyshareServer(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) *KeyshareServer {
 	handler, host := KeyshareServerHandler(t, l, schemeID, jwtKeyID)
+	return startKeyshareServerOnHost(t, handler, host, nil)
+}
 
-	keyshareServ := &KeyshareServer{http.Server{
-		Addr:    host,
-		Handler: handler,
-	}, t}
+func StartKeyshareServerWithDB(t *testing.T, l *logrus.Logger, schemeID irma.SchemeManagerIdentifier, jwtKeyID uint32) *KeyshareServer {
+	db, handler, host := KeyshareServerHandlerWithDB(t, l, schemeID, jwtKeyID)
+	return startKeyshareServerOnHost(t, handler, host, db)
+}
+
+func startKeyshareServerOnHost(t *testing.T, handler http.Handler, host string, db *keyshareserver.MemoryDB) *KeyshareServer {
+	keyshareServ := &KeyshareServer{
+		Server: http.Server{
+			Addr:    host,
+			Handler: handler,
+		},
+		DB: db,
+		t:  t,
+	}
 
 	go func() {
 		err := keyshareServ.ListenAndServe()

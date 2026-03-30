@@ -414,7 +414,7 @@ func (p *ProcessedSdJwtPayload) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]any(*p))
 }
 
-// sort sorts the ProcessedSdJwtPayload in place, by sorting all arrays by their values (when the array is of a scalar type).
+// Sort sorts the ProcessedSdJwtPayload in place, by sorting all arrays by their values (when the array is of a scalar type).
 // This ensures that the JSON encoding of the payload is deterministic, which is necessary for consistent hashing of the payload.
 // As the map is keyed, it cannot be sorted itself, but this is handled by the JSON marshalling.
 func (p *ProcessedSdJwtPayload) Sort() {

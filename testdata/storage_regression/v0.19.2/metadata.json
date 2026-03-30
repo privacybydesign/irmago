@@ -1,0 +1,1311 @@
+{
+  "aes_key": "asdfasdfasdfasdfasdfasdfasdfasdf",
+  "credentials": [
+    {
+      "ID": "email",
+      "IssuerID": "test",
+      "SchemeManagerID": "test",
+      "SignedOn": 1774862983,
+      "Expires": 1790760583,
+      "Attributes": {
+        "test.test.email.email": {
+          "": "test@gmail.com",
+          "en": "test@gmail.com",
+          "nl": "test@gmail.com"
+        }
+      },
+      "Hash": "DJwHV7dsaJgoMh8PQkIKE2MaKy1tfY9irW42HmxARX4",
+      "Revoked": false,
+      "RevocationSupported": false,
+      "CredentialFormat": "dc+sd-jwt",
+      "InstanceCount": 8
+    },
+    {
+      "ID": "mijnirma",
+      "IssuerID": "test",
+      "SchemeManagerID": "test",
+      "SignedOn": 1774483200,
+      "Expires": 1805932800,
+      "Attributes": {
+        "test.test.mijnirma.email": {
+          "": "kNeGRk8TdroO",
+          "en": "kNeGRk8TdroO",
+          "nl": "kNeGRk8TdroO"
+        }
+      },
+      "Hash": "1db43c942d29d79e5002feaac11c831de5c757b5b4f436f8959d48cad3cb6272",
+      "Revoked": false,
+      "RevocationSupported": false,
+      "CredentialFormat": "idemix",
+      "InstanceCount": null
+    },
+    {
+      "ID": "fullName",
+      "IssuerID": "MijnOverheid",
+      "SchemeManagerID": "irma-demo",
+      "SignedOn": 1774483200,
+      "Expires": 1790208000,
+      "Attributes": {
+        "irma-demo.MijnOverheid.fullName.familyname": {
+          "": "Batsbak",
+          "en": "Batsbak",
+          "nl": "Batsbak"
+        },
+        "irma-demo.MijnOverheid.fullName.firstname": {
+          "": "",
+          "en": "",
+          "nl": ""
+        },
+        "irma-demo.MijnOverheid.fullName.firstnames": {
+          "": "Barry",
+          "en": "Barry",
+          "nl": "Barry"
+        },
+        "irma-demo.MijnOverheid.fullName.prefix": {
+          "": "Sir",
+          "en": "Sir",
+          "nl": "Sir"
+        }
+      },
+      "Hash": "ef443fa2fd4ae8571f874cd485eec6e4267f93d28a8080dce4573b437054f642",
+      "Revoked": false,
+      "RevocationSupported": false,
+      "CredentialFormat": "idemix",
+      "InstanceCount": null
+    },
+    {
+      "ID": "email",
+      "IssuerID": "test",
+      "SchemeManagerID": "test",
+      "SignedOn": 1774483200,
+      "Expires": 1790208000,
+      "Attributes": {
+        "test.test.email.email": {
+          "": "test@gmail.com",
+          "en": "test@gmail.com",
+          "nl": "test@gmail.com"
+        }
+      },
+      "Hash": "343f29dc68474d59a57cc738c3d6c832425bfb1eb348cb9488b5a8b5a6303fb9",
+      "Revoked": false,
+      "RevocationSupported": false,
+      "CredentialFormat": "idemix",
+      "InstanceCount": null
+    },
+    {
+      "ID": "singleton",
+      "IssuerID": "MijnOverheid",
+      "SchemeManagerID": "irma-demo",
+      "SignedOn": 1774483200,
+      "Expires": 1790208000,
+      "Attributes": {
+        "irma-demo.MijnOverheid.singleton.BSN": {
+          "": "12345",
+          "en": "12345",
+          "nl": "12345"
+        }
+      },
+      "Hash": "90d27ebd5bb15c925f8d15acc7f9bcb95ef3d48e1b247bd1db03182dd7a72351",
+      "Revoked": false,
+      "RevocationSupported": false,
+      "CredentialFormat": "idemix",
+      "InstanceCount": null
+    }
+  ],
+  "description": "Client storage generated for regression testing",
+  "logs": [
+    {
+      "ID": 8,
+      "Type": "disclosure",
+      "Time": 1774862984,
+      "DisclosureLog": {
+        "Protocol": "openid4vp",
+        "Credentials": [
+          {
+            "Formats": [
+              "dc+sd-jwt"
+            ],
+            "CredentialType": "test.test.email",
+            "Attributes": {
+              "email": "test@gmail.com"
+            }
+          }
+        ],
+        "Verifier": {
+          "id": "",
+          "scheme": "",
+          "name": {
+            "en": "Yivi B.V.",
+            "nl": "Yivi B.V."
+          },
+          "industry": {},
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "551457292725140545526920589625581952473600958670.png",
+          "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/eudi_configuration/verifiers/logos/551457292725140545526920589625581952473600958670.png",
+          "valid_until": 1826452690,
+          "unverified": false,
+          "languages": [
+            "en",
+            "nl"
+          ],
+          "wizards": {}
+        }
+      }
+    },
+    {
+      "ID": 7,
+      "Type": "disclosure",
+      "Time": 1774862984,
+      "DisclosureLog": {
+        "Protocol": "openid4vp",
+        "Credentials": [
+          {
+            "Formats": [
+              "dc+sd-jwt"
+            ],
+            "CredentialType": "test.test.email",
+            "Attributes": {
+              "email": "test@gmail.com"
+            }
+          }
+        ],
+        "Verifier": {
+          "id": "",
+          "scheme": "",
+          "name": {
+            "en": "Yivi B.V.",
+            "nl": "Yivi B.V."
+          },
+          "industry": {},
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "551457292725140545526920589625581952473600958670.png",
+          "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/eudi_configuration/verifiers/logos/551457292725140545526920589625581952473600958670.png",
+          "valid_until": 1826452690,
+          "unverified": false,
+          "languages": [
+            "nl",
+            "en"
+          ],
+          "wizards": {}
+        }
+      }
+    },
+    {
+      "ID": 6,
+      "Type": "signature",
+      "Time": 1774862984,
+      "SignedMessageLog": {
+        "Protocol": "irma",
+        "Credentials": [
+          {
+            "Formats": [
+              "idemix"
+            ],
+            "CredentialType": "test.test.email",
+            "Attributes": {
+              "email": "test@gmail.com"
+            }
+          }
+        ],
+        "Verifier": {
+          "id": "test-requestors.test-requestor",
+          "scheme": "test-requestors",
+          "name": {
+            "en": "Local IRMA server",
+            "nl": "Lokale IRMA server"
+          },
+          "industry": null,
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+          "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "valid_until": null,
+          "unverified": false,
+          "languages": [
+            "en",
+            "nl"
+          ],
+          "wizards": {
+            "test-requestors.test-requestor.testwizard": {
+              "id": "test-requestors.test-requestor.testwizard",
+              "title": {
+                "en": "Test",
+                "nl": "Test"
+              },
+              "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+              "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "allowOtherRequestors": false,
+              "languages": [
+                "en",
+                "nl"
+              ],
+              "info": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "faq": [
+                {
+                  "question": {
+                    "en": "Where do you get the data?",
+                    "nl": "Waar haal je de gegevens op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "Which data are added?",
+                    "nl": "Welke gegevens haal je op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "How does it work?",
+                    "nl": "Hoe werkt het?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                }
+              ],
+              "intro": {
+                "en": "Go through the steps below once to gain access to test.",
+                "nl": "Doorloop eenmalig onderstaande stappen om toegang tot test te krijgen."
+              },
+              "successHeader": {
+                "en": "Done!",
+                "nl": "Gelukt!"
+              },
+              "successText": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "expandDependencies": false,
+              "contents": [
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.fullName",
+                      "header": {
+                        "en": "Full name",
+                        "nl": "Volledige naam"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get name data",
+                        "nl": "Haal naamgegevens op"
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.singleton",
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "session",
+                      "credential": "irma-demo.RU.studentCard",
+                      "header": {
+                        "en": "Student Card",
+                        "nl": "Studentpas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Student Card",
+                        "nl": "Haal studentpas op"
+                      },
+                      "sessionUrl": "https://example.com/getsession"
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "website",
+                      "credential": "irma-demo.stemmen.stempas",
+                      "header": {
+                        "en": "Voting Card",
+                        "nl": "Stempas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Voting Card",
+                        "nl": "Haal stempas op"
+                      },
+                      "url": {
+                        "en": "https://example.com/en",
+                        "nl": "https://example.com/nl"
+                      },
+                      "inapp": true
+                    }
+                  ]
+                ]
+              ]
+            }
+          }
+        },
+        "Message": "Hello, World!"
+      }
+    },
+    {
+      "ID": 5,
+      "Type": "disclosure",
+      "Time": 1774862984,
+      "DisclosureLog": {
+        "Protocol": "irma",
+        "Credentials": [
+          {
+            "Formats": [
+              "idemix"
+            ],
+            "CredentialType": "test.test.email",
+            "Attributes": {
+              "email": "test@gmail.com"
+            }
+          }
+        ],
+        "Verifier": {
+          "id": "test-requestors.test-requestor",
+          "scheme": "test-requestors",
+          "name": {
+            "en": "Local IRMA server",
+            "nl": "Lokale IRMA server"
+          },
+          "industry": null,
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+          "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "valid_until": null,
+          "unverified": false,
+          "languages": [
+            "en",
+            "nl"
+          ],
+          "wizards": {
+            "test-requestors.test-requestor.testwizard": {
+              "id": "test-requestors.test-requestor.testwizard",
+              "title": {
+                "en": "Test",
+                "nl": "Test"
+              },
+              "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+              "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "allowOtherRequestors": false,
+              "languages": [
+                "en",
+                "nl"
+              ],
+              "info": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "faq": [
+                {
+                  "question": {
+                    "en": "Where do you get the data?",
+                    "nl": "Waar haal je de gegevens op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "Which data are added?",
+                    "nl": "Welke gegevens haal je op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "How does it work?",
+                    "nl": "Hoe werkt het?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                }
+              ],
+              "intro": {
+                "en": "Go through the steps below once to gain access to test.",
+                "nl": "Doorloop eenmalig onderstaande stappen om toegang tot test te krijgen."
+              },
+              "successHeader": {
+                "en": "Done!",
+                "nl": "Gelukt!"
+              },
+              "successText": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "expandDependencies": false,
+              "contents": [
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.fullName",
+                      "header": {
+                        "en": "Full name",
+                        "nl": "Volledige naam"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get name data",
+                        "nl": "Haal naamgegevens op"
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.singleton",
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "session",
+                      "credential": "irma-demo.RU.studentCard",
+                      "header": {
+                        "en": "Student Card",
+                        "nl": "Studentpas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Student Card",
+                        "nl": "Haal studentpas op"
+                      },
+                      "sessionUrl": "https://example.com/getsession"
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "website",
+                      "credential": "irma-demo.stemmen.stempas",
+                      "header": {
+                        "en": "Voting Card",
+                        "nl": "Stempas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Voting Card",
+                        "nl": "Haal stempas op"
+                      },
+                      "url": {
+                        "en": "https://example.com/en",
+                        "nl": "https://example.com/nl"
+                      },
+                      "inapp": true
+                    }
+                  ]
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "ID": 4,
+      "Type": "issuance",
+      "Time": 1774862984,
+      "IssuanceLog": {
+        "Protocol": "irma",
+        "Credentials": [
+          {
+            "Formats": [
+              "idemix"
+            ],
+            "CredentialType": "irma-demo.MijnOverheid.singleton",
+            "Attributes": {
+              "BSN": "12345"
+            }
+          }
+        ],
+        "DisclosedCredentials": [],
+        "Issuer": {
+          "id": "test-requestors.test-requestor",
+          "scheme": "test-requestors",
+          "name": {
+            "en": "Local IRMA server",
+            "nl": "Lokale IRMA server"
+          },
+          "industry": null,
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+          "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "valid_until": null,
+          "unverified": false,
+          "languages": [
+            "en",
+            "nl"
+          ],
+          "wizards": {
+            "test-requestors.test-requestor.testwizard": {
+              "id": "test-requestors.test-requestor.testwizard",
+              "title": {
+                "en": "Test",
+                "nl": "Test"
+              },
+              "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+              "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "allowOtherRequestors": false,
+              "languages": [
+                "en",
+                "nl"
+              ],
+              "info": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "faq": [
+                {
+                  "question": {
+                    "en": "Where do you get the data?",
+                    "nl": "Waar haal je de gegevens op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "Which data are added?",
+                    "nl": "Welke gegevens haal je op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "How does it work?",
+                    "nl": "Hoe werkt het?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                }
+              ],
+              "intro": {
+                "en": "Go through the steps below once to gain access to test.",
+                "nl": "Doorloop eenmalig onderstaande stappen om toegang tot test te krijgen."
+              },
+              "successHeader": {
+                "en": "Done!",
+                "nl": "Gelukt!"
+              },
+              "successText": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "expandDependencies": false,
+              "contents": [
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.fullName",
+                      "header": {
+                        "en": "Full name",
+                        "nl": "Volledige naam"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get name data",
+                        "nl": "Haal naamgegevens op"
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.singleton",
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "session",
+                      "credential": "irma-demo.RU.studentCard",
+                      "header": {
+                        "en": "Student Card",
+                        "nl": "Studentpas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Student Card",
+                        "nl": "Haal studentpas op"
+                      },
+                      "sessionUrl": "https://example.com/getsession"
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "website",
+                      "credential": "irma-demo.stemmen.stempas",
+                      "header": {
+                        "en": "Voting Card",
+                        "nl": "Stempas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Voting Card",
+                        "nl": "Haal stempas op"
+                      },
+                      "url": {
+                        "en": "https://example.com/en",
+                        "nl": "https://example.com/nl"
+                      },
+                      "inapp": true
+                    }
+                  ]
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "ID": 3,
+      "Type": "issuance",
+      "Time": 1774862983,
+      "IssuanceLog": {
+        "Protocol": "irma",
+        "Credentials": [
+          {
+            "Formats": [
+              "idemix",
+              "dc+sd-jwt"
+            ],
+            "CredentialType": "test.test.email",
+            "Attributes": {
+              "email": "test@gmail.com"
+            }
+          }
+        ],
+        "DisclosedCredentials": [],
+        "Issuer": {
+          "id": "test-requestors.test-requestor",
+          "scheme": "test-requestors",
+          "name": {
+            "en": "Local IRMA server",
+            "nl": "Lokale IRMA server"
+          },
+          "industry": null,
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+          "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "valid_until": null,
+          "unverified": false,
+          "languages": [
+            "en",
+            "nl"
+          ],
+          "wizards": {
+            "test-requestors.test-requestor.testwizard": {
+              "id": "test-requestors.test-requestor.testwizard",
+              "title": {
+                "en": "Test",
+                "nl": "Test"
+              },
+              "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+              "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "allowOtherRequestors": false,
+              "languages": [
+                "en",
+                "nl"
+              ],
+              "info": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "faq": [
+                {
+                  "question": {
+                    "en": "Where do you get the data?",
+                    "nl": "Waar haal je de gegevens op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "Which data are added?",
+                    "nl": "Welke gegevens haal je op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "How does it work?",
+                    "nl": "Hoe werkt het?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                }
+              ],
+              "intro": {
+                "en": "Go through the steps below once to gain access to test.",
+                "nl": "Doorloop eenmalig onderstaande stappen om toegang tot test te krijgen."
+              },
+              "successHeader": {
+                "en": "Done!",
+                "nl": "Gelukt!"
+              },
+              "successText": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "expandDependencies": false,
+              "contents": [
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.fullName",
+                      "header": {
+                        "en": "Full name",
+                        "nl": "Volledige naam"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get name data",
+                        "nl": "Haal naamgegevens op"
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.singleton",
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "session",
+                      "credential": "irma-demo.RU.studentCard",
+                      "header": {
+                        "en": "Student Card",
+                        "nl": "Studentpas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Student Card",
+                        "nl": "Haal studentpas op"
+                      },
+                      "sessionUrl": "https://example.com/getsession"
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "website",
+                      "credential": "irma-demo.stemmen.stempas",
+                      "header": {
+                        "en": "Voting Card",
+                        "nl": "Stempas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Voting Card",
+                        "nl": "Haal stempas op"
+                      },
+                      "url": {
+                        "en": "https://example.com/en",
+                        "nl": "https://example.com/nl"
+                      },
+                      "inapp": true
+                    }
+                  ]
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "ID": 2,
+      "Type": "issuance",
+      "Time": 1774862983,
+      "IssuanceLog": {
+        "Protocol": "irma",
+        "Credentials": [
+          {
+            "Formats": [
+              "idemix"
+            ],
+            "CredentialType": "irma-demo.MijnOverheid.fullName",
+            "Attributes": {
+              "familyname": "Batsbak",
+              "firstname": "",
+              "firstnames": "Barry",
+              "prefix": "Sir"
+            }
+          }
+        ],
+        "DisclosedCredentials": [],
+        "Issuer": {
+          "id": "test-requestors.test-requestor",
+          "scheme": "test-requestors",
+          "name": {
+            "en": "Local IRMA server",
+            "nl": "Lokale IRMA server"
+          },
+          "industry": null,
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+          "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "valid_until": null,
+          "unverified": false,
+          "languages": [
+            "en",
+            "nl"
+          ],
+          "wizards": {
+            "test-requestors.test-requestor.testwizard": {
+              "id": "test-requestors.test-requestor.testwizard",
+              "title": {
+                "en": "Test",
+                "nl": "Test"
+              },
+              "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+              "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "allowOtherRequestors": false,
+              "languages": [
+                "en",
+                "nl"
+              ],
+              "info": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "faq": [
+                {
+                  "question": {
+                    "en": "Where do you get the data?",
+                    "nl": "Waar haal je de gegevens op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "Which data are added?",
+                    "nl": "Welke gegevens haal je op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "How does it work?",
+                    "nl": "Hoe werkt het?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                }
+              ],
+              "intro": {
+                "en": "Go through the steps below once to gain access to test.",
+                "nl": "Doorloop eenmalig onderstaande stappen om toegang tot test te krijgen."
+              },
+              "successHeader": {
+                "en": "Done!",
+                "nl": "Gelukt!"
+              },
+              "successText": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "expandDependencies": false,
+              "contents": [
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.fullName",
+                      "header": {
+                        "en": "Full name",
+                        "nl": "Volledige naam"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get name data",
+                        "nl": "Haal naamgegevens op"
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.singleton",
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "session",
+                      "credential": "irma-demo.RU.studentCard",
+                      "header": {
+                        "en": "Student Card",
+                        "nl": "Studentpas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Student Card",
+                        "nl": "Haal studentpas op"
+                      },
+                      "sessionUrl": "https://example.com/getsession"
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "website",
+                      "credential": "irma-demo.stemmen.stempas",
+                      "header": {
+                        "en": "Voting Card",
+                        "nl": "Stempas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Voting Card",
+                        "nl": "Haal stempas op"
+                      },
+                      "url": {
+                        "en": "https://example.com/en",
+                        "nl": "https://example.com/nl"
+                      },
+                      "inapp": true
+                    }
+                  ]
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "ID": 1,
+      "Type": "issuance",
+      "Time": 1774862983,
+      "IssuanceLog": {
+        "Protocol": "irma",
+        "Credentials": [
+          {
+            "Formats": [
+              "idemix"
+            ],
+            "CredentialType": "test.test.mijnirma",
+            "Attributes": {
+              "email": "kNeGRk8TdroO"
+            }
+          }
+        ],
+        "DisclosedCredentials": [],
+        "Issuer": {
+          "id": "test-requestors.test-requestor",
+          "scheme": "test-requestors",
+          "name": {
+            "en": "Local IRMA server",
+            "nl": "Lokale IRMA server"
+          },
+          "industry": null,
+          "hostnames": [
+            "localhost"
+          ],
+          "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+          "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+          "valid_until": null,
+          "unverified": false,
+          "languages": [
+            "en",
+            "nl"
+          ],
+          "wizards": {
+            "test-requestors.test-requestor.testwizard": {
+              "id": "test-requestors.test-requestor.testwizard",
+              "title": {
+                "en": "Test",
+                "nl": "Test"
+              },
+              "logo": "61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718",
+              "logoPath": "/var/folders/dc/ptw9xrf92wx5nrswq4q6sg2m0000gn/T/TestGenerateClientStorageForRegressionTests1005260218/004/client/irma_configuration/test-requestors/assets/61a1fc7f161e43f8fc5b0c6ac2997cfe6bc0da7d27009b9914a04dca79ec6718.png",
+              "allowOtherRequestors": false,
+              "languages": [
+                "en",
+                "nl"
+              ],
+              "info": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "faq": [
+                {
+                  "question": {
+                    "en": "Where do you get the data?",
+                    "nl": "Waar haal je de gegevens op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "Which data are added?",
+                    "nl": "Welke gegevens haal je op?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                },
+                {
+                  "question": {
+                    "en": "How does it work?",
+                    "nl": "Hoe werkt het?"
+                  },
+                  "answer": {
+                    "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                    "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                  }
+                }
+              ],
+              "intro": {
+                "en": "Go through the steps below once to gain access to test.",
+                "nl": "Doorloop eenmalig onderstaande stappen om toegang tot test te krijgen."
+              },
+              "successHeader": {
+                "en": "Done!",
+                "nl": "Gelukt!"
+              },
+              "successText": {
+                "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+              },
+              "expandDependencies": false,
+              "contents": [
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.fullName",
+                      "header": {
+                        "en": "Full name",
+                        "nl": "Volledige naam"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get name data",
+                        "nl": "Haal naamgegevens op"
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "credential",
+                      "credential": "irma-demo.MijnOverheid.singleton",
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      }
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "session",
+                      "credential": "irma-demo.RU.studentCard",
+                      "header": {
+                        "en": "Student Card",
+                        "nl": "Studentpas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Student Card",
+                        "nl": "Haal studentpas op"
+                      },
+                      "sessionUrl": "https://example.com/getsession"
+                    }
+                  ]
+                ],
+                [
+                  [
+                    {
+                      "type": "website",
+                      "credential": "irma-demo.stemmen.stempas",
+                      "header": {
+                        "en": "Voting Card",
+                        "nl": "Stempas"
+                      },
+                      "text": {
+                        "en": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                        "nl": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+                      },
+                      "label": {
+                        "en": "Get Voting Card",
+                        "nl": "Haal stempas op"
+                      },
+                      "url": {
+                        "en": "https://example.com/en",
+                        "nl": "https://example.com/nl"
+                      },
+                      "inapp": true
+                    }
+                  ]
+                ]
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
