@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"time"
 
@@ -404,6 +405,62 @@ func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationCo
 }
 
 type ProcessedSdJwtPayload map[string]any
+
+// MarshalJSON ensures that the JSON encoding of the ProcessedSdJwtPayload is deterministic by sorting map keys, which is necessary for consistent hashing of the payload.
+// In order to calculate the hash consistently, the entire payload structure has to be sorted.
+// Fortunately, ProcessedSdJwtPayload is built up from map[string]any structures (where any is either a scalar value, a map, or an array), which we can sort by marshalling to JSON, which already sorts map keys.
+func (p *ProcessedSdJwtPayload) MarshalJSON() ([]byte, error) {
+	p.Sort()
+	return json.Marshal(map[string]any(*p))
+}
+
+// sort sorts the ProcessedSdJwtPayload in place, by sorting all arrays by their values (when the array is of a scalar type).
+// This ensures that the JSON encoding of the payload is deterministic, which is necessary for consistent hashing of the payload.
+// As the map is keyed, it cannot be sorted itself, but this is handled by the JSON marshalling.
+func (p *ProcessedSdJwtPayload) Sort() {
+	for _, v := range *p {
+		rt := reflect.TypeOf(v)
+		switch rt.Kind() {
+		case reflect.Map:
+			m, ok := v.(ProcessedSdJwtPayload)
+			if ok {
+				m.Sort()
+			} else {
+				panic(fmt.Errorf("unexpected map type in ProcessedSdJwtPayload: %v", rt))
+			}
+		case reflect.Slice, reflect.Array:
+			kind := rt.Elem().Kind()
+			switch kind {
+			case reflect.Float32:
+				slices.Sort(v.([]float32))
+			case reflect.Float64:
+				slices.Sort(v.([]float64))
+			case reflect.Uint8:
+				slices.Sort(v.([]uint8))
+			case reflect.Uint16:
+				slices.Sort(v.([]uint16))
+			case reflect.Uint32:
+				slices.Sort(v.([]uint32))
+			case reflect.Uint64:
+				slices.Sort(v.([]uint64))
+			case reflect.Uint:
+				slices.Sort(v.([]uint))
+			case reflect.Int8:
+				slices.Sort(v.([]int8))
+			case reflect.Int16:
+				slices.Sort(v.([]int16))
+			case reflect.Int32:
+				slices.Sort(v.([]int32))
+			case reflect.Int64:
+				slices.Sort(v.([]int64))
+			case reflect.Int:
+				slices.Sort(v.([]int))
+			case reflect.String:
+				slices.Sort(v.([]string))
+			}
+		}
+	}
+}
 
 func (v *VerifiedSdJwtVc) GetRawSdJwtVc() SdJwtVc {
 	allDisclosures := slices.Collect(maps.Values(v.DisclosureLookup.Encoded))
@@ -891,6 +948,31 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	}
 
 	return token, nil, nil
+}
+
+func CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs []*VerifiedSdJwtVc) error {
+	for _, verifiedSdJwtVc := range verifiedSdJwtVcs {
+		cnf := verifiedSdJwtVc.Confirm
+		if cnf == nil {
+			continue
+		}
+
+		duplicateCryptographicKey := slices.ContainsFunc(verifiedSdJwtVcs, func(otherSdJwtVc *VerifiedSdJwtVc) bool {
+			return otherSdJwtVc != verifiedSdJwtVc &&
+				otherSdJwtVc.Confirm != nil &&
+				((cnf.Jwk != nil && otherSdJwtVc.Confirm.Jwk != nil && jwk.Equal(*otherSdJwtVc.Confirm.Jwk, *cnf.Jwk)) ||
+					(cnf.Kid != nil && otherSdJwtVc.Confirm.Kid != nil && *otherSdJwtVc.Confirm.Kid == *cnf.Kid))
+		})
+
+		if duplicateCryptographicKey {
+			return fmt.Errorf(
+				"duplicate cryptographic key binding confirmation found for SD-JWT with vct %q",
+				verifiedSdJwtVc.VerifiableCredentialType,
+			)
+		}
+	}
+
+	return nil
 }
 
 // ============================= Verifier processing =====================================

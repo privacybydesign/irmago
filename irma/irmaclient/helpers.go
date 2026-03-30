@@ -3,12 +3,10 @@ package irmaclient
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -133,25 +131,9 @@ func VerifyAndStoreSdJwtVcKbs(sdJwtVcKbs []sdjwtvc.SdJwtVcKb, sdJwtVcStorage SdJ
 
 	// Check if every SD-JWT has a unique Key-Binding public key (cnf field)
 	if validateUniqueKeyBindingConfirmations {
-		for _, verifiedSdJwtVc := range verifiedSdJwtVcs {
-			cnf := verifiedSdJwtVc.Confirm
-			if cnf == nil {
-				continue
-			}
-
-			duplicateCryptographicKey := slices.ContainsFunc(verifiedSdJwtVcs, func(otherSdJwtVc *sdjwtvc.VerifiedSdJwtVc) bool {
-				return otherSdJwtVc != verifiedSdJwtVc &&
-					otherSdJwtVc.Confirm != nil &&
-					((cnf.Jwk != nil && otherSdJwtVc.Confirm.Jwk != nil && jwk.Equal(*otherSdJwtVc.Confirm.Jwk, *cnf.Jwk)) ||
-						(cnf.Kid != nil && otherSdJwtVc.Confirm.Kid != nil && *otherSdJwtVc.Confirm.Kid == *cnf.Kid))
-			})
-
-			if duplicateCryptographicKey {
-				return fmt.Errorf(
-					"duplicate cryptographic key binding confirmation found for SD-JWT with vct %q",
-					verifiedSdJwtVc.VerifiableCredentialType,
-				)
-			}
+		err := sdjwtvc.CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs)
+		if err != nil {
+			return fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
 		}
 	}
 

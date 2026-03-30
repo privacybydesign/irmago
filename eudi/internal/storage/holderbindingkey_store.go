@@ -11,35 +11,43 @@ import (
 
 // HolderBindingKeyStore is the public interface for storing and retrieving holder binding keys.
 type HolderBindingKeyStore interface {
-	StoreKey(db *gorm.DB, key *models.HolderBindingKey) error
-	GetByID(db *gorm.DB, id uuid.UUID) (*models.HolderBindingKey, error)
-	GetByThumbprint(db *gorm.DB, thumbprint string) (*models.HolderBindingKey, error)
-	DeleteKey(db *gorm.DB, id uuid.UUID) error
-	DeleteAll(db *gorm.DB) error
+	StoreKey(key models.HolderBindingKey) error
+	StoreKeys(keys []models.HolderBindingKey) error
+	GetByID(id uuid.UUID) (*models.HolderBindingKey, error)
+	GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error)
+	DeleteKey(id uuid.UUID) error
+	DeleteKeys(ids uuid.UUIDs) error
+	DeleteAll() error
 }
 
 // holderBindingKeyStore is the gorm-backed implementation of HolderBindingKeyStore.
-type holderBindingKeyStore struct{}
+type holderBindingKeyStore struct {
+	db *gorm.DB
+}
 
 // NewHolderBindingKeyStore creates a HolderBindingKeyStore backed by an existing gorm.DB.
 func NewHolderBindingKeyStore(db *gorm.DB) HolderBindingKeyStore {
-	return &holderBindingKeyStore{}
+	return &holderBindingKeyStore{db: db}
 }
 
 // StoreKey inserts the base key row plus the matching algorithm-specific metadata row.
-func (r *holderBindingKeyStore) StoreKey(db *gorm.DB, key *models.HolderBindingKey) error {
-	if key == nil {
-		return fmt.Errorf("key is nil")
+func (r *holderBindingKeyStore) StoreKey(key models.HolderBindingKey) error {
+	return r.db.Create(key).Error
+}
+
+func (r *holderBindingKeyStore) StoreKeys(keys []models.HolderBindingKey) error {
+	if keys == nil {
+		return fmt.Errorf("keys are nil")
 	}
 
-	return db.Create(key).Error
+	return r.db.Create(keys).Error
 }
 
 // GetByID retrieves a key and preloads both metadata relations.
-func (r *holderBindingKeyStore) GetByID(db *gorm.DB, id uuid.UUID) (*models.HolderBindingKey, error) {
+func (r *holderBindingKeyStore) GetByID(id uuid.UUID) (*models.HolderBindingKey, error) {
 	var key models.HolderBindingKey
 
-	err := db.
+	err := r.db.
 		Preload("ECDSA").
 		Preload("RSA").
 		First(&key, "id = ?", id).
@@ -56,10 +64,10 @@ func (r *holderBindingKeyStore) GetByID(db *gorm.DB, id uuid.UUID) (*models.Hold
 
 // GetByThumbprint retrieves a key by thumbprint.
 // If your system is multi-tenant, use GetByTenantAndThumbprint instead.
-func (r *holderBindingKeyStore) GetByThumbprint(db *gorm.DB, thumbprint string) (*models.HolderBindingKey, error) {
+func (r *holderBindingKeyStore) GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error) {
 	var key models.HolderBindingKey
 
-	err := db.
+	err := r.db.
 		Preload("ECDSA").
 		Preload("RSA").
 		First(&key, "public_key_thumbprint = ?", thumbprint).
@@ -76,8 +84,8 @@ func (r *holderBindingKeyStore) GetByThumbprint(db *gorm.DB, thumbprint string) 
 
 // DeleteKey deletes the base row.
 // Because the model uses OnDelete:CASCADE, related metadata should be deleted too.
-func (r *holderBindingKeyStore) DeleteKey(db *gorm.DB, id uuid.UUID) error {
-	res := db.Delete(&models.HolderBindingKey{}, "id = ?", id)
+func (r *holderBindingKeyStore) DeleteKey(id uuid.UUID) error {
+	res := r.db.Delete(&models.HolderBindingKey{}, "id = ?", id)
 
 	if res.Error != nil {
 		return res.Error
@@ -89,6 +97,21 @@ func (r *holderBindingKeyStore) DeleteKey(db *gorm.DB, id uuid.UUID) error {
 	return nil
 }
 
-func (r *holderBindingKeyStore) DeleteAll(db *gorm.DB) error {
-	return db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&models.HolderBindingKey{}).Error
+// DeleteKeys deletes multiple keys by their IDs.
+// If the key is not found, it will continue to delete the other keys
+func (r *holderBindingKeyStore) DeleteKeys(ids uuid.UUIDs) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, id := range ids {
+			res := r.db.Delete(&models.HolderBindingKey{}, "id = ?", id)
+
+			if res.Error != nil {
+				return res.Error
+			}
+		}
+		return nil
+	})
+}
+
+func (r *holderBindingKeyStore) DeleteAll() error {
+	return r.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&models.HolderBindingKey{}).Error
 }

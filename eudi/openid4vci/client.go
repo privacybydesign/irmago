@@ -118,6 +118,7 @@ func (client *Client) handleCredentialOffer(
 		storageClient:            client,
 		httpClient:               client.httpClient,
 		storage:                  client.storage,
+		holderVerifier:           client.holderVerifier,
 		//keyBinder:                client.keyBinder,
 		// logsStorage:              client.logsStorage,
 	}
@@ -329,6 +330,7 @@ func (client *Client) downloadRemoteImage(remoteImage RemoteImage) ([]byte, stri
 }
 
 func (client *Client) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error {
+
 	// TODO: set the verification mode to Lax for testing purposes only
 	// adding an SD-JWT without having a credential type in the Yivi scheme will break the app in Lax mode
 	return irmaclient.VerifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, validateUniqueKeyBindingConfirmations, eudi.StrictSdJwtVerificationMode)

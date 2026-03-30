@@ -75,7 +75,7 @@ type Attribute struct {
 
 type Credential struct {
 	// The id for this credential. For irma/idemix credentials this would look like
-	// `pbdf.sidn-pbdf.email`, for Eudi credentials this would be in the form of `https://example.credential.com`
+	// `pbdf.sidn-pbdf.email`, for EUDI credentials this would be in the form of `https://example.credential.com`
 	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
