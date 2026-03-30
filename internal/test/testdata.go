@@ -4,6 +4,7 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"sync/atomic"
@@ -46,13 +47,28 @@ func StopSchemeManagerHttpServer() {
 
 // StartBadHttpServer starts an HTTP server that times out and returns 500 on the first few times.
 func StartBadHttpServer(count uint32, timeout time.Duration, success string) {
+	badServerCount.Store(0)
 	badServer = &http.Server{Addr: "localhost:48682", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if badServerCount.CompareAndSwap(count, 0) {
-			_, _ = fmt.Fprintln(w, success)
-		} else {
+		response := success
+
+		if !badServerCount.CompareAndSwap(count, 0) {
 			badServerCount.Add(1)
 			time.Sleep(timeout)
+			return
 		}
+
+		// If the client POSTed anything, echo it.
+		if r.Method == "POST" {
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				response = "error reading what was POSTed"
+			} else {
+				response = string(bodyBytes)
+			}
+		}
+
+		// Otherwise return the default 'success' value.
+		_, _ = fmt.Fprintln(w, response)
 	})}
 
 	go func() {

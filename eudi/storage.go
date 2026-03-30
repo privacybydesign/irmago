@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	"github.com/privacybydesign/irmago/eudi/internal/storage"
 	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
 	"github.com/privacybydesign/irmago/eudi/internal/storage/sqlcipher"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -30,9 +29,7 @@ func NewStorage(aesKey [32]byte, storagePath string) (*Storage, error) {
 
 	passphrase := string(aesKey[:])
 	dsn := sqlcipher.DSN(storagePath, passphrase)
-	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{
-		SkipDefaultTransaction: true,
-	})
+	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -114,36 +111,4 @@ func encrypt(bytes []byte, aesKey []byte) ([]byte, error) {
 	}
 
 	return gcm.Seal(nonce, nonce, bytes, nil), nil
-}
-
-type UnitOfWork interface {
-	Do(fn func(tx *gorm.DB) error) error
-	Storage() *Storage
-	HolderBindingKeyStorage() storage.HolderBindingKeyStore
-}
-
-type gormUnitOfWork struct {
-	storage *Storage
-
-	holderBindingKeyStore *storage.HolderBindingKeyStore
-}
-
-func NewUnitOfWork(storage *Storage) UnitOfWork {
-	return &gormUnitOfWork{storage: storage}
-}
-
-func (u *gormUnitOfWork) Do(fn func(tx *gorm.DB) error) error {
-	return u.storage.Db().Transaction(fn)
-}
-
-func (u *gormUnitOfWork) HolderBindingKeyStorage() storage.HolderBindingKeyStore {
-	if u.holderBindingKeyStore == nil {
-		ks := storage.NewHolderBindingKeyStore(u.storage.Db())
-		u.holderBindingKeyStore = &ks
-	}
-	return *u.holderBindingKeyStore
-}
-
-func (u *gormUnitOfWork) Storage() *Storage {
-	return u.storage
 }

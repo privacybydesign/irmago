@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func newTestStore(t *testing.T) (HolderBindingKeyStore, *gorm.DB) {
+func newTestStore(t *testing.T) HolderBindingKeyStore {
 	t.Helper()
 
 	const passphrase = "super-secret-key-123"
@@ -23,11 +23,11 @@ func newTestStore(t *testing.T) (HolderBindingKeyStore, *gorm.DB) {
 	err = db.AutoMigrate(&models.HolderBindingKey{}, &models.ECDSAKeyMetadata{}, &models.RSAKeyMetadata{})
 	require.NoError(t, err)
 
-	return NewHolderBindingKeyStore(db), db
+	return NewHolderBindingKeyStore(db)
 }
 
-func newECDSAKey() *models.HolderBindingKey {
-	return &models.HolderBindingKey{
+func newECDSAKey() models.HolderBindingKey {
+	return models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmECDSA,
 		PublicKeyThumbprint: "test-thumbprint-ecdsa",
 		PrivateKey:          []byte("encrypted-private-key"),
@@ -37,8 +37,8 @@ func newECDSAKey() *models.HolderBindingKey {
 	}
 }
 
-func newRSAKey() *models.HolderBindingKey {
-	return &models.HolderBindingKey{
+func newRSAKey() models.HolderBindingKey {
+	return models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmRSA,
 		PublicKeyThumbprint: "test-thumbprint-rsa",
 		PrivateKey:          []byte("encrypted-private-key"),
@@ -50,105 +50,98 @@ func newRSAKey() *models.HolderBindingKey {
 }
 
 func TestStoreKey_ECDSA(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
-	err := store.StoreKey(db, key)
+	err := store.StoreKey(key)
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, key.ID)
 }
 
 func TestStoreKey_RSA(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
-	err := store.StoreKey(db, newRSAKey())
+	err := store.StoreKey(newRSAKey())
 	require.NoError(t, err)
 }
 
 func TestStoreKey_AssignsIDWhenNil(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
 	key.ID = uuid.Nil
 
-	require.NoError(t, store.StoreKey(db, key))
+	require.NoError(t, store.StoreKey(key))
 	assert.NotEqual(t, uuid.Nil, key.ID)
 }
 
 func TestStoreKey_PreservesProvidedID(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	id := uuid.New()
 	key := newECDSAKey()
 	key.ID = id
 
-	require.NoError(t, store.StoreKey(db, key))
+	require.NoError(t, store.StoreKey(key))
 	assert.Equal(t, id, key.ID)
 }
 
-func TestStoreKey_NilKey(t *testing.T) {
-	store, db := newTestStore(t)
-
-	err := store.StoreKey(db, nil)
-	require.Error(t, err)
-}
-
 func TestStoreKey_DuplicateThumbprint(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
-	require.NoError(t, store.StoreKey(db, newECDSAKey()))
+	require.NoError(t, store.StoreKey(newECDSAKey()))
 
-	err := store.StoreKey(db, newECDSAKey()) // same thumbprint
+	err := store.StoreKey(newECDSAKey()) // same thumbprint
 	require.Error(t, err)
 }
 
 func TestStoreKey_ValidationFailsWithoutThumbprint(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
 	key.PublicKeyThumbprint = ""
 
-	err := store.StoreKey(db, key)
+	err := store.StoreKey(key)
 	require.Error(t, err)
 }
 
 func TestStoreKey_ValidationFailsWithoutPrivateKey(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
 	key.PrivateKey = nil
 
-	err := store.StoreKey(db, key)
+	err := store.StoreKey(key)
 	require.Error(t, err)
 }
 
 func TestStoreKey_ValidationFailsECDSAWithoutMetadata(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
 	key.ECDSA = nil
 
-	err := store.StoreKey(db, key)
+	err := store.StoreKey(key)
 	require.Error(t, err)
 }
 
 func TestStoreKey_ValidationFailsECDSAWithRSAMetadata(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
 	key.RSA = &models.RSAKeyMetadata{ModulusBits: 2048, PublicExponent: 65537}
 
-	err := store.StoreKey(db, key)
+	err := store.StoreKey(key)
 	require.Error(t, err)
 }
 
 func TestGetByID(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
-	require.NoError(t, store.StoreKey(db, key))
+	require.NoError(t, store.StoreKey(key))
 
-	got, err := store.GetByID(db, key.ID)
+	got, err := store.GetByID(key.ID)
 	require.NoError(t, err)
 	assert.Equal(t, key.ID, got.ID)
 	assert.Equal(t, key.Algorithm, got.Algorithm)
@@ -159,12 +152,12 @@ func TestGetByID(t *testing.T) {
 }
 
 func TestGetByID_PreloadsRSAMetadata(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newRSAKey()
-	require.NoError(t, store.StoreKey(db, key))
+	require.NoError(t, store.StoreKey(key))
 
-	got, err := store.GetByID(db, key.ID)
+	got, err := store.GetByID(key.ID)
 	require.NoError(t, err)
 	require.NotNil(t, got.RSA)
 	assert.Equal(t, 2048, got.RSA.ModulusBits)
@@ -173,19 +166,19 @@ func TestGetByID_PreloadsRSAMetadata(t *testing.T) {
 }
 
 func TestGetByID_NotFound(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
-	_, err := store.GetByID(db, uuid.New())
+	_, err := store.GetByID(uuid.New())
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestGetByThumbprint(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
-	require.NoError(t, store.StoreKey(db, key))
+	require.NoError(t, store.StoreKey(key))
 
-	got, err := store.GetByThumbprint(db, key.PublicKeyThumbprint)
+	got, err := store.GetByThumbprint(key.PublicKeyThumbprint)
 	require.NoError(t, err)
 	assert.Equal(t, key.ID, got.ID)
 	assert.Equal(t, key.PublicKeyThumbprint, got.PublicKeyThumbprint)
@@ -194,54 +187,54 @@ func TestGetByThumbprint(t *testing.T) {
 }
 
 func TestGetByThumbprint_NotFound(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
-	_, err := store.GetByThumbprint(db, "nonexistent-thumbprint")
+	_, err := store.GetByThumbprint("nonexistent-thumbprint")
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestDeleteKey(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
-	require.NoError(t, store.StoreKey(db, key))
+	require.NoError(t, store.StoreKey(key))
 
-	require.NoError(t, store.DeleteKey(db, key.ID))
+	require.NoError(t, store.DeleteKey(key.ID))
 
-	_, err := store.GetByID(db, key.ID)
+	_, err := store.GetByID(key.ID)
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestDeleteKey_NotFound(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
-	err := store.DeleteKey(db, uuid.New())
+	err := store.DeleteKey(uuid.New())
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestDeleteKey_CascadesMetadata(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
 	key := newECDSAKey()
-	require.NoError(t, store.StoreKey(db, key))
+	require.NoError(t, store.StoreKey(key))
 
-	require.NoError(t, store.DeleteKey(db, key.ID))
+	require.NoError(t, store.DeleteKey(key.ID))
 
 	// Verify that re-inserting with the same thumbprint succeeds (unique index freed)
 	key2 := newECDSAKey()
-	require.NoError(t, store.StoreKey(db, key2))
+	require.NoError(t, store.StoreKey(key2))
 }
 
 func TestDeleteAll(t *testing.T) {
-	store, db := newTestStore(t)
+	store := newTestStore(t)
 
-	require.NoError(t, store.StoreKey(db, newECDSAKey()))
-	require.NoError(t, store.StoreKey(db, newRSAKey()))
+	require.NoError(t, store.StoreKey(newECDSAKey()))
+	require.NoError(t, store.StoreKey(newRSAKey()))
 
-	require.NoError(t, store.DeleteAll(db))
+	require.NoError(t, store.DeleteAll())
 
-	_, err := store.GetByThumbprint(db, "test-thumbprint-ecdsa")
+	_, err := store.GetByThumbprint("test-thumbprint-ecdsa")
 	require.ErrorIs(t, err, ErrNotFound)
-	_, err = store.GetByThumbprint(db, "test-thumbprint-rsa")
+	_, err = store.GetByThumbprint("test-thumbprint-rsa")
 	require.ErrorIs(t, err, ErrNotFound)
 }

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -30,6 +31,7 @@ type session struct {
 	httpClient               *http.Client
 	handler                  Handler
 	storage                  storage.Storage
+	holderVerifier           *sdjwtvc.HolderVerificationProcessor
 	//keyBinder                sdjwtvc.KeyBinder
 
 	issuerSettings openid4vciSessionIssuerSettings
@@ -258,8 +260,7 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 
 	// TODO: determine credential specific settings (like cryptographic key binding requirements) based on the credential configuration metadata, and pass those to the requestCredential function
 	credentialRequestPreferences := getCredentialRequestPreferences(credentialConfig)
-
-	requireCryptographicKeyBinding := len(credentialConfig.CryptographicBindingMethodsSupported) > 0
+	requireCryptographicKeyBinding := credentialRequestPreferences.cryptographicBindingMethod != nil
 
 	// TODO: fill correct fields in Credential Request..
 	// For now, we only support the credential_configuration_id parameter, no credential_identifier from authorization details
@@ -269,12 +270,10 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
 	// TODO: disabled check for testing with Digidentity
-	if requireCryptographicKeyBinding {
-		// Make sure the determined preference is set
-		if credentialRequestPreferences.cryptographicBindingMethod == nil {
-			return fmt.Errorf("credential configuration requires cryptographic key binding, but no supported cryptographic binding method was found in the credential configuration metadata")
-		}
+	keyBindingService := services.NewHolderBindingKeyService(s.storage)
 
+	var keys uuid.UUIDs
+	if requireCryptographicKeyBinding {
 		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
@@ -302,9 +301,10 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 		// Create a Proof builder, matching the `proofType` from the supported proof types
 		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
 
-		uow := storage.NewUnitOfWork(s.storage)
-		keyBindingService := services.NewHolderBindingKeyService(uow)
-		proofJwts, err := keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
+		var proofs []string
+		var err error
+
+		keys, proofs, err = keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
 		if err != nil {
 			return fmt.Errorf("could not create key pairs: %v", err)
 		}
@@ -314,8 +314,8 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 		// which is costly when dealing with many key bindings
 		// x := *(*[]any)(unsafe.Pointer(&proofJwts))
 		// x = x[:len(proofJwts)]
-		x := make([]any, len(proofJwts))
-		for i, v := range proofJwts {
+		x := make([]any, len(proofs))
+		for i, v := range proofs {
 			x[i] = v
 		}
 
@@ -451,18 +451,54 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 	}
 
 	// Verify and store the received credentials
-	sdJwts := make([]sdjwtvc.SdJwtVcKb, len(credentialResponse.Credentials))
+	var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
+	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
-		sdJwts[i] = sdjwtvc.SdJwtVcKb(cred.Credential)
+		// Verify the credential
+		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
+		if err != nil {
+			return fmt.Errorf("failed to verify credential: %v", err)
+		}
+		verifiedSdJwtVcs[i] = verifiedSdJwt
 
 		if i == 0 {
 			// Log the first credential for debugging purposes
 			irma.Logger.Infof("Received credential (first from batch only): %s", string(cred.Credential))
+
+			// Save the processed SD-JWT payload of the first credential, for storage in the credential batch
+			// TODO: processedSdJwtPayload = needs to come from s.holderVerifier.ParseAndVerifySdJwtVc
 		}
 	}
 
-	// Store the credentials using the storage client
-	return s.storageClient.VerifyAndStoreSdJwts(sdJwts, nil, requireCryptographicKeyBinding)
+	// Verify uniquness of key binding confirmations if required by the issuer settings
+	err = sdjwtvc.CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs)
+	if err != nil {
+		return fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
+	}
+
+	// Store the credentials + holder-binding keys + metadata (+ images?) in the storage (in bulk), so we can use a transaction and make sure everything is stored correctly, and also for performance reasons when dealing with batch issuance
+	credentialService := services.NewCredentialService(s.storage)
+
+	// TODO: fill metadata based on the credential response and issuer/credential configuration metadata
+	metadata := services.IssuedCredentialMetadata{
+		// CredentialConfigurationId: credConfigId,
+		// Issuer:                    s.credentialIssuerMetadata.CredentialIssuer,
+		// IssuanceDate:              verifiedSdJwtVcs[0].IssuanceDate, // Assuming all credentials in the batch share the same issuance date, as they should according to the spec
+	}
+
+	err = credentialService.VerifyAndStoreIssuedCredentials(verifiedSdJwtVcs, *processedSdJwtPayload, metadata, requireCryptographicKeyBinding, keys)
+	if err != nil {
+		// Error storing credentials; remove the already stored keys for the credentials that were received, to avoid orphaned keys in the storage
+		if requireCryptographicKeyBinding {
+			err = keyBindingService.RemoveKeys(keys)
+			if err != nil {
+				irma.Logger.Warnf("failed to remove key binding keys after credential storage failure: %v", err)
+			}
+		}
+		return fmt.Errorf("failed to verify and store issued credentials: %v", err)
+	}
+
+	return nil
 }
 
 // requestNonce requests a fresh nonce from the issuer's nonce endpoint
