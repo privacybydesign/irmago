@@ -13,20 +13,20 @@ import (
 
 const memoryDBMaxPinTries = 3
 
-type memoryDB struct {
+type MemoryDB struct {
 	sync.Mutex
 	users       map[string]UserSecrets
 	pinCounters map[string]int
 }
 
-func NewMemoryDB() DB {
-	return &memoryDB{
+func NewMemoryDB() *MemoryDB {
+	return &MemoryDB{
 		users:       map[string]UserSecrets{},
 		pinCounters: map[string]int{},
 	}
 }
 
-func (db *memoryDB) user(_ context.Context, username string) (*User, error) {
+func (db *MemoryDB) user(_ context.Context, username string) (*User, error) {
 	// Ensure access to database is single-threaded
 	db.Lock()
 	defer db.Unlock()
@@ -39,7 +39,7 @@ func (db *memoryDB) user(_ context.Context, username string) (*User, error) {
 	return &User{Username: username, Secrets: UserSecrets(secrets)}, nil
 }
 
-func (db *memoryDB) AddUser(_ context.Context, user *User) error {
+func (db *MemoryDB) AddUser(_ context.Context, user *User) error {
 	// Ensure access to database is single-threaded
 	db.Lock()
 	defer db.Unlock()
@@ -53,7 +53,7 @@ func (db *memoryDB) AddUser(_ context.Context, user *User) error {
 	return nil
 }
 
-func (db *memoryDB) updateUser(_ context.Context, user *User) error {
+func (db *MemoryDB) updateUser(_ context.Context, user *User) error {
 	// Ensure access to database is single-threaded
 	db.Lock()
 	defer db.Unlock()
@@ -67,7 +67,7 @@ func (db *memoryDB) updateUser(_ context.Context, user *User) error {
 	return nil
 }
 
-func (db *memoryDB) reservePinTry(_ context.Context, user *User) (bool, int, int64, error) {
+func (db *MemoryDB) reservePinTry(_ context.Context, user *User) (bool, int, int64, error) {
 	db.Lock()
 	defer db.Unlock()
 
@@ -80,7 +80,7 @@ func (db *memoryDB) reservePinTry(_ context.Context, user *User) (bool, int, int
 	return true, memoryDBMaxPinTries - counter, 0, nil
 }
 
-func (db *memoryDB) resetPinTries(_ context.Context, user *User) error {
+func (db *MemoryDB) resetPinTries(_ context.Context, user *User) error {
 	db.Lock()
 	defer db.Unlock()
 
@@ -88,17 +88,30 @@ func (db *memoryDB) resetPinTries(_ context.Context, user *User) error {
 	return nil
 }
 
-func (db *memoryDB) setSeen(_ context.Context, _ *User) error {
+func (db *MemoryDB) setSeen(_ context.Context, _ *User) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
-func (db *memoryDB) addLog(_ context.Context, _ *User, _ eventType, _ interface{}) error {
+func (db *MemoryDB) addLog(_ context.Context, _ *User, _ eventType, _ interface{}) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }
 
-func (db *memoryDB) addEmailVerification(_ context.Context, _ *User, _, _ string, _ int) error {
+func (db *MemoryDB) addEmailVerification(_ context.Context, _ *User, _, _ string, _ int) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
+}
+
+// DumpUsers returns a copy of all users in the database.
+func (db *MemoryDB) DumpUsers() []User {
+	db.Lock()
+	defer db.Unlock()
+	users := make([]User, 0, len(db.users))
+	for username, secrets := range db.users {
+		s := make(UserSecrets, len(secrets))
+		copy(s, secrets)
+		users = append(users, User{Username: username, Secrets: s})
+	}
+	return users
 }
