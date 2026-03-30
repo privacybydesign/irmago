@@ -11,7 +11,7 @@ import (
 
 // HolderBindingKeyStore is the public interface for storing and retrieving holder binding keys.
 type HolderBindingKeyStore interface {
-	StoreKey(key models.HolderBindingKey) error
+	StoreKey(key *models.HolderBindingKey) error
 	StoreKeys(keys []models.HolderBindingKey) error
 	GetByID(id uuid.UUID) (*models.HolderBindingKey, error)
 	GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error)
@@ -31,7 +31,7 @@ func NewHolderBindingKeyStore(db *gorm.DB) HolderBindingKeyStore {
 }
 
 // StoreKey inserts the base key row plus the matching algorithm-specific metadata row.
-func (r *holderBindingKeyStore) StoreKey(key models.HolderBindingKey) error {
+func (r *holderBindingKeyStore) StoreKey(key *models.HolderBindingKey) error {
 	return r.db.Create(key).Error
 }
 

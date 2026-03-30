@@ -190,6 +190,7 @@ func createTestSdJwtVcWithHolderKey[T sdjwtvc.LeafClaimDataType](vct, issuerUrl 
 		Build(sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey())
 }
 
+// TODO: this func becomes irrelevant once we have our own metadata storage (and no longer depend on metadata in the IrmaClient)
 func createCredentialInfoAndVerifiedSdJwtVc(
 	sdJwt sdjwtvc.SdJwtVcKb,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
@@ -202,42 +203,33 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 	}
 
 	attributes := map[string]any{}
-
-	for key, value := range verifiedSdJwtVc.Claims.Object {
-		if value.Type != sdjwtvc.Claim_String {
-			irma.Logger.Infof("attribute value not a string, skipping attribute: %v %v", key, value.Type)
-			continue
-		}
-		valStr, ok := value.Value.(string)
-		if !ok {
-			return nil, nil, fmt.Errorf("attribute value not a string: %v", key)
-		}
-		attributes[key] = valStr
+	for _, d := range verifiedSdJwtVc.Disclosures {
+		attributes[d.Key] = d.Value
 	}
 
-	hash, err := irmaclient.CreateHashForSdJwtVc(verifiedSdJwtVc.VerifiableCredentialType, attributes)
+	hash, err := irmaclient.CreateHashForSdJwtVc(verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType, attributes)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if mode == eudi.StrictSdJwtVerificationMode {
-		idComponents := strings.Split(verifiedSdJwtVc.VerifiableCredentialType, ".")
+		idComponents := strings.Split(verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType, ".")
 		if num := len(idComponents); num != 3 {
 			return nil, nil, fmt.Errorf(
 				"credential id expected to have exactly 3 components, separated by dots: %s",
-				verifiedSdJwtVc.VerifiableCredentialType,
+				verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
 			)
 		}
 	}
 
 	info := irmaclient.SdJwtVcMetadata{
 		Hash:           hash,
-		CredentialType: verifiedSdJwtVc.VerifiableCredentialType,
+		CredentialType: verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
 		SignedOn: irma.Timestamp(
-			time.Unix(verifiedSdJwtVc.IssuedAt, 0),
+			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt, 0),
 		),
 		Expires: irma.Timestamp(
-			time.Unix(verifiedSdJwtVc.Expiry, 0),
+			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry, 0),
 		),
 		Attributes: attributes,
 	}

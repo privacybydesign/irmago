@@ -94,54 +94,34 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	// Use the first credential as the source of truth for batch-level metadata.
 	first := verifiedSdJwtVcs[0]
 
-	attributes, err := extractScalarAttributes(first)
-	if err != nil {
-		return fmt.Errorf("failed to extract attributes: %w", err)
-	}
-
 	// The hash will be a hash over the ProcessedSdJwtPayload, which is the same for all credentials in the batch since they share the same claims.
 	processedSdJwtPayloadBytes, err := json.Marshal(processedSdJwtPayload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
 	}
 
-	hash := hashForSdJwtVc(first.VerifiableCredentialType, processedSdJwtPayloadBytes)
+	hash := hashForSdJwtVc(first.IssuerSignedJwtPayload.VerifiableCredentialType, processedSdJwtPayloadBytes)
 
-	attributesJSON, err := json.Marshal(attributes)
-	if err != nil {
-		return fmt.Errorf("failed to marshal attributes: %w", err)
-	}
-
-	issuerDisplayJSON, err := marshalIssuerDisplay(metadata.IssuerDisplays)
-	if err != nil {
-		return fmt.Errorf("failed to marshal issuer display metadata: %w", err)
-	}
-
-	credentialDisplayJSON, err := marshalCredentialDisplay(metadata.CredentialDisplays)
-	if err != nil {
-		return fmt.Errorf("failed to marshal credential display metadata: %w", err)
-	}
-
-	issuedAt := time.Unix(first.IssuedAt, 0)
+	issuedAt := time.Unix(first.IssuerSignedJwtPayload.IssuedAt, 0)
 
 	var expiresAt *time.Time
-	if first.Expiry != 0 {
-		t := time.Unix(first.Expiry, 0)
+	if first.IssuerSignedJwtPayload.Expiry != 0 {
+		t := time.Unix(first.IssuerSignedJwtPayload.Expiry, 0)
 		expiresAt = &t
 	}
 
 	var notBefore *time.Time
-	if first.NotBefore != 0 {
-		t := time.Unix(first.NotBefore, 0)
+	if first.IssuerSignedJwtPayload.NotBefore != 0 {
+		t := time.Unix(first.IssuerSignedJwtPayload.NotBefore, 0)
 		notBefore = &t
 	}
 
 	var status []byte
-	if first.Status != "" {
+	if first.IssuerSignedJwtPayload.Status != "" {
 		// The upstream IssuerSignedJwtPayload currently parses the status claim as a plain
 		// string. Store the raw bytes for now; once the upstream type is updated to a JSON
-		// object (RFC 9596 Token Status List), change this to json.Marshal(first.Status).
-		status = []byte(first.Status)
+		// object (RFC 9596 Token Status List), change this to json.Marshal(first.IssuerSignedJwtPayload.Status).
+		status = []byte(first.IssuerSignedJwtPayload.Status)
 	}
 
 	batchSize := uint(len(verifiedSdJwtVcs))
@@ -156,45 +136,29 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                 first.Issuer,
+		IssuerURL:                 first.IssuerSignedJwtPayload.Issuer,
 		CredentialConfigurationID: metadata.CredentialConfigurationID,
-		VerifiableCredentialType:  first.VerifiableCredentialType,
+		VerifiableCredentialType:  first.IssuerSignedJwtPayload.VerifiableCredentialType,
 		Format:                    models.CredentialFormat(metadata.Format),
 		Hash:                      hash,
 		ProcessedSdJwtPayload:     string(processedSdJwtPayloadBytes),
-		AttributesJSON:            attributesJSON,
-		IssuerDisplayJSON:         issuerDisplayJSON,
-		CredentialDisplayJSON:     credentialDisplayJSON,
-		IssuedAt:                  issuedAt,
-		ExpiresAt:                 expiresAt,
-		NotBefore:                 notBefore,
-		Status:                    status,
-		BatchSize:                 batchSize,
-		RemainingCount:            batchSize,
-		Instances:                 instances,
+
+		// TODO: replace with correct (relational) metadata fields instead of JSON blobs
+		AttributesJSON:        nil,
+		IssuerDisplayJSON:     nil,
+		CredentialDisplayJSON: nil,
+		// END TODO
+
+		IssuedAt:       issuedAt,
+		ExpiresAt:      expiresAt,
+		NotBefore:      notBefore,
+		Status:         status,
+		BatchSize:      batchSize,
+		RemainingCount: batchSize,
+		Instances:      instances,
 	}
 
 	return s.credentialStore.StoreBatch(batch)
-}
-
-// extractScalarAttributes extracts the top-level scalar claims (string, int, bool, null)
-// from the verified SD-JWT VC. Structured claims (objects and arrays) are skipped, matching
-// the behaviour of irmaclient.CreateHashForSdJwtVc.
-func extractScalarAttributes(v *sdjwtvc.VerifiedSdJwtVc) (map[string]any, error) {
-	// TODO: should we include all claims (except for _sd claims) ?
-	if v.Claims == nil {
-		return map[string]any{}, nil
-	}
-
-	attrs := make(map[string]any, len(v.Claims.Object))
-	for key, node := range v.Claims.Object {
-		switch node.Type {
-		case sdjwtvc.Claim_String, sdjwtvc.Claim_Int, sdjwtvc.Claim_Bool, sdjwtvc.Claim_Null:
-			attrs[key] = node.Value
-		}
-	}
-
-	return attrs, nil
 }
 
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.
