@@ -3191,32 +3191,32 @@ func awaitWithTimeout[T any](t *testing.T, channel chan T, timeout time.Duration
 type SessionIntegrationTest func(t *testing.T, irmaServer *IrmaServer, client *client.Client, handler *MockSessionHandler)
 
 func runEudiSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
-	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
-	defer irmaServer.Stop()
-
-	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
-	defer keyshareServer.Stop()
-
-	c, sessionHandler := createClient(t)
-	defer c.Close()
-
 	t.Run(name, func(t *testing.T) {
+		irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+		defer irmaServer.Stop()
+
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+		defer keyshareServer.Stop()
+
+		c, sessionHandler := createClient(t)
+		defer c.Close()
+
 		test(t, irmaServer, c, sessionHandler)
 	})
 }
 
 func runSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
-	conf := IrmaServerConfigurationWithTempStorage(t)
-	irmaServer := StartIrmaServer(t, conf)
-	defer irmaServer.Stop()
-
-	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
-	defer keyshareServer.Stop()
-
-	c, sessionHandler := createClient(t)
-	defer c.Close()
-
 	t.Run(name, func(t *testing.T) {
+		conf := IrmaServerConfigurationWithTempStorage(t)
+		irmaServer := StartIrmaServer(t, conf)
+		defer irmaServer.Stop()
+
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+		defer keyshareServer.Stop()
+
+		c, sessionHandler := createClient(t)
+		defer c.Close()
+
 		test(t, irmaServer, c, sessionHandler)
 	})
 }

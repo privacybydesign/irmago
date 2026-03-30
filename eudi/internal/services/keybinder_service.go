@@ -18,6 +18,7 @@ import (
 
 // HolderBindingKeyService implements the KeyBinder interface.
 type HolderBindingKeyService interface {
+	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (uuid.UUIDs, []string, error)
 }
 
 type holderBindingKeyService struct {

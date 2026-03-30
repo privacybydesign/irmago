@@ -31,6 +31,7 @@ type HolderBindingKey struct {
 	ECDSA *ECDSAKeyMetadata `gorm:"constraint:OnDelete:CASCADE;foreignKey:KeyID;references:ID" json:"ecdsa,omitempty"`
 	RSA   *RSAKeyMetadata   `gorm:"constraint:OnDelete:CASCADE;foreignKey:KeyID;references:ID" json:"rsa,omitempty"`
 
+	// Date/time of creation (UTC)
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -38,6 +39,8 @@ func (k *HolderBindingKey) BeforeCreate(tx *gorm.DB) error {
 	if k.ID == uuid.Nil {
 		k.ID = uuid.New()
 	}
+
+	k.CreatedAt = time.Now().UTC()
 	k.NormalizeChildren()
 
 	return k.validate()
@@ -54,8 +57,6 @@ type ECDSAKeyMetadata struct {
 
 	// e.g. P-256, P-384, secp256k1
 	CurveName string `gorm:"type:text;not null" json:"curve_name"`
-
-	CreatedAt time.Time `json:"created_at"`
 }
 
 func (ECDSAKeyMetadata) TableName() string {
@@ -72,8 +73,6 @@ type RSAKeyMetadata struct {
 
 	// usually 65537
 	PublicExponent int `gorm:"not null" json:"public_exponent"`
-
-	CreatedAt time.Time `json:"created_at"`
 }
 
 func (RSAKeyMetadata) TableName() string {
