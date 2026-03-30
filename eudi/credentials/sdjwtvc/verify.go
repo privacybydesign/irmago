@@ -472,6 +472,7 @@ func (v *VerifiedSdJwtVc) GetRawSdJwtVc() SdJwtVc {
 // sdJwtVcProcessor is the base processor, used to process and verify an SD-JWT VC for both holder and verifier.
 type sdJwtVcProcessor struct {
 	verificationContext SdJwtVcVerificationContext
+	allowInsecureDidWeb bool
 }
 
 // keyBindingProcessor is an interface for processing and verifying the key binding JWT of an SD-JWT VC.
@@ -914,7 +915,7 @@ func extractClaimsAndDisclosuresDigestsFromToken(token jwt.Token) (map[string]an
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
 ) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
-	keyProvider := SdJwtKeyProvider{}
+	keyProvider := SdJwtKeyProvider{allowInsecure: v.allowInsecureDidWeb}
 
 	// Create a context for the verification where we can retrieve the requestor info back
 	token, err := jwt.Parse(signedJwt,
@@ -1111,6 +1112,12 @@ func NewHolderVerificationProcessor(verificationContext SdJwtVcVerificationConte
 	return &HolderVerificationProcessor{
 		sdJwtVcProcessor: NewSdJwtVcProcessor(verificationContext),
 	}
+}
+
+// SetAllowInsecureDidWeb enables resolving did:web DIDs over HTTP instead of HTTPS.
+// This should only be called when developer mode is enabled.
+func (v *HolderVerificationProcessor) SetAllowInsecureDidWeb(allow bool) {
+	v.allowInsecureDidWeb = allow
 }
 
 type holderVerifierKeyBindingProcessor struct{}

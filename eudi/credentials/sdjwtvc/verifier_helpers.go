@@ -12,6 +12,7 @@ import (
 
 type SdJwtKeyProvider struct {
 	innerKeyProvider jws.KeyProvider
+	allowInsecure    bool
 }
 
 // FetchKeys fetches the keys for verifying the SD-JWT VC issuer signed jwt, but not before validating the 'typ' header.
@@ -28,7 +29,7 @@ func (p *SdJwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig 
 	}
 
 	if kid, kidPresent := sig.ProtectedHeaders().KeyID(); kidPresent && kid != "" {
-		p.innerKeyProvider = eudi_jwt.NewKidKeyProvider(kid)
+		p.innerKeyProvider = eudi_jwt.NewKidKeyProvider(kid, p.allowInsecure)
 	}
 
 	if p.innerKeyProvider == nil {

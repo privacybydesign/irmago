@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 
 	"github.com/lestrrat-go/jwx/v3/cert"
 	"github.com/lestrrat-go/jwx/v3/jwa"
@@ -59,12 +60,15 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 }
 
 type KidKeyProvider struct {
-	kidHeader string
+	kidHeader     string
+	httpClient    *http.Client
+	allowInsecure bool
 }
 
-func NewKidKeyProvider(kidHeader string) *KidKeyProvider {
+func NewKidKeyProvider(kidHeader string, allowInsecure bool) *KidKeyProvider {
 	return &KidKeyProvider{
-		kidHeader: kidHeader,
+		kidHeader:     kidHeader,
+		allowInsecure: allowInsecure,
 	}
 }
 
@@ -84,7 +88,10 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 
 	fullKid := fmt.Sprintf("%s%s", issClaim, p.kidHeader)
 
-	documentResolver := didweb.DocumentResolver{}
+	documentResolver := didweb.DocumentResolver{
+		HTTPClient:    p.httpClient,
+		AllowInsecure: p.allowInsecure,
+	}
 	doc, err := documentResolver.Resolve(issClaim)
 	if err != nil {
 		return fmt.Errorf("failed to resolve did document for kid: %v", err)
@@ -101,11 +108,61 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 				return fmt.Errorf("cannot use a JWK containing private key material")
 			}
 
-			sink.Key(jwa.ES256(), *vm.PublicKeyJwk)
+			alg, err := algorithmFromJWK(*vm.PublicKeyJwk)
+			if err != nil {
+				return fmt.Errorf("failed to determine algorithm from JWK: %v", err)
+			}
+
+			sink.Key(alg, *vm.PublicKeyJwk)
 
 			return nil
 		}
 	}
 
 	return fmt.Errorf("failed to find matching verification method for kid: %s", fullKid)
+}
+
+// algorithmFromJWK determines the signing algorithm from a JWK.
+// It first checks the "alg" field, then falls back to inferring from the key type and curve.
+func algorithmFromJWK(key jwk.Key) (jwa.SignatureAlgorithm, error) {
+	if alg, ok := key.Algorithm(); ok {
+		if sigAlg, ok := jwa.LookupSignatureAlgorithm(alg.String()); ok {
+			return sigAlg, nil
+		}
+	}
+
+	kty := key.KeyType()
+
+	switch kty {
+	case jwa.EC():
+		var crv jwa.EllipticCurveAlgorithm
+		if err := key.Get("crv", &crv); err != nil {
+			return jwa.SignatureAlgorithm{}, fmt.Errorf("EC JWK has no curve: %v", err)
+		}
+		switch crv {
+		case jwa.P256():
+			return jwa.ES256(), nil
+		case jwa.P384():
+			return jwa.ES384(), nil
+		case jwa.P521():
+			return jwa.ES512(), nil
+		default:
+			return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported EC curve: %s", crv)
+		}
+	case jwa.OKP():
+		var crv jwa.EllipticCurveAlgorithm
+		if err := key.Get("crv", &crv); err != nil {
+			return jwa.SignatureAlgorithm{}, fmt.Errorf("OKP JWK has no curve: %v", err)
+		}
+		switch crv {
+		case jwa.Ed25519():
+			return jwa.EdDSA(), nil
+		default:
+			return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported OKP curve: %s", crv)
+		}
+	case jwa.RSA():
+		return jwa.RS256(), nil
+	default:
+		return jwa.SignatureAlgorithm{}, fmt.Errorf("unsupported key type: %s", kty)
+	}
 }

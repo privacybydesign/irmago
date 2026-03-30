@@ -63,6 +63,34 @@ func Test_didWebToURL(t *testing.T) {
 	}
 }
 
+func Test_Resolve_AllowInsecure_FallsBackToHTTP(t *testing.T) {
+	doc := did.Document{
+		Context: []string{"https://www.w3.org/ns/did/v1"},
+		ID:      "did:web:example.com",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/did+json")
+		_ = json.NewEncoder(w).Encode(doc)
+	}))
+	defer server.Close()
+
+	resolver := &DocumentResolver{
+		HTTPClient: &http.Client{
+			Transport: &hostOverrideTransport{
+				base:       http.DefaultTransport,
+				targetHost: server.Listener.Addr().String(),
+				useHTTP:    true,
+			},
+		},
+		AllowInsecure: true,
+	}
+
+	result, err := resolver.Resolve("did:web:example.com")
+	require.NoError(t, err)
+	require.Equal(t, "did:web:example.com", result.ID)
+}
+
 func Test_Resolve_ReturnsDocument(t *testing.T) {
 	doc := did.Document{
 		Context: []string{"https://www.w3.org/ns/did/v1"},

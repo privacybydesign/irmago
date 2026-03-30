@@ -1,0 +1,7 @@
+{
+  "did": "did:web:localhost%3A8880:test-issuer:.well-known",
+  "alias": "test-issuer-did",
+  "provider": "did:web",
+  "type": "Secp256r1",
+  "services": []
+}

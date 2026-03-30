@@ -16,6 +16,9 @@ import (
 type DocumentResolver struct {
 	// HTTPClient is the HTTP client used to fetch DID documents. If nil, http.DefaultClient is used.
 	HTTPClient *http.Client
+	// AllowInsecure additionally allows resolving did:web DIDs over HTTP when
+	// the HTTPS request fails. This should only be enabled in developer mode.
+	AllowInsecure bool
 }
 
 // Resolve fetches and parses the DID Document for the given did:web DID.
@@ -25,6 +28,19 @@ func (r *DocumentResolver) Resolve(didWeb string) (*did.Document, error) {
 		return nil, err
 	}
 
+	doc, err := r.fetchDocument(docURL)
+	if err != nil && r.AllowInsecure {
+		httpURL := strings.Replace(docURL, "https://", "http://", 1)
+		doc, err = r.fetchDocument(httpURL)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return doc, nil
+}
+
+func (r *DocumentResolver) fetchDocument(docURL string) (*did.Document, error) {
 	client := r.HTTPClient
 	if client == nil {
 		client = http.DefaultClient
