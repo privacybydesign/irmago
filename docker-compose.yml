@@ -86,8 +86,9 @@ services:
     volumes:
       - .:/irmago
     depends_on:
-      - eudi_verifier
-      - eudi_verifier_jwt
+      - eudi_openid4vp
+      - eudi_openid4vp_jwt
+      - veramo_openid4vp
       - postgres
       - mysql
       - sqlserver
@@ -115,8 +116,8 @@ services:
     networks:
       - irma-net
 
-  # OpenID4VCI issuer for integration tests (surf-veramo-agent)
-  openid4vci_issuer_postgres:
+  # OpenID4VCI issuer for integration tests (eduwallet/veramo-agent)
+  veramo_openid4vci_postgres:
     image: postgres:16-bookworm
     environment:
       POSTGRES_DB: postgres
@@ -125,24 +126,24 @@ services:
     networks:
       irma-net:
         aliases:
-          - openid4vci-postgres.localhost
+          - veramo-openid4vci-postgres.localhost
     ports:
       - 5434:5432
 
-  openid4vci_issuer_postgres_init:
+  veramo_openid4vci_postgres_init:
     image: postgres:16-bookworm
     environment:
-      PGHOST: openid4vci-postgres.localhost
+      PGHOST: veramo-openid4vci-postgres.localhost
       PGUSER: postgres
       PGPASSWORD: testpassword
       PGDATABASE: postgres
     networks:
       - irma-net
     depends_on:
-      - openid4vci_issuer_postgres
+      - veramo_openid4vci_postgres
     command: /bin/sh -c "sleep 3 && psql -c 'CREATE SCHEMA IF NOT EXISTS agent'"
 
-  openid4vci_mock_authorization_server:
+  veramo_openid4vci_mock_authorization_server:
     build:
       context: ./testdata/openid4vci-issuer/mock-as
     environment:
@@ -155,23 +156,23 @@ services:
     ports:
       - 9090:9090
 
-  openid4vci_issuer:
+  veramo_openid4vci:
     build:
       context: https://github.com/eduwallet/veramo-agent.git#v1.4.1
     command: ["yarn", "start"]
     extra_hosts:
       - "localhost:host-gateway"
     depends_on:
-      openid4vci_issuer_postgres_init:
+      veramo_openid4vci_postgres_init:
         condition: service_completed_successfully
-      openid4vci_mock_authorization_server:
+      veramo_openid4vci_mock_authorization_server:
         condition: service_started
     volumes:
       - ./testdata/openid4vci-issuer/conf:/app/conf
     environment:
       NODE_ENV: development
       DB_TYPE: postgres
-      DB_HOST: openid4vci-postgres.localhost
+      DB_HOST: veramo-openid4vci-postgres.localhost
       DB_PORT: 5432
       DB_USER: postgres
       DB_PASSWORD: testpassword
@@ -185,14 +186,80 @@ services:
     networks:
       irma-net:
         aliases:
-          - openid4vci-issuer.localhost
+          - veramo-openid4vci.localhost
     ports:
       - 8880:3000
 
-  # Eudi openid4vp verifier service
-  eudi_verifier:
+  # OpenID4VP verifier for integration tests (eduwallet/veramo-verifier)
+  veramo_openid4vp_postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: testpassword
+    networks:
+      irma-net:
+        aliases:
+          - veramo-openid4vp-postgres.localhost
+    ports:
+      - 5435:5432
+
+  veramo_openid4vp_postgres_init:
+    image: postgres:16-bookworm
+    environment:
+      PGHOST: veramo-openid4vp-postgres.localhost
+      PGUSER: postgres
+      PGPASSWORD: testpassword
+      PGDATABASE: postgres
+    networks:
+      - irma-net
+    depends_on:
+      - veramo_openid4vp_postgres
+    command: /bin/sh -c "sleep 3 && psql -c 'CREATE SCHEMA IF NOT EXISTS verifier'"
+
+  veramo_openid4vp:
+    build:
+      context: https://github.com/eduwallet/veramo-verifier.git#v1.5.1
+      dockerfile_inline: |
+        FROM node:20-alpine
+        WORKDIR /app
+        COPY package.json yarn.lock .yarnrc.yml ./
+        RUN yarn install
+        COPY . .
+        CMD ["yarn", "start"]
+    extra_hosts:
+      - "localhost:host-gateway"
+    depends_on:
+      veramo_openid4vp_postgres_init:
+        condition: service_completed_successfully
+      veramo_openid4vci:
+        condition: service_started
+    volumes:
+      - ./testdata/openid4vp-verifier/conf:/app/conf
+    environment:
+      NODE_ENV: development
+      DB_HOST: veramo-openid4vp-postgres.localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: testpassword
+      DB_NAME: postgres
+      PORT: 5000
+      LISTEN_ADDRESS: 0.0.0.0
+      BASEURL: http://localhost:8891
+      PASSPHRASE: abcdefghijklmnopqrstuvwxyz012345
+      ADMIN_BEARER_TOKEN: test-verifier-admin-token
+      CONF_PATH: conf
+    networks:
+      irma-net:
+        aliases:
+          - veramo-openid4vp.localhost
+    ports:
+      - 8891:5000
+
+  # Eudi openid4vp verifier service (eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt)
+  eudi_openid4vp:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.6.0
-    container_name: eudi_verifier
+    container_name: eudi_openid4vp
     ports:
       - "8089:8089"
     volumes:
@@ -212,9 +279,9 @@ services:
       - VERIFIER_CLIENTIDPREFIX=x509_san_dns
 
   # Eudi openid4vp verifier service with direct_post.jwt enabled
-  eudi_verifier_jwt:
+  eudi_openid4vp_jwt:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.6.0
-    container_name: eudi_verifier_jwt
+    container_name: eudi_openid4vp_jwt
     ports:
       - "8090:8090"
     volumes:
