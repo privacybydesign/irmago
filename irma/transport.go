@@ -206,13 +206,12 @@ func (transport *HTTPTransport) request(
 	reader io.Reader,
 	contenttype string,
 ) (response *http.Response, err error) {
-	var req retryablehttp.Request
 	u := transport.Server + url
 	if common.ForceHTTPS && transport.ForceHTTPS && !strings.HasPrefix(u, "https") {
 		return nil, &SessionError{ErrorType: ErrorHTTPS, Err: errors.New("remote server does not use https")}
 	}
 
-	req.Request, err = http.NewRequestWithContext(ctx, method, u, reader)
+	req, err := retryablehttp.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}
@@ -223,7 +222,7 @@ func (transport *HTTPTransport) request(
 	if reader != nil && contenttype != "" {
 		req.Header.Set("Content-Type", contenttype)
 	}
-	res, err := transport.client.Do(&req)
+	res, err := transport.client.Do(req)
 	if err != nil {
 		return nil, &SessionError{ErrorType: ErrorTransport, Err: err}
 	}

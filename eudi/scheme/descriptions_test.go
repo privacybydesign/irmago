@@ -9,17 +9,22 @@ import (
 
 func TestSchemeQueryValidator(t *testing.T) {
 	// Happy flow tests
-	t.Run("SchemeQueryValidator validates authorized query for single credential successfully", testSchemeQueryValidatorValidatesAuthorizedQueryForSingleCredentialSuccessfully)
-	t.Run("SchemeQueryValidator validates authorized query for multiple credential successfully", testSchemeQueryValidatorValidatesAuthorizedQueryForMultipleCredentialSuccessfully)
+	t.Run("SchemeQueryValidator authorizes query for single credential successfully", testSchemeQueryValidatorAuthorizesQueryForSingleCredentialSuccessfully)
+	t.Run("SchemeQueryValidator authorizes query for multiple credential successfully", testSchemeQueryValidatorAuthorizesQueryForMultipleCredentialSuccessfully)
+	t.Run("SchemeQueryValidator authorizes query against RP with attributes wildcard", testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithAttributesWildcard)
+	t.Run("SchemeQueryValidator authorizes query against RP with credentials wildcard", testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithCredentialsWildcard)
+	t.Run("SchemeQueryValidator authorizes query against RP with issuers wildcard", testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithIssuersWildcard)
+	t.Run("SchemeQueryValidator authorizes query against RP with scheme wildcard", testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithSchemeWildcard)
 
 	// Unhappy flow tests
 	t.Run("SchemeQueryValidator fails validation for unauthorized credential query", testSchemeQueryValidatorFailsValidationForUnknownCredential)
+	t.Run("SchemeQueryValidator fails validation for unauthorized issuer query", testSchemeQueryValidatorFailsValidationForUnknownIssuer)
 	t.Run("SchemeQueryValidator fails validation for single unauthorized credential query", testSchemeQueryValidatorFailsValidationForSingleUnknownCredential)
 	t.Run("SchemeQueryValidator fails validation for unauthorized attribute", testSchemeQueryValidatorFailsValidationForUnauthorizedAttribute)
 	t.Run("SchemeQueryValidator fails validation for single unauthorized attribute", testSchemeQueryValidatorFailsValidationForSingleUnauthorizedAttribute)
 }
 
-func testSchemeQueryValidatorValidatesAuthorizedQueryForSingleCredentialSuccessfully(t *testing.T) {
+func testSchemeQueryValidatorAuthorizesQueryForSingleCredentialSuccessfully(t *testing.T) {
 	query := createBasicQuery()
 
 	validator := SchemeQueryValidator{
@@ -37,7 +42,7 @@ func testSchemeQueryValidatorValidatesAuthorizedQueryForSingleCredentialSuccessf
 	require.NoError(t, err)
 }
 
-func testSchemeQueryValidatorValidatesAuthorizedQueryForMultipleCredentialSuccessfully(t *testing.T) {
+func testSchemeQueryValidatorAuthorizesQueryForMultipleCredentialSuccessfully(t *testing.T) {
 	query := createBasicQuery()
 	query.Credentials[0].Meta.VctValues = append(query.Credentials[0].Meta.VctValues, "pbdf.issuer2.cred")
 
@@ -60,7 +65,79 @@ func testSchemeQueryValidatorValidatesAuthorizedQueryForMultipleCredentialSucces
 	require.NoError(t, err)
 }
 
-func testSchemeQueryValidatorFailsValidationForUnknownCredential(t *testing.T) {
+func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithAttributesWildcard(t *testing.T) {
+	query := createBasicQuery()
+
+	validator := SchemeQueryValidator{
+		RelyingParty: &RelyingParty{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
+				{
+					Credential: "pbdf.issuer1.cred",
+					Attributes: []string{"*"},
+				},
+			},
+		},
+	}
+
+	err := validator.ValidateQuery(query)
+	require.NoError(t, err)
+}
+
+func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithCredentialsWildcard(t *testing.T) {
+	query := createBasicQuery()
+
+	validator := SchemeQueryValidator{
+		RelyingParty: &RelyingParty{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
+				{
+					Credential: "pbdf.issuer1.*",
+					Attributes: []string{"*"},
+				},
+			},
+		},
+	}
+
+	err := validator.ValidateQuery(query)
+	require.NoError(t, err)
+}
+
+func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithIssuersWildcard(t *testing.T) {
+	query := createBasicQuery()
+
+	validator := SchemeQueryValidator{
+		RelyingParty: &RelyingParty{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
+				{
+					Credential: "pbdf.*",
+					Attributes: []string{"*"},
+				},
+			},
+		},
+	}
+
+	err := validator.ValidateQuery(query)
+	require.NoError(t, err)
+}
+
+func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithSchemeWildcard(t *testing.T) {
+	query := createBasicQuery()
+
+	validator := SchemeQueryValidator{
+		RelyingParty: &RelyingParty{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
+				{
+					Credential: "*",
+					Attributes: []string{"*"},
+				},
+			},
+		},
+	}
+
+	err := validator.ValidateQuery(query)
+	require.NoError(t, err)
+}
+
+func testSchemeQueryValidatorFailsValidationForUnknownIssuer(t *testing.T) {
 	query := createBasicQuery()
 
 	validator := SchemeQueryValidator{
@@ -68,6 +145,24 @@ func testSchemeQueryValidatorFailsValidationForUnknownCredential(t *testing.T) {
 			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
 				{
 					Credential: "pbdf.issuer2.cred",
+					Attributes: []string{"attr"},
+				},
+			},
+		},
+	}
+
+	err := validator.ValidateQuery(query)
+	require.Errorf(t, err, "credential is not authorized: credential pbdf.issuer1.cred is not in the authorized set")
+}
+
+func testSchemeQueryValidatorFailsValidationForUnknownCredential(t *testing.T) {
+	query := createBasicQuery()
+
+	validator := SchemeQueryValidator{
+		RelyingParty: &RelyingParty{
+			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
+				{
+					Credential: "pbdf.issuer1.test",
 					Attributes: []string{"attr"},
 				},
 			},
