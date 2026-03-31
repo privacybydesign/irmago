@@ -1,4 +1,4 @@
-package irmaclient
+package sdjwtvphandler
 
 import (
 	"fmt"
@@ -10,17 +10,18 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
 // SdJwtVcDcqlHandler implements clientmodels.DcqlCredentialQueryHandler for SD-JWT-VC credentials.
 type SdJwtVcDcqlHandler struct {
-	storage   SdJwtVcStorage
+	storage   irmaclient.SdJwtVcStorage
 	config    *irma.Configuration
 	keyBinder sdjwtvc.KeyBinder
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler for SD-JWT-VC DCQL credential queries.
-func NewSdJwtVcDcqlHandler(storage SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwtvc.KeyBinder) *SdJwtVcDcqlHandler {
+func NewSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwtvc.KeyBinder) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:   storage,
 		config:    config,
@@ -130,7 +131,7 @@ func dcqlClaimKey(claim dcql.Claim) string {
 }
 
 // getClaimMatches checks which claims from the query match the credential's attributes.
-func getClaimMatchesForQuery(metadata SdJwtVcBatchMetadata, claims []dcql.Claim) map[string]dcqlClaimMatch {
+func getClaimMatchesForQuery(metadata irmaclient.SdJwtVcBatchMetadata, claims []dcql.Claim) map[string]dcqlClaimMatch {
 	result := make(map[string]dcqlClaimMatch)
 	for _, claim := range claims {
 		attrName := claim.Path[0]
@@ -199,12 +200,12 @@ func filterClaimMatchesForQuery(query dcql.CredentialQuery, matches map[string]d
 }
 
 type sdJwtVcCredCandidate struct {
-	entry        SdJwtVcAndInfo
+	entry        irmaclient.SdJwtVcAndInfo
 	claimMatches []dcqlClaimMatch
 }
 
 // filterCredentialsWithClaims returns only credentials that have ALL required claims.
-func (h *SdJwtVcDcqlHandler) filterCredentialsWithClaims(entries []SdJwtVcAndInfo, query dcql.CredentialQuery) ([]sdJwtVcCredCandidate, error) {
+func (h *SdJwtVcDcqlHandler) filterCredentialsWithClaims(entries []irmaclient.SdJwtVcAndInfo, query dcql.CredentialQuery) ([]sdJwtVcCredCandidate, error) {
 	var result []sdJwtVcCredCandidate
 	for _, e := range entries {
 		claimMatches := getClaimMatchesForQuery(e.Metadata, query.Claims)
@@ -262,7 +263,7 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 	credType *irma.CredentialType,
 	matches []dcqlClaimMatch,
-	metadata SdJwtVcBatchMetadata,
+	metadata irmaclient.SdJwtVcBatchMetadata,
 ) []clientmodels.Attribute {
 	var attributes []clientmodels.Attribute
 
@@ -397,7 +398,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 }
 
 // buildLogCredential creates a LogCredential for a disclosed credential.
-func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata SdJwtVcBatchMetadata, disclosedAttributeNames []string) clientmodels.LogCredential {
+func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatchMetadata, disclosedAttributeNames []string) clientmodels.LogCredential {
 	credTypeId := irma.NewCredentialTypeIdentifier(metadata.CredentialType)
 
 	logCred := clientmodels.LogCredential{
@@ -527,8 +528,8 @@ func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.Att
 	return val
 }
 
-// sortedAttributeTypes returns attribute types sorted by DisplayIndex.
-func sortedAttributeTypes(attrs []*irma.AttributeType) []*irma.AttributeType {
+// SortedAttributeTypes returns attribute types sorted by DisplayIndex.
+func SortedAttributeTypes(attrs []*irma.AttributeType) []*irma.AttributeType {
 	sorted := make([]*irma.AttributeType, len(attrs))
 	copy(sorted, attrs)
 	slices.SortStableFunc(sorted, func(a, b *irma.AttributeType) int {

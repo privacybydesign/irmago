@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/irma"
 )
 
 // Handler is the callback interface for the OpenID4VP client session lifecycle.
@@ -74,11 +74,11 @@ func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismiss
 
 // Dismiss dismisses the current session.
 func (client *Client) Dismiss() {
-	irma.Logger.Info("openid4vp: session dismissed")
+	slog.Info("openid4vp: session dismissed")
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {
-	irma.Logger.Errorf(message, fmtArgs...)
+	slog.Error(fmt.Sprintf(message, fmtArgs...))
 	handler.Failure(&clientmodels.SessionError{
 		WrappedError: fmt.Sprintf(message, fmtArgs...),
 	})
@@ -99,7 +99,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
-		irma.Logger.Infof("starting openid4vp session: %v\n", requestUri)
+		slog.Info(fmt.Sprintf("starting openid4vp session: %v", requestUri))
 		response, err := http.Get(requestUri)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to get authorization request: %v", err)
@@ -138,7 +138,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			Verified:  true,
 		}
 
-		irma.Logger.Infof("auth request: %#v\n", request)
+		slog.Info(fmt.Sprintf("auth request: %#v", request))
 		err = client.handleAuthorizationRequest(request, requestor, handler)
 
 		if err != nil {
@@ -250,7 +250,7 @@ func (session *openid4vpSession) perform() error {
 	permResp := session.awaitPermission()
 
 	if permResp == nil {
-		irma.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
+		slog.Info("openid4vp: no attributes selected for disclosure, cancelling")
 		session.handler.Cancelled()
 		return nil
 	}
@@ -331,8 +331,8 @@ func collectOwnedHashes(queryResults map[string]*clientmodels.CredentialQueryRes
 func logMarshalled(message string, value any) {
 	jsonBytes, err := json.MarshalIndent(value, "", "   ")
 	if err != nil {
-		irma.Logger.Errorf("%s: failed to marshal: %v", message, err)
+		slog.Error(fmt.Sprintf("%s: failed to marshal: %v", message, err))
 	} else {
-		irma.Logger.Infof("\n%s\n%s\n\n", message, string(jsonBytes))
+		slog.Info(fmt.Sprintf("\n%s\n%s\n", message, string(jsonBytes)))
 	}
 }
