@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 
@@ -74,11 +73,11 @@ func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismiss
 
 // Dismiss dismisses the current session.
 func (client *Client) Dismiss() {
-	slog.Info("openid4vp: session dismissed")
+	eudi.Logger.Info("openid4vp: session dismissed")
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {
-	slog.Error(fmt.Sprintf(message, fmtArgs...))
+	eudi.Logger.Errorf(message, fmtArgs...)
 	handler.Failure(&clientmodels.SessionError{
 		WrappedError: fmt.Sprintf(message, fmtArgs...),
 	})
@@ -99,7 +98,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
-		slog.Info(fmt.Sprintf("starting openid4vp session: %v", requestUri))
+		eudi.Logger.Infof("starting openid4vp session: %v", requestUri)
 		response, err := http.Get(requestUri)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to get authorization request: %v", err)
@@ -138,7 +137,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			Verified:  true,
 		}
 
-		slog.Info(fmt.Sprintf("auth request: %#v", request))
+		eudi.Logger.Infof("auth request: %#v", request)
 		err = client.handleAuthorizationRequest(request, requestor, handler)
 
 		if err != nil {
@@ -250,7 +249,7 @@ func (session *openid4vpSession) perform() error {
 	permResp := session.awaitPermission()
 
 	if permResp == nil {
-		slog.Info("openid4vp: no attributes selected for disclosure, cancelling")
+		eudi.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
 		session.handler.Cancelled()
 		return nil
 	}
@@ -331,8 +330,8 @@ func collectOwnedHashes(queryResults map[string]*clientmodels.CredentialQueryRes
 func logMarshalled(message string, value any) {
 	jsonBytes, err := json.MarshalIndent(value, "", "   ")
 	if err != nil {
-		slog.Error(fmt.Sprintf("%s: failed to marshal: %v", message, err))
+		eudi.Logger.Errorf("%s: failed to marshal: %v", message, err)
 	} else {
-		slog.Info(fmt.Sprintf("\n%s\n%s\n", message, string(jsonBytes)))
+		eudi.Logger.Infof("\n%s\n%s\n", message, string(jsonBytes))
 	}
 }
