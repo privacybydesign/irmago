@@ -18,9 +18,17 @@ func openAndMigrateTestDB(t *testing.T, dsn string) *gorm.DB {
 	t.Helper()
 	db := openGormDB(t, dsn)
 	require.NoError(t, db.AutoMigrate(
-		&models.HolderBindingKey{},
 		&models.ECDSAKeyMetadata{},
 		&models.RSAKeyMetadata{},
+		&models.HolderBindingKey{},
+		&models.IssuerMetadata{},
+		&models.IssuerMetadataDisplay{},
+		&models.CredentialMetadata{},
+		&models.CredentialDisplay{},
+		&models.CredentialClaim{},
+		&models.ClaimDisplay{},
+		&models.CredentialBatch{},
+		&models.IssuedCredentialInstance{},
 	))
 	return db
 }
@@ -74,10 +82,11 @@ func TestSQLCipher_CreateAndReadBackAllColumnTypes(t *testing.T) {
 	_, err := rand.Read(blob)
 	require.NoError(t, err)
 
+	thumbprint := "thumb-readback"
 	original := &models.HolderBindingKey{
 		ID:                  uuid.New(),
 		Algorithm:           models.KeyAlgorithmECDSA,
-		PublicKeyThumbprint: "thumb-readback",
+		PublicKeyThumbprint: &thumbprint,
 		PrivateKey:          blob,
 		ECDSA:               &models.ECDSAKeyMetadata{CurveName: "P-384"},
 	}

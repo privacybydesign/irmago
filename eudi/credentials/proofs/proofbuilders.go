@@ -21,7 +21,7 @@ const (
 
 type ProofBuilder interface {
 	// TODO: input any type of private key (not just ECDSA)
-	Build(key *ecdsa.PrivateKey) (interface{}, error)
+	Build(key *ecdsa.PrivateKey) (any, error)
 }
 
 /// --- JWT proof builder --- ///
@@ -46,7 +46,7 @@ func NewJwtProofBuilder(issuer string, audience string, alg jwa.SignatureAlgorit
 	}
 }
 
-func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (interface{}, error) {
+func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 	proofBuilder := jwt.NewBuilder()
 
 	// Build the proof JWT

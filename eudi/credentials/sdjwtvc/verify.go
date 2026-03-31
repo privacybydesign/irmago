@@ -25,7 +25,9 @@ import (
 type VerifiedSdJwtVc struct {
 	IssuerSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []DisclosureContent
-	KeyBindingJwt          *KeyBindingJwtPayload
+	ProcessedSdJwtPayload  ProcessedSdJwtPayload
+
+	KeyBindingJwt *KeyBindingJwtPayload
 
 	rawSdJwtVc SdJwtVc
 }
@@ -155,7 +157,7 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 		return nil, err
 	}
 
-	issuerSignedJwtPayload, requestorInfo, decodedDisclosures, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
+	issuerSignedJwtPayload, requestorInfo, decodedDisclosures, processedSdJwtPayload, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +186,7 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 		Disclosures:            decodedDisclosures,
 		KeyBindingJwt:          kbJwtPayload,
 		rawSdJwtVc:             rawSdJwtVc,
+		ProcessedSdJwtPayload:  *processedSdJwtPayload,
 	}, nil
 }
 
@@ -191,17 +194,18 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	*IssuerSignedJwtPayload,
 	*scheme.AttestationProviderRequestor,
 	[]DisclosureContent,
+	*ProcessedSdJwtPayload,
 	error,
 ) {
 	token, requestorInfo, err := v.decodeJwtAndVerifyFromX5cHeader([]byte(signedJwt))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	var vct string
 	err = token.Get(Key_VerifiableCredentialType, &vct)
 	if err != nil {
-		return nil, nil, nil, errors.New("missing vct field")
+		return nil, nil, nil, nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
@@ -211,10 +215,8 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	nbf, _ := token.NotBefore()
 	iss, issPresent := token.Issuer()
 
-	status := utils.GetOptional[string](token, Key_Status)
-
 	if !issPresent {
-		return nil, nil, nil, errors.New("missing iss field")
+		return nil, nil, nil, nil, errors.New("missing iss field")
 	}
 
 	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
@@ -223,7 +225,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 		if h := utils.GetOptional[string](token, Key_SdAlg); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
 			sdAlg = iana.HashingAlgorithm(h)
 		} else {
-			return nil, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
+			return nil, nil, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
 		}
 	}
 
@@ -234,7 +236,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	if err == nil {
 		sd, err = parseSdField(sdRaw)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to parse sd field: %v", err)
 		}
 	}
 
@@ -243,7 +245,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	if err == nil {
 		cnf, err = parseConfirmField(cnfRaw)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to parse cnf field: %v", err)
 		}
 	}
 
@@ -251,7 +253,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	// Get structured SD-JWT claims, which we can check for embedded disclosure digests
 	issuerSignedJwtClaims, err := extractClaimsAndDisclosuresDigestsFromToken(token)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
 
 	// Construct payload
@@ -265,20 +267,18 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 		Sd:                       sd,
 		SdAlg:                    iana.HashingAlgorithm(sdAlg),
 		Confirm:                  cnf,
-		Status:                   status,
 	}
 
 	// Verify times
 	err = v.verifyTimeFields(payload)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// Parse and verify disclosures
-	// TODO: store ProcessedSdJwtPayload somewhere if needed
-	_, decodedDisclosures, err := verifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtClaims, disclosures)
+	processedSdJwtPayload, decodedDisclosures, err := verifyAndProcessDisclosures(payload.SdAlg, &issuerSignedJwtClaims, disclosures)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// Convert pointer to disclosures to values for return  (TODO: optimize to avoid this copy?)
@@ -287,19 +287,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 		decodedDisclosuresValues[i] = *discPtr
 	}
 
-	return payload, requestorInfo, decodedDisclosuresValues, nil
-}
-
-// getOptionalTimeAsUnix reads a JWT time claim (exp, iat, nbf) as a time.Time
-// and returns its Unix timestamp. Returns 0 if the claim is absent.
-// This is needed because lestrrat-go/jwx v3 stores registered time claims as
-// time.Time, so token.Get(key, &int64Value) fails.
-func getOptionalTimeAsUnix(token jwt.Token, key string) int64 {
-	t := utils.GetOptional[time.Time](token, key)
-	if t.IsZero() {
-		return 0
-	}
-	return t.Unix()
+	return payload, requestorInfo, decodedDisclosuresValues, &processedSdJwtPayload, nil
 }
 
 func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSignedJwtPayload) error {
@@ -563,23 +551,8 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 }
 
 func extractClaimsAndDisclosuresDigestsFromToken(token jwt.Token) (map[string]any, error) {
-	defaultSdJwtClaims := []string{
-		jwt.SubjectKey,
-		jwt.ExpirationKey,
-		jwt.IssuedAtKey,
-		jwt.NotBeforeKey,
-		jwt.IssuerKey,
-		Key_VerifiableCredentialType,
-		Key_SdAlg,
-		Key_Confirmationkey,
-		Key_Status,
-	}
 	issuerSignedJwtClaims := map[string]any{}
 	for _, key := range token.Keys() {
-		if slices.Contains(defaultSdJwtClaims, key) {
-			continue
-		}
-
 		var value any
 		if err := token.Get(key, &value); err != nil {
 			return nil, fmt.Errorf("failed to get extra claim %s: %v", key, err)

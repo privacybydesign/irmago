@@ -1,9 +1,11 @@
-package services
+package openid4vci
 
 import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"iter"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,45 +14,13 @@ import (
 	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
 )
 
-// IssuedCredentialMetadata carries the issuer and configuration metadata needed to build a
-// CredentialBatch record. Callers in the openid4vci package map their types to this struct
-// to avoid an import cycle (openid4vci → services → openid4vci).
-type IssuedCredentialMetadata struct {
-	// CredentialConfigurationID is the credential_configuration_id from the credential offer.
-	CredentialConfigurationID string
-
-	// Format is the credential format identifier (e.g. "dc+sd-jwt").
-	Format string
-
-	// IssuerDisplays contains the localised display entries from CredentialIssuerMetadata.Display.
-	IssuerDisplays []IssuerDisplayMetadata
-
-	// CredentialDisplays contains the localised display entries from CredentialConfiguration.CredentialMetadata.Display.
-	CredentialDisplays []CredentialDisplayMetadata
-}
-
-// IssuerDisplayMetadata holds one localised display entry for the credential issuer.
-type IssuerDisplayMetadata struct {
-	Name        string
-	Locale      string
-	LogoURI     string
-	LogoAltText string
-}
-
-// CredentialDisplayMetadata holds one localised display entry for the credential type.
-type CredentialDisplayMetadata struct {
-	Name        string
-	Locale      string
-	Description string
-}
-
 // CredentialService stores verified SD-JWT VCs and their associated holder binding keys
 // in a single atomic transaction.
 type CredentialService interface {
 	VerifyAndStoreIssuedCredentials(
 		verifiedSdJwtVcs []*sdjwtvc.VerifiedSdJwtVc,
-		processedSdJwtPayload sdjwtvc.ProcessedSdJwtPayload,
-		metadata IssuedCredentialMetadata,
+		credentialConfigurationId string,
+		metadata CredentialIssuerMetadata,
 		requireCryptographicKeyBinding bool,
 		keyIds uuid.UUIDs,
 	) error
@@ -74,8 +44,8 @@ func NewCredentialService(s storage.Storage) CredentialService {
 // issued from the same credential_configuration_id and therefore share vct, issuer, and timing claims.
 func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	verifiedSdJwtVcs []*sdjwtvc.VerifiedSdJwtVc,
-	processedSdJwtPayload sdjwtvc.ProcessedSdJwtPayload,
-	metadata IssuedCredentialMetadata,
+	credentialConfigurationId string,
+	metadata CredentialIssuerMetadata,
 	requireCryptographicKeyBinding bool,
 	keyIds uuid.UUIDs,
 ) error {
@@ -95,7 +65,7 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	first := verifiedSdJwtVcs[0]
 
 	// The hash will be a hash over the ProcessedSdJwtPayload, which is the same for all credentials in the batch since they share the same claims.
-	processedSdJwtPayloadBytes, err := json.Marshal(processedSdJwtPayload)
+	processedSdJwtPayloadBytes, err := json.Marshal(first.ProcessedSdJwtPayload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
 	}
@@ -116,14 +86,6 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		notBefore = &t
 	}
 
-	var status []byte
-	if first.IssuerSignedJwtPayload.Status != "" {
-		// The upstream IssuerSignedJwtPayload currently parses the status claim as a plain
-		// string. Store the raw bytes for now; once the upstream type is updated to a JSON
-		// object (RFC 9596 Token Status List), change this to json.Marshal(first.IssuerSignedJwtPayload.Status).
-		status = []byte(first.IssuerSignedJwtPayload.Status)
-	}
-
 	batchSize := uint(len(verifiedSdJwtVcs))
 	instances := make([]models.IssuedCredentialInstance, batchSize)
 	for i, v := range verifiedSdJwtVcs {
@@ -135,27 +97,54 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		}
 	}
 
+	// Convert metadata to the format expected by storage
+	credentialConfiguration := metadata.CredentialConfigurationsSupported[credentialConfigurationId]
+
+	credentialConfigurationModel := models.CredentialMetadata{}
+	if credentialConfiguration.CredentialMetadata != nil {
+		credentialConfigurationModel.Display = slices.Collect(credentialConfiguration.CredentialMetadata.Display.ToStorageModelItterator())
+
+		claimModels := make([]models.CredentialClaim, len(credentialConfiguration.CredentialMetadata.Claims))
+		for i, claim := range credentialConfiguration.CredentialMetadata.Claims {
+			claimPath, err := json.Marshal(claim.Path)
+			if err != nil {
+				return fmt.Errorf("failed to marshal claim path: %w", err)
+			}
+
+			displays := make([]models.ClaimDisplay, len(claim.Display))
+			for j, display := range claim.Display {
+				displays[j] = models.ClaimDisplay{
+					Name:   display.Name,
+					Locale: display.Locale,
+				}
+			}
+
+			claimModels[i] = models.CredentialClaim{
+				Path:      string(claimPath),
+				Mandatory: *claim.Mandatory,
+				Display:   displays,
+			}
+		}
+	}
+
+	issuerMetadataModel := models.IssuerMetadata{
+		CredentialIssuer: first.IssuerSignedJwtPayload.Issuer,
+		Display:          slices.Collect(metadata.Display.ToStorageModelItterator()),
+	}
+
 	batch := &models.CredentialBatch{
-		IssuerURL:                 first.IssuerSignedJwtPayload.Issuer,
-		CredentialConfigurationID: metadata.CredentialConfigurationID,
-		VerifiableCredentialType:  first.IssuerSignedJwtPayload.VerifiableCredentialType,
-		Format:                    models.CredentialFormat(metadata.Format),
-		Hash:                      hash,
-		ProcessedSdJwtPayload:     string(processedSdJwtPayloadBytes),
-
-		// TODO: replace with correct (relational) metadata fields instead of JSON blobs
-		AttributesJSON:        nil,
-		IssuerDisplayJSON:     nil,
-		CredentialDisplayJSON: nil,
-		// END TODO
-
-		IssuedAt:       issuedAt,
-		ExpiresAt:      expiresAt,
-		NotBefore:      notBefore,
-		Status:         status,
-		BatchSize:      batchSize,
-		RemainingCount: batchSize,
-		Instances:      instances,
+		IssuerURL:                first.IssuerSignedJwtPayload.Issuer,
+		VerifiableCredentialType: first.IssuerSignedJwtPayload.VerifiableCredentialType,
+		Format:                   models.CredentialFormat(credentialConfiguration.Format),
+		Hash:                     hash,
+		ProcessedSdJwtPayload:    string(processedSdJwtPayloadBytes),
+		IssuerMetadata:           &issuerMetadataModel,
+		IssuedAt:                 issuedAt,
+		ExpiresAt:                expiresAt,
+		NotBefore:                notBefore,
+		BatchSize:                batchSize,
+		RemainingCount:           batchSize,
+		Instances:                instances,
 	}
 
 	return s.credentialStore.StoreBatch(batch)
@@ -173,37 +162,46 @@ func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(combinedBytes))
 }
 
-func marshalIssuerDisplay(displays []IssuerDisplayMetadata) ([]byte, error) {
-	if len(displays) == 0 {
-		return nil, nil
-	}
+func (d CredentialIssuerDisplays) ToStorageModelItterator() iter.Seq[models.IssuerMetadataDisplay] {
+	return func(yield func(models.IssuerMetadataDisplay) bool) {
+		for _, item := range d {
+			m := models.IssuerMetadataDisplay{
+				Name:   item.Name,
+				Locale: item.Locale,
+			}
 
-	out := make([]models.IssuerDisplay, len(displays))
-	for i, d := range displays {
-		out[i] = models.IssuerDisplay{
-			Name:        d.Name,
-			Locale:      d.Locale,
-			LogoURI:     d.LogoURI,
-			LogoAltText: d.LogoAltText,
+			if item.Logo != nil {
+				m.LogoURI = item.Logo.Uri
+				m.LogoAltText = item.Logo.AltText
+			}
+
+			yield(m)
 		}
 	}
-
-	return json.Marshal(out)
 }
 
-func marshalCredentialDisplay(displays []CredentialDisplayMetadata) ([]byte, error) {
-	if len(displays) == 0 {
-		return nil, nil
-	}
+func (d CredentialDisplays) ToStorageModelItterator() iter.Seq[models.CredentialDisplay] {
+	return func(yield func(models.CredentialDisplay) bool) {
+		for _, item := range d {
+			m := models.CredentialDisplay{
+				Name:            item.Name,
+				Locale:          item.Locale,
+				Description:     item.Description,
+				BackgroundColor: item.BackgroundColor,
+				TextColor:       item.TextColor,
+			}
 
-	out := make([]models.CredentialDisplay, len(displays))
-	for i, d := range displays {
-		out[i] = models.CredentialDisplay{
-			Name:        d.Name,
-			Locale:      d.Locale,
-			Description: d.Description,
+			if item.BackgroundImage != nil {
+				m.BackgroundImageURI = item.BackgroundImage.Uri
+				m.BackgroundImageAltText = item.BackgroundImage.AltText
+			}
+
+			if item.Logo != nil {
+				m.LogoURI = item.Logo.Uri
+				m.LogoAltText = item.Logo.AltText
+			}
+
+			yield(m)
 		}
 	}
-
-	return json.Marshal(out)
 }
