@@ -133,64 +133,6 @@ func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.
 	return plan
 }
 
-// satisfiesRequestedAttributes checks if given attributes satisfy requested attributes.
-func satisfiesRequestedAttributes(given, requested []clientmodels.Attribute) bool {
-	givenByID := make(map[string]clientmodels.Attribute)
-	for _, g := range given {
-		givenByID[g.Id] = g
-	}
-	for _, r := range requested {
-		if r.RequestedValue == nil || !r.RequestedValue.HasValue() {
-			continue
-		}
-		g, ok := givenByID[r.Id]
-		if !ok || g.Value == nil {
-			return false
-		}
-		// Compare TranslatedString values
-		if r.RequestedValue.TranslatedString != nil && g.Value.TranslatedString != nil {
-			for lang, want := range *r.RequestedValue.TranslatedString {
-				have, ok := (*g.Value.TranslatedString)[lang]
-				if !ok || have != want {
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-// filterMismatchedAttributes returns attributes from owned that don't match the requested values.
-func filterMismatchedAttributes(owned, requested []clientmodels.Attribute) []clientmodels.Attribute {
-	requestedByID := make(map[string]*clientmodels.Attribute)
-	for i := range requested {
-		requestedByID[requested[i].Id] = &requested[i]
-	}
-	var mismatched []clientmodels.Attribute
-	for _, attr := range owned {
-		req, ok := requestedByID[attr.Id]
-		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
-			continue
-		}
-		if attr.Value != nil {
-			ok, _ := clientmodels.SatisfiesRequestedAttributes(
-				[]clientmodels.Attribute{attr},
-				[]clientmodels.Attribute{*req},
-			)
-			if !ok {
-				mismatched = append(mismatched, clientmodels.Attribute{
-					Id:             attr.Id,
-					DisplayName:    attr.DisplayName,
-					Description:    attr.Description,
-					Value:          attr.Value,
-					RequestedValue: req.RequestedValue,
-				})
-			}
-		}
-	}
-	return mismatched
-}
-
 // addIssueDuringDisclosure checks if any required DisclosurePickOne has no owned options
 // and adds IssueDuringDislosure with issuance steps for unsatisfied disjunctions.
 func addIssueDuringDisclosure(plan *clientmodels.DisclosurePlan) *clientmodels.DisclosurePlan {
