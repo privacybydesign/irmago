@@ -26,10 +26,12 @@ func newTestStore(t *testing.T) HolderBindingKeyStore {
 	return NewHolderBindingKeyStore(db)
 }
 
+func strPtr(s string) *string { return &s }
+
 func newECDSAKey() *models.HolderBindingKey {
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmECDSA,
-		PublicKeyThumbprint: "test-thumbprint-ecdsa",
+		PublicKeyThumbprint: strPtr("test-thumbprint-ecdsa"),
 		PrivateKey:          []byte("encrypted-private-key"),
 		ECDSA: &models.ECDSAKeyMetadata{
 			CurveName: "P-256",
@@ -40,7 +42,7 @@ func newECDSAKey() *models.HolderBindingKey {
 func newRSAKey() *models.HolderBindingKey {
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmRSA,
-		PublicKeyThumbprint: "test-thumbprint-rsa",
+		PublicKeyThumbprint: strPtr("test-thumbprint-rsa"),
 		PrivateKey:          []byte("encrypted-private-key"),
 		RSA: &models.RSAKeyMetadata{
 			ModulusBits:    2048,
@@ -95,11 +97,48 @@ func TestStoreKey_DuplicateThumbprint(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestStoreKey_WithDidUrl(t *testing.T) {
+	store := newTestStore(t)
+
+	key := newECDSAKey()
+	key.PublicKeyThumbprint = nil
+	key.DidUrl = strPtr("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK#z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK")
+
+	require.NoError(t, store.StoreKey(key))
+	assert.NotEqual(t, uuid.Nil, key.ID)
+}
+
+func TestStoreKey_DuplicateDidUrl(t *testing.T) {
+	store := newTestStore(t)
+
+	didUrl := strPtr("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK#z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK")
+
+	key1 := newECDSAKey()
+	key1.PublicKeyThumbprint = nil
+	key1.DidUrl = didUrl
+	require.NoError(t, store.StoreKey(key1))
+
+	key2 := newECDSAKey()
+	key2.PublicKeyThumbprint = nil
+	key2.DidUrl = didUrl
+	require.Error(t, store.StoreKey(key2))
+}
+
+func TestStoreKey_ValidationFailsWithBothThumbprintAndDidUrl(t *testing.T) {
+	store := newTestStore(t)
+
+	key := newECDSAKey()
+	key.DidUrl = strPtr("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK#z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK")
+
+	err := store.StoreKey(key)
+	require.Error(t, err)
+}
+
 func TestStoreKey_ValidationFailsWithoutThumbprint(t *testing.T) {
 	store := newTestStore(t)
 
 	key := newECDSAKey()
-	key.PublicKeyThumbprint = ""
+	key.PublicKeyThumbprint = nil
 
 	err := store.StoreKey(key)
 	require.Error(t, err)
@@ -145,7 +184,8 @@ func TestGetByID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, key.ID, got.ID)
 	assert.Equal(t, key.Algorithm, got.Algorithm)
-	assert.Equal(t, key.PublicKeyThumbprint, got.PublicKeyThumbprint)
+	require.NotNil(t, got.PublicKeyThumbprint)
+	assert.Equal(t, *key.PublicKeyThumbprint, *got.PublicKeyThumbprint)
 	require.NotNil(t, got.ECDSA)
 	assert.Equal(t, "P-256", got.ECDSA.CurveName)
 	assert.Nil(t, got.RSA)
@@ -178,10 +218,11 @@ func TestGetByThumbprint(t *testing.T) {
 	key := newECDSAKey()
 	require.NoError(t, store.StoreKey(key))
 
-	got, err := store.GetByThumbprint(key.PublicKeyThumbprint)
+	got, err := store.GetByThumbprint(*key.PublicKeyThumbprint)
 	require.NoError(t, err)
 	assert.Equal(t, key.ID, got.ID)
-	assert.Equal(t, key.PublicKeyThumbprint, got.PublicKeyThumbprint)
+	require.NotNil(t, got.PublicKeyThumbprint)
+	assert.Equal(t, *key.PublicKeyThumbprint, *got.PublicKeyThumbprint)
 	require.NotNil(t, got.ECDSA)
 	assert.Equal(t, "P-256", got.ECDSA.CurveName)
 }

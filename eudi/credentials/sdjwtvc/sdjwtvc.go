@@ -283,7 +283,7 @@ type IssuerSignedJwtPayload struct {
 	Confirm *CnfField
 
 	// OPTIONAL: The information on how to read the status of the verifiable credential
-	Status string
+	Status *string
 
 	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
 	NotBefore int64

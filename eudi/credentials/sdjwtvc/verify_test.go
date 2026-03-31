@@ -1041,6 +1041,59 @@ func Test_HolderVerificationProcessor_TimeFieldsAreParsedCorrectly(t *testing.T)
 	require.Equal(t, nbf, result.IssuerSignedJwtPayload.NotBefore, "NotBefore should match the nbf claim")
 }
 
+func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedClaims(t *testing.T) {
+	// Arrange: build a credential with two selective-disclosure claims (email + domain),
+	// matching what an OpenID4VCI issuer would produce.
+	now := time.Now().Unix()
+	exp := now + 86400
+
+	disclosures, err := MultipleNewDisclosureContents(map[string]string{
+		"email":  "holder@example.com",
+		"domain": "example.com",
+	})
+	require.NoError(t, err)
+
+	config := newWorkingSdJwtVcTestConfig().
+		withVct("test.test.email").
+		withIssuedAt(now).
+		withExpiryTime(exp).
+		withSdClaims(disclosures, iana.SHA256).
+		withDisclosures(disclosures)
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		},
+		Clock:       &testClock{time: now},
+		JwtVerifier: NewJwxJwtVerifier(),
+	}
+	holderVerifier := NewHolderVerificationProcessor(context)
+
+	// Act
+	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+
+	// Assert
+	require.NoError(t, err)
+
+	payload := result.ProcessedSdJwtPayload
+
+	// Standard JWT claims must be present
+	require.Equal(t, "https://openid4vc.staging.yivi.app", payload["iss"], "iss claim should be present in processed payload")
+	require.Equal(t, "test.test.email", payload["vct"], "vct claim should be present in processed payload")
+
+	// Selectively-disclosed claims must be embedded directly in the processed payload
+	require.Equal(t, "holder@example.com", payload["email"], "email disclosure should be embedded in processed payload")
+	require.Equal(t, "example.com", payload["domain"], "domain disclosure should be embedded in processed payload")
+
+	// _sd and _sd_alg must be stripped from the processed payload
+	_, hasSd := payload["_sd"]
+	require.False(t, hasSd, "_sd field should be removed from processed payload")
+	_, hasSdAlg := payload["_sd_alg"]
+	require.False(t, hasSdAlg, "_sd_alg field should be removed from processed payload")
+}
+
 // ======================= Verifier verification tests ==============================
 // fails for:
 // - [x] required kb-jwt, but missing

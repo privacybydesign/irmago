@@ -41,6 +41,14 @@ func NewStorage(aesKey [32]byte, storagePath string) (*Storage, error) {
 		&models.HolderBindingKey{},
 		&models.ECDSAKeyMetadata{},
 		&models.RSAKeyMetadata{},
+		&models.IssuerMetadata{},
+		&models.IssuerMetadataDisplay{},
+		&models.CredentialMetadata{},
+		&models.CredentialDisplay{},
+		&models.CredentialClaim{},
+		&models.ClaimDisplay{},
+		&models.CredentialBatch{},
+		&models.IssuedCredentialInstance{},
 	)
 
 	// Initialize the repositories, which will auto-migrate their models if needed

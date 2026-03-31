@@ -15,7 +15,6 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/internal/services"
 	"github.com/privacybydesign/irmago/eudi/internal/storage"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
@@ -230,32 +229,32 @@ func (s *session) requestCredentials(accessToken string) error {
 	}
 
 	// TODO: Request credentials in parallel
-	for _, credConfigId := range s.credentialOffer.CredentialConfigurationIds {
+	for _, credentialConfigurationId := range s.credentialOffer.CredentialConfigurationIds {
 		// TODO: check if/how we need to set/pass credential_identifier or credential_configuration_id field to the Credential Request
 		// As the credential identifier can be returned from the Authorization Details in the Token Response from authorization code flow
-		err := s.requestCredential(credConfigId, cNonce, accessToken)
+		err := s.requestCredential(credentialConfigurationId, cNonce, accessToken)
 		if err != nil {
 			// TODO: how to handle if a single request fails but others succeed?
 			// I think, we need to add transaction support; if a single Credential Configuration fails, the entire Credential Offer fails and no credentials should be stored
-			return fmt.Errorf("could not request credential %q: %v", credConfigId, err)
+			return fmt.Errorf("could not request credential %q: %v", credentialConfigurationId, err)
 		}
 	}
 	return nil
 }
 
 // requestCredential requests a credential for the given credential configuration ID. Make sure the cNonce is provided if required (Nonce Endpoint is available) and is fresh.
-func (s *session) requestCredential(credConfigId string, cNonce *string, accessToken string) error {
+func (s *session) requestCredential(credentialConfigurationId string, cNonce *string, accessToken string) error {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
 		return fmt.Errorf("credential request requires nonce but none was provided")
 	}
 
-	credentialConfig, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credConfigId]
+	credentialConfig, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 	if !ok {
-		return fmt.Errorf("credential configuration %q not found in issuer metadata", credConfigId)
+		return fmt.Errorf("credential configuration %q not found in issuer metadata", credentialConfigurationId)
 	}
 
 	if err := credentialConfig.ValidateSupportedFeatures(); err != nil {
-		return fmt.Errorf("credential configuration %q is not supported: %v", credConfigId, err)
+		return fmt.Errorf("credential configuration %q is not supported: %v", credentialConfigurationId, err)
 	}
 
 	// TODO: determine credential specific settings (like cryptographic key binding requirements) based on the credential configuration metadata, and pass those to the requestCredential function
@@ -265,14 +264,14 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 	// TODO: fill correct fields in Credential Request..
 	// For now, we only support the credential_configuration_id parameter, no credential_identifier from authorization details
 	request := &CredentialRequest{
-		CredentialConfigurationId: &credConfigId,
+		CredentialConfigurationId: &credentialConfigurationId,
 	}
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
 	// TODO: disabled check for testing with Digidentity
-	keyBindingService := services.NewHolderBindingKeyService(s.storage)
+	keyBindingService := NewHolderBindingKeyService(s.storage)
 
-	var keys uuid.UUIDs
+	var keyIds uuid.UUIDs
 	if requireCryptographicKeyBinding {
 		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
 		num := uint(1)
@@ -304,7 +303,7 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 		var proofs []string
 		var err error
 
-		keys, proofs, err = keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
+		keyIds, proofs, err = keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
 		if err != nil {
 			return fmt.Errorf("could not create key pairs: %v", err)
 		}
@@ -451,7 +450,6 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 	}
 
 	// Verify and store the received credentials
-	var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
 	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
 		// Verify the credential
@@ -464,9 +462,6 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 		if i == 0 {
 			// Log the first credential for debugging purposes
 			irma.Logger.Infof("Received credential (first from batch only): %s", string(cred.Credential))
-
-			// Save the processed SD-JWT payload of the first credential, for storage in the credential batch
-			// TODO: processedSdJwtPayload = needs to come from s.holderVerifier.ParseAndVerifySdJwtVc
 		}
 	}
 
@@ -477,20 +472,13 @@ func (s *session) requestCredential(credConfigId string, cNonce *string, accessT
 	}
 
 	// Store the credentials + holder-binding keys + metadata (+ images?) in the storage (in bulk), so we can use a transaction and make sure everything is stored correctly, and also for performance reasons when dealing with batch issuance
-	credentialService := services.NewCredentialService(s.storage)
+	credentialService := NewCredentialService(s.storage)
 
-	// TODO: fill metadata based on the credential response and issuer/credential configuration metadata
-	metadata := services.IssuedCredentialMetadata{
-		// CredentialConfigurationId: credConfigId,
-		// Issuer:                    s.credentialIssuerMetadata.CredentialIssuer,
-		// IssuanceDate:              verifiedSdJwtVcs[0].IssuanceDate, // Assuming all credentials in the batch share the same issuance date, as they should according to the spec
-	}
-
-	err = credentialService.VerifyAndStoreIssuedCredentials(verifiedSdJwtVcs, *processedSdJwtPayload, metadata, requireCryptographicKeyBinding, keys)
+	err = credentialService.VerifyAndStoreIssuedCredentials(verifiedSdJwtVcs, credentialConfigurationId, *s.credentialIssuerMetadata, requireCryptographicKeyBinding, keyIds)
 	if err != nil {
-		// Error storing credentials; remove the already stored keys for the credentials that were received, to avoid orphaned keys in the storage
+		// Error storing credentials; remove the already stored keys for the credentials that were received, to avoid orphaned keys in storage
 		if requireCryptographicKeyBinding {
-			err = keyBindingService.RemoveKeys(keys)
+			err := keyBindingService.RemoveKeys(keyIds)
 			if err != nil {
 				irma.Logger.Warnf("failed to remove key binding keys after credential storage failure: %v", err)
 			}

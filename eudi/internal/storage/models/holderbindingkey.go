@@ -21,8 +21,11 @@ type HolderBindingKey struct {
 
 	Algorithm KeyAlgorithm `gorm:"type:text;not null;index" json:"algorithm"`
 
-	// Secondary lookup, not primary identity.
-	PublicKeyThumbprint string `gorm:"type:text;not null;uniqueIndex" json:"public_key_thumbprint"`
+	// Secondary lookup, either by PublicKeyThumbprint or DidUrl, not primary identity. Mutually exclusive with each other, but this is not enforced by the database.
+	// According to the docs, null values do not count towards uniqueness in SQLite, but this might be different in other databases
+	// In the future, we might want to add conditional indexing (where clause), but we need custom migrations in order to get that working with GORM.
+	PublicKeyThumbprint *string `gorm:"type:text;index" json:"public_key_thumbprint,omitempty"`
+	DidUrl              *string `gorm:"type:text;index" json:"did_url,omitempty"`
 
 	// Private key bytes, preferably PKCS#8.
 	PrivateKey []byte `gorm:"type:bytea;not null" json:"private_key"`
@@ -92,8 +95,11 @@ func (k *HolderBindingKey) validate() error {
 	if k.Algorithm == "" {
 		return fmt.Errorf("algorithm is required")
 	}
-	if k.PublicKeyThumbprint == "" {
-		return fmt.Errorf("public_key_thumbprint is required")
+	if k.PublicKeyThumbprint == nil && k.DidUrl == nil {
+		return fmt.Errorf("either public_key_thumbprint or did_url is required")
+	}
+	if k.PublicKeyThumbprint != nil && k.DidUrl != nil {
+		return fmt.Errorf("public_key_thumbprint and did_url are mutually exclusive")
 	}
 	if len(k.PrivateKey) == 0 {
 		return fmt.Errorf("private_key is required")
