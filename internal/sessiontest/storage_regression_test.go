@@ -256,7 +256,7 @@ func loadKeyshareUsersFromFixture(t *testing.T, db *keyshareserver.MemoryDB, fix
 	t.Logf("Loaded %d keyshare users from fixture", len(users))
 }
 
-func requireLogTypePresent(t *testing.T, logs []client.LogInfo, logType clientmodels.LogType) {
+func requireLogTypePresent(t *testing.T, logs []clientmodels.LogInfo, logType clientmodels.LogType) {
 	t.Helper()
 	for _, log := range logs {
 		if log.Type == logType {

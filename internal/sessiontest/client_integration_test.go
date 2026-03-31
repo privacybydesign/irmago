@@ -598,7 +598,7 @@ func getLogAttr(attrs []clientmodels.Attribute, id string) *clientmodels.Attribu
 	return nil
 }
 
-func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log client.LogInfo) {
+func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, log.Type, clientmodels.LogType_CredentialRemoval)
 	require.Len(t, log.RemovalLog.Credentials, 1)
 	cred := log.RemovalLog.Credentials[0]
@@ -662,7 +662,7 @@ func testIrmaSignatureSessionLogs(t *testing.T) {
 	requireSignatureLog(t, logs[0])
 }
 
-func requireIrmaDisclosureLog(t *testing.T, log client.LogInfo) {
+func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, log.Type, clientmodels.LogType_Disclosure)
 	require.Equal(t, clientmodels.Protocol_Irma, log.DisclosureLog.Protocol)
 	require.Len(t, log.DisclosureLog.Credentials, 1)
@@ -681,7 +681,7 @@ func requireIrmaDisclosureLog(t *testing.T, log client.LogInfo) {
 	require.Equal(t, "Your verified email address", emailDescription["en"])
 }
 
-func requireSignatureLog(t *testing.T, log client.LogInfo) {
+func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, log.Type, clientmodels.LogType_Signature)
 	require.Equal(t, clientmodels.Protocol_Irma, log.SignedMessageLog.Protocol)
 	require.Equal(t, "Hello, World!", log.SignedMessageLog.Message)
@@ -741,7 +741,7 @@ func testEudiSessionLogs(t *testing.T) {
 	requireOpenID4VPLog(t, logs[0])
 }
 
-func requireOpenID4VPLog(t *testing.T, log client.LogInfo) {
+func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, log.Type, clientmodels.LogType_Disclosure)
 	require.NotNil(t, log.DisclosureLog)
 	require.Len(t, log.DisclosureLog.Credentials, 1)
@@ -768,7 +768,7 @@ func requireOpenID4VPLog(t *testing.T, log client.LogInfo) {
 	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)[""], "attribute value should have raw value")
 }
 
-func requireRegularIrmaIssuanceLog(t *testing.T, log client.LogInfo) {
+func requireRegularIrmaIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, log.Type, clientmodels.LogType_Issuance)
 	require.Equal(t, clientmodels.Protocol_Irma, log.IssuanceLog.Protocol)
 
@@ -776,7 +776,7 @@ func requireRegularIrmaIssuanceLog(t *testing.T, log client.LogInfo) {
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 }
 
-func requireIrmaSdJwtIssuanceLog(t *testing.T, log client.LogInfo) {
+func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, log.Type, clientmodels.LogType_Issuance)
 	require.Equal(t, clientmodels.Protocol_Irma, log.IssuanceLog.Protocol)
 

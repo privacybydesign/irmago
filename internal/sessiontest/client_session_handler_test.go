@@ -2350,8 +2350,8 @@ func testTrustedPartyLogoPathsInLogs(
 	require.GreaterOrEqual(t, len(logs), 2)
 
 	// Find the issuance and disclosure logs
-	var issuanceLog *client.IssuanceLog
-	var disclosureLog *client.DisclosureLog
+	var issuanceLog *clientmodels.IssuanceLog
+	var disclosureLog *clientmodels.DisclosureLog
 	for i := range logs {
 		if logs[i].IssuanceLog != nil {
 			issuanceLog = logs[i].IssuanceLog
