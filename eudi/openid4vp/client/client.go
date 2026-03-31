@@ -22,6 +22,7 @@ type Handler interface {
 	RequestVerificationPermission(
 		disclosurePlan *clientmodels.DisclosurePlan,
 		requestor *clientmodels.TrustedParty,
+		hashToQueryId map[string]string,
 		callback PermissionHandler,
 	)
 }
@@ -173,6 +174,12 @@ type openid4vpSession struct {
 	handler                  Handler
 	credentialQueryHandlers  []clientmodels.DcqlCredentialQueryHandler
 	pendingPermissionRequest *permissionRequest
+	lastPlan                 *clientmodels.DisclosurePlan
+	// hashToQueryId maps credential hashes to their DCQL query IDs.
+	hashToQueryId map[string]string
+	// preExistingHashes tracks owned credential hashes at session start,
+	// used to detect newly issued credentials for WrongCredentialIssued.
+	preExistingHashes map[string]struct{}
 }
 
 type permissionRequest struct {
@@ -202,10 +209,12 @@ func (session *openid4vpSession) requestPermission() error {
 	if err != nil {
 		return err
 	}
+	session.lastPlan = plan
 
 	session.handler.RequestVerificationPermission(
 		plan,
 		session.requestor,
+		session.hashToQueryId,
 		func(proceed bool, selections []clientmodels.DisclosureSelection) {
 			if proceed {
 				session.pendingPermissionRequest.channel <- &permissionResponse{
@@ -240,12 +249,27 @@ func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.Disclosure
 		queryFormats[credQuery.Id] = credQuery.Format
 	}
 
-	// Build the disclosure plan
-	if session.request.DcqlQuery.CredentialSets != nil {
-		return buildPlanFromCredentialSets(queryResults, session.request.DcqlQuery.CredentialSets)
+	// Snapshot pre-existing hashes on first call
+	if session.preExistingHashes == nil {
+		session.preExistingHashes = collectOwnedHashes(queryResults)
 	}
 
-	return buildPlanFromCredentialQueries(session.request.DcqlQuery.Credentials, queryResults)
+	// Build hash→queryId mapping from query results
+	session.hashToQueryId = make(map[string]string)
+	for queryId, result := range queryResults {
+		for _, owned := range result.OwnedCandidates {
+			if owned.Hash != "" {
+				session.hashToQueryId[owned.Hash] = queryId
+			}
+		}
+	}
+
+	// Build the disclosure plan
+	if session.request.DcqlQuery.CredentialSets != nil {
+		return buildPlanFromCredentialSets(queryResults, session.request.DcqlQuery.CredentialSets, session.lastPlan, session.preExistingHashes)
+	}
+
+	return buildPlanFromCredentialQueries(session.request.DcqlQuery.Credentials, queryResults, session.lastPlan, session.preExistingHashes)
 }
 
 func (session *openid4vpSession) perform() error {
@@ -357,6 +381,18 @@ func (session *openid4vpSession) prepareDisclosures(
 // ========================================================================
 // Helpers
 // ========================================================================
+
+func collectOwnedHashes(queryResults map[string]*clientmodels.CredentialQueryResult) map[string]struct{} {
+	hashes := make(map[string]struct{})
+	for _, result := range queryResults {
+		for _, owned := range result.OwnedCandidates {
+			if owned.Hash != "" {
+				hashes[owned.Hash] = struct{}{}
+			}
+		}
+	}
+	return hashes
+}
 
 func logMarshalled(message string, value any) {
 	jsonBytes, err := json.MarshalIndent(value, "", "   ")

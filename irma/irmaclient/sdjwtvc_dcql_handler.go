@@ -332,9 +332,29 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		return nil, fmt.Errorf("issuer %s not found in configuration", issuerId.String())
 	}
 
-	// Build attributes for the query's claims
+	// Determine which claims to show. When claim_sets are present,
+	// only include claims from the first claim_set (matching old behavior).
+	claimsToShow := query.Claims
+	if len(query.ClaimSets) > 0 {
+		claimMap := make(map[string]dcql.Claim)
+		for _, c := range query.Claims {
+			key := c.Id
+			if key == "" {
+				key = strings.Join(c.Path, ".")
+			}
+			claimMap[key] = c
+		}
+		claimsToShow = nil
+		for _, key := range query.ClaimSets[0] {
+			if c, ok := claimMap[key]; ok {
+				claimsToShow = append(claimsToShow, c)
+			}
+		}
+	}
+
+	// Build attributes for the selected claims
 	var attributes []clientmodels.Attribute
-	for _, claim := range query.Claims {
+	for _, claim := range claimsToShow {
 		attrName := claim.Path[0]
 		attr := clientmodels.Attribute{
 			Id:          attrName,
@@ -349,17 +369,18 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 			}
 		}
 
-		// Set requested value if the claim has specific value constraints
+		// Always set RequestedValue on obtainable descriptors (at minimum with just the type).
+		// When specific values are requested, include the value.
+		requestedValue := &clientmodels.AttributeValue{
+			Type: clientmodels.AttributeType_TranslatedString,
+		}
 		if len(claim.Values) != 0 {
-			requestedValue := &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
-			}
 			if firstValue, ok := claim.Values[0].(string); ok {
 				ts := clientmodels.TranslatedString(irma.NewTranslatedString(&firstValue))
 				requestedValue.TranslatedString = &ts
 			}
-			attr.RequestedValue = requestedValue
 		}
+		attr.RequestedValue = requestedValue
 
 		attributes = append(attributes, attr)
 	}

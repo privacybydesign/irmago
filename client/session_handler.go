@@ -73,6 +73,7 @@ type session struct {
 	authCodeHandler            openid4vci.AuthCodeHandler
 	preAuthorizedCodeHandler   openid4vci.TokenPermissionHandler
 	openid4vpPermissionHandler openid4vpclient.PermissionHandler
+	openid4vpHashToQueryId     map[string]string // credential hash → DCQL query ID
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
@@ -781,11 +782,18 @@ func (client *Client) HandleUserInteraction(userInteraction SessionUserInteracti
 	switch userInteraction.Type {
 	case UI_Permission:
 		payload := userInteraction.Payload.(SessionPermissionInteractionPayload)
-		choices, err := choicesToAnswer(payload.DisclosureChoices)
-		if err != nil {
-			return err
+		if session.openid4vpPermissionHandler != nil {
+			// OpenID4VP flow: convert UI selections to DisclosureSelections
+			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpHashToQueryId)
+			session.openid4vpPermissionHandler(payload.Granted, selections)
+		} else {
+			// IRMA flow
+			choices, err := choicesToAnswer(payload.DisclosureChoices)
+			if err != nil {
+				return err
+			}
+			session.permissionHandler(payload.Granted, choices)
 		}
-		session.permissionHandler(payload.Granted, choices)
 	case UI_EnteredPin:
 		payload := userInteraction.Payload.(PinInteractionPayload)
 		session.pinHandler(payload.Proceed, payload.Pin)

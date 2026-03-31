@@ -42,6 +42,7 @@ func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []client
 func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	disclosurePlan *clientmodels.DisclosurePlan,
 	requestor *clientmodels.TrustedParty,
+	hashToQueryId map[string]string,
 	callback openid4vpclient.PermissionHandler,
 ) {
 	a.session.State.Status = Status_RequestPermission
@@ -50,9 +51,134 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	if requestor != nil {
 		a.session.State.Requestor = *requestor
 	}
+	// Detect WrongCredentialIssued if issuance-during-disclosure is active
+	if disclosurePlan.IssueDuringDislosure != nil {
+		detectWrongCredentialIssued(a.session, disclosurePlan)
+	}
+
 	a.session.State.DisclosurePlan = disclosurePlan
 	a.session.openid4vpPermissionHandler = callback
+	a.session.openid4vpHashToQueryId = hashToQueryId
 	a.session.dispatchState()
+}
+
+// disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to OpenID4VP selections.
+func disclosureChoicesToOpenID4VPSelections(choices []DisclosureDisconSelection, hashToQueryId map[string]string) []clientmodels.DisclosureSelection {
+	var selections []clientmodels.DisclosureSelection
+	for _, discon := range choices {
+		for _, cred := range discon.Credentials {
+			attrNames := make([]string, 0, len(cred.AttributePaths))
+			for _, path := range cred.AttributePaths {
+				if len(path) > 0 {
+					if name, ok := path[0].(string); ok {
+						attrNames = append(attrNames, name)
+					}
+				}
+			}
+			queryId := hashToQueryId[cred.CredentialHash]
+			selections = append(selections, clientmodels.DisclosureSelection{
+				QueryId:        queryId,
+				CredentialHash: cred.CredentialHash,
+				AttributeNames: attrNames,
+			})
+		}
+	}
+	return selections
+}
+
+// detectWrongCredentialIssued checks if any newly issued credential matches a required
+// type but has wrong attribute values. Uses the client's full credential list.
+func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) {
+	if plan.IssueDuringDislosure == nil {
+		return
+	}
+
+	allCreds, err := s.client.GetCredentials()
+	if err != nil {
+		return
+	}
+
+	s.snapshotPreExistingCredentials(allCreds)
+
+	var previousWrongHash string
+	if plan.IssueDuringDislosure.WrongCredentialIssued != nil {
+		previousWrongHash = plan.IssueDuringDislosure.WrongCredentialIssued.Hash
+	}
+
+	for _, step := range plan.IssueDuringDislosure.Steps {
+		stepSatisfied := false
+		var wrongForStep *Credential
+
+		for _, option := range step.Options {
+			for _, cred := range allCreds {
+				if cred.CredentialId != option.CredentialId {
+					continue
+				}
+				_, preExisting := s.preExistingCredentialHashes[cred.Hash]
+				if preExisting {
+					continue
+				}
+				// This credential is new and matches the type. Check if values match.
+				wrong := checkWrongCredential(cred, option)
+				if wrong != nil {
+					if cred.Hash != previousWrongHash {
+						wrongForStep = wrong
+					}
+				} else {
+					stepSatisfied = true
+				}
+			}
+		}
+
+		// Only report wrong credential if the step is not satisfied by a correct one
+		if !stepSatisfied && wrongForStep != nil {
+			plan.IssueDuringDislosure.WrongCredentialIssued = wrongForStep
+			return
+		}
+	}
+}
+
+// checkWrongCredential returns a Credential with only the mismatched attributes if
+// the credential's values don't satisfy the requested values.
+func checkWrongCredential(cred *Credential, option *CredentialDescriptor) *Credential {
+	ok, _ := SatisfiesRequestedAttributes(cred.Attributes, option.Attributes)
+	if ok {
+		return nil
+	}
+
+	// Build a credential with only the mismatched attributes
+	var mismatched []Attribute
+	requestedByID := make(map[string]*Attribute)
+	for i := range option.Attributes {
+		requestedByID[option.Attributes[i].Id] = &option.Attributes[i]
+	}
+
+	for _, attr := range cred.Attributes {
+		req, ok := requestedByID[attr.Id]
+		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
+			continue
+		}
+		satisfied, _ := SatisfiesRequestedAttributes([]Attribute{attr}, []Attribute{*req})
+		if !satisfied {
+			mismatched = append(mismatched, Attribute{
+				Id:             attr.Id,
+				DisplayName:    attr.DisplayName,
+				Description:    attr.Description,
+				Value:          attr.Value,
+				RequestedValue: req.RequestedValue,
+			})
+		}
+	}
+
+	if len(mismatched) == 0 {
+		return nil
+	}
+
+	return &Credential{
+		CredentialId: cred.CredentialId,
+		Hash:         cred.Hash,
+		Attributes:   mismatched,
+	}
 }
 
 // openid4vpCredentialLogsToIrmaclientLogEntry converts OpenID4VP credential logs
