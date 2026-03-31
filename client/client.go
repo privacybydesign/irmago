@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
+	openid4vpclient "github.com/privacybydesign/irmago/eudi/openid4vp/client"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -28,7 +29,7 @@ type Client struct {
 	storage          *clientstorage.Storage
 	eudiStorage      *eudi.Storage
 	sdjwtvcStorage   irmaclient.SdJwtVcStorage
-	openid4vpClient  *irmaclient.OpenID4VPClient
+	openid4vpClient  *openid4vpclient.Client
 	openid4vciClient *openid4vci.Client
 	irmaClient       *irmaclient.IrmaClient
 	logsStorage      irmaclient.LogsStorage
@@ -91,7 +92,7 @@ func New(
 	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &eudi.DefaultQueryValidatorFactory{})
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
 
-	openid4vpClient, err := irmaclient.NewOpenID4VPClient(eudiConf, sdjwtvcStorage, verifierValidator, irmaKeyBinder, irmaStorage)
+	openid4vpClient, err := openid4vpclient.NewClient(eudiConf, sdjwtvcStorage, verifierValidator, irmaKeyBinder, irmaStorage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}

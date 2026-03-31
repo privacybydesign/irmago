@@ -1,4 +1,4 @@
-package irmaclient
+package client
 
 import (
 	"bytes"
@@ -15,13 +15,14 @@ import (
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
-func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
+func createClientForTesting(t *testing.T) *Client {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	storage, err := NewInMemorySdJwtVcStorage()
+	storage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
 	addTestCredentialsToStorage(t, storage, keyBinder)
@@ -38,7 +39,7 @@ func createOpenID4VPClientForTesting(t *testing.T) *OpenID4VPClient {
 	require.NoError(t, conf.Reload())
 
 	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&conf.Verifiers, &eudi.MockQueryValidatorFactory{})
-	client, err := NewOpenID4VPClient(conf, storage, verifierValidator, keyBinder, &InMemoryLogsStorage{})
+	client, err := NewClient(conf, storage, verifierValidator, keyBinder, &irmaclient.InMemoryLogsStorage{})
 	require.NoError(t, err)
 	return client
 }
@@ -54,9 +55,9 @@ func testDisclosingTwoCredentials_Success(t *testing.T, verifierHost string) {
 	url, err := startSessionAtEudiVerifier(verifierHost)
 	require.NoError(t, err)
 
-	client := createOpenID4VPClientForTesting(t)
+	client := createClientForTesting(t)
 
-	handler := NewMockSessionHandler(t)
+	handler := irmaclient.NewMockSessionHandler(t)
 	client.NewSession(url, handler)
 
 	permissionRequest := handler.AwaitPermissionRequest()
@@ -118,22 +119,21 @@ func startSessionAtEudiVerifier(verifierHost string) (string, error) {
 	return url.String(), nil
 }
 
-func addTestCredentialsToStorage(t *testing.T, storage SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
-	// ignoring all errors here, since it's not production code anyway
-	mobilephoneInfo, mobilephoneEntry := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
+func addTestCredentialsToStorage(t *testing.T, storage irmaclient.SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
+	mobilephoneInfo, mobilephoneEntry := irmaclient.CreateMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
 		map[string]string{
 			"mobilephone": "+31612345678",
 		}, 1,
 	)
 	require.NoError(t, storage.StoreCredential(mobilephoneInfo, mobilephoneEntry))
 
-	emailInfo, emailSdjwts := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
+	emailInfo, emailSdjwts := irmaclient.CreateMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email":  "test@gmail.com",
 		"domain": "gmail.com",
 	}, 1)
 	require.NoError(t, storage.StoreCredential(emailInfo, emailSdjwts))
 
-	emailInfo2, emailSdjwt2 := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
+	emailInfo2, emailSdjwt2 := irmaclient.CreateMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
 		"email":  "yivi@gmail.com",
 		"domain": "gmail.com",
 	}, 2)
