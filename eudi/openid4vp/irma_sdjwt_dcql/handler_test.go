@@ -1,4 +1,4 @@
-package sdjwtvphandler_test
+package irma_sdjwt_dcql_test
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	openid4vpclient "github.com/privacybydesign/irmago/eudi/openid4vp/client"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/sdjwtvphandler"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -655,7 +655,7 @@ func createTestDcqlHandler(t *testing.T) (*openid4vpclient.DcqlHandler, *irmacli
 	require.NoError(t, err)
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	return openid4vpclient.NewDcqlHandler([]clientmodels.DcqlCredentialQueryHandler{
-		sdjwtvphandler.NewSdJwtVcDcqlHandler(storage, conf, keyBinder),
+		irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(storage, conf, keyBinder),
 	}), storage
 }
 

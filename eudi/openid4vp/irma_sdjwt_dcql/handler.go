@@ -1,4 +1,4 @@
-package sdjwtvphandler
+package irma_sdjwt_dcql
 
 import (
 	"fmt"
@@ -20,8 +20,8 @@ type SdJwtVcDcqlHandler struct {
 	keyBinder sdjwtvc.KeyBinder
 }
 
-// NewSdJwtVcDcqlHandler creates a new handler for SD-JWT-VC DCQL credential queries.
-func NewSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwtvc.KeyBinder) *SdJwtVcDcqlHandler {
+// NewIrmaSdJwtVcDcqlHandler creates a new handler for DCQL credential queries for SD-JWT-VC credentials issued over IRMA.
+func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwtvc.KeyBinder) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:   storage,
 		config:    config,
