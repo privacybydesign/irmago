@@ -8,7 +8,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
-type Jwk interface{}
+type Jwk any
 
 type SdJwtVcClientMetadataVpFormat struct {
 	KbJwtAlgorithms []string `json:"kb-jwt_alg_values"`
@@ -19,7 +19,7 @@ type MdocClientMedataVpFormat struct {
 	Algorithm []string `json:"alg"`
 }
 
-func GetMdocFromClientMetadataVpFormats(vpFormats map[string]interface{}) *MdocClientMedataVpFormat {
+func GetMdocFromClientMetadataVpFormats(vpFormats map[string]any) *MdocClientMedataVpFormat {
 	result, ok := vpFormats["mso_mdoc"].(MdocClientMedataVpFormat)
 	if ok {
 		return &result
@@ -27,7 +27,7 @@ func GetMdocFromClientMetadataVpFormats(vpFormats map[string]interface{}) *MdocC
 	return nil
 }
 
-func GetSdJwtVcFromClientMedataVpFormats(vpFormats map[string]interface{}) *SdJwtVcClientMetadataVpFormat {
+func GetSdJwtVcFromClientMedataVpFormats(vpFormats map[string]any) *SdJwtVcClientMetadataVpFormat {
 	result, ok := vpFormats["vc+sd-jwt"].(SdJwtVcClientMetadataVpFormat)
 	if ok {
 		return &result
