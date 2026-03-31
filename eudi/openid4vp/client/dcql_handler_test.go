@@ -45,8 +45,14 @@ func testSatisfiableSingleCredentialSingleOption(t *testing.T) {
 	h, s := createTestDcqlHandler(t)
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@email.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{ "path": ["email"] }]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
 	assert.Equal(t, "test.test.email", plan.DisclosureChoicesOverview[0].OwnedOptions[0].CredentialId)
@@ -58,8 +64,14 @@ func testSatisfiableSingleCredentialMultipleInstances(t *testing.T) {
 	info1 := storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@test.com"})
 	info2 := storeTestCred(t, s, "test.test.email", map[string]string{"email": "b@test.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{ "path": ["email"] }]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
 	hashes := ownedHashes(plan.DisclosureChoicesOverview[0])
@@ -70,8 +82,14 @@ func testSatisfiableSingleCredentialMultipleInstances(t *testing.T) {
 func testUnsatisfiableSingleCredential(t *testing.T) {
 	h, _ := createTestDcqlHandler(t)
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{ "path": ["email"] }]
+		}]
+	}`)
 
 	requireUnsatisfiable(t, plan, 1)
 	assert.Equal(t, "test.test.email", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
@@ -82,22 +100,49 @@ func testSatisfiableMultipleCredentialsSingleOptionEach(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@test.com"})
 	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@test.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [
-		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
-		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [
+			{
+				"id": "q1",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }]
+			},
+			{
+				"id": "q2",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		]
+	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1}, expectPickOne{owned: 1, obtainable: 1})
+	requireSatisfiable(t, plan,
+		expectPickOne{owned: 1, obtainable: 1},
+		expectPickOne{owned: 1, obtainable: 1},
+	)
 }
 
 func testUnsatisfiableMultipleCredentialsOneAvailable(t *testing.T) {
 	h, s := createTestDcqlHandler(t)
 	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@test.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [
-		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
-		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [
+			{
+				"id": "q1",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }]
+			},
+			{
+				"id": "q2",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		]
+	}`)
 
 	requireUnsatisfiable(t, plan, 1)
 	assert.Equal(t, "test.test.email", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
@@ -106,10 +151,22 @@ func testUnsatisfiableMultipleCredentialsOneAvailable(t *testing.T) {
 func testUnsatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
 	h, _ := createTestDcqlHandler(t)
 
-	plan := buildPlan(t, h, `{"credentials": [
-		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
-		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [
+			{
+				"id": "q1",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }]
+			},
+			{
+				"id": "q2",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		]
+	}`)
 
 	requireUnsatisfiable(t, plan, 1, 1)
 }
@@ -118,8 +175,17 @@ func testSatisfiableMultipleAttributes(t *testing.T) {
 	h, s := createTestDcqlHandler(t)
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [
+				{ "path": ["email"] },
+				{ "path": ["domain"] }
+			]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
 	assert.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes, 2)
@@ -129,8 +195,17 @@ func testUnsatisfiablePartialAttributes(t *testing.T) {
 	h, s := createTestDcqlHandler(t)
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [
+				{ "path": ["email"] },
+				{ "path": ["domain"] }
+			]
+		}]
+	}`)
 
 	requireUnsatisfiable(t, plan, 1)
 }
@@ -140,12 +215,31 @@ func testCredentialSetsAllRequiredDifferentPurpose(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com"})
 	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@t.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [
-		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
-		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	], "credential_sets": [{"options": [["q1"]]}, {"options": [["q2"]]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [
+			{
+				"id": "q1",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }]
+			},
+			{
+				"id": "q2",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["q1"]] },
+			{ "options": [["q2"]] }
+		]
+	}`)
 
-	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1}, expectPickOne{owned: 1, obtainable: 1})
+	requireSatisfiable(t, plan,
+		expectPickOne{owned: 1, obtainable: 1},
+		expectPickOne{owned: 1, obtainable: 1},
+	)
 }
 
 func testCredentialSetTwoOptionsSamePurpose(t *testing.T) {
@@ -153,10 +247,25 @@ func testCredentialSetTwoOptionsSamePurpose(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com"})
 	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@t.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [
-		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
-		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	], "credential_sets": [{"options": [["q1"], ["q2"]]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [
+			{
+				"id": "q1",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }]
+			},
+			{
+				"id": "q2",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["q1"], ["q2"]] }
+		]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 2})
 }
@@ -166,10 +275,25 @@ func testCredentialSetTwoOptionsMultipleClaimsSingleCandidateEach(t *testing.T) 
 	emailInfo := storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
 	loginInfo := storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@t.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [
-		{"id": "email", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]},
-		{"id": "login", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	], "credential_sets": [{"options": [["email"], ["login"]]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [
+			{
+				"id": "email",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }, { "path": ["domain"] }]
+			},
+			{
+				"id": "login",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["email"], ["login"]] }
+		]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 2})
 	byHash := ownedByHash(plan.DisclosureChoicesOverview[0])
@@ -183,10 +307,25 @@ func testCredentialSetTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "b@t.com", "domain": "t2.com"})
 	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "c@t.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [
-		{"id": "email", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]},
-		{"id": "login", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	], "credential_sets": [{"options": [["email"], ["login"]]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [
+			{
+				"id": "email",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }, { "path": ["domain"] }]
+			},
+			{
+				"id": "login",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["email"], ["login"]] }
+		]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2})
 }
@@ -195,10 +334,25 @@ func testMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
 	h, s := createTestDcqlHandler(t)
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
 
-	query := parseDcqlQuery(t, `{"credentials": [
-		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
-		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	], "credential_sets": [{"options": [["q1", "q2"]]}]}`)
+	query := parseDcqlQuery(t, `{
+		"credentials": [
+			{
+				"id": "q1",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }]
+			},
+			{
+				"id": "q2",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["q1", "q2"]] }
+		]
+	}`)
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
@@ -210,8 +364,14 @@ func testMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
 func testInvalidFormatReturnsError(t *testing.T) {
 	h, _ := createTestDcqlHandler(t)
 
-	query := parseDcqlQuery(t, `{"credentials": [{"id": "q1", "format": "mso_mdoc",
-		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]}]}`)
+	query := parseDcqlQuery(t, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "mso_mdoc",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{ "path": ["email"] }]
+		}]
+	}`)
 
 	_, err := h.FindCandidates(query)
 	require.Error(t, err)
@@ -223,9 +383,14 @@ func testSatisfiablePredefinedValue(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@gmail.com"})
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@hotmail.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]},
-		"claims": [{"path": ["email"], "values": ["test@gmail.com"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{ "path": ["email"], "values": ["test@gmail.com"] }]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
 	assert.NotNil(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes[0].RequestedValue)
@@ -236,9 +401,14 @@ func testUnsatisfiablePredefinedValue(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@hotmail.com"})
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "user@live.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]},
-		"claims": [{"path": ["email"], "values": ["nope@nowhere.com"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{ "path": ["email"], "values": ["nope@nowhere.com"] }]
+		}]
+	}`)
 
 	requireUnsatisfiable(t, plan, 1)
 }
@@ -248,9 +418,17 @@ func testMultipleAllowedValuesSingleMatch(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@hotmail.com"})
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "user@live.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]},
-		"claims": [{"path": ["email"], "values": ["test@gmail.com", "test@hotmail.com", "test@yahoo.com"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{
+				"path": ["email"],
+				"values": ["test@gmail.com", "test@hotmail.com", "test@yahoo.com"]
+			}]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
 }
@@ -260,9 +438,17 @@ func testMultipleAllowedValuesMultipleMatches(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@hotmail.com"})
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "user@gmail.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]},
-		"claims": [{"path": ["email"], "values": ["user@gmail.com", "test@hotmail.com"]}]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{
+				"path": ["email"],
+				"values": ["user@gmail.com", "test@hotmail.com"]
+			}]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
 }
@@ -272,10 +458,18 @@ func testClaimSetsOneOptionSatisfiable(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "t@hotmail.com", "domain": "hotmail.com"})
 	infoGmail := storeTestCred(t, s, "test.test.email", map[string]string{"email": "u@gmail.com", "domain": "gmail.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]},
-		"claims": [{"id": "em", "path": ["email"], "values": ["not@available.com"]}, {"id": "do", "path": ["domain"], "values": ["gmail.com"]}],
-		"claim_sets": [["em"], ["do"]]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [
+				{ "id": "em", "path": ["email"], "values": ["not@available.com"] },
+				{ "id": "do", "path": ["domain"], "values": ["gmail.com"] }
+			],
+			"claim_sets": [["em"], ["do"]]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
 	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -289,10 +483,18 @@ func testClaimSetsBothSatisfiablePicksFirst(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "t@hotmail.com", "domain": "hotmail.com"})
 	infoGmail := storeTestCred(t, s, "test.test.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]},
-		"claims": [{"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["gmail.com"]}],
-		"claim_sets": [["em"], ["do"]]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [
+				{ "id": "em", "path": ["email"], "values": ["hello@gmail.com"] },
+				{ "id": "do", "path": ["domain"], "values": ["gmail.com"] }
+			],
+			"claim_sets": [["em"], ["do"]]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
 	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -306,10 +508,18 @@ func testClaimSetsBothSatisfiableByDifferentInstances(t *testing.T) {
 	infoHotmail := storeTestCred(t, s, "test.test.email", map[string]string{"email": "t@hotmail.com", "domain": "hotmail.com"})
 	infoGmail := storeTestCred(t, s, "test.test.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]},
-		"claims": [{"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["hotmail.com"]}],
-		"claim_sets": [["em"], ["do"]]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [
+				{ "id": "em", "path": ["email"], "values": ["hello@gmail.com"] },
+				{ "id": "do", "path": ["domain"], "values": ["hotmail.com"] }
+			],
+			"claim_sets": [["em"], ["do"]]
+		}]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
 	byHash := ownedByHash(plan.DisclosureChoicesOverview[0])
@@ -326,10 +536,18 @@ func testClaimSetsBothSatisfiableByDifferentInstances(t *testing.T) {
 func testClaimSetsNotSatisfiable(t *testing.T) {
 	h, _ := createTestDcqlHandler(t)
 
-	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
-		"meta": {"vct_values": ["test.test.email"]},
-		"claims": [{"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["hotmail.com"]}],
-		"claim_sets": [["em"], ["do"]]}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [
+				{ "id": "em", "path": ["email"], "values": ["hello@gmail.com"] },
+				{ "id": "do", "path": ["domain"], "values": ["hotmail.com"] }
+			],
+			"claim_sets": [["em"], ["do"]]
+		}]
+	}`)
 
 	requireUnsatisfiable(t, plan, 1)
 }
@@ -340,10 +558,25 @@ func testNonRequiredCredentialSet(t *testing.T) {
 	storeTestCred(t, s, "test.test.email", map[string]string{"email": "b@t.com", "domain": "t2.com"})
 	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "c@t.com"})
 
-	plan := buildPlan(t, h, `{"credentials": [
-		{"id": "email", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]},
-		{"id": "login", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
-	], "credential_sets": [{"options": [["email"], ["login"]], "required": false}]}`)
+	plan := buildPlan(t, h, `{
+		"credentials": [
+			{
+				"id": "email",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.email"] },
+				"claims": [{ "path": ["email"] }, { "path": ["domain"] }]
+			},
+			{
+				"id": "login",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["test.test.mijnirma"] },
+				"claims": [{ "path": ["email"] }]
+			}
+		],
+		"credential_sets": [
+			{ "options": [["email"], ["login"]], "required": false }
+		]
+	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2, optional: true})
 }
