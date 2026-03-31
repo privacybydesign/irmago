@@ -17,54 +17,9 @@ import (
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
-// Interaction type aliases: canonical definitions live in common/clientmodels.
-type UserInteractionType = clientmodels.UserInteractionType
-type SessionUserInteraction = clientmodels.SessionUserInteraction
-type SessionPermissionInteractionPayload = clientmodels.SessionPermissionInteractionPayload
-type SelectedCredential = clientmodels.SelectedCredential
-type DisclosureDisconSelection = clientmodels.DisclosureDisconSelection
-type PinInteractionPayload = clientmodels.PinInteractionPayload
-type SessionAuthCodeInteractionPayload = clientmodels.SessionAuthCodeInteractionPayload
-type SessionPreAuthorizedCodeInteractionPayload = clientmodels.SessionPreAuthorizedCodeInteractionPayload
-
-const (
-	UI_EnteredPin        = clientmodels.UI_EnteredPin
-	UI_Permission        = clientmodels.UI_Permission
-	UI_DismissSession    = clientmodels.UI_DismissSession
-	UI_AuthorizationCode = clientmodels.UI_AuthorizationCode
-	UI_PreAuthorizedCode = clientmodels.UI_PreAuthorizedCode
-)
-
-// Type aliases: canonical definitions live in common/clientmodels.
-type SessionStatus = clientmodels.SessionStatus
-type SessionType = clientmodels.SessionType
-type SelectableCredentialInstance = clientmodels.SelectableCredentialInstance
-type DisclosurePlan = clientmodels.DisclosurePlan
-type DisclosurePickOne = clientmodels.DisclosurePickOne
-type IssuanceStep = clientmodels.IssuanceStep
-type IssueDuringDislosure = clientmodels.IssueDuringDislosure
-type SessionState = clientmodels.SessionState
-type SessionError = clientmodels.SessionError
-type SessionHandler = clientmodels.SessionHandler
-
-const (
-	Status_RequestPermission        = clientmodels.Status_RequestPermission
-	Status_ShowPairingCode          = clientmodels.Status_ShowPairingCode
-	Status_Success                  = clientmodels.Status_Success
-	Status_Error                    = clientmodels.Status_Error
-	Status_Dismissed                = clientmodels.Status_Dismissed
-	Status_RequestPin               = clientmodels.Status_RequestPin
-	Status_RequestPreAuthorizedCode = clientmodels.Status_RequestPreAuthorizedCode
-	Status_RequestAuthorizationCode = clientmodels.Status_RequestAuthorizationCode
-
-	Type_Disclosure = clientmodels.Type_Disclosure
-	Type_Issuance   = clientmodels.Type_Issuance
-	Type_Signature  = clientmodels.Type_Signature
-)
-
 type session struct {
-	State                      *SessionState
-	handler                    SessionHandler
+	State                      *clientmodels.SessionState
+	handler                    clientmodels.SessionHandler
 	permissionHandler          irmaclient.PermissionHandler
 	pinHandler                 irmaclient.PinHandler
 	client                     *Client
@@ -86,7 +41,7 @@ func (s *session) dispatchState() {
 // snapshotPreExistingCredentials records the hashes of all credentials that exist
 // before issuance-during-disclosure begins. Only called once per session; subsequent
 // calls are no-ops so the snapshot reflects the state at plan creation time.
-func (s *session) snapshotPreExistingCredentials(credentials []*Credential) {
+func (s *session) snapshotPreExistingCredentials(credentials []*clientmodels.Credential) {
 	if s.preExistingCredentialHashes != nil {
 		return
 	}
@@ -97,7 +52,7 @@ func (s *session) snapshotPreExistingCredentials(credentials []*Credential) {
 }
 
 func (s *session) error(err error) {
-	s.State.Status = Status_Error
+	s.State.Status = clientmodels.Status_Error
 	var irmaErr *irma.SessionError
 	if errors.As(err, &irmaErr) {
 		s.State.Error = clientmodels.NewSessionError(irmaErr)
@@ -110,7 +65,7 @@ func (s *session) error(err error) {
 type sessionManager struct {
 	Sessions       map[int]*session
 	NextId         int
-	SessionHandler SessionHandler
+	SessionHandler clientmodels.SessionHandler
 	Client         *Client
 }
 
@@ -127,7 +82,7 @@ func (m *sessionManager) NewSession() *session {
 	// TODO: use locking here to update the session ID
 	m.NextId += 1
 	s := &session{
-		State: &SessionState{
+		State: &clientmodels.SessionState{
 			Id: m.NextId,
 		},
 		handler: m.SessionHandler,
@@ -145,18 +100,18 @@ func (s *session) ClientReturnURLSet(clientReturnURL string) {
 }
 
 func (s *session) PairingRequired(pairingCode string) {
-	s.State.Status = Status_ShowPairingCode
+	s.State.Status = clientmodels.Status_ShowPairingCode
 	s.State.PairingCode = pairingCode
 	s.dispatchState()
 }
 
 func (s *session) Success(result string) {
-	s.State.Status = Status_Success
+	s.State.Status = clientmodels.Status_Success
 	s.dispatchState()
 }
 
 func (s *session) Cancelled() {
-	s.State.Status = Status_Dismissed
+	s.State.Status = clientmodels.Status_Dismissed
 	s.dispatchState()
 }
 
@@ -166,7 +121,7 @@ func (s *session) Failure(err *irma.SessionError) {
 
 func (s *session) KeyshareBlocked(manager irma.SchemeManagerIdentifier, duration int) {
 	s.State.PinBlockedTimeSeconds = &duration
-	s.State.Status = Status_RequestPin
+	s.State.Status = clientmodels.Status_RequestPin
 	s.dispatchState()
 }
 
@@ -174,17 +129,17 @@ func (s *session) KeyshareEnrollmentMissing(manager irma.SchemeManagerIdentifier
 	s.error(fmt.Errorf("keyshare enrollment is missing for scheme: '%s'", manager))
 }
 
-func requestorInfoToTrustedParty(info *irma.RequestorInfo) TrustedParty {
-	return TrustedParty{
+func requestorInfoToTrustedParty(info *irma.RequestorInfo) clientmodels.TrustedParty {
+	return clientmodels.TrustedParty{
 		Id:        info.ID.String(),
-		Name:      TranslatedString(info.Name),
+		Name:      clientmodels.TranslatedString(info.Name),
 		ImagePath: info.LogoPath,
 		Parent:    nil,
 		Verified:  !info.Unverified,
 	}
 }
 
-func requestorInfoToTrustedPartyPtr(info *irma.RequestorInfo) *TrustedParty {
+func requestorInfoToTrustedPartyPtr(info *irma.RequestorInfo) *clientmodels.TrustedParty {
 	if info == nil {
 		return nil
 	}
@@ -201,7 +156,7 @@ func (s *session) RequestIssuancePermission(
 ) {
 	// if the session type wasn't an issuance session before
 	// we can assume this session to be chained and we can cache that for future permission requests
-	if s.State.Type != "" && s.State.Type != Type_Issuance {
+	if s.State.Type != "" && s.State.Type != clientmodels.Type_Issuance {
 		s.chained = true
 	}
 
@@ -224,7 +179,7 @@ func (s *session) RequestIssuancePermission(
 	// if the session is a chained session and the previous type was disclosure or signature
 	// we don't want to update the disclosure plan and instead make a new one
 	// if the current (issuance) session has any disclosures
-	if s.chained && s.State.Type != Type_Issuance {
+	if s.chained && s.State.Type != clientmodels.Type_Issuance {
 		s.State.DisclosurePlan = nil
 	} else {
 		s.snapshotPreExistingCredentials(credentials)
@@ -242,11 +197,11 @@ func (s *session) RequestIssuancePermission(
 	filterRandomBlindAttributes(irmaConfig, offeredCredentials)
 
 	s.State.OfferedCredentials = offeredCredentials
-	s.State.Status = Status_RequestPermission
+	s.State.Status = clientmodels.Status_RequestPermission
 	s.permissionHandler = callback
-	s.State.Protocol = irmaclient.Protocol_Irma
+	s.State.Protocol = clientmodels.Protocol_Irma
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
-	s.State.Type = Type_Issuance
+	s.State.Type = clientmodels.Type_Issuance
 
 	s.dispatchState()
 }
@@ -254,7 +209,7 @@ func (s *session) RequestIssuancePermission(
 // filterRandomBlindAttributes removes random blind attributes from offered credentials.
 // These attributes are generated by the issuance protocol and have no user-meaningful value
 // at issuance permission time.
-func filterRandomBlindAttributes(irmaConfig *irma.Configuration, credentials []*Credential) {
+func filterRandomBlindAttributes(irmaConfig *irma.Configuration, credentials []*clientmodels.Credential) {
 	for _, cred := range credentials {
 		credTypeID := irma.NewCredentialTypeIdentifier(cred.CredentialId)
 		credType, ok := irmaConfig.CredentialTypes[credTypeID]
@@ -270,7 +225,7 @@ func filterRandomBlindAttributes(irmaConfig *irma.Configuration, credentials []*
 		if len(randomBlindIDs) == 0 {
 			continue
 		}
-		filtered := make([]Attribute, 0, len(cred.Attributes))
+		filtered := make([]clientmodels.Attribute, 0, len(cred.Attributes))
 		for _, attr := range cred.Attributes {
 			if _, isBlind := randomBlindIDs[attr.Id]; !isBlind {
 				filtered = append(filtered, attr)
@@ -280,12 +235,12 @@ func filterRandomBlindAttributes(irmaConfig *irma.Configuration, credentials []*
 	}
 }
 
-func findCredential(credentials []*Credential, hash string) *SelectableCredentialInstance {
+func findCredential(credentials []*clientmodels.Credential, hash string) *clientmodels.SelectableCredentialInstance {
 	for _, c := range credentials {
 		// each format has its own hash for the corresponding instance
 		for format, h := range c.CredentialInstanceIds {
 			if h == hash {
-				return &SelectableCredentialInstance{
+				return &clientmodels.SelectableCredentialInstance{
 					CredentialId:                c.CredentialId,
 					Hash:                        h,
 					ImagePath:                   c.ImagePath,
@@ -308,13 +263,13 @@ func findCredential(credentials []*Credential, hash string) *SelectableCredentia
 
 func createIssuanceSteps(
 	irmaConfig *irma.Configuration,
-	credentials []*Credential,
+	credentials []*clientmodels.Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
-) ([]IssuanceStep, error) {
+) ([]clientmodels.IssuanceStep, error) {
 	// for each disjunction that is not satisfiable we need to give the user the option to select
 	// from any of the options (inner cons) beloning to that disjunction
 	unsatisfiedDisjunctionIndices := []int{}
-	result := []IssuanceStep{}
+	result := []clientmodels.IssuanceStep{}
 
 	for i, discon := range candidates {
 		disconSatisfied := false
@@ -336,7 +291,7 @@ func createIssuanceSteps(
 
 	for _, i := range unsatisfiedDisjunctionIndices {
 		discon := candidates[i]
-		options := []*CredentialDescriptor{}
+		options := []*clientmodels.CredentialDescriptor{}
 		for _, con := range discon {
 			descriptor, err := createCredentialDescriptor(irmaConfig, con)
 			if err != nil {
@@ -344,7 +299,7 @@ func createIssuanceSteps(
 			}
 			options = append(options, descriptor)
 		}
-		result = append(result, IssuanceStep{
+		result = append(result, clientmodels.IssuanceStep{
 			Options: options,
 		})
 	}
@@ -354,17 +309,17 @@ func createIssuanceSteps(
 
 func createDisclosureChoicesOverview(
 	irmaConfig *irma.Configuration,
-	credentials []*Credential,
+	credentials []*clientmodels.Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
-) ([]DisclosurePickOne, error) {
-	result := []DisclosurePickOne{}
+) ([]clientmodels.DisclosurePickOne, error) {
+	result := []clientmodels.DisclosurePickOne{}
 	// for each discon we create a disclosure pick one
 	for _, discon := range candidates {
-		choice := DisclosurePickOne{}
+		choice := clientmodels.DisclosurePickOne{}
 
-		choiceTemplates := map[string]*CredentialDescriptor{}        // key: credentialId
-		filteredByHash := map[string]*SelectableCredentialInstance{} // key: credentialHash
-		ownedOrder := []string{}                                     // preserves insertion order of hashes
+		choiceTemplates := map[string]*clientmodels.CredentialDescriptor{}        // key: credentialId
+		filteredByHash := map[string]*clientmodels.SelectableCredentialInstance{} // key: credentialHash
+		ownedOrder := []string{}                                                  // preserves insertion order of hashes
 
 		for _, con := range discon {
 			// if at least one of the cons inside of a discon is empty
@@ -394,8 +349,8 @@ func createDisclosureChoicesOverview(
 					attrName := attr.AttributeIdentifier.Type.Name()
 					for i := range choiceTemplates[id].Attributes {
 						if choiceTemplates[id].Attributes[i].Id == attrName {
-							requestedValue := &AttributeValue{
-								Type: AttributeType_TranslatedString,
+							requestedValue := &clientmodels.AttributeValue{
+								Type: clientmodels.AttributeType_TranslatedString,
 							}
 							if attr.Value != nil {
 								requestedValue.TranslatedString = convertOptionalTranslatedString(&attr.Value)
@@ -416,7 +371,7 @@ func createDisclosureChoicesOverview(
 					if !ok {
 						cp := *orig
 						f = &cp
-						f.Attributes = []Attribute{}
+						f.Attributes = []clientmodels.Attribute{}
 						filteredByHash[hash] = f
 						ownedOrder = append(ownedOrder, hash)
 					}
@@ -450,11 +405,11 @@ func createDisclosureChoicesOverview(
 // previousWrongHash is the hash of the wrong credential from the previous plan update,
 // used to prefer a newer wrong credential when issuance dates are equal.
 func getIssuedSinceOriginalPlan(
-	steps []IssuanceStep,
-	allCredentials []*Credential,
+	steps []clientmodels.IssuanceStep,
+	allCredentials []*clientmodels.Credential,
 	preExistingHashes map[string]struct{},
 	previousWrongHash string,
-) (issued map[string]struct{}, lastWrongCredential *Credential, satisfied bool) {
+) (issued map[string]struct{}, lastWrongCredential *clientmodels.Credential, satisfied bool) {
 	issued = map[string]struct{}{}
 	numSatisfiedSteps := 0
 
@@ -508,13 +463,13 @@ func getIssuedSinceOriginalPlan(
 // the attributes that have a pre-defined requested value that doesn't match the credential's
 // actual value. Each included attribute gets the RequestedValue from the option so the
 // frontend can show both the actual and expected values side by side.
-func filterCredentialToMismatchedAttributes(cred *Credential, requestedAttrs []Attribute) *Credential {
-	requestedByID := make(map[string]*Attribute, len(requestedAttrs))
+func filterCredentialToMismatchedAttributes(cred *clientmodels.Credential, requestedAttrs []clientmodels.Attribute) *clientmodels.Credential {
+	requestedByID := make(map[string]*clientmodels.Attribute, len(requestedAttrs))
 	for i := range requestedAttrs {
 		requestedByID[requestedAttrs[i].Id] = &requestedAttrs[i]
 	}
 
-	var filtered []Attribute
+	var filtered []clientmodels.Attribute
 	for _, attr := range cred.Attributes {
 		req, ok := requestedByID[attr.Id]
 		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
@@ -522,11 +477,11 @@ func filterCredentialToMismatchedAttributes(cred *Credential, requestedAttrs []A
 		}
 		// Check if the actual value doesn't match the requested value
 		satisfied, _ := SatisfiesRequestedAttributes(
-			[]Attribute{attr},
-			[]Attribute{*req},
+			[]clientmodels.Attribute{attr},
+			[]clientmodels.Attribute{*req},
 		)
 		if !satisfied {
-			filtered = append(filtered, Attribute{
+			filtered = append(filtered, clientmodels.Attribute{
 				Id:             attr.Id,
 				DisplayName:    attr.DisplayName,
 				Description:    attr.Description,
@@ -542,13 +497,13 @@ func filterCredentialToMismatchedAttributes(cred *Credential, requestedAttrs []A
 }
 
 func createDisclosurePlan(
-	oldDisclosurePlan *DisclosurePlan,
+	oldDisclosurePlan *clientmodels.DisclosurePlan,
 	irmaConfig *irma.Configuration,
-	credentials []*Credential,
+	credentials []*clientmodels.Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
 	preExistingCredentialHashes map[string]struct{},
-) (*DisclosurePlan, error) {
-	newPlan := &DisclosurePlan{}
+) (*clientmodels.DisclosurePlan, error) {
+	newPlan := &clientmodels.DisclosurePlan{}
 	// there's no plan yet, so make a new one
 	if oldDisclosurePlan == nil {
 		issuanceSteps, err := createIssuanceSteps(irmaConfig, credentials, candidates)
@@ -558,8 +513,8 @@ func createDisclosurePlan(
 
 		// the current disclosure flow is not satisfyable without issuance
 		if len(issuanceSteps) != 0 {
-			return &DisclosurePlan{
-				IssueDuringDislosure: &IssueDuringDislosure{
+			return &clientmodels.DisclosurePlan{
+				IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
 					IssuedCredentialIds: map[string]struct{}{},
 					Steps:               issuanceSteps,
 				},
@@ -576,7 +531,7 @@ func createDisclosurePlan(
 			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(
 				lastIssuancePlan.Steps, credentials, preExistingCredentialHashes, previousWrongHash,
 			)
-			newPlan.IssueDuringDislosure = &IssueDuringDislosure{
+			newPlan.IssueDuringDislosure = &clientmodels.IssueDuringDislosure{
 				Steps:                 lastIssuancePlan.Steps,
 				IssuedCredentialIds:   issued,
 				WrongCredentialIssued: lastWrongCredential,
@@ -599,14 +554,14 @@ func createDisclosurePlan(
 	return newPlan, nil
 }
 
-func lookupAttrValue(orig *SelectableCredentialInstance, id *irma.AttributeIdentifier) (Attribute, bool) {
-	index := slices.IndexFunc(orig.Attributes, func(att Attribute) bool {
+func lookupAttrValue(orig *clientmodels.SelectableCredentialInstance, id *irma.AttributeIdentifier) (clientmodels.Attribute, bool) {
+	index := slices.IndexFunc(orig.Attributes, func(att clientmodels.Attribute) bool {
 		return att.Id == id.Type.Name()
 	})
 	if index >= 0 {
 		return orig.Attributes[index], true
 	}
-	return Attribute{}, false
+	return clientmodels.Attribute{}, false
 }
 
 func (s *session) RequestVerificationPermission(
@@ -616,8 +571,8 @@ func (s *session) RequestVerificationPermission(
 	requestorInfo *irma.RequestorInfo,
 	callback irmaclient.PermissionHandler,
 ) {
-	s.State.Status = Status_RequestPermission
-	s.State.Type = Type_Disclosure
+	s.State.Status = clientmodels.Status_RequestPermission
+	s.State.Type = clientmodels.Type_Disclosure
 	s.permissionHandler = callback
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.OfferedCredentials = nil
@@ -646,8 +601,8 @@ func (s *session) RequestSignaturePermission(request *irma.SignatureRequest,
 	requestorInfo *irma.RequestorInfo,
 	callback irmaclient.PermissionHandler,
 ) {
-	s.State.Status = Status_RequestPermission
-	s.State.Type = Type_Signature
+	s.State.Status = clientmodels.Status_RequestPermission
+	s.State.Type = clientmodels.Type_Signature
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.permissionHandler = callback
 	s.State.OfferedCredentials = nil
@@ -688,8 +643,8 @@ func (s *session) RequestAuthorizationCodeFlowPermission(
 	}
 	authRequestUrl.RawQuery = request.AuthorizationParameters.Encode()
 
-	s.State.Status = Status_RequestAuthorizationCode
-	s.State.Type = Type_Issuance
+	s.State.Status = clientmodels.Status_RequestAuthorizationCode
+	s.State.Type = clientmodels.Type_Issuance
 	s.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.AuthorizationRequestUrl = authRequestUrl.String()
@@ -722,8 +677,8 @@ func (s *session) RequestPreAuthorizedCodeFlowPermission(
 	requestorInfo *irma.RequestorInfo,
 	callback openid4vci.TokenPermissionHandler,
 ) {
-	s.State.Status = Status_RequestPreAuthorizedCode
-	s.State.Type = Type_Issuance
+	s.State.Status = clientmodels.Status_RequestPreAuthorizedCode
+	s.State.Type = clientmodels.Type_Issuance
 	s.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.TransactionCodeParameters = request.TransactionCodeParameters
@@ -736,7 +691,7 @@ func (s *session) RequestPreAuthorizedCodeFlowPermission(
 }
 
 func (s *session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
-	s.State.Status = Status_RequestPin
+	s.State.Status = clientmodels.Status_RequestPin
 	if remainingAttempts >= 0 {
 		s.State.RemainingPinAttempts = &remainingAttempts
 	} else {
@@ -748,7 +703,7 @@ func (s *session) RequestPin(remainingAttempts int, callback irmaclient.PinHandl
 
 // =====================================================================================
 
-func choicesToAnswer(choices []DisclosureDisconSelection) (*irma.DisclosureChoice, error) {
+func choicesToAnswer(choices []clientmodels.DisclosureDisconSelection) (*irma.DisclosureChoice, error) {
 	result := &irma.DisclosureChoice{
 		Attributes: [][]*irma.AttributeIdentifier{},
 	}
@@ -774,14 +729,14 @@ func choicesToAnswer(choices []DisclosureDisconSelection) (*irma.DisclosureChoic
 
 // =====================================================================================
 
-func (client *Client) HandleUserInteraction(userInteraction SessionUserInteraction) error {
+func (client *Client) HandleUserInteraction(userInteraction clientmodels.SessionUserInteraction) error {
 	session, ok := client.sessionManager.Sessions[userInteraction.SessionId]
 	if !ok {
 		return fmt.Errorf("no session with id %v", userInteraction.SessionId)
 	}
 	switch userInteraction.Type {
-	case UI_Permission:
-		payload := userInteraction.Payload.(SessionPermissionInteractionPayload)
+	case clientmodels.UI_Permission:
+		payload := userInteraction.Payload.(clientmodels.SessionPermissionInteractionPayload)
 		if session.openid4vpPermissionHandler != nil {
 			// OpenID4VP flow: convert UI selections to DisclosureSelections
 			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpHashToQueryId)
@@ -794,22 +749,22 @@ func (client *Client) HandleUserInteraction(userInteraction SessionUserInteracti
 			}
 			session.permissionHandler(payload.Granted, choices)
 		}
-	case UI_EnteredPin:
-		payload := userInteraction.Payload.(PinInteractionPayload)
+	case clientmodels.UI_EnteredPin:
+		payload := userInteraction.Payload.(clientmodels.PinInteractionPayload)
 		session.pinHandler(payload.Proceed, payload.Pin)
-	case UI_DismissSession:
+	case clientmodels.UI_DismissSession:
 		session.dismisser.Dismiss()
 		// Ensure the session is always marked as dismissed, regardless of protocol.
 		// Some protocol implementations (e.g. OpenID4VP) don't call Cancelled() from Dismiss().
-		if session.State.Status != Status_Dismissed {
-			session.State.Status = Status_Dismissed
+		if session.State.Status != clientmodels.Status_Dismissed {
+			session.State.Status = clientmodels.Status_Dismissed
 			session.dispatchState()
 		}
-	case UI_PreAuthorizedCode:
-		payload := userInteraction.Payload.(SessionPreAuthorizedCodeInteractionPayload)
+	case clientmodels.UI_PreAuthorizedCode:
+		payload := userInteraction.Payload.(clientmodels.SessionPreAuthorizedCodeInteractionPayload)
 		session.preAuthorizedCodeHandler(payload.Proceed, payload.TransactionCode)
-	case UI_AuthorizationCode:
-		payload := userInteraction.Payload.(SessionAuthCodeInteractionPayload)
+	case clientmodels.UI_AuthorizationCode:
+		payload := userInteraction.Payload.(clientmodels.SessionAuthCodeInteractionPayload)
 		session.authCodeHandler(payload.Proceed, payload.Code)
 	}
 
@@ -834,17 +789,17 @@ func (client *Client) NewSession(sessionrequest string) {
 
 	switch sessionReq.Type {
 	case irma.ActionDisclosing:
-		state.Type = Type_Disclosure
+		state.Type = clientmodels.Type_Disclosure
 	case irma.ActionIssuing:
-		state.Type = Type_Issuance
+		state.Type = clientmodels.Type_Issuance
 	case irma.ActionSigning:
-		state.Type = Type_Signature
+		state.Type = clientmodels.Type_Signature
 	}
 
 	switch sessionReq.Protocol {
-	case irmaclient.Protocol_OpenID4VP:
+	case clientmodels.Protocol_OpenID4VP:
 		session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, &openid4vpSessionAdapter{session: session})
-	case irmaclient.Protocol_OpenID4VCI:
+	case clientmodels.Protocol_OpenID4VCI:
 		session.dismisser = client.openid4vciClient.NewSession(sessionReq.URL, session)
 	default:
 		session.dismisser = client.irmaClient.NewSession(sessionrequest, session)

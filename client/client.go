@@ -13,6 +13,7 @@ import (
 	"github.com/go-co-op/gocron/v2"
 
 	"github.com/privacybydesign/irmago/client/clientsettings"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -44,7 +45,7 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	handler irmaclient.ClientHandler,
-	sessionHandler SessionHandler,
+	sessionHandler clientmodels.SessionHandler,
 	signer irmaclient.Signer,
 	aesKey [32]byte,
 ) (*Client, error) {
@@ -93,7 +94,7 @@ func New(
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
 
 	sdjwtDcqlHandler := irmaclient.NewSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
-	openid4vpClient, err := openid4vpclient.NewClient(eudiConf, []openid4vpclient.DcqlCredentialQueryHandler{sdjwtDcqlHandler}, verifierValidator)
+	openid4vpClient, err := openid4vpclient.NewClient(eudiConf, []clientmodels.DcqlCredentialQueryHandler{sdjwtDcqlHandler}, verifierValidator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -189,8 +190,8 @@ func (client *Client) Close() error {
 
 type SessionRequestData struct {
 	irma.Qr
-	Protocol               irmaclient.Protocol `json:"protocol,omitempty"`
-	ContinueOnSecondDevice bool                `json:"continue_on_second_device"`
+	Protocol               clientmodels.Protocol `json:"protocol,omitempty"`
+	ContinueOnSecondDevice bool                  `json:"continue_on_second_device"`
 }
 
 func (client *Client) DeleteKeyshareTokens() {
@@ -234,7 +235,7 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMeta
 		Hash:                metadata.Hash,
 		Revoked:             false,
 		RevocationSupported: false,
-		CredentialFormat:    string(irmaclient.Format_SdJwtVc),
+		CredentialFormat:    string(clientmodels.Format_SdJwtVc),
 		InstanceCount:       &metadata.RemainingInstanceCount,
 	}
 }
@@ -303,7 +304,7 @@ func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error
 	return len(typeAndAttrsHashes) == 1, nil
 }
 
-func (client *Client) RemoveCredentialsByHash(hashByFormat map[irmaclient.CredentialFormat]string) error {
+func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.CredentialFormat]string) error {
 	allCreds := client.credentialInfoList()
 	relevantCreds := []*irma.CredentialInfo{}
 	for _, hash := range hashByFormat {
@@ -324,15 +325,15 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[irmaclient.Creden
 		}
 	}
 
-	formats := []irmaclient.CredentialFormat{}
+	formats := []clientmodels.CredentialFormat{}
 	for format, hash := range hashByFormat {
 		formats = append(formats, format)
-		if format == irmaclient.Format_Idemix {
+		if format == clientmodels.Format_Idemix {
 			if err := client.irmaClient.RemoveCredentialByHash(hash); err != nil {
 				return err
 			}
 		}
-		if format == irmaclient.Format_SdJwtVc {
+		if format == clientmodels.Format_SdJwtVc {
 			holderPubKeys, err := client.sdjwtvcStorage.RemoveCredentialByHash(hash)
 			if err != nil {
 				return fmt.Errorf("error while deleting sdjwtvc credential: %v", err)
@@ -356,7 +357,7 @@ func createRemovalLog(
 	irmaConfiguration *irma.Configuration,
 	credentialType irma.CredentialTypeIdentifier,
 	attributes map[irma.AttributeTypeIdentifier]irma.TranslatedString,
-	formats []irmaclient.CredentialFormat,
+	formats []clientmodels.CredentialFormat,
 ) (*irmaclient.LogEntry, error) {
 	attrs := []irma.TranslatedString{}
 
@@ -439,10 +440,10 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 		}
 		return LogInfo{
 			ID:   entry.ID,
-			Type: irmaclient.LogType_Disclosure,
+			Type: clientmodels.LogType_Disclosure,
 			Time: entry.Time,
 			DisclosureLog: &DisclosureLog{
-				Protocol:    irmaclient.Protocol_OpenID4VP,
+				Protocol:    clientmodels.Protocol_OpenID4VP,
 				Credentials: openid4vpCredentialLogsToLogCredentials(client.GetIrmaConfiguration(), entry.OpenID4VP.DisclosedCredentials),
 				Verifier:    requestorInfoToTrustedPartyPtr(requestor),
 			},
@@ -472,7 +473,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 			return LogInfo{}, err
 		}
 		disclosureLog := &DisclosureLog{
-			Protocol:    irmaclient.Protocol_Irma,
+			Protocol:    clientmodels.Protocol_Irma,
 			Credentials: credLog,
 			Verifier:    requestorInfoToTrustedPartyPtr(requestor),
 		}
@@ -480,7 +481,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 		if entry.Type == irma.ActionSigning {
 			return LogInfo{
 				ID:   entry.ID,
-				Type: irmaclient.LogType_Signature,
+				Type: clientmodels.LogType_Signature,
 				Time: entry.Time,
 				SignedMessageLog: &SignedMessageLog{
 					Message:       string(entry.SignedMessage),
@@ -490,7 +491,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 		}
 		return LogInfo{
 			ID:            entry.ID,
-			Type:          irmaclient.LogType_Disclosure,
+			Type:          clientmodels.LogType_Disclosure,
 			Time:          entry.Time,
 			DisclosureLog: disclosureLog,
 		}, nil
@@ -515,9 +516,9 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 		return LogInfo{
 			ID:   entry.ID,
 			Time: entry.Time,
-			Type: irmaclient.LogType_Issuance,
+			Type: clientmodels.LogType_Issuance,
 			IssuanceLog: &IssuanceLog{
-				Protocol:             irmaclient.Protocol_Irma,
+				Protocol:             clientmodels.Protocol_Irma,
 				Credentials:          issuedLog,
 				DisclosedCredentials: credLog,
 				Issuer:               requestorInfoToTrustedPartyPtr(requestor),
@@ -531,21 +532,21 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 			credTypeInfo := irmaConfig.CredentialTypes[credentialTypeId]
 			issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
 
-			formats := make([]CredentialFormat, len(entry.RemovedFormats))
+			formats := make([]clientmodels.CredentialFormat, len(entry.RemovedFormats))
 			for i, f := range entry.RemovedFormats {
-				formats[i] = CredentialFormat(f)
+				formats[i] = clientmodels.CredentialFormat(f)
 			}
 
-			attributes := []Attribute{}
+			attributes := []clientmodels.Attribute{}
 			for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 				if atType.RevocationAttribute {
 					continue
 				}
 				rawVal := irma.TranslatedString(attributeValues[atType.Index])
-				description := TranslatedString(atType.Description)
-				attributes = append(attributes, Attribute{
+				description := clientmodels.TranslatedString(atType.Description)
+				attributes = append(attributes, clientmodels.Attribute{
 					Id:          atType.ID,
-					DisplayName: TranslatedString(atType.Name),
+					DisplayName: clientmodels.TranslatedString(atType.Name),
 					Description: &description,
 					Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 				})
@@ -555,10 +556,10 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 				CredentialId: credentialTypeId.String(),
 				Formats:      formats,
 				ImagePath:    credTypeInfo.Logo(irmaConfig),
-				Name:         TranslatedString(credTypeInfo.Name),
-				Issuer: TrustedParty{
+				Name:         clientmodels.TranslatedString(credTypeInfo.Name),
+				Issuer: clientmodels.TrustedParty{
 					Id:   issuer.Identifier().String(),
-					Name: TranslatedString(issuer.Name),
+					Name: clientmodels.TranslatedString(issuer.Name),
 				},
 				Attributes: attributes,
 				IssueURL:   convertOptionalTranslatedString(credTypeInfo.IssueURL),
@@ -567,7 +568,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (LogInfo,
 		return LogInfo{
 			ID:   entry.ID,
 			Time: entry.Time,
-			Type: irmaclient.LogType_CredentialRemoval,
+			Type: clientmodels.LogType_CredentialRemoval,
 			RemovalLog: &RemovalLog{
 				Credentials: removedCreds,
 			},
@@ -601,7 +602,7 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 		issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
 
 		// Build attributes in display order, only for those that were disclosed
-		attributes := []Attribute{}
+		attributes := []clientmodels.Attribute{}
 		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 			if atType.RevocationAttribute {
 				continue
@@ -611,10 +612,10 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 				continue
 			}
 			rawVal := irma.TranslatedString(attr.Value)
-			description := TranslatedString(atType.Description)
-			attributes = append(attributes, Attribute{
+			description := clientmodels.TranslatedString(atType.Description)
+			attributes = append(attributes, clientmodels.Attribute{
 				Id:          atType.ID,
-				DisplayName: TranslatedString(atType.Name),
+				DisplayName: clientmodels.TranslatedString(atType.Name),
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 			})
@@ -622,9 +623,9 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 
 		result = append(result, LogCredential{
 			CredentialId: credTypeId.String(),
-			Formats:      []CredentialFormat{irmaclient.Format_Idemix},
+			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_Idemix},
 			ImagePath:    credTypeInfo.Logo(irmaConfig),
-			Name:         TranslatedString(credTypeInfo.Name),
+			Name:         clientmodels.TranslatedString(credTypeInfo.Name),
 			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:   attributes,
 			IssuanceDate: issuanceTimes[credTypeId],
@@ -646,21 +647,21 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 		credTypeInfo := irmaConfig.CredentialTypes[credTypeId]
 		issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
 
-		formats := []CredentialFormat{irmaclient.Format_Idemix}
+		formats := []clientmodels.CredentialFormat{clientmodels.Format_Idemix}
 		if cred.InstanceCount != nil && *cred.InstanceCount > 0 {
-			formats = append(formats, irmaclient.Format_SdJwtVc)
+			formats = append(formats, clientmodels.Format_SdJwtVc)
 		}
 
-		attributes := []Attribute{}
+		attributes := []clientmodels.Attribute{}
 		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 			if atType.RevocationAttribute {
 				continue
 			}
 			rawVal := irma.TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
-			description := TranslatedString(atType.Description)
-			attributes = append(attributes, Attribute{
+			description := clientmodels.TranslatedString(atType.Description)
+			attributes = append(attributes, clientmodels.Attribute{
 				Id:          atType.ID,
-				DisplayName: TranslatedString(atType.Name),
+				DisplayName: clientmodels.TranslatedString(atType.Name),
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 			})
@@ -670,7 +671,7 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 			CredentialId:        credTypeId.String(),
 			Formats:             formats,
 			ImagePath:           credTypeInfo.Logo(irmaConfig),
-			Name:                TranslatedString(credTypeInfo.Name),
+			Name:                clientmodels.TranslatedString(credTypeInfo.Name),
 			Issuer:              buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:          attributes,
 			IssuanceDate:        time.Time(cred.SignedOn).Unix(),
@@ -692,12 +693,12 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 		credTypeInfo := irmaConfig.CredentialTypes[credTypeId]
 		issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
 
-		formats := make([]CredentialFormat, len(log.Formats))
+		formats := make([]clientmodels.CredentialFormat, len(log.Formats))
 		for i, f := range log.Formats {
-			formats[i] = CredentialFormat(f)
+			formats[i] = clientmodels.CredentialFormat(f)
 		}
 
-		attributes := []Attribute{}
+		attributes := []clientmodels.Attribute{}
 		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
 			if atType.RevocationAttribute {
 				continue
@@ -708,10 +709,10 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			}
 			v := rawVal
 			irmaVal := irma.NewTranslatedString(&v)
-			description := TranslatedString(atType.Description)
-			attributes = append(attributes, Attribute{
+			description := clientmodels.TranslatedString(atType.Description)
+			attributes = append(attributes, clientmodels.Attribute{
 				Id:          atType.ID,
-				DisplayName: TranslatedString(atType.Name),
+				DisplayName: clientmodels.TranslatedString(atType.Name),
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &irmaVal),
 			})
@@ -721,7 +722,7 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			CredentialId: log.CredentialType,
 			Formats:      formats,
 			ImagePath:    credTypeInfo.Logo(irmaConfig),
-			Name:         TranslatedString(credTypeInfo.Name),
+			Name:         clientmodels.TranslatedString(credTypeInfo.Name),
 			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:   attributes,
 			IssueURL:     convertOptionalTranslatedString(credTypeInfo.IssueURL),

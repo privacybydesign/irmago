@@ -15,7 +15,7 @@ type openid4vpSessionAdapter struct {
 }
 
 func (a *openid4vpSessionAdapter) Failure(err *clientmodels.SessionError) {
-	a.session.State.Status = Status_Error
+	a.session.State.Status = clientmodels.Status_Error
 	a.session.State.Error = err
 	a.session.dispatchState()
 }
@@ -35,7 +35,7 @@ func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []client
 		}
 	}
 
-	a.session.State.Status = Status_Success
+	a.session.State.Status = clientmodels.Status_Success
 	a.session.dispatchState()
 }
 
@@ -45,8 +45,8 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	hashToQueryId map[string]string,
 	callback openid4vpclient.PermissionHandler,
 ) {
-	a.session.State.Status = Status_RequestPermission
-	a.session.State.Type = Type_Disclosure
+	a.session.State.Status = clientmodels.Status_RequestPermission
+	a.session.State.Type = clientmodels.Type_Disclosure
 	a.session.State.Protocol = clientmodels.Protocol_OpenID4VP
 	if requestor != nil {
 		a.session.State.Requestor = *requestor
@@ -63,7 +63,7 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 }
 
 // disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to OpenID4VP selections.
-func disclosureChoicesToOpenID4VPSelections(choices []DisclosureDisconSelection, hashToQueryId map[string]string) []clientmodels.DisclosureSelection {
+func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, hashToQueryId map[string]string) []clientmodels.DisclosureSelection {
 	var selections []clientmodels.DisclosureSelection
 	for _, discon := range choices {
 		for _, cred := range discon.Credentials {
@@ -107,7 +107,7 @@ func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) 
 
 	for _, step := range plan.IssueDuringDislosure.Steps {
 		stepSatisfied := false
-		var wrongForStep *Credential
+		var wrongForStep *clientmodels.Credential
 
 		for _, option := range step.Options {
 			for _, cred := range allCreds {
@@ -140,15 +140,15 @@ func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) 
 
 // checkWrongCredential returns a Credential with only the mismatched attributes if
 // the credential's values don't satisfy the requested values.
-func checkWrongCredential(cred *Credential, option *CredentialDescriptor) *Credential {
+func checkWrongCredential(cred *clientmodels.Credential, option *clientmodels.CredentialDescriptor) *clientmodels.Credential {
 	ok, _ := SatisfiesRequestedAttributes(cred.Attributes, option.Attributes)
 	if ok {
 		return nil
 	}
 
 	// Build a credential with only the mismatched attributes
-	var mismatched []Attribute
-	requestedByID := make(map[string]*Attribute)
+	var mismatched []clientmodels.Attribute
+	requestedByID := make(map[string]*clientmodels.Attribute)
 	for i := range option.Attributes {
 		requestedByID[option.Attributes[i].Id] = &option.Attributes[i]
 	}
@@ -158,9 +158,9 @@ func checkWrongCredential(cred *Credential, option *CredentialDescriptor) *Crede
 		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
 			continue
 		}
-		satisfied, _ := SatisfiesRequestedAttributes([]Attribute{attr}, []Attribute{*req})
+		satisfied, _ := SatisfiesRequestedAttributes([]clientmodels.Attribute{attr}, []clientmodels.Attribute{*req})
 		if !satisfied {
-			mismatched = append(mismatched, Attribute{
+			mismatched = append(mismatched, clientmodels.Attribute{
 				Id:             attr.Id,
 				DisplayName:    attr.DisplayName,
 				Description:    attr.Description,
@@ -174,7 +174,7 @@ func checkWrongCredential(cred *Credential, option *CredentialDescriptor) *Crede
 		return nil
 	}
 
-	return &Credential{
+	return &clientmodels.Credential{
 		CredentialId: cred.CredentialId,
 		Hash:         cred.Hash,
 		Attributes:   mismatched,
@@ -185,7 +185,7 @@ func checkWrongCredential(cred *Credential, option *CredentialDescriptor) *Crede
 // into an irmaclient LogEntry for storage.
 func openid4vpCredentialLogsToIrmaclientLogEntry(
 	credentialLogs []clientmodels.LogCredential,
-	requestor TrustedParty,
+	requestor clientmodels.TrustedParty,
 ) *irmaclient.LogEntry {
 	var disclosed []irmaclient.CredentialLog
 	for _, cl := range credentialLogs {

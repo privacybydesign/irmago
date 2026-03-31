@@ -11,29 +11,9 @@ import (
 	"github.com/privacybydesign/irmago/irma"
 )
 
-// Type aliases: canonical definitions live in common/clientmodels.
-type LogType = clientmodels.LogType
-type Protocol = clientmodels.Protocol
-type CredentialFormat = clientmodels.CredentialFormat
-
-// Re-export constants for backward compatibility.
-const (
-	LogType_Disclosure        = clientmodels.LogType_Disclosure
-	LogType_Issuance          = clientmodels.LogType_Issuance
-	LogType_Signature         = clientmodels.LogType_Signature
-	LogType_CredentialRemoval = clientmodels.LogType_CredentialRemoval
-
-	Protocol_Irma       = clientmodels.Protocol_Irma
-	Protocol_OpenID4VP  = clientmodels.Protocol_OpenID4VP
-	Protocol_OpenID4VCI = clientmodels.Protocol_OpenID4VCI
-
-	Format_SdJwtVc = clientmodels.Format_SdJwtVc
-	Format_Idemix  = clientmodels.Format_Idemix
-)
-
 // CredentialLog is the internal storage format for a credential in a log entry.
 type CredentialLog struct {
-	Formats        []CredentialFormat
+	Formats        []clientmodels.CredentialFormat
 	CredentialType string
 	Attributes     map[string]string
 }
@@ -61,7 +41,7 @@ type LogEntry struct {
 
 	// Credential removal
 	Removed        map[irma.CredentialTypeIdentifier][]irma.TranslatedString
-	RemovedFormats []CredentialFormat
+	RemovedFormats []clientmodels.CredentialFormat
 
 	// Signature sessions
 	SignedMessage          []byte
