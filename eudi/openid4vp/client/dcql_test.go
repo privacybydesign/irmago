@@ -25,7 +25,7 @@ func TestBuildPlanFromCredentialQueries(t *testing.T) {
 			},
 		}
 
-		plan, err := buildPlanFromCredentialQueries(queries, queryResults, nil)
+		plan, err := buildPlanFromCredentialQueries(queries, queryResults, nil, nil)
 		require.NoError(t, err)
 		require.Len(t, plan.DisclosureChoicesOverview, 1)
 
@@ -46,7 +46,7 @@ func TestBuildPlanFromCredentialQueries(t *testing.T) {
 			"q2": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h2"}}},
 		}
 
-		plan, err := buildPlanFromCredentialQueries(queries, queryResults, nil)
+		plan, err := buildPlanFromCredentialQueries(queries, queryResults, nil, nil)
 		require.NoError(t, err)
 		require.Len(t, plan.DisclosureChoicesOverview, 2)
 		assert.False(t, plan.DisclosureChoicesOverview[0].Optional)
@@ -55,7 +55,7 @@ func TestBuildPlanFromCredentialQueries(t *testing.T) {
 
 	t.Run("missing query result returns error", func(t *testing.T) {
 		queries := []dcql.CredentialQuery{{Id: "missing"}}
-		_, err := buildPlanFromCredentialQueries(queries, map[string]*clientmodels.CredentialQueryResult{}, nil)
+		_, err := buildPlanFromCredentialQueries(queries, map[string]*clientmodels.CredentialQueryResult{}, nil, nil)
 		require.Error(t, err)
 	})
 }
@@ -70,7 +70,7 @@ func TestBuildPlanFromCredentialSets(t *testing.T) {
 			{Options: [][]string{{"q1"}, {"q2"}}},
 		}
 
-		plan, err := buildPlanFromCredentialSets(queryResults, credSets, nil)
+		plan, err := buildPlanFromCredentialSets(queryResults, credSets, nil, nil)
 		require.NoError(t, err)
 		require.Len(t, plan.DisclosureChoicesOverview, 1)
 		assert.False(t, plan.DisclosureChoicesOverview[0].Optional)
@@ -86,7 +86,7 @@ func TestBuildPlanFromCredentialSets(t *testing.T) {
 			{Options: [][]string{{"q1"}}, Required: &notRequired},
 		}
 
-		plan, err := buildPlanFromCredentialSets(queryResults, credSets, nil)
+		plan, err := buildPlanFromCredentialSets(queryResults, credSets, nil, nil)
 		require.NoError(t, err)
 		require.Len(t, plan.DisclosureChoicesOverview, 1)
 		assert.True(t, plan.DisclosureChoicesOverview[0].Optional)
@@ -101,7 +101,7 @@ func TestBuildPlanFromCredentialSets(t *testing.T) {
 			{Options: [][]string{{"q1", "q2"}}},
 		}
 
-		_, err := buildPlanFromCredentialSets(queryResults, credSets, nil)
+		_, err := buildPlanFromCredentialSets(queryResults, credSets, nil, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not supported")
 	})
