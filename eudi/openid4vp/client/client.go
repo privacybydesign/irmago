@@ -39,10 +39,10 @@ type SessionDismisser interface {
 
 // Client drives OpenID4VP disclosure sessions.
 type Client struct {
-	Configuration           *eudi.Configuration
-	credentialQueryHandlers []clientmodels.DcqlCredentialQueryHandler
-	verifierValidator       eudi.VerifierValidator
-	currentSession          *openid4vpSession
+	Configuration     *eudi.Configuration
+	dcqlHandler       *DcqlHandler
+	verifierValidator eudi.VerifierValidator
+	currentSession    *openid4vpSession
 }
 
 // RefreshPendingPermissionRequest sends another, updated verification request if there's an active session.
@@ -59,10 +59,10 @@ func NewClient(
 	verifierValidator eudi.VerifierValidator,
 ) (*Client, error) {
 	return &Client{
-		Configuration:           eudiConf,
-		credentialQueryHandlers: handlers,
-		verifierValidator:       verifierValidator,
-		currentSession:          nil,
+		Configuration:     eudiConf,
+		dcqlHandler:       NewDcqlHandler(handlers),
+		verifierValidator: verifierValidator,
+		currentSession:    nil,
 	}, nil
 }
 
@@ -153,10 +153,10 @@ func (client *Client) handleAuthorizationRequest(
 	handler Handler,
 ) error {
 	client.currentSession = &openid4vpSession{
-		request:                 request,
-		requestor:               requestor,
-		handler:                 handler,
-		credentialQueryHandlers: client.credentialQueryHandlers,
+		request:     request,
+		requestor:   requestor,
+		handler:     handler,
+		dcqlHandler: client.dcqlHandler,
 	}
 	defer func() {
 		client.currentSession = nil
@@ -172,11 +172,10 @@ type openid4vpSession struct {
 	request                  *openid4vp.AuthorizationRequest
 	requestor                *clientmodels.TrustedParty
 	handler                  Handler
-	credentialQueryHandlers  []clientmodels.DcqlCredentialQueryHandler
+	dcqlHandler              *DcqlHandler
 	pendingPermissionRequest *permissionRequest
 	lastPlan                 *clientmodels.DisclosurePlan
-	// hashToQueryId maps credential hashes to their DCQL query IDs.
-	hashToQueryId map[string]string
+	lastResult               *DcqlResult
 	// preExistingHashes tracks owned credential hashes at session start,
 	// used to detect newly issued credentials for WrongCredentialIssued.
 	preExistingHashes map[string]struct{}
@@ -194,16 +193,6 @@ func (session *openid4vpSession) awaitPermission() *permissionResponse {
 	return <-session.pendingPermissionRequest.channel
 }
 
-// findHandlerForFormat returns the DcqlCredentialQueryHandler that supports the given format.
-func (session *openid4vpSession) findHandlerForFormat(format string) (clientmodels.DcqlCredentialQueryHandler, error) {
-	for _, h := range session.credentialQueryHandlers {
-		if h.Format() == format {
-			return h, nil
-		}
-	}
-	return nil, fmt.Errorf("no credential query handler for format %q", format)
-}
-
 func (session *openid4vpSession) requestPermission() error {
 	plan, err := session.buildDisclosurePlan()
 	if err != nil {
@@ -214,7 +203,7 @@ func (session *openid4vpSession) requestPermission() error {
 	session.handler.RequestVerificationPermission(
 		plan,
 		session.requestor,
-		session.hashToQueryId,
+		session.lastResult.HashToQueryId,
 		func(proceed bool, selections []clientmodels.DisclosureSelection) {
 			if proceed {
 				session.pendingPermissionRequest.channel <- &permissionResponse{
@@ -228,48 +217,22 @@ func (session *openid4vpSession) requestPermission() error {
 	return nil
 }
 
-// buildDisclosurePlan builds a DisclosurePlan by querying each handler for candidates.
+// buildDisclosurePlan builds a DisclosurePlan by delegating to the DcqlHandler.
 func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.DisclosurePlan, error) {
-	// Build per-query results
-	queryResults := map[string]*clientmodels.CredentialQueryResult{}
-	queryFormats := map[string]string{} // queryId -> format
-
-	for _, credQuery := range session.request.DcqlQuery.Credentials {
-		handler, err := session.findHandlerForFormat(credQuery.Format)
-		if err != nil {
-			return nil, fmt.Errorf("credential query '%s': %w", credQuery.Id, err)
-		}
-
-		result, err := handler.FindCandidates(credQuery)
-		if err != nil {
-			return nil, fmt.Errorf("credential query '%s': failed to find candidates: %w", credQuery.Id, err)
-		}
-
-		queryResults[credQuery.Id] = result
-		queryFormats[credQuery.Id] = credQuery.Format
+	result, err := session.dcqlHandler.FindCandidates(session.request.DcqlQuery)
+	if err != nil {
+		return nil, err
 	}
+	session.lastResult = result
 
 	// Snapshot pre-existing hashes on first call
 	if session.preExistingHashes == nil {
-		session.preExistingHashes = collectOwnedHashes(queryResults)
+		session.preExistingHashes = collectOwnedHashes(result.QueryResults)
 	}
 
-	// Build hash→queryId mapping from query results
-	session.hashToQueryId = make(map[string]string)
-	for queryId, result := range queryResults {
-		for _, owned := range result.OwnedCandidates {
-			if owned.Hash != "" {
-				session.hashToQueryId[owned.Hash] = queryId
-			}
-		}
-	}
-
-	// Build the disclosure plan
-	if session.request.DcqlQuery.CredentialSets != nil {
-		return buildPlanFromCredentialSets(queryResults, session.request.DcqlQuery.CredentialSets, session.lastPlan, session.preExistingHashes)
-	}
-
-	return buildPlanFromCredentialQueries(session.request.DcqlQuery.Credentials, queryResults, session.lastPlan, session.preExistingHashes)
+	return session.dcqlHandler.BuildDisclosurePlan(
+		session.request.DcqlQuery, result, session.lastPlan, session.preExistingHashes,
+	)
 }
 
 func (session *openid4vpSession) perform() error {
@@ -336,46 +299,17 @@ func (session *openid4vpSession) perform() error {
 	return nil
 }
 
-// prepareDisclosures groups selections by credential format and calls each handler's
-// PrepareDisclosure method, returning aggregated query responses and log data.
+// prepareDisclosures delegates to the DcqlHandler to prepare credentials for the VP token.
 func (session *openid4vpSession) prepareDisclosures(
 	selections []clientmodels.DisclosureSelection,
 ) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
-	// Build a map from queryId -> format using the request's credential queries
-	queryFormat := map[string]string{}
-	for _, cq := range session.request.DcqlQuery.Credentials {
-		queryFormat[cq.Id] = cq.Format
+	prepared, err := session.dcqlHandler.PrepareDisclosure(
+		session.request.DcqlQuery, selections, session.request.Nonce, session.request.ClientId,
+	)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	// Group selections by format
-	selectionsByFormat := map[string][]clientmodels.DisclosureSelection{}
-	for _, sel := range selections {
-		format, ok := queryFormat[sel.QueryId]
-		if !ok {
-			return nil, nil, fmt.Errorf("unknown query id %q in selection", sel.QueryId)
-		}
-		selectionsByFormat[format] = append(selectionsByFormat[format], sel)
-	}
-
-	var allQueryResponses []dcql.QueryResponse
-	var allCredLogs []clientmodels.LogCredential
-
-	for format, sels := range selectionsByFormat {
-		handler, err := session.findHandlerForFormat(format)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		prepared, err := handler.PrepareDisclosure(sels, session.request.Nonce, session.request.ClientId)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to prepare disclosure for format %q: %w", format, err)
-		}
-
-		allQueryResponses = append(allQueryResponses, prepared.QueryResponses...)
-		allCredLogs = append(allCredLogs, prepared.CredentialLogs...)
-	}
-
-	return allQueryResponses, allCredLogs, nil
+	return prepared.QueryResponses, prepared.CredentialLogs, nil
 }
 
 // ========================================================================
