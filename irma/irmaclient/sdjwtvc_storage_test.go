@@ -284,20 +284,6 @@ func testStoringMultipleInstancesOfSameSdJwtVc(t *testing.T, storage SdJwtVcStor
 	require.Equal(t, len(result), 1)
 }
 
-func createMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
-	t *testing.T, keyBinder sdjwtvc.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
-) (SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
-	return CreateMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, vct, issuer, claims, num)
-}
-
-func createTestSdJwtVc[T sdjwtvc.LeafClaimDataType](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T, x5c []string) (sdjwtvc.SdJwtVc, error) {
-	return CreateTestSdJwtVc(keyBinder, vct, issuerUrl, claims, x5c)
-}
-
-func createTestSdJwtVcWithHolderKey[T sdjwtvc.LeafClaimDataType](vct, issuerUrl string, claims map[string]T, x5c []string, cnfHolderHey jwk.Key) (sdjwtvc.SdJwtVc, error) {
-	return CreateTestSdJwtVcWithHolderKey(vct, issuerUrl, claims, x5c, cnfHolderHey)
-}
-
 func createMultipleSdJwtVcs[T sdjwtvc.LeafClaimDataType](
 	t *testing.T,
 	vct string,
@@ -321,7 +307,7 @@ func createMultipleSdJwtVcs[T sdjwtvc.LeafClaimDataType](
 			holderKeys, err = keyBinder.CreateKeyPairs(1)
 			require.NoError(t, err)
 		}
-		sdjwt, err := createTestSdJwtVcWithHolderKey(vct, issuer, claims, certChain, holderKeys[0])
+		sdjwt, err := CreateTestSdJwtVcWithHolderKey(vct, issuer, claims, certChain, holderKeys[0])
 		require.NoError(t, err)
 		result = append(result, sdjwt)
 	}
