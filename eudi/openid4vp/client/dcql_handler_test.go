@@ -16,980 +16,412 @@ import (
 )
 
 func TestDcqlCandidateSelection(t *testing.T) {
-	// Basic single/multi credential tests
-	t.Run("satisfiable single credential single option", testDcqlSatisfiableSingleCredentialSingleOption)
-	t.Run("satisfiable single credential multiple options", testDcqlSatisfiableSingleCredentialMultipleOptions)
-	t.Run("unsatisfiable single credential", testDcqlUnsatisfiableSingleCredential)
-	t.Run("satisfiable multiple credentials single option", testDcqlSatisfiableMultipleCredentialsSingleOption)
-	t.Run("unsatisfiable multiple credentials single available", testDcqlUnsatisfiableMultipleCredentialsSingleAvailable)
-	t.Run("unsatisfiable multiple credentials none available", testDcqlUnsatisfiableMultipleCredentialsNoneAvailable)
-	t.Run("satisfiable multiple attributes single credential", testDcqlSatisfiableMultipleAttributesSingleCredential)
-	t.Run("multiple attributes single credential partially available", testDcqlMultipleAttributesSingleCredentialPartiallyAvailable)
-
-	// Credential sets tests
-	t.Run("satisfiable credential sets all required different purpose", testDcqlSatisfiableCredentialSetsAllRequiredDifferentPurpose)
-	t.Run("satisfiable credential set two options for same purpose", testDcqlSatisfiableTwoOptionsSamePurpose)
-	t.Run("satisfiable credential set two options multiple claims single candidate each", testDcqlSatisfiableTwoOptionsMultipleClaimsSingleCandidate)
-	t.Run("satisfiable credential set two options multiple claims multiple candidates", testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates)
-	t.Run("multiple credential queries in option", testDcqlMultipleCredentialQueriesInOption)
-	t.Run("invalid format", testDcqlInvalidFormat)
-
-	// Value-matching tests
-	t.Run("single satisfiable expected value for claim", testDcqlSingleSatisfiableExpectedValueForClaim)
-	t.Run("single unsatisfiable expected value for claim", testDcqlSingleUnsatisfiableExpectedValueForClaim)
-	t.Run("multiple value options single claim satisfiable", testDcqlMultipleValueOptionsSingleClaimSatisfiable)
-	t.Run("multiple value options single claim satisfiable multiple options", testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions)
-
-	// Claim sets tests
-	t.Run("claim sets two options one satisfiable", testDcqlClaimSetsTwoOptionsOneSatisfiable)
-	t.Run("claim sets two options both satisfiable pick first claim", testDcqlClaimSetsTwoOptionsBothSatisfiablePickFirstClaim)
-	t.Run("claim sets two options both satisfiable by different instances", testDcqlClaimSetsTwoOptionsBothSatisfiableByDifferentInstances)
-	t.Run("claim sets two options not satisfiable", testDcqlClaimSetsTwoOptionsNotSatisfiable)
-
-	// Non-required credential set
-	t.Run("non-required credential set", testDcqlNonRequiredCredentialSet)
+	t.Run("satisfiable single credential single option", testSatisfiableSingleCredentialSingleOption)
+	t.Run("satisfiable single credential multiple instances", testSatisfiableSingleCredentialMultipleInstances)
+	t.Run("unsatisfiable single credential", testUnsatisfiableSingleCredential)
+	t.Run("satisfiable multiple credentials single option each", testSatisfiableMultipleCredentialsSingleOptionEach)
+	t.Run("unsatisfiable multiple credentials one available", testUnsatisfiableMultipleCredentialsOneAvailable)
+	t.Run("unsatisfiable multiple credentials none available", testUnsatisfiableMultipleCredentialsNoneAvailable)
+	t.Run("satisfiable multiple attributes", testSatisfiableMultipleAttributes)
+	t.Run("unsatisfiable partial attributes", testUnsatisfiablePartialAttributes)
+	t.Run("credential sets all required different purpose", testCredentialSetsAllRequiredDifferentPurpose)
+	t.Run("credential set two options same purpose", testCredentialSetTwoOptionsSamePurpose)
+	t.Run("credential set two options multiple claims single candidate each", testCredentialSetTwoOptionsMultipleClaimsSingleCandidateEach)
+	t.Run("credential set two options multiple claims multiple candidates", testCredentialSetTwoOptionsMultipleClaimsMultipleCandidates)
+	t.Run("multiple credential queries in option is unsupported", testMultipleCredentialQueriesInOptionIsUnsupported)
+	t.Run("invalid format returns error", testInvalidFormatReturnsError)
+	t.Run("satisfiable predefined value", testSatisfiablePredefinedValue)
+	t.Run("unsatisfiable predefined value", testUnsatisfiablePredefinedValue)
+	t.Run("multiple allowed values single match", testMultipleAllowedValuesSingleMatch)
+	t.Run("multiple allowed values multiple matches", testMultipleAllowedValuesMultipleMatches)
+	t.Run("claim sets one option satisfiable", testClaimSetsOneOptionSatisfiable)
+	t.Run("claim sets both satisfiable picks first", testClaimSetsBothSatisfiablePicksFirst)
+	t.Run("claim sets both satisfiable by different instances", testClaimSetsBothSatisfiableByDifferentInstances)
+	t.Run("claim sets not satisfiable", testClaimSetsNotSatisfiable)
+	t.Run("non-required credential set", testNonRequiredCredentialSet)
 }
 
-// ========================================================================
-// 1. Satisfiable single credential single option
-// ========================================================================
+func testSatisfiableSingleCredentialSingleOption(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@email.com"})
 
-func testDcqlSatisfiableSingleCredentialSingleOption(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "12345",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.email"]},
-			"claims": [{"id": "9876", "path": ["email"]}]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@email.com"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	// Satisfiable: no issuance needed
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	assert.False(t, pickOne.Optional)
-	require.Len(t, pickOne.OwnedOptions, 1)
-	assert.Equal(t, "test.test.email", pickOne.OwnedOptions[0].CredentialId)
-	require.Len(t, pickOne.OwnedOptions[0].Attributes, 1)
-	assert.Equal(t, "email", pickOne.OwnedOptions[0].Attributes[0].Id)
-	assert.NotNil(t, pickOne.OwnedOptions[0].Attributes[0].Value)
-	require.Len(t, pickOne.ObtainableOptions, 1)
-	assert.Equal(t, "test.test.email", pickOne.ObtainableOptions[0].CredentialId)
+	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
+	assert.Equal(t, "test.test.email", plan.DisclosureChoicesOverview[0].OwnedOptions[0].CredentialId)
+	assert.Equal(t, "email", plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes[0].Id)
 }
 
-// ========================================================================
-// 2. Satisfiable single credential multiple options (two instances)
-// ========================================================================
+func testSatisfiableSingleCredentialMultipleInstances(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	info1 := storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@test.com"})
+	info2 := storeTestCred(t, s, "test.test.email", map[string]string{"email": "b@test.com"})
 
-func testDcqlSatisfiableSingleCredentialMultipleOptions(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "identifier",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [{ "id": "email-claim-id", "path": ["email"]}]
-		}]
-	}`)
-
-	info1 := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@email.com"})
-	info2 := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test2@email.com"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	require.Len(t, pickOne.OwnedOptions, 2)
-	hashes := []string{pickOne.OwnedOptions[0].Hash, pickOne.OwnedOptions[1].Hash}
+	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
+	hashes := ownedHashes(plan.DisclosureChoicesOverview[0])
 	assert.Contains(t, hashes, info1.Hash)
 	assert.Contains(t, hashes, info2.Hash)
-	assert.NotEqual(t, pickOne.OwnedOptions[0].Hash, pickOne.OwnedOptions[1].Hash)
-	require.Len(t, pickOne.ObtainableOptions, 1)
 }
 
-// ========================================================================
-// 3. Unsatisfiable single credential (nothing stored)
-// ========================================================================
+func testUnsatisfiableSingleCredential(t *testing.T) {
+	h, _ := createTestDcqlHandler(t)
 
-func testDcqlUnsatisfiableSingleCredential(t *testing.T) {
-	handler, _ := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "12345",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.email"]},
-			"claims": [{"id": "9876", "path": ["email"]}]
-		}]
-	}`)
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	// Unsatisfiable: issuance needed, no disclosure choices
-	assert.Nil(t, plan.DisclosureChoicesOverview)
-	require.NotNil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	requireUnsatisfiable(t, plan, 1)
 	assert.Equal(t, "test.test.email", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
 }
 
-// ========================================================================
-// 4. Satisfiable multiple credentials single option (two queries, each matched)
-// ========================================================================
+func testSatisfiableMultipleCredentialsSingleOptionEach(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@test.com"})
+	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@test.com"})
 
-func testDcqlSatisfiableMultipleCredentialsSingleOption(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [
+		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
+		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "123",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}]
-		}, {
-			"id": "789",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}]
-	}`)
-
-	emailInfo := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "yivi@test.com"})
-	mijnirmaInfo := storeTestCred(t, storage, "test.test.mijnirma", map[string]string{"email": "myuser@irma.app"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 2)
-
-	// First pick-one: email
-	pickOne0 := plan.DisclosureChoicesOverview[0]
-	require.Len(t, pickOne0.OwnedOptions, 1)
-	assert.Equal(t, "test.test.email", pickOne0.OwnedOptions[0].CredentialId)
-	assert.Equal(t, emailInfo.Hash, pickOne0.OwnedOptions[0].Hash)
-	require.Len(t, pickOne0.ObtainableOptions, 1)
-
-	// Second pick-one: mijnirma
-	pickOne1 := plan.DisclosureChoicesOverview[1]
-	require.Len(t, pickOne1.OwnedOptions, 1)
-	assert.Equal(t, "test.test.mijnirma", pickOne1.OwnedOptions[0].CredentialId)
-	assert.Equal(t, mijnirmaInfo.Hash, pickOne1.OwnedOptions[0].Hash)
-	require.Len(t, pickOne1.ObtainableOptions, 1)
+	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1}, expectPickOne{owned: 1, obtainable: 1})
 }
 
-// ========================================================================
-// 5. Unsatisfiable multiple credentials single available
-// ========================================================================
+func testUnsatisfiableMultipleCredentialsOneAvailable(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@test.com"})
 
-func testDcqlUnsatisfiableMultipleCredentialsSingleAvailable(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [
+		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
+		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "123",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}]
-		}, {
-			"id": "789",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}]
-	}`)
-
-	// Only store mijnirma, not email
-	storeTestCred(t, storage, "test.test.mijnirma", map[string]string{"email": "myuser@irma.app"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	// Unsatisfiable: email query has no owned options
-	assert.Nil(t, plan.DisclosureChoicesOverview)
-	require.NotNil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 1)
+	requireUnsatisfiable(t, plan, 1)
 	assert.Equal(t, "test.test.email", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
 }
 
-// ========================================================================
-// 6. Unsatisfiable multiple credentials none available
-// ========================================================================
+func testUnsatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
+	h, _ := createTestDcqlHandler(t)
 
-func testDcqlUnsatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
-	handler, _ := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [
+		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
+		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "123",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}]
-		}, {
-			"id": "789",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}]
-	}`)
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	// Unsatisfiable: both queries have no owned options
-	assert.Nil(t, plan.DisclosureChoicesOverview)
-	require.NotNil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.IssueDuringDislosure.Steps, 2)
-	assert.Equal(t, "test.test.email", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
-	assert.Equal(t, "test.test.mijnirma", plan.IssueDuringDislosure.Steps[1].Options[0].CredentialId)
+	requireUnsatisfiable(t, plan, 1, 1)
 }
 
-// ========================================================================
-// 7. Satisfiable multiple attributes single credential
-// ========================================================================
+func testSatisfiableMultipleAttributes(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
 
-func testDcqlSatisfiableMultipleAttributesSingleCredential(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "123",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [
-				{ "id": "456", "path": ["email"]},
-				{ "id": "789", "path": ["domain"]}
-			]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{
-		"email":  "test@gmail.com",
-		"domain": "gmail.com",
-	})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	require.Len(t, pickOne.OwnedOptions, 1)
-	assert.Len(t, pickOne.OwnedOptions[0].Attributes, 2)
-	require.Len(t, pickOne.ObtainableOptions, 1)
+	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
+	assert.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes, 2)
 }
 
-// ========================================================================
-// 8. Multiple attributes single credential partially available
-// ========================================================================
+func testUnsatisfiablePartialAttributes(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com"})
 
-func testDcqlMultipleAttributesSingleCredentialPartiallyAvailable(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "123",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [
-				{ "id": "456", "path": ["email"]},
-				{ "id": "789", "path": ["domain"]}
-			]
-		}]
-	}`)
-
-	// Only store email, not domain
-	storeTestCred(t, storage, "test.test.email", map[string]string{
-		"email": "test@gmail.com",
-	})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	// Credential has email but not domain, so it should not match -> unsatisfiable
-	assert.Nil(t, plan.DisclosureChoicesOverview)
-	require.NotNil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	requireUnsatisfiable(t, plan, 1)
 }
 
-// ========================================================================
-// 9. Credential sets: all required, different purpose
-// ========================================================================
+func testCredentialSetsAllRequiredDifferentPurpose(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com"})
+	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@t.com"})
 
-func testDcqlSatisfiableCredentialSetsAllRequiredDifferentPurpose(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [
+		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
+		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	], "credential_sets": [{"options": [["q1"]]}, {"options": [["q2"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "123",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}]
-		}, {
-			"id": "789",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}],
-		"credential_sets": [{
-			"options": [["123"]]
-		}, {
-			"options": [["789"]]
-		}]
-	}`)
-
-	emailInfo := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com"})
-	mijnirmaInfo := storeTestCred(t, storage, "test.test.mijnirma", map[string]string{"email": "myuser@irma.app"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 2)
-
-	// First credential set: email
-	pickOne0 := plan.DisclosureChoicesOverview[0]
-	assert.False(t, pickOne0.Optional)
-	require.Len(t, pickOne0.OwnedOptions, 1)
-	assert.Equal(t, emailInfo.Hash, pickOne0.OwnedOptions[0].Hash)
-	require.Len(t, pickOne0.ObtainableOptions, 1)
-
-	// Second credential set: mijnirma
-	pickOne1 := plan.DisclosureChoicesOverview[1]
-	assert.False(t, pickOne1.Optional)
-	require.Len(t, pickOne1.OwnedOptions, 1)
-	assert.Equal(t, mijnirmaInfo.Hash, pickOne1.OwnedOptions[0].Hash)
-	require.Len(t, pickOne1.ObtainableOptions, 1)
+	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1}, expectPickOne{owned: 1, obtainable: 1})
 }
 
-// ========================================================================
-// 10. Credential set: two options for same purpose
-// ========================================================================
+func testCredentialSetTwoOptionsSamePurpose(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com"})
+	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@t.com"})
 
-func testDcqlSatisfiableTwoOptionsSamePurpose(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [
+		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
+		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	], "credential_sets": [{"options": [["q1"], ["q2"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "123",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}]
-		}, {
-			"id": "789",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}],
-		"credential_sets": [{
-			"options": [["123"], ["789"]]
-		}]
-	}`)
-
-	emailInfo := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com"})
-	mijnirmaInfo := storeTestCred(t, storage, "test.test.mijnirma", map[string]string{"email": "myuser@irma.app"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	// credential_set groups both options into 1 DisclosurePickOne
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	assert.False(t, pickOne.Optional)
-	// Both queries contribute owned options to the same pick-one
-	require.Len(t, pickOne.OwnedOptions, 2)
-	hashes := []string{pickOne.OwnedOptions[0].Hash, pickOne.OwnedOptions[1].Hash}
-	assert.Contains(t, hashes, emailInfo.Hash)
-	assert.Contains(t, hashes, mijnirmaInfo.Hash)
+	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 2})
 }
 
-// ========================================================================
-// 11. Credential set: two options, multiple claims, single candidate each
-// ========================================================================
+func testCredentialSetTwoOptionsMultipleClaimsSingleCandidateEach(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	emailInfo := storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
+	loginInfo := storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "b@t.com"})
 
-func testDcqlSatisfiableTwoOptionsMultipleClaimsSingleCandidate(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [
+		{"id": "email", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]},
+		{"id": "login", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	], "credential_sets": [{"options": [["email"], ["login"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
-		}, {
-			"id": "login",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}],
-		"credential_sets": [{
-			"options": [["email"], ["login"]]
-		}]
-	}`)
-
-	emailInfo := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
-	loginInfo := storeTestCred(t, storage, "test.test.mijnirma", map[string]string{"email": "myuser@irma.app"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	require.Len(t, pickOne.OwnedOptions, 2)
-	hashes := []string{pickOne.OwnedOptions[0].Hash, pickOne.OwnedOptions[1].Hash}
-	assert.Contains(t, hashes, emailInfo.Hash)
-	assert.Contains(t, hashes, loginInfo.Hash)
-
-	// Find the email candidate and check it has 2 attributes
-	for _, owned := range pickOne.OwnedOptions {
-		if owned.Hash == emailInfo.Hash {
-			assert.Len(t, owned.Attributes, 2)
-		}
-		if owned.Hash == loginInfo.Hash {
-			assert.Len(t, owned.Attributes, 1)
-		}
-	}
+	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 2})
+	byHash := ownedByHash(plan.DisclosureChoicesOverview[0])
+	assert.Len(t, byHash[emailInfo.Hash].Attributes, 2)
+	assert.Len(t, byHash[loginInfo.Hash].Attributes, 1)
 }
 
-// ========================================================================
-// 12. Credential set: two options, multiple claims, multiple candidates
-// ========================================================================
+func testCredentialSetTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "b@t.com", "domain": "t2.com"})
+	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "c@t.com"})
 
-func testDcqlSatisfiableTwoOptionsMultipleClaimsMultipleCandidates(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [
+		{"id": "email", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]},
+		{"id": "login", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	], "credential_sets": [{"options": [["email"], ["login"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
-		}, {
-			"id": "login",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}],
-		"credential_sets": [{
-			"options": [["email"], ["login"]]
-		}]
-	}`)
-
-	emailInfo1 := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
-	emailInfo2 := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "contact@yivi.app", "domain": "yivi.app"})
-	loginInfo := storeTestCred(t, storage, "test.test.mijnirma", map[string]string{"email": "myuser@irma.app"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	// 2 email instances + 1 login instance = 3 owned options
-	require.Len(t, pickOne.OwnedOptions, 3)
-	hashes := make([]string, 3)
-	for i, owned := range pickOne.OwnedOptions {
-		hashes[i] = owned.Hash
-	}
-	assert.Contains(t, hashes, emailInfo1.Hash)
-	assert.Contains(t, hashes, emailInfo2.Hash)
-	assert.Contains(t, hashes, loginInfo.Hash)
+	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2})
 }
 
-// ========================================================================
-// 13. Multiple credential queries in option -> error from BuildDisclosurePlan
-// ========================================================================
+func testMultipleCredentialQueriesInOptionIsUnsupported(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
 
-func testDcqlMultipleCredentialQueriesInOption(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	query := parseDcqlQuery(t, `{"credentials": [
+		{"id": "q1", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]},
+		{"id": "q2", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	], "credential_sets": [{"options": [["q1", "q2"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
-		}, {
-			"id": "login",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}],
-		"credential_sets": [{
-			"options": [["email", "login"]]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
-	storeTestCred(t, storage, "test.test.mijnirma", map[string]string{"email": "myuser@irma.app"})
-
-	result, err := handler.FindCandidates(query)
+	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-
-	// BuildDisclosurePlan should return an error for multi-query options
-	_, err = handler.BuildDisclosurePlan(query, result, nil, nil)
+	_, err = h.BuildDisclosurePlan(query, result, nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not supported")
 }
 
-// ========================================================================
-// 14. Invalid format -> error from FindCandidates
-// ========================================================================
+func testInvalidFormatReturnsError(t *testing.T) {
+	h, _ := createTestDcqlHandler(t)
 
-func testDcqlInvalidFormat(t *testing.T) {
-	handler, _ := createTestDcqlHandler(t)
+	query := parseDcqlQuery(t, `{"credentials": [{"id": "q1", "format": "mso_mdoc",
+		"meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "12345",
-			"format": "mso_mdoc",
-			"meta": {"vct_values": ["test.test.email"]},
-			"claims": [{"id": "9876", "path": ["email"]}]
-		}]
-	}`)
-
-	_, err := handler.FindCandidates(query)
+	_, err := h.FindCandidates(query)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no credential query handler for format")
+	assert.Contains(t, err.Error(), "no credential query handler")
 }
 
-// ========================================================================
-// 15. Single satisfiable expected value for claim
-// ========================================================================
+func testSatisfiablePredefinedValue(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@gmail.com"})
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@hotmail.com"})
 
-func testDcqlSingleSatisfiableExpectedValueForClaim(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]},
+		"claims": [{"path": ["email"], "values": ["test@gmail.com"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"], "values": ["test@gmail.com"]}]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com"})
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	// Only the gmail credential matches the email value constraint
-	require.Len(t, pickOne.OwnedOptions, 1)
-	assert.Equal(t, "email", pickOne.OwnedOptions[0].Attributes[0].Id)
-	assert.NotNil(t, pickOne.OwnedOptions[0].Attributes[0].RequestedValue)
+	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
+	assert.NotNil(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes[0].RequestedValue)
 }
 
-// ========================================================================
-// 16. Single unsatisfiable expected value for claim
-// ========================================================================
+func testUnsatisfiablePredefinedValue(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@hotmail.com"})
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "user@live.com"})
 
-func testDcqlSingleUnsatisfiableExpectedValueForClaim(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]},
+		"claims": [{"path": ["email"], "values": ["nope@nowhere.com"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"], "values": ["nope@nowhere.com"]}]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com"})
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "user@live.com"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	// Neither credential matches -> unsatisfiable
-	assert.Nil(t, plan.DisclosureChoicesOverview)
-	require.NotNil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
+	requireUnsatisfiable(t, plan, 1)
 }
 
-// ========================================================================
-// 17. Multiple value options single claim satisfiable
-// ========================================================================
+func testMultipleAllowedValuesSingleMatch(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@hotmail.com"})
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "user@live.com"})
 
-func testDcqlMultipleValueOptionsSingleClaimSatisfiable(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]},
+		"claims": [{"path": ["email"], "values": ["test@gmail.com", "test@hotmail.com", "test@yahoo.com"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"], "values": ["test@gmail.com", "test@hotmail.com", "test@yahoo.com"]}]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com"})
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "user@live.com"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	// Only the hotmail credential matches (email in allowed values)
-	require.Len(t, pickOne.OwnedOptions, 1)
-	assert.NotNil(t, pickOne.OwnedOptions[0].Attributes[0].RequestedValue)
+	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
 }
 
-// ========================================================================
-// 18. Multiple value options single claim satisfiable multiple options
-// ========================================================================
+func testMultipleAllowedValuesMultipleMatches(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "test@hotmail.com"})
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "user@gmail.com"})
 
-func testDcqlMultipleValueOptionsSingleClaimSatisfiableMultipleOptions(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]},
+		"claims": [{"path": ["email"], "values": ["user@gmail.com", "test@hotmail.com"]}]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"], "values": ["user@gmail.com", "test@hotmail.com", "test@yahoo.com"]}]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com"})
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "user@gmail.com"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	// Both credentials match (their emails are in allowed values)
-	require.Len(t, pickOne.OwnedOptions, 2)
-	for _, owned := range pickOne.OwnedOptions {
-		require.Len(t, owned.Attributes, 1)
-		assert.NotNil(t, owned.Attributes[0].RequestedValue)
-	}
+	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
 }
 
-// ========================================================================
-// 19. Claim sets: two options, one satisfiable
-// ========================================================================
+func testClaimSetsOneOptionSatisfiable(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "t@hotmail.com", "domain": "hotmail.com"})
+	infoGmail := storeTestCred(t, s, "test.test.email", map[string]string{"email": "u@gmail.com", "domain": "gmail.com"})
 
-func testDcqlClaimSetsTwoOptionsOneSatisfiable(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]},
+		"claims": [{"id": "em", "path": ["email"], "values": ["not@available.com"]}, {"id": "do", "path": ["domain"], "values": ["gmail.com"]}],
+		"claim_sets": [["em"], ["do"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "em", "path": ["email"], "values": ["not@available.com"]}, {"id": "do", "path": ["domain"], "values": ["gmail.com"]}],
-			"claim_sets": [["em"], ["do"]]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	infoGmail := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "user@gmail.com", "domain": "gmail.com"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	require.Len(t, pickOne.OwnedOptions, 1)
-	assert.Equal(t, infoGmail.Hash, pickOne.OwnedOptions[0].Hash)
-
-	// Matched via claim_set ["do"] -> only domain attribute
-	require.Len(t, pickOne.OwnedOptions[0].Attributes, 1)
-	assert.Equal(t, "domain", pickOne.OwnedOptions[0].Attributes[0].Id)
+	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
+	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	assert.Equal(t, infoGmail.Hash, owned.Hash)
+	require.Len(t, owned.Attributes, 1)
+	assert.Equal(t, "domain", owned.Attributes[0].Id)
 }
 
-// ========================================================================
-// 20. Claim sets: two options, both satisfiable, pick first claim set
-// ========================================================================
+func testClaimSetsBothSatisfiablePicksFirst(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "t@hotmail.com", "domain": "hotmail.com"})
+	infoGmail := storeTestCred(t, s, "test.test.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
 
-func testDcqlClaimSetsTwoOptionsBothSatisfiablePickFirstClaim(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]},
+		"claims": [{"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["gmail.com"]}],
+		"claim_sets": [["em"], ["do"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["gmail.com"]}],
-			"claim_sets": [["em"], ["do"]]
-		}]
-	}`)
-
-	storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	infoGmail := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	require.Len(t, pickOne.OwnedOptions, 1)
-	assert.Equal(t, infoGmail.Hash, pickOne.OwnedOptions[0].Hash)
-
-	// First claim_set ["em"] means only the "email" attribute
-	require.Len(t, pickOne.OwnedOptions[0].Attributes, 1)
-	assert.Equal(t, "email", pickOne.OwnedOptions[0].Attributes[0].Id)
-	assert.NotNil(t, pickOne.OwnedOptions[0].Attributes[0].RequestedValue)
+	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
+	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	assert.Equal(t, infoGmail.Hash, owned.Hash)
+	require.Len(t, owned.Attributes, 1)
+	assert.Equal(t, "email", owned.Attributes[0].Id) // first claim_set wins
 }
 
-// ========================================================================
-// 21. Claim sets: two options, both satisfiable by different instances
-// ========================================================================
+func testClaimSetsBothSatisfiableByDifferentInstances(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	infoHotmail := storeTestCred(t, s, "test.test.email", map[string]string{"email": "t@hotmail.com", "domain": "hotmail.com"})
+	infoGmail := storeTestCred(t, s, "test.test.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
 
-func testDcqlClaimSetsTwoOptionsBothSatisfiableByDifferentInstances(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]},
+		"claims": [{"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["hotmail.com"]}],
+		"claim_sets": [["em"], ["do"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["hotmail.com"]}],
-			"claim_sets": [["em"], ["do"]]
-		}]
-	}`)
+	requireSatisfiable(t, plan, expectPickOne{owned: 2, obtainable: 1})
+	byHash := ownedByHash(plan.DisclosureChoicesOverview[0])
 
-	infoHotmail := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@hotmail.com", "domain": "hotmail.com"})
-	infoGmail := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "hello@gmail.com", "domain": "gmail.com"})
+	gmail := byHash[infoGmail.Hash]
+	require.Len(t, gmail.Attributes, 1)
+	assert.Equal(t, "email", gmail.Attributes[0].Id)
 
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	require.Len(t, pickOne.OwnedOptions, 2)
-
-	// Find each candidate by hash
-	candidateByHash := make(map[string]*clientmodels.SelectableCredentialInstance)
-	for _, c := range pickOne.OwnedOptions {
-		candidateByHash[c.Hash] = c
-	}
-
-	// Gmail matches via claim_set ["em"] (first claim_set) -> email attribute
-	gmailCandidate := candidateByHash[infoGmail.Hash]
-	require.NotNil(t, gmailCandidate)
-	require.Len(t, gmailCandidate.Attributes, 1)
-	assert.Equal(t, "email", gmailCandidate.Attributes[0].Id)
-	assert.NotNil(t, gmailCandidate.Attributes[0].RequestedValue)
-
-	// Hotmail matches via claim_set ["do"] (second claim_set) -> domain attribute
-	hotmailCandidate := candidateByHash[infoHotmail.Hash]
-	require.NotNil(t, hotmailCandidate)
-	require.Len(t, hotmailCandidate.Attributes, 1)
-	assert.Equal(t, "domain", hotmailCandidate.Attributes[0].Id)
+	hotmail := byHash[infoHotmail.Hash]
+	require.Len(t, hotmail.Attributes, 1)
+	assert.Equal(t, "domain", hotmail.Attributes[0].Id)
 }
 
-// ========================================================================
-// 22. Claim sets: two options, not satisfiable
-// ========================================================================
+func testClaimSetsNotSatisfiable(t *testing.T) {
+	h, _ := createTestDcqlHandler(t)
 
-func testDcqlClaimSetsTwoOptionsNotSatisfiable(t *testing.T) {
-	handler, _ := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [{"id": "q1", "format": "dc+sd-jwt",
+		"meta": {"vct_values": ["test.test.email"]},
+		"claims": [{"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["hotmail.com"]}],
+		"claim_sets": [["em"], ["do"]]}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "em", "path": ["email"], "values": ["hello@gmail.com"]}, {"id": "do", "path": ["domain"], "values": ["hotmail.com"]}],
-			"claim_sets": [["em"], ["do"]]
-		}]
-	}`)
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	// No credentials stored -> unsatisfiable
-	assert.Nil(t, plan.DisclosureChoicesOverview)
-	require.NotNil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	assert.Equal(t, "test.test.email", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
+	requireUnsatisfiable(t, plan, 1)
 }
 
-// ========================================================================
-// 23. Non-required credential set
-// ========================================================================
+func testNonRequiredCredentialSet(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com", "domain": "t.com"})
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "b@t.com", "domain": "t2.com"})
+	storeTestCred(t, s, "test.test.mijnirma", map[string]string{"email": "c@t.com"})
 
-func testDcqlNonRequiredCredentialSet(t *testing.T) {
-	handler, storage := createTestDcqlHandler(t)
+	plan := buildPlan(t, h, `{"credentials": [
+		{"id": "email", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.email"]}, "claims": [{"path": ["email"]}, {"path": ["domain"]}]},
+		{"id": "login", "format": "dc+sd-jwt", "meta": {"vct_values": ["test.test.mijnirma"]}, "claims": [{"path": ["email"]}]}
+	], "credential_sets": [{"options": [["email"], ["login"]], "required": false}]}`)
 
-	query := parseDcqlQuery(t, `{
-		"credentials": [{
-			"id": "email",
-			"format": "dc+sd-jwt",
-			"meta": { "vct_values": ["test.test.email"] },
-			"claims": [ {"id": "456", "path": ["email"]}, {"id": "1111", "path": ["domain"]}]
-		}, {
-			"id": "login",
-			"format": "dc+sd-jwt",
-			"meta": {"vct_values": ["test.test.mijnirma"]},
-			"claims": [{"id": "191112", "path": ["email"]}]
-		}],
-		"credential_sets": [{
-			"options": [["email"], ["login"]],
-			"required": false
-		}]
-	}`)
-
-	emailInfo1 := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "test@gmail.com", "domain": "gmail.com"})
-	emailInfo2 := storeTestCred(t, storage, "test.test.email", map[string]string{"email": "contact@yivi.app", "domain": "yivi.app"})
-	loginInfo := storeTestCred(t, storage, "test.test.mijnirma", map[string]string{"email": "myuser@irma.app"})
-
-	result, err := handler.FindCandidates(query)
-	require.NoError(t, err)
-
-	plan, err := handler.BuildDisclosurePlan(query, result, nil, nil)
-	require.NoError(t, err)
-
-	assert.Nil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	pickOne := plan.DisclosureChoicesOverview[0]
-	assert.True(t, pickOne.Optional)
-	// 2 email instances + 1 login instance = 3 owned options
-	require.Len(t, pickOne.OwnedOptions, 3)
-	hashes := make([]string, 3)
-	for i, owned := range pickOne.OwnedOptions {
-		hashes[i] = owned.Hash
-	}
-	assert.Contains(t, hashes, emailInfo1.Hash)
-	assert.Contains(t, hashes, emailInfo2.Hash)
-	assert.Contains(t, hashes, loginInfo.Hash)
-
-	// Email instances should have 2 attributes each
-	for _, owned := range pickOne.OwnedOptions {
-		if owned.CredentialId == "test.test.email" {
-			assert.Len(t, owned.Attributes, 2)
-		}
-	}
+	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2, optional: true})
 }
 
 // ========================================================================
 // Test helpers
 // ========================================================================
 
+type expectPickOne struct {
+	owned      int
+	obtainable int
+	optional   bool
+}
+
+func buildPlan(t *testing.T, h *DcqlHandler, rawQuery string) *clientmodels.DisclosurePlan {
+	t.Helper()
+	query := parseDcqlQuery(t, rawQuery)
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	plan, err := h.BuildDisclosurePlan(query, result, nil, nil)
+	require.NoError(t, err)
+	return plan
+}
+
+func requireSatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, expected ...expectPickOne) {
+	t.Helper()
+	assert.Nil(t, plan.IssueDuringDislosure)
+	require.Len(t, plan.DisclosureChoicesOverview, len(expected))
+	for i, exp := range expected {
+		po := plan.DisclosureChoicesOverview[i]
+		assert.Equal(t, exp.optional, po.Optional, "pickOne[%d].Optional", i)
+		assert.Len(t, po.OwnedOptions, exp.owned, "pickOne[%d].OwnedOptions", i)
+		assert.Len(t, po.ObtainableOptions, exp.obtainable, "pickOne[%d].ObtainableOptions", i)
+	}
+}
+
+func requireUnsatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, stepOptionCounts ...int) {
+	t.Helper()
+	assert.Nil(t, plan.DisclosureChoicesOverview)
+	require.NotNil(t, plan.IssueDuringDislosure)
+	require.Len(t, plan.IssueDuringDislosure.Steps, len(stepOptionCounts))
+	for i, count := range stepOptionCounts {
+		assert.Len(t, plan.IssueDuringDislosure.Steps[i].Options, count, "step[%d].Options", i)
+	}
+}
+
+func ownedHashes(po clientmodels.DisclosurePickOne) []string {
+	hashes := make([]string, len(po.OwnedOptions))
+	for i, o := range po.OwnedOptions {
+		hashes[i] = o.Hash
+	}
+	return hashes
+}
+
+func ownedByHash(po clientmodels.DisclosurePickOne) map[string]*clientmodels.SelectableCredentialInstance {
+	m := make(map[string]*clientmodels.SelectableCredentialInstance)
+	for _, o := range po.OwnedOptions {
+		m[o.Hash] = o
+	}
+	return m
+}
+
 func createTestDcqlHandler(t *testing.T) (*DcqlHandler, *irmaclient.InMemorySdJwtVcStorage) {
 	t.Helper()
-
 	testdataPath := test.FindTestdataFolder(t)
 	conf, err := irma.NewConfiguration(
 		filepath.Join(t.TempDir(), "irma_configuration"),
-		irma.ConfigurationOptions{
-			Assets:            filepath.Join(testdataPath, "irma_configuration"),
-			IgnorePrivateKeys: true,
-		},
+		irma.ConfigurationOptions{Assets: filepath.Join(testdataPath, "irma_configuration"), IgnorePrivateKeys: true},
 	)
 	require.NoError(t, err)
 	require.NoError(t, conf.ParseFolder())
 
 	storage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
-
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	sdJwtHandler := irmaclient.NewSdJwtVcDcqlHandler(storage, conf, keyBinder)
-
-	handler := NewDcqlHandler([]clientmodels.DcqlCredentialQueryHandler{sdJwtHandler})
-	return handler, storage
+	return NewDcqlHandler([]clientmodels.DcqlCredentialQueryHandler{
+		irmaclient.NewSdJwtVcDcqlHandler(storage, conf, keyBinder),
+	}), storage
 }
 
 func storeTestCred(t *testing.T, storage *irmaclient.InMemorySdJwtVcStorage, vct string, claims map[string]string) irmaclient.SdJwtVcBatchMetadata {
