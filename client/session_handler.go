@@ -10,254 +10,72 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
+	openid4vpclient "github.com/privacybydesign/irmago/eudi/openid4vp/client"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
-type UserInteractionType string
+// Interaction type aliases: canonical definitions live in common/clientmodels.
+type UserInteractionType = clientmodels.UserInteractionType
+type SessionUserInteraction = clientmodels.SessionUserInteraction
+type SessionPermissionInteractionPayload = clientmodels.SessionPermissionInteractionPayload
+type SelectedCredential = clientmodels.SelectedCredential
+type DisclosureDisconSelection = clientmodels.DisclosureDisconSelection
+type PinInteractionPayload = clientmodels.PinInteractionPayload
+type SessionAuthCodeInteractionPayload = clientmodels.SessionAuthCodeInteractionPayload
+type SessionPreAuthorizedCodeInteractionPayload = clientmodels.SessionPreAuthorizedCodeInteractionPayload
 
 const (
-	UI_EnteredPin        UserInteractionType = "entered_pin"
-	UI_Permission        UserInteractionType = "permission"
-	UI_DismissSession    UserInteractionType = "dismiss"
-	UI_AuthorizationCode UserInteractionType = "authorization_code"
-	UI_PreAuthorizedCode UserInteractionType = "pre_authorized_code"
+	UI_EnteredPin        = clientmodels.UI_EnteredPin
+	UI_Permission        = clientmodels.UI_Permission
+	UI_DismissSession    = clientmodels.UI_DismissSession
+	UI_AuthorizationCode = clientmodels.UI_AuthorizationCode
+	UI_PreAuthorizedCode = clientmodels.UI_PreAuthorizedCode
 )
 
-// SessionUserInteraction is any interaction the user has to do with a session, like entering a pin code or giving permission
-type SessionUserInteraction struct {
-	// The ID corresponding to the session this interaction belongs to
-	SessionId int `json:"session_id"`
-	// The type of interaction performed by the user
-	Type UserInteractionType `json:"type"`
-	// The payload for this interaction
-	Payload any `json:"payload"`
-}
-
-type SessionPermissionInteractionPayload struct {
-	// Whether or not the user agreed to either sharing, siging or disclosing
-	Granted bool `json:"granted"`
-	// The list of discons for each outer con, where each discon contains a list of credentials corresponding to the inner con
-	DisclosureChoices []DisclosureDisconSelection `json:"disclosure_choices"`
-}
-
-// SelectedCredential is a reference to a credential the user has picked for disclosure, including exactly which attributes will be shared
-type SelectedCredential struct {
-	// The ID for this credential (idemix id or vct)
-	CredentialId string `json:"credential_id"`
-	// The hash for the specific credential instance for which attributes will be shared
-	CredentialHash string `json:"credential_hash"`
-	// List of claim path pointers to the attributes the user will share for this credential
-	// When it's Idemix these paths should have a length of only one
-	AttributePaths [][]any `json:"attribute_paths"`
-}
-
-// DisclosureDisconSelection is the list of selected credentials and attributes for a discon
-type DisclosureDisconSelection struct {
-	Credentials []SelectedCredential `json:"credentials"`
-}
-
-type PinInteractionPayload struct {
-	Pin     string `json:"pin"`
-	Proceed bool   `json:"proceed"`
-}
-
-type SessionAuthCodeInteractionPayload struct {
-	Code    *string `json:"code,omitempty"`
-	Proceed bool    `json:"proceed"`
-}
-
-type SessionPreAuthorizedCodeInteractionPayload struct {
-	TransactionCode *string `json:"transaction_code,omitempty"`
-	Proceed         bool    `json:"proceed"`
-}
-
-type SessionStatus string
-type SessionType string
+// Type aliases: canonical definitions live in common/clientmodels.
+type SessionStatus = clientmodels.SessionStatus
+type SessionType = clientmodels.SessionType
+type SelectableCredentialInstance = clientmodels.SelectableCredentialInstance
+type DisclosurePlan = clientmodels.DisclosurePlan
+type DisclosurePickOne = clientmodels.DisclosurePickOne
+type IssuanceStep = clientmodels.IssuanceStep
+type IssueDuringDislosure = clientmodels.IssueDuringDislosure
+type SessionState = clientmodels.SessionState
+type SessionError = clientmodels.SessionError
+type SessionHandler = clientmodels.SessionHandler
 
 const (
-	Status_RequestPermission        SessionStatus = "request_permission"
-	Status_ShowPairingCode          SessionStatus = "show_pairing_code"
-	Status_Success                  SessionStatus = "success"
-	Status_Error                    SessionStatus = "error"
-	Status_Dismissed                SessionStatus = "dismissed"
-	Status_RequestPin               SessionStatus = "request_pin"
-	Status_RequestPreAuthorizedCode SessionStatus = "request_pre_authorized_code"
-	Status_RequestAuthorizationCode SessionStatus = "request_authorization_code"
+	Status_RequestPermission        = clientmodels.Status_RequestPermission
+	Status_ShowPairingCode          = clientmodels.Status_ShowPairingCode
+	Status_Success                  = clientmodels.Status_Success
+	Status_Error                    = clientmodels.Status_Error
+	Status_Dismissed                = clientmodels.Status_Dismissed
+	Status_RequestPin               = clientmodels.Status_RequestPin
+	Status_RequestPreAuthorizedCode = clientmodels.Status_RequestPreAuthorizedCode
+	Status_RequestAuthorizationCode = clientmodels.Status_RequestAuthorizationCode
 
-	Type_Disclosure SessionType = "disclosure"
-	Type_Issuance   SessionType = "issuance"
-	Type_Signature  SessionType = "signature"
+	Type_Disclosure = clientmodels.Type_Disclosure
+	Type_Issuance   = clientmodels.Type_Issuance
+	Type_Signature  = clientmodels.Type_Signature
 )
-
-type SelectableCredentialInstance struct {
-	// The id for this credential. For irma/idemix credentials this would look like
-	// `pbdf.sidn-pbdf.email`, for Eudi credentials this would be in the form of `https://example.credential.com`
-	CredentialId string `json:"credential_id"`
-	// Hash over all attribute values and the credential id.
-	Hash string `json:"hash"`
-	// Absolute path to the image for this credential stored on disk
-	ImagePath string `json:"image_path"`
-	// The display name for this credential
-	Name TranslatedString `json:"name"`
-	// All information about the credential issuer
-	Issuer TrustedParty `json:"issuer"`
-	// The credential format for this instance
-	Format CredentialFormat `json:"format"`
-	// The number of credential instances left for this credential instance
-	BatchInstanceCountRemaining *uint `json:"batch_instance_count_remaining"`
-	// All the attributes and their values in this credential that are selectable
-	Attributes []Attribute `json:"attributes"`
-	// The date and time (unix format) at which this credential was issued
-	IssuanceDate int64 `json:"issuance_date"`
-	// The date and time (unix format) when this credential expires
-	ExpiryDate int64 `json:"expiry_date"`
-	// Whether or not this credential has been revoked
-	Revoked bool `json:"revoked"`
-	// Whether or not revocation is supported for this credential
-	RevocationSupported bool `json:"revocation_supported"`
-	// Url at which this credential can be issued (if any)
-	IssueURL *TranslatedString `json:"issue_url"`
-}
-
-type DisclosurePlan struct {
-	// What to show during issuance during disclosure.
-	// If this is nil then no issuances are required before a valid choice can be made.
-	// The disclosure flow then only has one step.
-	// When it is present it contains both the credentials that have been added during this flow,
-	// as well as the credentials left to issuer in order to proceed. This is done to make it possible to
-	// show a correct stepper, even after the session state gets updated.
-	// When all are satisfied, the value should still be present in updates to the session state, so the stepper is shown correctly.
-	IssueDuringDislosure *IssueDuringDislosure `json:"issue_during_dislosure"`
-	// What the user can pick for disclosure. This should never be nil.
-	DisclosureChoicesOverview []DisclosurePickOne `json:"disclosure_choices_overview"`
-}
-
-// DisclosurePickOne is a discon where the user needs to pick only one credential
-// TODO: What to do when there's multiple credentials in the inner con?
-// This is possible for singletons in irma condiscon and for anything in DCQL (resulting in condiscondis)
-// E.g.: you can ask for both personal data and address in the inner con,
-// because they're both singletons and will always result in a single choice.
-// But you can't ask for both email and mobilenumber in the inner con,
-// because they're not singletons and they could be multiple options, resulting in condiscondis.
-type DisclosurePickOne struct {
-	// if this is set to true the user can decide to pick none of the options
-	// because it isn't required to satisfy the disclosure
-	Optional bool `json:"optional"`
-	// the user can pick one of these without having to issue
-	OwnedOptions []*SelectableCredentialInstance `json:"owned_options"`
-	// The user can issue one of these and then use it
-	ObtainableOptions []*CredentialDescriptor `json:"obtainable_options"`
-}
-
-// IssuanceStep is one step in the issuance wizard during disclosure flow
-type IssuanceStep struct {
-	// the list of options for the given discon
-	// the user can choose which one to issue, but only has to issue one
-	Options []*CredentialDescriptor `json:"options"`
-}
-
-// IssueDuringDislosure is what to show during issuance during disclosure
-type IssueDuringDislosure struct {
-	// The steps to fulfill before we can continue the disclosure
-	Steps []IssuanceStep `json:"steps"`
-	// The set of credential ids that have been issued during this session
-	// in order to satisfy the issuance steps.
-	IssuedCredentialIds map[string]struct{} `json:"issued_credential_ids"`
-	// The last credential that was issued with the correct type but with attribute values
-	// that do not match the required/preset values from the issuance steps.
-	// The frontend can compare this credential's attribute values against the
-	// RequestedValue in the corresponding step option (matched by CredentialId)
-	// to show the user what went wrong. Nil when no wrong credential has been issued,
-	// or when the step has since been satisfied by a correct credential.
-	// Only credentials issued during this disclosure session are considered;
-	// pre-existing credentials are excluded.
-	WrongCredentialIssued *Credential `json:"wrong_credential_issued"`
-}
-
-// SessionState is a snapshot of the state of this session.
-// When the session state changes it should create a new instance.
-// It has been setup in such a way that it contains all relevant state for
-// displaying all stages for this session to the user
-type SessionState struct {
-	// The identifier for this session
-	Id int `json:"id"`
-	// The protocol used for this session
-	Protocol irmaclient.Protocol `json:"protocol"`
-	// The type of session this is
-	Type SessionType `json:"type"`
-	// In what stage this session currently is
-	Status SessionStatus `json:"status"`
-	// Who started this session
-	Requestor TrustedParty `json:"requestor"`
-	// The pairing code to show to the user when the status is pairing
-	PairingCode string `json:"pairing_code"`
-	// The list of credentials offered to the user. The user has no choice other than accepting or denying them.
-	OfferedCredentials []*Credential `json:"offered_credentials"`
-	// The plan for disclosing credentials to satisfy this disclosure session
-	// Nil when no disclosure has to be done. Can also be present during issuance session.
-	DisclosurePlan *DisclosurePlan `json:"disclosure_plan"`
-	// The message that should be signed during this session, if any
-	MessageToSign string `json:"message_to_sign"`
-	// The error when this session has an error
-	Error *SessionError `json:"error,omitempty"`
-	// The client return url when the app should redirect to after the session, if any
-	ClientReturnUrl string `json:"client_return_url"`
-	// If this is true then the frontend should not return to the browser after the session is done
-	ContinueOnSecondDevice bool `json:"continue_on_second_device"`
-	// The number of attempts the user still has to enter a correct pin
-	RemainingPinAttempts  *int `json:"remaining_pin_attempts,omitempty"`
-	PinBlockedTimeSeconds *int `json:"pin_blocked_time_seconds,omitempty"`
-
-	// OID4VCI specific fields
-	OfferedCredentialTypes []CredentialDescriptor `json:"offered_credential_types"`
-
-	// OID4VCI - Authorization Code Flow parameters
-	stateSalt               []byte
-	Oid4VciState            string `json:"oid4_vci_state,omitempty"`
-	AuthorizationRequestUrl string `json:"authorization_request_url,omitempty"`
-
-	// OID4VCI - Pre-Authorized Code Flow parameters
-	TransactionCodeParameters *irma.PreAuthorizedCodeTransactionCodeParameters `json:"transaction_code_parameters,omitempty"`
-}
 
 type session struct {
-	State                    *SessionState
-	handler                  SessionHandler
-	permissionHandler        irmaclient.PermissionHandler
-	pinHandler               irmaclient.PinHandler
-	client                   *Client
-	dismisser                irmaclient.SessionDismisser
-	chained                  bool
-	authCodeHandler          openid4vci.AuthCodeHandler
-	preAuthorizedCodeHandler openid4vci.TokenPermissionHandler
+	State                      *SessionState
+	handler                    SessionHandler
+	permissionHandler          irmaclient.PermissionHandler
+	pinHandler                 irmaclient.PinHandler
+	client                     *Client
+	dismisser                  irmaclient.SessionDismisser
+	chained                    bool
+	authCodeHandler            openid4vci.AuthCodeHandler
+	preAuthorizedCodeHandler   openid4vci.TokenPermissionHandler
+	openid4vpPermissionHandler openid4vpclient.PermissionHandler
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
-}
-
-// SessionError is a frontend-friendly representation of irma.SessionError.
-// Unlike irma.SessionError, the Err field is serialized as a string (WrappedError)
-// so it is available to frontends.
-type SessionError struct {
-	ErrorType    irma.ErrorType    `json:"error_type"`
-	WrappedError string            `json:"wrapped_error"`
-	Info         string            `json:"info"`
-	RemoteError  *irma.RemoteError `json:"remote_error,omitempty"`
-	RemoteStatus int               `json:"remote_status"`
-	Stack        string            `json:"stack"`
-}
-
-func newSessionError(err *irma.SessionError) *SessionError {
-	return &SessionError{
-		ErrorType:    err.ErrorType,
-		WrappedError: err.WrappedError(),
-		Info:         err.Info,
-		RemoteError:  err.RemoteError,
-		RemoteStatus: err.RemoteStatus,
-		Stack:        err.Stack(),
-	}
 }
 
 func (s *session) dispatchState() {
@@ -281,9 +99,9 @@ func (s *session) error(err error) {
 	s.State.Status = Status_Error
 	var irmaErr *irma.SessionError
 	if errors.As(err, &irmaErr) {
-		s.State.Error = newSessionError(irmaErr)
+		s.State.Error = clientmodels.NewSessionError(irmaErr)
 	} else {
-		s.State.Error = newSessionError(&irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()})
+		s.State.Error = clientmodels.NewSessionError(&irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()})
 	}
 	s.dispatchState()
 }
@@ -316,10 +134,6 @@ func (m *sessionManager) NewSession() *session {
 	}
 	m.Sessions[m.NextId] = s
 	return s
-}
-
-type SessionHandler interface {
-	UpdateSession(session SessionState)
 }
 
 func (s *session) StatusUpdate(action irma.Action, status irma.ClientStatus) {}
@@ -702,7 +516,7 @@ func filterCredentialToMismatchedAttributes(cred *Credential, requestedAttrs []A
 	var filtered []Attribute
 	for _, attr := range cred.Attributes {
 		req, ok := requestedByID[attr.Id]
-		if !ok || req.RequestedValue == nil || !req.RequestedValue.hasValue() {
+		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
 			continue
 		}
 		// Check if the actual value doesn't match the requested value
@@ -887,17 +701,17 @@ func (s *session) RequestAuthorizationCodeFlowPermission(
 }
 
 func (s *session) setPseudoRandomOpenIdState() {
-	if len(s.State.stateSalt) == 0 {
+	if len(s.State.StateSalt) == 0 {
 		salt := [16]byte{}
 		_, err := rand.Read(salt[:])
 		if err != nil {
 			panic(fmt.Sprintf("failed to generate random state salt: %v", err))
 		}
 
-		s.State.stateSalt = salt[:]
+		s.State.StateSalt = salt[:]
 	}
 
-	stateBytes := append(s.State.stateSalt, []byte(strconv.Itoa(s.State.Id))...)
+	stateBytes := append(s.State.StateSalt, []byte(strconv.Itoa(s.State.Id))...)
 
 	s.State.Oid4VciState = fmt.Sprintf("%x", sha256.Sum256(stateBytes))
 }
@@ -1021,7 +835,7 @@ func (client *Client) NewSession(sessionrequest string) {
 
 	switch sessionReq.Protocol {
 	case irmaclient.Protocol_OpenID4VP:
-		session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, session)
+		session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, &openid4vpSessionAdapter{session: session})
 	case irmaclient.Protocol_OpenID4VCI:
 		session.dismisser = client.openid4vciClient.NewSession(sessionReq.URL, session)
 	default:

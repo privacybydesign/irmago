@@ -6,81 +6,80 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
-// Handler is a narrow interface covering only the callbacks that the OpenID4VP client needs.
-// The full irmaclient.Handler satisfies this interface via Go duck typing.
+// Handler is the callback interface for the OpenID4VP client session lifecycle.
 type Handler interface {
-	Failure(err *irma.SessionError)
+	Failure(err *clientmodels.SessionError)
 	Cancelled()
-	Success(result string)
+	Success(result string, credentialLogs []clientmodels.LogCredential)
 	RequestVerificationPermission(
-		request *irma.DisclosureRequest,
-		satisfiable bool,
-		candidates [][]irmaclient.DisclosureCandidates,
-		requestorInfo *irma.RequestorInfo,
-		callback irmaclient.PermissionHandler,
+		disclosurePlan *clientmodels.DisclosurePlan,
+		requestor *clientmodels.TrustedParty,
+		callback PermissionHandler,
 	)
+}
+
+// PermissionHandler is the callback the UI invokes after the user grants or denies permission.
+type PermissionHandler func(proceed bool, selections []clientmodels.DisclosureSelection)
+
+// SessionDismisser allows dismissing the current session.
+type SessionDismisser interface {
+	Dismiss()
 }
 
 // ========================================================================
 
+// Client drives OpenID4VP disclosure sessions.
 type Client struct {
-	Configuration *eudi.Configuration
-
-	keyBinder         sdjwtvc.KeyBinder
-	sdjwtvcStorage    irmaclient.SdJwtVcStorage
-	verifierValidator eudi.VerifierValidator
-	logsStorage       irmaclient.LogsStorage
-	currentSession    *openid4vpSession
+	Configuration           *eudi.Configuration
+	credentialQueryHandlers []clientmodels.DcqlCredentialQueryHandler
+	verifierValidator       eudi.VerifierValidator
+	currentSession          *openid4vpSession
 }
 
-// RefreshPendingPermissionRequest sends another, updated verification request if there's an active session
+// RefreshPendingPermissionRequest sends another, updated verification request if there's an active session.
 func (client *Client) RefreshPendingPermissionRequest() {
 	if client.currentSession != nil {
 		client.currentSession.requestPermission()
 	}
 }
 
+// NewClient creates a new OpenID4VP client.
 func NewClient(
 	eudiConf *eudi.Configuration,
-	storage irmaclient.SdJwtVcStorage,
+	handlers []clientmodels.DcqlCredentialQueryHandler,
 	verifierValidator eudi.VerifierValidator,
-	keybinder sdjwtvc.KeyBinder,
-	logsStorage irmaclient.LogsStorage,
 ) (*Client, error) {
 	return &Client{
-		Configuration:     eudiConf,
-		keyBinder:         keybinder,
-		sdjwtvcStorage:    storage,
-		verifierValidator: verifierValidator,
-		logsStorage:       logsStorage,
-		currentSession:    nil,
+		Configuration:           eudiConf,
+		credentialQueryHandlers: handlers,
+		verifierValidator:       verifierValidator,
+		currentSession:          nil,
 	}, nil
 }
 
-func (client *Client) NewSession(fullUrl string, handler Handler) irmaclient.SessionDismisser {
+// NewSession starts a new OpenID4VP session from the given URL and returns a SessionDismisser.
+func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismisser {
 	client.handleSessionAsync(fullUrl, handler)
 	return client
 }
 
+// Dismiss dismisses the current session.
 func (client *Client) Dismiss() {
 	irma.Logger.Info("openid4vp: session dismissed")
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	irma.Logger.Errorf(message, fmtArgs...)
-	handler.Failure(&irma.SessionError{
-		Err: fmt.Errorf(message, fmtArgs...),
+	handler.Failure(&clientmodels.SessionError{
+		WrappedError: fmt.Sprintf(message, fmtArgs...),
 	})
 }
 
@@ -123,7 +122,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		// Store the verifier logo in the cache
-		filename, path, err := client.Configuration.Verifiers.CacheLogo(
+		_, logoPath, err := client.Configuration.Verifiers.CacheLogo(
 			endEntityCert.SerialNumber.String(),
 			&requestorSchemeData.Organization.Logo,
 		)
@@ -132,23 +131,14 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
-		// Construct IRMA RequestorInfo from the requestorSchemeData
-		requestorInfo := &irma.RequestorInfo{
-			//ID:     irma.NewRequestorIdentifier(endEntityCert.Subject.CommonName), // TODO: use the CN, cert thumbprint or something else?
-			//Scheme: irma.NewRequestorSchemeIdentifier("eudi"),                     // TODO: do we need/want this for cert-based trust model?
-			Name:       requestorSchemeData.Organization.LegalName,
-			Industry:   &irma.TranslatedString{},
-			Hostnames:  endEntityCert.DNSNames,
-			Logo:       &filename,
-			LogoPath:   &path,
-			ValidUntil: (*irma.Timestamp)(&endEntityCert.NotAfter),
-			Unverified: false,
-			Languages:  utils.GetMapKeys(requestorSchemeData.Organization.LegalName),
-			Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
+		requestor := &clientmodels.TrustedParty{
+			Name:      clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
+			ImagePath: &logoPath,
+			Verified:  true,
 		}
 
 		irma.Logger.Infof("auth request: %#v\n", request)
-		err = client.handleAuthorizationRequest(request, requestorInfo, handler)
+		err = client.handleAuthorizationRequest(request, requestor, handler)
 
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
@@ -158,16 +148,14 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 
 func (client *Client) handleAuthorizationRequest(
 	request *openid4vp.AuthorizationRequest,
-	requestorInfo *irma.RequestorInfo,
+	requestor *clientmodels.TrustedParty,
 	handler Handler,
 ) error {
 	client.currentSession = &openid4vpSession{
-		request:        request,
-		requestorInfo:  requestorInfo,
-		handler:        handler,
-		sdjwtvcStorage: client.sdjwtvcStorage,
-		keyBinder:      client.keyBinder,
-		logsStorage:    client.logsStorage,
+		request:                 request,
+		requestor:               requestor,
+		handler:                 handler,
+		credentialQueryHandlers: client.credentialQueryHandlers,
 	}
 	defer func() {
 		client.currentSession = nil
@@ -181,11 +169,9 @@ func (client *Client) handleAuthorizationRequest(
 
 type openid4vpSession struct {
 	request                  *openid4vp.AuthorizationRequest
-	requestorInfo            *irma.RequestorInfo
+	requestor                *clientmodels.TrustedParty
 	handler                  Handler
-	sdjwtvcStorage           irmaclient.SdJwtVcStorage
-	keyBinder                sdjwtvc.KeyBinder
-	logsStorage              irmaclient.LogsStorage
+	credentialQueryHandlers  []clientmodels.DcqlCredentialQueryHandler
 	pendingPermissionRequest *permissionRequest
 }
 
@@ -194,38 +180,72 @@ type permissionRequest struct {
 }
 
 type permissionResponse struct {
-	choice     *irma.DisclosureChoice
-	candidates *DcqlQueryCandidates
+	selections []clientmodels.DisclosureSelection
 }
 
 func (session *openid4vpSession) awaitPermission() *permissionResponse {
 	return <-session.pendingPermissionRequest.channel
 }
 
-func (session *openid4vpSession) requestPermission() error {
-	candidates, err := GetCandidatesForDcqlQuery(session.sdjwtvcStorage, session.request.DcqlQuery)
+// findHandlerForFormat returns the DcqlCredentialQueryHandler that supports the given format.
+func (session *openid4vpSession) findHandlerForFormat(format string) (clientmodels.DcqlCredentialQueryHandler, error) {
+	for _, h := range session.credentialQueryHandlers {
+		if h.Format() == format {
+			return h, nil
+		}
+	}
+	return nil, fmt.Errorf("no credential query handler for format %q", format)
+}
 
+func (session *openid4vpSession) requestPermission() error {
+	plan, err := session.buildDisclosurePlan()
 	if err != nil {
 		return err
 	}
-	disclosureRequest := &irma.DisclosureRequest{}
+
 	session.handler.RequestVerificationPermission(
-		disclosureRequest,
-		candidates.Satisfiable,
-		candidates.Candidates,
-		session.requestorInfo,
-		irmaclient.PermissionHandler(func(proceed bool, choice *irma.DisclosureChoice) {
+		plan,
+		session.requestor,
+		func(proceed bool, selections []clientmodels.DisclosureSelection) {
 			if proceed {
 				session.pendingPermissionRequest.channel <- &permissionResponse{
-					choice:     choice,
-					candidates: candidates,
+					selections: selections,
 				}
 			} else {
 				session.pendingPermissionRequest.channel <- nil
 			}
-		}),
+		},
 	)
 	return nil
+}
+
+// buildDisclosurePlan builds a DisclosurePlan by querying each handler for candidates.
+func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.DisclosurePlan, error) {
+	// Build per-query results
+	queryResults := map[string]*clientmodels.CredentialQueryResult{}
+	queryFormats := map[string]string{} // queryId -> format
+
+	for _, credQuery := range session.request.DcqlQuery.Credentials {
+		handler, err := session.findHandlerForFormat(credQuery.Format)
+		if err != nil {
+			return nil, fmt.Errorf("credential query '%s': %w", credQuery.Id, err)
+		}
+
+		result, err := handler.FindCandidates(credQuery)
+		if err != nil {
+			return nil, fmt.Errorf("credential query '%s': failed to find candidates: %w", credQuery.Id, err)
+		}
+
+		queryResults[credQuery.Id] = result
+		queryFormats[credQuery.Id] = credQuery.Format
+	}
+
+	// Build the disclosure plan
+	if session.request.DcqlQuery.CredentialSets != nil {
+		return buildPlanFromCredentialSets(queryResults, session.request.DcqlQuery.CredentialSets)
+	}
+
+	return buildPlanFromCredentialQueries(session.request.DcqlQuery.Credentials, queryResults)
 }
 
 func (session *openid4vpSession) perform() error {
@@ -240,34 +260,28 @@ func (session *openid4vpSession) perform() error {
 	if err != nil {
 		return fmt.Errorf("failed to request permission: %v", err)
 	}
-	permissionResponse := session.awaitPermission()
+	permResp := session.awaitPermission()
 
-	if permissionResponse == nil {
+	if permResp == nil {
 		irma.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
 		session.handler.Cancelled()
 		return nil
 	}
 
-	logMarshalled("choice:", permissionResponse)
-	credentials, credLog, err := getCredentialsForChoices(
-		session.sdjwtvcStorage,
-		session.keyBinder,
-		permissionResponse.candidates.QueryIdMap,
-		permissionResponse.choice.Attributes,
-		session.request.Nonce,
-		session.request.ClientId,
-	)
+	logMarshalled("selections:", permResp.selections)
 
+	// Group selections by format
+	queryResponses, credLogs, err := session.prepareDisclosures(permResp.selections)
 	if err != nil {
 		return err
 	}
 
-	logMarshalled("credentials for choice:", credentials)
+	logMarshalled("credentials for choice:", queryResponses)
 
 	httpClient := http.Client{}
 	responseConfig := authorizationResponseConfig{
 		State:          session.request.State,
-		QueryResponses: credentials,
+		QueryResponses: queryResponses,
 		ResponseUri:    session.request.ResponseUri,
 		ResponseType:   session.request.ResponseType,
 		ResponseMode:   session.request.ResponseMode,
@@ -294,99 +308,55 @@ func (session *openid4vpSession) perform() error {
 		return fmt.Errorf("response status was not ok: %v", response)
 	}
 
-	// note: we don't add irma.ActionDisclosing, as that's for the irma protocol
-	// and will cause problems when deserializing.
-	// instead we can just assume a log containing OpenID4VP info to be for disclosure
-	logEntry := &irmaclient.LogEntry{
-		Time:       irma.Timestamp(time.Now()),
-		ServerName: session.requestorInfo,
-		OpenID4VP: &irmaclient.OpenID4VPDisclosureLog{
-			DisclosedCredentials: credLog,
-		},
-	}
-	err = session.logsStorage.AddLogEntry(logEntry)
-	if err != nil {
-		return fmt.Errorf("failed to add log entry: %v", err)
+	session.handler.Success("managed to complete openid4vp session", credLogs)
+	return nil
+}
+
+// prepareDisclosures groups selections by credential format and calls each handler's
+// PrepareDisclosure method, returning aggregated query responses and log data.
+func (session *openid4vpSession) prepareDisclosures(
+	selections []clientmodels.DisclosureSelection,
+) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
+	// Build a map from queryId -> format using the request's credential queries
+	queryFormat := map[string]string{}
+	for _, cq := range session.request.DcqlQuery.Credentials {
+		queryFormat[cq.Id] = cq.Format
 	}
 
-	session.handler.Success("managed to complete openid4vp session")
-	return nil
+	// Group selections by format
+	selectionsByFormat := map[string][]clientmodels.DisclosureSelection{}
+	for _, sel := range selections {
+		format, ok := queryFormat[sel.QueryId]
+		if !ok {
+			return nil, nil, fmt.Errorf("unknown query id %q in selection", sel.QueryId)
+		}
+		selectionsByFormat[format] = append(selectionsByFormat[format], sel)
+	}
+
+	var allQueryResponses []dcql.QueryResponse
+	var allCredLogs []clientmodels.LogCredential
+
+	for format, sels := range selectionsByFormat {
+		handler, err := session.findHandlerForFormat(format)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		prepared, err := handler.PrepareDisclosure(sels, session.request.Nonce, session.request.ClientId)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to prepare disclosure for format %q: %w", format, err)
+		}
+
+		allQueryResponses = append(allQueryResponses, prepared.QueryResponses...)
+		allCredLogs = append(allCredLogs, prepared.CredentialLogs...)
+	}
+
+	return allQueryResponses, allCredLogs, nil
 }
 
 // ========================================================================
 // Helpers
 // ========================================================================
-
-// will return the SdJwtVc instances to be sent as the response to the complete DcqlQuery, based on the users choices.
-func getCredentialsForChoices(
-	storage irmaclient.SdJwtVcStorage,
-	keyBinder sdjwtvc.KeyBinder,
-	queryIdMap map[irma.AttributeIdentifier]string,
-	choices [][]*irma.AttributeIdentifier,
-	nonce string,
-	clientId string,
-) ([]dcql.QueryResponse, []irmaclient.CredentialLog, error) {
-	// map of attribute identifiers by the dcql query id
-	attributesByQueryId := map[string][]*irma.AttributeIdentifier{}
-
-	for _, credential := range choices {
-		// let's for now assume that all selected attributes for a given credential type all come from
-		// the same credential instance
-		for _, attribute := range credential {
-			queryId, ok := queryIdMap[*attribute]
-
-			if !ok {
-				return []dcql.QueryResponse{}, nil, fmt.Errorf("query id map doesn't contain '%v'", *attribute)
-			}
-
-			_, ok = attributesByQueryId[queryId]
-			if !ok {
-				attributesByQueryId[queryId] = []*irma.AttributeIdentifier{attribute}
-			} else {
-				attributesByQueryId[queryId] = append(attributesByQueryId[queryId], attribute)
-			}
-		}
-	}
-
-	queryResponses := []dcql.QueryResponse{}
-	credentialInfos := []irmaclient.CredentialLog{}
-
-	for queryId, attributes := range attributesByQueryId {
-		sdjwt, err := storage.GetCredentialByHash(attributes[0].CredentialHash)
-		if err != nil {
-			return []dcql.QueryResponse{}, nil, fmt.Errorf("failed to get credential: %v", err)
-		}
-
-		err = storage.RemoveLastUsedInstanceOfCredentialByHash(attributes[0].CredentialHash)
-		if err != nil {
-			return []dcql.QueryResponse{}, nil, fmt.Errorf("failed to remove instance of sdjwtvc credential: %v", err)
-		}
-
-		disclosureNames := []string{}
-		for _, attr := range attributes {
-			disclosureNames = append(disclosureNames, attr.Type.Name())
-		}
-
-		sdjwtSelected, err := sdjwtvc.SelectDisclosures(sdjwt.SdJwtVc, disclosureNames)
-		if err != nil {
-			return []dcql.QueryResponse{}, nil, fmt.Errorf("failed to select disclosures: %v", err)
-		}
-
-		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, keyBinder, nonce, clientId)
-		if err != nil {
-			return []dcql.QueryResponse{}, nil, fmt.Errorf("failed to create kbjwt: %v", err)
-		}
-
-		sdjwtWithKb := sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt)
-
-		queryResponses = append(queryResponses, dcql.QueryResponse{
-			QueryId:     queryId,
-			Credentials: []string{string(sdjwtWithKb)},
-		})
-		credentialInfos = append(credentialInfos, createSdJwtCredentialLog(sdjwt.Metadata, attributes))
-	}
-	return queryResponses, credentialInfos, nil
-}
 
 func logMarshalled(message string, value any) {
 	jsonBytes, err := json.MarshalIndent(value, "", "   ")
@@ -395,18 +365,4 @@ func logMarshalled(message string, value any) {
 	} else {
 		irma.Logger.Infof("\n%s\n%s\n\n", message, string(jsonBytes))
 	}
-}
-
-func createSdJwtCredentialLog(info irmaclient.SdJwtVcBatchMetadata, disclosures []*irma.AttributeIdentifier) irmaclient.CredentialLog {
-	result := irmaclient.CredentialLog{
-		CredentialType: info.CredentialType,
-		Formats:        []irmaclient.CredentialFormat{irmaclient.Format_SdJwtVc},
-		Attributes:     map[string]string{},
-	}
-
-	for _, attr := range disclosures {
-		result.Attributes[attr.Type.Name()] = info.Attributes[attr.Type.Name()].(string)
-	}
-
-	return result
 }

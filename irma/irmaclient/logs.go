@@ -7,25 +7,28 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
 )
 
-type LogType string
-type Protocol string
-type CredentialFormat string
+// Type aliases: canonical definitions live in common/clientmodels.
+type LogType = clientmodels.LogType
+type Protocol = clientmodels.Protocol
+type CredentialFormat = clientmodels.CredentialFormat
 
+// Re-export constants for backward compatibility.
 const (
-	LogType_Disclosure        LogType = "disclosure"
-	LogType_Issuance          LogType = "issuance"
-	LogType_Signature         LogType = "signature"
-	LogType_CredentialRemoval LogType = "removal"
+	LogType_Disclosure        = clientmodels.LogType_Disclosure
+	LogType_Issuance          = clientmodels.LogType_Issuance
+	LogType_Signature         = clientmodels.LogType_Signature
+	LogType_CredentialRemoval = clientmodels.LogType_CredentialRemoval
 
-	Protocol_Irma       Protocol = "irma"
-	Protocol_OpenID4VP  Protocol = "openid4vp"
-	Protocol_OpenID4VCI Protocol = "openid4vci"
+	Protocol_Irma       = clientmodels.Protocol_Irma
+	Protocol_OpenID4VP  = clientmodels.Protocol_OpenID4VP
+	Protocol_OpenID4VCI = clientmodels.Protocol_OpenID4VCI
 
-	Format_SdJwtVc CredentialFormat = "dc+sd-jwt"
-	Format_Idemix  CredentialFormat = "idemix"
+	Format_SdJwtVc = clientmodels.Format_SdJwtVc
+	Format_Idemix  = clientmodels.Format_Idemix
 )
 
 // CredentialLog is the internal storage format for a credential in a log entry.

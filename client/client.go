@@ -92,7 +92,8 @@ func New(
 	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &eudi.DefaultQueryValidatorFactory{})
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
 
-	openid4vpClient, err := openid4vpclient.NewClient(eudiConf, sdjwtvcStorage, verifierValidator, irmaKeyBinder, irmaStorage)
+	sdjwtDcqlHandler := irmaclient.NewSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
+	openid4vpClient, err := openid4vpclient.NewClient(eudiConf, []openid4vpclient.DcqlCredentialQueryHandler{sdjwtDcqlHandler}, verifierValidator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
