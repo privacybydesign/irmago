@@ -1,10 +1,9 @@
-package client
+package dcql
 
 import (
 	"fmt"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
 // DcqlHandler orchestrates the handling of a complete DCQL query by delegating
@@ -12,26 +11,26 @@ import (
 // based on credential format. It also handles credential_sets aggregation and
 // disclosure plan building.
 type DcqlHandler struct {
-	credentialQueryHandlers []dcql.DcqlCredentialQueryHandler
+	credentialQueryHandlers []DcqlCredentialQueryHandler
 }
 
 // NewDcqlHandler creates a new DcqlHandler with the given credential query handlers.
-func NewDcqlHandler(handlers []dcql.DcqlCredentialQueryHandler) *DcqlHandler {
+func NewDcqlHandler(handlers []DcqlCredentialQueryHandler) *DcqlHandler {
 	return &DcqlHandler{credentialQueryHandlers: handlers}
 }
 
 // DcqlResult contains the results of processing a full DCQL query.
 type DcqlResult struct {
 	// Per-query results keyed by credential query ID.
-	QueryResults map[string]*dcql.CredentialQueryResult
+	QueryResults map[string]*CredentialQueryResult
 	// Maps credential hashes to their DCQL query IDs.
 	HashToQueryId map[string]string
 }
 
 // FindCandidates processes a complete DCQL query by delegating each credential query
 // to the handler matching its format. Returns per-query results and a hash-to-queryId mapping.
-func (h *DcqlHandler) FindCandidates(query dcql.DcqlQuery) (*DcqlResult, error) {
-	queryResults := make(map[string]*dcql.CredentialQueryResult, len(query.Credentials))
+func (h *DcqlHandler) FindCandidates(query DcqlQuery) (*DcqlResult, error) {
+	queryResults := make(map[string]*CredentialQueryResult, len(query.Credentials))
 	hashToQueryId := make(map[string]string)
 
 	for _, credQuery := range query.Credentials {
@@ -64,7 +63,7 @@ func (h *DcqlHandler) FindCandidates(query dcql.DcqlQuery) (*DcqlResult, error) 
 // previousPlan is used to track issuance-during-disclosure state across refreshes.
 // preExistingHashes tracks which credentials existed at session start.
 func (h *DcqlHandler) BuildDisclosurePlan(
-	query dcql.DcqlQuery,
+	query DcqlQuery,
 	result *DcqlResult,
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
@@ -78,11 +77,11 @@ func (h *DcqlHandler) BuildDisclosurePlan(
 // PrepareDisclosure prepares the selected credentials for the VP token by delegating
 // to the appropriate handlers based on credential format.
 func (h *DcqlHandler) PrepareDisclosure(
-	query dcql.DcqlQuery,
-	selections []dcql.DisclosureSelection,
+	query DcqlQuery,
+	selections []DisclosureSelection,
 	nonce string,
 	clientId string,
-) (*dcql.PreparedDisclosure, error) {
+) (*PreparedDisclosure, error) {
 	// Build a map from queryId -> format
 	queryFormat := make(map[string]string, len(query.Credentials))
 	for _, cq := range query.Credentials {
@@ -90,7 +89,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 	}
 
 	// Group selections by format
-	selectionsByFormat := make(map[string][]dcql.DisclosureSelection)
+	selectionsByFormat := make(map[string][]DisclosureSelection)
 	for _, sel := range selections {
 		format, ok := queryFormat[sel.QueryId]
 		if !ok {
@@ -99,7 +98,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 		selectionsByFormat[format] = append(selectionsByFormat[format], sel)
 	}
 
-	result := &dcql.PreparedDisclosure{}
+	result := &PreparedDisclosure{}
 
 	for format, sels := range selectionsByFormat {
 		handler, err := h.findHandlerForFormat(format)
@@ -119,11 +118,24 @@ func (h *DcqlHandler) PrepareDisclosure(
 	return result, nil
 }
 
-func (h *DcqlHandler) findHandlerForFormat(format string) (dcql.DcqlCredentialQueryHandler, error) {
+func (h *DcqlHandler) findHandlerForFormat(format string) (DcqlCredentialQueryHandler, error) {
 	for _, handler := range h.credentialQueryHandlers {
 		if handler.Format() == format {
 			return handler, nil
 		}
 	}
 	return nil, fmt.Errorf("no credential query handler for format %q", format)
+}
+
+// CollectOwnedHashes extracts all credential hashes from query results.
+func CollectOwnedHashes(queryResults map[string]*CredentialQueryResult) map[string]struct{} {
+	hashes := make(map[string]struct{})
+	for _, result := range queryResults {
+		for _, owned := range result.OwnedCandidates {
+			if owned.Hash != "" {
+				hashes[owned.Hash] = struct{}{}
+			}
+		}
+	}
+	return hashes
 }

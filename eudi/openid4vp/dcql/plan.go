@@ -1,17 +1,16 @@
-package client
+package dcql
 
 import (
 	"fmt"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
 // buildPlanFromCredentialQueries builds a DisclosurePlan when no credential_sets are present.
 // Each credential query becomes one DisclosurePickOne entry (all required).
 func buildPlanFromCredentialQueries(
-	queries []dcql.CredentialQuery,
-	queryResults map[string]*dcql.CredentialQueryResult,
+	queries []CredentialQuery,
+	queryResults map[string]*CredentialQueryResult,
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
 ) (*clientmodels.DisclosurePlan, error) {
@@ -37,8 +36,8 @@ func buildPlanFromCredentialQueries(
 
 // buildPlanFromCredentialSets builds a DisclosurePlan when credential_sets are present.
 func buildPlanFromCredentialSets(
-	queryResults map[string]*dcql.CredentialQueryResult,
-	credentialSets []dcql.CredentialSetQuery,
+	queryResults map[string]*CredentialQueryResult,
+	credentialSets []CredentialSetQuery,
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
 ) (*clientmodels.DisclosurePlan, error) {

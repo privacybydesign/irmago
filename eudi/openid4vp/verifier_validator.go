@@ -1,4 +1,4 @@
-package eudi
+package openid4vp
 
 import (
 	"crypto/x509"
@@ -10,7 +10,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
-	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -21,7 +20,7 @@ const ClockSkew = 60 * time.Second
 // VerifierValidator is an interface to be used to validate verifiers by parsing and verifying the
 // authorization request and returning the requestor info for the verifier.
 type VerifierValidator interface {
-	ParseAndVerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *x509.Certificate, *scheme.RelyingPartyRequestor, error)
+	ParseAndVerifyAuthorizationRequest(requestJwt string) (*AuthorizationRequest, *x509.Certificate, *scheme.RelyingPartyRequestor, error)
 }
 
 type RequestorCertificateStoreVerifierValidator struct {
@@ -38,13 +37,13 @@ func NewRequestorCertificateStoreVerifierValidator(verificationContext eudi_jwt.
 
 // ParseAndVerifyAuthorizationRequest should be followed by a way to store the requestor logo in the cache
 func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
-	*openid4vp.AuthorizationRequest,
+	*AuthorizationRequest,
 	*x509.Certificate,
 	*scheme.RelyingPartyRequestor,
 	error,
 ) {
 	// Parse the JWT and verify it using the verifier
-	var authRequest openid4vp.AuthorizationRequest
+	var authRequest AuthorizationRequest
 	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier())
 
 	if err != nil {
@@ -79,12 +78,12 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 		if !ok {
 			return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
 		}
-		if typ != openid4vp.AuthRequestJwtTyp {
-			return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", openid4vp.AuthRequestJwtTyp, typ)
+		if typ != AuthRequestJwtTyp {
+			return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", AuthRequestJwtTyp, typ)
 		}
 
 		// Add hostname to the VerifyOptions to check against SAN DNS
-		request := token.Claims.(*openid4vp.AuthorizationRequest)
+		request := token.Claims.(*AuthorizationRequest)
 		prefix := "x509_san_dns:"
 
 		if !strings.HasPrefix(request.ClientId, prefix) {

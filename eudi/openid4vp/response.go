@@ -1,4 +1,4 @@
-package client
+package openid4vp
 
 import (
 	"encoding/json"
@@ -10,7 +10,6 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -19,7 +18,7 @@ type authorizationResponseConfig struct {
 	QueryResponses                      []dcql.QueryResponse
 	ResponseUri                         string
 	ResponseType                        string
-	ResponseMode                        openid4vp.ResponseMode
+	ResponseMode                        ResponseMode
 	EncryptionKeys                      *jwk.Set
 	EncryptedResponseEncValuesSupported []string
 }
@@ -27,7 +26,7 @@ type authorizationResponseConfig struct {
 func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) (*http.Request, error) {
 	values := url.Values{}
 
-	if config.ResponseMode == openid4vp.ResponseMode_DirectPost {
+	if config.ResponseMode == ResponseMode_DirectPost {
 		vpToken, err := createDirectPostVpToken(config.QueryResponses)
 		if err != nil {
 			return nil, err
@@ -36,9 +35,9 @@ func createAuthorizationResponseHttpRequest(config authorizationResponseConfig) 
 		values.Add("state", config.State)
 	}
 
-	if config.ResponseMode == openid4vp.ResponseMode_DirectPostJwt {
+	if config.ResponseMode == ResponseMode_DirectPostJwt {
 		if config.EncryptionKeys == nil {
-			return nil, fmt.Errorf("using response mode %v, but the encryption key is nil", openid4vp.ResponseMode_DirectPostJwt)
+			return nil, fmt.Errorf("using response mode %v, but the encryption key is nil", ResponseMode_DirectPostJwt)
 		}
 		jwe, err := createDirectPostJwtEncryptedResponse(
 			config.QueryResponses,

@@ -1,4 +1,4 @@
-package eudi
+package openid4vp
 
 import (
 	"crypto/rand"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -172,8 +173,8 @@ func testParseAndVerifyAuthorizationRequestFailureMissingRoot(t *testing.T) {
 
 	// Remove the root certificate from the trusted roots, to simulate a missing cert
 	verifierValidator.(*RequestorCertificateStoreVerifierValidator).
-		verificationContext.(*TrustModel).
-		trustedRootCertificates = x509.NewCertPool()
+		verificationContext.(*eudi.TrustModel).
+		ClearTrustedRootCertificates()
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -201,8 +202,8 @@ func testParseAndVerifyAuthorizationRequestFailureMissingIntermediate(t *testing
 
 	// Remove the intermediate certificate from the trusted intermediates, to simulate a missing cert
 	verifierValidator.(*RequestorCertificateStoreVerifierValidator).
-		verificationContext.(*TrustModel).
-		trustedIntermediateCertificates = x509.NewCertPool()
+		verificationContext.(*eudi.TrustModel).
+		ClearTrustedIntermediateCertificates()
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
@@ -259,12 +260,7 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 	}
 
 	// Create the TrustModel with the PKI
-	trustModel := &TrustModel{
-		basePath:                        "testdata",
-		trustedRootCertificates:         rootPool,
-		trustedIntermediateCertificates: intermediatePool,
-		revocationLists:                 revocationLists,
-	}
+	trustModel := eudi.NewTestTrustModel(rootPool, intermediatePool, revocationLists)
 
 	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, &MockQueryValidatorFactory{})
 

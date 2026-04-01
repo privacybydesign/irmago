@@ -11,7 +11,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
-	openid4vpclient "github.com/privacybydesign/irmago/eudi/openid4vp/client"
+	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -26,7 +26,7 @@ type session struct {
 	chained                    bool
 	authCodeHandler            openid4vci.AuthCodeHandler
 	preAuthorizedCodeHandler   openid4vci.TokenPermissionHandler
-	openid4vpPermissionHandler openid4vpclient.PermissionHandler
+	openid4vpPermissionHandler openid4vp.PermissionHandler
 	openid4vpHashToQueryId     map[string]string // credential hash → DCQL query ID
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.

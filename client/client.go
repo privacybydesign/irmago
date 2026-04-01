@@ -18,7 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
-	openid4vpclient "github.com/privacybydesign/irmago/eudi/openid4vp/client"
+	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
@@ -32,7 +32,7 @@ type Client struct {
 	storage          *clientstorage.Storage
 	eudiStorage      *eudi.Storage
 	sdjwtvcStorage   irmaclient.SdJwtVcStorage
-	openid4vpClient  *openid4vpclient.Client
+	openid4vpClient  *openid4vp.Client
 	openid4vciClient *openid4vci.Client
 	irmaClient       *irmaclient.IrmaClient
 	logsStorage      irmaclient.LogsStorage
@@ -92,11 +92,11 @@ func New(
 	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
-	verifierValidator := eudi.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &eudi.DefaultQueryValidatorFactory{})
+	verifierValidator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
 
 	sdjwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
-	openid4vpClient, err := openid4vpclient.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{sdjwtDcqlHandler}, verifierValidator)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{sdjwtDcqlHandler}, verifierValidator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}

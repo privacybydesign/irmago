@@ -1,4 +1,4 @@
-package eudi
+package openid4vp
 
 import (
 	"github.com/privacybydesign/irmago/eudi/scheme"

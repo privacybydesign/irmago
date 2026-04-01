@@ -1,4 +1,4 @@
-package client
+package openid4vp
 
 import (
 	"encoding/json"
@@ -9,7 +9,6 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
-	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
@@ -39,8 +38,8 @@ type SessionDismisser interface {
 // Client drives OpenID4VP disclosure sessions.
 type Client struct {
 	Configuration     *eudi.Configuration
-	dcqlHandler       *DcqlHandler
-	verifierValidator eudi.VerifierValidator
+	dcqlHandler       *dcql.DcqlHandler
+	verifierValidator VerifierValidator
 	currentSession    *openid4vpSession
 }
 
@@ -55,11 +54,11 @@ func (client *Client) RefreshPendingPermissionRequest() {
 func NewClient(
 	eudiConf *eudi.Configuration,
 	handlers []dcql.DcqlCredentialQueryHandler,
-	verifierValidator eudi.VerifierValidator,
+	verifierValidator VerifierValidator,
 ) (*Client, error) {
 	return &Client{
 		Configuration:     eudiConf,
-		dcqlHandler:       NewDcqlHandler(handlers),
+		dcqlHandler:       dcql.NewDcqlHandler(handlers),
 		verifierValidator: verifierValidator,
 		currentSession:    nil,
 	}, nil
@@ -147,7 +146,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 }
 
 func (client *Client) handleAuthorizationRequest(
-	request *openid4vp.AuthorizationRequest,
+	request *AuthorizationRequest,
 	requestor *clientmodels.TrustedParty,
 	handler Handler,
 ) error {
@@ -168,13 +167,13 @@ func (client *Client) handleAuthorizationRequest(
 // ========================================================================
 
 type openid4vpSession struct {
-	request                  *openid4vp.AuthorizationRequest
+	request                  *AuthorizationRequest
 	requestor                *clientmodels.TrustedParty
 	handler                  Handler
-	dcqlHandler              *DcqlHandler
+	dcqlHandler              *dcql.DcqlHandler
 	pendingPermissionRequest *permissionRequest
 	lastPlan                 *clientmodels.DisclosurePlan
-	lastResult               *DcqlResult
+	lastResult               *dcql.DcqlResult
 	// preExistingHashes tracks owned credential hashes at session start,
 	// used to detect newly issued credentials for WrongCredentialIssued.
 	preExistingHashes map[string]struct{}
@@ -226,7 +225,7 @@ func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.Disclosure
 
 	// Snapshot pre-existing hashes on first call
 	if session.preExistingHashes == nil {
-		session.preExistingHashes = collectOwnedHashes(result.QueryResults)
+		session.preExistingHashes = dcql.CollectOwnedHashes(result.QueryResults)
 	}
 
 	return session.dcqlHandler.BuildDisclosurePlan(
@@ -273,9 +272,9 @@ func (session *openid4vpSession) perform() error {
 		ResponseMode:   session.request.ResponseMode,
 	}
 
-	if session.request.ResponseMode == openid4vp.ResponseMode_DirectPostJwt {
+	if session.request.ResponseMode == ResponseMode_DirectPostJwt {
 		if session.request.ClientMetadata.Jwks == nil {
-			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", openid4vp.ResponseMode_DirectPostJwt)
+			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", ResponseMode_DirectPostJwt)
 		}
 		responseConfig.EncryptionKeys = &session.request.ClientMetadata.Jwks.Set
 		responseConfig.EncryptedResponseEncValuesSupported = session.request.ClientMetadata.EncryptedResponseEncValuesSupported
@@ -314,18 +313,6 @@ func (session *openid4vpSession) prepareDisclosures(
 // ========================================================================
 // Helpers
 // ========================================================================
-
-func collectOwnedHashes(queryResults map[string]*dcql.CredentialQueryResult) map[string]struct{} {
-	hashes := make(map[string]struct{})
-	for _, result := range queryResults {
-		for _, owned := range result.OwnedCandidates {
-			if owned.Hash != "" {
-				hashes[owned.Hash] = struct{}{}
-			}
-		}
-	}
-	return hashes
-}
 
 func logMarshalled(message string, value any) {
 	jsonBytes, err := json.MarshalIndent(value, "", "   ")

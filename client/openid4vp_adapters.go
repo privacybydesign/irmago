@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	openid4vpclient "github.com/privacybydesign/irmago/eudi/openid4vp/client"
+	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -45,7 +45,7 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 	disclosurePlan *clientmodels.DisclosurePlan,
 	requestor *clientmodels.TrustedParty,
 	hashToQueryId map[string]string,
-	callback openid4vpclient.PermissionHandler,
+	callback openid4vp.PermissionHandler,
 ) {
 	a.session.State.Status = clientmodels.Status_RequestPermission
 	a.session.State.Type = clientmodels.Type_Disclosure

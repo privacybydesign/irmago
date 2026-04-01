@@ -7,7 +7,6 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	openid4vpclient "github.com/privacybydesign/irmago/eudi/openid4vp/client"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -593,7 +592,7 @@ type expectPickOne struct {
 	optional   bool
 }
 
-func buildPlan(t *testing.T, h *openid4vpclient.DcqlHandler, rawQuery string) *clientmodels.DisclosurePlan {
+func buildPlan(t *testing.T, h *dcql.DcqlHandler, rawQuery string) *clientmodels.DisclosurePlan {
 	t.Helper()
 	query := parseDcqlQuery(t, rawQuery)
 	result, err := h.FindCandidates(query)
@@ -641,7 +640,7 @@ func ownedByHash(po clientmodels.DisclosurePickOne) map[string]*clientmodels.Sel
 	return m
 }
 
-func createTestDcqlHandler(t *testing.T) (*openid4vpclient.DcqlHandler, *irmaclient.InMemorySdJwtVcStorage) {
+func createTestDcqlHandler(t *testing.T) (*dcql.DcqlHandler, *irmaclient.InMemorySdJwtVcStorage) {
 	t.Helper()
 	testdataPath := test.FindTestdataFolder(t)
 	conf, err := irma.NewConfiguration(
@@ -654,7 +653,7 @@ func createTestDcqlHandler(t *testing.T) (*openid4vpclient.DcqlHandler, *irmacli
 	storage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	return openid4vpclient.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{
+	return dcql.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{
 		irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(storage, conf, keyBinder),
 	}), storage
 }

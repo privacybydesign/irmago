@@ -1,27 +1,25 @@
 package eudi
 
 import (
-	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/eudi/scheme"
+	"crypto/x509"
 )
 
-type MockQueryValidatorFactory struct {
-	failsQueryValidation bool
-}
-
-type MockQueryValidator struct {
-	failsValidation bool
-}
-
-func (f *MockQueryValidatorFactory) CreateQueryValidator(rp *scheme.RelyingParty) QueryValidator {
-	return &MockQueryValidator{
-		failsValidation: f.failsQueryValidation,
+// NewTestTrustModel creates a TrustModel for testing with the given PKI components.
+func NewTestTrustModel(rootPool, intermediatePool *x509.CertPool, revocationLists []*x509.RevocationList) *TrustModel {
+	return &TrustModel{
+		basePath:                        "testdata",
+		trustedRootCertificates:         rootPool,
+		trustedIntermediateCertificates: intermediatePool,
+		revocationLists:                 revocationLists,
 	}
 }
 
-func (m *MockQueryValidator) ValidateCredentialQueries(queries []scheme.CredentialQueryInfo) error {
-	if m.failsValidation {
-		return errors.New("query validation failed")
-	}
-	return nil
+// ClearTrustedRootCertificates replaces the root cert pool (for testing missing roots).
+func (tm *TrustModel) ClearTrustedRootCertificates() {
+	tm.trustedRootCertificates = x509.NewCertPool()
+}
+
+// ClearTrustedIntermediateCertificates replaces the intermediate cert pool (for testing missing intermediates).
+func (tm *TrustModel) ClearTrustedIntermediateCertificates() {
+	tm.trustedIntermediateCertificates = x509.NewCertPool()
 }
