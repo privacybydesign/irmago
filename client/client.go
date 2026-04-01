@@ -149,7 +149,6 @@ func New(
 		&http.Client{},
 		eudiStorage,
 		eudiConf,
-		sdjwtvcStorage,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci),
 	)
 

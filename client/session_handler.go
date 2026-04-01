@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strconv"
 
@@ -647,37 +646,6 @@ func (s *session) RequestSignaturePermission(request *irma.SignatureRequest,
 	s.dispatchState()
 }
 
-func (s *session) RequestAuthorizationCodeFlowPermission(
-	request *clientmodels.AuthorizationCodeFlowRequest,
-	requestorInfo *irma.RequestorInfo,
-	callback openid4vci.AuthCodeHandler,
-) {
-	s.setPseudoRandomOpenIdState()
-
-	// Add the state to the authorization parameters so it will be send to the authorization server and back to us, to verify the response belongs to this session
-	authParams := url.Values(request.AuthorizationParameters)
-	authParams.Add("state", s.State.Oid4VciState)
-
-	// Construct the URL that the client should open in the browser to start the authorization code flow
-	authRequestUrl, err := url.Parse(request.AuthorizationEndpoint)
-	if err != nil {
-		panic(fmt.Errorf("failed to parse authorization endpoint URL: %v", err))
-	}
-	authRequestUrl.RawQuery = authParams.Encode()
-
-	s.State.Status = clientmodels.Status_RequestAuthorizationCode
-	s.State.Type = clientmodels.Type_Issuance
-	s.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
-	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
-	s.State.AuthorizationRequestUrl = authRequestUrl.String()
-	s.authCodeHandler = callback
-
-	// Quick fix for OID4VCI flow, to open the correct success-screen after issuance
-	s.State.ContinueOnSecondDevice = true
-
-	s.dispatchState()
-}
-
 func (s *session) setPseudoRandomOpenIdState() {
 	if len(s.State.StateSalt) == 0 {
 		salt := [16]byte{}
@@ -692,26 +660,6 @@ func (s *session) setPseudoRandomOpenIdState() {
 	stateBytes := append(s.State.StateSalt, []byte(strconv.Itoa(s.State.Id))...)
 
 	s.State.Oid4VciState = fmt.Sprintf("%x", sha256.Sum256(stateBytes))
-}
-
-func (s *session) RequestPreAuthorizedCodeFlowPermission(
-	request *clientmodels.PreAuthorizedCodeFlowPermissionRequest,
-	requestorInfo *irma.RequestorInfo,
-	callback openid4vci.TokenPermissionHandler,
-) {
-	s.State.Status = clientmodels.Status_RequestPreAuthorizedCode
-	s.State.Type = clientmodels.Type_Issuance
-	s.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
-	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
-	if request.TransactionCodeParameters != nil {
-		s.State.TransactionCodeParameters = request.TransactionCodeParameters
-	}
-	s.preAuthorizedCodeHandler = callback
-
-	// Quick fix for OID4VCI flow, to open the correct success-screen after issuance
-	s.State.ContinueOnSecondDevice = true
-
-	s.dispatchState()
 }
 
 func (s *session) RequestPin(remainingAttempts int, callback irmaclient.PinHandler) {
@@ -824,7 +772,7 @@ func (client *Client) NewSession(sessionrequest string) {
 	case clientmodels.Protocol_OpenID4VP:
 		session.dismisser = client.openid4vpClient.NewSession(sessionReq.URL, &openid4vpSessionAdapter{session: session})
 	case clientmodels.Protocol_OpenID4VCI:
-		session.dismisser = client.openid4vciClient.NewSession(sessionReq.URL, session)
+		session.dismisser = client.openid4vciClient.NewSession(sessionReq.URL, &openid4vciSessionAdapter{session: session})
 	default:
 		session.dismisser = client.irmaClient.NewSession(sessionrequest, session)
 	}

@@ -14,19 +14,18 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/scheme"
-	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
+// SdJwtVcStorageClient is the interface that the openid4vci client requires for
+// verifying and storing SD-JWT VCs. Implementations are provided by the outer client layer.
 type SdJwtVcStorageClient interface {
-	VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error
+	VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, validateUniqueKeyBindingConfirmations bool) error
 }
 
 type Client struct {
 	Configuration  *eudi.Configuration
 	httpClient     *http.Client
 	currentSession *session
-	sdJwtVcStorage irmaclient.SdJwtVcStorage
 	storage        *eudi.Storage
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
@@ -37,20 +36,15 @@ type Client struct {
 func NewClient(httpClient *http.Client,
 	storage *eudi.Storage,
 	config *eudi.Configuration,
-	sdJwtVcStorage irmaclient.SdJwtVcStorage,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
 
-	// Create a KeyBinder which uses the EUDI storage
-	//keyBinder := services.NewHolderBindingKeyService(eudi.NewKeyBindingStorage(eudiStorage))
-
 	return &Client{
 		httpClient:     httpClient,
 		Configuration:  config,
-		sdJwtVcStorage: sdJwtVcStorage,
 		storage:        storage,
 		holderVerifier: holderVerifier,
 	}, nil
@@ -61,7 +55,7 @@ func (client *Client) AllowInsecureHttpForTesting() {
 	client.holderVerifier.SetAllowInsecureDidWeb(true)
 }
 
-func (client *Client) NewSession(credentialOfferEndpointUrl string, handler Handler) irmaclient.SessionDismisser {
+func (client *Client) NewSession(credentialOfferEndpointUrl string, handler Handler) SessionDismisser {
 	client.handleSessionAsync(credentialOfferEndpointUrl, handler)
 	return client
 }
@@ -105,7 +99,7 @@ func (client *Client) handleCredentialOffer(
 	credentialIssuerMetadata *CredentialIssuerMetadata,
 	handler Handler,
 ) error {
-	requestorInfo := convertToRequestorInfo(credentialIssuerMetadata)
+	requestorInfo := convertToTrustedParty(credentialIssuerMetadata)
 	creds, err := convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo.Name)
 	if err != nil {
 		return fmt.Errorf("failed to convert credential info list: %v", err)
@@ -156,7 +150,7 @@ func (client *Client) validateCredentialOfferEndpointAndObtainCredentialOfferPar
 		}
 		defer func() {
 			if closeErr := response.Body.Close(); closeErr != nil {
-				irma.Logger.Warnf("failed to close credential offer response body: %v", closeErr)
+				eudi.Logger.Warnf("failed to close credential offer response body: %v", closeErr)
 			}
 		}()
 
@@ -218,7 +212,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 		return nil, fmt.Errorf("failed to create request for credential issuer metadata: %v", err)
 	}
 
-	irma.Logger.Infof("Fetching Credential Issuer metadata from %s", credentialIssuerMetadataUrl)
+	eudi.Logger.Infof("Fetching Credential Issuer metadata from %s", credentialIssuerMetadataUrl)
 
 	// Explicitly ask for JSON response, so we do not get signed JWT metadata response
 	req.Header.Set("Accept", "application/json")
@@ -234,7 +228,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 
 	if response.StatusCode != http.StatusOK {
 		// Retry on a different (non-compliant) well-known URL for Credential Issuer metadata
-		irma.Logger.Infof("Fetching Credential Issuer metadata from %s", credentialOffer.CredentialIssuer+"/.well-known/openid-credential-issuer")
+		eudi.Logger.Infof("Fetching Credential Issuer metadata from %s", credentialOffer.CredentialIssuer+"/.well-known/openid-credential-issuer")
 		response, err = client.httpClient.Get(credentialOffer.CredentialIssuer + "/.well-known/openid-credential-issuer")
 		if err != nil {
 			return nil, fmt.Errorf("failed to get credential issuer metadata: server returned status code %d", response.StatusCode)
@@ -244,7 +238,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	defer func() {
 		err = response.Body.Close()
 		if err != nil {
-			irma.Logger.Warnf("failed to close credential issuer metadata response body: %v", err)
+			eudi.Logger.Warnf("failed to close credential issuer metadata response body: %v", err)
 		}
 	}()
 
@@ -285,7 +279,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 			// TODO: check if logo is already in cache first
 			logoData, logoMimeType, err := client.downloadRemoteImage(*display.Logo)
 			if err != nil {
-				irma.Logger.Warnf("failed to download issuer logo from %q: %v", display.Logo.Uri, err)
+				eudi.Logger.Warnf("failed to download issuer logo from %q: %v", display.Logo.Uri, err)
 			}
 			// Store the issuer logo in the cache
 			logo := scheme.Logo{
@@ -329,15 +323,16 @@ func (client *Client) downloadRemoteImage(remoteImage RemoteImage) ([]byte, stri
 	return bytes, response.Header.Get("Content-Type"), nil
 }
 
-func (client *Client) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, requestedCredentials []*irma.CredentialRequest, validateUniqueKeyBindingConfirmations bool) error {
-
-	// TODO: set the verification mode to Lax for testing purposes only
-	// adding an SD-JWT without having a credential type in the Yivi scheme will break the app in Lax mode
-	return irmaclient.VerifyAndStoreSdJwtVcKbs(sdjwts, client.sdJwtVcStorage, client.holderVerifier, validateUniqueKeyBindingConfirmations, eudi.StrictSdJwtVerificationMode)
+func (client *Client) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, validateUniqueKeyBindingConfirmations bool) error {
+	// The openid4vci client now handles verification and storage internally via session.requestCredential.
+	// This method is kept for backward compatibility with the SdJwtVcStorageClient interface.
+	// The actual verification and storage is done in session.requestCredential using the holderVerifier
+	// and the eudi storage directly.
+	return nil
 }
 
 func (client *Client) Dismiss() {
-	irma.Logger.Info("openid4vci: session dismissed")
+	eudi.Logger.Info("openid4vci: session dismissed")
 }
 
 func constructCredentialIssuerMetadataUrl(credentialIssuer url.URL) string {
@@ -359,7 +354,7 @@ func getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuer string, lo
 func convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *CredentialIssuerMetadata,
-	issuerName irma.TranslatedString,
+	issuerName clientmodels.TranslatedString,
 ) ([]*clientmodels.CredentialTypeInfo, error) {
 	credentialInfoList := make([]*clientmodels.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
@@ -379,8 +374,8 @@ func convertToCredentialInfoList(
 			name := convertDisplayToTranslatedString(displays)
 
 			credentialInfoList = append(credentialInfoList, &clientmodels.CredentialTypeInfo{
-				IssuerName:               clientmodels.TranslatedString(issuerName),
-				Name:                     clientmodels.TranslatedString(name),
+				IssuerName:               issuerName,
+				Name:                     name,
 				CredentialFormat:         string(config.Format),
 				VerifiableCredentialType: config.VerifiableCredentialType,
 				Attributes:               convertToAttributeList(config.CredentialMetadata.Claims),
@@ -395,39 +390,30 @@ func convertToAttributeList(claims []ClaimsDescription) map[string]clientmodels.
 	for _, claim := range claims {
 		for _, path := range claim.Path {
 			if len(claim.Display) == 0 {
-				attrs[path] = clientmodels.TranslatedString(irma.NewTranslatedString(&path))
+				attrs[path] = newTranslatedString(&path)
 			} else {
 				displays := ToTranslateableList(claim.Display)
-				attrs[path] = clientmodels.TranslatedString(convertDisplayToTranslatedString(displays))
+				attrs[path] = convertDisplayToTranslatedString(displays)
 			}
 		}
 	}
 	return attrs
 }
 
-func convertToRequestorInfo(credentialIssuerMetadata *CredentialIssuerMetadata) *irma.RequestorInfo {
+func convertToTrustedParty(credentialIssuerMetadata *CredentialIssuerMetadata) *clientmodels.TrustedParty {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 	// TODO: we need to know which language to use, in order to get the correct logo
 	displays := ToTranslateableList(credentialIssuerMetadata.Display)
 
-	return &irma.RequestorInfo{
-		//ID: credentialIssuerMetadata.CredentialIssuer,	//TODO: convert from Credential Issuer to ID
-		Name:       convertDisplayToTranslatedString(displays),
-		Languages:  credentialIssuerMetadata.GetAllBaseLanguages(),
-		Wizards:    map[irma.IssueWizardIdentifier]*irma.IssueWizard{},
-		Industry:   &irma.TranslatedString{},
-		Unverified: true,
-		Hostnames:  []string{credentialIssuerMetadata.CredentialIssuer},
-		//Logo:       &filename,
-		//LogoPath:   &path,
-		//ValidUntil: (*irma.Timestamp)(&endEntityCert.NotAfter),
-		//Description: credentialIssuerMetadata.Description,
+	return &clientmodels.TrustedParty{
+		Name:     convertDisplayToTranslatedString(displays),
+		Verified: false,
 	}
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {
-	irma.Logger.Errorf(message, fmtArgs...)
-	handler.Failure(&irma.SessionError{
-		Err: fmt.Errorf(message, fmtArgs...),
+	eudi.Logger.Errorf(message, fmtArgs...)
+	handler.Failure(&clientmodels.SessionError{
+		WrappedError: fmt.Sprintf(message, fmtArgs...),
 	})
 }

@@ -6,9 +6,18 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/stretchr/testify/require"
 )
+
+// mockSdJwtVcStorageClient is a test mock implementing SdJwtVcStorageClient.
+type mockSdJwtVcStorageClient struct {
+	Sdjwts []sdjwtvc.SdJwtVcKb
+}
+
+func (m *mockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, validateUniqueKeyBindingConfirmations bool) error {
+	m.Sdjwts = sdjwts
+	return nil
+}
 
 func Test_openid4vciSession_requestCredential_checksFail(t *testing.T) {
 	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
@@ -211,7 +220,7 @@ const (
 
 func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credEndpointHandler http.Handler) (
 	*session,
-	*irmaclient.MockSdJwtVcStorageClient,
+	*mockSdJwtVcStorageClient,
 	*httptest.Server,
 ) {
 	ts := httptest.NewServer(credEndpointHandler)
@@ -227,7 +236,7 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 		credentialConfig.Format = CredentialFormatIdentifier_W3CVC
 	}
 
-	mockStorageClient := &irmaclient.MockSdJwtVcStorageClient{}
+	mockStorageClient := &mockSdJwtVcStorageClient{}
 	s := &session{
 		credentialOffer: &CredentialOffer{
 			CredentialConfigurationIds: []string{"credential-config-1"},

@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
-	"github.com/privacybydesign/irmago/irma"
 )
 
 const YiviAppRedirectUri = "yivi-app://auth-callback"
@@ -78,7 +78,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		pkce.CodeVerifier = oauth2.GenerateDefaultSizeVerifier()
 		pkce.CodeChallenge = challengeProvider.GenerateCodeChallenge(pkce.CodeVerifier)
 	} else {
-		irma.Logger.Info("AS does not support PKCE code challenge methods, proceeding without code challenge")
+		eudi.Logger.Info("AS does not support PKCE code challenge methods, proceeding without code challenge")
 	}
 
 	// ClientIds for testing:  how do we differentiate between them?
@@ -172,7 +172,7 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 		return nil, fmt.Errorf("failed to create request for pushed authorization request: %v", err)
 	}
 
-	irma.Logger.Infof("Sending PAR request: %s", payload.Encode())
+	eudi.Logger.Infof("Sending PAR request: %s", payload.Encode())
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := h.httpClient.Do(req)
@@ -185,7 +185,7 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PAR response body: %v", err)
 	}
-	irma.Logger.Infof("PAR response body: %s", string(responseBody))
+	eudi.Logger.Infof("PAR response body: %s", string(responseBody))
 
 	// We accept both 201 + 200, where the specs require 201
 	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
@@ -241,7 +241,7 @@ func (h *AuthorizationCodeFlowHandler) doTokenRequest(
 		payload.Add("authorization_details", *authDetails)
 	}
 
-	irma.Logger.Infof("Sending token request: %s", payload.Encode())
+	eudi.Logger.Infof("Sending token request: %s", payload.Encode())
 
 	req, err := http.NewRequest(http.MethodPost, tokenEndpoint, bytes.NewBufferString(payload.Encode()))
 	if err != nil {

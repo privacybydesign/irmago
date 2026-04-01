@@ -3,7 +3,7 @@ package openid4vci
 import (
 	"strings"
 
-	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"golang.org/x/text/language"
 )
 
@@ -17,8 +17,8 @@ func ToTranslateableList[T Display | CredentialDisplay | CredentialIssuerDisplay
 	return translations
 }
 
-func convertDisplayToTranslatedString(displays []Translateable) irma.TranslatedString {
-	result := irma.TranslatedString{}
+func convertDisplayToTranslatedString(displays []Translateable) clientmodels.TranslatedString {
+	result := clientmodels.TranslatedString{}
 	var nonLocaleValue *string = nil
 
 	for _, display := range displays {
@@ -46,6 +46,19 @@ func convertDisplayToTranslatedString(displays []Translateable) irma.TranslatedS
 	}
 
 	return result
+}
+
+// newTranslatedString returns a TranslatedString containing the specified string for each supported language,
+// or nil when attr is nil.
+func newTranslatedString(value *string) clientmodels.TranslatedString {
+	if value == nil {
+		return nil
+	}
+	return map[string]string{
+		"":   *value, // raw value
+		"en": *value,
+		"nl": *value,
+	}
 }
 
 // isUniqueStrings checks if all strings in the slice are unique (case-sensitive or insensitive)
