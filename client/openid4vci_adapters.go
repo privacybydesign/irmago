@@ -29,7 +29,8 @@ func (a *openid4vciSessionAdapter) Failure(err *clientmodels.SessionError) {
 }
 
 func (a *openid4vciSessionAdapter) Cancelled() {
-	a.session.Cancelled()
+	a.session.State.Status = clientmodels.Status_Dismissed
+	a.session.dispatchState()
 }
 
 func (a *openid4vciSessionAdapter) Success(result string) {

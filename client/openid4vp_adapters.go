@@ -22,7 +22,8 @@ func (a *openid4vpSessionAdapter) Failure(err *clientmodels.SessionError) {
 }
 
 func (a *openid4vpSessionAdapter) Cancelled() {
-	a.session.Cancelled()
+	a.session.State.Status = clientmodels.Status_Dismissed
+	a.session.dispatchState()
 }
 
 func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []clientmodels.LogCredential) {
@@ -211,8 +212,7 @@ func openid4vpCredentialLogsToIrmaclientLogEntry(
 		Name: irma.TranslatedString(requestor.Name),
 	}
 	return &irmaclient.LogEntry{
-		Type:       irma.ActionDisclosing,
-		Time:       irma.Timestamp(time.Now()),
+		Time: irma.Timestamp(time.Now()),
 		ServerName: requestorInfo,
 		OpenID4VP: &irmaclient.OpenID4VPDisclosureLog{
 			DisclosedCredentials: disclosed,
