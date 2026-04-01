@@ -1,6 +1,8 @@
 package openid4vci
 
-import "github.com/privacybydesign/irmago/irma"
+import (
+	"github.com/privacybydesign/irmago/common/clientmodels"
+)
 
 // AuthCodeHandler is a callback for providing the authorization code from the app side.
 type AuthCodeHandler func(proceed bool, code *string)
@@ -12,22 +14,27 @@ type TokenHandler func(proceed bool, accessToken string, refreshToken *string)
 // TokenPermissionHandler is a callback for providing permission for an Pre-Authorized Code issuance session to proceed.
 type TokenPermissionHandler func(proceed bool, transactionCode *string)
 
+// SessionDismisser allows dismissing the current session.
+type SessionDismisser interface {
+	Dismiss()
+}
+
 type Handler interface {
 	// Shared interface functions with irmaclient.Handler
 	Success(result string)
 	Cancelled()
-	Failure(err *irma.SessionError)
+	Failure(err *clientmodels.SessionError)
 
 	// OpenID specific interface functions
 	RequestPreAuthorizedCodeFlowPermission(
-		request *irma.PreAuthorizedCodeFlowPermissionRequest,
-		requestorInfo *irma.RequestorInfo,
+		request *clientmodels.PreAuthorizedCodeFlowPermissionRequest,
+		requestorInfo *clientmodels.TrustedParty,
 		callback TokenPermissionHandler,
 	)
 
 	RequestAuthorizationCodeFlowPermission(
-		request *irma.AuthorizationCodeFlowRequest,
-		requestorInfo *irma.RequestorInfo,
+		request *clientmodels.AuthorizationCodeFlowRequest,
+		requestorInfo *clientmodels.TrustedParty,
 		callback AuthCodeHandler,
 	)
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,15 +51,15 @@ func (h *MockSessionHandler) Cancelled() {
 	h.sessionEndChannel <- false
 }
 
-func (h *MockSessionHandler) Failure(err *irma.SessionError) {
+func (h *MockSessionHandler) Failure(err *clientmodels.SessionError) {
 	if h.log {
-		fmt.Printf("session failed, err: %v\n\n", err.Error())
+		fmt.Printf("session failed, err: %v\n\n", err.WrappedError)
 	}
 	h.sessionEndChannel <- false
 }
 
-func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *irma.AuthorizationCodeFlowRequest,
-	requestorInfo *irma.RequestorInfo,
+func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *clientmodels.AuthorizationCodeFlowRequest,
+	requestorInfo *clientmodels.TrustedParty,
 	callback AuthCodeHandler,
 ) {
 	if h.log {
@@ -72,8 +72,8 @@ func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *irm
 }
 
 func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
-	request *irma.PreAuthorizedCodeFlowPermissionRequest,
-	requestorInfo *irma.RequestorInfo,
+	request *clientmodels.PreAuthorizedCodeFlowPermissionRequest,
+	requestorInfo *clientmodels.TrustedParty,
 	callback TokenPermissionHandler,
 ) {
 	if h.log {

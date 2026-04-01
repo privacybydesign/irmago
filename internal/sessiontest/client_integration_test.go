@@ -18,6 +18,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
@@ -72,7 +73,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	emailCred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, emailCred)
-	require.Equal(t, 10, int(*emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
+	require.Equal(t, 10, int(*emailCred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)]))
 
 	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
@@ -84,7 +85,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 
 	emailCred = findCredentialById(creds, "test.test.email")
 	require.NotNil(t, emailCred)
-	require.Equal(t, 10, int(*emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
+	require.Equal(t, 10, int(*emailCred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)]))
 }
 
 func testCredentialInstanceCount(t *testing.T) {
@@ -105,7 +106,7 @@ func testCredentialInstanceCount(t *testing.T) {
 
 	numInstances := uint(10)
 
-	require.Equal(t, numInstances, *emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)])
+	require.Equal(t, numInstances, *emailCred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)])
 
 	for i := range numInstances {
 		discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
@@ -116,7 +117,7 @@ func testCredentialInstanceCount(t *testing.T) {
 
 		emailCred = findCredentialById(creds, "test.test.email")
 		require.NotNil(t, emailCred)
-		require.Equal(t, numInstances-1-i, *emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)])
+		require.Equal(t, numInstances-1-i, *emailCred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)])
 	}
 
 	c.Close()
@@ -142,8 +143,8 @@ func testLogsForCombinedIssuanceAndDisclosure(t *testing.T) {
 
 	latestLog := logs[0]
 
-	require.Equal(t, latestLog.Type, irmaclient.LogType_Issuance)
-	require.Equal(t, latestLog.IssuanceLog.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, latestLog.Type, clientmodels.LogType_Issuance)
+	require.Equal(t, latestLog.IssuanceLog.Protocol, clientmodels.Protocol_Irma)
 	require.Len(t, latestLog.IssuanceLog.DisclosedCredentials, 2)
 	require.Len(t, latestLog.IssuanceLog.Credentials, 1)
 }
@@ -259,12 +260,12 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, c *client.Client,
 	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, combinedIssuanceRequest)
 	c.NewSession(sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	// Both fullName.familyname and singleton.BSN belong to one discon, so they
 	// appear as two OwnedOptions within a single DisclosurePickOne.
 	overview := session.DisclosurePlan.DisclosureChoicesOverview[0]
-	var fullNameCred, singletonCred *client.SelectableCredentialInstance
+	var fullNameCred, singletonCred *clientmodels.SelectableCredentialInstance
 	for _, opt := range overview.OwnedOptions {
 		switch opt.CredentialId {
 		case "irma-demo.MijnOverheid.fullName":
@@ -276,15 +277,15 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, c *client.Client,
 	require.NotNil(t, fullNameCred)
 	require.NotNil(t, singletonCred)
 
-	grantPermission(t, c, session.Id, client.DisclosureDisconSelection{
-		Credentials: []client.SelectedCredential{
+	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{
+		Credentials: []clientmodels.SelectedCredential{
 			{CredentialId: fullNameCred.CredentialId, CredentialHash: fullNameCred.Hash, AttributePaths: [][]any{{"familyname"}}},
 			{CredentialId: singletonCred.CredentialId, CredentialHash: singletonCred.Hash, AttributePaths: [][]any{{"BSN"}}},
 		},
 	})
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Success, session.Status)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
 func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
@@ -305,9 +306,9 @@ func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
 
 	latestLog := logs[0]
 
-	require.Equal(t, latestLog.Type, irmaclient.LogType_Disclosure)
+	require.Equal(t, latestLog.Type, clientmodels.LogType_Disclosure)
 	require.Empty(t, latestLog.DisclosureLog.Credentials)
-	require.Equal(t, latestLog.DisclosureLog.Protocol, irmaclient.Protocol_Irma)
+	require.Equal(t, latestLog.DisclosureLog.Protocol, clientmodels.Protocol_Irma)
 	require.Equal(t, latestLog.DisclosureLog.Verifier.Id, "test-requestors.test-requestor")
 }
 
@@ -323,13 +324,13 @@ func performCompletelyOptionalDisclosure(t *testing.T, c *client.Client, session
 	}
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	// Grant permission with an empty selection for the one optional discon.
-	grantPermission(t, c, session.Id, client.DisclosureDisconSelection{})
+	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{})
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Success, session.Status)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
 func testRemoveStorageWithOnlyIdemixCredentials(t *testing.T) {
@@ -387,7 +388,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		logs, err := c.LoadNewestLogs(100)
 		require.NoError(t, err)
 
-		require.Equal(t, logs[0].Type, irmaclient.LogType_CredentialRemoval)
+		require.Equal(t, logs[0].Type, clientmodels.LogType_CredentialRemoval)
 		removalLog := logs[0].RemovalLog
 
 		// one credential was removed
@@ -395,7 +396,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 
 		credential := removalLog.Credentials[0]
 
-		require.Contains(t, credential.Formats, irmaclient.Format_Idemix)
+		require.Contains(t, credential.Formats, clientmodels.Format_Idemix)
 		require.Equal(t, "irma-demo.MijnOverheid.fullName", credential.CredentialId)
 		require.Equal(t, "Demo Name", credential.Name["en"])
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
@@ -537,7 +538,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	cred := findCredentialById(creds, "test.test.email")
 	require.NotNil(t, cred)
 
-	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
+	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)]))
 
 	// Revoke the issuer certificate, wait for the client to pick up the new CRL and try to issue again
 	crlTemplate.Number = crlTemplate.Number.Add(crl.Number, mathBig.NewInt(1))
@@ -568,12 +569,12 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	cred = findCredentialById(creds, "test.test.email")
 	require.NotNil(t, cred)
 
-	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]))
+	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)]))
 }
 
 // getLogAttrValue finds an attribute by ID and returns its string value.
 // For TranslatedString values, it prefers the English translation, falling back to any available value.
-func getLogAttrValue(attrs []client.Attribute, id string) string {
+func getLogAttrValue(attrs []clientmodels.Attribute, id string) string {
 	for _, a := range attrs {
 		if a.Id == id && a.Value != nil && a.Value.TranslatedString != nil {
 			if v, ok := (*a.Value.TranslatedString)["en"]; ok {
@@ -588,7 +589,7 @@ func getLogAttrValue(attrs []client.Attribute, id string) string {
 }
 
 // getLogAttr finds an attribute by ID and returns it, or nil if not found.
-func getLogAttr(attrs []client.Attribute, id string) *client.Attribute {
+func getLogAttr(attrs []clientmodels.Attribute, id string) *clientmodels.Attribute {
 	for i := range attrs {
 		if attrs[i].Id == id {
 			return &attrs[i]
@@ -597,11 +598,11 @@ func getLogAttr(attrs []client.Attribute, id string) *client.Attribute {
 	return nil
 }
 
-func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log client.LogInfo) {
-	require.Equal(t, log.Type, irmaclient.LogType_CredentialRemoval)
+func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInfo) {
+	require.Equal(t, log.Type, clientmodels.LogType_CredentialRemoval)
 	require.Len(t, log.RemovalLog.Credentials, 1)
 	cred := log.RemovalLog.Credentials[0]
-	require.Equal(t, []client.CredentialFormat{irmaclient.Format_Idemix}, cred.Formats)
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
@@ -661,12 +662,12 @@ func testIrmaSignatureSessionLogs(t *testing.T) {
 	requireSignatureLog(t, logs[0])
 }
 
-func requireIrmaDisclosureLog(t *testing.T, log client.LogInfo) {
-	require.Equal(t, log.Type, irmaclient.LogType_Disclosure)
-	require.Equal(t, irmaclient.Protocol_Irma, log.DisclosureLog.Protocol)
+func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
+	require.Equal(t, log.Type, clientmodels.LogType_Disclosure)
+	require.Equal(t, clientmodels.Protocol_Irma, log.DisclosureLog.Protocol)
 	require.Len(t, log.DisclosureLog.Credentials, 1)
 	cred := log.DisclosureLog.Credentials[0]
-	require.Equal(t, []client.CredentialFormat{irmaclient.Format_Idemix}, cred.Formats)
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
@@ -680,13 +681,13 @@ func requireIrmaDisclosureLog(t *testing.T, log client.LogInfo) {
 	require.Equal(t, "Your verified email address", emailDescription["en"])
 }
 
-func requireSignatureLog(t *testing.T, log client.LogInfo) {
-	require.Equal(t, log.Type, irmaclient.LogType_Signature)
-	require.Equal(t, irmaclient.Protocol_Irma, log.SignedMessageLog.Protocol)
+func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
+	require.Equal(t, log.Type, clientmodels.LogType_Signature)
+	require.Equal(t, clientmodels.Protocol_Irma, log.SignedMessageLog.Protocol)
 	require.Equal(t, "Hello, World!", log.SignedMessageLog.Message)
 	require.Len(t, log.SignedMessageLog.Credentials, 1)
 	cred := log.SignedMessageLog.Credentials[0]
-	require.Equal(t, []client.CredentialFormat{irmaclient.Format_Idemix}, cred.Formats)
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
@@ -740,14 +741,14 @@ func testEudiSessionLogs(t *testing.T) {
 	requireOpenID4VPLog(t, logs[0])
 }
 
-func requireOpenID4VPLog(t *testing.T, log client.LogInfo) {
-	require.Equal(t, log.Type, irmaclient.LogType_Disclosure)
+func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
+	require.Equal(t, log.Type, clientmodels.LogType_Disclosure)
 	require.NotNil(t, log.DisclosureLog)
 	require.Len(t, log.DisclosureLog.Credentials, 1)
-	require.Equal(t, irmaclient.Protocol_OpenID4VP, log.DisclosureLog.Protocol)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, log.DisclosureLog.Protocol)
 
 	cred := log.DisclosureLog.Credentials[0]
-	require.Equal(t, []client.CredentialFormat{irmaclient.Format_SdJwtVc}, cred.Formats)
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
@@ -767,24 +768,24 @@ func requireOpenID4VPLog(t *testing.T, log client.LogInfo) {
 	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)[""], "attribute value should have raw value")
 }
 
-func requireRegularIrmaIssuanceLog(t *testing.T, log client.LogInfo) {
-	require.Equal(t, log.Type, irmaclient.LogType_Issuance)
-	require.Equal(t, irmaclient.Protocol_Irma, log.IssuanceLog.Protocol)
+func requireRegularIrmaIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
+	require.Equal(t, log.Type, clientmodels.LogType_Issuance)
+	require.Equal(t, clientmodels.Protocol_Irma, log.IssuanceLog.Protocol)
 
 	cred := log.IssuanceLog.Credentials[0]
-	require.Equal(t, []client.CredentialFormat{irmaclient.Format_Idemix}, cred.Formats)
+	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 }
 
-func requireIrmaSdJwtIssuanceLog(t *testing.T, log client.LogInfo) {
-	require.Equal(t, log.Type, irmaclient.LogType_Issuance)
-	require.Equal(t, irmaclient.Protocol_Irma, log.IssuanceLog.Protocol)
+func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
+	require.Equal(t, log.Type, clientmodels.LogType_Issuance)
+	require.Equal(t, clientmodels.Protocol_Irma, log.IssuanceLog.Protocol)
 
 	require.Len(t, log.IssuanceLog.Credentials, 1)
 
 	cred := log.IssuanceLog.Credentials[0]
 
-	require.Contains(t, cred.Formats, irmaclient.Format_SdJwtVc)
-	require.Contains(t, cred.Formats, irmaclient.Format_Idemix)
+	require.Contains(t, cred.Formats, clientmodels.Format_SdJwtVc)
+	require.Contains(t, cred.Formats, clientmodels.Format_Idemix)
 
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
@@ -894,20 +895,20 @@ func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionHandler *MockS
 			Type: irma.ActionDisclosing,
 			URL:  verifierSession.SessionLink,
 		},
-		Protocol: irmaclient.Protocol_OpenID4VP,
+		Protocol: clientmodels.Protocol_OpenID4VP,
 	}
 	sessionJson, err := json.Marshal(sessionReq)
 	require.NoError(t, err)
 
 	c.NewSession(string(sessionJson))
 	sessionState := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, sessionState.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, sessionState.Status)
 
 	emailCred := sessionState.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, sessionState.Id, makeDisclosureChoice(emailCred, "email"))
 
 	sessionState = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Success, sessionState.Status)
+	require.Equal(t, clientmodels.Status_Success, sessionState.Status)
 }
 
 func createIdemixOnlyIssuanceRequest() *irma.IssuanceRequest {
@@ -924,12 +925,12 @@ func createIdemixOnlyIssuanceRequest() *irma.IssuanceRequest {
 func failIssueSdJwtAndIdemixToClient(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	grantPermission(t, c, session.Id)
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Error, session.Status)
+	require.Equal(t, clientmodels.Status_Error, session.Status)
 }
 
 func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
@@ -943,13 +944,13 @@ func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionHandler
 	}
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred, "email"))
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Success, session.Status)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
 func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
@@ -964,13 +965,13 @@ func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionHandler 
 
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred, "email"))
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Success, session.Status)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
 func startCrossDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req irma.SessionRequest) string {
@@ -978,7 +979,7 @@ func startCrossDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req i
 	require.NoError(t, err)
 	session := client.SessionRequestData{
 		Qr:                     *qr,
-		Protocol:               irmaclient.Protocol_Irma,
+		Protocol:               clientmodels.Protocol_Irma,
 		ContinueOnSecondDevice: true,
 	}
 	sessionJson, err := json.Marshal(session)
@@ -991,7 +992,7 @@ func startSameDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req an
 	require.NoError(t, err)
 	session := client.SessionRequestData{
 		Qr:                     *qr,
-		Protocol:               irmaclient.Protocol_Irma,
+		Protocol:               clientmodels.Protocol_Irma,
 		ContinueOnSecondDevice: false,
 	}
 	sessionJson, err := json.Marshal(session)
@@ -1018,10 +1019,10 @@ func createClient(t *testing.T) (*client.Client, *MockSessionHandler) {
 }
 
 type MockSessionHandler struct {
-	SessionChan chan client.SessionState
+	SessionChan chan clientmodels.SessionState
 }
 
-func (mh *MockSessionHandler) UpdateSession(s client.SessionState) {
+func (mh *MockSessionHandler) UpdateSession(s clientmodels.SessionState) {
 	mh.SessionChan <- s
 }
 
@@ -1076,7 +1077,7 @@ func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmac
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
-		SessionChan: make(chan client.SessionState, 10),
+		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
 	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
@@ -1153,7 +1154,7 @@ func irmaServerConfWithSdJwtEnabledWithoutCerts(t *testing.T) *server.Configurat
 	return conf
 }
 
-func findCredentialById(credentials []*client.Credential, id string) *client.Credential {
+func findCredentialById(credentials []*clientmodels.Credential, id string) *clientmodels.Credential {
 	for _, cred := range credentials {
 		if cred.CredentialId == id {
 			return cred
@@ -1162,10 +1163,10 @@ func findCredentialById(credentials []*client.Credential, id string) *client.Cre
 	return nil
 }
 
-func credentialHashByFormat(cred *client.Credential) map[irmaclient.CredentialFormat]string {
-	result := map[irmaclient.CredentialFormat]string{}
+func credentialHashByFormat(cred *clientmodels.Credential) map[clientmodels.CredentialFormat]string {
+	result := map[clientmodels.CredentialFormat]string{}
 	for format, hash := range cred.CredentialInstanceIds {
-		result[irmaclient.CredentialFormat(format)] = hash
+		result[clientmodels.CredentialFormat(format)] = hash
 	}
 	return result
 }
@@ -1229,7 +1230,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find both credentials and distinguish them by attribute count
-	var credWithoutPrefix, credWithPrefix *client.Credential
+	var credWithoutPrefix, credWithPrefix *clientmodels.Credential
 	for _, cred := range creds {
 		if cred.CredentialId != "irma-demo.MijnOverheid.fullName" {
 			continue
@@ -1288,7 +1289,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	// Find the credential with empty firstname (distinct from the others by its attribute values)
-	var credEmptyFirstname *client.Credential
+	var credEmptyFirstname *clientmodels.Credential
 	for _, cred := range creds {
 		if cred.CredentialId != "irma-demo.MijnOverheid.fullName" {
 			continue

@@ -7,6 +7,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
@@ -47,7 +48,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 
 	// make sure we have the correct OpenID4VP log
 	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
-	require.Contains(t, log.Protocol, irmaclient.Protocol_OpenID4VP)
+	require.Contains(t, log.Protocol, clientmodels.Protocol_OpenID4VP)
 
 	// require the logo of the requestor to be an existing file
 	require.FileExists(t, *log.Verifier.ImagePath)
@@ -74,7 +75,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 
 	// make sure we have the correct OpenID4VP log
 	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
-	require.Contains(t, log.Protocol, irmaclient.Protocol_OpenID4VP)
+	require.Contains(t, log.Protocol, clientmodels.Protocol_OpenID4VP)
 
 	// require the logo of the requestor to be an existing file
 	require.FileExists(t, *log.Verifier.ImagePath)
@@ -104,8 +105,8 @@ func test_iOSLogoPathBug(t *testing.T) {
 
 	// make sure we have the correct log
 	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
-	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_Idemix)
-	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_SdJwtVc)
+	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_Idemix)
+	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_SdJwtVc)
 
 	// require the logo of the requestor to be an existing file
 	require.FileExists(t, *log.Issuer.ImagePath)
@@ -131,8 +132,8 @@ func test_iOSLogoPathBug(t *testing.T) {
 	log = logs[1].IssuanceLog
 
 	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
-	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_Idemix)
-	require.Contains(t, log.Credentials[0].Formats, irmaclient.Format_SdJwtVc)
+	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_Idemix)
+	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_SdJwtVc)
 
 	// require the logo of the requestor to be an existing file
 	require.FileExists(t, *log.Issuer.ImagePath)
@@ -143,21 +144,21 @@ func test_iOSLogoPathBug(t *testing.T) {
 func issueSdJwtAndIdemixToClientExpectPin(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	grantPermission(t, c, session.Id)
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPin, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPin, session.Status)
 
-	userInteraction(t, c, client.SessionUserInteraction{
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
-		Type:      client.UI_EnteredPin,
-		Payload:   client.PinInteractionPayload{Pin: "12345", Proceed: true},
+		Type:      clientmodels.UI_EnteredPin,
+		Payload:   clientmodels.PinInteractionPayload{Pin: "12345", Proceed: true},
 	})
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Success, session.Status)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
 func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPath string) {
@@ -199,7 +200,7 @@ func createClientWithStorageAndSigner(
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
-		SessionChan: make(chan client.SessionState, 10),
+		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
 	c, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, signer, aesKey)
 	require.NoError(t, err)

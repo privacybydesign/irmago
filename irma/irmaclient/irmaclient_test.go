@@ -547,7 +547,7 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 	}
 
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	sdjwt, _ := createTestSdJwtVc(keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
+	sdjwt, _ := CreateTestSdJwtVc(keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
 		map[string]string{
 			"mobilephone": "+31612345678",
 		}, certChain,
@@ -594,7 +594,7 @@ func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 	}
 
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	sdjwt, _ := createTestSdJwtVc(
+	sdjwt, _ := CreateTestSdJwtVc(
 		keyBinder,
 		"test.test.mobilephone",
 		"http://openid4vc.staging.yivi.app", // issuer is invalid (no HTTPS)

@@ -55,7 +55,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (*eudi.Storage, *Client) {
 	storage, err := eudi.NewStorage(aesKey, filepath.Join(storageFolder, "eudi_storage.db"))
 	require.NoError(t, err)
 
-	client, err := NewClient(&http.Client{}, storage, conf, sdJwtStorage, holderVerifier)
+	client, err := NewClient(&http.Client{}, storage, conf, holderVerifier)
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 

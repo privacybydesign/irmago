@@ -124,10 +124,6 @@ type TrustedAuthority struct {
 	Values []string             `json:"values"` // required
 }
 
-type QueryValidator interface {
-	ValidateQuery(query *DcqlQuery) error
-}
-
 func (c CredentialQuery) AllClaimPaths() iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for _, claim := range c.Claims {
@@ -138,4 +134,14 @@ func (c CredentialQuery) AllClaimPaths() iter.Seq[string] {
 			}
 		}
 	}
+}
+
+// VctValues implements scheme.ValidatableCredentialQuery.
+func (c CredentialQuery) VctValues() []string {
+	return c.Meta.VctValues
+}
+
+// ClaimPaths implements scheme.ValidatableCredentialQuery.
+func (c CredentialQuery) ClaimPaths() iter.Seq[string] {
+	return c.AllClaimPaths()
 }

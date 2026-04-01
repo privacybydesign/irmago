@@ -11,6 +11,7 @@ import (
 	rootpkg "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
@@ -159,7 +160,7 @@ func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSes
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
-		SessionChan: make(chan client.SessionState, 10),
+		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
 	c, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, signer, aesKey)
 	require.NoError(t, err)

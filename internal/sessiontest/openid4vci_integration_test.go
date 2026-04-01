@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/client"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,8 +61,8 @@ func testOpenId4VciPreAuthFlowReachesPermission(t *testing.T) {
 	startOpenID4VCISession(t, c, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 
-	require.Equal(t, irmaclient.Protocol_OpenID4VCI, session.Protocol)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
+	require.Equal(t, clientmodels.Protocol_OpenID4VCI, session.Protocol)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 }
 
 func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
@@ -73,18 +73,18 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 
 	startOpenID4VCISession(t, c, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
-	userInteraction(t, c, client.SessionUserInteraction{
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
-		Type:      client.UI_PreAuthorizedCode,
-		Payload:   client.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
 	})
 
 	// The test issuer uses did:web, so full credential verification should work.
 	session = awaitSessionState(t, sessionHandler)
 	fmt.Printf("error: %v\n", session.Error)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
@@ -100,14 +100,14 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 
 	startOpenID4VCISession(t, c, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 	require.NotNil(t, session.TransactionCodeParameters, "session should include transaction code parameters")
 
 	txCode := offer.TxCode
-	userInteraction(t, c, client.SessionUserInteraction{
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
-		Type:      client.UI_PreAuthorizedCode,
-		Payload: client.SessionPreAuthorizedCodeInteractionPayload{
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
 			Proceed:         true,
 			TransactionCode: &txCode,
 		},
@@ -115,7 +115,7 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 
 	// The test issuer uses did:web, so full credential verification should work.
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
@@ -131,20 +131,20 @@ func testOpenId4VciPreAuthFlowWithWrongTxCode(t *testing.T) {
 
 	startOpenID4VCISession(t, c, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
 	wrongCode := "000000"
-	userInteraction(t, c, client.SessionUserInteraction{
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
-		Type:      client.UI_PreAuthorizedCode,
-		Payload: client.SessionPreAuthorizedCodeInteractionPayload{
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
 			Proceed:         true,
 			TransactionCode: &wrongCode,
 		},
 	})
 
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Error)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
 	require.Contains(t,
 		session.Error.WrappedError,
 		"could not obtain permission to continue issuance session: token endpoint returned status code 400, invalid_request.",
@@ -159,15 +159,15 @@ func testOpenId4VciPreAuthFlowCanBeDismissed(t *testing.T) {
 
 	startOpenID4VCISession(t, c, offer.URI)
 	session := awaitWithTimeout(t, sessionHandler.SessionChan, 30*time.Second)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPreAuthorizedCode)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
-	userInteraction(t, c, client.SessionUserInteraction{
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
-		Type:      client.UI_DismissSession,
+		Type:      clientmodels.UI_DismissSession,
 	})
 
 	session = awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_Dismissed)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
 }
 
 // ---------------------------------------------------------------------------
@@ -181,10 +181,10 @@ func testOpenId4VciAuthCodeFlowReachesAuthRequest(t *testing.T) {
 	offer := createAuthCodeOffer(t)
 
 	startOpenID4VCISession(t, c, offer.URI)
-	session := awaitStatus(t, sessionHandler, client.Status_RequestAuthorizationCode)
+	session := awaitStatus(t, sessionHandler, clientmodels.Status_RequestAuthorizationCode)
 
-	require.Equal(t, irmaclient.Protocol_OpenID4VCI, session.Protocol)
-	require.Equal(t, client.Type_Issuance, session.Type)
+	require.Equal(t, clientmodels.Protocol_OpenID4VCI, session.Protocol)
+	require.Equal(t, clientmodels.Type_Issuance, session.Type)
 	require.NotEmpty(t, session.AuthorizationRequestUrl, "authorization request URL should be set")
 }
 
@@ -195,15 +195,15 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	offer := createAuthCodeOffer(t)
 
 	startOpenID4VCISession(t, c, offer.URI)
-	session := awaitStatus(t, sessionHandler, client.Status_RequestAuthorizationCode)
+	session := awaitStatus(t, sessionHandler, clientmodels.Status_RequestAuthorizationCode)
 
 	// Simulate the wallet visiting the authorization URL and getting a code.
 	authCode := getAuthorizationCode(t, session.AuthorizationRequestUrl)
 
-	userInteraction(t, c, client.SessionUserInteraction{
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
-		Type:      client.UI_AuthorizationCode,
-		Payload: client.SessionAuthCodeInteractionPayload{
+		Type:      clientmodels.UI_AuthorizationCode,
+		Payload: clientmodels.SessionAuthCodeInteractionPayload{
 			Proceed: true,
 			Code:    &authCode,
 		},
@@ -211,7 +211,7 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 
 	// The authcode issuer uses did:web, so full credential verification should work.
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, client.Type_Issuance, client.Status_RequestPermission)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
 		"server should have issued the credential via authorization code flow")
@@ -224,15 +224,15 @@ func testOpenId4VciAuthCodeFlowCanBeDismissed(t *testing.T) {
 	offer := createAuthCodeOffer(t)
 
 	startOpenID4VCISession(t, c, offer.URI)
-	session := awaitStatus(t, sessionHandler, client.Status_RequestAuthorizationCode)
+	session := awaitStatus(t, sessionHandler, clientmodels.Status_RequestAuthorizationCode)
 
-	userInteraction(t, c, client.SessionUserInteraction{
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
-		Type:      client.UI_DismissSession,
+		Type:      clientmodels.UI_DismissSession,
 	})
 
-	session = awaitStatus(t, sessionHandler, client.Status_Dismissed)
-	require.Equal(t, client.Type_Issuance, session.Type)
+	session = awaitStatus(t, sessionHandler, clientmodels.Status_Dismissed)
+	require.Equal(t, clientmodels.Type_Issuance, session.Type)
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +243,7 @@ func startOpenID4VCISession(t *testing.T, c *client.Client, credOfferURL string)
 	t.Helper()
 	sessionReq, err := json.Marshal(client.SessionRequestData{
 		Qr:       irma.Qr{URL: credOfferURL},
-		Protocol: irmaclient.Protocol_OpenID4VCI,
+		Protocol: clientmodels.Protocol_OpenID4VCI,
 	})
 	require.NoError(t, err)
 	c.NewSession(string(sessionReq))
@@ -251,7 +251,7 @@ func startOpenID4VCISession(t *testing.T, c *client.Client, credOfferURL string)
 
 // awaitStatus drains the session channel until a state with the expected status arrives.
 // Intermediate states are skipped. Errors cause an immediate test failure.
-func awaitStatus(t *testing.T, handler *MockSessionHandler, expected client.SessionStatus) client.SessionState {
+func awaitStatus(t *testing.T, handler *MockSessionHandler, expected clientmodels.SessionStatus) clientmodels.SessionState {
 	t.Helper()
 	timeout := time.After(30 * time.Second)
 	for {
@@ -260,7 +260,7 @@ func awaitStatus(t *testing.T, handler *MockSessionHandler, expected client.Sess
 			if session.Status == expected {
 				return session
 			}
-			if session.Status == client.Status_Error {
+			if session.Status == clientmodels.Status_Error {
 				t.Fatalf("session errored while waiting for %q: %+v", expected, session.Error)
 			}
 		case <-timeout:

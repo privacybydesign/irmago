@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 )
 
 var locale_EN = "en"
@@ -19,7 +19,7 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 	tests := []struct {
 		name     string
 		displays []Display
-		want     irma.TranslatedString
+		want     clientmodels.TranslatedString
 	}{
 		{
 			name: "single display, single locale",
@@ -29,7 +29,7 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 					Locale: &locale_EN,
 				},
 			},
-			want: irma.TranslatedString{
+			want: clientmodels.TranslatedString{
 				"en": "Issuer Name",
 			},
 		},
@@ -49,7 +49,7 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 					Locale: &locale_ES,
 				},
 			},
-			want: irma.TranslatedString{
+			want: clientmodels.TranslatedString{
 				"en": "Issuer Name",
 				"fr": "Nom de l'émetteur",
 				"es": "Nombre del emisor",
@@ -71,7 +71,7 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 					Locale: &locale_FR,
 				},
 			},
-			want: irma.TranslatedString{
+			want: clientmodels.TranslatedString{
 				"en": "Another Issuer Name", // Last one wins
 				"fr": "Nom de l'émetteur",
 			},
@@ -88,7 +88,7 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 					Locale: &locale_EN_US,
 				},
 			},
-			want: irma.TranslatedString{
+			want: clientmodels.TranslatedString{
 				"":   "Issuer Name",
 				"en": "Another Issuer Name",
 			},

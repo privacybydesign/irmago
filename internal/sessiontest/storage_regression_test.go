@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/gabi/signed"
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
@@ -86,7 +87,7 @@ func TestClientStorageRegression(t *testing.T) {
 			// Verify the email credential has SD-JWT instances remaining (10 issued - 2 OpenID4VP disclosures = 8)
 			emailCred := findCredentialById(creds, "test.test.email")
 			require.NotNil(t, emailCred)
-			sdJwtCount := emailCred.BatchInstanceCountsRemaining[client.CredentialFormat(irmaclient.Format_SdJwtVc)]
+			sdJwtCount := emailCred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)]
 			require.NotNil(t, sdJwtCount)
 			require.Equal(t, uint(8), *sdJwtCount)
 
@@ -100,13 +101,13 @@ func TestClientStorageRegression(t *testing.T) {
 
 			require.GreaterOrEqual(t, len(logs), 8, "expected at least 8 log entries")
 
-			requireLogTypePresent(t, logs, irmaclient.LogType_Issuance)
-			requireLogTypePresent(t, logs, irmaclient.LogType_Disclosure)
-			requireLogTypePresent(t, logs, irmaclient.LogType_Signature)
+			requireLogTypePresent(t, logs, clientmodels.LogType_Issuance)
+			requireLogTypePresent(t, logs, clientmodels.LogType_Disclosure)
+			requireLogTypePresent(t, logs, clientmodels.LogType_Signature)
 
 			openid4vpDisclosureCount := 0
 			for _, log := range logs {
-				if log.Type == irmaclient.LogType_Disclosure && log.DisclosureLog != nil && log.DisclosureLog.Protocol == irmaclient.Protocol_OpenID4VP {
+				if log.Type == clientmodels.LogType_Disclosure && log.DisclosureLog != nil && log.DisclosureLog.Protocol == clientmodels.Protocol_OpenID4VP {
 					openid4vpDisclosureCount++
 				}
 			}
@@ -114,7 +115,7 @@ func TestClientStorageRegression(t *testing.T) {
 
 			irmaDisclosureCount := 0
 			for _, log := range logs {
-				if log.Type == irmaclient.LogType_Disclosure && log.DisclosureLog != nil && log.DisclosureLog.Protocol == irmaclient.Protocol_Irma {
+				if log.Type == clientmodels.LogType_Disclosure && log.DisclosureLog != nil && log.DisclosureLog.Protocol == clientmodels.Protocol_Irma {
 					irmaDisclosureCount++
 				}
 			}
@@ -156,7 +157,7 @@ func loadClientFromFixture(t *testing.T, db2Path string) (*client.Client, *MockS
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
-		SessionChan: make(chan client.SessionState, 10),
+		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
 	c, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, signer, aesKey)
 	require.NoError(t, err)
@@ -191,13 +192,13 @@ func performDisclosureSessionForAttribute(t *testing.T, c *client.Client, sessio
 	}
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attribute[strings.LastIndex(attribute, ".")+1:]))
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Success, session.Status)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
 // performKeyshareDisclosureSession performs an IRMA disclosure of a keyshare-protected attribute.
@@ -213,26 +214,26 @@ func performKeyshareDisclosureSession(t *testing.T, c *client.Client, sessionHan
 	}
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attribute[strings.LastIndex(attribute, ".")+1:]))
 
 	// The reloaded client needs to authenticate with the keyshare server.
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_RequestPin, session.Status)
+	require.Equal(t, clientmodels.Status_RequestPin, session.Status)
 
-	userInteraction(t, c, client.SessionUserInteraction{
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
-		Type:      client.UI_EnteredPin,
-		Payload:   client.PinInteractionPayload{Pin: "12345", Proceed: true},
+		Type:      clientmodels.UI_EnteredPin,
+		Payload:   clientmodels.PinInteractionPayload{Pin: "12345", Proceed: true},
 	})
 
 	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, client.Status_Success, session.Status)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
-func requireCredentialPresent(t *testing.T, creds []*client.Credential, credType string) {
+func requireCredentialPresent(t *testing.T, creds []*clientmodels.Credential, credType string) {
 	t.Helper()
 	cred := findCredentialById(creds, credType)
 	require.NotNilf(t, cred, "expected credential %s", credType)
@@ -255,7 +256,7 @@ func loadKeyshareUsersFromFixture(t *testing.T, db *keyshareserver.MemoryDB, fix
 	t.Logf("Loaded %d keyshare users from fixture", len(users))
 }
 
-func requireLogTypePresent(t *testing.T, logs []client.LogInfo, logType irmaclient.LogType) {
+func requireLogTypePresent(t *testing.T, logs []clientmodels.LogInfo, logType clientmodels.LogType) {
 	t.Helper()
 	for _, log := range logs {
 		if log.Type == logType {

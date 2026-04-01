@@ -4,18 +4,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/privacybydesign/irmago/common/clientmodels"
 )
-
-type CredentialTypeInfo struct {
-	IssuerName               TranslatedString            `json:"issuer_name"`                // Human-readable name of the issuer
-	Name                     TranslatedString            `json:"name"`                       // Human-readable name of this credential type
-	VerifiableCredentialType string                      `json:"verifiable_credential_type"` // Corresponds to vct value in sdjwtvc
-	Attributes               map[string]TranslatedString `json:"attributes"`                 // Human-readable names of the different attributes mapped by their ID
-	CredentialFormat         string                      `json:"credential_format"`          // The credential format, e.g. "idemix" or "dc+sd-jwt"
-}
-
-// A CredentialTypeInfoList is a list of credentials (implements sort.Interface).
-type CredentialTypeInfoList []*CredentialTypeInfo
 
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
@@ -28,7 +19,7 @@ type CredentialInfo struct {
 	Hash                string                                       // SHA256 hash over the attributes
 	Revoked             bool                                         // If the credential has been revoked
 	RevocationSupported bool                                         // If the credential supports creating nonrevocation proofs
-	CredentialFormat    string                                       // the credential format, e.g. "idemix" or "dc+sd-jwt"
+	CredentialFormat    clientmodels.CredentialFormat                // the credential format, e.g. "idemix" or "dc+sd-jwt"
 	InstanceCount       *uint                                        // number of instances left (only relevant for eudi formats)
 }
 

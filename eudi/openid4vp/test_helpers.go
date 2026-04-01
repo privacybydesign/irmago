@@ -1,0 +1,27 @@
+package openid4vp
+
+import (
+	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/eudi/scheme"
+)
+
+type MockQueryValidatorFactory struct {
+	failsQueryValidation bool
+}
+
+type MockQueryValidator struct {
+	failsValidation bool
+}
+
+func (f *MockQueryValidatorFactory) CreateQueryValidator(rp *scheme.RelyingParty) QueryValidator {
+	return &MockQueryValidator{
+		failsValidation: f.failsQueryValidation,
+	}
+}
+
+func (m *MockQueryValidator) ValidateCredentialQueries(queries []scheme.CredentialQueryInfo) error {
+	if m.failsValidation {
+		return errors.New("query validation failed")
+	}
+	return nil
+}

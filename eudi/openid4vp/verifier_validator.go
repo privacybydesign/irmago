@@ -1,4 +1,4 @@
-package eudi
+package openid4vp
 
 import (
 	"crypto/x509"
@@ -10,7 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
-	"github.com/privacybydesign/irmago/eudi/openid4vp"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
@@ -20,7 +20,7 @@ const ClockSkew = 60 * time.Second
 // VerifierValidator is an interface to be used to validate verifiers by parsing and verifying the
 // authorization request and returning the requestor info for the verifier.
 type VerifierValidator interface {
-	ParseAndVerifyAuthorizationRequest(requestJwt string) (*openid4vp.AuthorizationRequest, *x509.Certificate, *scheme.RelyingPartyRequestor, error)
+	ParseAndVerifyAuthorizationRequest(requestJwt string) (*AuthorizationRequest, *x509.Certificate, *scheme.RelyingPartyRequestor, error)
 }
 
 type RequestorCertificateStoreVerifierValidator struct {
@@ -37,13 +37,13 @@ func NewRequestorCertificateStoreVerifierValidator(verificationContext eudi_jwt.
 
 // ParseAndVerifyAuthorizationRequest should be followed by a way to store the requestor logo in the cache
 func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
-	*openid4vp.AuthorizationRequest,
+	*AuthorizationRequest,
 	*x509.Certificate,
 	*scheme.RelyingPartyRequestor,
 	error,
 ) {
 	// Parse the JWT and verify it using the verifier
-	var authRequest openid4vp.AuthorizationRequest
+	var authRequest AuthorizationRequest
 	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier())
 
 	if err != nil {
@@ -64,7 +64,8 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 
 	// Now we have a valid request, we can evaluate the query against the RP authorized attributes
 	queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
-	if err := queryValidator.ValidateQuery(&authRequest.DcqlQuery); err != nil {
+	credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
+	if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
 	}
 
@@ -77,12 +78,12 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 		if !ok {
 			return nil, errors.New("auth request JWT needs to contain 'typ' in header, but doesn't")
 		}
-		if typ != openid4vp.AuthRequestJwtTyp {
-			return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", openid4vp.AuthRequestJwtTyp, typ)
+		if typ != AuthRequestJwtTyp {
+			return nil, fmt.Errorf("auth request JWT typ in header should be %v but was %v", AuthRequestJwtTyp, typ)
 		}
 
 		// Add hostname to the VerifyOptions to check against SAN DNS
-		request := token.Claims.(*openid4vp.AuthorizationRequest)
+		request := token.Claims.(*AuthorizationRequest)
 		prefix := "x509_san_dns:"
 
 		if !strings.HasPrefix(request.ClientId, prefix) {
@@ -135,4 +136,21 @@ func getEndEntityCertFromX5cHeader(token *jwt.Token) (*x509.Certificate, error) 
 		return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
 	}
 	return parsedCert, nil
+}
+
+// dcqlQueryToCredentialQueryInfos converts a DcqlQuery's credential queries
+// into the scheme-level CredentialQueryInfo representation.
+func dcqlQueryToCredentialQueryInfos(query dcql.DcqlQuery) []scheme.CredentialQueryInfo {
+	result := make([]scheme.CredentialQueryInfo, len(query.Credentials))
+	for i, cq := range query.Credentials {
+		var paths []string
+		for path := range cq.AllClaimPaths() {
+			paths = append(paths, path)
+		}
+		result[i] = scheme.CredentialQueryInfo{
+			VctValues:  cq.Meta.VctValues,
+			ClaimPaths: paths,
+		}
+	}
+	return result
 }

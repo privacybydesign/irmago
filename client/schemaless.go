@@ -6,129 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
-type TranslatedString map[string]string
-
-// CredentialFormat is a type alias for irmaclient.CredentialFormat so the two packages share the same type.
-type CredentialFormat = irmaclient.CredentialFormat
-
-type TrustedParty struct {
-	Id string `json:"id"`
-	// Display name for the issuer
-	Name TranslatedString `json:"name"`
-	// Url for the issuer (which can be different per language)
-	Url *TranslatedString `json:"url"`
-	// Absolute path to the image for this issuer stored on disk
-	ImagePath *string `json:"image_path"`
-	// The trust chain for this issuer (if any)
-	Parent *TrustedParty `json:"parent"`
-	// Whether this party is verified by the scheme manager
-	Verified bool `json:"verified"`
-}
-
-type AttributeType string
-
-const (
-	AttributeType_Object           AttributeType = "object"
-	AttributeType_Array            AttributeType = "array"
-	AttributeType_TranslatedString AttributeType = "translated_string"
-	AttributeType_Bool             AttributeType = "bool"
-	AttributeType_Int              AttributeType = "int"
-	AttributeType_Image            AttributeType = "image"
-	AttributeType_Base64Image      AttributeType = "base64_image"
-)
-
-type AttributeValue struct {
-	Type AttributeType `json:"type"`
-
-	Int              *int64            `json:"int,omitempty"`
-	Bool             *bool             `json:"bool,omitempty"`
-	TranslatedString *TranslatedString `json:"translated_string,omitempty"`
-	Array            []AttributeValue  `json:"array,omitempty"`
-	Object           []Attribute       `json:"object,omitempty"`
-	ImagePath        *string           `json:"image_path,omitempty"`
-	Base64Image      *string           `json:"base64_image,omitempty"`
-}
-
-// hasValue returns true if this AttributeValue carries an actual value
-// (not just a type constraint).
-func (v *AttributeValue) hasValue() bool {
-	return v.Int != nil || v.Bool != nil || v.TranslatedString != nil ||
-		len(v.Array) > 0 || len(v.Object) > 0 || v.ImagePath != nil || v.Base64Image != nil
-}
-
-type Attribute struct {
-	// Id for this attribute (only the last part in case of irma/idemix)
-	Id string `json:"id"`
-	// The name for this attribute as displayed to the end user
-	DisplayName TranslatedString `json:"display_name"`
-	// The description for this attribute if any
-	Description *TranslatedString `json:"description,omitempty"`
-	// The value that this attribute has as provided by the issuer (absent when it's just an attribute description)
-	Value *AttributeValue `json:"value,omitempty"`
-	// The value that was requested by a verifier (if any)
-	RequestedValue *AttributeValue `json:"requested_value,omitempty"`
-}
-
-type Credential struct {
-	// The id for this credential. For irma/idemix credentials this would look like
-	// `pbdf.sidn-pbdf.email`, for EUDI credentials this would be in the form of `https://example.credential.com`
-	CredentialId string `json:"credential_id"`
-	// Hash over all attribute values and the credential id.
-	Hash string `json:"hash"`
-	// Absolute path to the image for this credential stored on disk
-	ImagePath string `json:"image_path"`
-	// The display name for this credential
-	Name TranslatedString `json:"name"`
-	// All information about the credential issuer
-	Issuer TrustedParty `json:"issuer"`
-	// The IDs for all instances of this credential in all different formats it's available in.
-	CredentialInstanceIds map[CredentialFormat]string `json:"credential_instance_ids"`
-	// The number of credential instances left per credential format (in case they were issued in batches)
-	BatchInstanceCountsRemaining map[CredentialFormat]*uint `json:"batch_instance_counts_remaining"`
-	// All the attributes and their values in this credential
-	Attributes []Attribute `json:"attributes"`
-	// The date and time (unix format) at which this credential was issued
-	IssuanceDate int64 `json:"issuance_date"`
-	// The date and time (unix format) when this credential expires
-	ExpiryDate int64 `json:"expiry_date"`
-	// Whether or not this credential has been revoked
-	Revoked bool `json:"revoked"`
-	// Whether or not revocation is supported for this credential
-	RevocationSupported bool `json:"revocation_supported"`
-	// Url at which this credential can be issued (if any)
-	IssueURL *TranslatedString `json:"issue_url"`
-}
-
-// CredentialDescriptor describes a credential without any values for the attributes
-type CredentialDescriptor struct {
-	CredentialId string            `json:"credential_id"`
-	Name         TranslatedString  `json:"name"`
-	Issuer       TrustedParty      `json:"issuer"`
-	Category     *TranslatedString `json:"category,omitempty"`
-	ImagePath    *string           `json:"image_path,omitempty"`
-	Attributes   []Attribute       `json:"attributes"`
-	IssueURL     *TranslatedString `json:"issue_url,omitempty"`
-}
-
-type CredentialStoreItem struct {
-	Credential CredentialDescriptor `json:"credential"`
-	Faq        Faq                  `json:"faq"`
-}
-
-type Faq struct {
-	Intro   *TranslatedString `json:"intro"`
-	Purpose *TranslatedString `json:"purpose"`
-	Content *TranslatedString `json:"content"`
-	HowTo   *TranslatedString `json:"how_to"`
-}
-
-func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
+func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem, error) {
 	irmaConfig := client.irmaClient.Configuration
-	result := []*CredentialStoreItem{}
+	result := []*clientmodels.CredentialStoreItem{}
 
 	for _, cred := range irmaConfig.CredentialTypes {
 		if !cred.IsInCredentialStore {
@@ -146,32 +31,32 @@ func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
 			return nil, fmt.Errorf("encountered credential store item without issue url: %s", issuerId.String())
 		}
 
-		attributes := []Attribute{}
+		attributes := []clientmodels.Attribute{}
 
 		for _, attr := range sortedAttributeTypes(cred.AttributeTypes) {
 			if attr.RevocationAttribute {
 				continue
 			}
-			attributes = append(attributes, Attribute{
+			attributes = append(attributes, clientmodels.Attribute{
 				Id:          attr.ID,
-				DisplayName: TranslatedString(attr.Name),
-				Value: &AttributeValue{
+				DisplayName: clientmodels.TranslatedString(attr.Name),
+				Value: &clientmodels.AttributeValue{
 					Type: displayHintToAttributeType(attr.DisplayHint),
 				},
 			})
 		}
 
-		result = append(result, &CredentialStoreItem{
-			Credential: CredentialDescriptor{
+		result = append(result, &clientmodels.CredentialStoreItem{
+			Credential: clientmodels.CredentialDescriptor{
 				CredentialId: cred.Identifier().String(),
-				Name:         TranslatedString(cred.Name),
+				Name:         clientmodels.TranslatedString(cred.Name),
 				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 				IssueURL:     convertOptionalTranslatedString(cred.IssueURL),
 				Category:     convertOptionalTranslatedString(cred.Category),
 				ImagePath:    optionalString(cred.Logo(irmaConfig)),
 				Attributes:   attributes,
 			},
-			Faq: Faq{
+			Faq: clientmodels.Faq{
 				Intro:   convertOptionalTranslatedString(cred.FAQIntro),
 				Purpose: convertOptionalTranslatedString(cred.FAQPurpose),
 				Content: convertOptionalTranslatedString(cred.FAQContent),
@@ -183,11 +68,11 @@ func (client *Client) GetCredentialStore() ([]*CredentialStoreItem, error) {
 	return result, nil
 }
 
-func convertOptionalTranslatedString(s *irma.TranslatedString) *TranslatedString {
+func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.TranslatedString {
 	if s == nil {
 		return nil
 	}
-	t := TranslatedString(*s)
+	t := clientmodels.TranslatedString(*s)
 	return &t
 }
 
@@ -200,16 +85,16 @@ func optionalString(s string) *string {
 
 // buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo
 // and the scheme manager as parent.
-func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer) TrustedParty {
+func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer) clientmodels.TrustedParty {
 	scheme := irmaConfig.SchemeManagers[issuer.SchemeManagerIdentifier()]
-	parent := TrustedParty{
+	parent := clientmodels.TrustedParty{
 		Id:       scheme.Identifier().String(),
-		Name:     TranslatedString(scheme.Name),
+		Name:     clientmodels.TranslatedString(scheme.Name),
 		Verified: scheme.Status == irma.SchemeManagerStatusValid,
 	}
-	return TrustedParty{
+	return clientmodels.TrustedParty{
 		Id:        issuer.Identifier().String(),
-		Name:      TranslatedString(issuer.Name),
+		Name:      clientmodels.TranslatedString(issuer.Name),
 		ImagePath: optionalString(issuer.Logo(irmaConfig)),
 		Verified:  scheme.Status == irma.SchemeManagerStatusValid,
 		Parent:    &parent,
@@ -220,7 +105,7 @@ func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer
 func createCredentialDescriptor(
 	irmaConfig *irma.Configuration,
 	attrs []*irmaclient.DisclosureCandidate,
-) (*CredentialDescriptor, error) {
+) (*clientmodels.CredentialDescriptor, error) {
 	id := attrs[0].Type.CredentialTypeIdentifier()
 	info, ok := irmaConfig.CredentialTypes[id]
 
@@ -230,30 +115,30 @@ func createCredentialDescriptor(
 
 	issuerId := info.IssuerIdentifier()
 	issuer := irmaConfig.Issuers[issuerId]
-	attributes := []Attribute{}
+	attributes := []clientmodels.Attribute{}
 
 	// only put the requested attributes in the descriptor
 	for _, at := range attrs {
 		for _, a := range info.AttributeTypes {
 			if a.GetAttributeTypeIdentifier() == at.Type {
-				requestedValue := &AttributeValue{
-					Type: AttributeType_TranslatedString,
+				requestedValue := &clientmodels.AttributeValue{
+					Type: clientmodels.AttributeType_TranslatedString,
 				}
 				if at.Value != nil {
 					requestedValue.TranslatedString = convertOptionalTranslatedString(&at.Value)
 				}
-				attributes = append(attributes, Attribute{
+				attributes = append(attributes, clientmodels.Attribute{
 					Id:             a.ID,
-					DisplayName:    TranslatedString(a.Name),
+					DisplayName:    clientmodels.TranslatedString(a.Name),
 					RequestedValue: requestedValue,
 				})
 			}
 		}
 	}
 
-	return &CredentialDescriptor{
+	return &clientmodels.CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
-		Name:         TranslatedString(info.Name),
+		Name:         clientmodels.TranslatedString(info.Name),
 		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 		Category:     convertOptionalTranslatedString(info.Category),
 		ImagePath:    optionalString(info.Logo(irmaConfig)),
@@ -262,7 +147,7 @@ func createCredentialDescriptor(
 	}, nil
 }
 
-func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialTypeIdentifier) (*CredentialDescriptor, error) {
+func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialTypeIdentifier) (*clientmodels.CredentialDescriptor, error) {
 	info, ok := irmaConfig.CredentialTypes[id]
 
 	if !ok {
@@ -271,24 +156,24 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 
 	issuerId := info.IssuerIdentifier()
 	issuer := irmaConfig.Issuers[issuerId]
-	attributes := []Attribute{}
+	attributes := []clientmodels.Attribute{}
 
 	for _, at := range sortedAttributeTypes(info.AttributeTypes) {
 		if at.RevocationAttribute {
 			continue
 		}
-		attributes = append(attributes, Attribute{
+		attributes = append(attributes, clientmodels.Attribute{
 			Id:          at.ID,
-			DisplayName: TranslatedString(at.Name),
-			Value: &AttributeValue{
-				Type: AttributeType_TranslatedString,
+			DisplayName: clientmodels.TranslatedString(at.Name),
+			Value: &clientmodels.AttributeValue{
+				Type: clientmodels.AttributeType_TranslatedString,
 			},
 		})
 	}
 
-	return &CredentialDescriptor{
+	return &clientmodels.CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
-		Name:         TranslatedString(info.Name),
+		Name:         clientmodels.TranslatedString(info.Name),
 		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 		Category:     convertOptionalTranslatedString(info.Category),
 		ImagePath:    optionalString(info.Logo(irmaConfig)),
@@ -297,9 +182,9 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 	}, nil
 }
 
-func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.CredentialInfoList) ([]*Credential, error) {
-	result := []*Credential{}
-	intermediateResult := map[string]*Credential{}
+func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.CredentialInfoList) ([]*clientmodels.Credential, error) {
+	result := []*clientmodels.Credential{}
+	intermediateResult := map[string]*clientmodels.Credential{}
 
 	// loop over all credentials and immediately combine them when they're the same
 	// attributes + credential ID in different credential formats
@@ -309,7 +194,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 			return nil, fmt.Errorf("failed to hash attributes and cred type: %w", err)
 		}
 
-		format := CredentialFormat(cred.CredentialFormat)
+		format := clientmodels.CredentialFormat(cred.CredentialFormat)
 
 		// if there's an existing instance we just add some format specific info
 		// and combine the two formats into a single credential result
@@ -330,35 +215,35 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 
 			issuerId := info.IssuerIdentifier()
 			issuer := irmaConfig.Issuers[issuerId]
-			attributes := []Attribute{}
+			attributes := []clientmodels.Attribute{}
 
 			for _, at := range sortedAttributeTypes(info.AttributeTypes) {
 				if at.RevocationAttribute {
 					continue
 				}
 				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
-				description := TranslatedString(at.Description)
+				description := clientmodels.TranslatedString(at.Description)
 				if at.IsOptional() && len(attrValue) == 0 {
 					continue
 				}
-				attributes = append(attributes, Attribute{
+				attributes = append(attributes, clientmodels.Attribute{
 					Id:          at.ID,
-					DisplayName: TranslatedString(at.Name),
+					DisplayName: clientmodels.TranslatedString(at.Name),
 					Description: &description,
 					Value:       buildAttributeValue(at.DisplayHint, &attrValue),
 				})
 			}
 
-			newCred := Credential{
+			newCred := clientmodels.Credential{
 				CredentialId: cred.Identifier().String(),
 				Hash:         instanceHash,
 				ImagePath:    info.Logo(irmaConfig),
-				Name:         TranslatedString(info.Name),
+				Name:         clientmodels.TranslatedString(info.Name),
 				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
-				CredentialInstanceIds: map[CredentialFormat]string{
+				CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 					format: cred.Hash,
 				},
-				BatchInstanceCountsRemaining: map[CredentialFormat]*uint{
+				BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
 					format: cred.InstanceCount,
 				},
 				Attributes:          attributes,
@@ -379,7 +264,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 	return result, nil
 }
 
-func (client *Client) GetCredentials() ([]*Credential, error) {
+func (client *Client) GetCredentials() ([]*clientmodels.Credential, error) {
 	creds := client.credentialInfoList()
 	creds = filterOutKeyshareCredentials(client.irmaClient.Configuration, creds)
 	return credentialInfoListToSchemaless(client.irmaClient.Configuration, creds)
@@ -404,25 +289,25 @@ func filterOutKeyshareCredentials(conf *irma.Configuration, creds irma.Credentia
 	return filtered
 }
 
-func displayHintToAttributeType(s string) AttributeType {
-	result := AttributeType_TranslatedString
+func displayHintToAttributeType(s string) clientmodels.AttributeType {
+	result := clientmodels.AttributeType_TranslatedString
 	switch s {
 	case "portraitPhoto":
-		result = AttributeType_Base64Image
+		result = clientmodels.AttributeType_Base64Image
 	}
 	return result
 }
 
 // buildAttributeValue creates an AttributeValue with the value in the correct field
 // based on the attribute's display hint.
-func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *AttributeValue {
+func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *clientmodels.AttributeValue {
 	attrType := displayHintToAttributeType(displayHint)
-	val := &AttributeValue{Type: attrType}
+	val := &clientmodels.AttributeValue{Type: attrType}
 	if rawValue == nil {
 		return val
 	}
 	switch attrType {
-	case AttributeType_Base64Image:
+	case clientmodels.AttributeType_Base64Image:
 		// For base64 images, use the untranslated value
 		s := (*rawValue)["en"]
 		if s == "" {
@@ -430,7 +315,7 @@ func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *A
 		}
 		val.Base64Image = &s
 	default:
-		ts := TranslatedString(*rawValue)
+		ts := clientmodels.TranslatedString(*rawValue)
 		val.TranslatedString = &ts
 	}
 	return val
@@ -438,14 +323,14 @@ func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *A
 
 // SatisfiesRequestedAttributes checks that `given` contains everything needed to satisfy `requested`.
 // Returns ok + list of issues with paths (e.g. "address.street", "roles[2]").
-func SatisfiesRequestedAttributes(given, requested []Attribute) (bool, []string) {
+func SatisfiesRequestedAttributes(given, requested []clientmodels.Attribute) (bool, []string) {
 	var issues []string
 	checkAttributeList(&issues, "", given, requested)
 	return len(issues) == 0, issues
 }
 
-func checkAttributeList(issues *[]string, path string, given, requested []Attribute) {
-	givenByID := make(map[string]Attribute, len(given))
+func checkAttributeList(issues *[]string, path string, given, requested []clientmodels.Attribute) {
+	givenByID := make(map[string]clientmodels.Attribute, len(given))
 	for _, g := range given {
 		givenByID[g.Id] = g
 	}
@@ -474,7 +359,7 @@ func checkAttributeList(issues *[]string, path string, given, requested []Attrib
 	}
 }
 
-func checkValueSatisfies(issues *[]string, path string, given AttributeValue, req AttributeValue) {
+func checkValueSatisfies(issues *[]string, path string, given clientmodels.AttributeValue, req clientmodels.AttributeValue) {
 	// Enforce type when requested type is set.
 	if req.Type != "" && given.Type != req.Type {
 		*issues = append(*issues, fmt.Sprintf("type mismatch at %s: have %q want %q", path, given.Type, req.Type))
@@ -482,14 +367,14 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 	}
 
 	switch req.Type {
-	case AttributeType_Object:
+	case clientmodels.AttributeType_Object:
 		// Nested attributes must satisfy nested requested constraints.
 		checkAttributeList(issues, path, given.Object, req.Object)
 
-	case AttributeType_Array:
+	case clientmodels.AttributeType_Array:
 		checkArrayAllOfUnordered(issues, path, given.Array, req.Array)
 
-	case AttributeType_Int:
+	case clientmodels.AttributeType_Int:
 		if req.Int == nil {
 			return
 		}
@@ -497,7 +382,7 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 			*issues = append(*issues, fmt.Sprintf("int mismatch at %s", path))
 		}
 
-	case AttributeType_Bool:
+	case clientmodels.AttributeType_Bool:
 		if req.Bool == nil {
 			return
 		}
@@ -505,7 +390,7 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 			*issues = append(*issues, fmt.Sprintf("bool mismatch at %s", path))
 		}
 
-	case AttributeType_TranslatedString:
+	case clientmodels.AttributeType_TranslatedString:
 		if req.TranslatedString == nil {
 			return
 		}
@@ -521,7 +406,7 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 			}
 		}
 
-	case AttributeType_Image:
+	case clientmodels.AttributeType_Image:
 		if req.ImagePath == nil {
 			return
 		}
@@ -529,7 +414,7 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 			*issues = append(*issues, fmt.Sprintf("image mismatch at %s", path))
 		}
 
-	case AttributeType_Base64Image:
+	case clientmodels.AttributeType_Base64Image:
 		if req.Base64Image == nil {
 			return
 		}
@@ -545,7 +430,7 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 // Unordered "all-of":
 // Every requested element must be satisfied by some *distinct* element in given.
 // Uses backtracking to avoid greedy mismatches.
-func checkArrayAllOfUnordered(issues *[]string, path string, given, req []AttributeValue) {
+func checkArrayAllOfUnordered(issues *[]string, path string, given, req []clientmodels.AttributeValue) {
 	// If nothing requested, array type is enough.
 	if len(req) == 0 {
 		return
@@ -589,32 +474,32 @@ func checkArrayAllOfUnordered(issues *[]string, path string, given, req []Attrib
 
 // valueSatisfiesNoReport mirrors checkValueSatisfies but returns bool only (no side-effects).
 // This is used for array matching/backtracking.
-func valueSatisfiesNoReport(given AttributeValue, req AttributeValue) bool {
+func valueSatisfiesNoReport(given clientmodels.AttributeValue, req clientmodels.AttributeValue) bool {
 	if req.Type != "" && given.Type != req.Type {
 		return false
 	}
 
 	switch req.Type {
-	case AttributeType_Object:
+	case clientmodels.AttributeType_Object:
 		return attributeListSatisfiesNoReport(given.Object, req.Object)
 
-	case AttributeType_Array:
+	case clientmodels.AttributeType_Array:
 		// Recurse into unordered all-of arrays as well.
 		return arrayAllOfUnorderedNoReport(given.Array, req.Array)
 
-	case AttributeType_Int:
+	case clientmodels.AttributeType_Int:
 		if req.Int == nil {
 			return true
 		}
 		return given.Int != nil && *given.Int == *req.Int
 
-	case AttributeType_Bool:
+	case clientmodels.AttributeType_Bool:
 		if req.Bool == nil {
 			return true
 		}
 		return given.Bool != nil && *given.Bool == *req.Bool
 
-	case AttributeType_TranslatedString:
+	case clientmodels.AttributeType_TranslatedString:
 		if req.TranslatedString == nil {
 			return true
 		}
@@ -629,13 +514,13 @@ func valueSatisfiesNoReport(given AttributeValue, req AttributeValue) bool {
 		}
 		return true
 
-	case AttributeType_Image:
+	case clientmodels.AttributeType_Image:
 		if req.ImagePath == nil {
 			return true
 		}
 		return given.ImagePath != nil && *given.ImagePath == *req.ImagePath
 
-	case AttributeType_Base64Image:
+	case clientmodels.AttributeType_Base64Image:
 		if req.Base64Image == nil {
 			return true
 		}
@@ -646,7 +531,7 @@ func valueSatisfiesNoReport(given AttributeValue, req AttributeValue) bool {
 	}
 }
 
-func arrayAllOfUnorderedNoReport(given, req []AttributeValue) bool {
+func arrayAllOfUnorderedNoReport(given, req []clientmodels.AttributeValue) bool {
 	if len(req) == 0 {
 		return true
 	}
@@ -677,8 +562,8 @@ func arrayAllOfUnorderedNoReport(given, req []AttributeValue) bool {
 	return dfs(0)
 }
 
-func attributeListSatisfiesNoReport(given, requested []Attribute) bool {
-	givenByID := make(map[string]Attribute, len(given))
+func attributeListSatisfiesNoReport(given, requested []clientmodels.Attribute) bool {
+	givenByID := make(map[string]clientmodels.Attribute, len(given))
 	for _, g := range given {
 		givenByID[g.Id] = g
 	}
@@ -705,34 +590,6 @@ func joinPath(prefix, id string) string {
 		return id
 	}
 	return strings.Join([]string{prefix, id}, ".")
-}
-
-func credentialTypeInfoListToSchemaless(infoList irma.CredentialTypeInfoList) []CredentialDescriptor {
-	descriptors := make([]CredentialDescriptor, len(infoList))
-	for i, info := range infoList {
-		descriptors[i] = CredentialDescriptor{
-			CredentialId: info.VerifiableCredentialType,
-			Name:         TranslatedString(info.Name),
-			Issuer: TrustedParty{
-				Name: TranslatedString(info.IssuerName),
-			},
-			Attributes: credentialTypeInfoAttributesToSchemaless(info.Attributes),
-		}
-	}
-	return descriptors
-}
-
-func credentialTypeInfoAttributesToSchemaless(attributes map[string]irma.TranslatedString) []Attribute {
-	attrs := make([]Attribute, len(attributes))
-	i := 0
-	for id, name := range attributes {
-		attrs[i] = Attribute{
-			Id:          id,
-			DisplayName: TranslatedString(name),
-		}
-		i++
-	}
-	return attrs
 }
 
 // sortedAttributeTypes returns attribute types sorted by DisplayIndex.

@@ -7,30 +7,13 @@ import (
 
 	"github.com/bwesterb/go-atum"
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
-)
-
-type LogType string
-type Protocol string
-type CredentialFormat string
-
-const (
-	LogType_Disclosure        LogType = "disclosure"
-	LogType_Issuance          LogType = "issuance"
-	LogType_Signature         LogType = "signature"
-	LogType_CredentialRemoval LogType = "removal"
-
-	Protocol_Irma       Protocol = "irma"
-	Protocol_OpenID4VP  Protocol = "openid4vp"
-	Protocol_OpenID4VCI Protocol = "openid4vci"
-
-	Format_SdJwtVc CredentialFormat = "dc+sd-jwt"
-	Format_Idemix  CredentialFormat = "idemix"
 )
 
 // CredentialLog is the internal storage format for a credential in a log entry.
 type CredentialLog struct {
-	Formats        []CredentialFormat
+	Formats        []clientmodels.CredentialFormat
 	CredentialType string
 	Attributes     map[string]string
 }
@@ -58,7 +41,7 @@ type LogEntry struct {
 
 	// Credential removal
 	Removed        map[irma.CredentialTypeIdentifier][]irma.TranslatedString
-	RemovedFormats []CredentialFormat
+	RemovedFormats []clientmodels.CredentialFormat
 
 	// Signature sessions
 	SignedMessage          []byte

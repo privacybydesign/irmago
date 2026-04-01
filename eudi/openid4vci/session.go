@@ -13,19 +13,20 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/internal/storage"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
-	"github.com/privacybydesign/irmago/irma"
 )
 
 type session struct {
 	credentialOffer          *CredentialOffer
 	credentialIssuerMetadata *CredentialIssuerMetadata
-	requestorInfo            *irma.RequestorInfo
-	credentials              []*irma.CredentialTypeInfo
+	requestorInfo            *clientmodels.TrustedParty
+	credentials              []*clientmodels.CredentialDescriptor
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler
@@ -59,8 +60,8 @@ func (s *session) perform() error {
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
 	err := s.configureIssuerSettings()
 	if err != nil {
-		s.handler.Failure(&irma.SessionError{
-			Err: fmt.Errorf("could not configure the session: %v", err),
+		s.handler.Failure(&clientmodels.SessionError{
+			WrappedError: fmt.Sprintf("could not configure the session: %v", err),
 		})
 		return nil
 	}
@@ -75,9 +76,9 @@ func (s *session) perform() error {
 	case GrantType_PreAuthorizedCode:
 		grantHandler = &PreAuthorizedCodeFlowHandler{}
 	default:
-		s.handler.Failure(&irma.SessionError{
-			ErrorType: irma.ErrorInvalidRequest,
-			Err:       fmt.Errorf("unsupported grant type"),
+		s.handler.Failure(&clientmodels.SessionError{
+			ErrorType:    "invalidRequest",
+			WrappedError: "unsupported grant type",
 		})
 		return nil
 	}
@@ -85,8 +86,8 @@ func (s *session) perform() error {
 	// Await permission and access token
 	permission, err := grantHandler.HandleGrant(s)
 	if err != nil {
-		s.handler.Failure(&irma.SessionError{
-			Err: fmt.Errorf("could not obtain permission to continue issuance session: %v", err),
+		s.handler.Failure(&clientmodels.SessionError{
+			WrappedError: fmt.Sprintf("could not obtain permission to continue issuance session: %v", err),
 		})
 		return nil
 	}
@@ -100,9 +101,9 @@ func (s *session) perform() error {
 	// AccessToken received;
 	err = s.requestCredentials(permission.GetAccessToken())
 	if err != nil {
-		irma.Logger.Infof("error requesting credentials: %v", err)
-		s.handler.Failure(&irma.SessionError{
-			Err: fmt.Errorf("could not request credentials: %v", err),
+		eudi.Logger.Infof("error requesting credentials: %v", err)
+		s.handler.Failure(&clientmodels.SessionError{
+			WrappedError: fmt.Sprintf("could not request credentials: %v", err),
 		})
 		return nil
 	}
@@ -339,7 +340,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 			Build()
 
 		if err != nil {
-			irma.Logger.Errorf("failed to build jwt for credential request: %v", err)
+			eudi.Logger.Errorf("failed to build jwt for credential request: %v", err)
 			return err
 		}
 
@@ -350,7 +351,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		requestBody = encryptedToken
 
 		if err != nil {
-			irma.Logger.Errorf("failed to encrypt jwt for credential request: %v", err)
+			eudi.Logger.Errorf("failed to encrypt jwt for credential request: %v", err)
 			return err
 		}
 	} else {
@@ -363,7 +364,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		requestBody = jsonRequest
 	}
 
-	irma.Logger.Infof("Sending credential request: %s = %s", contentType, string(requestBody))
+	eudi.Logger.Infof("Sending credential request: %s = %s", contentType, string(requestBody))
 
 	// Send the request
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
@@ -379,7 +380,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	defer func() {
 		err = resp.Body.Close()
 		if err != nil {
-			irma.Logger.Warnf("failed to close credential request response body: %v", err)
+			eudi.Logger.Warnf("failed to close credential request response body: %v", err)
 		}
 	}()
 	if err != nil {
@@ -461,7 +462,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 
 		if i == 0 {
 			// Log the first credential for debugging purposes
-			irma.Logger.Infof("Received credential (first from batch only): %s", string(cred.Credential))
+			eudi.Logger.Infof("Received credential (first from batch only): %s", string(cred.Credential))
 		}
 	}
 
@@ -480,7 +481,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		if requireCryptographicKeyBinding {
 			err := keyBindingService.RemoveKeys(keyIds)
 			if err != nil {
-				irma.Logger.Warnf("failed to remove key binding keys after credential storage failure: %v", err)
+				eudi.Logger.Warnf("failed to remove key binding keys after credential storage failure: %v", err)
 			}
 		}
 		return fmt.Errorf("failed to verify and store issued credentials: %v", err)
@@ -501,7 +502,7 @@ func (s *session) requestNonce() (string, error) {
 	defer func() {
 		err = resp.Body.Close()
 		if err != nil {
-			irma.Logger.Warnf("failed to close credential request response body: %v", err)
+			eudi.Logger.Warnf("failed to close credential request response body: %v", err)
 		}
 	}()
 	if err != nil {
