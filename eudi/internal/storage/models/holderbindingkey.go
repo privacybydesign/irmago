@@ -24,8 +24,8 @@ type HolderBindingKey struct {
 	// Secondary lookup, either by PublicKeyThumbprint or DidUrl, not primary identity. Mutually exclusive with each other, but this is not enforced by the database.
 	// According to the docs, null values do not count towards uniqueness in SQLite, but this might be different in other databases
 	// In the future, we might want to add conditional indexing (where clause), but we need custom migrations in order to get that working with GORM.
-	PublicKeyThumbprint *string `gorm:"type:text;index" json:"public_key_thumbprint,omitempty"`
-	DidUrl              *string `gorm:"type:text;index" json:"did_url,omitempty"`
+	PublicKeyThumbprint *string `gorm:"type:text;uniqueIndex" json:"public_key_thumbprint,omitempty"`
+	DidUrl              *string `gorm:"type:text;uniqueIndex" json:"did_url,omitempty"`
 
 	// Private key bytes, preferably PKCS#8.
 	PrivateKey []byte `gorm:"type:bytea;not null" json:"private_key"`
