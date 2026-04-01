@@ -1,6 +1,7 @@
 package client
 
 import (
+	"path/filepath"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -208,8 +209,14 @@ func openid4vpCredentialLogsToIrmaclientLogEntry(
 		})
 	}
 	requestorInfo := &irma.RequestorInfo{
-		ID:   irma.NewRequestorIdentifier(requestor.Id),
-		Name: irma.TranslatedString(requestor.Name),
+		ID:       irma.NewRequestorIdentifier(requestor.Id),
+		Name:     irma.TranslatedString(requestor.Name),
+		LogoPath: requestor.ImagePath,
+	}
+	// Store just the filename in Logo for later re-resolution (iOS logo path bug workaround)
+	if requestor.ImagePath != nil {
+		filename := filepath.Base(*requestor.ImagePath)
+		requestorInfo.Logo = &filename
 	}
 	return &irmaclient.LogEntry{
 		Time:       irma.Timestamp(time.Now()),
