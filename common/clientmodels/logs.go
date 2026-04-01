@@ -1,6 +1,6 @@
 package clientmodels
 
-import "github.com/privacybydesign/irmago/irma"
+import "time"
 
 // LogCredential is a credential entry in a log, containing full credential metadata.
 type LogCredential struct {
@@ -47,7 +47,7 @@ type SignedMessageLog struct {
 type LogInfo struct {
 	ID               uint64            `json:"id"`
 	Type             LogType           `json:"type"`
-	Time             irma.Timestamp    `json:"time"`
+	Time             time.Time         `json:"time"`
 	RemovalLog       *RemovalLog       `json:"removal_log,omitempty"`
 	IssuanceLog      *IssuanceLog      `json:"issuance_log,omitempty"`
 	DisclosureLog    *DisclosureLog    `json:"disclosure_log,omitempty"`

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +59,7 @@ func (h *MockSessionHandler) Failure(err *irma.SessionError) {
 	h.sessionEndChannel <- false
 }
 
-func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *irma.AuthorizationCodeFlowRequest,
+func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *clientmodels.AuthorizationCodeFlowRequest,
 	requestorInfo *irma.RequestorInfo,
 	callback AuthCodeHandler,
 ) {
@@ -72,7 +73,7 @@ func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *irm
 }
 
 func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
-	request *irma.PreAuthorizedCodeFlowPermissionRequest,
+	request *clientmodels.PreAuthorizedCodeFlowPermissionRequest,
 	requestorInfo *irma.RequestorInfo,
 	callback TokenPermissionHandler,
 ) {

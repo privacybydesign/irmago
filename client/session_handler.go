@@ -55,11 +55,32 @@ func (s *session) error(err error) {
 	s.State.Status = clientmodels.Status_Error
 	var irmaErr *irma.SessionError
 	if errors.As(err, &irmaErr) {
-		s.State.Error = clientmodels.NewSessionError(irmaErr)
+		s.State.Error = newSessionError(irmaErr)
 	} else {
-		s.State.Error = clientmodels.NewSessionError(&irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()})
+		s.State.Error = newSessionError(&irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()})
 	}
 	s.dispatchState()
+}
+
+func newSessionError(err *irma.SessionError) *clientmodels.SessionError {
+	var remoteError *clientmodels.RemoteError
+	if err.RemoteError != nil {
+		remoteError = &clientmodels.RemoteError{
+			Status:      err.RemoteError.Status,
+			ErrorName:   err.RemoteError.ErrorName,
+			Description: err.RemoteError.Description,
+			Message:     err.RemoteError.Message,
+			Stacktrace:  err.RemoteError.Stacktrace,
+		}
+	}
+	return &clientmodels.SessionError{
+		ErrorType:    string(err.ErrorType),
+		WrappedError: err.WrappedError(),
+		Info:         err.Info,
+		RemoteError:  remoteError,
+		RemoteStatus: err.RemoteStatus,
+		Stack:        err.Stack(),
+	}
 }
 
 type sessionManager struct {
@@ -627,21 +648,22 @@ func (s *session) RequestSignaturePermission(request *irma.SignatureRequest,
 }
 
 func (s *session) RequestAuthorizationCodeFlowPermission(
-	request *irma.AuthorizationCodeFlowRequest,
+	request *clientmodels.AuthorizationCodeFlowRequest,
 	requestorInfo *irma.RequestorInfo,
 	callback openid4vci.AuthCodeHandler,
 ) {
 	s.setPseudoRandomOpenIdState()
 
 	// Add the state to the authorization parameters so it will be send to the authorization server and back to us, to verify the response belongs to this session
-	request.AuthorizationParameters.Add("state", s.State.Oid4VciState)
+	authParams := url.Values(request.AuthorizationParameters)
+	authParams.Add("state", s.State.Oid4VciState)
 
 	// Construct the URL that the client should open in the browser to start the authorization code flow
 	authRequestUrl, err := url.Parse(request.AuthorizationEndpoint)
 	if err != nil {
 		panic(fmt.Errorf("failed to parse authorization endpoint URL: %v", err))
 	}
-	authRequestUrl.RawQuery = request.AuthorizationParameters.Encode()
+	authRequestUrl.RawQuery = authParams.Encode()
 
 	s.State.Status = clientmodels.Status_RequestAuthorizationCode
 	s.State.Type = clientmodels.Type_Issuance
@@ -673,7 +695,7 @@ func (s *session) setPseudoRandomOpenIdState() {
 }
 
 func (s *session) RequestPreAuthorizedCodeFlowPermission(
-	request *irma.PreAuthorizedCodeFlowPermissionRequest,
+	request *clientmodels.PreAuthorizedCodeFlowPermissionRequest,
 	requestorInfo *irma.RequestorInfo,
 	callback openid4vci.TokenPermissionHandler,
 ) {
@@ -681,7 +703,9 @@ func (s *session) RequestPreAuthorizedCodeFlowPermission(
 	s.State.Type = clientmodels.Type_Issuance
 	s.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
-	s.State.TransactionCodeParameters = request.TransactionCodeParameters
+	if request.TransactionCodeParameters != nil {
+		s.State.TransactionCodeParameters = request.TransactionCodeParameters
+	}
 	s.preAuthorizedCodeHandler = callback
 
 	// Quick fix for OID4VCI flow, to open the correct success-screen after issuance

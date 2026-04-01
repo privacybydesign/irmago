@@ -1,7 +1,5 @@
 package clientmodels
 
-import "github.com/privacybydesign/irmago/irma"
-
 // SessionStatus represents the current status of a session.
 type SessionStatus string
 
@@ -70,31 +68,56 @@ type SessionState struct {
 	AuthorizationRequestUrl string `json:"authorization_request_url,omitempty"`
 
 	// OID4VCI - Pre-Authorized Code Flow parameters
-	TransactionCodeParameters *irma.PreAuthorizedCodeTransactionCodeParameters `json:"transaction_code_parameters,omitempty"`
+	TransactionCodeParameters *PreAuthorizedCodeTransactionCodeParameters `json:"transaction_code_parameters,omitempty"`
 }
 
-// SessionError is a frontend-friendly representation of irma.SessionError.
-// Unlike irma.SessionError, the Err field is serialized as a string (WrappedError)
-// so it is available to frontends.
+// RemoteError is a server-side error returned by a remote party.
+type RemoteError struct {
+	Status      int    `json:"status,omitempty"`
+	ErrorName   string `json:"error,omitempty"`
+	Description string `json:"description,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Stacktrace  string `json:"stacktrace,omitempty"`
+}
+
+// PreAuthorizedCodeTransactionCodeParameters describes the parameters for a
+// pre-authorized code transaction code (OID4VCI).
+type PreAuthorizedCodeTransactionCodeParameters struct {
+	InputMode   string  `json:"input_mode"`
+	Length      *int    `json:"length,omitempty"`
+	Description *string `json:"description,omitempty"`
+}
+
+// CredentialTypeInfo contains display information about a credential type.
+type CredentialTypeInfo struct {
+	IssuerName               TranslatedString            `json:"issuer_name"`
+	Name                     TranslatedString            `json:"name"`
+	VerifiableCredentialType string                      `json:"verifiable_credential_type"`
+	Attributes               map[string]TranslatedString `json:"attributes"`
+	CredentialFormat         string                      `json:"credential_format"`
+}
+
+// PreAuthorizedCodeFlowPermissionRequest is a request to proceed with a pre-authorized code issuance flow.
+type PreAuthorizedCodeFlowPermissionRequest struct {
+	CredentialTypeInfoList    []*CredentialTypeInfo
+	TransactionCodeParameters *PreAuthorizedCodeTransactionCodeParameters
+}
+
+// AuthorizationCodeFlowRequest is a request to proceed with an authorization code issuance flow.
+type AuthorizationCodeFlowRequest struct {
+	CredentialTypeInfoList  []*CredentialTypeInfo
+	AuthorizationEndpoint   string
+	AuthorizationParameters map[string][]string // url.Values
+}
+
+// SessionError is a frontend-friendly representation of a session error.
 type SessionError struct {
-	ErrorType    irma.ErrorType    `json:"error_type"`
-	WrappedError string            `json:"wrapped_error"`
-	Info         string            `json:"info"`
-	RemoteError  *irma.RemoteError `json:"remote_error,omitempty"`
-	RemoteStatus int               `json:"remote_status"`
-	Stack        string            `json:"stack"`
-}
-
-// NewSessionError creates a SessionError from an irma.SessionError.
-func NewSessionError(err *irma.SessionError) *SessionError {
-	return &SessionError{
-		ErrorType:    err.ErrorType,
-		WrappedError: err.WrappedError(),
-		Info:         err.Info,
-		RemoteError:  err.RemoteError,
-		RemoteStatus: err.RemoteStatus,
-		Stack:        err.Stack(),
-	}
+	ErrorType    string       `json:"error_type"`
+	WrappedError string       `json:"wrapped_error"`
+	Info         string       `json:"info"`
+	RemoteError  *RemoteError `json:"remote_error,omitempty"`
+	RemoteStatus int          `json:"remote_status"`
+	Stack        string       `json:"stack"`
 }
 
 // DisclosurePlan describes how the user can satisfy a disclosure request.

@@ -10,6 +10,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/scheme"
@@ -359,8 +360,8 @@ func convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *CredentialIssuerMetadata,
 	issuerName irma.TranslatedString,
-) ([]*irma.CredentialTypeInfo, error) {
-	credentialInfoList := make([]*irma.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
+) ([]*clientmodels.CredentialTypeInfo, error) {
+	credentialInfoList := make([]*clientmodels.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
 			if config.Format != CredentialFormatIdentifier_SdJwtVc {
@@ -377,9 +378,9 @@ func convertToCredentialInfoList(
 			displays := ToTranslateableList(config.CredentialMetadata.Display)
 			name := convertDisplayToTranslatedString(displays)
 
-			credentialInfoList = append(credentialInfoList, &irma.CredentialTypeInfo{
-				IssuerName:               issuerName,
-				Name:                     name,
+			credentialInfoList = append(credentialInfoList, &clientmodels.CredentialTypeInfo{
+				IssuerName:               clientmodels.TranslatedString(issuerName),
+				Name:                     clientmodels.TranslatedString(name),
 				CredentialFormat:         string(config.Format),
 				VerifiableCredentialType: config.VerifiableCredentialType,
 				Attributes:               convertToAttributeList(config.CredentialMetadata.Claims),
@@ -389,15 +390,15 @@ func convertToCredentialInfoList(
 	return credentialInfoList, nil
 }
 
-func convertToAttributeList(claims []ClaimsDescription) map[string]irma.TranslatedString {
-	attrs := map[string]irma.TranslatedString{}
+func convertToAttributeList(claims []ClaimsDescription) map[string]clientmodels.TranslatedString {
+	attrs := map[string]clientmodels.TranslatedString{}
 	for _, claim := range claims {
 		for _, path := range claim.Path {
 			if len(claim.Display) == 0 {
-				attrs[path] = irma.NewTranslatedString(&path)
+				attrs[path] = clientmodels.TranslatedString(irma.NewTranslatedString(&path))
 			} else {
 				displays := ToTranslateableList(claim.Display)
-				attrs[path] = convertDisplayToTranslatedString(displays)
+				attrs[path] = clientmodels.TranslatedString(convertDisplayToTranslatedString(displays))
 			}
 		}
 	}

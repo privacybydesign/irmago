@@ -6,17 +6,6 @@ import (
 	"time"
 )
 
-type CredentialTypeInfo struct {
-	IssuerName               TranslatedString            `json:"issuer_name"`                // Human-readable name of the issuer
-	Name                     TranslatedString            `json:"name"`                       // Human-readable name of this credential type
-	VerifiableCredentialType string                      `json:"verifiable_credential_type"` // Corresponds to vct value in sdjwtvc
-	Attributes               map[string]TranslatedString `json:"attributes"`                 // Human-readable names of the different attributes mapped by their ID
-	CredentialFormat         string                      `json:"credential_format"`          // The credential format, e.g. "idemix" or "dc+sd-jwt"
-}
-
-// A CredentialTypeInfoList is a list of credentials (implements sort.Interface).
-type CredentialTypeInfoList []*CredentialTypeInfo
-
 // CredentialInfo contains all information of an IRMA credential.
 type CredentialInfo struct {
 	ID                  string                                       // e.g., "studentCard"

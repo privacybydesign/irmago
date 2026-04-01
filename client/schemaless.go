@@ -592,14 +592,14 @@ func joinPath(prefix, id string) string {
 	return strings.Join([]string{prefix, id}, ".")
 }
 
-func credentialTypeInfoListToSchemaless(infoList irma.CredentialTypeInfoList) []clientmodels.CredentialDescriptor {
+func credentialTypeInfoListToSchemaless(infoList []*clientmodels.CredentialTypeInfo) []clientmodels.CredentialDescriptor {
 	descriptors := make([]clientmodels.CredentialDescriptor, len(infoList))
 	for i, info := range infoList {
 		descriptors[i] = clientmodels.CredentialDescriptor{
 			CredentialId: info.VerifiableCredentialType,
-			Name:         clientmodels.TranslatedString(info.Name),
+			Name:         info.Name,
 			Issuer: clientmodels.TrustedParty{
-				Name: clientmodels.TranslatedString(info.IssuerName),
+				Name: info.IssuerName,
 			},
 			Attributes: credentialTypeInfoAttributesToSchemaless(info.Attributes),
 		}
@@ -607,13 +607,13 @@ func credentialTypeInfoListToSchemaless(infoList irma.CredentialTypeInfoList) []
 	return descriptors
 }
 
-func credentialTypeInfoAttributesToSchemaless(attributes map[string]irma.TranslatedString) []clientmodels.Attribute {
+func credentialTypeInfoAttributesToSchemaless(attributes map[string]clientmodels.TranslatedString) []clientmodels.Attribute {
 	attrs := make([]clientmodels.Attribute, len(attributes))
 	i := 0
 	for id, name := range attributes {
 		attrs[i] = clientmodels.Attribute{
 			Id:          id,
-			DisplayName: clientmodels.TranslatedString(name),
+			DisplayName: name,
 		}
 		i++
 	}

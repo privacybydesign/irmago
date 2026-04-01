@@ -13,6 +13,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/internal/storage"
@@ -25,7 +26,7 @@ type session struct {
 	credentialOffer          *CredentialOffer
 	credentialIssuerMetadata *CredentialIssuerMetadata
 	requestorInfo            *irma.RequestorInfo
-	credentials              []*irma.CredentialTypeInfo
+	credentials              []*clientmodels.CredentialTypeInfo
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 	"github.com/privacybydesign/irmago/irma"
 )
@@ -130,7 +131,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		authRequest.Add("request_uri", parResponse.RequestUri)
 	}
 
-	request := &irma.AuthorizationCodeFlowRequest{
+	request := &clientmodels.AuthorizationCodeFlowRequest{
 		CredentialTypeInfoList:  s.credentials,
 		AuthorizationEndpoint:   s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint,
 		AuthorizationParameters: authRequest,
@@ -267,7 +268,7 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		pendingAuthTokenPermissionRequestChannel = nil
 	}()
 
-	var transactionCodeParameters *irma.PreAuthorizedCodeTransactionCodeParameters = nil
+	var transactionCodeParameters *clientmodels.PreAuthorizedCodeTransactionCodeParameters = nil
 	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {
 		txCode := s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode
 
@@ -276,14 +277,14 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 			txCodeInputMode = string(*txCode.InputMode)
 		}
 
-		transactionCodeParameters = &irma.PreAuthorizedCodeTransactionCodeParameters{
+		transactionCodeParameters = &clientmodels.PreAuthorizedCodeTransactionCodeParameters{
 			InputMode:   txCodeInputMode,
 			Length:      txCode.Length,
 			Description: txCode.Description,
 		}
 	}
 
-	request := &irma.PreAuthorizedCodeFlowPermissionRequest{
+	request := &clientmodels.PreAuthorizedCodeFlowPermissionRequest{
 		CredentialTypeInfoList:    s.credentials,
 		TransactionCodeParameters: transactionCodeParameters,
 	}

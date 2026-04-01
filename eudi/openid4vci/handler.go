@@ -1,6 +1,9 @@
 package openid4vci
 
-import "github.com/privacybydesign/irmago/irma"
+import (
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/irma"
+)
 
 // AuthCodeHandler is a callback for providing the authorization code from the app side.
 type AuthCodeHandler func(proceed bool, code *string)
@@ -20,13 +23,13 @@ type Handler interface {
 
 	// OpenID specific interface functions
 	RequestPreAuthorizedCodeFlowPermission(
-		request *irma.PreAuthorizedCodeFlowPermissionRequest,
+		request *clientmodels.PreAuthorizedCodeFlowPermissionRequest,
 		requestorInfo *irma.RequestorInfo,
 		callback TokenPermissionHandler,
 	)
 
 	RequestAuthorizationCodeFlowPermission(
-		request *irma.AuthorizationCodeFlowRequest,
+		request *clientmodels.AuthorizationCodeFlowRequest,
 		requestorInfo *irma.RequestorInfo,
 		callback AuthCodeHandler,
 	)

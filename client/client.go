@@ -443,7 +443,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 		return clientmodels.LogInfo{
 			ID:   entry.ID,
 			Type: clientmodels.LogType_Disclosure,
-			Time: entry.Time,
+			Time: time.Time(entry.Time),
 			DisclosureLog: &clientmodels.DisclosureLog{
 				Protocol:    clientmodels.Protocol_OpenID4VP,
 				Credentials: openid4vpCredentialLogsToLogCredentials(client.GetIrmaConfiguration(), entry.OpenID4VP.DisclosedCredentials),
@@ -484,7 +484,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 			return clientmodels.LogInfo{
 				ID:   entry.ID,
 				Type: clientmodels.LogType_Signature,
-				Time: entry.Time,
+				Time: time.Time(entry.Time),
 				SignedMessageLog: &clientmodels.SignedMessageLog{
 					Message:       string(entry.SignedMessage),
 					DisclosureLog: *disclosureLog,
@@ -494,7 +494,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 		return clientmodels.LogInfo{
 			ID:            entry.ID,
 			Type:          clientmodels.LogType_Disclosure,
-			Time:          entry.Time,
+			Time:          time.Time(entry.Time),
 			DisclosureLog: disclosureLog,
 		}, nil
 
@@ -517,7 +517,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 		}
 		return clientmodels.LogInfo{
 			ID:   entry.ID,
-			Time: entry.Time,
+			Time: time.Time(entry.Time),
 			Type: clientmodels.LogType_Issuance,
 			IssuanceLog: &clientmodels.IssuanceLog{
 				Protocol:             clientmodels.Protocol_Irma,
@@ -569,7 +569,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 		}
 		return clientmodels.LogInfo{
 			ID:   entry.ID,
-			Time: entry.Time,
+			Time: time.Time(entry.Time),
 			Type: clientmodels.LogType_CredentialRemoval,
 			RemovalLog: &clientmodels.RemovalLog{
 				Credentials: removedCreds,

@@ -2595,7 +2595,7 @@ func testSessionErrorsArePropagated(
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, clientmodels.Status_Error, session.Status)
 	require.NotNil(t, session.Error)
-	require.Equal(t, irma.ErrorType("unknownSchemeManager"), session.Error.ErrorType)
+	require.Equal(t, "unknownSchemeManager", session.Error.ErrorType)
 	require.Equal(t, "Unknown identifiers: not, not.existing, not.existing.lol", session.Error.WrappedError)
 }
 
