@@ -93,6 +93,8 @@ services:
       - mysql
       - sqlserver
       - mailhog
+    environment:
+      CGO_ENABLED: "1"
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
     working_dir: /irmago
