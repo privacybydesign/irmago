@@ -355,8 +355,8 @@ func convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *CredentialIssuerMetadata,
 	issuerName clientmodels.TranslatedString,
-) ([]*clientmodels.CredentialTypeInfo, error) {
-	credentialInfoList := make([]*clientmodels.CredentialTypeInfo, 0, len(requestedCredentialConfigs))
+) ([]*clientmodels.CredentialDescriptor, error) {
+	result := make([]*clientmodels.CredentialDescriptor, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
 			if config.Format != CredentialFormatIdentifier_SdJwtVc {
@@ -373,28 +373,32 @@ func convertToCredentialInfoList(
 			displays := ToTranslateableList(config.CredentialMetadata.Display)
 			name := convertDisplayToTranslatedString(displays)
 
-			credentialInfoList = append(credentialInfoList, &clientmodels.CredentialTypeInfo{
-				IssuerName:               issuerName,
-				Name:                     name,
-				CredentialFormat:         string(config.Format),
-				VerifiableCredentialType: config.VerifiableCredentialType,
-				Attributes:               convertToAttributeList(config.CredentialMetadata.Claims),
+			result = append(result, &clientmodels.CredentialDescriptor{
+				CredentialId: config.VerifiableCredentialType,
+				Name:         name,
+				Issuer: clientmodels.TrustedParty{
+					Name: issuerName,
+				},
+				Attributes: convertClaimsToAttributes(config.CredentialMetadata.Claims),
 			})
 		}
 	}
-	return credentialInfoList, nil
+	return result, nil
 }
 
-func convertToAttributeList(claims []ClaimsDescription) map[string]clientmodels.TranslatedString {
-	attrs := map[string]clientmodels.TranslatedString{}
+func convertClaimsToAttributes(claims []ClaimsDescription) []clientmodels.Attribute {
+	var attrs []clientmodels.Attribute
 	for _, claim := range claims {
 		for _, path := range claim.Path {
-			if len(claim.Display) == 0 {
-				attrs[path] = newTranslatedString(&path)
-			} else {
+			displayName := newTranslatedString(&path)
+			if len(claim.Display) > 0 {
 				displays := ToTranslateableList(claim.Display)
-				attrs[path] = convertDisplayToTranslatedString(displays)
+				displayName = convertDisplayToTranslatedString(displays)
 			}
+			attrs = append(attrs, clientmodels.Attribute{
+				Id:          path,
+				DisplayName: displayName,
+			})
 		}
 	}
 	return attrs

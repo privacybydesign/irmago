@@ -26,7 +26,7 @@ type session struct {
 	credentialOffer          *CredentialOffer
 	credentialIssuerMetadata *CredentialIssuerMetadata
 	requestorInfo            *clientmodels.TrustedParty
-	credentials              []*clientmodels.CredentialTypeInfo
+	credentials              []*clientmodels.CredentialDescriptor
 	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler

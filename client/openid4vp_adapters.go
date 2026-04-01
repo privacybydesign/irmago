@@ -212,7 +212,7 @@ func openid4vpCredentialLogsToIrmaclientLogEntry(
 		Name: irma.TranslatedString(requestor.Name),
 	}
 	return &irmaclient.LogEntry{
-		Time: irma.Timestamp(time.Now()),
+		Time:       irma.Timestamp(time.Now()),
 		ServerName: requestorInfo,
 		OpenID4VP: &irmaclient.OpenID4VPDisclosureLog{
 			DisclosedCredentials: disclosed,

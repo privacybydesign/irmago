@@ -132,7 +132,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	}
 
 	request := &clientmodels.AuthorizationCodeFlowRequest{
-		CredentialTypeInfoList:  s.credentials,
+		Credentials:             s.credentials,
 		AuthorizationEndpoint:   s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint,
 		AuthorizationParameters: authRequest,
 	}
@@ -285,7 +285,7 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	}
 
 	request := &clientmodels.PreAuthorizedCodeFlowPermissionRequest{
-		CredentialTypeInfoList:    s.credentials,
+		Credentials:               s.credentials,
 		TransactionCodeParameters: transactionCodeParameters,
 	}
 	s.handler.RequestPreAuthorizedCodeFlowPermission(

@@ -60,7 +60,7 @@ type SessionState struct {
 	PinBlockedTimeSeconds *int `json:"pin_blocked_time_seconds,omitempty"`
 
 	// OID4VCI specific fields
-	OfferedCredentialTypes []CredentialDescriptor `json:"offered_credential_types"`
+	OfferedCredentialTypes []*CredentialDescriptor `json:"offered_credential_types"`
 
 	// OID4VCI - Authorization Code Flow parameters
 	StateSalt               []byte `json:"-"`
@@ -88,24 +88,15 @@ type PreAuthorizedCodeTransactionCodeParameters struct {
 	Description *string `json:"description,omitempty"`
 }
 
-// CredentialTypeInfo contains display information about a credential type.
-type CredentialTypeInfo struct {
-	IssuerName               TranslatedString            `json:"issuer_name"`
-	Name                     TranslatedString            `json:"name"`
-	VerifiableCredentialType string                      `json:"verifiable_credential_type"`
-	Attributes               map[string]TranslatedString `json:"attributes"`
-	CredentialFormat         string                      `json:"credential_format"`
-}
-
 // PreAuthorizedCodeFlowPermissionRequest is a request to proceed with a pre-authorized code issuance flow.
 type PreAuthorizedCodeFlowPermissionRequest struct {
-	CredentialTypeInfoList    []*CredentialTypeInfo
+	Credentials               []*CredentialDescriptor
 	TransactionCodeParameters *PreAuthorizedCodeTransactionCodeParameters
 }
 
 // AuthorizationCodeFlowRequest is a request to proceed with an authorization code issuance flow.
 type AuthorizationCodeFlowRequest struct {
-	CredentialTypeInfoList  []*CredentialTypeInfo
+	Credentials             []*CredentialDescriptor
 	AuthorizationEndpoint   string
 	AuthorizationParameters map[string][]string // url.Values
 }

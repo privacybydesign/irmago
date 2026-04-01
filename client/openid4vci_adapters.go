@@ -60,7 +60,7 @@ func (a *openid4vciSessionAdapter) RequestAuthorizationCodeFlowPermission(
 
 	a.session.State.Status = clientmodels.Status_RequestAuthorizationCode
 	a.session.State.Type = clientmodels.Type_Issuance
-	a.session.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
+	a.session.State.OfferedCredentialTypes = request.Credentials
 	if requestorInfo != nil {
 		a.session.State.Requestor = *requestorInfo
 	}
@@ -80,7 +80,7 @@ func (a *openid4vciSessionAdapter) RequestPreAuthorizedCodeFlowPermission(
 ) {
 	a.session.State.Status = clientmodels.Status_RequestPreAuthorizedCode
 	a.session.State.Type = clientmodels.Type_Issuance
-	a.session.State.OfferedCredentialTypes = credentialTypeInfoListToSchemaless(request.CredentialTypeInfoList)
+	a.session.State.OfferedCredentialTypes = request.Credentials
 	if requestorInfo != nil {
 		a.session.State.Requestor = *requestorInfo
 	}
