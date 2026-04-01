@@ -269,11 +269,10 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	}
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
-	// TODO: disabled check for testing with Digidentity
-	keyBindingService := NewHolderBindingKeyService(s.storage)
-
+	var keyBindingService *holderBindingKeyService
 	var keyIds uuid.UUIDs
 	if requireCryptographicKeyBinding {
+		keyBindingService = NewHolderBindingKeyService(s.storage)
 		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
