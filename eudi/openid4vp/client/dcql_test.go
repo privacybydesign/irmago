@@ -14,7 +14,7 @@ func TestBuildPlanFromCredentialQueries(t *testing.T) {
 		queries := []dcql.CredentialQuery{
 			{Id: "q1", Format: "dc+sd-jwt"},
 		}
-		queryResults := map[string]*clientmodels.CredentialQueryResult{
+		queryResults := map[string]*dcql.CredentialQueryResult{
 			"q1": {
 				OwnedCandidates: []*clientmodels.SelectableCredentialInstance{
 					{CredentialId: "test.email", Hash: "abc123"},
@@ -41,7 +41,7 @@ func TestBuildPlanFromCredentialQueries(t *testing.T) {
 			{Id: "q1", Format: "dc+sd-jwt"},
 			{Id: "q2", Format: "dc+sd-jwt"},
 		}
-		queryResults := map[string]*clientmodels.CredentialQueryResult{
+		queryResults := map[string]*dcql.CredentialQueryResult{
 			"q1": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h1"}}},
 			"q2": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h2"}}},
 		}
@@ -55,14 +55,14 @@ func TestBuildPlanFromCredentialQueries(t *testing.T) {
 
 	t.Run("missing query result returns error", func(t *testing.T) {
 		queries := []dcql.CredentialQuery{{Id: "missing"}}
-		_, err := buildPlanFromCredentialQueries(queries, map[string]*clientmodels.CredentialQueryResult{}, nil, nil)
+		_, err := buildPlanFromCredentialQueries(queries, map[string]*dcql.CredentialQueryResult{}, nil, nil)
 		require.Error(t, err)
 	})
 }
 
 func TestBuildPlanFromCredentialSets(t *testing.T) {
 	t.Run("required credential set groups options", func(t *testing.T) {
-		queryResults := map[string]*clientmodels.CredentialQueryResult{
+		queryResults := map[string]*dcql.CredentialQueryResult{
 			"q1": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h1"}}},
 			"q2": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h2"}}},
 		}
@@ -79,7 +79,7 @@ func TestBuildPlanFromCredentialSets(t *testing.T) {
 
 	t.Run("optional credential set", func(t *testing.T) {
 		notRequired := false
-		queryResults := map[string]*clientmodels.CredentialQueryResult{
+		queryResults := map[string]*dcql.CredentialQueryResult{
 			"q1": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h1"}}},
 		}
 		credSets := []dcql.CredentialSetQuery{
@@ -93,7 +93,7 @@ func TestBuildPlanFromCredentialSets(t *testing.T) {
 	})
 
 	t.Run("multi-query options not supported", func(t *testing.T) {
-		queryResults := map[string]*clientmodels.CredentialQueryResult{
+		queryResults := map[string]*dcql.CredentialQueryResult{
 			"q1": {},
 			"q2": {},
 		}

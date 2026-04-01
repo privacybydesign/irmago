@@ -11,6 +11,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
 )
@@ -64,7 +65,8 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 
 	// Now we have a valid request, we can evaluate the query against the RP authorized attributes
 	queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
-	if err := queryValidator.ValidateQuery(&authRequest.DcqlQuery); err != nil {
+	credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
+	if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
 	}
 
@@ -135,4 +137,21 @@ func getEndEntityCertFromX5cHeader(token *jwt.Token) (*x509.Certificate, error) 
 		return nil, fmt.Errorf("failed to parse x.509 certificate: %v", err)
 	}
 	return parsedCert, nil
+}
+
+// dcqlQueryToCredentialQueryInfos converts a DcqlQuery's credential queries
+// into the scheme-level CredentialQueryInfo representation.
+func dcqlQueryToCredentialQueryInfos(query dcql.DcqlQuery) []scheme.CredentialQueryInfo {
+	result := make([]scheme.CredentialQueryInfo, len(query.Credentials))
+	for i, cq := range query.Credentials {
+		var paths []string
+		for path := range cq.AllClaimPaths() {
+			paths = append(paths, path)
+		}
+		result[i] = scheme.CredentialQueryInfo{
+			VctValues:  cq.Meta.VctValues,
+			ClaimPaths: paths,
+		}
+	}
+	return result
 }

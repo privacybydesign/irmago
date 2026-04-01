@@ -27,7 +27,7 @@ type Handler interface {
 }
 
 // PermissionHandler is the callback the UI invokes after the user grants or denies permission.
-type PermissionHandler func(proceed bool, selections []clientmodels.DisclosureSelection)
+type PermissionHandler func(proceed bool, selections []dcql.DisclosureSelection)
 
 // SessionDismisser allows dismissing the current session.
 type SessionDismisser interface {
@@ -54,7 +54,7 @@ func (client *Client) RefreshPendingPermissionRequest() {
 // NewClient creates a new OpenID4VP client.
 func NewClient(
 	eudiConf *eudi.Configuration,
-	handlers []clientmodels.DcqlCredentialQueryHandler,
+	handlers []dcql.DcqlCredentialQueryHandler,
 	verifierValidator eudi.VerifierValidator,
 ) (*Client, error) {
 	return &Client{
@@ -185,7 +185,7 @@ type permissionRequest struct {
 }
 
 type permissionResponse struct {
-	selections []clientmodels.DisclosureSelection
+	selections []dcql.DisclosureSelection
 }
 
 func (session *openid4vpSession) awaitPermission() *permissionResponse {
@@ -203,7 +203,7 @@ func (session *openid4vpSession) requestPermission() error {
 		plan,
 		session.requestor,
 		session.lastResult.HashToQueryId,
-		func(proceed bool, selections []clientmodels.DisclosureSelection) {
+		func(proceed bool, selections []dcql.DisclosureSelection) {
 			if proceed {
 				session.pendingPermissionRequest.channel <- &permissionResponse{
 					selections: selections,
@@ -300,7 +300,7 @@ func (session *openid4vpSession) perform() error {
 
 // prepareDisclosures delegates to the DcqlHandler to prepare credentials for the VP token.
 func (session *openid4vpSession) prepareDisclosures(
-	selections []clientmodels.DisclosureSelection,
+	selections []dcql.DisclosureSelection,
 ) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
 	prepared, err := session.dcqlHandler.PrepareDisclosure(
 		session.request.DcqlQuery, selections, session.request.Nonce, session.request.ClientId,
@@ -315,7 +315,7 @@ func (session *openid4vpSession) prepareDisclosures(
 // Helpers
 // ========================================================================
 
-func collectOwnedHashes(queryResults map[string]*clientmodels.CredentialQueryResult) map[string]struct{} {
+func collectOwnedHashes(queryResults map[string]*dcql.CredentialQueryResult) map[string]struct{} {
 	hashes := make(map[string]struct{})
 	for _, result := range queryResults {
 		for _, owned := range result.OwnedCandidates {

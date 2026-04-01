@@ -654,7 +654,7 @@ func createTestDcqlHandler(t *testing.T) (*openid4vpclient.DcqlHandler, *irmacli
 	storage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
-	return openid4vpclient.NewDcqlHandler([]clientmodels.DcqlCredentialQueryHandler{
+	return openid4vpclient.NewDcqlHandler([]dcql.DcqlCredentialQueryHandler{
 		irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(storage, conf, keyBinder),
 	}), storage
 }

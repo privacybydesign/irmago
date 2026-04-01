@@ -3,7 +3,6 @@ package scheme
 import (
 	"testing"
 
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,9 +23,16 @@ func TestSchemeQueryValidator(t *testing.T) {
 	t.Run("SchemeQueryValidator fails validation for single unauthorized attribute", testSchemeQueryValidatorFailsValidationForSingleUnauthorizedAttribute)
 }
 
-func testSchemeQueryValidatorAuthorizesQueryForSingleCredentialSuccessfully(t *testing.T) {
-	query := createBasicQuery()
+func createBasicQueryInfos() []CredentialQueryInfo {
+	return []CredentialQueryInfo{
+		{
+			VctValues:  []string{"pbdf.issuer1.cred"},
+			ClaimPaths: []string{"attr"},
+		},
+	}
+}
 
+func testSchemeQueryValidatorAuthorizesQueryForSingleCredentialSuccessfully(t *testing.T) {
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
 			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
@@ -38,13 +44,17 @@ func testSchemeQueryValidatorAuthorizesQueryForSingleCredentialSuccessfully(t *t
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(createBasicQueryInfos())
 	require.NoError(t, err)
 }
 
 func testSchemeQueryValidatorAuthorizesQueryForMultipleCredentialSuccessfully(t *testing.T) {
-	query := createBasicQuery()
-	query.Credentials[0].Meta.VctValues = append(query.Credentials[0].Meta.VctValues, "pbdf.issuer2.cred")
+	queryInfos := []CredentialQueryInfo{
+		{
+			VctValues:  []string{"pbdf.issuer1.cred", "pbdf.issuer2.cred"},
+			ClaimPaths: []string{"attr"},
+		},
+	}
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
@@ -61,13 +71,11 @@ func testSchemeQueryValidatorAuthorizesQueryForMultipleCredentialSuccessfully(t 
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(queryInfos)
 	require.NoError(t, err)
 }
 
 func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithAttributesWildcard(t *testing.T) {
-	query := createBasicQuery()
-
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
 			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
@@ -79,13 +87,11 @@ func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithAttributesWildcar
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(createBasicQueryInfos())
 	require.NoError(t, err)
 }
 
 func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithCredentialsWildcard(t *testing.T) {
-	query := createBasicQuery()
-
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
 			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
@@ -97,13 +103,11 @@ func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithCredentialsWildca
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(createBasicQueryInfos())
 	require.NoError(t, err)
 }
 
 func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithIssuersWildcard(t *testing.T) {
-	query := createBasicQuery()
-
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
 			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
@@ -115,13 +119,11 @@ func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithIssuersWildcard(t
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(createBasicQueryInfos())
 	require.NoError(t, err)
 }
 
 func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithSchemeWildcard(t *testing.T) {
-	query := createBasicQuery()
-
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
 			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
@@ -133,13 +135,11 @@ func testSchemeQueryValidatorAuthorizesQueryForRelyingPartyWithSchemeWildcard(t 
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(createBasicQueryInfos())
 	require.NoError(t, err)
 }
 
 func testSchemeQueryValidatorFailsValidationForUnknownIssuer(t *testing.T) {
-	query := createBasicQuery()
-
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
 			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
@@ -151,13 +151,11 @@ func testSchemeQueryValidatorFailsValidationForUnknownIssuer(t *testing.T) {
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(createBasicQueryInfos())
 	require.Errorf(t, err, "credential is not authorized: credential pbdf.issuer1.cred is not in the authorized set")
 }
 
 func testSchemeQueryValidatorFailsValidationForUnknownCredential(t *testing.T) {
-	query := createBasicQuery()
-
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
 			AuthorizedQueryableAttributeSets: []AuthorizedAttributeSet{
@@ -169,14 +167,18 @@ func testSchemeQueryValidatorFailsValidationForUnknownCredential(t *testing.T) {
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(createBasicQueryInfos())
 	require.Errorf(t, err, "credential is not authorized: credential pbdf.issuer1.cred is not in the authorized set")
 }
 
 func testSchemeQueryValidatorFailsValidationForSingleUnknownCredential(t *testing.T) {
 	// Test requesting `pbdf.issuer1.cred.attr` or `pbdf.issuer2.cred.attr`, where only issuer1 is authorized
-	query := createBasicQuery()
-	query.Credentials[0].Meta.VctValues = append(query.Credentials[0].Meta.VctValues, "pbdf.issuer2.cred")
+	queryInfos := []CredentialQueryInfo{
+		{
+			VctValues:  []string{"pbdf.issuer1.cred", "pbdf.issuer2.cred"},
+			ClaimPaths: []string{"attr"},
+		},
+	}
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
@@ -189,13 +191,17 @@ func testSchemeQueryValidatorFailsValidationForSingleUnknownCredential(t *testin
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(queryInfos)
 	require.Errorf(t, err, "credential is not authorized: credential pbdf.issuer2.cred is not in the authorized set")
 }
 
 func testSchemeQueryValidatorFailsValidationForUnauthorizedAttribute(t *testing.T) {
-	query := createBasicQuery()
-	query.Credentials[0].Claims[0].Path = []string{"unauthorizedAttr"}
+	queryInfos := []CredentialQueryInfo{
+		{
+			VctValues:  []string{"pbdf.issuer1.cred"},
+			ClaimPaths: []string{"unauthorizedAttr"},
+		},
+	}
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
@@ -208,13 +214,17 @@ func testSchemeQueryValidatorFailsValidationForUnauthorizedAttribute(t *testing.
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(queryInfos)
 	require.Errorf(t, err, "credential is not authorized: requested attribute unauthorizedAttr is not in the authorized set")
 }
 
 func testSchemeQueryValidatorFailsValidationForSingleUnauthorizedAttribute(t *testing.T) {
-	query := createBasicQuery()
-	query.Credentials[0].Claims[0].Path = append(query.Credentials[0].Claims[0].Path, "unauthorizedAttr")
+	queryInfos := []CredentialQueryInfo{
+		{
+			VctValues:  []string{"pbdf.issuer1.cred"},
+			ClaimPaths: []string{"attr", "unauthorizedAttr"},
+		},
+	}
 
 	validator := SchemeQueryValidator{
 		RelyingParty: &RelyingParty{
@@ -227,23 +237,6 @@ func testSchemeQueryValidatorFailsValidationForSingleUnauthorizedAttribute(t *te
 		},
 	}
 
-	err := validator.ValidateQuery(query)
+	err := validator.ValidateCredentialQueries(queryInfos)
 	require.Errorf(t, err, "credential is not authorized: requested attribute pbdf.issuer1.cred.unauthorizedAttr is not in the authorized set")
-}
-
-func createBasicQuery() *dcql.DcqlQuery {
-	return &dcql.DcqlQuery{
-		Credentials: []dcql.CredentialQuery{
-			{
-				Meta: dcql.Meta{
-					VctValues: []string{"pbdf.issuer1.cred"},
-				},
-				Claims: []dcql.Claim{
-					{
-						Path: []string{"attr"},
-					},
-				},
-			},
-		},
-	}
 }

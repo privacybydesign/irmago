@@ -13,7 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
-// SdJwtVcDcqlHandler implements clientmodels.DcqlCredentialQueryHandler for SD-JWT-VC credentials.
+// SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC credentials.
 type SdJwtVcDcqlHandler struct {
 	storage   irmaclient.SdJwtVcStorage
 	config    *irma.Configuration
@@ -30,7 +30,7 @@ func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.C
 }
 
 // Compile-time check that SdJwtVcDcqlHandler implements the interface.
-var _ clientmodels.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
+var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
 
 // Format returns the credential format this handler supports.
 func (h *SdJwtVcDcqlHandler) Format() string {
@@ -38,8 +38,8 @@ func (h *SdJwtVcDcqlHandler) Format() string {
 }
 
 // FindCandidates finds all credential instances that match the given DCQL credential query.
-func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*clientmodels.CredentialQueryResult, error) {
-	result := &clientmodels.CredentialQueryResult{}
+func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
+	result := &dcql.CredentialQueryResult{}
 
 	// For each VCT value, find matching credentials from storage
 	for _, vct := range query.Meta.VctValues {
@@ -73,8 +73,8 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*client
 }
 
 // PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []clientmodels.DisclosureSelection, nonce string, clientId string) (*clientmodels.PreparedDisclosure, error) {
-	result := &clientmodels.PreparedDisclosure{}
+func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
+	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {
 		cred, err := h.storage.GetCredentialByHash(sel.CredentialHash)

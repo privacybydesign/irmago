@@ -12,18 +12,18 @@ import (
 // based on credential format. It also handles credential_sets aggregation and
 // disclosure plan building.
 type DcqlHandler struct {
-	credentialQueryHandlers []clientmodels.DcqlCredentialQueryHandler
+	credentialQueryHandlers []dcql.DcqlCredentialQueryHandler
 }
 
 // NewDcqlHandler creates a new DcqlHandler with the given credential query handlers.
-func NewDcqlHandler(handlers []clientmodels.DcqlCredentialQueryHandler) *DcqlHandler {
+func NewDcqlHandler(handlers []dcql.DcqlCredentialQueryHandler) *DcqlHandler {
 	return &DcqlHandler{credentialQueryHandlers: handlers}
 }
 
 // DcqlResult contains the results of processing a full DCQL query.
 type DcqlResult struct {
 	// Per-query results keyed by credential query ID.
-	QueryResults map[string]*clientmodels.CredentialQueryResult
+	QueryResults map[string]*dcql.CredentialQueryResult
 	// Maps credential hashes to their DCQL query IDs.
 	HashToQueryId map[string]string
 }
@@ -31,7 +31,7 @@ type DcqlResult struct {
 // FindCandidates processes a complete DCQL query by delegating each credential query
 // to the handler matching its format. Returns per-query results and a hash-to-queryId mapping.
 func (h *DcqlHandler) FindCandidates(query dcql.DcqlQuery) (*DcqlResult, error) {
-	queryResults := make(map[string]*clientmodels.CredentialQueryResult, len(query.Credentials))
+	queryResults := make(map[string]*dcql.CredentialQueryResult, len(query.Credentials))
 	hashToQueryId := make(map[string]string)
 
 	for _, credQuery := range query.Credentials {
@@ -79,10 +79,10 @@ func (h *DcqlHandler) BuildDisclosurePlan(
 // to the appropriate handlers based on credential format.
 func (h *DcqlHandler) PrepareDisclosure(
 	query dcql.DcqlQuery,
-	selections []clientmodels.DisclosureSelection,
+	selections []dcql.DisclosureSelection,
 	nonce string,
 	clientId string,
-) (*clientmodels.PreparedDisclosure, error) {
+) (*dcql.PreparedDisclosure, error) {
 	// Build a map from queryId -> format
 	queryFormat := make(map[string]string, len(query.Credentials))
 	for _, cq := range query.Credentials {
@@ -90,7 +90,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 	}
 
 	// Group selections by format
-	selectionsByFormat := make(map[string][]clientmodels.DisclosureSelection)
+	selectionsByFormat := make(map[string][]dcql.DisclosureSelection)
 	for _, sel := range selections {
 		format, ok := queryFormat[sel.QueryId]
 		if !ok {
@@ -99,7 +99,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 		selectionsByFormat[format] = append(selectionsByFormat[format], sel)
 	}
 
-	result := &clientmodels.PreparedDisclosure{}
+	result := &dcql.PreparedDisclosure{}
 
 	for format, sels := range selectionsByFormat {
 		handler, err := h.findHandlerForFormat(format)
@@ -119,7 +119,7 @@ func (h *DcqlHandler) PrepareDisclosure(
 	return result, nil
 }
 
-func (h *DcqlHandler) findHandlerForFormat(format string) (clientmodels.DcqlCredentialQueryHandler, error) {
+func (h *DcqlHandler) findHandlerForFormat(format string) (dcql.DcqlCredentialQueryHandler, error) {
 	for _, handler := range h.credentialQueryHandlers {
 		if handler.Format() == format {
 			return handler, nil

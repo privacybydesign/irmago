@@ -9,7 +9,6 @@ import (
 	_ "embed"
 	"encoding/asn1"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -24,8 +23,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/privacybydesign/irmago/eudi/openid4vp"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -139,37 +136,30 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
 }
 
 func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
-	authReq := openid4vp.AuthorizationRequest{
-		Audience: "https://audience",
-		ClientId: "x509_san_dns:" + hostname,
-		DcqlQuery: dcql.DcqlQuery{
-			Credentials: []dcql.CredentialQuery{
+	claims := jwt.MapClaims{
+		"aud":       "https://audience",
+		"client_id": "x509_san_dns:" + hostname,
+		"dcql_query": map[string]any{
+			"credentials": []map[string]any{
 				{
-					Id:     "32f54163-7166-48f1-93d8-ff217bdb0653",
-					Format: "dc+sd-jwt",
-					Claims: []dcql.Claim{
-						{
-							Path: []string{"email"},
-						},
+					"id":     "32f54163-7166-48f1-93d8-ff217bdb0653",
+					"format": "dc+sd-jwt",
+					"claims": []map[string]any{
+						{"path": []string{"email"}},
 					},
 				},
 			},
 		},
-		Nonce:        "nonce",
-		ResponseMode: openid4vp.ResponseMode_DirectPost,
-		ResponseType: string(openid4vp.ResponseType_VpToken),
-		ResponseUri:  "https://response.uri",
-		RedirectUri:  "https://redirect.uri",
-		State:        "state",
+		"nonce":         "nonce",
+		"response_mode": "direct_post",
+		"response_type": "vp_token",
+		"response_uri":  "https://response.uri",
+		"redirect_uri":  "https://redirect.uri",
+		"state":         "state",
 	}
 
-	authReqBytes, _ := json.Marshal(authReq)
-
-	var c jwt.MapClaims
-	json.Unmarshal(authReqBytes, &c)
-
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, c)
-	token.Header["typ"] = openid4vp.AuthRequestJwtTyp
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	token.Header["typ"] = "oauth-authz-req+jwt"
 	token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(verifierCert.Raw)}
 
 	if modifyTokenFunc != nil {

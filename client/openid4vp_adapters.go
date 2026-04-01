@@ -5,6 +5,7 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	openid4vpclient "github.com/privacybydesign/irmago/eudi/openid4vp/client"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -63,8 +64,8 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 }
 
 // disclosureChoicesToOpenID4VPSelections converts UI disclosure choices to OpenID4VP selections.
-func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, hashToQueryId map[string]string) []clientmodels.DisclosureSelection {
-	var selections []clientmodels.DisclosureSelection
+func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDisconSelection, hashToQueryId map[string]string) []dcql.DisclosureSelection {
+	var selections []dcql.DisclosureSelection
 	for _, discon := range choices {
 		for _, cred := range discon.Credentials {
 			attrNames := make([]string, 0, len(cred.AttributePaths))
@@ -76,7 +77,7 @@ func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDis
 				}
 			}
 			queryId := hashToQueryId[cred.CredentialHash]
-			selections = append(selections, clientmodels.DisclosureSelection{
+			selections = append(selections, dcql.DisclosureSelection{
 				QueryId:        queryId,
 				CredentialHash: cred.CredentialHash,
 				AttributeNames: attrNames,

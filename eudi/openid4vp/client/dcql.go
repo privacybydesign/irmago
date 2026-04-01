@@ -11,7 +11,7 @@ import (
 // Each credential query becomes one DisclosurePickOne entry (all required).
 func buildPlanFromCredentialQueries(
 	queries []dcql.CredentialQuery,
-	queryResults map[string]*clientmodels.CredentialQueryResult,
+	queryResults map[string]*dcql.CredentialQueryResult,
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
 ) (*clientmodels.DisclosurePlan, error) {
@@ -37,7 +37,7 @@ func buildPlanFromCredentialQueries(
 
 // buildPlanFromCredentialSets builds a DisclosurePlan when credential_sets are present.
 func buildPlanFromCredentialSets(
-	queryResults map[string]*clientmodels.CredentialQueryResult,
+	queryResults map[string]*dcql.CredentialQueryResult,
 	credentialSets []dcql.CredentialSetQuery,
 	previousPlan *clientmodels.DisclosurePlan,
 	preExistingHashes map[string]struct{},
