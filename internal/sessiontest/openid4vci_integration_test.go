@@ -83,8 +83,7 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 
 	// The test issuer uses did:web, so full credential verification should work.
 	session = awaitSessionState(t, sessionHandler)
-	fmt.Printf("error: %v\n", session.Error)
-	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
@@ -115,7 +114,7 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 
 	// The test issuer uses did:web, so full credential verification should work.
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
@@ -211,7 +210,7 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 
 	// The authcode issuer uses did:web, so full credential verification should work.
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status,
 		"server should have issued the credential via authorization code flow")

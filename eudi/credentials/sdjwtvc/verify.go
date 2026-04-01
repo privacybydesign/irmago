@@ -34,6 +34,16 @@ type VerifiedSdJwtVc struct {
 
 const ClockSkewInSeconds = 180
 
+// timeToUnixOrZero returns 0 if t is the zero time (i.e. the claim was missing),
+// otherwise returns t.Unix(). This prevents time.Time{}.Unix() (-62135596800)
+// from being treated as a real timestamp.
+func timeToUnixOrZero(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
+}
+
 // SdJwtVcVerificationContext contains some options and configuration for verifying SD-JWT VCs.
 type SdJwtVcVerificationContext struct {
 	eudi_jwt.X509VerificationContext
@@ -256,12 +266,12 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 		return nil, nil, nil, nil, fmt.Errorf("failed to extract claims from token: %v", err)
 	}
 
-	// Construct payload
+	// Construct payload — use 0 for missing time claims instead of time.Time{}.Unix()
 	payload := &IssuerSignedJwtPayload{
 		Subject:                  sub,
-		Expiry:                   exp.Unix(),
-		IssuedAt:                 iat.Unix(),
-		NotBefore:                nbf.Unix(),
+		Expiry:                   timeToUnixOrZero(exp),
+		IssuedAt:                 timeToUnixOrZero(iat),
+		NotBefore:                timeToUnixOrZero(nbf),
 		Issuer:                   iss,
 		VerifiableCredentialType: vct,
 		Sd:                       sd,

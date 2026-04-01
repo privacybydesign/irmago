@@ -116,7 +116,7 @@ func TestSQLCipher_UpdateRecord(t *testing.T) {
 
 	var got models.HolderBindingKey
 	require.NoError(t, db.First(&got, "id = ?", key.ID).Error)
-	assert.Equal(t, "updated-thumbprint", got.PublicKeyThumbprint)
+	assert.Equal(t, "updated-thumbprint", *got.PublicKeyThumbprint)
 }
 
 func TestSQLCipher_DeleteRecord(t *testing.T) {
