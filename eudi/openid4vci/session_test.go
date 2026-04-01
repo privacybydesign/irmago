@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/stretchr/testify/require"
 )
 
 // mockSdJwtVcStorageClient is a test mock implementing SdJwtVcStorageClient.
