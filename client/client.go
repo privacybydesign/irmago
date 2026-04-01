@@ -237,7 +237,7 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMeta
 		Hash:                metadata.Hash,
 		Revoked:             false,
 		RevocationSupported: false,
-		CredentialFormat:    string(clientmodels.Format_SdJwtVc),
+		CredentialFormat:    clientmodels.Format_SdJwtVc,
 		InstanceCount:       &metadata.RemainingInstanceCount,
 	}
 }
