@@ -20,6 +20,60 @@
           "locale": "en"
         }
       ]
+    },
+    "EmailCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "EmailCredentialSdJwt",
+      "extends": "EmailCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
+      "display": [
+        {
+          "name": "Email Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
+    "PhoneCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "PhoneCredentialSdJwt",
+      "extends": "PhoneCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
+      "display": [
+        {
+          "name": "Phone Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
+    "StudentCardCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "StudentCardCredentialSdJwt",
+      "extends": "StudentCardCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
+      "display": [
+        {
+          "name": "Student Card Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
     }
   }
 }
