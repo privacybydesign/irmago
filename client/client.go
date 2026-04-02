@@ -99,9 +99,18 @@ func New(
 	verifierValidator := openid4vp.NewCompositeVerifierValidator(x509Validator, didValidator)
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
 
+	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
+	eudiStorage, err := eudi.NewStorage(aesKey, eudiConf.FullDatabasePath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
+	}
+
+	// Register the EUDI SD-JWT handler for credentials issued via OID4VCI
+	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(eudiStorage)
+
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
 	// eudiSdJwtDcqlHandler is added after eudiStorage is created (see below)
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler}, verifierValidator)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -142,16 +151,6 @@ func New(
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
 	}
-
-	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
-	eudiStorage, err := eudi.NewStorage(aesKey, eudiConf.FullDatabasePath())
-	if err != nil {
-		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
-	}
-
-	// Register the EUDI SD-JWT handler for credentials issued via OID4VCI
-	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(eudiStorage)
-	openid4vpClient.AddCredentialQueryHandler(eudiSdJwtDcqlHandler)
 
 	// Initiate the OpenID4VCI client
 	openid4vciClient, err := openid4vci.NewClient(

@@ -2,6 +2,7 @@ package dcql
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 )
@@ -17,11 +18,6 @@ type DcqlHandler struct {
 // NewDcqlHandler creates a new DcqlHandler with the given credential query handlers.
 func NewDcqlHandler(handlers []DcqlCredentialQueryHandler) *DcqlHandler {
 	return &DcqlHandler{credentialQueryHandlers: handlers}
-}
-
-// AddHandler adds a credential query handler.
-func (h *DcqlHandler) AddHandler(handler DcqlCredentialQueryHandler) {
-	h.credentialQueryHandlers = append(h.credentialQueryHandlers, handler)
 }
 
 // DcqlResult contains the results of processing a full DCQL query.
@@ -152,11 +148,8 @@ func (h *DcqlHandler) findHandlersForFormat(format string) []DcqlCredentialQuery
 		}
 		// Check if handler supports multiple formats
 		if mf, ok := handler.(MultiFormatHandler); ok {
-			for _, f := range mf.Formats() {
-				if f == format {
-					result = append(result, handler)
-					break
-				}
+			if slices.Contains(mf.Formats(), format) {
+				result = append(result, handler)
 			}
 		}
 	}
