@@ -5,8 +5,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
@@ -241,14 +243,57 @@ func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (iana.HashingAlgorith
 		return "", nil, err
 	}
 
-	keyJson, err := json.Marshal(confirm.Jwk)
+	key, err := resolveHolderKey(confirm)
 	if err != nil {
 		return "", nil, err
 	}
-	key, err := jwk.ParseKey(keyJson)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to parse key (%v) from json: %v", keyJson, err)
-	}
 
 	return iana.HashingAlgorithm(alg), key, nil
+}
+
+// resolveHolderKey extracts the holder public key from a cnf field.
+// Supports both direct JWK (`cnf.jwk`) and DID-based key references (`cnf.kid`).
+// For `did:jwk:` DIDs, the public key is embedded in the DID string itself.
+func resolveHolderKey(cnf *CnfField) (jwk.Key, error) {
+	if cnf.Jwk != nil {
+		keyJson, err := json.Marshal(cnf.Jwk)
+		if err != nil {
+			return nil, err
+		}
+		return jwk.ParseKey(keyJson)
+	}
+
+	if cnf.Kid != nil {
+		return resolveKeyFromDid(*cnf.Kid)
+	}
+
+	return nil, fmt.Errorf("cnf field has neither jwk nor kid")
+}
+
+// resolveKeyFromDid extracts a public key from a DID URL.
+// Currently supports did:jwk where the key is base64url-encoded in the DID itself.
+func resolveKeyFromDid(kid string) (jwk.Key, error) {
+	// Strip fragment (e.g., "#0") from DID URL
+	did := kid
+	if idx := strings.Index(kid, "#"); idx != -1 {
+		did = kid[:idx]
+	}
+
+	const didJwkPrefix = "did:jwk:"
+	if strings.HasPrefix(did, didJwkPrefix) {
+		encoded := strings.TrimPrefix(did, didJwkPrefix)
+		jwkBytes, err := base64.RawURLEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("failed to base64url-decode did:jwk: %v", err)
+		}
+		key, err := jwk.ParseKey(jwkBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse JWK from did:jwk: %v", err)
+		}
+		// Store the kid (DID URL) on the key so callers can use it for lookups
+		key.Set(jwk.KeyIDKey, kid)
+		return key, nil
+	}
+
+	return nil, fmt.Errorf("unsupported DID method in cnf.kid: %s", did)
 }

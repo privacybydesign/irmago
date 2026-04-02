@@ -22,56 +22,75 @@ type SdJwtVcDcqlHandler struct {
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler.
-func NewSdJwtVcDcqlHandler(eudiStorage *eudi.Storage, keyBinder sdjwtvc.KeyBinder) *SdJwtVcDcqlHandler {
+func NewSdJwtVcDcqlHandler(eudiStorage *eudi.Storage) *SdJwtVcDcqlHandler {
+	keyStore := storage.NewHolderBindingKeyStore(eudiStorage.Db())
 	return &SdJwtVcDcqlHandler{
 		credentialStore: storage.NewCredentialStore(eudiStorage),
-		keyBinder:       keyBinder,
+		keyBinder:       sdjwtvc.NewDefaultKeyBinder(&eudiKeyBindingStorage{keyStore: keyStore}),
 	}
 }
 
 var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
 
 func (h *SdJwtVcDcqlHandler) Format() string {
-	return string(clientmodels.Format_SdJwtVc)
+	return string(clientmodels.Format_SdJwtVc) // "dc+sd-jwt"
+}
+
+// Formats returns all format identifiers this handler supports.
+// Both "dc+sd-jwt" (current spec) and "vc+sd-jwt" (legacy) are SD-JWT-VC formats.
+func (h *SdJwtVcDcqlHandler) Formats() []string {
+	return []string{"dc+sd-jwt", "vc+sd-jwt"}
 }
 
 func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {
 	result := &dcql.CredentialQueryResult{}
 
+	batches, err := h.findBatches(query)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, batch := range batches {
+		attributes, err := parseBatchAttributes(batch, query)
+		if err != nil {
+			continue
+		}
+		if attributes == nil {
+			continue
+		}
+
+		result.OwnedCandidates = append(result.OwnedCandidates, &clientmodels.SelectableCredentialInstance{
+			CredentialId:                batch.VerifiableCredentialType,
+			Hash:                        batch.Hash,
+			Name:                        clientmodels.TranslatedString{"en": batch.VerifiableCredentialType},
+			Format:                      clientmodels.Format_SdJwtVc,
+			BatchInstanceCountRemaining: &batch.RemainingCount,
+			Attributes:                  attributes,
+			IssuanceDate:                batch.IssuedAt.Unix(),
+			ExpiryDate:                  expiryUnix(batch),
+		})
+	}
+
+	return result, nil
+}
+
+// findBatches returns credential batches matching the query.
+// When vct_values are specified, only matching batches are returned.
+// When vct_values are absent (per DCQL spec, any VCT is acceptable), all batches are returned.
+func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.CredentialBatch, error) {
+	if len(query.Meta.VctValues) == 0 {
+		return h.credentialStore.GetAllBatches()
+	}
+
+	var all []*models.CredentialBatch
 	for _, vct := range query.Meta.VctValues {
 		batches, err := h.credentialStore.GetBatchesByVCT(vct)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get batches for vct %s: %w", vct, err)
 		}
-
-		for _, batch := range batches {
-			// Parse the stored processed payload to get attribute values
-			attributes, err := parseBatchAttributes(batch, query)
-			if err != nil {
-				continue // skip batches that don't match
-			}
-
-			if attributes == nil {
-				continue // claims didn't match
-			}
-
-			result.OwnedCandidates = append(result.OwnedCandidates, &clientmodels.SelectableCredentialInstance{
-				CredentialId:                batch.VerifiableCredentialType,
-				Hash:                        batch.Hash,
-				Name:                        clientmodels.TranslatedString{"en": batch.VerifiableCredentialType},
-				Format:                      clientmodels.Format_SdJwtVc,
-				BatchInstanceCountRemaining: &batch.RemainingCount,
-				Attributes:                  attributes,
-				IssuanceDate:                batch.IssuedAt.Unix(),
-				ExpiryDate:                  expiryUnix(batch),
-			})
-		}
-
-		// Note: no obtainable descriptors — this handler only serves credentials already in storage.
-		// Obtainability for OID4VCI credentials is handled by the issuance flow, not the DCQL handler.
+		all = append(all, batches...)
 	}
-
-	return result, nil
+	return all, nil
 }
 
 func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
@@ -166,24 +185,6 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	}
 
 	return attributes, nil
-}
-
-func buildObtainableDescriptor(vct string, query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
-	var attrs []clientmodels.Attribute
-	for _, claim := range query.Claims {
-		attrs = append(attrs, clientmodels.Attribute{
-			Id:          claim.Path[0],
-			DisplayName: clientmodels.TranslatedString{"en": claim.Path[0]},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
-			},
-		})
-	}
-	return &clientmodels.CredentialDescriptor{
-		CredentialId: vct,
-		Name:         clientmodels.TranslatedString{"en": vct},
-		Attributes:   attrs,
-	}
 }
 
 func buildLogCredential(batch *models.CredentialBatch, attrNames []string) clientmodels.LogCredential {

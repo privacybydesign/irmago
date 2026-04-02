@@ -28,7 +28,7 @@ type RequestorCertificateStoreVerifierValidator struct {
 	validatorFactory    QueryValidatorFactory
 }
 
-func NewRequestorCertificateStoreVerifierValidator(verificationContext eudi_jwt.X509VerificationContext, validatorFactory QueryValidatorFactory) VerifierValidator {
+func NewRequestorCertificateStoreVerifierValidator(verificationContext eudi_jwt.X509VerificationContext, validatorFactory QueryValidatorFactory) *RequestorCertificateStoreVerifierValidator {
 	return &RequestorCertificateStoreVerifierValidator{
 		verificationContext: verificationContext,
 		validatorFactory:    validatorFactory,

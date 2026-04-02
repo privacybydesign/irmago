@@ -125,20 +125,20 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
-		// Store the verifier logo in the cache
-		_, logoPath, err := client.Configuration.Verifiers.CacheLogo(
-			endEntityCert.SerialNumber.String(),
-			&requestorSchemeData.Organization.Logo,
-		)
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
-			return
+		requestor := &clientmodels.TrustedParty{
+			Name:     clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
+			Verified: true,
 		}
 
-		requestor := &clientmodels.TrustedParty{
-			Name:      clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
-			ImagePath: &logoPath,
-			Verified:  true,
+		// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
+		if endEntityCert != nil {
+			_, logoPath, err := client.Configuration.Verifiers.CacheLogo(
+				endEntityCert.SerialNumber.String(),
+				&requestorSchemeData.Organization.Logo,
+			)
+			if err == nil {
+				requestor.ImagePath = &logoPath
+			}
 		}
 
 		eudi.Logger.Infof("auth request: %#v", request)

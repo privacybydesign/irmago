@@ -198,8 +198,8 @@ func requireSessionState(
 ) {
 	t.Helper()
 	require.Equal(t, id, session.Id)
-	require.Equal(t, sessionType, session.Type)
 	require.Equal(t, status, session.Status)
+	require.Equal(t, sessionType, session.Type)
 }
 
 // requireRequestorInfo validates the standard test requestor info

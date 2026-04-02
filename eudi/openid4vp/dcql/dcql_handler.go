@@ -137,11 +137,27 @@ func (h *DcqlHandler) PrepareDisclosure(
 	return result, nil
 }
 
+// MultiFormatHandler is an optional interface that handlers can implement
+// to support multiple credential format identifiers (e.g., both "dc+sd-jwt" and "vc+sd-jwt").
+type MultiFormatHandler interface {
+	Formats() []string
+}
+
 func (h *DcqlHandler) findHandlersForFormat(format string) []DcqlCredentialQueryHandler {
 	var result []DcqlCredentialQueryHandler
 	for _, handler := range h.credentialQueryHandlers {
 		if handler.Format() == format {
 			result = append(result, handler)
+			continue
+		}
+		// Check if handler supports multiple formats
+		if mf, ok := handler.(MultiFormatHandler); ok {
+			for _, f := range mf.Formats() {
+				if f == format {
+					result = append(result, handler)
+					break
+				}
+			}
 		}
 	}
 	return result

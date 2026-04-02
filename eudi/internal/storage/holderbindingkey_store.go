@@ -15,6 +15,7 @@ type HolderBindingKeyStore interface {
 	StoreKeys(keys []models.HolderBindingKey) error
 	GetByID(id uuid.UUID) (*models.HolderBindingKey, error)
 	GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error)
+	GetByDidUrl(didUrl string) (*models.HolderBindingKey, error)
 	DeleteKey(id uuid.UUID) error
 	DeleteKeys(ids uuid.UUIDs) error
 	DeleteAll() error
@@ -79,6 +80,22 @@ func (r *holderBindingKeyStore) GetByThumbprint(thumbprint string) (*models.Hold
 		return nil, err
 	}
 
+	return &key, nil
+}
+
+func (r *holderBindingKeyStore) GetByDidUrl(didUrl string) (*models.HolderBindingKey, error) {
+	var key models.HolderBindingKey
+	err := r.db.
+		Preload("ECDSA").
+		Preload("RSA").
+		First(&key, "did_url = ?", didUrl).
+		Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
 	return &key, nil
 }
 

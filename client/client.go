@@ -38,6 +38,7 @@ type Client struct {
 	irmaClient       *irmaclient.IrmaClient
 	logsStorage      irmaclient.LogsStorage
 	keyBinder        sdjwtvc.KeyBinder
+	didValidator     *openid4vp.DidVerifierValidator
 	scheduler        gocron.Scheduler
 	sessionManager   sessionManager
 	// TODO: move preferences from IrmaClient to here
@@ -93,7 +94,9 @@ func New(
 	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
-	verifierValidator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
+	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
+	didValidator := openid4vp.NewDidVerifierValidator(false)
+	verifierValidator := openid4vp.NewCompositeVerifierValidator(x509Validator, didValidator)
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
 
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
@@ -147,7 +150,7 @@ func New(
 	}
 
 	// Register the EUDI SD-JWT handler for credentials issued via OID4VCI
-	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(eudiStorage, irmaKeyBinder)
+	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(eudiStorage)
 	openid4vpClient.AddCredentialQueryHandler(eudiSdJwtDcqlHandler)
 
 	// Initiate the OpenID4VCI client
@@ -176,6 +179,7 @@ func New(
 		irmaClient:       irmaClient,
 		logsStorage:      irmaStorage,
 		keyBinder:        irmaKeyBinder,
+		didValidator:     didValidator,
 		scheduler:        scheduler,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
@@ -755,6 +759,7 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 	if prefs.DeveloperMode {
 		client.openid4vciClient.AllowInsecureHttpForTesting()
 		client.openid4vciClient.Configuration.SetCertificateVerificationMode(eudi.DeveloperModeCertificateVerification)
+		client.didValidator.SetAllowInsecureDidWeb(true)
 		client.openid4vpClient.Configuration.EnableStagingTrustAnchors()
 
 		if err := client.openid4vpClient.Configuration.Reload(); err != nil {

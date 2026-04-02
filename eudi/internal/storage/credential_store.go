@@ -24,6 +24,9 @@ type CredentialStore interface {
 	// the given vct string. Does not preload instances.
 	GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error)
 
+	// GetAllBatches returns all CredentialBatches. Does not preload instances.
+	GetAllBatches() ([]*models.CredentialBatch, error)
+
 	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
 	// not yet been marked as used. Returns ErrNotFound if all instances are used.
 	GetUnusedInstance(batchID uuid.UUID) (*models.IssuedCredentialInstance, error)
@@ -87,6 +90,14 @@ func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch
 		return nil, err
 	}
 
+	return batches, nil
+}
+
+func (s *credentialStore) GetAllBatches() ([]*models.CredentialBatch, error) {
+	var batches []*models.CredentialBatch
+	if err := s.db.Find(&batches).Error; err != nil {
+		return nil, err
+	}
 	return batches, nil
 }
 
