@@ -43,6 +43,11 @@ type Client struct {
 	currentSession    *openid4vpSession
 }
 
+// AddCredentialQueryHandler adds a credential query handler to the client.
+func (client *Client) AddCredentialQueryHandler(handler dcql.DcqlCredentialQueryHandler) {
+	client.dcqlHandler.AddHandler(handler)
+}
+
 // RefreshPendingPermissionRequest sends another, updated verification request if there's an active session.
 func (client *Client) RefreshPendingPermissionRequest() {
 	if client.currentSession != nil {

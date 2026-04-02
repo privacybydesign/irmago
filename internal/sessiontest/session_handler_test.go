@@ -6,7 +6,8 @@ import (
 
 // TestSessionHandler runs all session handler tests across all protocols.
 func TestSessionHandler(t *testing.T) {
-	t.Run("openid4vp/irma-sdjwt", testSessionHandlerForOpenId4VpDisclosuresWithIrmaSdJwts)
+	t.Run("openid4vp/irma-sdjwt", testSessionHandlerForOpenId4VpWithIrmaSdJwts)
+	t.Run("openid4vp/sdjwtvc", testSessionHandlerForOpenId4VpWithSdJwtVcs)
 	t.Run("openid4vci/sdjwtvc/pre-authorized", testSessionHandlerForOpenID4VCIPreAuth)
 	t.Run("openid4vci/sdjwtvc/auth-code", testSessionHandlerForOpenID4VCIAuthCode)
 	t.Run("irma/disclosure", testSessionHandlerForIrmaDisclosures)
