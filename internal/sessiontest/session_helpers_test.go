@@ -1,6 +1,11 @@
 package sessiontest
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -278,4 +283,151 @@ func requireDisclosureChoices(t *testing.T, plan *clientmodels.DisclosurePlan, e
 		require.Len(t, got.OwnedOptions, exp.owned)
 		require.Len(t, got.ObtainableOptions, exp.obtainable)
 	}
+}
+
+const (
+	openid4vciIssuerBaseURL = "http://localhost:8880"
+
+	preAuthIssuerURL  = openid4vciIssuerBaseURL + "/test-issuer"
+	preAuthAdminToken = "test-admin-token"
+
+	authcodeIssuerURL  = openid4vciIssuerBaseURL + "/authcode-issuer"
+	authcodeAdminToken = "authcode-admin-token"
+
+	mockAuthorizationServerURL = "http://localhost:9090"
+)
+
+func startOpenID4VCISession(t *testing.T, c *client.Client, credOfferURL string) {
+	t.Helper()
+	sessionReq, err := json.Marshal(client.SessionRequestData{
+		Qr:       irma.Qr{URL: credOfferURL},
+		Protocol: clientmodels.Protocol_OpenID4VCI,
+	})
+	require.NoError(t, err)
+	c.NewSession(string(sessionReq))
+}
+
+// getAuthorizationCode simulates the wallet visiting the authorization URL and
+// receiving a code from the mock authorization server.
+func getAuthorizationCode(t *testing.T, authorizationRequestURL string) string {
+	t.Helper()
+
+	parsed, err := url.Parse(authorizationRequestURL)
+	require.NoError(t, err)
+
+	authorizeURL := mockAuthorizationServerURL + "/authorize?" + parsed.RawQuery
+	resp, err := http.Get(authorizeURL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var result struct {
+		Code string `json:"code"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	require.NotEmpty(t, result.Code)
+	return result.Code
+}
+
+// ---------------------------------------------------------------------------
+// Issuer admin helpers
+// ---------------------------------------------------------------------------
+
+type oid4vciOfferResponse struct {
+	URI    string `json:"uri"`
+	ID     string `json:"id"`
+	TxCode string `json:"txCode"`
+}
+
+func createPreAuthOffer(t *testing.T) oid4vciOfferResponse {
+	t.Helper()
+	return postOffer(t, preAuthIssuerURL, preAuthAdminToken, `{
+		"credentials": ["TestCredentialSdJwt"],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": {
+			"given_name": "Test",
+			"family_name": "User",
+			"email": "test@example.com"
+		}
+	}`)
+}
+
+func createPreAuthOfferWithTxCode(t *testing.T) oid4vciOfferResponse {
+	t.Helper()
+	return postOffer(t, preAuthIssuerURL, preAuthAdminToken, `{
+		"credentials": ["TestCredentialSdJwt"],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate",
+				"tx_code": {
+					"input_mode": "numeric",
+					"length": 6
+				}
+			}
+		},
+		"credentialDataSupplierInput": {
+			"given_name": "Test",
+			"family_name": "TxCode",
+			"email": "txcode@example.com"
+		}
+	}`)
+}
+
+func createAuthCodeOffer(t *testing.T) oid4vciOfferResponse {
+	t.Helper()
+	return postOffer(t, authcodeIssuerURL, authcodeAdminToken, `{
+		"credentials": ["TestCredentialSdJwt"],
+		"grants": {
+			"authorization_code": {
+				"issuer_state": "generate"
+			}
+		},
+		"credentialDataSupplierInput": {
+			"given_name": "Test",
+			"family_name": "AuthCode",
+			"email": "authcode@example.com"
+		}
+	}`)
+}
+
+func postOffer(t *testing.T, issuerURL, adminToken, body string) oid4vciOfferResponse {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, issuerURL+"/api/create-offer", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "create-offer should succeed")
+
+	var result oid4vciOfferResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	require.NotEmpty(t, result.ID)
+	require.NotEmpty(t, result.URI)
+	return result
+}
+
+func checkOfferStatus(t *testing.T, issuerURL, adminToken, offerID string) string {
+	t.Helper()
+	body := fmt.Sprintf(`{"id": %q}`, offerID)
+	req, err := http.NewRequest(http.MethodPost, issuerURL+"/api/check-offer", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var result struct {
+		Status string `json:"status"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	return result.Status
 }
