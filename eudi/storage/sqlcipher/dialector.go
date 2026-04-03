@@ -147,3 +147,15 @@ func (m *sqlcipherMigrator) HasIndex(value interface{}, name string) bool {
 	})
 	return count > 0
 }
+
+func (m *sqlcipherMigrator) HasConstraint(value interface{}, name string) bool {
+	return true // SQLite doesn't support ALTER TABLE ADD CONSTRAINT
+}
+
+func (m *sqlcipherMigrator) CreateConstraint(value interface{}, name string) error {
+	return nil // SQLite doesn't support ALTER TABLE ADD CONSTRAINT
+}
+
+func (m *sqlcipherMigrator) AlterColumn(value interface{}, field string) error {
+	return nil // SQLite doesn't support ALTER TABLE ... ALTER COLUMN
+}

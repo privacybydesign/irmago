@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
-	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -13,10 +13,10 @@ import (
 type HolderBindingKeyStore interface {
 	StoreKey(key *models.HolderBindingKey) error
 	StoreKeys(keys []models.HolderBindingKey) error
-	GetByID(id uuid.UUID) (*models.HolderBindingKey, error)
+	GetByID(id datatypes.UUID) (*models.HolderBindingKey, error)
 	GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error)
-	DeleteKey(id uuid.UUID) error
-	DeleteKeys(ids uuid.UUIDs) error
+	DeleteKey(id datatypes.UUID) error
+	DeleteKeys(ids []datatypes.UUID) error
 	DeleteAll() error
 }
 
@@ -44,7 +44,7 @@ func (r *holderBindingKeyStore) StoreKeys(keys []models.HolderBindingKey) error 
 }
 
 // GetByID retrieves a key and preloads both metadata relations.
-func (r *holderBindingKeyStore) GetByID(id uuid.UUID) (*models.HolderBindingKey, error) {
+func (r *holderBindingKeyStore) GetByID(id datatypes.UUID) (*models.HolderBindingKey, error) {
 	var key models.HolderBindingKey
 
 	err := r.db.
@@ -84,7 +84,7 @@ func (r *holderBindingKeyStore) GetByThumbprint(thumbprint string) (*models.Hold
 
 // DeleteKey deletes the base row.
 // Because the model uses OnDelete:CASCADE, related metadata should be deleted too.
-func (r *holderBindingKeyStore) DeleteKey(id uuid.UUID) error {
+func (r *holderBindingKeyStore) DeleteKey(id datatypes.UUID) error {
 	res := r.db.Delete(&models.HolderBindingKey{}, "id = ?", id)
 
 	if res.Error != nil {
@@ -99,7 +99,7 @@ func (r *holderBindingKeyStore) DeleteKey(id uuid.UUID) error {
 
 // DeleteKeys deletes multiple keys by their IDs.
 // If the key is not found, it will continue to delete the other keys
-func (r *holderBindingKeyStore) DeleteKeys(ids uuid.UUIDs) error {
+func (r *holderBindingKeyStore) DeleteKeys(ids []datatypes.UUID) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		for _, id := range ids {
 			res := r.db.Delete(&models.HolderBindingKey{}, "id = ?", id)

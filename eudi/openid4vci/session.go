@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -17,14 +16,17 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/internal/storage"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
+	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage"
+	"gorm.io/datatypes"
 )
 
 type session struct {
 	credentialOffer          *CredentialOffer
-	credentialIssuerMetadata *CredentialIssuerMetadata
+	credentialIssuerMetadata *metadata.CredentialIssuerMetadata
 	requestorInfo            *clientmodels.TrustedParty
 	credentials              []*clientmodels.CredentialDescriptor
 	storageClient            SdJwtVcStorageClient
@@ -177,7 +179,7 @@ func (s *session) configureIssuerSettings() error {
 	return nil
 }
 
-func getCredentialRequestPreferences(c CredentialConfiguration) *sessionCredentialRequestPreferences {
+func getCredentialRequestPreferences(c metadata.CredentialConfiguration) *sessionCredentialRequestPreferences {
 	s := &sessionCredentialRequestPreferences{}
 
 	if len(c.CryptographicBindingMethodsSupported) > 0 {
@@ -254,7 +256,8 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		return fmt.Errorf("credential configuration %q not found in issuer metadata", credentialConfigurationId)
 	}
 
-	if err := credentialConfig.ValidateSupportedFeatures(); err != nil {
+	credentialConfigurationValidator := CredentialConfigurationValidator{}
+	if err := credentialConfigurationValidator.ValidateSupportedFeatures(&credentialConfig); err != nil {
 		return fmt.Errorf("credential configuration %q is not supported: %v", credentialConfigurationId, err)
 	}
 
@@ -269,10 +272,11 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	}
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
-	var keyBindingService *holderBindingKeyService
-	var keyIds uuid.UUIDs
+	// TODO: disabled check for testing with Digidentity
+	keyBindingService := services.NewHolderBindingKeyService(s.storage)
+
+	var keyIds []datatypes.UUID
 	if requireCryptographicKeyBinding {
-		keyBindingService = NewHolderBindingKeyService(s.storage)
 		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
@@ -280,7 +284,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		}
 
 		// Since we now only support JWT proofs (and the issuer supports this, as checked with ValidateSupportedFeatures), we can directly use that to create the key pairs with JWT proofs
-		proofType := credentialConfig.ProofTypesSupported[ProofTypeIdentifier_JWT]
+		proofType := credentialConfig.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]
 
 		// Determine signing algorithm for key binding proofs
 		var alg jwa.SignatureAlgorithm
@@ -318,8 +322,8 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 			x[i] = v
 		}
 
-		request.Proofs = &Proofs{
-			ProofTypeIdentifier_JWT: x,
+		request.Proofs = &metadata.Proofs{
+			metadata.ProofTypeIdentifier_JWT: x,
 		}
 	}
 
@@ -472,7 +476,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	}
 
 	// Store the credentials + holder-binding keys + metadata (+ images?) in the storage (in bulk), so we can use a transaction and make sure everything is stored correctly, and also for performance reasons when dealing with batch issuance
-	credentialService := NewCredentialService(s.storage)
+	credentialService := services.NewCredentialService(s.storage)
 
 	err = credentialService.VerifyAndStoreIssuedCredentials(verifiedSdJwtVcs, credentialConfigurationId, *s.credentialIssuerMetadata, requireCryptographicKeyBinding, keyIds)
 	if err != nil {

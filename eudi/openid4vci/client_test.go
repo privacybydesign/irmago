@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -23,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createOpenID4VCiClientForTesting(t *testing.T) (*eudi.Storage, *Client) {
+func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdJwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
@@ -52,7 +53,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (*eudi.Storage, *Client) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	storage, err := eudi.NewStorage(aesKey, filepath.Join(storageFolder, "eudi_storage.db"))
+	storage, err := storage.NewStorage(aesKey, filepath.Join(storageFolder, "eudi_storage.db"))
 	require.NoError(t, err)
 
 	client, err := NewClient(&http.Client{}, storage, conf, holderVerifier)

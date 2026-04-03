@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -234,10 +235,12 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				})
 			}
 
+			logo := info.Logo(irmaConfig)
+
 			newCred := clientmodels.Credential{
 				CredentialId: cred.Identifier().String(),
 				Hash:         instanceHash,
-				ImagePath:    info.Logo(irmaConfig),
+				ImagePath:    &logo,
 				Name:         clientmodels.TranslatedString(info.Name),
 				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 				CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
@@ -265,9 +268,23 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 }
 
 func (client *Client) GetCredentials() ([]*clientmodels.Credential, error) {
-	creds := client.credentialInfoList()
+	// Get IRMA + SDJWT-over-IRMA credentials, filter out keyshare credentials
+	creds := client.getIrmaCredentialInfoList()
 	creds = filterOutKeyshareCredentials(client.irmaClient.Configuration, creds)
-	return credentialInfoListToSchemaless(client.irmaClient.Configuration, creds)
+
+	irmaCreds, err := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert IRMA credentials to schemaless format: %v", err)
+	}
+
+	// Get EUDI credentials and convert to the same format, then combine with IRMA credentials.
+	credentialService := services.NewCredentialService(client.eudiStorage)
+	oidCreds, err := credentialService.GetCredentialMetadataList()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
+	}
+
+	return append(irmaCreds, oidCreds...), nil
 }
 
 // filterOutKeyshareCredentials removes credentials that are used for keyshare server enrollment.

@@ -72,7 +72,7 @@ type Credential struct {
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
 	// Absolute path to the image for this credential stored on disk
-	ImagePath string `json:"image_path"`
+	ImagePath *string `json:"image_path"`
 	// The display name for this credential
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer
@@ -86,7 +86,7 @@ type Credential struct {
 	// The date and time (unix format) at which this credential was issued
 	IssuanceDate int64 `json:"issuance_date"`
 	// The date and time (unix format) when this credential expires
-	ExpiryDate int64 `json:"expiry_date"`
+	ExpiryDate int64 `json:"expiry_date"` // TODO: should be optional
 	// Whether or not this credential has been revoked
 	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential
@@ -129,7 +129,7 @@ type SelectableCredentialInstance struct {
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
 	// Absolute path to the image for this credential stored on disk
-	ImagePath string `json:"image_path"`
+	ImagePath *string `json:"image_path"`
 	// The display name for this credential
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer
@@ -150,4 +150,17 @@ type SelectableCredentialInstance struct {
 	RevocationSupported bool `json:"revocation_supported"`
 	// Url at which this credential can be issued (if any)
 	IssueURL *TranslatedString `json:"issue_url"`
+}
+
+// NewTranslatedString returns a TranslatedString containing the specified string for each supported language,
+// or nil when attr is nil.
+func NewTranslatedString(value *string) TranslatedString {
+	if value == nil {
+		return nil
+	}
+	return map[string]string{
+		"":   *value, // raw value
+		"en": *value,
+		"nl": *value,
+	}
 }

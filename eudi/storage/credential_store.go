@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
-	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -15,6 +15,9 @@ type CredentialStore interface {
 	// batch.Instances must be non-empty. GORM sets each instance's BatchID automatically
 	// before running the instance's BeforeCreate hook.
 	StoreBatch(batch *models.CredentialBatch) error
+
+	// GetCredentialBatchList returns a list of all stored credential batches with preloaded batch metadata, but without preloading instances.
+	GetCredentialBatchList() ([]*models.CredentialBatch, error)
 
 	// GetBatchByHash retrieves a CredentialBatch (without preloading instances) by its
 	// deterministic hash. Returns ErrNotFound if no matching batch exists.
@@ -26,15 +29,15 @@ type CredentialStore interface {
 
 	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
 	// not yet been marked as used. Returns ErrNotFound if all instances are used.
-	GetUnusedInstance(batchID uuid.UUID) (*models.IssuedCredentialInstance, error)
+	GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error)
 
 	// MarkInstanceUsed sets Used = true on the given instance and decrements RemainingCount
 	// on its parent batch. Both updates run in the same statement group; callers should wrap
 	// the call in a UnitOfWork.Do transaction to keep them atomic.
-	MarkInstanceUsed(instanceID uuid.UUID) error
+	MarkInstanceUsed(instanceID datatypes.UUID) error
 
 	// DeleteBatch deletes a CredentialBatch and all its instances (via CASCADE).
-	DeleteBatch(batchID uuid.UUID) error
+	DeleteBatch(batchID datatypes.UUID) error
 }
 
 type credentialStore struct {
@@ -46,6 +49,19 @@ func NewCredentialStore(storage Storage) CredentialStore {
 	return &credentialStore{
 		db: storage.Db(),
 	}
+}
+
+func (c *credentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
+	var batches []*models.CredentialBatch
+	err := c.db.
+		Model(&models.CredentialBatch{}).
+		Preload("IssuerDisplay").
+		Preload("CredentialMetadata").
+		Preload("CredentialMetadata.Display").
+		Preload("CredentialMetadata.Claims").
+		Preload("CredentialMetadata.Claims.Display").
+		Find(&batches).Error
+	return batches, err
 }
 
 func (s *credentialStore) StoreBatch(batch *models.CredentialBatch) error {
@@ -90,14 +106,14 @@ func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch
 	return batches, nil
 }
 
-func (s *credentialStore) GetUnusedInstance(batchID uuid.UUID) (*models.IssuedCredentialInstance, error) {
-	if batchID == uuid.Nil {
+func (s *credentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {
+	if batchID.IsNil() {
 		return nil, fmt.Errorf("batchID is required")
 	}
 
 	var instance models.IssuedCredentialInstance
 	err := s.db.
-		Where("batch_id = ? AND used = ?", batchID, false).
+		Where("credential_batch_id = ? AND used = ?", batchID, false).
 		First(&instance).
 		Error
 	if err != nil {
@@ -110,8 +126,8 @@ func (s *credentialStore) GetUnusedInstance(batchID uuid.UUID) (*models.IssuedCr
 	return &instance, nil
 }
 
-func (s *credentialStore) MarkInstanceUsed(instanceID uuid.UUID) error {
-	if instanceID == uuid.Nil {
+func (s *credentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
+	if instanceID.IsNil() {
 		return fmt.Errorf("instanceID is required")
 	}
 
@@ -130,13 +146,13 @@ func (s *credentialStore) MarkInstanceUsed(instanceID uuid.UUID) error {
 	// This runs as a separate statement; wrap both calls in a UnitOfWork.Do
 	// transaction to keep them atomic.
 	return s.db.Model(&models.CredentialBatch{}).
-		Where("id = (SELECT batch_id FROM issued_credential_instances WHERE id = ?) AND remaining_count > 0", instanceID).
+		Where("id = (SELECT credential_batch_id FROM issued_credential_instances WHERE id = ?) AND remaining_count > 0", instanceID).
 		UpdateColumn("remaining_count", gorm.Expr("remaining_count - 1")).
 		Error
 }
 
-func (s *credentialStore) DeleteBatch(batchID uuid.UUID) error {
-	if batchID == uuid.Nil {
+func (s *credentialStore) DeleteBatch(batchID datatypes.UUID) error {
+	if batchID.IsNil() {
 		return fmt.Errorf("batchID is required")
 	}
 

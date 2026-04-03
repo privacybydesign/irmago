@@ -13,7 +13,9 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/scheme"
+	"github.com/privacybydesign/irmago/eudi/storage"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -26,7 +28,7 @@ type Client struct {
 	Configuration  *eudi.Configuration
 	httpClient     *http.Client
 	currentSession *session
-	storage        *eudi.Storage
+	storage        storage.Storage
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
 	// Allow non-HTTPS for testing purposes
@@ -34,7 +36,7 @@ type Client struct {
 }
 
 func NewClient(httpClient *http.Client,
-	storage *eudi.Storage,
+	storage storage.Storage,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 ) (*Client, error) {
@@ -96,7 +98,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, hand
 
 func (client *Client) handleCredentialOffer(
 	credentialOffer *CredentialOffer,
-	credentialIssuerMetadata *CredentialIssuerMetadata,
+	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
 	handler Handler,
 ) error {
 	requestorInfo := convertToTrustedParty(credentialIssuerMetadata)
@@ -192,14 +194,14 @@ func (client *Client) ParseAndValidateCredentialOffer(credentialOfferJson string
 	}
 
 	// Validate all requested Credential Configuration IDs are unique
-	if !isUniqueStrings(credentialOffer.CredentialConfigurationIds, true) {
+	if !metadata.IsUniqueStrings(credentialOffer.CredentialConfigurationIds, true) {
 		return nil, fmt.Errorf("credential_configuration_ids in credential offer are not unique")
 	}
 
 	return &credentialOffer, nil
 }
 
-func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *CredentialOffer) (*CredentialIssuerMetadata, error) {
+func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *CredentialOffer) (*metadata.CredentialIssuerMetadata, error) {
 	parsedCredentialIssuerUri, err := url.Parse(credentialOffer.CredentialIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse credential issuer URI: %v", err)
@@ -252,21 +254,22 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 		return nil, fmt.Errorf("failed to read credential issuer metadata response body: %v", err)
 	}
 
-	var credentialIssuerMetadata CredentialIssuerMetadata
+	var credentialIssuerMetadata metadata.CredentialIssuerMetadata
 	err = json.Unmarshal(credentialIssuerMetadataBytes, &credentialIssuerMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal credential issuer metadata: %v", err)
 	}
 
 	// Validate the Credential Issuer metadata against the spec
-	err = credentialIssuerMetadata.Verify()
+	validator := CredentialIssuerMetadataValidator{}
+	err = validator.Verify(credentialIssuerMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate credential issuer metadata: %v", err)
 	}
 
 	// Validate the metadata against the offered credentials in the Credential Offer
 	// This way, any unsupported credential configurations will be filtered and don't raise a validation error
-	err = credentialIssuerMetadata.ValidateAgainstCredentialOffer(credentialOffer)
+	err = validator.ValidateAgainstCredentialOffer(&credentialIssuerMetadata, credentialOffer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate credential issuer metadata against credential offer: %v", err)
 	}
@@ -300,7 +303,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	return &credentialIssuerMetadata, nil
 }
 
-func (client *Client) downloadRemoteImage(remoteImage RemoteImage) ([]byte, string, error) {
+func (client *Client) downloadRemoteImage(remoteImage metadata.RemoteImage) ([]byte, string, error) {
 	response, err := client.httpClient.Get(remoteImage.Uri)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download image %s: %v", remoteImage.Uri, err)
@@ -353,13 +356,13 @@ func getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuer string, lo
 
 func convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
-	credentialIssuerMetadata *CredentialIssuerMetadata,
+	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
 	issuerName clientmodels.TranslatedString,
 ) ([]*clientmodels.CredentialDescriptor, error) {
 	result := make([]*clientmodels.CredentialDescriptor, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
-			if config.Format != CredentialFormatIdentifier_SdJwtVc {
+			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
 				// We only support SD-JWT VCs for now
 				continue
 			}
@@ -370,8 +373,8 @@ func convertToCredentialInfoList(
 				return nil, nil
 			}
 
-			displays := ToTranslateableList(config.CredentialMetadata.Display)
-			name := convertDisplayToTranslatedString(displays)
+			displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
+			name := metadata.ConvertDisplayToTranslatedString(displays)
 
 			result = append(result, &clientmodels.CredentialDescriptor{
 				CredentialId: config.VerifiableCredentialType,
@@ -386,14 +389,14 @@ func convertToCredentialInfoList(
 	return result, nil
 }
 
-func convertClaimsToAttributes(claims []ClaimsDescription) []clientmodels.Attribute {
+func convertClaimsToAttributes(claims []metadata.ClaimsDescription) []clientmodels.Attribute {
 	var attrs []clientmodels.Attribute
 	for _, claim := range claims {
 		for _, path := range claim.Path {
-			displayName := newTranslatedString(&path)
+			displayName := clientmodels.NewTranslatedString(&path)
 			if len(claim.Display) > 0 {
-				displays := ToTranslateableList(claim.Display)
-				displayName = convertDisplayToTranslatedString(displays)
+				displays := metadata.ToTranslateableList(claim.Display)
+				displayName = metadata.ConvertDisplayToTranslatedString(displays)
 			}
 			attrs = append(attrs, clientmodels.Attribute{
 				Id:          path,
@@ -404,13 +407,13 @@ func convertClaimsToAttributes(claims []ClaimsDescription) []clientmodels.Attrib
 	return attrs
 }
 
-func convertToTrustedParty(credentialIssuerMetadata *CredentialIssuerMetadata) *clientmodels.TrustedParty {
+func convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata) *clientmodels.TrustedParty {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 	// TODO: we need to know which language to use, in order to get the correct logo
-	displays := ToTranslateableList(credentialIssuerMetadata.Display)
+	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
 	return &clientmodels.TrustedParty{
-		Name:     convertDisplayToTranslatedString(displays),
+		Name:     metadata.ConvertDisplayToTranslatedString(displays),
 		Verified: false,
 	}
 }

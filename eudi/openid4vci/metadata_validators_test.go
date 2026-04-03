@@ -2,35 +2,44 @@ package openid4vci
 
 import (
 	"encoding/json"
-	"reflect"
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/stretchr/testify/require"
 )
+
+var locale_EN = "en"
+var locale_EN_US = "en-US"
+var locale_EN_GB = "en-GB"
+var locale_FR = "fr"
+var locale_FR_FR = "fr-FR"
+var locale_ES = "es"
+var invalid_Locale = "invalid_locale"
 
 var scope = "https://pid-issuer/vct/pid"
 
 func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 	tests := []struct {
 		name    string
-		format  CredentialFormatIdentifier
+		format  metadata.CredentialFormatIdentifier
 		wantErr bool
 	}{
-		{"W3CVC", CredentialFormatIdentifier_W3CVC, false},
-		{"W3CVCLD", CredentialFormatIdentifier_W3CVCLD, false},
-		{"W3CVCLD_ProofSuite", CredentialFormatIdentifier_W3CVCLD_ProofSuite, false},
-		{"MsoMdoc", CredentialFormatIdentifier_MsoMdoc, false},
-		{"SdJwtVc", CredentialFormatIdentifier_SdJwtVc, false},
+		{"W3CVC", metadata.CredentialFormatIdentifier_W3CVC, false},
+		{"W3CVCLD", metadata.CredentialFormatIdentifier_W3CVCLD, false},
+		{"W3CVCLD_ProofSuite", metadata.CredentialFormatIdentifier_W3CVCLD_ProofSuite, false},
+		{"MsoMdoc", metadata.CredentialFormatIdentifier_MsoMdoc, false},
+		{"SdJwtVc", metadata.CredentialFormatIdentifier_SdJwtVc, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &CredentialConfiguration{
+			c := &metadata.CredentialConfiguration{
 				Format:                   tt.format,
 				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 			}
-			err := c.Verify()
+			validator := CredentialConfigurationValidator{}
+			err := validator.Verify(c)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Verify() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -39,10 +48,11 @@ func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 }
 
 func TestValidateCredentialConfiguration_UnsupportedFormat(t *testing.T) {
-	c := &CredentialConfiguration{
+	c := &metadata.CredentialConfiguration{
 		Format: "unsupported_format",
 	}
-	err := c.Verify()
+	validator := CredentialConfigurationValidator{}
+	err := validator.Verify(c)
 	if err == nil {
 		t.Errorf("Expected error for unsupported format, got nil")
 	}
@@ -53,20 +63,21 @@ func TestValidateCredentialConfiguration_UnsupportedFormat(t *testing.T) {
 }
 
 func TestValidateCredentialConfiguration_SdJwtVc_InvalidCredentialMetadata(t *testing.T) {
-	c := &CredentialConfiguration{
-		Format:                              CredentialFormatIdentifier_SdJwtVc,
+	c := &metadata.CredentialConfiguration{
+		Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
 		CredentialSigningAlgValuesSupported: []any{"ES256"},
-		CredentialMetadata: &CredentialMetadata{
-			Display: []CredentialDisplay{
+		CredentialMetadata: &metadata.CredentialMetadata{
+			Display: []metadata.CredentialDisplay{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name: "",
 					},
 				},
 			},
 		},
 	}
-	err := c.Verify()
+	validator := CredentialConfigurationValidator{}
+	err := validator.Verify(c)
 	if err == nil {
 		t.Errorf("Expected error for missing name in display, got nil")
 	}
@@ -76,13 +87,13 @@ func TestValidateCredentialConfiguration_SdJwtVc_InvalidCredentialMetadata(t *te
 }
 
 func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *testing.T) {
-	c := &CredentialConfiguration{
-		Format:                              CredentialFormatIdentifier_SdJwtVc,
+	c := &metadata.CredentialConfiguration{
+		Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
 		CredentialSigningAlgValuesSupported: []any{"ES256"},
-		CredentialMetadata: &CredentialMetadata{
-			Display: []CredentialDisplay{
+		CredentialMetadata: &metadata.CredentialMetadata{
+			Display: []metadata.CredentialDisplay{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Test Credential",
 						Locale: &locale_EN,
 					},
@@ -91,20 +102,21 @@ func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *test
 		},
 		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 	}
-	err := c.Verify()
+	validator := CredentialConfigurationValidator{}
+	err := validator.Verify(c)
 	if err != nil {
 		t.Errorf("Expected no error for valid credential metadata, got %v", err)
 	}
 }
 
 func TestCredentialIssuerMetadata_Verify(t *testing.T) {
-	validCredentialConfig := CredentialConfiguration{
-		Format:                              CredentialFormatIdentifier_SdJwtVc,
+	validCredentialConfig := metadata.CredentialConfiguration{
+		Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
 		CredentialSigningAlgValuesSupported: []any{"ES256"},
-		CredentialMetadata: &CredentialMetadata{
-			Display: []CredentialDisplay{
+		CredentialMetadata: &metadata.CredentialMetadata{
+			Display: []metadata.CredentialDisplay{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Test Credential",
 						Locale: &locale_EN,
 					},
@@ -115,29 +127,29 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		metadata CredentialIssuerMetadata
+		metadata metadata.CredentialIssuerMetadata
 		offer    *CredentialOffer
 		wantErr  string
 	}{
 		{
 			name: "missing credential_issuer",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: "missing 'credential_issuer'",
 		},
 		{
 			name: "missing credential_endpoint",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: "missing 'credential_endpoint'",
 		},
 		{
 			name: "missing credential_configurations_supported",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:   "https://issuer.example.com",
 				CredentialEndpoint: "https://issuer.example.com/credential",
 			},
@@ -145,101 +157,101 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 		},
 		{
 			name: "empty credential_configurations_supported",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{},
 			},
 			wantErr: "missing 'credential_configurations_supported'",
 		},
 		{
 			name: "invalid authorization_server URL",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
 				AuthorizationServers:              []string{"://invalid-url"},
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: `invalid 'authorization_server' URL "://invalid-url"`,
 		},
 		{
 			name: "invalid credential_endpoint URL",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "://invalid-url",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: `invalid 'credential_endpoint' URL "://invalid-url"`,
 		},
 		{
 			name: "credential_endpoint with fragment",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential#frag",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: `invalid 'credential_endpoint' URL "https://issuer.example.com/credential#frag": fragment is not allowed`,
 		},
 		{
 			name: "nonce_endpoint with fragment",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
 				NonceEndpoint:                     "https://issuer.example.com/nonce#frag",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: `invalid 'nonce_endpoint' URL "https://issuer.example.com/nonce#frag": fragment is not allowed`,
 		},
 		{
 			name: "deferred_credential_endpoint with fragment",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
 				DeferredCredentialEndpoint:        "https://issuer.example.com/deferred#frag",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: `invalid 'deferred_credential_endpoint' URL "https://issuer.example.com/deferred#frag": fragment is not allowed`,
 		},
 		{
 			name: "notification_endpoint with fragment",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
 				NotificationEndpoint:              "https://issuer.example.com/notify#frag",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: `invalid 'notification_endpoint' URL "https://issuer.example.com/notify#frag": fragment is not allowed`,
 		},
 		{
 			name: "batch_credential_issuance batch_size <= 1",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:   "https://issuer.example.com",
 				CredentialEndpoint: "https://issuer.example.com/credential",
-				BatchCredentialIssuance: &BatchCredentialIssuance{
+				BatchCredentialIssuance: &metadata.BatchCredentialIssuance{
 					BatchSize: 1,
 				},
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: "'batch_size' in 'batch_credential_issuance' must be > 1",
 		},
 		{
 			name: "valid batch_credential_issuance batch_size (>1)",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:   "https://issuer.example.com",
 				CredentialEndpoint: "https://issuer.example.com/credential",
-				BatchCredentialIssuance: &BatchCredentialIssuance{
+				BatchCredentialIssuance: &metadata.BatchCredentialIssuance{
 					BatchSize: 2,
 				},
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: "",
 		},
 		{
 			name: "valid metadata",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			wantErr: "",
 		},
@@ -247,7 +259,8 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.metadata.Verify()
+			validator := CredentialIssuerMetadataValidator{}
+			err := validator.Verify(tt.metadata)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)
 			}
@@ -263,13 +276,13 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 }
 
 func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
-	validCredentialConfig := CredentialConfiguration{
-		Format:                              CredentialFormatIdentifier_SdJwtVc,
+	validCredentialConfig := metadata.CredentialConfiguration{
+		Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
 		CredentialSigningAlgValuesSupported: []any{"ES256"},
-		CredentialMetadata: &CredentialMetadata{
-			Display: []CredentialDisplay{
+		CredentialMetadata: &metadata.CredentialMetadata{
+			Display: []metadata.CredentialDisplay{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Test Credential",
 						Locale: &locale_EN,
 					},
@@ -282,32 +295,32 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 		CredentialConfigurationIds: []string{"test"},
 	}
 
-	unsupportedFeatureCredentialConfig := CredentialConfiguration{
-		Format: CredentialFormatIdentifier_MsoMdoc,
+	unsupportedFeatureCredentialConfig := metadata.CredentialConfiguration{
+		Format: metadata.CredentialFormatIdentifier_MsoMdoc,
 	}
 
 	tests := []struct {
 		name     string
-		metadata CredentialIssuerMetadata
+		metadata metadata.CredentialIssuerMetadata
 		offer    *CredentialOffer
 		wantErr  string
 	}{
 		{
 			name: "credential_issuer mismatch with credential offer",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://mismatched-issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			offer:   validCredentialOffer,
 			wantErr: "'credential_issuer' in metadata does not match 'credential_issuer' from the credential offer",
 		},
 		{
 			name: "credential offer mismatch against metadata",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": validCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": validCredentialConfig},
 			},
 			offer: &CredentialOffer{
 				CredentialIssuer:           "https://issuer.example.com",
@@ -317,10 +330,10 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 		},
 		{
 			name: "unsupported feature(s) in credential config",
-			metadata: CredentialIssuerMetadata{
+			metadata: metadata.CredentialIssuerMetadata{
 				CredentialIssuer:                  "https://issuer.example.com",
 				CredentialEndpoint:                "https://issuer.example.com/credential",
-				CredentialConfigurationsSupported: map[string]CredentialConfiguration{"test": unsupportedFeatureCredentialConfig},
+				CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{"test": unsupportedFeatureCredentialConfig},
 			},
 			offer: &CredentialOffer{
 				CredentialIssuer:           "https://issuer.example.com",
@@ -332,7 +345,8 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.metadata.ValidateAgainstCredentialOffer(tt.offer)
+			validator := CredentialIssuerMetadataValidator{}
+			err := validator.ValidateAgainstCredentialOffer(&tt.metadata, tt.offer)
 			if tt.wantErr == "" && err != nil {
 				t.Errorf("Verify() unexpected error: %v", err)
 			}
@@ -348,25 +362,25 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 }
 
 func TestCredentialConfiguration_Verify(t *testing.T) {
-	validConfiguration := CredentialConfiguration{
-		Format: CredentialFormatIdentifier_SdJwtVc,
+	validConfiguration := metadata.CredentialConfiguration{
+		Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 		CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 			proofs.CryptographicBindingMethod_JWK,
 		},
-		ProofTypesSupported:      map[ProofTypeIdentifier]ProofType{ProofTypeIdentifier_JWT: {ProofSigningAlgValuesSupported: []string{"test"}}},
+		ProofTypesSupported:      map[metadata.ProofTypeIdentifier]metadata.ProofType{metadata.ProofTypeIdentifier_JWT: {ProofSigningAlgValuesSupported: []string{"test"}}},
 		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
 	}
 
 	tests := []struct {
 		name        string
-		config      CredentialConfiguration
+		config      metadata.CredentialConfiguration
 		wantErr     bool
 		expectedErr string
 	}{
 		{
 			name: "cryptographic_binding_methods_supported present, missing 'proof_types_supported'",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 					proofs.CryptographicBindingMethod_JWK,
 				},
@@ -383,7 +397,8 @@ func TestCredentialConfiguration_Verify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Verify()
+			validator := CredentialConfigurationValidator{}
+			err := validator.Verify(&tt.config)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("Verify() expected error, got nil")
@@ -400,28 +415,28 @@ func TestCredentialConfiguration_Verify(t *testing.T) {
 }
 
 func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
-	validFullConfiguration := CredentialConfiguration{
-		Format: CredentialFormatIdentifier_SdJwtVc,
+	validFullConfiguration := metadata.CredentialConfiguration{
+		Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 		Scope:  &scope,
 		CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 			proofs.CryptographicBindingMethod_JWK,
 		},
 		CredentialSigningAlgValuesSupported: []any{"ES256"},
-		ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
-			ProofTypeIdentifier_JWT: {
+		ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
+			metadata.ProofTypeIdentifier_JWT: {
 				ProofSigningAlgValuesSupported: []string{"ES256"},
 			},
 		},
 	}
 
-	unsupportedCredentialConfig := CredentialConfiguration{
-		Format: CredentialFormatIdentifier_W3CVC,
+	unsupportedCredentialConfig := metadata.CredentialConfiguration{
+		Format: metadata.CredentialFormatIdentifier_W3CVC,
 		Scope:  &scope,
 	}
 
 	tests := []struct {
 		name        string
-		config      CredentialConfiguration
+		config      metadata.CredentialConfiguration
 		wantErr     bool
 		expectedErr string
 	}{
@@ -433,24 +448,24 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "no scope present",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 			},
 			wantErr:     true,
 			expectedErr: `missing 'scope' parameter`,
 		},
 		{
 			name: "credential signing algorithms can be nil",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
 			},
 			wantErr: false,
 		},
 		{
 			name: "credential signing algorithms can be empty",
-			config: CredentialConfiguration{
-				Format:                              CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:                               &scope,
 				CredentialSigningAlgValuesSupported: []any{},
 			},
@@ -458,8 +473,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "single credential signing algorithm - unsupported",
-			config: CredentialConfiguration{
-				Format:                              CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:                               &scope,
 				CredentialSigningAlgValuesSupported: []any{"invalid-alg"},
 			},
@@ -468,8 +483,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "single credential signing algorithm - supported",
-			config: CredentialConfiguration{
-				Format:                              CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:                               &scope,
 				CredentialSigningAlgValuesSupported: []any{"ES256"},
 			},
@@ -477,8 +492,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "multiple credential signing algorithms - at least one supported",
-			config: CredentialConfiguration{
-				Format:                              CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:                               &scope,
 				CredentialSigningAlgValuesSupported: []any{"ES256", "invalid-alg"},
 			},
@@ -486,8 +501,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "unsupported cryptographic binding method",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 					proofs.CryptographicBindingMethod_COSE,
@@ -498,8 +513,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "cryptographic binding method present, no proof type supported present",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 					proofs.CryptographicBindingMethod_JWK,
@@ -510,14 +525,14 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "cryptographic binding method present, no proof type JWT available",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 					proofs.CryptographicBindingMethod_JWK,
 				},
-				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
-					ProofTypeIdentifier_DIVP: {
+				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
+					metadata.ProofTypeIdentifier_DIVP: {
 						ProofSigningAlgValuesSupported: []string{"ES256"},
 					},
 				},
@@ -527,14 +542,14 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "cryptographic binding method present, proof type JWT, unsupported proof signing algorithms",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 					proofs.CryptographicBindingMethod_JWK,
 				},
-				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
-					ProofTypeIdentifier_JWT: {
+				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
+					metadata.ProofTypeIdentifier_JWT: {
 						ProofSigningAlgValuesSupported: []string{"invalid-alg"},
 					},
 				},
@@ -544,14 +559,14 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "cryptographic binding method present, proof type JWT, multiple proof signing algorithms, at least one supported",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 					proofs.CryptographicBindingMethod_JWK,
 				},
-				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
-					ProofTypeIdentifier_JWT: {
+				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
+					metadata.ProofTypeIdentifier_JWT: {
 						ProofSigningAlgValuesSupported: []string{"ES256", "invalid-alg"},
 					},
 				},
@@ -560,18 +575,18 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 		},
 		{
 			name: "cryptographic binding method present, proof type JWT, key attestations required - unsupported",
-			config: CredentialConfiguration{
-				Format: CredentialFormatIdentifier_SdJwtVc,
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				Scope:  &scope,
 				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
 					proofs.CryptographicBindingMethod_JWK,
 				},
-				ProofTypesSupported: map[ProofTypeIdentifier]ProofType{
-					ProofTypeIdentifier_JWT: {
+				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
+					metadata.ProofTypeIdentifier_JWT: {
 						ProofSigningAlgValuesSupported: []string{"ES256"},
-						KeyAttestationsRequired: &KeyAttestationRequirement{
-							KeyStorage:         []AttestationAttackResistance{Iso18045_Basic},
-							UserAuthentication: []AttestationAttackResistance{Iso18045_Basic},
+						KeyAttestationsRequired: &metadata.KeyAttestationRequirement{
+							KeyStorage:         []metadata.AttestationAttackResistance{metadata.Iso18045_Basic},
+							UserAuthentication: []metadata.AttestationAttackResistance{metadata.Iso18045_Basic},
 						},
 					},
 				},
@@ -588,7 +603,8 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.ValidateSupportedFeatures()
+			validator := CredentialConfigurationValidator{}
+			err := validator.ValidateSupportedFeatures(&tt.config)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("ValidateSupportedFeatures() expected error, got nil")
@@ -607,15 +623,15 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 func TestCredentialDisplays_verify(t *testing.T) {
 	tests := []struct {
 		name        string
-		displays    CredentialDisplays
+		displays    metadata.CredentialDisplays
 		wantErr     bool
 		expectedErr string
 	}{
 		{
 			name: "valid single display",
-			displays: CredentialDisplays{
+			displays: metadata.CredentialDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Credential Name",
 						Locale: &locale_EN,
 					},
@@ -625,9 +641,9 @@ func TestCredentialDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "valid single display, extended locale",
-			displays: CredentialDisplays{
+			displays: metadata.CredentialDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Credential Name",
 						Locale: &locale_EN_US,
 					},
@@ -637,9 +653,9 @@ func TestCredentialDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "missing name in display",
-			displays: CredentialDisplays{
+			displays: metadata.CredentialDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "",
 						Locale: &locale_EN,
 					},
@@ -650,9 +666,9 @@ func TestCredentialDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "display without locale, should be ignored",
-			displays: CredentialDisplays{
+			displays: metadata.CredentialDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Issuer Name",
 						Locale: nil,
 					},
@@ -662,13 +678,13 @@ func TestCredentialDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "invalid logo uri",
-			displays: CredentialDisplays{
+			displays: metadata.CredentialDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Credential Name",
 						Locale: &locale_EN,
 					},
-					Logo: &RemoteImage{
+					Logo: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
 				},
@@ -678,13 +694,13 @@ func TestCredentialDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "invalid background image uri",
-			displays: CredentialDisplays{
+			displays: metadata.CredentialDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Credential Name",
 						Locale: &locale_EN,
 					},
-					BackgroundImage: &RemoteImage{
+					BackgroundImage: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
 				},
@@ -694,15 +710,15 @@ func TestCredentialDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "duplicate locale",
-			displays: CredentialDisplays{
+			displays: metadata.CredentialDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Credential Name",
 						Locale: &locale_EN,
 					},
 				},
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Another Name",
 						Locale: &locale_EN,
 					},
@@ -713,9 +729,9 @@ func TestCredentialDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "invalid locale tag",
-			displays: CredentialDisplays{
+			displays: metadata.CredentialDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Credential Name",
 						Locale: &invalid_Locale,
 					},
@@ -728,7 +744,8 @@ func TestCredentialDisplays_verify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.displays.verify()
+			validator := CredentialDisplaysValidator{}
+			err := validator.verify(tt.displays)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("Expected error, got nil")
@@ -753,7 +770,7 @@ func TestCredentialIssuerDisplay_UnmarshalJSON_HandleBackwardsCompatibilityUrl(t
 		}
 	}`
 
-	var display CredentialIssuerDisplay
+	var display metadata.CredentialIssuerDisplay
 	err := json.Unmarshal([]byte(input), &display)
 
 	require.NoError(t, err)
@@ -766,15 +783,15 @@ func TestCredentialIssuerDisplay_UnmarshalJSON_HandleBackwardsCompatibilityUrl(t
 func TestCredentialIssuerDisplays_verify(t *testing.T) {
 	tests := []struct {
 		name        string
-		displays    CredentialIssuerDisplays
+		displays    metadata.CredentialIssuerDisplays
 		wantErr     bool
 		expectedErr string
 	}{
 		{
 			name: "valid single display",
-			displays: CredentialIssuerDisplays{
+			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Issuer Name",
 						Locale: &locale_EN,
 					},
@@ -784,13 +801,13 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "valid display with logo",
-			displays: CredentialIssuerDisplays{
+			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Issuer Name",
 						Locale: &locale_EN,
 					},
-					Logo: &RemoteImage{
+					Logo: &metadata.RemoteImage{
 						Uri: "https://example.com/logo.png",
 					},
 				},
@@ -799,13 +816,13 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "invalid logo uri",
-			displays: CredentialIssuerDisplays{
+			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Issuer Name",
 						Locale: &locale_EN,
 					},
-					Logo: &RemoteImage{
+					Logo: &metadata.RemoteImage{
 						Uri: "://invalid-url",
 					},
 				},
@@ -815,15 +832,15 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "duplicate locale",
-			displays: CredentialIssuerDisplays{
+			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Issuer Name",
 						Locale: &locale_EN,
 					},
 				},
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Another Name",
 						Locale: &locale_EN,
 					},
@@ -834,9 +851,9 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 		},
 		{
 			name: "invalid locale tag",
-			displays: CredentialIssuerDisplays{
+			displays: metadata.CredentialIssuerDisplays{
 				{
-					Display: Display{
+					Display: metadata.Display{
 						Name:   "Issuer Name",
 						Locale: &invalid_Locale,
 					},
@@ -849,7 +866,8 @@ func TestCredentialIssuerDisplays_verify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.displays.verify()
+			validator := CredentialIssuerDisplaysValidator{}
+			err := validator.verify(tt.displays)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("Expected error, got nil")
@@ -951,89 +969,6 @@ func TestIsValidCSSColorLevel3(t *testing.T) {
 	}
 }
 
-func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
-	tests := []struct {
-		name     string // description of this test case
-		metadata CredentialIssuerMetadata
-		want     []string
-	}{
-		{
-			name: "single display, single locale",
-			metadata: CredentialIssuerMetadata{
-				Display: CredentialIssuerDisplays{
-					{
-						Display: Display{
-							Name:   "Issuer Name",
-							Locale: &locale_EN,
-						},
-					},
-				},
-			},
-			want: []string{"en"},
-		},
-		{
-			name: "multiple displays, multiple locales",
-			metadata: CredentialIssuerMetadata{
-				Display: CredentialIssuerDisplays{
-					{
-						Display: Display{
-							Name:   "Issuer Name",
-							Locale: &locale_EN_US,
-						},
-					},
-					{
-						Display: Display{
-							Name:   "Nom de l'émetteur",
-							Locale: &locale_FR_FR,
-						},
-					},
-					{
-						Display: Display{
-							Name:   "Nombre del emisor",
-							Locale: &locale_ES,
-						},
-					},
-				},
-			},
-			want: []string{"en", "fr", "es"},
-		},
-		{
-			name: "displays with duplicate base languages",
-			metadata: CredentialIssuerMetadata{
-				Display: CredentialIssuerDisplays{
-					{
-						Display: Display{
-							Name:   "Issuer Name",
-							Locale: &locale_EN_US,
-						},
-					},
-					{
-						Display: Display{
-							Name:   "Another Issuer Name",
-							Locale: &locale_EN_GB,
-						},
-					},
-					{
-						Display: Display{
-							Name:   "Nom de l'émetteur",
-							Locale: &locale_FR,
-						},
-					},
-				},
-			},
-			want: []string{"en", "fr"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.metadata.GetAllBaseLanguages()
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetAllBaseLanguages() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestCredentialRequestEncryption_UnmarshalJSON_Success(t *testing.T) {
 	input := `{
 		"jwks": {
@@ -1054,7 +989,7 @@ func TestCredentialRequestEncryption_UnmarshalJSON_Success(t *testing.T) {
 		"encryption_required": true
 	}`
 
-	var creqEnc CredentialRequestEncryption
+	var creqEnc metadata.CredentialRequestEncryption
 	err := json.Unmarshal([]byte(input), &creqEnc)
 
 	require.NoError(t, err)
