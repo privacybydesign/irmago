@@ -39,7 +39,7 @@ type CredentialBatch struct {
 	Hash string `gorm:"uniqueIndex"`
 
 	// ProcessedSdJwtPayload is the JSON-encoded payload of the SD-JWT after processing/verifying the issuer-signed JWT.
-	//ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
+	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
 	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
 	IssuedAt time.Time

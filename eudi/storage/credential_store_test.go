@@ -44,11 +44,11 @@ func newBatch(hash string) *models.CredentialBatch {
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
-		//ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:         time.Now().UTC().Truncate(time.Second),
-		BatchSize:        1,
-		RemainingCount:   1,
-		CredentialIssuer: "https://issuer.example.com",
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                 time.Now().UTC().Truncate(time.Second),
+		BatchSize:                1,
+		RemainingCount:           1,
+		CredentialIssuer:         "https://issuer.example.com",
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -113,11 +113,11 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
-		//ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:         time.Now().UTC().Truncate(time.Second),
-		BatchSize:        uint(instanceCount),
-		RemainingCount:   uint(instanceCount),
-		CredentialIssuer: "https://issuer.example.com",
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                 time.Now().UTC().Truncate(time.Second),
+		BatchSize:                uint(instanceCount),
+		RemainingCount:           uint(instanceCount),
+		CredentialIssuer:         "https://issuer.example.com",
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
