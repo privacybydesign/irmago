@@ -1,5 +1,7 @@
 package clientmodels
 
+const DefaultFallbackLanguage = "en"
+
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
@@ -24,9 +26,10 @@ type AttributeType string
 const (
 	AttributeType_Object           AttributeType = "object"
 	AttributeType_Array            AttributeType = "array"
+	AttributeType_String           AttributeType = "string"
 	AttributeType_TranslatedString AttributeType = "translated_string"
-	AttributeType_Bool             AttributeType = "bool"
-	AttributeType_Int              AttributeType = "int"
+	AttributeType_Bool             AttributeType = "boolean"
+	AttributeType_Int              AttributeType = "integer"
 	AttributeType_Image            AttributeType = "image"
 	AttributeType_Base64Image      AttributeType = "base64_image"
 )
@@ -38,6 +41,7 @@ type AttributeValue struct {
 	Int              *int64            `json:"int,omitempty"`
 	Bool             *bool             `json:"bool,omitempty"`
 	TranslatedString *TranslatedString `json:"translated_string,omitempty"`
+	String           *string           `json:"string,omitempty"`
 	Array            []AttributeValue  `json:"array,omitempty"`
 	Object           []Attribute       `json:"object,omitempty"`
 	ImagePath        *string           `json:"image_path,omitempty"`
@@ -46,7 +50,7 @@ type AttributeValue struct {
 
 // HasValue returns true if this AttributeValue carries an actual value (not just a type constraint).
 func (v *AttributeValue) HasValue() bool {
-	return v.Int != nil || v.Bool != nil || v.TranslatedString != nil ||
+	return v.Int != nil || v.Bool != nil || v.TranslatedString != nil || v.String != nil ||
 		len(v.Array) > 0 || len(v.Object) > 0 || v.ImagePath != nil || v.Base64Image != nil
 }
 
