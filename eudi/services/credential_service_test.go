@@ -147,7 +147,7 @@ func newStorageBatch() *models.CredentialBatch {
 			},
 			Claims: []models.CredentialClaim{
 				{
-					Path:      `["family_name"]`,
+					Path:      datatypes.JSON(`["family_name"]`),
 					Mandatory: true,
 					Display: []models.ClaimDisplay{
 						{Name: "Family Name", Locale: datatypes.NullString{V: "en", Valid: true}},

@@ -68,7 +68,7 @@ func newBatch(hash string) *models.CredentialBatch {
 			},
 			Claims: []models.CredentialClaim{
 				models.CredentialClaim{
-					Path:      "{\"a\", \"b\", \"c\"}",
+					Path:      datatypes.JSON(`["a", "b", "c"]`),
 					Mandatory: false,
 					Display: []models.ClaimDisplay{
 						models.ClaimDisplay{
@@ -82,7 +82,7 @@ func newBatch(hash string) *models.CredentialBatch {
 					},
 				},
 				models.CredentialClaim{
-					Path:      "{\"x\", \"y\", \"z\"}",
+					Path:      datatypes.JSON(`["x", "y", "z"]`),
 					Mandatory: true,
 					Display: []models.ClaimDisplay{
 						models.ClaimDisplay{

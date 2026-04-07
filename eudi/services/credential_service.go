@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log"
 	"slices"
 	"time"
 
@@ -47,6 +48,12 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, len(m))
 	for i, batch := range m {
+		var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
+		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &processedSdJwtPayload); err != nil {
+			log.Printf("Error unmarshalling processed SD-JWT payload for batch %s: %v", batch.ID, err)
+			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
+		}
+
 		issuerDisplays := clientmodels.TranslatedString{}
 		for _, d := range batch.IssuerDisplay {
 			locale := ""
@@ -79,10 +86,35 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					attrDisplay[locale] = d.Name
 				}
 
+				// Build a slice from the claim path for processing
+				var claimPath []any
+				if err := json.Unmarshal(claim.Path, &claimPath); err != nil {
+					log.Fatalf("Error unmarshalling JSON: %v", err)
+				}
+
+				claimValue, err := processedSdJwtPayload.GetClaimValue(claimPath)
+				if err != nil {
+					log.Fatalf("Error getting claim value: %v", err)
+				}
+
+				// TODO: for now; JSON marshal the value, but apperently, we need to convert to correct type
+				marshaledValue, err := json.Marshal(claimValue)
+				if err != nil {
+					log.Fatalf("Error marshalling claim value: %v", err)
+				}
+
+				attrValue := clientmodels.AttributeValue{
+					Type: "translated_string",
+					TranslatedString: &clientmodels.TranslatedString{
+						"nl": string(marshaledValue),
+						"en": string(marshaledValue),
+					},
+				}
+
 				attrs[j] = clientmodels.Attribute{
-					Id:          "", // TODO: needs to be different per language/locale
+					Id:          "", // TODO: what to assign here? needs to be different per language/locale?
 					DisplayName: attrDisplay,
-					Value:       nil, // TODO: fill attributes here?
+					Value:       &attrValue, // TODO: fill attributes here; apply JSON Path Pointer to the ProcessedSdJwtPayload to extract the value for this claim
 				}
 			}
 		}
@@ -161,7 +193,7 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 
 	issuedAt := time.Unix(first.IssuerSignedJwtPayload.IssuedAt, 0)
 
-	// Since Expiry and NotBefore are not (yet) optional, we will directly assign them to datatypes.NullTime with Valid=true
+	// Since Expiry and NotBefore are not (yet) optional, we will directly assign them to time.Unix, potentially resulting in a zero time if the claims are missing
 	exp := datatypes.NullTime{
 		V:     time.Unix(first.IssuerSignedJwtPayload.Expiry, 0),
 		Valid: true,
@@ -213,7 +245,7 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 			}
 
 			claimModels[i] = models.CredentialClaim{
-				Path:      string(claimPath),
+				Path:      datatypes.JSON(claimPath),
 				Mandatory: mandatory,
 				Display:   displays,
 			}

@@ -252,8 +252,8 @@ type CredentialClaim struct {
 	CredentialMetadataID datatypes.UUID
 
 	// Path is the dot-separated or JSON Pointer path to the claim within the credential.
-	Path      string
-	Mandatory bool `gorm:"default:false"`
+	Path      datatypes.JSON `gorm:"type:JSON;not null"`
+	Mandatory bool           `gorm:"default:false"`
 
 	Display []ClaimDisplay `gorm:"constraint:OnDelete:CASCADE"`
 }
@@ -262,7 +262,7 @@ func (c *CredentialClaim) BeforeCreate(tx *gorm.DB) error {
 	if c.ID.IsNil() {
 		c.ID = datatypes.NewUUIDv4()
 	}
-	if c.Path == "" {
+	if len(c.Path) == 0 {
 		return fmt.Errorf("path is required")
 	}
 	return c.normalizeChildren()
