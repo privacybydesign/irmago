@@ -29,6 +29,35 @@
           "locale": "en"
         }
       ]
+    },
+    "HouseCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "HouseCredentialSdJwt",
+      "extends": "HouseCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          { "name": "House Possession Credential (SD-JWT, Auth Code)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["owner_name"], "display": [{ "name": "Owner Name", "locale": "en" }] },
+          { "path": ["address", "street"], "display": [{ "name": "Street", "locale": "en" }] },
+          { "path": ["address", "city"], "display": [{ "name": "City", "locale": "en" }] },
+          { "path": ["address", "country"], "display": [{ "name": "Country", "locale": "en" }] }
+        ]
+      },
+      "display": [
+        {
+          "name": "House Possession Credential (SD-JWT, Auth Code)",
+          "locale": "en"
+        }
+      ]
     }
   }
 }
