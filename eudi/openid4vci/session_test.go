@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 )
 
 // mockSdJwtVcStorageClient is a test mock implementing SdJwtVcStorageClient.
@@ -228,14 +229,14 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	ts := httptest.NewServer(credEndpointHandler)
 
 	scope := "test-scope"
-	credentialConfig := &CredentialConfiguration{
-		Format: CredentialFormatIdentifier_SdJwtVc,
+	credentialConfig := &metadata.CredentialConfiguration{
+		Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 		Scope:  &scope,
 	}
 
 	if opts&CredentialConfigurationWithUnsupportedFeature == CredentialConfigurationWithUnsupportedFeature {
 		// Configure unsupported format to force 'unsupported'
-		credentialConfig.Format = CredentialFormatIdentifier_W3CVC
+		credentialConfig.Format = metadata.CredentialFormatIdentifier_W3CVC
 	}
 
 	mockStorageClient := &mockSdJwtVcStorageClient{}
@@ -243,10 +244,10 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 		credentialOffer: &CredentialOffer{
 			CredentialConfigurationIds: []string{"credential-config-1"},
 		},
-		credentialIssuerMetadata: &CredentialIssuerMetadata{
+		credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
 			CredentialEndpoint: ts.URL,
 			NonceEndpoint:      "https://nonce-endpoint",
-			CredentialConfigurationsSupported: map[string]CredentialConfiguration{
+			CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
 				"credential-config-1": *credentialConfig,
 			},
 		},

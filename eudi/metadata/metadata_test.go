@@ -1,4 +1,4 @@
-package openid4vci
+package metadata
 
 import (
 	"reflect"
@@ -13,7 +13,6 @@ var locale_EN_GB = "en-GB"
 var locale_FR = "fr"
 var locale_FR_FR = "fr-FR"
 var locale_ES = "es"
-var invalid_Locale = "invalid_locale"
 
 func Test_convertDisplayToTranslatedString(t *testing.T) {
 	tests := []struct {
@@ -97,9 +96,92 @@ func Test_convertDisplayToTranslatedString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			displays := ToTranslateableList(tt.displays)
-			got := convertDisplayToTranslatedString(displays)
+			got := ConvertDisplayToTranslatedString(displays)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("convertDisplayToTranslatedString() = %v, want %v", got, tt.want)
+				t.Errorf("ConvertDisplayToTranslatedString() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCredentialIssuerMetadata_GetAllBaseLanguages(t *testing.T) {
+	tests := []struct {
+		name     string // description of this test case
+		metadata CredentialIssuerMetadata
+		want     []string
+	}{
+		{
+			name: "single display, single locale",
+			metadata: CredentialIssuerMetadata{
+				Display: CredentialIssuerDisplays{
+					{
+						Display: Display{
+							Name:   "Issuer Name",
+							Locale: &locale_EN,
+						},
+					},
+				},
+			},
+			want: []string{"en"},
+		},
+		{
+			name: "multiple displays, multiple locales",
+			metadata: CredentialIssuerMetadata{
+				Display: CredentialIssuerDisplays{
+					{
+						Display: Display{
+							Name:   "Issuer Name",
+							Locale: &locale_EN_US,
+						},
+					},
+					{
+						Display: Display{
+							Name:   "Nom de l'émetteur",
+							Locale: &locale_FR_FR,
+						},
+					},
+					{
+						Display: Display{
+							Name:   "Nombre del emisor",
+							Locale: &locale_ES,
+						},
+					},
+				},
+			},
+			want: []string{"en", "fr", "es"},
+		},
+		{
+			name: "displays with duplicate base languages",
+			metadata: CredentialIssuerMetadata{
+				Display: CredentialIssuerDisplays{
+					{
+						Display: Display{
+							Name:   "Issuer Name",
+							Locale: &locale_EN_US,
+						},
+					},
+					{
+						Display: Display{
+							Name:   "Another Issuer Name",
+							Locale: &locale_EN_GB,
+						},
+					},
+					{
+						Display: Display{
+							Name:   "Nom de l'émetteur",
+							Locale: &locale_FR,
+						},
+					},
+				},
+			},
+			want: []string{"en", "fr"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.metadata.GetAllBaseLanguages()
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetAllBaseLanguages() = %v, want %v", got, tt.want)
 			}
 		})
 	}

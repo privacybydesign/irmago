@@ -244,10 +244,11 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 	attributes := h.buildMatchedAttributes(credType, candidate.claimMatches, metadata)
 
 	remainingCount := metadata.RemainingInstanceCount
+	logo := credType.Logo(h.config)
 	return &clientmodels.SelectableCredentialInstance{
 		CredentialId:                credTypeId.String(),
 		Hash:                        metadata.Hash,
-		ImagePath:                   credType.Logo(h.config),
+		ImagePath:                   &logo,
 		Name:                        clientmodels.TranslatedString(credType.Name),
 		Issuer:                      buildIssuerTrustedParty(h.config, issuer),
 		Format:                      clientmodels.Format_SdJwtVc,

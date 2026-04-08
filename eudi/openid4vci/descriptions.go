@@ -1,6 +1,10 @@
 package openid4vci
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/privacybydesign/irmago/eudi/metadata"
+)
 
 type CredentialOffer struct {
 	CredentialIssuer           string   `json:"credential_issuer"`
@@ -72,12 +76,10 @@ type TransactionCode struct {
 	Description *string                   `json:"description,omitempty"`
 }
 
-type Proofs map[ProofTypeIdentifier][]any
-
 type CredentialRequest struct {
-	CredentialIdentifier      *string `json:"credential_identifier,omitempty"`
-	CredentialConfigurationId *string `json:"credential_configuration_id,omitempty"`
-	Proofs                    *Proofs `json:"proofs,omitempty"`
+	CredentialIdentifier      *string          `json:"credential_identifier,omitempty"`
+	CredentialConfigurationId *string          `json:"credential_configuration_id,omitempty"`
+	Proofs                    *metadata.Proofs `json:"proofs,omitempty"`
 }
 
 type CredentialResponse struct {

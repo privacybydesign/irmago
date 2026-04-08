@@ -1,5 +1,7 @@
 package clientmodels
 
+const DefaultFallbackLanguage = "en"
+
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
@@ -24,9 +26,10 @@ type AttributeType string
 const (
 	AttributeType_Object           AttributeType = "object"
 	AttributeType_Array            AttributeType = "array"
+	AttributeType_String           AttributeType = "string"
 	AttributeType_TranslatedString AttributeType = "translated_string"
-	AttributeType_Bool             AttributeType = "bool"
-	AttributeType_Int              AttributeType = "int"
+	AttributeType_Bool             AttributeType = "boolean"
+	AttributeType_Int              AttributeType = "integer"
 	AttributeType_Image            AttributeType = "image"
 	AttributeType_Base64Image      AttributeType = "base64_image"
 )
@@ -38,6 +41,7 @@ type AttributeValue struct {
 	Int              *int64            `json:"int,omitempty"`
 	Bool             *bool             `json:"bool,omitempty"`
 	TranslatedString *TranslatedString `json:"translated_string,omitempty"`
+	String           *string           `json:"string,omitempty"`
 	Array            []AttributeValue  `json:"array,omitempty"`
 	Object           []Attribute       `json:"object,omitempty"`
 	ImagePath        *string           `json:"image_path,omitempty"`
@@ -46,7 +50,7 @@ type AttributeValue struct {
 
 // HasValue returns true if this AttributeValue carries an actual value (not just a type constraint).
 func (v *AttributeValue) HasValue() bool {
-	return v.Int != nil || v.Bool != nil || v.TranslatedString != nil ||
+	return v.Int != nil || v.Bool != nil || v.TranslatedString != nil || v.String != nil ||
 		len(v.Array) > 0 || len(v.Object) > 0 || v.ImagePath != nil || v.Base64Image != nil
 }
 
@@ -72,7 +76,7 @@ type Credential struct {
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
 	// Absolute path to the image for this credential stored on disk
-	ImagePath string `json:"image_path"`
+	ImagePath *string `json:"image_path"`
 	// The display name for this credential
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer
@@ -86,7 +90,7 @@ type Credential struct {
 	// The date and time (unix format) at which this credential was issued
 	IssuanceDate int64 `json:"issuance_date"`
 	// The date and time (unix format) when this credential expires
-	ExpiryDate int64 `json:"expiry_date"`
+	ExpiryDate int64 `json:"expiry_date"` // TODO: should be optional
 	// Whether or not this credential has been revoked
 	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential
@@ -129,7 +133,7 @@ type SelectableCredentialInstance struct {
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
 	// Absolute path to the image for this credential stored on disk
-	ImagePath string `json:"image_path"`
+	ImagePath *string `json:"image_path"`
 	// The display name for this credential
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer
@@ -150,4 +154,17 @@ type SelectableCredentialInstance struct {
 	RevocationSupported bool `json:"revocation_supported"`
 	// Url at which this credential can be issued (if any)
 	IssueURL *TranslatedString `json:"issue_url"`
+}
+
+// NewTranslatedString returns a TranslatedString containing the specified string for each supported language,
+// or nil when attr is nil.
+func NewTranslatedString(value *string) TranslatedString {
+	if value == nil {
+		return nil
+	}
+	return map[string]string{
+		"":   *value, // raw value
+		"en": *value,
+		"nl": *value,
+	}
 }

@@ -1,4 +1,4 @@
-package openid4vci
+package services
 
 import (
 	"crypto"
@@ -14,8 +14,9 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
-	"github.com/privacybydesign/irmago/eudi/internal/storage"
-	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"gorm.io/datatypes"
 )
 
 // HolderBindingKeyService implements the KeyBinder interface.
@@ -41,7 +42,7 @@ func NewHolderBindingKeyService(db storage.Storage) *holderBindingKeyService {
 }
 
 // CreateKeyPairsWithProofs creates the specified number of ECDSA key pairs, stores the private keys, and returns the corresponding proofs built using the provided proof builder.
-func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (uuid.UUIDs, []string, error) {
+func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) ([]datatypes.UUID, []string, error) {
 	keyTuples := make([]keyTuple, num)
 	proofs := make([]string, num)
 
@@ -99,9 +100,9 @@ func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilde
 	return keyIds, proofs, nil
 }
 
-func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) (uuid.UUIDs, error) {
+func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) ([]datatypes.UUID, error) {
 	keyModels := make([]models.HolderBindingKey, len(keys))
-	ids := make(uuid.UUIDs, len(keys))
+	ids := make([]datatypes.UUID, len(keys))
 
 	for i, key := range keys {
 		privKeyBytes, err := x509.MarshalPKCS8PrivateKey(key.privKey)
@@ -119,14 +120,14 @@ func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) (uuid.UUIDs,
 
 		// If a DID has been generated as proof, we store the DID instead of the public key thumbprint, to be able to link the key to the proof. If no DID is present, we fall back to storing the thumbprint of the public key.
 		if key.didUrl != nil {
-			keyModels[i].DidUrl = key.didUrl
+			keyModels[i].DidUrl = datatypes.NullString{V: *key.didUrl, Valid: true}
 		} else {
 			thumbprintBytes, err := key.jwkPubKey.Thumbprint(crypto.SHA256)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create thumbprint of jwk pub key: %v", err)
 			}
 			thumbprint := hex.EncodeToString(thumbprintBytes)
-			keyModels[i].PublicKeyThumbprint = &thumbprint
+			keyModels[i].PublicKeyThumbprint = datatypes.NullString{V: thumbprint, Valid: true}
 		}
 	}
 
@@ -148,7 +149,7 @@ func (s *holderBindingKeyService) RemoveAllKeys() error {
 	return s.store.DeleteAll()
 }
 
-func (s *holderBindingKeyService) RemoveKeys(ids uuid.UUIDs) error {
+func (s *holderBindingKeyService) RemoveKeys(ids []datatypes.UUID) error {
 	// Removes holder binding private keys by their IDs
 	for _, id := range ids {
 		if err := s.store.DeleteKey(id); err != nil {

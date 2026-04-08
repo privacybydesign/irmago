@@ -1,12 +1,15 @@
 package sqlcipher
 
-import "github.com/privacybydesign/irmago/eudi/internal/storage/models"
+import (
+	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"gorm.io/datatypes"
+)
 
 func newECDSAKey() *models.HolderBindingKey {
 	thumbprintEcdsa := "test-thumbprint-ecdsa"
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmECDSA,
-		PublicKeyThumbprint: &thumbprintEcdsa,
+		PublicKeyThumbprint: datatypes.NullString{V: thumbprintEcdsa, Valid: true},
 		PrivateKey:          []byte("encrypted-private-key"),
 		ECDSA: &models.ECDSAKeyMetadata{
 			CurveName: "P-256",
@@ -18,7 +21,7 @@ func newRSAKey() *models.HolderBindingKey {
 	thumbprintRsa := "test-thumbprint-rsa"
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmRSA,
-		PublicKeyThumbprint: &thumbprintRsa,
+		PublicKeyThumbprint: datatypes.NullString{V: thumbprintRsa, Valid: true},
 		PrivateKey:          []byte("encrypted-private-key"),
 		RSA: &models.RSAKeyMetadata{
 			ModulusBits:    2048,
