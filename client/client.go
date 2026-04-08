@@ -22,6 +22,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -31,7 +32,7 @@ import (
 
 type Client struct {
 	storage          *clientstorage.Storage
-	eudiStorage      *eudi.Storage
+	eudiStorage      storage.Storage
 	sdjwtvcStorage   irmaclient.SdJwtVcStorage
 	openid4vpClient  *openid4vp.Client
 	openid4vciClient *openid4vci.Client
@@ -82,25 +83,25 @@ func New(
 	}
 
 	// Initialize DB storage
-	storage := clientstorage.NewStorage(storagePath, aesKey)
-	irmaStorage := irmaclient.NewIrmaStorage(storage, irmaConf)
+	s := clientstorage.NewStorage(storagePath, aesKey)
+	irmaStorage := irmaclient.NewIrmaStorage(s, irmaConf)
 
 	// Ensure storage path exists, and populate it with necessary files
-	if err = storage.Open(); err != nil {
+	if err = s.Open(); err != nil {
 		return nil, fmt.Errorf("failed to open irma storage: %v", err)
 	}
 
-	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(storage)
+	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	didValidator := openid4vp.NewDidVerifierValidator(false)
 	verifierValidator := openid4vp.NewCompositeVerifierValidator(x509Validator, didValidator)
-	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(storage)
+	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(s)
 
 	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
-	eudiStorage, err := eudi.NewStorage(aesKey, eudiConf.FullDatabasePath())
+	eudiStorage, err := storage.NewStorage(aesKey, eudiConf.FullDatabasePath())
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
 	}
@@ -170,7 +171,7 @@ func New(
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	client := &Client{
-		storage:          storage,
+		storage:          s,
 		sdjwtvcStorage:   sdjwtvcStorage,
 		eudiStorage:      eudiStorage,
 		openid4vpClient:  openid4vpClient,
@@ -250,7 +251,7 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMeta
 	}
 }
 
-func (client *Client) credentialInfoList() irma.CredentialInfoList {
+func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {
 	sdjwtvcs := client.sdjwtvcStorage.GetCredentialMetdataList()
 	idemix := client.irmaClient.CredentialInfoList()
 
@@ -315,7 +316,7 @@ func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error
 }
 
 func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.CredentialFormat]string) error {
-	allCreds := client.credentialInfoList()
+	allCreds := client.getIrmaCredentialInfoList()
 	relevantCreds := []*irma.CredentialInfo{}
 	for _, hash := range hashByFormat {
 		relevantCreds = append(relevantCreds, allCreds[slices.IndexFunc(allCreds, func(info *irma.CredentialInfo) bool {

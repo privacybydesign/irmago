@@ -7,11 +7,10 @@ import (
 	"fmt"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/internal/storage"
-	"github.com/privacybydesign/irmago/eudi/internal/storage/models"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/models"
 )
 
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
@@ -22,7 +21,7 @@ type SdJwtVcDcqlHandler struct {
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler.
-func NewSdJwtVcDcqlHandler(eudiStorage *eudi.Storage) *SdJwtVcDcqlHandler {
+func NewSdJwtVcDcqlHandler(eudiStorage storage.Storage) *SdJwtVcDcqlHandler {
 	keyStore := storage.NewHolderBindingKeyStore(eudiStorage.Db())
 	return &SdJwtVcDcqlHandler{
 		credentialStore: storage.NewCredentialStore(eudiStorage),
@@ -79,7 +78,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 // When vct_values are absent (per DCQL spec, any VCT is acceptable), all batches are returned.
 func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.CredentialBatch, error) {
 	if len(query.Meta.VctValues) == 0 {
-		return h.credentialStore.GetAllBatches()
+		return h.credentialStore.GetCredentialBatchList()
 	}
 
 	var all []*models.CredentialBatch
@@ -220,8 +219,8 @@ func buildLogCredential(batch *models.CredentialBatch, attrNames []string) clien
 }
 
 func expiryUnix(batch *models.CredentialBatch) int64 {
-	if batch.ExpiresAt != nil {
-		return batch.ExpiresAt.Unix()
+	if batch.ExpiresAt.Valid {
+		return batch.IssuedAt.Unix()
 	}
 	return 0
 }
