@@ -14,6 +14,16 @@
           "proof_signing_alg_values_supported": ["ES256"]
         }
       },
+      "credential_metadata": {
+        "display": [
+          { "name": "Test Credential (SD-JWT)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["given_name"], "display": [{ "name": "Given Name", "locale": "en" }] },
+          { "path": ["family_name"], "display": [{ "name": "Family Name", "locale": "en" }] },
+          { "path": ["email"], "display": [{ "name": "Email", "locale": "en" }] }
+        ]
+      },
       "display": [
         {
           "name": "Test Credential (SD-JWT)",
@@ -31,6 +41,15 @@
         "jwt": {
           "proof_signing_alg_values_supported": ["ES256"]
         }
+      },
+      "credential_metadata": {
+        "display": [
+          { "name": "Email Credential (SD-JWT)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["email"], "display": [{ "name": "Email", "locale": "en" }] },
+          { "path": ["domain"], "display": [{ "name": "Domain", "locale": "en" }] }
+        ]
       },
       "display": [
         {
@@ -50,6 +69,14 @@
           "proof_signing_alg_values_supported": ["ES256"]
         }
       },
+      "credential_metadata": {
+        "display": [
+          { "name": "Phone Credential (SD-JWT)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["phone_number"], "display": [{ "name": "Phone Number", "locale": "en" }] }
+        ]
+      },
       "display": [
         {
           "name": "Phone Credential (SD-JWT)",
@@ -68,9 +95,63 @@
           "proof_signing_alg_values_supported": ["ES256"]
         }
       },
+      "credential_metadata": {
+        "display": [
+          { "name": "Student Card Credential (SD-JWT)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["university"], "display": [{ "name": "University", "locale": "en" }] },
+          { "path": ["level"], "display": [{ "name": "Level", "locale": "en" }] },
+          { "path": ["student_id"], "display": [{ "name": "Student ID", "locale": "en" }] }
+        ]
+      },
       "display": [
         {
           "name": "Student Card Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
+    "HouseCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "HouseCredentialSdJwt",
+      "extends": "HouseCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "House Possession Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": ["owner_name"],
+            "display": [{ "name": "Owner Name", "locale": "en" }]
+          },
+          {
+            "path": ["address", "street"],
+            "display": [{ "name": "Street", "locale": "en" }]
+          },
+          {
+            "path": ["address", "city"],
+            "display": [{ "name": "City", "locale": "en" }]
+          },
+          {
+            "path": ["address", "country"],
+            "display": [{ "name": "Country", "locale": "en" }]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "House Possession Credential (SD-JWT)",
           "locale": "en"
         }
       ]

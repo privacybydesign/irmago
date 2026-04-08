@@ -73,6 +73,14 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions, "should have a credential to disclose")
 
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+
+	// Verify attribute display names and values.
+	attrMap := attributeMap(cred.Attributes)
+	requireAttributeDisplayName(t, attrMap, "given_name", "en", "given_name")
+	requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+	requireAttributeTranslatedValue(t, attrMap, "given_name", "en", "Test")
+	requireAttributeTranslatedValue(t, attrMap, "email", "en", "test@example.com")
+
 	attrIds := make([]string, len(cred.Attributes))
 	for i, attr := range cred.Attributes {
 		attrIds[i] = attr.Id
@@ -130,8 +138,14 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 
-	// Verify both attributes are present in the credential.
+	// Verify both attributes are present with correct display names and values.
 	require.GreaterOrEqual(t, len(cred.Attributes), 2, "credential should have at least email and domain attributes")
+	attrMap := attributeMap(cred.Attributes)
+	requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+	requireAttributeDisplayName(t, attrMap, "domain", "en", "domain")
+	requireAttributeTranslatedValue(t, attrMap, "email", "en", "alice@example.com")
+	requireAttributeTranslatedValue(t, attrMap, "domain", "en", "example.com")
+
 	attrIds := make([]string, len(cred.Attributes))
 	for i, attr := range cred.Attributes {
 		attrIds[i] = attr.Id
@@ -204,6 +218,20 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 	require.GreaterOrEqual(t, len(pickOne.OwnedOptions), 2,
 		"should have at least two credential options to choose from")
 
+	// Verify that both options have the expected attributes.
+	for _, opt := range pickOne.OwnedOptions {
+		attrMap := attributeMap(opt.Attributes)
+		// Each option should have at least one attribute with a display name.
+		if _, hasEmail := attrMap["email"]; hasEmail {
+			requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+			requireAttributeTranslatedValue(t, attrMap, "email", "en", "bob@example.com")
+		}
+		if _, hasPhone := attrMap["phone_number"]; hasPhone {
+			requireAttributeDisplayName(t, attrMap, "phone_number", "en", "phone_number")
+			requireAttributeTranslatedValue(t, attrMap, "phone_number", "en", "+31612345678")
+		}
+	}
+
 	// Pick the first option (whichever it is) and disclose.
 	chosen := pickOne.OwnedOptions[0]
 	attrIds := make([]string, len(chosen.Attributes))
@@ -272,11 +300,23 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	require.Len(t, plan.DisclosureChoicesOverview, 2,
 		"should have two required credential choices")
 
-	// Build choices for both credentials.
+	// Build choices for both credentials and verify attributes.
 	choices := make([]clientmodels.DisclosureDisconSelection, 2)
 	for i, pickOne := range plan.DisclosureChoicesOverview {
 		require.NotEmpty(t, pickOne.OwnedOptions, "should own a matching credential for choice %d", i)
 		cred := pickOne.OwnedOptions[0]
+
+		// Verify attribute display names and values for each credential.
+		attrMap := attributeMap(cred.Attributes)
+		if _, hasEmail := attrMap["email"]; hasEmail {
+			requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+			requireAttributeTranslatedValue(t, attrMap, "email", "en", "carol@example.com")
+		}
+		if _, hasPhone := attrMap["phone_number"]; hasPhone {
+			requireAttributeDisplayName(t, attrMap, "phone_number", "en", "phone_number")
+			requireAttributeTranslatedValue(t, attrMap, "phone_number", "en", "+31687654321")
+		}
+
 		attrIds := make([]string, len(cred.Attributes))
 		for j, attr := range cred.Attributes {
 			attrIds[j] = attr.Id
@@ -347,6 +387,12 @@ func testOptionalCredential(t *testing.T) {
 	require.NotEmpty(t, requiredChoice.OwnedOptions, "should own the email credential")
 
 	emailCred := requiredChoice.OwnedOptions[0]
+
+	// Verify email attribute display name and value.
+	attrMap := attributeMap(emailCred.Attributes)
+	requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+	requireAttributeTranslatedValue(t, attrMap, "email", "en", "dave@example.com")
+
 	attrIds := make([]string, len(emailCred.Attributes))
 	for i, attr := range emailCred.Attributes {
 		attrIds[i] = attr.Id
@@ -432,6 +478,13 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 		}
 	}
 	require.NotNil(t, matchingCred, "should find a credential with domain example.com")
+
+	// Verify attribute display names and values on the matching credential.
+	attrMap := attributeMap(matchingCred.Attributes)
+	requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+	requireAttributeDisplayName(t, attrMap, "domain", "en", "domain")
+	requireAttributeTranslatedValue(t, attrMap, "email", "en", "eve@example.com")
+	requireAttributeTranslatedValue(t, attrMap, "domain", "en", "example.com")
 
 	attrIds := make([]string, len(matchingCred.Attributes))
 	for i, attr := range matchingCred.Attributes {
@@ -565,6 +618,62 @@ func issueCredentialViaOid4Vci(
 
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status)
+}
+
+// findCredentialByName returns the first credential whose Name contains the
+// expected value for the given locale, or nil if none match.
+func findCredentialByName(t *testing.T, creds []*clientmodels.Credential, locale, expected string) *clientmodels.Credential {
+	t.Helper()
+	for _, cred := range creds {
+		if name, ok := cred.Name[locale]; ok && name == expected {
+			return cred
+		}
+	}
+	return nil
+}
+
+// attributeMap builds a map from attribute ID to Attribute for easy lookup.
+func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attribute {
+	m := make(map[string]clientmodels.Attribute, len(attrs))
+	for _, a := range attrs {
+		m[a.Id] = a
+	}
+	return m
+}
+
+// requireAttributeDisplayName asserts that the attribute with the given ID has
+// the expected display name for the given locale.
+func requireAttributeDisplayName(t *testing.T, attrs map[string]clientmodels.Attribute, attrId, locale, expected string) {
+	t.Helper()
+	attr, ok := attrs[attrId]
+	require.True(t, ok, "attribute %q should exist", attrId)
+	actual, ok := attr.DisplayName[locale]
+	require.True(t, ok, "attribute %q should have display name for locale %q", attrId, locale)
+	require.Equal(t, expected, actual, "attribute %q display name mismatch", attrId)
+}
+
+// requireAttributeTranslatedValue asserts that the attribute with the given ID
+// has a TranslatedString value matching the expected string for the given locale.
+func requireAttributeTranslatedValue(t *testing.T, attrs map[string]clientmodels.Attribute, attrId, locale, expected string) {
+	t.Helper()
+	attr, ok := attrs[attrId]
+	require.True(t, ok, "attribute %q should exist", attrId)
+	require.NotNil(t, attr.Value, "attribute %q should have a value", attrId)
+	require.NotNil(t, attr.Value.TranslatedString, "attribute %q value should be a TranslatedString", attrId)
+	actual, ok := (*attr.Value.TranslatedString)[locale]
+	require.True(t, ok, "attribute %q value should have locale %q", attrId, locale)
+	require.Equal(t, expected, actual, "attribute %q value mismatch", attrId)
+}
+
+// requireAttributeStringValue asserts that the attribute with the given ID has
+// a plain String value matching the expected string.
+func requireAttributeStringValue(t *testing.T, attrs map[string]clientmodels.Attribute, attrId, expected string) {
+	t.Helper()
+	attr, ok := attrs[attrId]
+	require.True(t, ok, "attribute %q should exist", attrId)
+	require.NotNil(t, attr.Value, "attribute %q should have a value", attrId)
+	require.NotNil(t, attr.Value.String, "attribute %q value should be a String", attrId)
+	require.Equal(t, expected, *attr.Value.String, "attribute %q value mismatch", attrId)
 }
 
 // startOpenID4VPDisclosureSession starts an OpenID4VP disclosure session in the

@@ -13,6 +13,16 @@
           "proof_signing_alg_values_supported": ["ES256"]
         }
       },
+      "credential_metadata": {
+        "display": [
+          { "name": "Test Credential (SD-JWT, Auth Code)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["given_name"], "display": [{ "name": "Given Name", "locale": "en" }] },
+          { "path": ["family_name"], "display": [{ "name": "Family Name", "locale": "en" }] },
+          { "path": ["email"], "display": [{ "name": "Email", "locale": "en" }] }
+        ]
+      },
       "display": [
         {
           "name": "Test Credential (SD-JWT, Auth Code)",

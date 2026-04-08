@@ -151,10 +151,18 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					// For non-string values, we will treat them as translated strings by marshalling the value to JSON and storing it as a string. This is a temporary solution until we have a more robust way to represent different attribute types in the client model.
 				}
 
+				// Use the last element of the claim path as the attribute ID (e.g., ["address", "city"] → "city")
+				attrId := ""
+				if len(claimPath) > 0 {
+					if last, ok := claimPath[len(claimPath)-1].(string); ok {
+						attrId = last
+					}
+				}
+
 				attrs[j] = clientmodels.Attribute{
-					Id:          "", // TODO: what to assign here? needs to be different per language/locale?
+					Id:          attrId,
 					DisplayName: attrDisplay,
-					Value:       &attrValue, // TODO: fill attributes here; apply JSON Path Pointer to the ProcessedSdJwtPayload to extract the value for this claim
+					Value:       &attrValue,
 				}
 			}
 		}
