@@ -70,19 +70,16 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 			*issues = append(*issues, fmt.Sprintf("bool mismatch at %s", path))
 		}
 
-	case AttributeType_TranslatedString:
-		if req.TranslatedString == nil {
+	case AttributeType_String:
+		if req.String == nil {
 			return
 		}
-		if given.TranslatedString == nil {
-			*issues = append(*issues, fmt.Sprintf("translated_string missing at %s", path))
+		if given.String == nil {
+			*issues = append(*issues, fmt.Sprintf("string missing at %s", path))
 			return
 		}
-		for lang, want := range *req.TranslatedString {
-			have, ok := (*given.TranslatedString)[lang]
-			if !ok || have != want {
-				*issues = append(*issues, fmt.Sprintf("translated_string mismatch at %s.%s", path, lang))
-			}
+		if *given.String != *req.String {
+			*issues = append(*issues, fmt.Sprintf("string mismatch at %s", path))
 		}
 
 	case AttributeType_Image:
@@ -158,20 +155,11 @@ func valueSatisfiesNoReport(given AttributeValue, req AttributeValue) bool {
 			return true
 		}
 		return given.Bool != nil && *given.Bool == *req.Bool
-	case AttributeType_TranslatedString:
-		if req.TranslatedString == nil {
+	case AttributeType_String:
+		if req.String == nil {
 			return true
 		}
-		if given.TranslatedString == nil {
-			return false
-		}
-		for lang, want := range *req.TranslatedString {
-			have, ok := (*given.TranslatedString)[lang]
-			if !ok || have != want {
-				return false
-			}
-		}
-		return true
+		return given.String != nil && *given.String == *req.String
 	case AttributeType_Image:
 		if req.ImagePath == nil {
 			return true

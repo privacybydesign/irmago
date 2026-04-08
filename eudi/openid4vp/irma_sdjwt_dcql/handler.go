@@ -307,10 +307,9 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 
 		// Set the requested value if the claim had specific value constraints
 		if match.hasValue {
-			ts := clientmodels.TranslatedString(irma.NewTranslatedString(&match.attributeValue))
 			attr.RequestedValue = &clientmodels.AttributeValue{
-				Type:             clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &ts,
+				Type:   clientmodels.AttributeType_String,
+				String: &match.attributeValue,
 			}
 		}
 
@@ -374,12 +373,11 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		// Always set RequestedValue on obtainable descriptors (at minimum with just the type).
 		// When specific values are requested, include the value.
 		requestedValue := &clientmodels.AttributeValue{
-			Type: clientmodels.AttributeType_TranslatedString,
+			Type: clientmodels.AttributeType_String,
 		}
 		if len(claim.Values) != 0 {
 			if firstValue, ok := claim.Values[0].(string); ok {
-				ts := clientmodels.TranslatedString(irma.NewTranslatedString(&firstValue))
-				requestedValue.TranslatedString = &ts
+				requestedValue.String = &firstValue
 			}
 		}
 		attr.RequestedValue = requestedValue
@@ -507,7 +505,7 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 	case "portraitPhoto":
 		return clientmodels.AttributeType_Base64Image
 	default:
-		return clientmodels.AttributeType_TranslatedString
+		return clientmodels.AttributeType_String
 	}
 }
 
@@ -523,8 +521,7 @@ func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.Att
 	case clientmodels.AttributeType_Base64Image:
 		val.Base64Image = rawValue
 	default:
-		ts := clientmodels.TranslatedString(irma.NewTranslatedString(rawValue))
-		val.TranslatedString = &ts
+		val.String = rawValue
 	}
 	return val
 }

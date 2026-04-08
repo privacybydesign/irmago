@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func strPtr(s string) *string { return &s }
+
 func userInteraction(t *testing.T, c *client.Client, interaction clientmodels.SessionUserInteraction) {
 	go func() {
 		require.NoError(

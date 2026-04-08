@@ -123,10 +123,14 @@ func createCredentialDescriptor(
 		for _, a := range info.AttributeTypes {
 			if a.GetAttributeTypeIdentifier() == at.Type {
 				requestedValue := &clientmodels.AttributeValue{
-					Type: clientmodels.AttributeType_TranslatedString,
+					Type: clientmodels.AttributeType_String,
 				}
 				if at.Value != nil {
-					requestedValue.TranslatedString = convertOptionalTranslatedString(&at.Value)
+					s := at.Value["en"]
+					if s == "" {
+						s = at.Value[""]
+					}
+					requestedValue.String = &s
 				}
 				attributes = append(attributes, clientmodels.Attribute{
 					Id:             a.ID,
@@ -167,7 +171,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 			Id:          at.ID,
 			DisplayName: clientmodels.TranslatedString(at.Name),
 			Value: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		})
 	}
@@ -307,7 +311,7 @@ func filterOutKeyshareCredentials(conf *irma.Configuration, creds irma.Credentia
 }
 
 func displayHintToAttributeType(s string) clientmodels.AttributeType {
-	result := clientmodels.AttributeType_TranslatedString
+	result := clientmodels.AttributeType_String
 	switch s {
 	case "portraitPhoto":
 		result = clientmodels.AttributeType_Base64Image
@@ -332,8 +336,11 @@ func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *c
 		}
 		val.Base64Image = &s
 	default:
-		ts := clientmodels.TranslatedString(*rawValue)
-		val.TranslatedString = &ts
+		s := (*rawValue)["en"]
+		if s == "" {
+			s = (*rawValue)[""]
+		}
+		val.String = &s
 	}
 	return val
 }
@@ -407,20 +414,16 @@ func checkValueSatisfies(issues *[]string, path string, given clientmodels.Attri
 			*issues = append(*issues, fmt.Sprintf("bool mismatch at %s", path))
 		}
 
-	case clientmodels.AttributeType_TranslatedString:
-		if req.TranslatedString == nil {
+	case clientmodels.AttributeType_String:
+		if req.String == nil {
 			return
 		}
-		if given.TranslatedString == nil {
-			*issues = append(*issues, fmt.Sprintf("translated_string missing at %s", path))
+		if given.String == nil {
+			*issues = append(*issues, fmt.Sprintf("string missing at %s", path))
 			return
 		}
-		// "All-of" on keys: requested languages must exist with same values.
-		for lang, want := range *req.TranslatedString {
-			have, ok := (*given.TranslatedString)[lang]
-			if !ok || have != want {
-				*issues = append(*issues, fmt.Sprintf("translated_string mismatch at %s.%s", path, lang))
-			}
+		if *given.String != *req.String {
+			*issues = append(*issues, fmt.Sprintf("string mismatch at %s", path))
 		}
 
 	case clientmodels.AttributeType_Image:
@@ -516,20 +519,11 @@ func valueSatisfiesNoReport(given clientmodels.AttributeValue, req clientmodels.
 		}
 		return given.Bool != nil && *given.Bool == *req.Bool
 
-	case clientmodels.AttributeType_TranslatedString:
-		if req.TranslatedString == nil {
+	case clientmodels.AttributeType_String:
+		if req.String == nil {
 			return true
 		}
-		if given.TranslatedString == nil {
-			return false
-		}
-		for lang, want := range *req.TranslatedString {
-			have, ok := (*given.TranslatedString)[lang]
-			if !ok || have != want {
-				return false
-			}
-		}
-		return true
+		return given.String != nil && *given.String == *req.String
 
 	case clientmodels.AttributeType_Image:
 		if req.ImagePath == nil {

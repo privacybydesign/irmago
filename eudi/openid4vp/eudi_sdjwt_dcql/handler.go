@@ -190,10 +190,9 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 			DisplayName: claimDisplayName(batch, attrName),
 		}
 		if valStr != "" {
-			ts := clientmodels.TranslatedString{"en": valStr}
 			attr.Value = &clientmodels.AttributeValue{
-				Type:             clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &ts,
+				Type:   clientmodels.AttributeType_String,
+				String: &valStr,
 			}
 		}
 
@@ -215,10 +214,9 @@ func buildLogCredential(batch *models.CredentialBatch, attrNames []string) clien
 		}
 		if val, ok := payload[name]; ok {
 			if valStr, ok := val.(string); ok {
-				ts := clientmodels.TranslatedString{"en": valStr}
 				attr.Value = &clientmodels.AttributeValue{
-					Type:             clientmodels.AttributeType_TranslatedString,
-					TranslatedString: &ts,
+					Type:   clientmodels.AttributeType_String,
+					String: &valStr,
 				}
 			}
 		}

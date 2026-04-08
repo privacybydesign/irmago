@@ -274,10 +274,14 @@ func createDisclosureChoicesOverview(
 					for i := range choiceTemplates[id].Attributes {
 						if choiceTemplates[id].Attributes[i].Id == attrName {
 							requestedValue := &clientmodels.AttributeValue{
-								Type: clientmodels.AttributeType_TranslatedString,
+								Type: clientmodels.AttributeType_String,
 							}
 							if attr.Value != nil {
-								requestedValue.TranslatedString = convertOptionalTranslatedString(&attr.Value)
+								if v, ok := attr.Value["en"]; ok {
+									requestedValue.String = &v
+								} else if v, ok := attr.Value[""]; ok {
+									requestedValue.String = &v
+								}
 							}
 							choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
 							break

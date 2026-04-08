@@ -573,16 +573,10 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 }
 
 // getLogAttrValue finds an attribute by ID and returns its string value.
-// For TranslatedString values, it prefers the English translation, falling back to any available value.
 func getLogAttrValue(attrs []clientmodels.Attribute, id string) string {
 	for _, a := range attrs {
-		if a.Id == id && a.Value != nil && a.Value.TranslatedString != nil {
-			if v, ok := (*a.Value.TranslatedString)["en"]; ok {
-				return v
-			}
-			for _, v := range *a.Value.TranslatedString {
-				return v
-			}
+		if a.Id == id && a.Value != nil && a.Value.String != nil {
+			return *a.Value.String
 		}
 	}
 	return ""
@@ -761,11 +755,9 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
 	require.Equal(t, "Your verified email address", emailDescription["en"])
 
-	// Verify that attribute value translations are present for OpenID4VP disclosures
-	require.NotNil(t, emailAttr.Value.TranslatedString)
-	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)["en"], "attribute value should have 'en' translation")
-	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)["nl"], "attribute value should have 'nl' translation")
-	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)[""], "attribute value should have raw value")
+	// Verify that attribute value is present for OpenID4VP disclosures
+	require.NotNil(t, emailAttr.Value.String)
+	require.Equal(t, "test@gmail.com", *emailAttr.Value.String, "attribute value should match")
 }
 
 func requireRegularIrmaIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
@@ -1266,7 +1258,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	}
 	require.Equal(t, []string{"firstnames", "firstname", "familyname", "prefix"}, attrIds,
 		"non-empty optional attribute 'prefix' should be included")
-	require.Equal(t, "Sir", (*credWithPrefix.Attributes[3].Value.TranslatedString)["en"])
+	require.Equal(t, "Sir", *credWithPrefix.Attributes[3].Value.String)
 
 	// Issue a credential with an empty non-optional attribute ("firstname" = "")
 	// Non-optional attributes should always be included, even when empty.
@@ -1296,7 +1288,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		}
 		for _, attr := range cred.Attributes {
 			if attr.Id == "firstname" && attr.Value != nil &&
-				attr.Value.TranslatedString != nil && (*attr.Value.TranslatedString)[""] == "" {
+				attr.Value.String != nil && *attr.Value.String == "" {
 				credEmptyFirstname = cred
 				break
 			}

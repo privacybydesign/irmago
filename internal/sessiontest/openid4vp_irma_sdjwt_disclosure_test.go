@@ -225,7 +225,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"nl": "E-mailadres",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})
@@ -240,7 +240,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"nl": "Universiteit",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 		{
@@ -250,7 +250,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"nl": "Soort",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})
@@ -265,7 +265,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"nl": "Voornaam",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 		{
@@ -275,7 +275,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"nl": "Achternaam",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})
@@ -329,12 +329,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"nl": "Naam van de universiteit",
 			},
 			Value: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &clientmodels.TranslatedString{
-					"":   "University of the Arts",
-					"en": "University of the Arts",
-					"nl": "University of the Arts",
-				},
+				Type:   clientmodels.AttributeType_String,
+				String: strPtr("University of the Arts"),
 			},
 		},
 		{
@@ -348,12 +344,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				"nl": "Of u een gewone of PhD student bent",
 			},
 			Value: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &clientmodels.TranslatedString{
-					"":   "high",
-					"en": "high",
-					"nl": "high",
-				},
+				Type:   clientmodels.AttributeType_String,
+				String: strPtr("high"),
 			},
 		},
 	})
@@ -484,11 +476,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// the issuance step shows the predefined university value as RequestedValue
-	expectedUniversityValue := clientmodels.TranslatedString{
-		"":   "University of the Arts",
-		"en": "University of the Arts",
-		"nl": "University of the Arts",
-	}
+	expectedUniversityValue := "University of the Arts"
 	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []clientmodels.Attribute{
 		{
 			Id: "university",
@@ -497,8 +485,8 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 				"nl": "Universiteit",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type:             clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &expectedUniversityValue,
+				Type:   clientmodels.AttributeType_String,
+				String: &expectedUniversityValue,
 			},
 		},
 		{
@@ -508,7 +496,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 				"nl": "Soort",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})
@@ -544,8 +532,8 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	// only university (which has a pre-defined value that doesn't match), not level
 	require.Len(t, wrongCred.Attributes, 1)
 	require.Equal(t, "university", wrongCred.Attributes[0].Id)
-	require.Equal(t, "Some Other University", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
-	require.Equal(t, &expectedUniversityValue, wrongCred.Attributes[0].RequestedValue.TranslatedString)
+	require.Equal(t, "Some Other University", *wrongCred.Attributes[0].Value.String)
+	require.Equal(t, &expectedUniversityValue, wrongCred.Attributes[0].RequestedValue.String)
 
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
@@ -584,14 +572,14 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	require.NotNil(t, universityAttr)
 	require.NotNil(t, universityAttr.RequestedValue)
 	require.Equal(t, &clientmodels.AttributeValue{
-		Type:             clientmodels.AttributeType_TranslatedString,
-		TranslatedString: &expectedUniversityValue,
+		Type:   clientmodels.AttributeType_String,
+		String: &expectedUniversityValue,
 	}, universityAttr.RequestedValue)
 
 	require.NotNil(t, levelAttr)
 	require.NotNil(t, levelAttr.RequestedValue)
 	require.Equal(t, &clientmodels.AttributeValue{
-		Type: clientmodels.AttributeType_TranslatedString,
+		Type: clientmodels.AttributeType_String,
 	}, levelAttr.RequestedValue)
 
 	// issuance session ended
@@ -668,7 +656,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"nl": "E-mailadres",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})
@@ -683,7 +671,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"nl": "Universiteit",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 		{
@@ -693,7 +681,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"nl": "Soort",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})
@@ -708,7 +696,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"nl": "Voornaam",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 		{
@@ -718,7 +706,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"nl": "Achternaam",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})
@@ -772,12 +760,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"nl": "Naam van de universiteit",
 			},
 			Value: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &clientmodels.TranslatedString{
-					"":   "University of the Arts",
-					"en": "University of the Arts",
-					"nl": "University of the Arts",
-				},
+				Type:   clientmodels.AttributeType_String,
+				String: strPtr("University of the Arts"),
 			},
 		},
 		{
@@ -791,12 +775,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				"nl": "Of u een gewone of PhD student bent",
 			},
 			Value: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &clientmodels.TranslatedString{
-					"":   "high",
-					"en": "high",
-					"nl": "high",
-				},
+				Type:   clientmodels.AttributeType_String,
+				String: strPtr("high"),
 			},
 		},
 	})
@@ -870,7 +850,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 				"nl": "Universiteit",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 		{
@@ -880,7 +860,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 				"nl": "Soort",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})
@@ -917,12 +897,8 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 				"nl": "Naam van de universiteit",
 			},
 			Value: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &clientmodels.TranslatedString{
-					"":   "University of the Arts",
-					"en": "University of the Arts",
-					"nl": "University of the Arts",
-				},
+				Type:   clientmodels.AttributeType_String,
+				String: strPtr("University of the Arts"),
 			},
 		},
 		{
@@ -936,12 +912,8 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 				"nl": "Of u een gewone of PhD student bent",
 			},
 			Value: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &clientmodels.TranslatedString{
-					"":   "high",
-					"en": "high",
-					"nl": "high",
-				},
+				Type:   clientmodels.AttributeType_String,
+				String: strPtr("high"),
 			},
 		},
 	})
@@ -1027,7 +999,7 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	// Verify that each issued credential is present (order of owned options may differ from issuance order)
 	foundUniversities := map[string]bool{}
 	for _, option := range pick.OwnedOptions {
-		foundUniversities[(*option.Attributes[0].Value.TranslatedString)["en"]] = true
+		foundUniversities[*option.Attributes[0].Value.String] = true
 	}
 	for _, attrs := range studentCards {
 		require.True(t, foundUniversities[attrs["university"]],
@@ -1044,10 +1016,10 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 
 	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
 		"sc": {
-			"university":        (*chosen.Attributes[0].Value.TranslatedString)[""],
-			"studentCardNumber": (*chosen.Attributes[1].Value.TranslatedString)[""],
-			"studentID":         (*chosen.Attributes[2].Value.TranslatedString)[""],
-			"level":             (*chosen.Attributes[3].Value.TranslatedString)[""],
+			"university":        *chosen.Attributes[0].Value.String,
+			"studentCardNumber": *chosen.Attributes[1].Value.String,
+			"studentID":         *chosen.Attributes[2].Value.String,
+			"level":             *chosen.Attributes[3].Value.String,
 		},
 	})
 }

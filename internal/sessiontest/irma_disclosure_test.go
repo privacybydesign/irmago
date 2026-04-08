@@ -125,11 +125,7 @@ func testDisclosureWithPredefinedValues(
 	step1 := plan.IssueDuringDislosure.Steps[0]
 	require.Len(t, step1.Options, 1)
 
-	expectedValue := clientmodels.TranslatedString{
-		"":   value,
-		"nl": value,
-		"en": value,
-	}
+	expectedValue := value
 
 	require.Equal(t, step1.Options[0].Attributes, []clientmodels.Attribute{
 		{
@@ -139,7 +135,7 @@ func testDisclosureWithPredefinedValues(
 				"en": "Student number",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 		{
@@ -149,8 +145,8 @@ func testDisclosureWithPredefinedValues(
 				"en": "University",
 			},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type:             clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &expectedValue,
+				Type:   clientmodels.AttributeType_String,
+				String: &expectedValue,
 			},
 		},
 	})
@@ -174,8 +170,8 @@ func testDisclosureWithPredefinedValues(
 	// only university (which has a pre-defined value that doesn't match), not studentID
 	require.Len(t, wrongCred.Attributes, 1)
 	require.Equal(t, "university", wrongCred.Attributes[0].Id)
-	require.Equal(t, "University of the Arts", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
-	require.Equal(t, &expectedValue, wrongCred.Attributes[0].RequestedValue.TranslatedString)
+	require.Equal(t, "University of the Arts", *wrongCred.Attributes[0].Value.String)
+	require.Equal(t, &expectedValue, wrongCred.Attributes[0].RequestedValue.String)
 
 	// make sure the previous issuance session was finished
 	session = awaitSessionState(t, sessionHandler)
@@ -520,13 +516,9 @@ func testWrongCredentialIssuedDuringDisclosure(
 	// only university (which has a pre-defined value that doesn't match), not level
 	require.Len(t, wrongCred.Attributes, 1)
 	require.Equal(t, "university", wrongCred.Attributes[0].Id)
-	require.Equal(t, "University of the Arts", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
-	expectedRequiredValue := clientmodels.TranslatedString{
-		"":   requiredValue,
-		"nl": requiredValue,
-		"en": requiredValue,
-	}
-	require.Equal(t, &expectedRequiredValue, wrongCred.Attributes[0].RequestedValue.TranslatedString)
+	require.Equal(t, "University of the Arts", *wrongCred.Attributes[0].Value.String)
+	expectedRequiredValue := requiredValue
+	require.Equal(t, &expectedRequiredValue, wrongCred.Attributes[0].RequestedValue.String)
 
 	// Finish the first wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -560,7 +552,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 	require.Len(t, wrongCred.Attributes, 1)
 	require.Equal(t, "university", wrongCred.Attributes[0].Id)
-	require.Equal(t, "Open University", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
+	require.Equal(t, "Open University", *wrongCred.Attributes[0].Value.String)
 
 	// Finish the second wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -683,7 +675,7 @@ func testPreExistingWrongCredentialNotReported(
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 	require.Len(t, wrongCred.Attributes, 1)
 	require.Equal(t, "university", wrongCred.Attributes[0].Id)
-	require.Equal(t, "Open University", (*wrongCred.Attributes[0].Value.TranslatedString)["en"])
+	require.Equal(t, "Open University", *wrongCred.Attributes[0].Value.String)
 
 	// Finish the wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -778,8 +770,8 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 				DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 				Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
 				Value: &clientmodels.AttributeValue{
-					Type:             "translated_string",
-					TranslatedString: &clientmodels.TranslatedString{"": "University of the Arts", "en": "University of the Arts", "nl": "University of the Arts"},
+					Type:   clientmodels.AttributeType_String,
+					String: strPtr("University of the Arts"),
 				},
 			},
 			{
@@ -787,8 +779,8 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 				DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 				Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
 				Value: &clientmodels.AttributeValue{
-					Type:             "translated_string",
-					TranslatedString: &clientmodels.TranslatedString{"": "high", "en": "high", "nl": "high"},
+					Type:   clientmodels.AttributeType_String,
+					String: strPtr("high"),
 				},
 			},
 		},
@@ -847,8 +839,8 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
 			Value: &clientmodels.AttributeValue{
-				Type:             clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &clientmodels.TranslatedString{"": "test@gmail.com", "en": "test@gmail.com", "nl": "test@gmail.com"},
+				Type:   clientmodels.AttributeType_String,
+				String: strPtr("test@gmail.com"),
 			},
 		},
 	}, emailOption.Attributes)
@@ -866,8 +858,8 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
 			Value: &clientmodels.AttributeValue{
-				Type:             clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &clientmodels.TranslatedString{"": "University of the Arts", "en": "University of the Arts", "nl": "University of the Arts"},
+				Type:   clientmodels.AttributeType_String,
+				String: strPtr("University of the Arts"),
 			},
 		},
 	}, studentCardOption.Attributes)
@@ -971,14 +963,14 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 			Id:          "firstname",
 			DisplayName: clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 		{
 			Id:          "familyname",
 			DisplayName: clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
 			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		},
 	})

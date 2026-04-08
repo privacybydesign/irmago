@@ -194,12 +194,8 @@ func openid4vpCredentialLogsToIrmaclientLogEntry(
 	for _, cl := range credentialLogs {
 		attrs := make(map[string]string)
 		for _, a := range cl.Attributes {
-			if a.Value != nil && a.Value.TranslatedString != nil {
-				// Use the first available translation as the string value
-				for _, v := range *a.Value.TranslatedString {
-					attrs[a.Id] = v
-					break
-				}
+			if a.Value != nil && a.Value.String != nil {
+				attrs[a.Id] = *a.Value.String
 			}
 		}
 		disclosed = append(disclosed, irmaclient.CredentialLog{
