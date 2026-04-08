@@ -86,13 +86,20 @@ services:
     volumes:
       - .:/irmago
     depends_on:
-      - eudi_openid4vp
-      - eudi_openid4vp_jwt
-      - veramo_openid4vp
-      - postgres
-      - mysql
-      - sqlserver
-      - mailhog
+      eudi_openid4vp:
+        condition: service_started
+      eudi_openid4vp_jwt:
+        condition: service_started
+      veramo_openid4vp:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+      mysql:
+        condition: service_started
+      sqlserver:
+        condition: service_started
+      mailhog:
+        condition: service_started
     environment:
       CGO_ENABLED: "1"
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
@@ -240,6 +247,7 @@ services:
       - ./testdata/openid4vp-verifier/conf:/app/conf
     environment:
       NODE_ENV: development
+      DEBUG: "verifier:*"
       DB_HOST: veramo-openid4vp-postgres.localhost
       DB_PORT: 5432
       DB_USER: postgres
@@ -251,6 +259,12 @@ services:
       PASSPHRASE: abcdefghijklmnopqrstuvwxyz012345
       ADMIN_BEARER_TOKEN: test-verifier-admin-token
       CONF_PATH: conf
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     networks:
       irma-net:
         aliases:
