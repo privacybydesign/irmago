@@ -105,6 +105,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run all unit tests
         run: docker compose run test -v ./...
+      - name: Dump veramo container logs
+        if: failure()
+        run: docker compose logs veramo_openid4vp veramo_openid4vci 2>&1 | tail -200
 
   # The integration tests are split into two jobs, one for the client side and one for the server side.
   # They test whether irmago versions with different versions of gabi can interact.
