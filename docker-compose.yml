@@ -260,7 +260,7 @@ services:
       ADMIN_BEARER_TOKEN: test-verifier-admin-token
       CONF_PATH: conf
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/test-verifier/api/check-status || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 12
