@@ -69,8 +69,11 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 
 	attrMap := attributeMap(cred.Attributes)
 	requireAttributeDisplayName(t, attrMap, "given_name", "en", "Given Name")
+	requireAttributeDisplayName(t, attrMap, "given_name", "nl", "Voornaam")
 	requireAttributeDisplayName(t, attrMap, "family_name", "en", "Family Name")
+	requireAttributeDisplayName(t, attrMap, "family_name", "nl", "Achternaam")
 	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
+	requireAttributeDisplayName(t, attrMap, "email", "nl", "E-mailadres")
 	requireAttributeStringValue(t, attrMap, "given_name", "Test")
 	requireAttributeStringValue(t, attrMap, "family_name", "User")
 	requireAttributeStringValue(t, attrMap, "email", "test@example.com")
@@ -115,8 +118,11 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 
 	attrMap := attributeMap(cred.Attributes)
 	requireAttributeDisplayName(t, attrMap, "given_name", "en", "Given Name")
+	requireAttributeDisplayName(t, attrMap, "given_name", "nl", "Voornaam")
 	requireAttributeDisplayName(t, attrMap, "family_name", "en", "Family Name")
+	requireAttributeDisplayName(t, attrMap, "family_name", "nl", "Achternaam")
 	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
+	requireAttributeDisplayName(t, attrMap, "email", "nl", "E-mailadres")
 	requireAttributeStringValue(t, attrMap, "given_name", "Test")
 	requireAttributeStringValue(t, attrMap, "family_name", "TxCode")
 	requireAttributeStringValue(t, attrMap, "email", "txcode@example.com")
@@ -190,6 +196,7 @@ func testOpenId4VciPreAuthFlowNestedClaims(t *testing.T) {
 
 	// Top-level claim: owner_name
 	requireAttributeDisplayName(t, attrMap, "owner_name", "en", "Owner Name")
+	requireAttributeDisplayName(t, attrMap, "owner_name", "nl", "Eigenaar")
 	requireAttributeStringValue(t, attrMap, "owner_name", "Alice")
 
 	// Nested claim: address is an object containing street, city, country
@@ -234,7 +241,9 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	require.NotNil(t, emailCred, "EmailCredential should appear in GetCredentials")
 	emailAttrs := attributeMap(emailCred.Attributes)
 	requireAttributeDisplayName(t, emailAttrs, "email", "en", "Email")
+	requireAttributeDisplayName(t, emailAttrs, "email", "nl", "E-mailadres")
 	requireAttributeDisplayName(t, emailAttrs, "domain", "en", "Domain")
+	requireAttributeDisplayName(t, emailAttrs, "domain", "nl", "Domein")
 	requireAttributeStringValue(t, emailAttrs, "email", "nested-test@example.com")
 	requireAttributeStringValue(t, emailAttrs, "domain", "example.com")
 
@@ -243,8 +252,11 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	require.NotNil(t, studentCred, "StudentCardCredential should appear in GetCredentials")
 	studentAttrs := attributeMap(studentCred.Attributes)
 	requireAttributeDisplayName(t, studentAttrs, "university", "en", "University")
+	requireAttributeDisplayName(t, studentAttrs, "university", "nl", "Universiteit")
 	requireAttributeDisplayName(t, studentAttrs, "level", "en", "Level")
+	requireAttributeDisplayName(t, studentAttrs, "level", "nl", "Niveau")
 	requireAttributeDisplayName(t, studentAttrs, "student_id", "en", "Student ID")
+	requireAttributeDisplayName(t, studentAttrs, "student_id", "nl", "Studentnummer")
 	requireAttributeStringValue(t, studentAttrs, "university", "TU Delft")
 	requireAttributeStringValue(t, studentAttrs, "level", "MSc")
 	requireAttributeStringValue(t, studentAttrs, "student_id", "S12345")
@@ -254,6 +266,7 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	require.NotNil(t, houseCred, "HouseCredential should appear in GetCredentials")
 	houseAttrs := attributeMap(houseCred.Attributes)
 	requireAttributeDisplayName(t, houseAttrs, "owner_name", "en", "Owner Name")
+	requireAttributeDisplayName(t, houseAttrs, "owner_name", "nl", "Eigenaar")
 	requireAttributeStringValue(t, houseAttrs, "owner_name", "Bob")
 
 	// The nested address claim should be stored as an object.
@@ -325,8 +338,11 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 
 	attrMap := attributeMap(cred.Attributes)
 	requireAttributeDisplayName(t, attrMap, "given_name", "en", "Given Name")
+	requireAttributeDisplayName(t, attrMap, "given_name", "nl", "Voornaam")
 	requireAttributeDisplayName(t, attrMap, "family_name", "en", "Family Name")
+	requireAttributeDisplayName(t, attrMap, "family_name", "nl", "Achternaam")
 	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
+	requireAttributeDisplayName(t, attrMap, "email", "nl", "E-mailadres")
 	requireAttributeStringValue(t, attrMap, "given_name", "Test")
 	requireAttributeStringValue(t, attrMap, "family_name", "AuthCode")
 	requireAttributeStringValue(t, attrMap, "email", "authcode@example.com")
@@ -376,6 +392,7 @@ func testOpenId4VciAuthCodeFlowNestedClaims(t *testing.T) {
 
 	// Top-level claim: owner_name
 	requireAttributeDisplayName(t, attrMap, "owner_name", "en", "Owner Name")
+	requireAttributeDisplayName(t, attrMap, "owner_name", "nl", "Eigenaar")
 	requireAttributeStringValue(t, attrMap, "owner_name", "Charlie")
 
 	// Nested claim: address is an object containing street, city, country
