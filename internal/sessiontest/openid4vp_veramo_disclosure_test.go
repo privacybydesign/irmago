@@ -3,6 +3,7 @@ package sessiontest
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ import (
 )
 
 const (
-	veramoVerifierBaseURL    = "http://localhost:8891"
+	veramoVerifierBaseURL    = "https://localhost:8444"
 	veramoVerifierName       = "test-verifier"
 	veramoVerifierAdminToken = "test-verifier-admin-token"
 )
@@ -88,10 +89,14 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
-	// Step 5: Verify the verifier received the VP token.
+	// Step 5: Verify the verifier received the VP token with correct attributes.
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "test-credential", map[string]string{
+		"given_name": "Test",
+		"email":      "test@example.com",
+	})
 }
 
 // testDiscloseCredentialWithMultipleAttributes issues an EmailCredential and
@@ -112,7 +117,7 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 			"credentials": [
 				{
 					"id": "email-cred",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["email"] },
 						{ "path": ["domain"] }
@@ -154,6 +159,10 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{
+		"email":  "alice@example.com",
+		"domain": "example.com",
+	})
 }
 
 // testChoiceBetweenTwoCredentialTypes issues both an EmailCredential and a
@@ -180,14 +189,14 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 			"credentials": [
 				{
 					"id": "email-cred",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["email"] }
 					]
 				},
 				{
 					"id": "phone-cred",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["phone_number"] }
 					]
@@ -239,6 +248,14 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+
+	// Verify the verifier received attributes for the chosen credential.
+	chosenAttrs := attributeMap(chosen.Attributes)
+	if _, hasEmail := chosenAttrs["email"]; hasEmail {
+		requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{"email": "bob@example.com"})
+	} else {
+		requireVerifierReceivedAttributes(t, result, "phone-cred", map[string]string{"phone_number": "+31612345678"})
+	}
 }
 
 // testMultipleRequiredCredentials issues both an EmailCredential and a
@@ -265,14 +282,14 @@ func testMultipleRequiredCredentials(t *testing.T) {
 			"credentials": [
 				{
 					"id": "email-cred",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["email"] }
 					]
 				},
 				{
 					"id": "phone-cred",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["phone_number"] }
 					]
@@ -322,6 +339,8 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{"email": "carol@example.com"})
+	requireVerifierReceivedAttributes(t, result, "phone-cred", map[string]string{"phone_number": "+31687654321"})
 }
 
 // testOptionalCredential issues only an EmailCredential. The DCQL query has
@@ -343,14 +362,14 @@ func testOptionalCredential(t *testing.T) {
 			"credentials": [
 				{
 					"id": "email-cred",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["email"] }
 					]
 				},
 				{
 					"id": "phone-cred",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["phone_number"] }
 					]
@@ -400,6 +419,7 @@ func testOptionalCredential(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{"email": "dave@example.com"})
 }
 
 // testCredentialWithSpecificClaimValue issues two EmailCredentials with
@@ -427,7 +447,7 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 			"credentials": [
 				{
 					"id": "email-cred",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["email"] },
 						{ "path": ["domain"], "values": ["example.com"] }
@@ -484,6 +504,10 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{
+		"email":  "eve@example.com",
+		"domain": "example.com",
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -497,8 +521,39 @@ type veramoVerifierSession struct {
 }
 
 type veramoCheckResult struct {
-	Status string `json:"status"`
-	Result any    `json:"result"`
+	Status string          `json:"status"`
+	Result *veramoVPResult `json:"result,omitempty"`
+}
+
+type veramoVPResult struct {
+	Credentials map[string][]veramoExtractedCredential `json:"credentials"`
+	Messages    []veramoMessage                        `json:"messages"`
+}
+
+type veramoExtractedCredential struct {
+	Claims map[string]any `json:"claims"`
+}
+
+type veramoMessage struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// requireVerifierReceivedAttributes asserts that the veramo verifier received
+// the expected attribute values for a given credential query ID.
+// When the verifier fully verified the credential (status VERIFIED), the claim
+// values are checked. Otherwise only the query ID presence is asserted.
+func requireVerifierReceivedAttributes(t *testing.T, result veramoCheckResult, queryId string, expected map[string]string) {
+	t.Helper()
+	require.NotNil(t, result.Result, "verifier result should not be nil")
+	creds, ok := result.Result.Credentials[queryId]
+	require.True(t, ok, "verifier should have credentials for query %q", queryId)
+	require.NotEmpty(t, creds, "verifier should have at least one credential for query %q", queryId)
+	for key, expectedVal := range expected {
+		actual, ok := creds[0].Claims[key]
+		require.True(t, ok, "verifier credential should have claim %q", key)
+		require.Equal(t, expectedVal, fmt.Sprintf("%v", actual), "verifier claim %q value mismatch", key)
+	}
 }
 
 func createVeramoVerifierDcqlSession(t *testing.T) veramoVerifierSession {
@@ -509,7 +564,7 @@ func createVeramoVerifierDcqlSession(t *testing.T) veramoVerifierSession {
 			"credentials": [
 				{
 					"id": "test-credential",
-					"format": "vc+sd-jwt",
+					"format": "dc+sd-jwt",
 					"claims": [
 						{ "path": ["given_name"] },
 						{ "path": ["email"] }
@@ -555,8 +610,11 @@ func checkVeramoVerifierOfferStatus(t *testing.T, state string) veramoCheckResul
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
 	var result veramoCheckResult
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	require.NoError(t, json.Unmarshal(body, &result))
 	return result
 }
 

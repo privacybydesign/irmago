@@ -1,10 +1,14 @@
 package sessiontest
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -288,7 +292,7 @@ func requireDisclosureChoices(t *testing.T, plan *clientmodels.DisclosurePlan, e
 }
 
 const (
-	openid4vciIssuerBaseURL = "http://localhost:8880"
+	openid4vciIssuerBaseURL = "https://localhost:8443"
 
 	preAuthIssuerURL  = openid4vciIssuerBaseURL + "/test-issuer"
 	preAuthAdminToken = "test-admin-token"
@@ -298,6 +302,24 @@ const (
 
 	mockAuthorizationServerURL = "http://localhost:9090"
 )
+
+func init() {
+	// Trust the self-signed localhost certificate used by the TLS proxy in Docker,
+	// so test helpers can make HTTPS calls to the issuer and verifier admin APIs.
+	certFile := filepath.Join(testdataFolder, "configurations", "certs", "localhost.crt")
+	pem, err := os.ReadFile(certFile)
+	if err != nil {
+		return // cert not found; skip (e.g., running without TLS)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	pool.AppendCertsFromPEM(pem)
+	http.DefaultTransport = &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: pool},
+	}
+}
 
 func startOpenID4VCISession(t *testing.T, c *client.Client, credOfferURL string) {
 	t.Helper()

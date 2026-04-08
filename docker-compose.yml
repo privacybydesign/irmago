@@ -92,6 +92,8 @@ services:
         condition: service_started
       veramo_openid4vp:
         condition: service_healthy
+      tls_proxy:
+        condition: service_started
       postgres:
         condition: service_started
       mysql:
@@ -105,7 +107,7 @@ services:
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
     working_dir: /irmago
-    entrypoint: go test -p 1
+    entrypoint: ["sh", "-c", "cp /irmago/testdata/configurations/certs/localhost.crt /usr/local/share/ca-certificates/ && update-ca-certificates && exec go test -p 1 \"$@\"", "--"]
     command: ./...
 
   # Service to run the 'irma' command line tool
@@ -189,15 +191,31 @@ services:
       DB_SCHEMA: agent
       PORT: 3000
       LISTEN_ADDRESS: 0.0.0.0
-      BASEURL: http://localhost:8880
+      BASEURL: https://localhost:8443
       PASSPHRASE: abcdefghijklmnopqrstuvwxyz012345
       CONF_PATH: conf
     networks:
       irma-net:
         aliases:
           - veramo-openid4vci.localhost
+
+  # TLS reverse proxy for the veramo issuer and verifier services
+  tls_proxy:
+    image: nginx:alpine
+    depends_on:
+      - veramo_openid4vci
+      - veramo_openid4vp
+    volumes:
+      - ./testdata/configurations/certs/nginx-tls-proxy.conf:/etc/nginx/nginx.conf:ro
+      - ./testdata/configurations/certs/localhost.crt:/etc/nginx/certs/localhost.crt:ro
+      - ./testdata/configurations/certs/localhost.key:/etc/nginx/certs/localhost.key:ro
+    networks:
+      irma-net:
+        aliases:
+          - tls-proxy.localhost
     ports:
-      - 8880:3000
+      - 8443:443
+      - 8444:444
 
   # OpenID4VP verifier for integration tests (eduwallet/veramo-verifier)
   veramo_openid4vp_postgres:
@@ -249,8 +267,10 @@ services:
         condition: service_started
     volumes:
       - ./testdata/openid4vp-verifier/conf:/app/conf
+      - ./testdata/configurations/certs/localhost.crt:/usr/local/share/ca-certificates/localhost.crt:ro
     environment:
       NODE_ENV: development
+      NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/localhost.crt
       DEBUG: "verifier:*"
       DB_HOST: veramo-openid4vp-postgres.localhost
       DB_PORT: 5432
@@ -259,7 +279,7 @@ services:
       DB_NAME: postgres
       PORT: 5000
       LISTEN_ADDRESS: 0.0.0.0
-      BASEURL: http://localhost:8891
+      BASEURL: https://localhost:8444
       PASSPHRASE: abcdefghijklmnopqrstuvwxyz012345
       ADMIN_BEARER_TOKEN: test-verifier-admin-token
       CONF_PATH: conf
