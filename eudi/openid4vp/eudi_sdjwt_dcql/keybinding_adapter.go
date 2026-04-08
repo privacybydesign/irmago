@@ -10,7 +10,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
-	"github.com/privacybydesign/irmago/eudi/internal/storage"
+	"github.com/privacybydesign/irmago/eudi/storage"
 )
 
 // eudiKeyBindingStorage implements sdjwtvc.KeyBindingStorage by reading holder
