@@ -228,13 +228,17 @@ services:
 
   veramo_openid4vp:
     build:
-      context: https://github.com/eduwallet/veramo-verifier.git#v1.5.1
+      context: https://github.com/eduwallet/veramo-verifier.git#v1.6.0
       dockerfile_inline: |
         FROM node:20-alpine
         WORKDIR /app
         COPY package.json yarn.lock .yarnrc.yml ./
         RUN yarn install
         COPY . .
+        # Workaround for https://github.com/eduwallet/veramo-verifier/issues/XXX:
+        # initialiseKey() doesn't set identifier.keys on the in-memory object after
+        # creating a new DID, causing "Missing keys or identifier" on a fresh DB.
+        RUN sed -i '/await prepo.save(pKey);/a\        identifier.keys = [dbKey];' src/dids/Store.ts
         CMD ["yarn", "start"]
     extra_hosts:
       - "localhost:host-gateway"
