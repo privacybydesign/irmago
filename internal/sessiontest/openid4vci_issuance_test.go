@@ -68,15 +68,9 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	require.NotNil(t, cred, "issued credential should appear in GetCredentials")
 
 	attrMap := attributeMap(cred.Attributes)
-	requireAttributeDisplayName(t, attrMap, "given_name", "en", "Given Name")
-	requireAttributeDisplayName(t, attrMap, "given_name", "nl", "Voornaam")
-	requireAttributeDisplayName(t, attrMap, "family_name", "en", "Family Name")
-	requireAttributeDisplayName(t, attrMap, "family_name", "nl", "Achternaam")
-	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
-	requireAttributeDisplayName(t, attrMap, "email", "nl", "E-mailadres")
-	requireAttributeStringValue(t, attrMap, "given_name", "Test")
-	requireAttributeStringValue(t, attrMap, "family_name", "User")
-	requireAttributeStringValue(t, attrMap, "email", "test@example.com")
+	requireAttribute(t, attrMap, "given_name", clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"}, "Test")
+	requireAttribute(t, attrMap, "family_name", clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"}, "User")
+	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}, "test@example.com")
 }
 
 func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
@@ -117,15 +111,9 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 	require.NotNil(t, cred, "issued credential should appear in GetCredentials")
 
 	attrMap := attributeMap(cred.Attributes)
-	requireAttributeDisplayName(t, attrMap, "given_name", "en", "Given Name")
-	requireAttributeDisplayName(t, attrMap, "given_name", "nl", "Voornaam")
-	requireAttributeDisplayName(t, attrMap, "family_name", "en", "Family Name")
-	requireAttributeDisplayName(t, attrMap, "family_name", "nl", "Achternaam")
-	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
-	requireAttributeDisplayName(t, attrMap, "email", "nl", "E-mailadres")
-	requireAttributeStringValue(t, attrMap, "given_name", "Test")
-	requireAttributeStringValue(t, attrMap, "family_name", "TxCode")
-	requireAttributeStringValue(t, attrMap, "email", "txcode@example.com")
+	requireAttribute(t, attrMap, "given_name", clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"}, "Test")
+	requireAttribute(t, attrMap, "family_name", clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"}, "TxCode")
+	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}, "txcode@example.com")
 }
 
 func testOpenId4VciPreAuthFlowWithWrongTxCode(t *testing.T) {
@@ -195,9 +183,7 @@ func testOpenId4VciPreAuthFlowNestedClaims(t *testing.T) {
 	attrMap := attributeMap(cred.Attributes)
 
 	// Top-level claim: owner_name
-	requireAttributeDisplayName(t, attrMap, "owner_name", "en", "Owner Name")
-	requireAttributeDisplayName(t, attrMap, "owner_name", "nl", "Eigenaar")
-	requireAttributeStringValue(t, attrMap, "owner_name", "Alice")
+	requireAttribute(t, attrMap, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Alice")
 
 	// Nested claim: address is an object containing street, city, country
 	attr, ok := attrMap["address"]
@@ -240,34 +226,22 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	emailCred := findCredentialByName(t, creds, "en", "Email Credential (SD-JWT)")
 	require.NotNil(t, emailCred, "EmailCredential should appear in GetCredentials")
 	emailAttrs := attributeMap(emailCred.Attributes)
-	requireAttributeDisplayName(t, emailAttrs, "email", "en", "Email")
-	requireAttributeDisplayName(t, emailAttrs, "email", "nl", "E-mailadres")
-	requireAttributeDisplayName(t, emailAttrs, "domain", "en", "Domain")
-	requireAttributeDisplayName(t, emailAttrs, "domain", "nl", "Domein")
-	requireAttributeStringValue(t, emailAttrs, "email", "nested-test@example.com")
-	requireAttributeStringValue(t, emailAttrs, "domain", "example.com")
+	requireAttribute(t, emailAttrs, "email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}, "nested-test@example.com")
+	requireAttribute(t, emailAttrs, "domain", clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"}, "example.com")
 
 	// Verify StudentCardCredential attributes.
 	studentCred := findCredentialByName(t, creds, "en", "Student Card Credential (SD-JWT)")
 	require.NotNil(t, studentCred, "StudentCardCredential should appear in GetCredentials")
 	studentAttrs := attributeMap(studentCred.Attributes)
-	requireAttributeDisplayName(t, studentAttrs, "university", "en", "University")
-	requireAttributeDisplayName(t, studentAttrs, "university", "nl", "Universiteit")
-	requireAttributeDisplayName(t, studentAttrs, "level", "en", "Level")
-	requireAttributeDisplayName(t, studentAttrs, "level", "nl", "Niveau")
-	requireAttributeDisplayName(t, studentAttrs, "student_id", "en", "Student ID")
-	requireAttributeDisplayName(t, studentAttrs, "student_id", "nl", "Studentnummer")
-	requireAttributeStringValue(t, studentAttrs, "university", "TU Delft")
-	requireAttributeStringValue(t, studentAttrs, "level", "MSc")
-	requireAttributeStringValue(t, studentAttrs, "student_id", "S12345")
+	requireAttribute(t, studentAttrs, "university", clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, "TU Delft")
+	requireAttribute(t, studentAttrs, "level", clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"}, "MSc")
+	requireAttribute(t, studentAttrs, "student_id", clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"}, "S12345")
 
 	// Verify HouseCredential attributes.
 	houseCred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT)")
 	require.NotNil(t, houseCred, "HouseCredential should appear in GetCredentials")
 	houseAttrs := attributeMap(houseCred.Attributes)
-	requireAttributeDisplayName(t, houseAttrs, "owner_name", "en", "Owner Name")
-	requireAttributeDisplayName(t, houseAttrs, "owner_name", "nl", "Eigenaar")
-	requireAttributeStringValue(t, houseAttrs, "owner_name", "Bob")
+	requireAttribute(t, houseAttrs, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Bob")
 
 	// The nested address claim should be stored as an object.
 	addrAttr, ok := houseAttrs["address"]
@@ -337,15 +311,9 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	require.NotNil(t, cred, "issued credential should appear in GetCredentials")
 
 	attrMap := attributeMap(cred.Attributes)
-	requireAttributeDisplayName(t, attrMap, "given_name", "en", "Given Name")
-	requireAttributeDisplayName(t, attrMap, "given_name", "nl", "Voornaam")
-	requireAttributeDisplayName(t, attrMap, "family_name", "en", "Family Name")
-	requireAttributeDisplayName(t, attrMap, "family_name", "nl", "Achternaam")
-	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
-	requireAttributeDisplayName(t, attrMap, "email", "nl", "E-mailadres")
-	requireAttributeStringValue(t, attrMap, "given_name", "Test")
-	requireAttributeStringValue(t, attrMap, "family_name", "AuthCode")
-	requireAttributeStringValue(t, attrMap, "email", "authcode@example.com")
+	requireAttribute(t, attrMap, "given_name", clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"}, "Test")
+	requireAttribute(t, attrMap, "family_name", clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"}, "AuthCode")
+	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}, "authcode@example.com")
 }
 
 func testOpenId4VciAuthCodeFlowCanBeDismissed(t *testing.T) {
@@ -391,9 +359,7 @@ func testOpenId4VciAuthCodeFlowNestedClaims(t *testing.T) {
 	attrMap := attributeMap(cred.Attributes)
 
 	// Top-level claim: owner_name
-	requireAttributeDisplayName(t, attrMap, "owner_name", "en", "Owner Name")
-	requireAttributeDisplayName(t, attrMap, "owner_name", "nl", "Eigenaar")
-	requireAttributeStringValue(t, attrMap, "owner_name", "Charlie")
+	requireAttribute(t, attrMap, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Charlie")
 
 	// Nested claim: address is an object containing street, city, country
 	addrAttr, ok := attrMap["address"]
