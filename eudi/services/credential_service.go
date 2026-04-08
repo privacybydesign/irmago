@@ -124,7 +124,7 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 						attrValue.Int = &iClaimValue
 					} else {
 						attrValue.Type = clientmodels.AttributeType_String
-						str := fmt.Sprintf("%d", fClaimValue)
+						str := fmt.Sprintf("%g", fClaimValue)
 						attrValue.String = &str
 					}
 				case reflect.Slice, reflect.Array:

@@ -273,10 +273,9 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
 	// TODO: disabled check for testing with Digidentity
-	keyBindingService := services.NewHolderBindingKeyService(s.storage)
-
 	var keyIds []datatypes.UUID
 	if requireCryptographicKeyBinding {
+		keyBindingService := services.NewHolderBindingKeyService(s.storage)
 		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
@@ -482,7 +481,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	if err != nil {
 		// Error storing credentials; remove the already stored keys for the credentials that were received, to avoid orphaned keys in storage
 		if requireCryptographicKeyBinding {
-			err := keyBindingService.RemoveKeys(keyIds)
+			err := services.NewHolderBindingKeyService(s.storage).RemoveKeys(keyIds)
 			if err != nil {
 				eudi.Logger.Warnf("failed to remove key binding keys after credential storage failure: %v", err)
 			}
