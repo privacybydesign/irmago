@@ -32,8 +32,8 @@ type PreparedDisclosure struct {
 
 // DcqlCredentialQueryHandler handles DCQL credential queries for a specific credential format.
 type DcqlCredentialQueryHandler interface {
-	// Format returns the credential format this handler supports (e.g., "dc+sd-jwt").
-	Format() string
+	// CanHandleCredentialQuery returns true if this handler can process the given credential query.
+	CanHandleCredentialQuery(query CredentialQuery) bool
 
 	// FindCandidates finds all credential instances that match the given DCQL credential query.
 	FindCandidates(query CredentialQuery) (*CredentialQueryResult, error)

@@ -5,6 +5,7 @@ package eudi_sdjwt_dcql
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -12,6 +13,11 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/models"
 )
+
+func isURL(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && u.Scheme != "" && u.Host != ""
+}
 
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
 // credentials stored in the eudi storage (SQLite).
@@ -31,14 +37,22 @@ func NewSdJwtVcDcqlHandler(eudiStorage storage.Storage) *SdJwtVcDcqlHandler {
 
 var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
 
-func (h *SdJwtVcDcqlHandler) Format() string {
-	return string(clientmodels.Format_SdJwtVc) // "dc+sd-jwt"
-}
-
-// Formats returns all format identifiers this handler supports.
-// Both "dc+sd-jwt" (current spec) and "vc+sd-jwt" (legacy) are SD-JWT-VC formats.
-func (h *SdJwtVcDcqlHandler) Formats() []string {
-	return []string{"dc+sd-jwt", "vc+sd-jwt"}
+// CanHandleCredentialQuery returns true when the format is dc+sd-jwt or vc+sd-jwt
+// and at least one vct_value is a valid URL (indicating an EUDI credential type).
+func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
+	if query.Format != "dc+sd-jwt" && query.Format != "vc+sd-jwt" {
+		return false
+	}
+	// Without vct_values, accept all sd-jwt queries (verifier didn't specify type).
+	if len(query.Meta.VctValues) == 0 {
+		return true
+	}
+	for _, vct := range query.Meta.VctValues {
+		if isURL(vct) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.CredentialQueryResult, error) {

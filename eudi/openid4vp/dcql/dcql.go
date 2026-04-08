@@ -49,7 +49,7 @@ type CredentialQuery struct {
 	// OPTIONAL: An object defining additional properties requested by the verifier that apply to the
 	// metadata and validity data of the credential. The properties of this are defined per credential format.
 	// If omitted, no specific constraints are placed on the metadata or validity of the requested credential.
-	Meta Meta `json:"meta,omitempty"`
+	Meta Meta `json:"meta"`
 
 	// OPTIONAL: A non-empty array that specifies the expected authorities or trust frameworks that certify issuers,
 	// that the verifier will accept. Every credential returned by the wallet should match at least one of the conditions

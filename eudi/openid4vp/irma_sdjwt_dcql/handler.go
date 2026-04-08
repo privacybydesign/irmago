@@ -32,9 +32,24 @@ func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.C
 // Compile-time check that SdJwtVcDcqlHandler implements the interface.
 var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
 
-// Format returns the credential format this handler supports.
-func (h *SdJwtVcDcqlHandler) Format() string {
-	return string(clientmodels.Format_SdJwtVc)
+// CanHandleCredentialQuery returns true when the format is dc+sd-jwt and at least
+// one vct_value is a dot-separated IRMA credential type identifier found in the
+// IRMA configuration (e.g., "test.test.email").
+func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
+	if query.Format != "dc+sd-jwt" {
+		return false
+	}
+	for _, vct := range query.Meta.VctValues {
+		parts := strings.Split(vct, ".")
+		if len(parts) != 3 {
+			continue
+		}
+		credTypeId := irma.NewCredentialTypeIdentifier(vct)
+		if _, ok := h.config.CredentialTypes[credTypeId]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // FindCandidates finds all credential instances that match the given DCQL credential query.
