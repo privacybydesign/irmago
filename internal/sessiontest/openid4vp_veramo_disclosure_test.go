@@ -76,8 +76,8 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 
 	// Verify attribute display names and values.
 	attrMap := attributeMap(cred.Attributes)
-	requireAttributeDisplayName(t, attrMap, "given_name", "en", "given_name")
-	requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+	requireAttributeDisplayName(t, attrMap, "given_name", "en", "Given Name")
+	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
 	requireAttributeTranslatedValue(t, attrMap, "given_name", "en", "Test")
 	requireAttributeTranslatedValue(t, attrMap, "email", "en", "test@example.com")
 
@@ -141,8 +141,8 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	// Verify both attributes are present with correct display names and values.
 	require.GreaterOrEqual(t, len(cred.Attributes), 2, "credential should have at least email and domain attributes")
 	attrMap := attributeMap(cred.Attributes)
-	requireAttributeDisplayName(t, attrMap, "email", "en", "email")
-	requireAttributeDisplayName(t, attrMap, "domain", "en", "domain")
+	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
+	requireAttributeDisplayName(t, attrMap, "domain", "en", "Domain")
 	requireAttributeTranslatedValue(t, attrMap, "email", "en", "alice@example.com")
 	requireAttributeTranslatedValue(t, attrMap, "domain", "en", "example.com")
 
@@ -223,11 +223,11 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 		attrMap := attributeMap(opt.Attributes)
 		// Each option should have at least one attribute with a display name.
 		if _, hasEmail := attrMap["email"]; hasEmail {
-			requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+			requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
 			requireAttributeTranslatedValue(t, attrMap, "email", "en", "bob@example.com")
 		}
 		if _, hasPhone := attrMap["phone_number"]; hasPhone {
-			requireAttributeDisplayName(t, attrMap, "phone_number", "en", "phone_number")
+			requireAttributeDisplayName(t, attrMap, "phone_number", "en", "Phone Number")
 			requireAttributeTranslatedValue(t, attrMap, "phone_number", "en", "+31612345678")
 		}
 	}
@@ -309,11 +309,11 @@ func testMultipleRequiredCredentials(t *testing.T) {
 		// Verify attribute display names and values for each credential.
 		attrMap := attributeMap(cred.Attributes)
 		if _, hasEmail := attrMap["email"]; hasEmail {
-			requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+			requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
 			requireAttributeTranslatedValue(t, attrMap, "email", "en", "carol@example.com")
 		}
 		if _, hasPhone := attrMap["phone_number"]; hasPhone {
-			requireAttributeDisplayName(t, attrMap, "phone_number", "en", "phone_number")
+			requireAttributeDisplayName(t, attrMap, "phone_number", "en", "Phone Number")
 			requireAttributeTranslatedValue(t, attrMap, "phone_number", "en", "+31687654321")
 		}
 
@@ -390,7 +390,7 @@ func testOptionalCredential(t *testing.T) {
 
 	// Verify email attribute display name and value.
 	attrMap := attributeMap(emailCred.Attributes)
-	requireAttributeDisplayName(t, attrMap, "email", "en", "email")
+	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
 	requireAttributeTranslatedValue(t, attrMap, "email", "en", "dave@example.com")
 
 	attrIds := make([]string, len(emailCred.Attributes))
@@ -481,8 +481,8 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 
 	// Verify attribute display names and values on the matching credential.
 	attrMap := attributeMap(matchingCred.Attributes)
-	requireAttributeDisplayName(t, attrMap, "email", "en", "email")
-	requireAttributeDisplayName(t, attrMap, "domain", "en", "domain")
+	requireAttributeDisplayName(t, attrMap, "email", "en", "Email")
+	requireAttributeDisplayName(t, attrMap, "domain", "en", "Domain")
 	requireAttributeTranslatedValue(t, attrMap, "email", "en", "eve@example.com")
 	requireAttributeTranslatedValue(t, attrMap, "domain", "en", "example.com")
 

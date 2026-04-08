@@ -73,32 +73,49 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	return result, nil
 }
 
-// findBatches returns credential batches matching the query.
-// When vct_values are specified, only matching batches are returned.
-// When vct_values are absent (per DCQL spec, any VCT is acceptable), all batches are returned.
+// findBatches returns credential batches matching the query, with metadata
+// preloaded (including claim display names). When vct_values are specified,
+// only matching batches are returned; otherwise all batches are returned.
 func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.CredentialBatch, error) {
-	if len(query.Meta.VctValues) == 0 {
-		return h.credentialStore.GetCredentialBatchList()
+	allBatches, err := h.credentialStore.GetCredentialBatchList()
+	if err != nil {
+		return nil, err
 	}
 
-	var all []*models.CredentialBatch
-	for _, vct := range query.Meta.VctValues {
-		batches, err := h.credentialStore.GetBatchesByVCT(vct)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get batches for vct %s: %w", vct, err)
-		}
-		all = append(all, batches...)
+	if len(query.Meta.VctValues) == 0 {
+		return allBatches, nil
 	}
-	return all, nil
+
+	vctSet := make(map[string]struct{}, len(query.Meta.VctValues))
+	for _, vct := range query.Meta.VctValues {
+		vctSet[vct] = struct{}{}
+	}
+	var filtered []*models.CredentialBatch
+	for _, batch := range allBatches {
+		if _, ok := vctSet[batch.VerifiableCredentialType]; ok {
+			filtered = append(filtered, batch)
+		}
+	}
+	return filtered, nil
 }
 
 func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
 	result := &dcql.PreparedDisclosure{}
 
+	// Load all batches with full metadata so buildLogCredential can resolve display names.
+	allBatches, err := h.credentialStore.GetCredentialBatchList()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load credential batches: %w", err)
+	}
+	batchByHash := make(map[string]*models.CredentialBatch, len(allBatches))
+	for _, b := range allBatches {
+		batchByHash[b.Hash] = b
+	}
+
 	for _, sel := range selections {
-		batch, err := h.credentialStore.GetBatchByHash(sel.CredentialHash)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get batch by hash %s: %w", sel.CredentialHash, err)
+		batch, ok := batchByHash[sel.CredentialHash]
+		if !ok {
+			return nil, fmt.Errorf("batch not found for hash %s", sel.CredentialHash)
 		}
 
 		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
@@ -170,7 +187,7 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 
 		attr := clientmodels.Attribute{
 			Id:          attrName,
-			DisplayName: clientmodels.TranslatedString{"en": attrName},
+			DisplayName: claimDisplayName(batch, attrName),
 		}
 		if valStr != "" {
 			ts := clientmodels.TranslatedString{"en": valStr}
@@ -194,7 +211,7 @@ func buildLogCredential(batch *models.CredentialBatch, attrNames []string) clien
 	for _, name := range attrNames {
 		attr := clientmodels.Attribute{
 			Id:          name,
-			DisplayName: clientmodels.TranslatedString{"en": name},
+			DisplayName: claimDisplayName(batch, name),
 		}
 		if val, ok := payload[name]; ok {
 			if valStr, ok := val.(string); ok {
@@ -223,4 +240,30 @@ func expiryUnix(batch *models.CredentialBatch) int64 {
 		return batch.IssuedAt.Unix()
 	}
 	return 0
+}
+
+// claimDisplayName looks up the display name for a claim from the stored credential metadata.
+// Falls back to the raw claim name if no display metadata is available.
+func claimDisplayName(batch *models.CredentialBatch, claimName string) clientmodels.TranslatedString {
+	if batch.CredentialMetadata != nil {
+		for _, claim := range batch.CredentialMetadata.Claims {
+			var path []string
+			if err := json.Unmarshal(claim.Path, &path); err == nil {
+				if len(path) > 0 && path[len(path)-1] == claimName {
+					ts := clientmodels.TranslatedString{}
+					for _, d := range claim.Display {
+						locale := "en"
+						if d.Locale.Valid {
+							locale = d.Locale.V
+						}
+						ts[locale] = d.Name
+					}
+					if len(ts) > 0 {
+						return ts
+					}
+				}
+			}
+		}
+	}
+	return clientmodels.TranslatedString{}
 }
