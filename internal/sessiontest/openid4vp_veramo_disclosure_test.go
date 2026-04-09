@@ -37,6 +37,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("non-sd claims shown in disclosure plan", testNonSdClaimsShownInDisclosurePlan)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
+	t.Run("veramo verifier requesting missing credential errors", testVeramoVerifierRequestingMissingCredentialErrors)
 }
 
 func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
@@ -918,6 +919,43 @@ func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
 	}
 	require.True(t, hasVerificationError,
 		"verifier should report a verification error for the IRMA-issued credential")
+}
+
+// testVeramoVerifierRequestingMissingCredentialErrors creates a disclosure
+// session at the veramo verifier requesting an email credential when the wallet
+// has no credentials at all. The session should error because the DCQL query
+// cannot be satisfied.
+func testVeramoVerifierRequestingMissingCredentialErrors(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// No credentials are issued — the wallet is empty.
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+	require.NotNil(t, session.DisclosurePlan)
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	require.Empty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions,
+		"should have no owned credentials since the wallet is empty")
+	require.Empty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].ObtainableOptions,
+		"should have no obtainable credentials")
 }
 
 // ---------------------------------------------------------------------------
