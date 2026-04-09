@@ -141,6 +141,34 @@
           "locale": "en"
         }
       ]
+    },
+    "MembershipCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "MembershipCredentialSdJwt",
+      "extends": "MembershipCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          { "name": "Membership Credential (SD-JWT)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["member_name"], "display": [{ "name": "Member Name", "locale": "en" }, { "name": "Naam lid", "locale": "nl" }] },
+          { "path": ["member_since"], "display": [{ "name": "Member Since", "locale": "en" }, { "name": "Lid sinds", "locale": "nl" }] },
+          { "path": ["membership_type"], "display": [{ "name": "Membership Type", "locale": "en" }, { "name": "Type lidmaatschap", "locale": "nl" }] }
+        ]
+      },
+      "display": [
+        {
+          "name": "Membership Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
     }
   }
 }

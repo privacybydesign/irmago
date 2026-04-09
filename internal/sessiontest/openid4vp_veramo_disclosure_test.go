@@ -31,6 +31,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("disclose credential with array values", testDiscloseCredentialWithArrayValues)
 	t.Run("disclose specific array element", testDiscloseSpecificArrayElement)
 	t.Run("disclose all array elements with null path", testDiscloseAllArrayElementsWithNullPath)
+	t.Run("non-sd claims shown in disclosure plan", testNonSdClaimsShownInDisclosurePlan)
 }
 
 func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
@@ -719,6 +720,69 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+}
+
+// testNonSdClaimsShownInDisclosurePlan issues a MembershipCredential where
+// member_name and membership_type are SD claims but member_since is a non-SD
+// claim (always in the JWT payload). The verifier only asks for member_name,
+// but the disclosure plan should also show member_since because it is always
+// shared when the credential is presented.
+func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+		"member_name": "Grace",
+		"member_since": "2020-01-15",
+		"membership_type": "Gold"
+	}`)
+
+	// The verifier only asks for the SD claim member_name.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "membership-cred",
+					"format": "dc+sd-jwt",
+					"claims": [
+						{ "path": ["member_name"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	// The disclosure plan should show member_name (requested SD claim) AND
+	// member_since (non-SD claim that is always shared).
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{
+			"member_name":  {Value: "Grace", DisplayName: "Member Name"},
+			"member_since": {Value: "2020-01-15", DisplayName: "Member Since"},
+		}},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "membership-cred", map[string]string{
+		"member_name": "Grace",
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 		return "", fmt.Errorf("failed to split SD-JWT VC: %v", err)
 	}
 
-	payload, err := decodeJwtPayload(issuerSignedJwt)
+	payload, err := decodeJwtPayloadFromJwt(issuerSignedJwt)
 	if err != nil {
 		return "", err
 	}
@@ -116,8 +116,17 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 	return CreateSdJwtVc(issuerSignedJwt, selected), nil
 }
 
-// decodeJwtPayload decodes the payload part of a JWT as raw JSON.
-func decodeJwtPayload(jwt IssuerSignedJwt) (map[string]any, error) {
+// DecodeJwtPayload extracts and decodes the payload of the issuer-signed JWT
+// from an SD-JWT VC. The disclosures and KB-JWT suffix are stripped first.
+func DecodeJwtPayload(sdJwt SdJwtVc) (map[string]any, error) {
+	issJwt, _, err := splitSdJwtVc(sdJwt)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJwtPayloadFromJwt(issJwt)
+}
+
+func decodeJwtPayloadFromJwt(jwt IssuerSignedJwt) (map[string]any, error) {
 	parts := strings.Split(string(jwt), ".")
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("invalid JWT: expected 3 parts, got %d", len(parts))

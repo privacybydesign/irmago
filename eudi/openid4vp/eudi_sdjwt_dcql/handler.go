@@ -64,7 +64,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	}
 
 	for _, batch := range batches {
-		attributes, err := parseBatchAttributes(batch, query)
+		attributes, err := parseBatchAttributes(batch, query, h.credentialStore)
 		if err != nil {
 			continue
 		}
@@ -169,15 +169,18 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 
 // parseBatchAttributes parses the stored ProcessedSdJwtPayload and matches
 // claims against the DCQL query. Returns nil if the credential doesn't match.
-func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery) ([]clientmodels.Attribute, error) {
+// Non-SD claims (always shared when presenting) are included in the result so
+// the user sees everything they will be sharing.
+func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, credStore storage.CredentialStore) ([]clientmodels.Attribute, error) {
 	var payload sdjwtvc.ProcessedSdJwtPayload
 	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload); err != nil {
 		return nil, err
 	}
 
+	// Check that all requested claims exist and match value constraints.
 	var attributes []clientmodels.Attribute
+	requestedKeys := make(map[string]struct{})
 	for _, claim := range query.Claims {
-		// Resolve the claim value using the full path.
 		val, err := payload.GetClaimValue([]any(claim.Path))
 		if err != nil {
 			return nil, nil // required claim missing
@@ -185,7 +188,6 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 
 		valStr, _ := val.(string)
 
-		// Check value constraints
 		if len(claim.Values) > 0 {
 			matched := false
 			for _, reqVal := range claim.Values {
@@ -199,18 +201,69 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 			}
 		}
 
-		// Use the last string path element as the attribute ID.
 		attrName := claim.Path.LastString()
+		requestedKeys[attrName] = struct{}{}
 		attr := clientmodels.Attribute{
 			Id:          attrName,
 			DisplayName: claimDisplayName(batch, attrName),
 		}
 		attr.Value = buildAttributeValue(val)
+		attributes = append(attributes, attr)
+	}
 
+	// Include non-SD claims: these are always visible in the JWT payload and
+	// will be shared regardless of which disclosures the user selects.
+	nonSdClaims := getNonSdClaimNames(batch, credStore)
+	for _, name := range nonSdClaims {
+		if _, alreadyIncluded := requestedKeys[name]; alreadyIncluded {
+			continue
+		}
+		val, err := payload.GetClaimValue([]any{name})
+		if err != nil {
+			continue
+		}
+		attr := clientmodels.Attribute{
+			Id:          name,
+			DisplayName: claimDisplayName(batch, name),
+		}
+		attr.Value = buildAttributeValue(val)
 		attributes = append(attributes, attr)
 	}
 
 	return attributes, nil
+}
+
+// getNonSdClaimNames returns the names of claims in the issuer JWT payload that
+// are NOT selectively disclosable (i.e., always shared). These are claims present
+// directly in the payload, not behind _sd hashes.
+func getNonSdClaimNames(batch *models.CredentialBatch, credStore storage.CredentialStore) []string {
+	instance, err := credStore.GetUnusedInstance(batch.ID)
+	if err != nil {
+		return nil
+	}
+
+	rawJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
+	jwtPayload, err := sdjwtvc.DecodeJwtPayload(rawJwt)
+	if err != nil {
+		return nil
+	}
+
+	// Standard SD-JWT claims that are not user data.
+	standardClaims := map[string]struct{}{
+		"iss": {}, "sub": {}, "iat": {}, "exp": {}, "nbf": {},
+		"vct": {}, "cnf": {}, "_sd": {}, "_sd_alg": {}, "status": {},
+	}
+
+	var names []string
+	for key := range jwtPayload {
+		if _, isStandard := standardClaims[key]; isStandard {
+			continue
+		}
+		// If the key is directly in the payload (not a nested _sd reference),
+		// it's a non-SD claim.
+		names = append(names, key)
+	}
+	return names
 }
 
 func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
