@@ -4,10 +4,39 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/did"
 )
+
+const Prefix = "did:jwk:"
+
+// Resolve parses a did:jwk DID string and returns the embedded JWK public key.
+// The DID string may include a fragment (e.g., "did:jwk:eyJ...#0") which is stripped.
+func Resolve(didJwk string) (jwk.Key, error) {
+	// Strip fragment
+	if idx := strings.Index(didJwk, "#"); idx != -1 {
+		didJwk = didJwk[:idx]
+	}
+
+	if !strings.HasPrefix(didJwk, Prefix) {
+		return nil, fmt.Errorf("invalid did:jwk: %s", didJwk)
+	}
+
+	encoded := strings.TrimPrefix(didJwk, Prefix)
+	jwkBytes, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("failed to base64url-decode did:jwk: %v", err)
+	}
+
+	key, err := jwk.ParseKey(jwkBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JWK from did:jwk: %v", err)
+	}
+
+	return key, nil
+}
 
 type DocumentBuilder struct{}
 
@@ -32,8 +61,7 @@ func (b *DocumentBuilder) FromJwk(key jwk.Key) (*did.Document, error) {
 	// Base64URL encode the serialized JWK
 	encodedJwk := base64.RawURLEncoding.EncodeToString(jwkBytes)
 
-	// Add the "did:jwk:" prefix to the encoded string to form the DID
-	didJwk := "did:jwk:" + encodedJwk
+	didJwk := Prefix + encodedJwk
 	kid := didJwk + "#0"
 
 	// Create a DID Document with the generated DID and appropriate verification method

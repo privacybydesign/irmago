@@ -2,13 +2,13 @@ package openid4vp
 
 import (
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/did"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 )
@@ -100,27 +100,15 @@ func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[stri
 }
 
 // resolveDidJwk extracts the public key from a did:jwk DID.
-// The JWK is embedded directly in the DID string as base64url-encoded JSON.
 func (v *DidVerifierValidator) resolveDidJwk(didJwk string, header map[string]any) (any, string, error) {
-	const prefix = "did:jwk:"
-	if !strings.HasPrefix(didJwk, prefix) {
-		return nil, "", fmt.Errorf("invalid did:jwk: %s", didJwk)
-	}
-
-	encoded := strings.TrimPrefix(didJwk, prefix)
-	jwkBytes, err := base64.RawURLEncoding.DecodeString(encoded)
+	key, err := didjwk.Resolve(didJwk)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to base64url-decode did:jwk: %v", err)
-	}
-
-	key, err := jwk.ParseKey(jwkBytes)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to parse JWK from did:jwk: %v", err)
+		return nil, "", err
 	}
 
 	var rawKey any
 	if err := jwk.Export(key, &rawKey); err != nil {
-		return nil, "", fmt.Errorf("failed to export raw key from JWK: %v", err)
+		return nil, "", fmt.Errorf("failed to export raw key from did:jwk: %v", err)
 	}
 
 	return rawKey, didJwk, nil

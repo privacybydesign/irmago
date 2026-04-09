@@ -5,7 +5,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -273,27 +273,15 @@ func resolveHolderKey(cnf *CnfField) (jwk.Key, error) {
 // resolveKeyFromDid extracts a public key from a DID URL.
 // Currently supports did:jwk where the key is base64url-encoded in the DID itself.
 func resolveKeyFromDid(kid string) (jwk.Key, error) {
-	// Strip fragment (e.g., "#0") from DID URL
-	did := kid
-	if idx := strings.Index(kid, "#"); idx != -1 {
-		did = kid[:idx]
-	}
-
-	const didJwkPrefix = "did:jwk:"
-	if strings.HasPrefix(did, didJwkPrefix) {
-		encoded := strings.TrimPrefix(did, didJwkPrefix)
-		jwkBytes, err := base64.RawURLEncoding.DecodeString(encoded)
+	if strings.HasPrefix(kid, didjwk.Prefix) || strings.HasPrefix(strings.SplitN(kid, "#", 2)[0], didjwk.Prefix) {
+		key, err := didjwk.Resolve(kid)
 		if err != nil {
-			return nil, fmt.Errorf("failed to base64url-decode did:jwk: %v", err)
-		}
-		key, err := jwk.ParseKey(jwkBytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse JWK from did:jwk: %v", err)
+			return nil, err
 		}
 		// Store the kid (DID URL) on the key so callers can use it for lookups
 		key.Set(jwk.KeyIDKey, kid)
 		return key, nil
 	}
 
-	return nil, fmt.Errorf("unsupported DID method in cnf.kid: %s", did)
+	return nil, fmt.Errorf("unsupported DID method in cnf.kid: %s", kid)
 }
