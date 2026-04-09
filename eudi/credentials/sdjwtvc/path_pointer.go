@@ -32,8 +32,13 @@ func (p *ProcessedSdJwtPayload) GetClaimValue(pathPointer []any) (any, error) {
 	for i, component := range pathPointer {
 		switch key := component.(type) {
 		case string:
-			m, ok := current.(ProcessedSdJwtPayload)
-			if !ok {
+			var m map[string]any
+			switch v := current.(type) {
+			case ProcessedSdJwtPayload:
+				m = v
+			case map[string]any:
+				m = v
+			default:
 				return nil, fmt.Errorf("path component %d (%q): expected object, got %T", i, key, current)
 			}
 			val, exists := m[key]
@@ -50,6 +55,17 @@ func (p *ProcessedSdJwtPayload) GetClaimValue(pathPointer []any) (any, error) {
 				return nil, fmt.Errorf("path component %d (%d): index out of range (length %d)", i, key, rv.Len())
 			}
 			current = rv.Index(key).Interface()
+		case float64:
+			// JSON numbers are decoded as float64; treat as an integer index.
+			idx := int(key)
+			rv := reflect.ValueOf(current)
+			if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+				return nil, fmt.Errorf("path component %d (%v): expected array, got %T", i, key, current)
+			}
+			if idx < 0 || idx >= rv.Len() {
+				return nil, fmt.Errorf("path component %d (%v): index out of range (length %d)", i, key, rv.Len())
+			}
+			current = rv.Index(idx).Interface()
 		case nil:
 			rv := reflect.ValueOf(current)
 			if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {

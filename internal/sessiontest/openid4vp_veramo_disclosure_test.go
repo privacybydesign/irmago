@@ -27,6 +27,10 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("multiple required credentials", testMultipleRequiredCredentials)
 	t.Run("optional credential", testOptionalCredential)
 	t.Run("credential with specific claim value", testCredentialWithSpecificClaimValue)
+	t.Run("disclose nested claims", testDiscloseNestedClaims)
+	t.Run("disclose credential with array values", testDiscloseCredentialWithArrayValues)
+	t.Run("disclose specific array element", testDiscloseSpecificArrayElement)
+	t.Run("disclose all array elements with null path", testDiscloseAllArrayElementsWithNullPath)
 }
 
 func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
@@ -67,19 +71,12 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	// Step 4: Grant permission to disclose.
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions, "should have a credential to disclose")
+	// Step 4: Verify the disclosure plan and grant permission.
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Name: "", Attributes: map[string]expectedPlanAttribute{"given_name": {Value: "Test", DisplayName: "Given Name"}, "email": {Value: "test@example.com", DisplayName: "Email"}}},
+	})
 
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-
-	// Verify attribute display names and values.
-	attrMap := attributeMap(cred.Attributes)
-	requireAttribute(t, attrMap, "given_name", clientmodels.TranslatedString{"en": "Given Name"}, "Test")
-	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email"}, "test@example.com")
-
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	attrIds := make([]string, len(cred.Attributes))
 	for i, attr := range cred.Attributes {
 		attrIds[i] = attr.Id
@@ -134,19 +131,11 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{"email": {Value: "alice@example.com", DisplayName: "Email"}, "domain": {Value: "example.com", DisplayName: "Domain"}}},
+	})
 
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-
-	// Verify both attributes are present with correct display names and values.
-	require.GreaterOrEqual(t, len(cred.Attributes), 2, "credential should have at least email and domain attributes")
-	attrMap := attributeMap(cred.Attributes)
-	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email"}, "alice@example.com")
-	requireAttribute(t, attrMap, "domain", clientmodels.TranslatedString{"en": "Domain"}, "example.com")
-
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	attrIds := make([]string, len(cred.Attributes))
 	for i, attr := range cred.Attributes {
 		attrIds[i] = attr.Id
@@ -216,21 +205,23 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 
 	plan := session.DisclosurePlan
 	require.NotNil(t, plan)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
 
 	// There should be one pick-one set with two owned options (email and phone).
 	pickOne := plan.DisclosureChoicesOverview[0]
 	require.GreaterOrEqual(t, len(pickOne.OwnedOptions), 2,
 		"should have at least two credential options to choose from")
 
-	// Verify that both options have the expected attributes.
+	// Verify that each option has the expected attribute values.
 	for _, opt := range pickOne.OwnedOptions {
 		attrMap := attributeMap(opt.Attributes)
 		if _, hasEmail := attrMap["email"]; hasEmail {
-			requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email"}, "bob@example.com")
+			require.NotNil(t, attrMap["email"].Value)
+			require.Equal(t, "bob@example.com", *attrMap["email"].Value.String)
 		}
 		if _, hasPhone := attrMap["phone_number"]; hasPhone {
-			requireAttribute(t, attrMap, "phone_number", clientmodels.TranslatedString{"en": "Phone Number"}, "+31612345678")
+			require.NotNil(t, attrMap["phone_number"].Value)
+			require.Equal(t, "+31612345678", *attrMap["phone_number"].Value.String)
 		}
 	}
 
@@ -304,27 +295,16 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
 	// Two separate disclosure choices, one for each required credential.
-	require.Len(t, plan.DisclosureChoicesOverview, 2,
-		"should have two required credential choices")
+	// The order depends on the DCQL query order, but both should have matching credentials.
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{"email": {Value: "carol@example.com", DisplayName: "Email"}}},
+		{Attributes: map[string]expectedPlanAttribute{"phone_number": {Value: "+31687654321", DisplayName: "Phone Number"}}},
+	})
 
-	// Build choices for both credentials and verify attributes.
 	choices := make([]clientmodels.DisclosureDisconSelection, 2)
-	for i, pickOne := range plan.DisclosureChoicesOverview {
-		require.NotEmpty(t, pickOne.OwnedOptions, "should own a matching credential for choice %d", i)
+	for i, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
 		cred := pickOne.OwnedOptions[0]
-
-		// Verify attribute display names and values for each credential.
-		attrMap := attributeMap(cred.Attributes)
-		if _, hasEmail := attrMap["email"]; hasEmail {
-			requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email"}, "carol@example.com")
-		}
-		if _, hasPhone := attrMap["phone_number"]; hasPhone {
-			requireAttribute(t, attrMap, "phone_number", clientmodels.TranslatedString{"en": "Phone Number"}, "+31687654321")
-		}
-
 		attrIds := make([]string, len(cred.Attributes))
 		for j, attr := range cred.Attributes {
 			attrIds[j] = attr.Id
@@ -388,20 +368,12 @@ func testOptionalCredential(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview)
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{"email": {Value: "dave@example.com", DisplayName: "Email"}}},
+		{Attributes: map[string]expectedPlanAttribute{}}, // optional phone (may have no owned options)
+	})
 
-	// The required email credential should be owned.
-	requiredChoice := plan.DisclosureChoicesOverview[0]
-	require.NotEmpty(t, requiredChoice.OwnedOptions, "should own the email credential")
-
-	emailCred := requiredChoice.OwnedOptions[0]
-
-	// Verify email attribute display name and value.
-	attrMap := attributeMap(emailCred.Attributes)
-	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email"}, "dave@example.com")
-
+	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	attrIds := make([]string, len(emailCred.Attributes))
 	for i, attr := range emailCred.Attributes {
 		attrIds[i] = attr.Id
@@ -465,32 +437,25 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 
 	plan := session.DisclosurePlan
 	require.NotNil(t, plan)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
 	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
 
-	// Only the credential with domain "example.com" should be selectable.
-	// Verify that the owned options have the correct domain value.
+	// Only the credential with domain "example.com" should match the value constraint.
+	// Find the matching credential among the owned options.
 	var matchingCred *clientmodels.SelectableCredentialInstance
 	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
-		for _, attr := range opt.Attributes {
-			if attr.Id == "domain" && attr.Value != nil &&
-				attr.Value.String != nil {
-				if *attr.Value.String == "example.com" {
-					matchingCred = opt
-					break
-				}
-			}
-		}
-		if matchingCred != nil {
+		attrMap := attributeMap(opt.Attributes)
+		if attr, ok := attrMap["domain"]; ok && attr.Value != nil &&
+			attr.Value.String != nil && *attr.Value.String == "example.com" {
+			matchingCred = opt
 			break
 		}
 	}
 	require.NotNil(t, matchingCred, "should find a credential with domain example.com")
 
-	// Verify attribute display names and values on the matching credential.
 	attrMap := attributeMap(matchingCred.Attributes)
-	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email"}, "eve@example.com")
-	requireAttribute(t, attrMap, "domain", clientmodels.TranslatedString{"en": "Domain"}, "example.com")
+	require.Equal(t, "eve@example.com", *attrMap["email"].Value.String)
+	require.Equal(t, "example.com", *attrMap["domain"].Value.String)
 
 	attrIds := make([]string, len(matchingCred.Attributes))
 	for i, attr := range matchingCred.Attributes {
@@ -508,6 +473,238 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 		"email":  "eve@example.com",
 		"domain": "example.com",
 	})
+}
+
+// testDiscloseNestedClaims issues a HouseCredential with a nested address object
+// and creates a DCQL query that requests specific nested claim paths
+// (e.g., ["address", "street"]).
+func testDiscloseNestedClaims(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue a HouseCredential with nested address claims.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+		"owner_name": "Frank",
+		"address": {
+			"street": "10 Downing St",
+			"city": "London",
+			"country": "GB"
+		}
+	}`)
+
+	// DCQL query requesting nested claim paths.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "house-cred",
+					"format": "dc+sd-jwt",
+					"claims": [
+						{ "path": ["owner_name"] },
+						{ "path": ["address", "street"] },
+						{ "path": ["address", "city"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{"owner_name": {Value: "Frank", DisplayName: "Owner Name"}, "street": {Value: "10 Downing St"}, "city": {Value: "London"}}},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+	// The veramo-verifier only extracts top-level SD claims; nested claims
+	// (address.street, address.city) are not extracted by the verifier.
+	requireVerifierReceivedAttributes(t, result, "house-cred", map[string]string{
+		"owner_name": "Frank",
+	})
+}
+
+// testDiscloseCredentialWithArrayValues issues a StudentCardCredential that
+// includes a "courses" claim with an array value, then discloses it.
+func testDiscloseCredentialWithArrayValues(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue a StudentCardCredential with an array of courses.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+		"university": "TU Delft",
+		"level": "MSc",
+		"student_id": "S99999",
+		"courses": ["Algorithms", "Databases", "Networks"]
+	}`)
+
+	// DCQL query requesting the array claim alongside a scalar claim.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "student-cred",
+					"format": "dc+sd-jwt",
+					"claims": [
+						{ "path": ["university"] },
+						{ "path": ["courses"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	// The courses attribute is an array, so its value isn't a plain string.
+	// Use "" to check presence without value check.
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{"university": {Value: "TU Delft", DisplayName: "University"}, "courses": {}}},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "student-cred", map[string]string{
+		"university": "TU Delft",
+	})
+}
+
+// testDiscloseSpecificArrayElement issues a StudentCardCredential with a courses
+// array and creates a DCQL query that requests a specific element by index
+// (path: ["courses", 1]).
+func testDiscloseSpecificArrayElement(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+		"university": "TU Delft",
+		"level": "MSc",
+		"student_id": "S88888",
+		"courses": ["Algorithms", "Databases", "Networks"]
+	}`)
+
+	// DCQL query requesting the second element of the courses array (index 1).
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "student-cred",
+					"format": "dc+sd-jwt",
+					"claims": [
+						{ "path": ["courses", 1] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{"courses": {}}},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+}
+
+// testDiscloseAllArrayElementsWithNullPath issues a StudentCardCredential with
+// a courses array and creates a DCQL query that requests all elements using a
+// null path component (path: ["courses", null]).
+func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+		"university": "TU Delft",
+		"level": "MSc",
+		"student_id": "S77777",
+		"courses": ["Algorithms", "Databases", "Networks"]
+	}`)
+
+	// DCQL query requesting all elements of the courses array using null.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "student-cred",
+					"format": "dc+sd-jwt",
+					"claims": [
+						{ "path": ["courses", null] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{"courses": {}}},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
 }
 
 // ---------------------------------------------------------------------------
@@ -616,6 +813,70 @@ func checkVeramoVerifierOfferStatus(t *testing.T, state string) veramoCheckResul
 	var result veramoCheckResult
 	require.NoError(t, json.Unmarshal(body, &result))
 	return result
+}
+
+// ---------------------------------------------------------------------------
+// Disclosure plan assertion helpers
+// ---------------------------------------------------------------------------
+
+// expectedPlanAttribute describes what we expect for a single attribute.
+type expectedPlanAttribute struct {
+	// Expected string value. Empty to only check presence.
+	Value string
+	// Expected display name (checked against DisplayName["en"]). Empty to skip check.
+	DisplayName string
+}
+
+// expectedPlanCredential describes what we expect for one credential option
+// in the disclosure plan.
+type expectedPlanCredential struct {
+	// Expected credential name (checked against Name["en"]). Empty to skip check.
+	Name string
+	// Expected attributes: map from attribute ID to expected attribute properties.
+	Attributes map[string]expectedPlanAttribute
+}
+
+// requireDisclosurePlan asserts the structure of a disclosure plan.
+// Each entry in expected corresponds to one DisclosurePickOne in order.
+// For each entry, the first OwnedOption is checked against the expected credential.
+func requireDisclosurePlan(t *testing.T, plan *clientmodels.DisclosurePlan, expected []expectedPlanCredential) {
+	t.Helper()
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, len(expected),
+		"disclosure plan should have %d choice(s)", len(expected))
+
+	for i, exp := range expected {
+		pickOne := plan.DisclosureChoicesOverview[i]
+
+		if len(exp.Attributes) == 0 {
+			continue // skip validation for entries with no expected attributes (e.g., optional unowned)
+		}
+
+		require.NotEmpty(t, pickOne.OwnedOptions, "choice %d should have owned options", i)
+
+		cred := pickOne.OwnedOptions[0]
+		if exp.Name != "" {
+			actual, ok := cred.Name["en"]
+			require.True(t, ok, "choice %d credential should have English name", i)
+			require.Equal(t, exp.Name, actual, "choice %d credential name mismatch", i)
+		}
+
+		attrMap := attributeMap(cred.Attributes)
+		for attrId, exp := range exp.Attributes {
+			attr, ok := attrMap[attrId]
+			require.True(t, ok, "choice %d should have attribute %q", i, attrId)
+			if exp.Value != "" && attr.Value != nil && attr.Value.String != nil {
+				require.Equal(t, exp.Value, *attr.Value.String,
+					"choice %d attribute %q value mismatch", i, attrId)
+			}
+			if exp.DisplayName != "" {
+				actual, ok := attr.DisplayName["en"]
+				require.True(t, ok, "choice %d attribute %q should have English display name", i, attrId)
+				require.Equal(t, exp.DisplayName, actual,
+					"choice %d attribute %q display name mismatch", i, attrId)
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

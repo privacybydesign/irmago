@@ -19,7 +19,7 @@ import (
 //
 // The returned SD-JWT VC has the same issuer-signed JWT but only the selected
 // disclosures appended.
-func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]string) (SdJwtVc, error) {
+func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) {
 	issuerSignedJwt, allDisclosures, err := splitSdJwtVc(fullSdJwt)
 	if err != nil {
 		return "", fmt.Errorf("failed to split SD-JWT VC: %v", err)
@@ -59,7 +59,14 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]string) (SdJwtVc, erro
 
 	for _, path := range claimPaths {
 		currentObj := payload
-		for _, key := range path {
+		for _, component := range path {
+			// Only string components navigate into objects and _sd arrays.
+			// Integer/null components (array indices) don't affect disclosure selection.
+			key, ok := component.(string)
+			if !ok {
+				continue
+			}
+
 			sdArray, _ := currentObj[Key_Sd].([]any)
 
 			if sdArray != nil {

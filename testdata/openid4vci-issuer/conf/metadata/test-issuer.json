@@ -102,7 +102,8 @@
         "claims": [
           { "path": ["university"], "display": [{ "name": "University", "locale": "en" }, { "name": "Universiteit", "locale": "nl" }] },
           { "path": ["level"], "display": [{ "name": "Level", "locale": "en" }, { "name": "Niveau", "locale": "nl" }] },
-          { "path": ["student_id"], "display": [{ "name": "Student ID", "locale": "en" }, { "name": "Studentnummer", "locale": "nl" }] }
+          { "path": ["student_id"], "display": [{ "name": "Student ID", "locale": "en" }, { "name": "Studentnummer", "locale": "nl" }] },
+          { "path": ["courses"], "display": [{ "name": "Courses", "locale": "en" }, { "name": "Vakken", "locale": "nl" }] }
         ]
       },
       "display": [

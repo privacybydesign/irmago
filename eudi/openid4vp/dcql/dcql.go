@@ -83,19 +83,35 @@ type QueryResponse struct {
 }
 
 // ClaimsPathPointer is a list of components that construct a full path to a claim.
-// Semantics of a claims path pointer when applied to a json-based credential:
+// Each component is one of:
+//   - string: selects a key within an object
+//   - int/float64: selects an element at the given index within an array
+//   - nil: selects all elements within an array
 //
-// A string value indicates that the respective key is to be selected,
-// a null value indicates that all elements of the currently selected array(s) are to be selected;
-// and a non-negative integer indicates that the respective index in an array is to be selected.
-//
-// The path is formed as follows:
-//
-// Start with an empty array and repeat the following until the full path is formed.
-//   - To address a particular claim within an object, append the key (claim name) to the array.
-//   - To address an element within an array, append the index to the array (as a non-negative, 0-based integer).
-//   - To address all elements within an array, append a null value to the array.
-type ClaimsPathPointer []string
+// JSON encoding: ["key", 0, null] → []any{"key", 0, nil}
+type ClaimsPathPointer []any
+
+// StringParts returns only the string components of the path, useful for
+// extracting the object key hierarchy (ignoring array indices and null).
+func (p ClaimsPathPointer) StringParts() []string {
+	var parts []string
+	for _, c := range p {
+		if s, ok := c.(string); ok {
+			parts = append(parts, s)
+		}
+	}
+	return parts
+}
+
+// LastString returns the last string component in the path, or "" if none.
+func (p ClaimsPathPointer) LastString() string {
+	for i := len(p) - 1; i >= 0; i-- {
+		if s, ok := p[i].(string); ok {
+			return s
+		}
+	}
+	return ""
+}
 
 type Claim struct {
 	// REQUIRED if claim_sets is present in the credential query, OPTIONAL otherwise.
@@ -127,7 +143,11 @@ type TrustedAuthority struct {
 func (c CredentialQuery) AllClaimPaths() iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for _, claim := range c.Claims {
-			for _, path := range claim.Path {
+			for _, component := range claim.Path {
+				path, ok := component.(string)
+				if !ok {
+					continue
+				}
 				if !yield(path) {
 					return
 				}

@@ -17,8 +17,8 @@ type DisclosureSelection struct {
 	QueryId string
 	// The hash of the selected credential instance
 	CredentialHash string
-	// The attribute names the user chose to disclose
-	AttributeNames []string
+	// The claim paths the user chose to disclose (e.g., [["given_name"], ["address", "street"]])
+	ClaimPaths [][]any
 }
 
 // PreparedDisclosure contains the VP token response data and log information

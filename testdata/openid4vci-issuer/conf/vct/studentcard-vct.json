@@ -11,7 +11,8 @@
     "claims": [
       { "path": ["university"], "sd": "allowed" },
       { "path": ["level"], "sd": "allowed" },
-      { "path": ["student_id"], "sd": "allowed" }
+      { "path": ["student_id"], "sd": "allowed" },
+      { "path": ["courses"], "sd": "allowed" }
     ],
     "issuer": "{{ here }}"
   }

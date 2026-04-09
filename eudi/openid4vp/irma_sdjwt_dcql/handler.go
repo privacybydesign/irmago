@@ -102,9 +102,9 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to remove instance of credential %s: %w", sel.CredentialHash, err)
 		}
 
-		sdjwtSelected, err := sdjwtvc.SelectDisclosures(cred.SdJwtVc, sel.AttributeNames)
+		sdjwtSelected, err := sdjwtvc.CreatePresentation(cred.SdJwtVc, sel.ClaimPaths)
 		if err != nil {
-			return nil, fmt.Errorf("failed to select disclosures: %w", err)
+			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
 		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
@@ -119,7 +119,15 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			Credentials: []string{string(sdjwtWithKb)},
 		})
 
-		credLog := h.buildLogCredential(cred.Metadata, sel.AttributeNames)
+		// Extract flat attribute names from claim paths for log display.
+		attrNames := make([]string, 0, len(sel.ClaimPaths))
+		for _, path := range sel.ClaimPaths {
+			name := dcql.ClaimsPathPointer(path).LastString()
+			if name != "" {
+				attrNames = append(attrNames, name)
+			}
+		}
+		credLog := h.buildLogCredential(cred.Metadata, attrNames)
 		result.CredentialLogs = append(result.CredentialLogs, credLog)
 	}
 
@@ -142,14 +150,17 @@ func dcqlClaimKey(claim dcql.Claim) string {
 	if claim.Id != "" {
 		return claim.Id
 	}
-	return strings.Join(claim.Path, ".")
+	return strings.Join(claim.Path.StringParts(), ".")
 }
 
 // getClaimMatches checks which claims from the query match the credential's attributes.
 func getClaimMatchesForQuery(metadata irmaclient.SdJwtVcBatchMetadata, claims []dcql.Claim) map[string]dcqlClaimMatch {
 	result := make(map[string]dcqlClaimMatch)
 	for _, claim := range claims {
-		attrName := claim.Path[0]
+		attrName, ok := claim.Path[0].(string)
+		if !ok {
+			continue
+		}
 		attributeValue, ok := metadata.Attributes[attrName]
 		if !ok {
 			continue
@@ -356,7 +367,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		for _, c := range query.Claims {
 			key := c.Id
 			if key == "" {
-				key = strings.Join(c.Path, ".")
+				key = strings.Join(c.Path.StringParts(), ".")
 			}
 			claimMap[key] = c
 		}
@@ -371,7 +382,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 	// Build attributes for the selected claims
 	var attributes []clientmodels.Attribute
 	for _, claim := range claimsToShow {
-		attrName := claim.Path[0]
+		attrName := claim.Path.LastString()
 		attr := clientmodels.Attribute{
 			Id:          attrName,
 			DisplayName: clientmodels.TranslatedString{"en": attrName},

@@ -70,19 +70,17 @@ func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDis
 	var selections []dcql.DisclosureSelection
 	for _, discon := range choices {
 		for _, cred := range discon.Credentials {
-			attrNames := make([]string, 0, len(cred.AttributePaths))
+			claimPaths := make([][]any, 0, len(cred.AttributePaths))
 			for _, path := range cred.AttributePaths {
 				if len(path) > 0 {
-					if name, ok := path[0].(string); ok {
-						attrNames = append(attrNames, name)
-					}
+					claimPaths = append(claimPaths, path)
 				}
 			}
 			queryId := hashToQueryId[cred.CredentialHash]
 			selections = append(selections, dcql.DisclosureSelection{
 				QueryId:        queryId,
 				CredentialHash: cred.CredentialHash,
-				AttributeNames: attrNames,
+				ClaimPaths:     claimPaths,
 			})
 		}
 	}

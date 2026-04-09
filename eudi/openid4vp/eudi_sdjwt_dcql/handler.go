@@ -139,9 +139,9 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 
 		rawSdJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
 
-		selected, err := sdjwtvc.SelectDisclosures(rawSdJwt, sel.AttributeNames)
+		selected, err := sdjwtvc.CreatePresentation(rawSdJwt, sel.ClaimPaths)
 		if err != nil {
-			return nil, fmt.Errorf("failed to select disclosures: %w", err)
+			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
 		kbjwt, err := sdjwtvc.CreateKbJwt(selected, h.keyBinder, nonce, clientId)
@@ -161,7 +161,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to mark instance as used: %w", err)
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, buildLogCredential(batch, sel.AttributeNames))
+		result.CredentialLogs = append(result.CredentialLogs, buildLogCredential(batch, sel.ClaimPaths))
 	}
 
 	return result, nil
@@ -170,16 +170,16 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 // parseBatchAttributes parses the stored ProcessedSdJwtPayload and matches
 // claims against the DCQL query. Returns nil if the credential doesn't match.
 func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery) ([]clientmodels.Attribute, error) {
-	var payload map[string]any
+	var payload sdjwtvc.ProcessedSdJwtPayload
 	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload); err != nil {
 		return nil, err
 	}
 
 	var attributes []clientmodels.Attribute
 	for _, claim := range query.Claims {
-		attrName := claim.Path[0]
-		val, ok := payload[attrName]
-		if !ok {
+		// Resolve the claim value using the full path.
+		val, err := payload.GetClaimValue([]any(claim.Path))
+		if err != nil {
 			return nil, nil // required claim missing
 		}
 
@@ -199,6 +199,8 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 			}
 		}
 
+		// Use the last string path element as the attribute ID.
+		attrName := claim.Path.LastString()
 		attr := clientmodels.Attribute{
 			Id:          attrName,
 			DisplayName: claimDisplayName(batch, attrName),
@@ -216,17 +218,21 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	return attributes, nil
 }
 
-func buildLogCredential(batch *models.CredentialBatch, attrNames []string) clientmodels.LogCredential {
+func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
 	var attrs []clientmodels.Attribute
-	var payload map[string]any
+	var payload sdjwtvc.ProcessedSdJwtPayload
 	json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload)
 
-	for _, name := range attrNames {
-		attr := clientmodels.Attribute{
-			Id:          name,
-			DisplayName: claimDisplayName(batch, name),
+	for _, path := range claimPaths {
+		if len(path) == 0 {
+			continue
 		}
-		if val, ok := payload[name]; ok {
+		attrName := dcql.ClaimsPathPointer(path).LastString()
+		attr := clientmodels.Attribute{
+			Id:          attrName,
+			DisplayName: claimDisplayName(batch, attrName),
+		}
+		if val, err := payload.GetClaimValue(path); err == nil {
 			if valStr, ok := val.(string); ok {
 				attr.Value = &clientmodels.AttributeValue{
 					Type:   clientmodels.AttributeType_String,
