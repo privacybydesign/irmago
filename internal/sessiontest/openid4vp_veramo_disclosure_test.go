@@ -10,6 +10,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
@@ -35,6 +36,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("disclose all array elements with null path", testDiscloseAllArrayElementsWithNullPath)
 	t.Run("non-sd claims shown in disclosure plan", testNonSdClaimsShownInDisclosurePlan)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
+	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
 }
 
 func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
@@ -835,6 +837,87 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 	require.NotNil(t, session.Error)
 	require.Contains(t, session.Error.WrappedError, "credential is not authorized")
 	require.Contains(t, session.Error.WrappedError, "https://localhost:8443/vct/email")
+}
+
+// testVeramoVerifierRequestingIrmaCredentialFails issues an IRMA email credential
+// via the IRMA server, then creates a disclosure session at the veramo verifier
+// requesting that credential (test.test.email). The veramo verifier uses DID-based
+// auth which is not authorized to request IRMA credentials, so the session should
+// reach permission request with an empty disclosure plan.
+func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	// Issue an IRMA email credential via the IRMA server.
+	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	awaitSessionState(t, sessionHandler)
+
+	// Create a DCQL session at the veramo verifier requesting the IRMA credential type.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "irma-email",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["test.test.email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+
+	// The IRMA handler finds the credential matching test.test.email and offers it.
+	// The session reaches permission request with the IRMA credential as an option.
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+	require.NotNil(t, session.DisclosurePlan)
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions,
+		"IRMA credential should be found as a candidate")
+
+	// Grant permission to disclose the IRMA credential to the veramo verifier.
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+
+	// The wallet successfully sends the IRMA credential to the veramo verifier.
+	// The veramo verifier receives it but cannot verify the IRMA issuer's signature
+	// (different trust model — IRMA uses x509 certificates, not did:web).
+	require.Equal(t, clientmodels.Status_Success, session.Status)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+
+	// The verifier should report an error verifying the IRMA-issued credential.
+	require.NotNil(t, result.Result)
+	hasVerificationError := false
+	for _, msg := range result.Result.Messages {
+		if msg.Code == "INVALID_SDJWT" || msg.Code == "INVALID_PRESENTATION" {
+			hasVerificationError = true
+			break
+		}
+	}
+	require.True(t, hasVerificationError,
+		"verifier should report a verification error for the IRMA-issued credential")
 }
 
 // ---------------------------------------------------------------------------
