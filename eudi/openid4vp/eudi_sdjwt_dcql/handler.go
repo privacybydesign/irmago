@@ -205,12 +205,7 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 			Id:          attrName,
 			DisplayName: claimDisplayName(batch, attrName),
 		}
-		if valStr != "" {
-			attr.Value = &clientmodels.AttributeValue{
-				Type:   clientmodels.AttributeType_String,
-				String: &valStr,
-			}
-		}
+		attr.Value = buildAttributeValue(val)
 
 		attributes = append(attributes, attr)
 	}
@@ -258,6 +253,47 @@ func expiryUnix(batch *models.CredentialBatch) int64 {
 		return batch.IssuedAt.Unix()
 	}
 	return 0
+}
+
+// buildAttributeValue converts a claim value from the processed SD-JWT payload
+// into a clientmodels.AttributeValue.
+func buildAttributeValue(val any) *clientmodels.AttributeValue {
+	if val == nil {
+		return nil
+	}
+	switch v := val.(type) {
+	case string:
+		return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &v}
+	case bool:
+		return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Bool, Bool: &v}
+	case float64:
+		i := int64(v)
+		if v == float64(i) {
+			return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Int, Int: &i}
+		}
+		s := fmt.Sprintf("%g", v)
+		return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &s}
+	case []any:
+		arr := make([]clientmodels.AttributeValue, len(v))
+		for i, elem := range v {
+			if av := buildAttributeValue(elem); av != nil {
+				arr[i] = *av
+			}
+		}
+		return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Array, Array: arr}
+	case map[string]any:
+		var obj []clientmodels.Attribute
+		for key, elem := range v {
+			obj = append(obj, clientmodels.Attribute{
+				Id:    key,
+				Value: buildAttributeValue(elem),
+			})
+		}
+		return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Object, Object: obj}
+	default:
+		s := fmt.Sprintf("%v", v)
+		return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &s}
+	}
 }
 
 // claimDisplayName looks up the display name for a claim from the stored credential metadata.

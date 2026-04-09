@@ -575,13 +575,18 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	// The courses attribute is an array, so its value isn't a plain string.
-	// Use "" to check presence without value check.
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"university": {Value: "TU Delft", DisplayName: "University"}, "courses": {}}},
+		{Attributes: map[string]expectedPlanAttribute{"university": {Value: "TU Delft", DisplayName: "University"}, "courses": {Type: clientmodels.AttributeType_Array, DisplayName: "Courses"}}},
 	})
 
+	// Verify the array contains all three course values.
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	coursesAttr := attributeMap(cred.Attributes)["courses"]
+	require.NotNil(t, coursesAttr.Value)
+	require.Len(t, coursesAttr.Value.Array, 3)
+	require.Equal(t, "Algorithms", *coursesAttr.Value.Array[0].String)
+	require.Equal(t, "Databases", *coursesAttr.Value.Array[1].String)
+	require.Equal(t, "Networks", *coursesAttr.Value.Array[2].String)
 	attrIds := make([]string, len(cred.Attributes))
 	for i, attr := range cred.Attributes {
 		attrIds[i] = attr.Id
@@ -634,8 +639,9 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	// Path ["courses", 1] resolves to a specific element ("Databases"), not the whole array.
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"courses": {}}},
+		{Attributes: map[string]expectedPlanAttribute{"courses": {Value: "Databases", Type: clientmodels.AttributeType_String, DisplayName: "Courses"}}},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -689,10 +695,18 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"courses": {}}},
+		{Attributes: map[string]expectedPlanAttribute{"courses": {Type: clientmodels.AttributeType_Array, DisplayName: "Courses"}}},
 	})
 
+	// Verify the full array is present when requesting all elements via null path.
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	coursesAttr := attributeMap(cred.Attributes)["courses"]
+	require.NotNil(t, coursesAttr.Value)
+	require.Len(t, coursesAttr.Value.Array, 3)
+	require.Equal(t, "Algorithms", *coursesAttr.Value.Array[0].String)
+	require.Equal(t, "Databases", *coursesAttr.Value.Array[1].String)
+	require.Equal(t, "Networks", *coursesAttr.Value.Array[2].String)
+
 	attrIds := make([]string, len(cred.Attributes))
 	for i, attr := range cred.Attributes {
 		attrIds[i] = attr.Id
@@ -825,6 +839,8 @@ type expectedPlanAttribute struct {
 	Value string
 	// Expected display name (checked against DisplayName["en"]). Empty to skip check.
 	DisplayName string
+	// Expected attribute type. Empty to skip check.
+	Type clientmodels.AttributeType
 }
 
 // expectedPlanCredential describes what we expect for one credential option
@@ -865,6 +881,11 @@ func requireDisclosurePlan(t *testing.T, plan *clientmodels.DisclosurePlan, expe
 		for attrId, exp := range exp.Attributes {
 			attr, ok := attrMap[attrId]
 			require.True(t, ok, "choice %d should have attribute %q", i, attrId)
+			if exp.Type != "" {
+				require.NotNil(t, attr.Value, "choice %d attribute %q should have a value", i, attrId)
+				require.Equal(t, exp.Type, attr.Value.Type,
+					"choice %d attribute %q type mismatch", i, attrId)
+			}
 			if exp.Value != "" && attr.Value != nil && attr.Value.String != nil {
 				require.Equal(t, exp.Value, *attr.Value.String,
 					"choice %d attribute %q value mismatch", i, attrId)
