@@ -11,6 +11,8 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,6 +34,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("disclose specific array element", testDiscloseSpecificArrayElement)
 	t.Run("disclose all array elements with null path", testDiscloseAllArrayElementsWithNullPath)
 	t.Run("non-sd claims shown in disclosure plan", testNonSdClaimsShownInDisclosurePlan)
+	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 }
 
 func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
@@ -783,6 +786,55 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 	requireVerifierReceivedAttributes(t, result, "membership-cred", map[string]string{
 		"member_name": "Grace",
 	})
+}
+
+// testEudiVerifierRequestingVeramoCredentialFails issues a credential via the
+// veramo issuer (OID4VCI), then starts a disclosure session using the EUDI
+// reference verifier. Because the EUDI verifier uses x509 client_id and a
+// different trust model, the session should result in an error.
+func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue a credential via the veramo OID4VCI issuer.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "eudi-test@example.com",
+		"domain": "example.com"
+	}`)
+
+	// Create a session at the EUDI reference verifier requesting the same VCT.
+	authRequest := createAuthRequestRequestWithDcql(fmt.Sprintf(`{
+		"credentials": [
+			{
+				"id": "email-cred",
+				"format": "dc+sd-jwt",
+				"meta": {
+					"vct_values": ["https://localhost:8443/vct/email"]
+				},
+				"claims": [
+					{ "path": ["email"] }
+				]
+			}
+		]
+	}`))
+
+	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(
+		testdata.OpenID4VP_DirectPost_Host, authRequest)
+	require.NoError(t, err)
+
+	sessionReq, err := json.Marshal(client.SessionRequestData{
+		Qr:       irma.Qr{URL: verifierSession.SessionLink},
+		Protocol: clientmodels.Protocol_OpenID4VP,
+	})
+	require.NoError(t, err)
+	c.NewSession(string(sessionReq))
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Error, session.Status,
+		"session should fail because the EUDI verifier's trust model doesn't match veramo-issued credentials")
+	require.NotNil(t, session.Error)
+	require.Contains(t, session.Error.WrappedError, "credential is not authorized")
+	require.Contains(t, session.Error.WrappedError, "https://localhost:8443/vct/email")
 }
 
 // ---------------------------------------------------------------------------
