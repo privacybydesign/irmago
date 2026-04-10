@@ -8,6 +8,12 @@ import (
 	"gorm.io/gorm"
 )
 
+type PublicHolderBindingKey struct {
+	ID                  datatypes.UUID
+	DidUrl              *string
+	PublicKeyThumbprint *string
+}
+
 type KeyAlgorithm string
 
 const (

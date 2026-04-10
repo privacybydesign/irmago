@@ -25,7 +25,7 @@ type CredentialService interface {
 		credentialConfigurationId string,
 		metadata metadata.CredentialIssuerMetadata,
 		requireCryptographicKeyBinding bool,
-		keyIds []datatypes.UUID,
+		publicKeyIdentifiers []models.PublicHolderBindingKey,
 	) error
 }
 
@@ -163,16 +163,16 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	credentialConfigurationId string,
 	metadata metadata.CredentialIssuerMetadata,
 	requireCryptographicKeyBinding bool,
-	keyIds []datatypes.UUID,
+	publicKeyIdentifiers []models.PublicHolderBindingKey,
 ) error {
 	if len(verifiedSdJwtVcs) == 0 {
 		return nil // nothing to store
 	}
 
-	if requireCryptographicKeyBinding && len(keyIds) != len(verifiedSdJwtVcs) {
+	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(verifiedSdJwtVcs) {
 		return fmt.Errorf(
-			"keyIds length (%d) must equal verifiedSdJwtVcs length (%d) when cryptographic key binding is used",
-			len(keyIds), len(verifiedSdJwtVcs),
+			"publicKeyIdentifiers length (%d) must equal verifiedSdJwtVcs length (%d) when cryptographic key binding is used",
+			len(publicKeyIdentifiers), len(verifiedSdJwtVcs),
 		)
 	}
 
@@ -206,10 +206,9 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		instances[i] = models.IssuedCredentialInstance{
 			RawCredential: []byte(v.GetRawSdJwtVc()),
 		}
-		if requireCryptographicKeyBinding {
-			// TODO: search the correct key in the key store based on the cnf in the credential and assign its ID here, instead of assuming the order of keyIds matches the order of verifiedSdJwtVcs
-			instances[i].HolderBindingKeyID = &keyIds[i]
-		}
+
+		// TODO: optional check for future development: search the correct key in the key store based on the cnf in the credential and assign its ID here, instead of assuming the order of publicKeyIdentifiers matches the order of verifiedSdJwtVcs
+		//if requireCryptographicKeyBinding {		}
 	}
 
 	// Convert metadata to the format expected by storage

@@ -21,6 +21,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/models"
 	"gorm.io/datatypes"
 )
 
@@ -272,8 +273,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	}
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
-	// TODO: disabled check for testing with Digidentity
-	var keyIds []datatypes.UUID
+	var publicKeyIdentifiers []models.PublicHolderBindingKey
 	if requireCryptographicKeyBinding {
 		keyBindingService := services.NewHolderBindingKeyService(s.storage)
 		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
@@ -306,7 +306,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		var proofs []string
 		var err error
 
-		keyIds, proofs, err = keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
+		publicKeyIdentifiers, proofs, err = keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
 		if err != nil {
 			return fmt.Errorf("could not create key pairs: %v", err)
 		}
@@ -477,10 +477,14 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	// Store the credentials + holder-binding keys + metadata (+ images?) in the storage (in bulk), so we can use a transaction and make sure everything is stored correctly, and also for performance reasons when dealing with batch issuance
 	credentialService := services.NewCredentialService(s.storage)
 
-	err = credentialService.VerifyAndStoreIssuedCredentials(verifiedSdJwtVcs, credentialConfigurationId, *s.credentialIssuerMetadata, requireCryptographicKeyBinding, keyIds)
+	err = credentialService.VerifyAndStoreIssuedCredentials(verifiedSdJwtVcs, credentialConfigurationId, *s.credentialIssuerMetadata, requireCryptographicKeyBinding, publicKeyIdentifiers)
 	if err != nil {
 		// Error storing credentials; remove the already stored keys for the credentials that were received, to avoid orphaned keys in storage
 		if requireCryptographicKeyBinding {
+			keyIds := make([]datatypes.UUID, len(publicKeyIdentifiers))
+			for i, key := range publicKeyIdentifiers {
+				keyIds[i] = key.ID
+			}
 			err := services.NewHolderBindingKeyService(s.storage).RemoveKeys(keyIds)
 			if err != nil {
 				eudi.Logger.Warnf("failed to remove key binding keys after credential storage failure: %v", err)
