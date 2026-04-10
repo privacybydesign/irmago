@@ -94,16 +94,17 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 }
 
 // findBatches returns credential batches matching the query, with metadata
-// preloaded (including claim display names). When vct_values are specified,
-// only matching batches are returned; otherwise all batches are returned.
+// preloaded (including claim display names). Only batches whose VCT matches
+// one of the requested vct_values are returned. When no vct_values are
+// specified, no batches are returned.
 func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.CredentialBatch, error) {
+	if len(query.Meta.VctValues) == 0 {
+		return nil, nil
+	}
+
 	allBatches, err := h.credentialStore.GetCredentialBatchList()
 	if err != nil {
 		return nil, err
-	}
-
-	if len(query.Meta.VctValues) == 0 {
-		return allBatches, nil
 	}
 
 	vctSet := make(map[string]struct{}, len(query.Meta.VctValues))
@@ -315,11 +316,15 @@ func expiryUnix(batch *models.CredentialBatch) int64 {
 }
 
 // isBatchValid returns false if the credential batch is expired or not yet valid.
+// Unix epoch (time.Unix(0,0)) is treated as "not set" because the storage layer
+// currently always marks ExpiresAt/NotBefore as Valid, even when the JWT has no
+// exp/nbf claims — storing 0 as the timestamp.
 func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
-	if batch.ExpiresAt.Valid && now.After(batch.ExpiresAt.V) {
+	epoch := time.Unix(0, 0)
+	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {
 		return false
 	}
-	if batch.NotBefore.Valid && now.Before(batch.NotBefore.V) {
+	if batch.NotBefore.Valid && !batch.NotBefore.V.Equal(epoch) && now.Before(batch.NotBefore.V) {
 		return false
 	}
 	return true

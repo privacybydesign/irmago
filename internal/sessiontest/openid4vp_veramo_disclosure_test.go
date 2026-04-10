@@ -122,6 +122,9 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 				{
 					"id": "email-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
 					"claims": [
 						{ "path": ["email"] },
 						{ "path": ["domain"] }
@@ -186,6 +189,9 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 				{
 					"id": "email-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
 					"claims": [
 						{ "path": ["email"] }
 					]
@@ -193,6 +199,9 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 				{
 					"id": "phone-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/phone"]
+					},
 					"claims": [
 						{ "path": ["phone_number"] }
 					]
@@ -281,6 +290,9 @@ func testMultipleRequiredCredentials(t *testing.T) {
 				{
 					"id": "email-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
 					"claims": [
 						{ "path": ["email"] }
 					]
@@ -288,6 +300,9 @@ func testMultipleRequiredCredentials(t *testing.T) {
 				{
 					"id": "phone-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/phone"]
+					},
 					"claims": [
 						{ "path": ["phone_number"] }
 					]
@@ -350,6 +365,9 @@ func testOptionalCredential(t *testing.T) {
 				{
 					"id": "email-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
 					"claims": [
 						{ "path": ["email"] }
 					]
@@ -357,6 +375,9 @@ func testOptionalCredential(t *testing.T) {
 				{
 					"id": "phone-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/phone"]
+					},
 					"claims": [
 						{ "path": ["phone_number"] }
 					]
@@ -427,6 +448,9 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 				{
 					"id": "email-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
 					"claims": [
 						{ "path": ["email"] },
 						{ "path": ["domain"], "values": ["example.com"] }
@@ -506,6 +530,9 @@ func testDiscloseNestedClaims(t *testing.T) {
 				{
 					"id": "house-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/house"]
+					},
 					"claims": [
 						{ "path": ["owner_name"] },
 						{ "path": ["address", "street"] },
@@ -567,6 +594,9 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 				{
 					"id": "student-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/studentcard"]
+					},
 					"claims": [
 						{ "path": ["university"] },
 						{ "path": ["courses"] }
@@ -632,6 +662,9 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 				{
 					"id": "student-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/studentcard"]
+					},
 					"claims": [
 						{ "path": ["courses", 1] }
 					]
@@ -687,6 +720,9 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 				{
 					"id": "student-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/studentcard"]
+					},
 					"claims": [
 						{ "path": ["courses", null] }
 					]
@@ -750,6 +786,9 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 				{
 					"id": "membership-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/membership"]
+					},
 					"claims": [
 						{ "path": ["member_name"] }
 					]
@@ -937,6 +976,9 @@ func testVeramoVerifierRequestingMissingCredentialErrors(t *testing.T) {
 				{
 					"id": "email-cred",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
 					"claims": [
 						{ "path": ["email"] }
 					]
@@ -1013,6 +1055,9 @@ func createVeramoVerifierDcqlSession(t *testing.T) veramoVerifierSession {
 				{
 					"id": "test-credential",
 					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/test"]
+					},
 					"claims": [
 						{ "path": ["given_name"] },
 						{ "path": ["email"] }
