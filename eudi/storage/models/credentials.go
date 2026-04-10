@@ -8,6 +8,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// TODO: we need to add polymorphic associations to support multiple credential formats in the future, but for now we only support SD-JWT VCs, so we can keep all fields in one table and use the Format field to distinguish them. See https://gorm.io/docs/polymorphism.html for reference on how to implement this when we need it.
+
 // CredentialFormat represents the credential format identifier as defined in the OID4VCI spec.
 type CredentialFormat string
 

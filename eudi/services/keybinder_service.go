@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
@@ -21,7 +20,7 @@ import (
 
 // HolderBindingKeyService implements the KeyBinder interface.
 type HolderBindingKeyService interface {
-	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (uuid.UUIDs, []string, error)
+	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error)
 }
 
 type holderBindingKeyService struct {
@@ -42,9 +41,12 @@ func NewHolderBindingKeyService(db storage.Storage) *holderBindingKeyService {
 }
 
 // CreateKeyPairsWithProofs creates the specified number of ECDSA key pairs, stores the private keys, and returns the corresponding proofs built using the provided proof builder.
-func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) ([]datatypes.UUID, []string, error) {
+// The publicKeyIdentifiers are the public identifiers (either DIDs or JWK thumbprints) that can be used in the credential's proof configuration to link the credential to the correct holder binding key.
+// The proofs are the cryptographic proofs (e.g. JWTs) that the holder can present alongside the credential to prove possession of the private keys.
+func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error) {
+	proofs = make([]string, num)
+
 	keyTuples := make([]keyTuple, num)
-	proofs := make([]string, num)
 
 	for i := range num {
 		// TODO: base the choice key type on the supported algorithms in the credential configuration (proof_types_supported / proof_signing_alg_values_supported)
@@ -92,17 +94,18 @@ func (s *holderBindingKeyService) CreateKeyPairsWithProofs(num uint, proofBuilde
 		}
 	}
 
-	keyIds, err := s.storePrivateKeys(keyTuples)
+	publicKeyIdentifiers, err = s.storePrivateKeys(keyTuples)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to storage private keys: %v", err)
 	}
 
-	return keyIds, proofs, nil
+	return
 }
 
-func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) ([]datatypes.UUID, error) {
+func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) (publicKeyIdentifiers []models.PublicHolderBindingKey, err error) {
+	publicKeyIdentifiers = make([]models.PublicHolderBindingKey, len(keys))
+
 	keyModels := make([]models.HolderBindingKey, len(keys))
-	ids := make([]datatypes.UUID, len(keys))
 
 	for i, key := range keys {
 		privKeyBytes, err := x509.MarshalPKCS8PrivateKey(key.privKey)
@@ -128,20 +131,27 @@ func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) ([]datatypes
 			}
 			thumbprint := hex.EncodeToString(thumbprintBytes)
 			keyModels[i].PublicKeyThumbprint = datatypes.NullString{V: thumbprint, Valid: true}
+			publicKeyIdentifiers[i].PublicKeyThumbprint = &thumbprint
 		}
 	}
 
-	err := s.store.StoreKeys(keyModels)
+	err = s.store.StoreKeys(keyModels)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store holder binding keys: %v", err)
 	}
 
-	// Return the KeyIDs of the stored keys
+	// Make sure we expose only public key material (DID URL or JWK thumbprint) in the returned publicKeyIdentifiers, not the private keys or other metadata
 	for i, keyModel := range keyModels {
-		ids[i] = keyModel.ID
+		publicKeyIdentifiers[i].ID = keyModel.ID
+		if keyModels[i].DidUrl.Valid {
+			publicKeyIdentifiers[i].DidUrl = &keyModels[i].DidUrl.V
+		}
+		if keyModels[i].PublicKeyThumbprint.Valid {
+			publicKeyIdentifiers[i].PublicKeyThumbprint = &keyModels[i].PublicKeyThumbprint.V
+		}
 	}
 
-	return ids, nil
+	return
 }
 
 func (s *holderBindingKeyService) RemoveAllKeys() error {
