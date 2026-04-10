@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -63,7 +64,12 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		return nil, err
 	}
 
+	now := time.Now()
 	for _, batch := range batches {
+		if !isBatchValid(batch, now) {
+			continue
+		}
+
 		attributes, err := parseBatchAttributes(batch, query, h.credentialStore)
 		if err != nil {
 			continue
@@ -303,9 +309,20 @@ func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clien
 
 func expiryUnix(batch *models.CredentialBatch) int64 {
 	if batch.ExpiresAt.Valid {
-		return batch.IssuedAt.Unix()
+		return batch.ExpiresAt.V.Unix()
 	}
 	return 0
+}
+
+// isBatchValid returns false if the credential batch is expired or not yet valid.
+func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
+	if batch.ExpiresAt.Valid && now.After(batch.ExpiresAt.V) {
+		return false
+	}
+	if batch.NotBefore.Valid && now.Before(batch.NotBefore.V) {
+		return false
+	}
+	return true
 }
 
 // claimDisplayName looks up the display name for a claim from the stored credential metadata.
