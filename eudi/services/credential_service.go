@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"reflect"
 	"slices"
 	"time"
 
@@ -99,57 +98,7 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					claimValue = "" // fallback to an empty string if claim value cannot be extracted
 				}
 
-				// Build the attribute value, based on the value and type extracted from the processed SD-JWT payload.
-				attrValue := clientmodels.AttributeValue{}
-				rt := reflect.TypeOf(claimValue)
-				switch rt.Kind() {
-				case reflect.String:
-					v := claimValue.(string)
-					attrValue.Type = clientmodels.AttributeType_String
-					attrValue.String = &v
-				case reflect.Bool:
-					v := claimValue.(bool)
-					attrValue.Type = clientmodels.AttributeType_Bool
-					attrValue.Bool = &v
-				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-					v := claimValue.(int64) // JSON numbers are unmarshalled as float64 by default, but if the value is an integer it will be represented as int64 in Go
-					attrValue.Type = clientmodels.AttributeType_Int
-					attrValue.Int = &v
-				case reflect.Float32, reflect.Float64:
-					// JSON numbers are unmarshalled as float64 by default, but we will treat them as ints if they have no fractional part
-					fClaimValue := claimValue.(float64)
-					iClaimValue := int64(fClaimValue)
-					if fClaimValue == float64(iClaimValue) {
-						attrValue.Type = clientmodels.AttributeType_Int
-						attrValue.Int = &iClaimValue
-					} else {
-						attrValue.Type = clientmodels.AttributeType_String
-						str := fmt.Sprintf("%g", fClaimValue)
-						attrValue.String = &str
-					}
-				case reflect.Slice, reflect.Array:
-					attrValue.Type = clientmodels.AttributeType_Array
-					s := reflect.ValueOf(claimValue)
-					attrValue.Array = make([]clientmodels.AttributeValue, s.Len())
-					for i := 0; i < s.Len(); i++ {
-						// TODO:
-						// For simplicity, we will treat all array elements as strings by marshalling them to JSON and storing the JSON string as the value. This is a temporary solution until we have a more robust way to represent different attribute types in the client model.
-						elemBytes, err := json.Marshal(s.Index(i).Interface())
-						if err != nil {
-							log.Fatalf("Error marshalling array element to JSON: %v", err)
-						}
-						elemStr := string(elemBytes)
-						attrValue.Array[i] = clientmodels.AttributeValue{
-							Type:   clientmodels.AttributeType_String,
-							String: &elemStr,
-						}
-					}
-				case reflect.Map, reflect.Struct:
-					attrValue.Type = clientmodels.AttributeType_Object
-					// TODO: implement
-				default:
-					// For non-string values, we will treat them as translated strings by marshalling the value to JSON and storing it as a string. This is a temporary solution until we have a more robust way to represent different attribute types in the client model.
-				}
+				attrValue := clientmodels.NewAttributeValue(claimValue)
 
 				// Use the last element of the claim path as the attribute ID (e.g., ["address", "city"] → "city")
 				attrId := ""
@@ -162,7 +111,7 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				attrs[j] = clientmodels.Attribute{
 					Id:          attrId,
 					DisplayName: attrDisplay,
-					Value:       &attrValue,
+					Value:       attrValue,
 				}
 			}
 		}

@@ -1,5 +1,7 @@
 package clientmodels
 
+import "fmt"
+
 const DefaultFallbackLanguage = "en"
 
 // TranslatedString is a map from language code to translated text.
@@ -44,6 +46,50 @@ type AttributeValue struct {
 	Object      []Attribute      `json:"object,omitempty"`
 	ImagePath   *string          `json:"image_path,omitempty"`
 	Base64Image *string          `json:"base64_image,omitempty"`
+}
+
+// NewAttributeValue converts a Go value (typically from JSON unmarshalling) into
+// an AttributeValue. Supported types: string, bool, float64, int64, []any,
+// map[string]any. Returns nil for nil input.
+func NewAttributeValue(val any) *AttributeValue {
+	if val == nil {
+		return nil
+	}
+	switch v := val.(type) {
+	case string:
+		return &AttributeValue{Type: AttributeType_String, String: &v}
+	case bool:
+		return &AttributeValue{Type: AttributeType_Bool, Bool: &v}
+	case int64:
+		return &AttributeValue{Type: AttributeType_Int, Int: &v}
+	case float64:
+		i := int64(v)
+		if v == float64(i) {
+			return &AttributeValue{Type: AttributeType_Int, Int: &i}
+		}
+		s := fmt.Sprintf("%g", v)
+		return &AttributeValue{Type: AttributeType_String, String: &s}
+	case []any:
+		arr := make([]AttributeValue, len(v))
+		for i, elem := range v {
+			if av := NewAttributeValue(elem); av != nil {
+				arr[i] = *av
+			}
+		}
+		return &AttributeValue{Type: AttributeType_Array, Array: arr}
+	case map[string]any:
+		var obj []Attribute
+		for key, elem := range v {
+			obj = append(obj, Attribute{
+				Id:    key,
+				Value: NewAttributeValue(elem),
+			})
+		}
+		return &AttributeValue{Type: AttributeType_Object, Object: obj}
+	default:
+		s := fmt.Sprintf("%v", v)
+		return &AttributeValue{Type: AttributeType_String, String: &s}
+	}
 }
 
 // HasValue returns true if this AttributeValue carries an actual value (not just a type constraint).
