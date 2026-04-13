@@ -178,36 +178,25 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 // claims against the DCQL query. Returns nil if the credential doesn't match.
 // Non-SD claims (always shared when presenting) are included in the result so
 // the user sees everything they will be sharing.
+//
+// When claim_sets is present, each set is tried in order and the first fully
+// satisfiable set determines which claims are included. Without claim_sets,
+// all claims must match.
 func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, credStore storage.CredentialStore) ([]clientmodels.Attribute, error) {
 	var payload sdjwtvc.ProcessedSdJwtPayload
 	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload); err != nil {
 		return nil, err
 	}
 
-	// Check that all requested claims exist and match value constraints.
+	claims := selectClaims(query, &payload)
+	if claims == nil {
+		return nil, nil
+	}
+
 	var attributes []clientmodels.Attribute
 	requestedKeys := make(map[string]struct{})
-	for _, claim := range query.Claims {
-		val, err := payload.GetClaimValue([]any(claim.Path))
-		if err != nil {
-			return nil, nil // required claim missing
-		}
-
-		valStr, _ := val.(string)
-
-		if len(claim.Values) > 0 {
-			matched := false
-			for _, reqVal := range claim.Values {
-				if reqValStr, ok := reqVal.(string); ok && reqValStr == valStr {
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				return nil, nil
-			}
-		}
-
+	for _, claim := range claims {
+		val, _ := payload.GetClaimValue([]any(claim.Path))
 		attrName := claim.Path.LastString()
 		requestedKeys[attrName] = struct{}{}
 		attr := clientmodels.Attribute{
@@ -238,6 +227,68 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	}
 
 	return attributes, nil
+}
+
+// selectClaims determines which claims to use for matching. When claim_sets is
+// present, it tries each set in order and returns the claims from the first
+// fully satisfiable set. Without claim_sets, all claims must match.
+// Returns nil if the credential doesn't satisfy the query.
+func selectClaims(query dcql.CredentialQuery, payload *sdjwtvc.ProcessedSdJwtPayload) []dcql.Claim {
+	if len(query.ClaimSets) == 0 {
+		// No claim_sets: all claims must match.
+		for _, claim := range query.Claims {
+			if !claimMatches(claim, payload) {
+				return nil
+			}
+		}
+		return query.Claims
+	}
+
+	// Build lookup from claim ID to claim.
+	claimById := make(map[string]dcql.Claim, len(query.Claims))
+	for _, claim := range query.Claims {
+		if claim.Id != "" {
+			claimById[claim.Id] = claim
+		}
+	}
+
+	// Try each claim set in order; return the first where every claim matches.
+	for _, set := range query.ClaimSets {
+		var matched []dcql.Claim
+		allFound := true
+		for _, id := range set {
+			claim, ok := claimById[id]
+			if !ok || !claimMatches(claim, payload) {
+				allFound = false
+				break
+			}
+			matched = append(matched, claim)
+		}
+		if allFound {
+			return matched
+		}
+	}
+
+	return nil
+}
+
+// claimMatches checks whether a single claim exists in the payload and satisfies
+// any value constraints.
+func claimMatches(claim dcql.Claim, payload *sdjwtvc.ProcessedSdJwtPayload) bool {
+	val, err := payload.GetClaimValue([]any(claim.Path))
+	if err != nil {
+		return false
+	}
+	if len(claim.Values) > 0 {
+		valStr, _ := val.(string)
+		for _, reqVal := range claim.Values {
+			if reqValStr, ok := reqVal.(string); ok && reqValStr == valStr {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // getNonSdClaimNames returns the names of claims in the issuer JWT payload that

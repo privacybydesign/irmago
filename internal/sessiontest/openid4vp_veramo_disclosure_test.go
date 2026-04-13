@@ -36,6 +36,8 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("disclose all array elements with null path", testDiscloseAllArrayElementsWithNullPath)
 	t.Run("non-sd claims shown in disclosure plan", testNonSdClaimsShownInDisclosurePlan)
 	t.Run("issue many credentials and disclose subset", testIssueManyCredentialsAndDiscloseSubset)
+	t.Run("claim sets picks first satisfiable set", testClaimSetsPicksFirstSatisfiableSet)
+	t.Run("multiple vct values matches across types", testMultipleVctValuesMatchesAcrossTypes)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
 	t.Run("veramo verifier requesting missing credential errors", testVeramoVerifierRequestingMissingCredentialErrors)
@@ -944,6 +946,159 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 		"verifier should not have received unrequested phone credential")
 	require.NotContains(t, result.Result.Credentials, "house-cred",
 		"verifier should not have received unrequested house credential")
+}
+
+// testClaimSetsPicksFirstSatisfiableSet issues an EmailCredential and uses a
+// DCQL query with claim_sets to express disjunctive claim requirements: either
+// just the email, or just the domain. Because claim_sets are tried in order and
+// both are satisfiable, the first set (email only) should be picked.
+func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "claimsets@example.com",
+		"domain": "example.com"
+	}`)
+
+	// DCQL query with claim_sets: prefer email only, fallback to domain only.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "id": "em", "path": ["email"] },
+						{ "id": "do", "path": ["domain"] }
+					],
+					"claim_sets": [["em"], ["do"]]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	// The first claim set (email only) should be picked.
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrMap := attributeMap(cred.Attributes)
+
+	// The first claim set ["em"] should be selected, so only email is a requested
+	// attribute. Domain may appear as a non-SD claim but the primary requested
+	// attribute should be email.
+	_, hasEmail := attrMap["email"]
+	require.True(t, hasEmail, "email should be in the disclosure plan")
+	require.Equal(t, "claimsets@example.com", *attrMap["email"].Value.String)
+
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{
+		"email": "claimsets@example.com",
+	})
+}
+
+// testMultipleVctValuesMatchesAcrossTypes issues an EmailCredential and a
+// PhoneCredential, then creates a DCQL query with a single credential entry
+// whose vct_values list contains both types. The wallet should find candidates
+// from both credential types and let the user pick one.
+func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "vct@example.com",
+		"domain": "example.com"
+	}`)
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+		"phone_number": "+31611111111"
+	}`)
+
+	// DCQL query: single credential entry with multiple vct_values.
+	// Both email and phone credentials have an "email" or "phone_number" claim,
+	// but the query only requests a claim that exists in the email credential.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "contact-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": [
+							"https://localhost:8443/vct/email",
+							"https://localhost:8443/vct/phone"
+						]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions,
+		"should have at least one matching credential")
+
+	// The email credential should match (it has an "email" claim).
+	// The phone credential should NOT match (it has no "email" claim).
+	var emailCred *clientmodels.SelectableCredentialInstance
+	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
+		attrMap := attributeMap(opt.Attributes)
+		if attr, ok := attrMap["email"]; ok && attr.Value != nil &&
+			attr.Value.String != nil && *attr.Value.String == "vct@example.com" {
+			emailCred = opt
+			break
+		}
+	}
+	require.NotNil(t, emailCred, "should find the email credential as a candidate")
+
+	attrIds := make([]string, len(emailCred.Attributes))
+	for i, attr := range emailCred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "contact-cred", map[string]string{
+		"email": "vct@example.com",
+	})
 }
 
 // testEudiVerifierRequestingVeramoCredentialFails issues a credential via the
