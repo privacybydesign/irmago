@@ -1,0 +1,30 @@
+{
+  "path": "/vct/eduid",
+  "credentials": ["EduIdCredentialSdJwt"],
+  "document": {
+    "name": "eduID",
+    "description": "eduID indicates affiliation with an institute of higher education or research",
+    "language": "en",
+    "display": [
+      { "lang": "en", "name": "eduID" }
+    ],
+    "claims": [
+      { "path": ["schac_home_organization"], "sd": "allowed" },
+      { "path": ["name"], "sd": "allowed" },
+      { "path": ["given_name"], "sd": "allowed" },
+      { "path": ["family_name"], "sd": "allowed" },
+      { "path": ["email"], "sd": "allowed" },
+      { "path": ["eduperson_scoped_affiliation"], "sd": "allowed" },
+      { "path": ["eduperson_assurance"], "sd": "never" },
+      { "path": ["is_student"], "sd": "allowed" },
+      { "path": ["is_faculty"], "sd": "allowed" },
+      { "path": ["is_member"], "sd": "allowed" },
+      { "path": ["is_staff"], "sd": "allowed" },
+      { "path": ["is_alum"], "sd": "allowed" },
+      { "path": ["is_affiliate"], "sd": "allowed" },
+      { "path": ["is_employee"], "sd": "allowed" },
+      { "path": ["is_library-walk-in"], "sd": "allowed" }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

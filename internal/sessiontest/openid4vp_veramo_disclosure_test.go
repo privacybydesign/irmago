@@ -38,6 +38,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("issue many credentials and disclose subset", testIssueManyCredentialsAndDiscloseSubset)
 	t.Run("claim sets picks first satisfiable set", testClaimSetsPicksFirstSatisfiableSet)
 	t.Run("multiple vct values matches across types", testMultipleVctValuesMatchesAcrossTypes)
+	t.Run("issue and disclose eduid credential", testIssueAndDiscloseEduIdCredential)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
 	t.Run("veramo verifier requesting missing credential errors", testVeramoVerifierRequestingMissingCredentialErrors)
@@ -946,6 +947,87 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 		"verifier should not have received unrequested phone credential")
 	require.NotContains(t, result.Result.Credentials, "house-cred",
 		"verifier should not have received unrequested house credential")
+}
+
+// testIssueAndDiscloseEduIdCredential issues an eduID credential via OID4VCI
+// and then discloses it via OpenID4VP using a DCQL query that mirrors what the
+// real eduID verifier would send.
+func testIssueAndDiscloseEduIdCredential(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+		"schac_home_organization": "university.nl",
+		"name": "Jan de Vries",
+		"given_name": "Jan",
+		"family_name": "de Vries",
+		"email": "jan.devries@university.nl",
+		"eduperson_scoped_affiliation": "student@university.nl",
+		"eduperson_assurance": "https://eduid.nl/assurance/low",
+		"is_student": true,
+		"is_faculty": false,
+		"is_member": true,
+		"is_staff": false,
+		"is_alum": false,
+		"is_affiliate": false,
+		"is_employee": false,
+		"is_library-walk-in": false
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "eduid-credential",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/eduid"]
+					},
+					"claims": [
+						{ "path": ["given_name"] },
+						{ "path": ["family_name"] },
+						{ "path": ["email"] },
+						{ "path": ["schac_home_organization"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{
+			"given_name":              {Value: "Jan", DisplayName: "Given name"},
+			"family_name":             {Value: "de Vries", DisplayName: "Family name"},
+			"email":                   {Value: "jan.devries@university.nl", DisplayName: "E-mail"},
+			"schac_home_organization": {Value: "university.nl", DisplayName: "Organization"},
+		}},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "eduid-credential", map[string]string{
+		"given_name":              "Jan",
+		"family_name":             "de Vries",
+		"email":                   "jan.devries@university.nl",
+		"schac_home_organization": "university.nl",
+	})
 }
 
 // testClaimSetsPicksFirstSatisfiableSet issues an EmailCredential and uses a
