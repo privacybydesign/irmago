@@ -51,9 +51,9 @@ func NewCredentialStore(storage Storage) CredentialStore {
 	}
 }
 
-func (c *credentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
+func (s *credentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
 	var batches []*models.CredentialBatch
-	err := c.db.
+	err := s.db.
 		Model(&models.CredentialBatch{}).
 		Preload("IssuerDisplay").
 		Preload("CredentialMetadata").

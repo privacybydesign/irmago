@@ -39,8 +39,8 @@ func NewCredentialService(s storage.Storage) CredentialService {
 	}
 }
 
-func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
-	m, err := c.credentialStore.GetCredentialBatchList()
+func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
+	m, err := s.credentialStore.GetCredentialBatchList()
 	if err != nil {
 		return nil, err
 	}

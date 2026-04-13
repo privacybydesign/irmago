@@ -1198,7 +1198,7 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 	}`)
 
 	// Create a session at the EUDI reference verifier requesting the same VCT.
-	authRequest := createAuthRequestRequestWithDcql(fmt.Sprintf(`{
+	authRequest := createAuthRequestRequestWithDcql(`{
 		"credentials": [
 			{
 				"id": "email-cred",
@@ -1211,7 +1211,7 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 				]
 			}
 		]
-	}`))
+	}`)
 
 	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(
 		testdata.OpenID4VP_DirectPost_Host, authRequest)

@@ -27,8 +27,6 @@ func newTestStore(t *testing.T) HolderBindingKeyStore {
 	return NewHolderBindingKeyStore(db)
 }
 
-func strPtr(s string) *string { return &s }
-
 func newECDSAKey() *models.HolderBindingKey {
 	return &models.HolderBindingKey{
 		Algorithm:           models.KeyAlgorithmECDSA,
