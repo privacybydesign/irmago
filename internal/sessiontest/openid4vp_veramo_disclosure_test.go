@@ -39,6 +39,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("claim sets picks first satisfiable set", testClaimSetsPicksFirstSatisfiableSet)
 	t.Run("multiple vct values matches across types", testMultipleVctValuesMatchesAcrossTypes)
 	t.Run("issue and disclose eduid credential", testIssueAndDiscloseEduIdCredential)
+	t.Run("verifier display name from response_uri", testVerifierDisplayNameFromResponseUri)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
 	t.Run("veramo verifier requesting missing credential errors", testVeramoVerifierRequestingMissingCredentialErrors)
@@ -1181,6 +1182,49 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 	requireVerifierReceivedAttributes(t, result, "contact-cred", map[string]string{
 		"email": "vct@example.com",
 	})
+}
+
+// testVerifierDisplayNameFromResponseUri verifies that the verifier display name
+// shown to the user comes from the response_uri hostname rather than the raw DID,
+// consistent with how regular IRMA sessions display the verifier.
+func testVerifierDisplayNameFromResponseUri(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "display@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	// The wallet should use the response_uri hostname as the display name,
+	// consistent with how regular IRMA sessions display the verifier.
+	require.Equal(t, "localhost", session.Requestor.Name["en"],
+		"verifier display name should be the response_uri hostname, not the raw DID")
+	require.False(t, session.Requestor.Verified,
+		"DID-based verifier should not be marked as verified (not verified by Yivi)")
 }
 
 // testEudiVerifierRequestingVeramoCredentialFails issues a credential via the

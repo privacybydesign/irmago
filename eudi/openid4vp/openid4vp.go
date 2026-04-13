@@ -58,6 +58,12 @@ func (s Jwks) MarshalJSON() ([]byte, error) {
 }
 
 type ClientMetadata struct {
+	// OPTIONAL. Human-readable name of the client (verifier).
+	// Defined in RFC 7591 but not part of the OpenID4VP client_metadata spec (which says
+	// unrecognized parameters MUST be ignored). Used as a fallback display name when
+	// response_uri is absent, to avoid showing a raw did:jwk to the user.
+	ClientName string `json:"client_name,omitempty"`
+
 	// OPTIONAL. A JSON Web Key Set, as defined in [RFC7591], that contains one or more public keys,
 	// such as those used by the Wallet as an input to a key agreement that may be used for encryption
 	// of the Authorization Response (see Section 8.3), or where the Wallet will require the public key

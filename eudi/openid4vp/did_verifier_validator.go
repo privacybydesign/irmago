@@ -3,6 +3,7 @@ package openid4vp
 import (
 	"crypto/x509"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -76,11 +77,49 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 		return nil, nil, nil, fmt.Errorf("failed to verify auth request jwt: %v", err)
 	}
 
-	// Build a minimal requestor info from the DID
+	// Determine a human-readable display name for the verifier. Priority:
+	// 1. response_uri hostname (consistent with regular IRMA sessions)
+	// 2. client_name from client_metadata (RFC 7591, best-effort)
+	// 3. domain from did:web
+	// 4. "unknown" (raw did:jwk is never useful to a user)
+	displayName := "unknown"
+	if host := hostFromURL(authRequest.ResponseUri); host != "" {
+		displayName = host
+	} else if authRequest.ClientMetadata.ClientName != "" {
+		displayName = authRequest.ClientMetadata.ClientName
+	} else if domain, ok := didWebDomain(didString); ok {
+		displayName = domain
+	}
+
 	requestorInfo := &scheme.RelyingPartyRequestor{}
-	requestorInfo.Organization.LegalName = map[string]string{"en": didString}
+	requestorInfo.Organization.LegalName = map[string]string{"en": displayName}
 
 	return &authRequest, nil, requestorInfo, nil
+}
+
+// hostFromURL parses a URL and returns its hostname (without port), or "" on failure.
+func hostFromURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+// didWebDomain extracts the domain (host) from a did:web DID string.
+func didWebDomain(didStr string) (string, bool) {
+	const prefix = "did:web:"
+	if !strings.HasPrefix(didStr, prefix) {
+		return "", false
+	}
+	host := strings.SplitN(strings.TrimPrefix(didStr, prefix), ":", 2)[0]
+	if host == "" {
+		return "", false
+	}
+	return host, true
 }
 
 // resolvePublicKey extracts the public key from the client_id DID.

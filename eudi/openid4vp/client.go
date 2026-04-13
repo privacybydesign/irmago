@@ -122,7 +122,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 
 		requestor := &clientmodels.TrustedParty{
 			Name:     clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
-			Verified: true,
+			Verified: endEntityCert != nil,
 		}
 
 		// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
