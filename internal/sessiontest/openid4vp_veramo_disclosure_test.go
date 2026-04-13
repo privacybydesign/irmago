@@ -35,6 +35,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("disclose specific array element", testDiscloseSpecificArrayElement)
 	t.Run("disclose all array elements with null path", testDiscloseAllArrayElementsWithNullPath)
 	t.Run("non-sd claims shown in disclosure plan", testNonSdClaimsShownInDisclosurePlan)
+	t.Run("issue many credentials and disclose subset", testIssueManyCredentialsAndDiscloseSubset)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
 	t.Run("veramo verifier requesting missing credential errors", testVeramoVerifierRequestingMissingCredentialErrors)
@@ -828,6 +829,121 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 	requireVerifierReceivedAttributes(t, result, "membership-cred", map[string]string{
 		"member_name": "Grace",
 	})
+}
+
+// testIssueManyCredentialsAndDiscloseSubset issues four different SD-JWT
+// credentials (Email, Phone, StudentCard, House) via OID4VCI, then creates
+// a DCQL query that only requests two of them (Email and StudentCard).
+// This verifies that the wallet correctly matches only the requested credential
+// types and does not disclose the unrequested Phone and House credentials.
+func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue four different credential types.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "multi@example.com",
+		"domain": "example.com"
+	}`)
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+		"phone_number": "+31699999999"
+	}`)
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+		"university": "Radboud University",
+		"level": "Master",
+		"student_id": "s1234567",
+		"courses": ["Algorithms", "Databases", "Security"]
+	}`)
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+		"owner_name": "Multi Test",
+		"address": {
+			"street": "Toernooiveld 1",
+			"city": "Nijmegen",
+			"country": "NL"
+		}
+	}`)
+
+	// DCQL query: request only the Email and StudentCard credentials.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] },
+						{ "path": ["domain"] }
+					]
+				},
+				{
+					"id": "student-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/studentcard"]
+					},
+					"claims": [
+						{ "path": ["university"] },
+						{ "path": ["student_id"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 5, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	// Exactly two disclosure choices: one for email, one for student card.
+	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{
+			"email":  {Value: "multi@example.com", DisplayName: "Email"},
+			"domain": {Value: "example.com", DisplayName: "Domain"},
+		}},
+		{Attributes: map[string]expectedPlanAttribute{
+			"university": {Value: "Radboud University", DisplayName: "University"},
+			"student_id": {Value: "s1234567", DisplayName: "Student ID"},
+		}},
+	})
+
+	// Grant permission for both required credentials.
+	choices := make([]clientmodels.DisclosureDisconSelection, 2)
+	for i, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
+		cred := pickOne.OwnedOptions[0]
+		attrIds := make([]string, len(cred.Attributes))
+		for j, attr := range cred.Attributes {
+			attrIds[j] = attr.Id
+		}
+		choices[i] = makeDisclosureChoice(cred, attrIds...)
+	}
+	grantPermission(t, c, session.Id, choices...)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 5, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// Verify the verifier received only the requested credentials.
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{
+		"email":  "multi@example.com",
+		"domain": "example.com",
+	})
+	requireVerifierReceivedAttributes(t, result, "student-cred", map[string]string{
+		"university": "Radboud University",
+		"student_id": "s1234567",
+	})
+
+	// The verifier should NOT have received Phone or House credentials.
+	require.NotContains(t, result.Result.Credentials, "phone-cred",
+		"verifier should not have received unrequested phone credential")
+	require.NotContains(t, result.Result.Credentials, "house-cred",
+		"verifier should not have received unrequested house credential")
 }
 
 // testEudiVerifierRequestingVeramoCredentialFails issues a credential via the
