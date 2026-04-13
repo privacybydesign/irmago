@@ -128,20 +128,33 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 						attrValue.String = &str
 					}
 				case reflect.Slice, reflect.Array:
+					// TODO: both for slices, arrays and structs/maps, this entire func should be recursive
+					arr := reflect.ValueOf(claimValue)
+
 					attrValue.Type = clientmodels.AttributeType_Array
-					s := reflect.ValueOf(claimValue)
-					attrValue.Array = make([]clientmodels.AttributeValue, s.Len())
-					for i := 0; i < s.Len(); i++ {
-						// TODO:
-						// For simplicity, we will treat all array elements as strings by marshalling them to JSON and storing the JSON string as the value. This is a temporary solution until we have a more robust way to represent different attribute types in the client model.
-						elemBytes, err := json.Marshal(s.Index(i).Interface())
-						if err != nil {
-							log.Fatalf("Error marshalling array element to JSON: %v", err)
-						}
-						elemStr := string(elemBytes)
-						attrValue.Array[i] = clientmodels.AttributeValue{
-							Type:   clientmodels.AttributeType_String,
-							String: &elemStr,
+					attrValue.Array = make([]clientmodels.AttributeValue, arr.Len())
+
+					for i := 0; i < arr.Len(); i++ {
+						val := arr.Index(i)
+						switch val.Elem().Kind() {
+						case reflect.String:
+							v := val.Interface().(string)
+							attrValue.Array[i] = clientmodels.AttributeValue{
+								Type:   clientmodels.AttributeType_String,
+								String: &v,
+							}
+						default:
+							// TODO:
+							// For simplicity, we will treat all array elements as strings by marshalling them to JSON and storing the JSON string as the value. This is a temporary solution until we have a more robust way to represent different attribute types in the client model.
+							elemBytes, err := json.Marshal(val.Interface())
+							if err != nil {
+								log.Fatalf("Error marshalling array element to JSON: %v", err)
+							}
+							elemStr := string(elemBytes)
+							attrValue.Array[i] = clientmodels.AttributeValue{
+								Type:   clientmodels.AttributeType_String,
+								String: &elemStr,
+							}
 						}
 					}
 				case reflect.Map, reflect.Struct:
