@@ -263,19 +263,17 @@ func requireNoAttr(t *testing.T, am map[string]clientmodels.Attribute, path []an
 	require.False(t, ok, "attribute %s should not exist", key)
 }
 
-// expectedAttr describes an expected attribute with its full claim path and string value.
+// expectedAttr describes an expected attribute with its full claim path,
+// optional display names, and value.
 type expectedAttr struct {
-	Path  []any
-	Value string
-}
-
-// attr builds an expectedAttr.
-func attr(path []any, value string) expectedAttr {
-	return expectedAttr{Path: path, Value: value}
+	Path        []any
+	DisplayName clientmodels.TranslatedString // nil to skip display name checks
+	Value       string
 }
 
 // requireAttrsInOrder asserts that the given attributes match the expected list
-// exactly — same order, same paths, same values, same length.
+// exactly — same order, same paths, same values, same length. When display names
+// are specified, those are checked too.
 func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected ...expectedAttr) {
 	t.Helper()
 	require.Len(t, attrs, len(expected), "attribute count mismatch")
@@ -287,6 +285,15 @@ func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected 
 		require.NotNil(t, actual.Value.String, "attribute %d should have a string value", i)
 		require.Equal(t, exp.Value, *actual.Value.String,
 			"attribute %d (%s) value mismatch", i, clientmodels.ClaimPathKey(exp.Path))
+		if exp.DisplayName != nil {
+			for locale, expectedName := range exp.DisplayName {
+				actualName, ok := actual.DisplayName[locale]
+				require.True(t, ok, "attribute %d (%s) should have display name for locale %q",
+					i, clientmodels.ClaimPathKey(exp.Path), locale)
+				require.Equal(t, expectedName, actualName,
+					"attribute %d (%s) display name [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+			}
+		}
 	}
 }
 

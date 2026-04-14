@@ -2278,22 +2278,6 @@ func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attrib
 	return m
 }
 
-// requireAttribute asserts that an attribute exists with the expected display
-// names and value.
-func requireAttribute(t *testing.T, attrs map[string]clientmodels.Attribute, attrId string, displayNames clientmodels.TranslatedString, expectedValue string) {
-	t.Helper()
-	attr, ok := attrs[attrId]
-	require.True(t, ok, "attribute %q should exist", attrId)
-	for locale, expected := range displayNames {
-		actual, ok := attr.DisplayName[locale]
-		require.True(t, ok, "attribute %q should have display name for locale %q", attrId, locale)
-		require.Equal(t, expected, actual, "attribute %q display name [%s] mismatch", attrId, locale)
-	}
-	require.NotNil(t, attr.Value, "attribute %q should have a value", attrId)
-	require.NotNil(t, attr.Value.String, "attribute %q should have a String value", attrId)
-	require.Equal(t, expectedValue, *attr.Value.String, "attribute %q value mismatch", attrId)
-}
-
 // startOpenID4VPDisclosureSession starts an OpenID4VP disclosure session in the
 // client using the given verifier request URI.
 func startOpenID4VPDisclosureSession(t *testing.T, c *client.Client, requestUri string) {

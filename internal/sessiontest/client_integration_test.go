@@ -402,10 +402,10 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
 
 		requireAttrsInOrder(t, credential.Attributes,
-			attr([]any{"firstnames"}, "Barry"),
-			attr([]any{"firstname"}, "Bar"),
-			attr([]any{"familyname"}, "Batsbak"),
-			attr([]any{"prefix"}, "Sir"),
+			expectedAttr{Path: []any{"firstnames"}, Value: "Barry"},
+			expectedAttr{Path: []any{"firstname"}, Value: "Bar"},
+			expectedAttr{Path: []any{"familyname"}, Value: "Batsbak"},
+			expectedAttr{Path: []any{"prefix"}, Value: "Sir"},
 		)
 
 		require.Equal(t, "First names", credential.Attributes[0].DisplayName["en"])
@@ -579,7 +579,7 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		attr([]any{"email"}, "test@gmail.com"),
+		expectedAttr{Path: []any{"email"}, Value: "test@gmail.com"},
 	)
 	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
 	require.NotNil(t, cred.Attributes[0].Description)
@@ -643,7 +643,7 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		attr([]any{"email"}, "test@gmail.com"),
+		expectedAttr{Path: []any{"email"}, Value: "test@gmail.com"},
 	)
 	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
 	require.NotNil(t, cred.Attributes[0].Description)
@@ -662,7 +662,7 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		attr([]any{"email"}, "test@gmail.com"),
+		expectedAttr{Path: []any{"email"}, Value: "test@gmail.com"},
 	)
 	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
 	require.NotNil(t, cred.Attributes[0].Description)
@@ -722,7 +722,7 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		attr([]any{"email"}, "test@gmail.com"),
+		expectedAttr{Path: []any{"email"}, Value: "test@gmail.com"},
 	)
 	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
 	require.NotNil(t, cred.Attributes[0].Description)
@@ -753,7 +753,7 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		attr([]any{"email"}, "test@gmail.com"),
+		expectedAttr{Path: []any{"email"}, Value: "test@gmail.com"},
 	)
 	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
 	require.NotNil(t, cred.Attributes[0].Description)
