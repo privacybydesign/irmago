@@ -402,10 +402,30 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
 
 		requireAttrsInOrder(t, credential.Attributes,
-			expectedAttr{Path: []any{"firstnames"}, DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"}, Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"}, Value: "Barry"},
-			expectedAttr{Path: []any{"firstname"}, DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"}, Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"}, Value: "Bar"},
-			expectedAttr{Path: []any{"familyname"}, DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"}, Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"}, Value: "Batsbak"},
-			expectedAttr{Path: []any{"prefix"}, DisplayName: clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"}, Description: &clientmodels.TranslatedString{"en": "Family name prefix", "nl": "Tussenvoegsel van uw achternaam"}, Value: "Sir"},
+			expectedAttr{
+				Path:        []any{"firstnames"},
+				DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+				Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+				Value:       "Barry",
+			},
+			expectedAttr{
+				Path:        []any{"firstname"},
+				DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+				Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+				Value:       "Bar",
+			},
+			expectedAttr{
+				Path:        []any{"familyname"},
+				DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+				Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+				Value:       "Batsbak",
+			},
+			expectedAttr{
+				Path:        []any{"prefix"},
+				DisplayName: clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
+				Description: &clientmodels.TranslatedString{"en": "Family name prefix", "nl": "Tussenvoegsel van uw achternaam"},
+				Value:       "Sir",
+			},
 		)
 
 		c.Close()
@@ -570,7 +590,12 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"}, Value: "test@gmail.com"},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       "test@gmail.com",
+		},
 	)
 }
 
@@ -631,7 +656,12 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"}, Value: "test@gmail.com"},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       "test@gmail.com",
+		},
 	)
 }
 
@@ -647,7 +677,12 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"}, Value: "test@gmail.com"},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       "test@gmail.com",
+		},
 	)
 }
 
@@ -704,7 +739,12 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"}, Value: "test@gmail.com"},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       "test@gmail.com",
+		},
 	)
 }
 
@@ -732,7 +772,12 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
 	requireAttrsInOrder(t, cred.Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"}, Value: "test@gmail.com"},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       "test@gmail.com",
+		},
 	)
 }
 

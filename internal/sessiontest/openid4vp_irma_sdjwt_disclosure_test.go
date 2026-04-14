@@ -531,7 +531,11 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 	// only university (which has a pre-defined value that doesn't match), not level
 	requireAttrsInOrder(t, wrongCred.Attributes,
-		expectedAttr{Path: []any{"university"}, DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Value: "Some Other University"},
+		expectedAttr{
+			Path:        []any{"university"},
+			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			Value:       "Some Other University",
+		},
 	)
 	require.Equal(t, &expectedUniversityValue, wrongCred.Attributes[0].RequestedValue.String)
 
