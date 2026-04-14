@@ -106,6 +106,11 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 
 		defer response.Body.Close()
 
+		if response.StatusCode != http.StatusOK {
+			handleFailure(handler, "openid4vp: authorization request returned HTTP %d", response.StatusCode)
+			return
+		}
+
 		authRequestJwt, err := io.ReadAll(response.Body)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to read authorization request body: %v", err)
