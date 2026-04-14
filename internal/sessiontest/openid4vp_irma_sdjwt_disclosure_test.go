@@ -1003,7 +1003,12 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	// Verify that each issued credential is present (order of owned options may differ from issuance order)
 	foundUniversities := map[string]bool{}
 	for _, option := range pick.OwnedOptions {
-		foundUniversities[*option.Attributes[0].Value.String] = true
+		am := attributeMap(option.Attributes)
+		uni, ok := am[pk("university")]
+		require.True(t, ok, "option should have university attribute")
+		require.NotNil(t, uni.Value)
+		require.NotNil(t, uni.Value.String)
+		foundUniversities[*uni.Value.String] = true
 	}
 	for _, attrs := range studentCards {
 		require.True(t, foundUniversities[attrs["university"]],
@@ -1018,12 +1023,13 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 4, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
+	chosenAttrs := attributeMap(chosen.Attributes)
 	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
 		"sc": {
-			"university":        *chosen.Attributes[0].Value.String,
-			"studentCardNumber": *chosen.Attributes[1].Value.String,
-			"studentID":         *chosen.Attributes[2].Value.String,
-			"level":             *chosen.Attributes[3].Value.String,
+			"university":        *chosenAttrs[pk("university")].Value.String,
+			"studentCardNumber": *chosenAttrs[pk("studentCardNumber")].Value.String,
+			"studentID":         *chosenAttrs[pk("studentID")].Value.String,
+			"level":             *chosenAttrs[pk("level")].Value.String,
 		},
 	})
 }

@@ -277,12 +277,12 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	require.Len(t, session.OfferedCredentials, 1)
 	offered := session.OfferedCredentials[0]
 	require.Equal(t, "irma-demo.stemmen.stempas", offered.CredentialId)
-	for _, attr := range offered.Attributes {
-		require.NotEqual(t, pk("votingnumber"), clientmodels.ClaimPathKey(attr.ClaimPath),
-			"random blind attribute should not be included in offered credentials")
-	}
-	require.Len(t, offered.Attributes, 1, "should only have election attribute, not votingnumber")
-	require.Equal(t, []any{"election"}, offered.Attributes[0].ClaimPath)
+	requireNoAttr(t, attributeMap(offered.Attributes), []any{"votingnumber"})
+	requireAttrsInOrder(t, offered.Attributes, expectedAttr{
+		Path:        []any{"election"},
+		DisplayName: clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
+		Value:       "plantsoen",
+	})
 
 	// Accept the issuance
 	userInteraction(t, c, clientmodels.SessionUserInteraction{
@@ -305,8 +305,10 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	}
 	require.NotNil(t, stempasCred, "should have irma-demo.stemmen.stempas credential")
 	require.Len(t, stempasCred.Attributes, 2, "GetCredentials should include both election and votingnumber")
-	require.Contains(t, [][]any{stempasCred.Attributes[0].ClaimPath, stempasCred.Attributes[1].ClaimPath}, []any{"election"})
-	require.Contains(t, [][]any{stempasCred.Attributes[0].ClaimPath, stempasCred.Attributes[1].ClaimPath}, []any{"votingnumber"})
+	stempassAttrs := attributeMap(stempasCred.Attributes)
+	requireAttr(t, stempassAttrs, []any{"election"}, "plantsoen")
+	_, hasVotingnumber := stempassAttrs[pk("votingnumber")]
+	require.True(t, hasVotingnumber, "should have votingnumber attribute")
 
 	// Start a disclosure session for the election attribute
 	disclosureRequest := irma.NewDisclosureRequest()
@@ -328,8 +330,11 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
 	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
-	require.Len(t, owned.Attributes, 1)
-	require.Equal(t, []any{"election"}, owned.Attributes[0].ClaimPath)
+	requireAttrsInOrder(t, owned.Attributes, expectedAttr{
+		Path:        []any{"election"},
+		DisplayName: clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
+		Value:       "plantsoen",
+	})
 
 	// Now request the votingnumber attribute directly — it should be disclosable
 	disclosureRequest2 := irma.NewDisclosureRequest()
@@ -352,7 +357,8 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	owned = plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
 	require.Len(t, owned.Attributes, 1)
-	require.Equal(t, []any{"votingnumber"}, owned.Attributes[0].ClaimPath)
+	_, votingnumberFound := attributeMap(owned.Attributes)[pk("votingnumber")]
+	require.True(t, votingnumberFound, "owned option should have votingnumber attribute")
 }
 
 func testTrustedPartyLogoPathsInLogs(
@@ -430,7 +436,6 @@ func testAttributesOrderedByDisplayIndex(
 	// irma-demo.RU.studentCard has displayIndex set:
 	// university=3, studentCardNumber=2, studentID=1, level=0
 	// So the expected display order is: level, studentID, studentCardNumber, university
-	expectedOrder := []string{"level", "studentID", "studentCardNumber", "university"}
 
 	// Issue the credential
 	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
@@ -448,17 +453,29 @@ func testAttributesOrderedByDisplayIndex(
 		}
 	}
 	require.NotNil(t, studentCard)
-	require.Len(t, studentCard.Attributes, 4)
-	attrIds := make([]string, len(studentCard.Attributes))
-	for i, attr := range studentCard.Attributes {
-		attrIds[i] = clientmodels.ClaimPathKey(attr.ClaimPath)
+	studentCardExpectedAttrs := []expectedAttr{
+		{
+			Path:        []any{"level"},
+			DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+			Value:       "high",
+		},
+		{
+			Path:        []any{"studentID"},
+			DisplayName: clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+			Value:       "67890",
+		},
+		{
+			Path:        []any{"studentCardNumber"},
+			DisplayName: clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+			Value:       "12345",
+		},
+		{
+			Path:        []any{"university"},
+			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			Value:       "University of the Arts",
+		},
 	}
-	expectedOrderKeys := make([]string, len(expectedOrder))
-	for i, id := range expectedOrder {
-		expectedOrderKeys[i] = pk(id)
-	}
-	require.Equal(t, expectedOrderKeys, attrIds,
-		"GetCredentials should return attributes ordered by displayIndex")
+	requireAttrsInOrder(t, studentCard.Attributes, studentCardExpectedAttrs...)
 
 	// Check OfferedCredentials during issuance also respects displayIndex
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createStudentCardIssuanceRequest()))
@@ -467,12 +484,7 @@ func testAttributesOrderedByDisplayIndex(
 
 	require.Len(t, session.OfferedCredentials, 1)
 	offered := session.OfferedCredentials[0]
-	offeredAttrIds := make([]string, len(offered.Attributes))
-	for i, attr := range offered.Attributes {
-		offeredAttrIds[i] = clientmodels.ClaimPathKey(attr.ClaimPath)
-	}
-	require.Equal(t, expectedOrderKeys, offeredAttrIds,
-		"OfferedCredentials should return attributes ordered by displayIndex")
+	requireAttrsInOrder(t, offered.Attributes, studentCardExpectedAttrs...)
 }
 
 func testRevocationAttributesExcludedFromCredentials(
@@ -507,13 +519,12 @@ func testRevocationAttributesExcludedFromCredentials(
 	}
 	require.NotNil(t, rootCred, "should have irma-demo.MijnOverheid.root credential")
 
-	// Prove that the revocation attribute (with empty ID) is currently included in the attributes
-	for _, attr := range rootCred.Attributes {
-		require.NotEmpty(t, attr.ClaimPath,
-			"revocation attribute (empty ID) should not be visible to the user")
-	}
-	require.Len(t, rootCred.Attributes, 1, "should only have BSN attribute, not the revocation attribute")
-	require.Equal(t, []any{"BSN"}, rootCred.Attributes[0].ClaimPath)
+	// Prove that the revocation attribute (with empty ID) is not visible — only BSN should be present
+	requireAttrsInOrder(t, rootCred.Attributes, expectedAttr{
+		Path:        []any{"BSN"},
+		DisplayName: clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
+		Value:       "299792458",
+	})
 
 	// Revoke the credential on the server
 	revocationTestCred := irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.root")
@@ -537,10 +548,11 @@ func testRevocationAttributesExcludedFromCredentials(
 	choice := disclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	require.Equal(t, "irma-demo.MijnOverheid.root", choice.CredentialId)
 	require.True(t, choice.Revoked, "owned option should show credential as revoked during disclosure permission")
-	for _, attr := range choice.Attributes {
-		require.NotEmpty(t, attr.ClaimPath,
-			"revocation attribute (empty ID) should not be included in disclosure permission")
-	}
+	requireAttrsInOrder(t, choice.Attributes, expectedAttr{
+		Path:        []any{"BSN"},
+		DisplayName: clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
+		Value:       "299792458",
+	})
 
 	// Grant permission — the client will attempt to construct a proof and discover the revocation
 	grantPermission(t, c, 2, makeDisclosureChoice(choice))

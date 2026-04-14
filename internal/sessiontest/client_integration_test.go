@@ -1216,13 +1216,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		if cred.CredentialId != "irma-demo.MijnOverheid.fullName" {
 			continue
 		}
-		hasPrefix := false
-		for _, attr := range cred.Attributes {
-			if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("prefix") {
-				hasPrefix = true
-				break
-			}
-		}
+		_, hasPrefix := attributeMap(cred.Attributes)[pk("prefix")]
 		if hasPrefix {
 			credWithPrefix = cred
 		} else {
@@ -1232,22 +1226,48 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 
 	// Credential without prefix: optional empty attribute should be excluded
 	require.NotNil(t, credWithoutPrefix)
-	attrIds := make([]string, len(credWithoutPrefix.Attributes))
-	for i, attr := range credWithoutPrefix.Attributes {
-		attrIds[i] = clientmodels.ClaimPathKey(attr.ClaimPath)
-	}
-	require.Equal(t, []string{pk("firstnames"), pk("firstname"), pk("familyname")}, attrIds,
-		"empty optional attribute 'prefix' should not be included")
+	requireAttrsInOrder(t, credWithoutPrefix.Attributes,
+		expectedAttr{
+			Path:        []any{"firstnames"},
+			DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			Value:       "Barry",
+		},
+		expectedAttr{
+			Path:        []any{"firstname"},
+			DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			Value:       "Bar",
+		},
+		expectedAttr{
+			Path:        []any{"familyname"},
+			DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			Value:       "Batsbak",
+		},
+	)
 
 	// Credential with prefix: optional non-empty attribute should be included
 	require.NotNil(t, credWithPrefix)
-	attrIds = make([]string, len(credWithPrefix.Attributes))
-	for i, attr := range credWithPrefix.Attributes {
-		attrIds[i] = clientmodels.ClaimPathKey(attr.ClaimPath)
-	}
-	require.Equal(t, []string{pk("firstnames"), pk("firstname"), pk("familyname"), pk("prefix")}, attrIds,
-		"non-empty optional attribute 'prefix' should be included")
-	require.Equal(t, "Sir", *credWithPrefix.Attributes[3].Value.String)
+	requireAttrsInOrder(t, credWithPrefix.Attributes,
+		expectedAttr{
+			Path:        []any{"firstnames"},
+			DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			Value:       "Barry",
+		},
+		expectedAttr{
+			Path:        []any{"firstname"},
+			DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			Value:       "Bar",
+		},
+		expectedAttr{
+			Path:        []any{"familyname"},
+			DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			Value:       "Batsbak",
+		},
+		expectedAttr{
+			Path:        []any{"prefix"},
+			DisplayName: clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
+			Value:       "Sir",
+		},
+	)
 
 	// Issue a credential with an empty non-optional attribute ("firstname" = "")
 	// Non-optional attributes should always be included, even when empty.
@@ -1275,20 +1295,29 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		if cred.CredentialId != "irma-demo.MijnOverheid.fullName" {
 			continue
 		}
-		for _, attr := range cred.Attributes {
-			if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("firstname") && attr.Value != nil &&
-				attr.Value.String != nil && *attr.Value.String == "" {
-				credEmptyFirstname = cred
-				break
-			}
+		am := attributeMap(cred.Attributes)
+		if attr, ok := am[pk("firstname")]; ok && attr.Value != nil &&
+			attr.Value.String != nil && *attr.Value.String == "" {
+			credEmptyFirstname = cred
 		}
 	}
 
 	require.NotNil(t, credEmptyFirstname, "credential with empty firstname should exist")
-	attrIds = make([]string, len(credEmptyFirstname.Attributes))
-	for i, attr := range credEmptyFirstname.Attributes {
-		attrIds[i] = clientmodels.ClaimPathKey(attr.ClaimPath)
-	}
-	require.Equal(t, []string{pk("firstnames"), pk("firstname"), pk("familyname")}, attrIds,
-		"empty non-optional attribute 'firstname' should still be included")
+	requireAttrsInOrder(t, credEmptyFirstname.Attributes,
+		expectedAttr{
+			Path:        []any{"firstnames"},
+			DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			Value:       "Barry",
+		},
+		expectedAttr{
+			Path:        []any{"firstname"},
+			DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			Value:       "",
+		},
+		expectedAttr{
+			Path:        []any{"familyname"},
+			DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			Value:       "Batsbak",
+		},
+	)
 }
