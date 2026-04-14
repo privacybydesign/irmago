@@ -120,6 +120,11 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
+		if err := validateNonce(request.Nonce); err != nil {
+			handleFailure(handler, "openid4vp: invalid authorization request: %v", err)
+			return
+		}
+
 		requestor := &clientmodels.TrustedParty{
 			Name:     clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
 			Verified: endEntityCert != nil,

@@ -2,11 +2,35 @@ package openid4vp
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
+
+// validateNonce checks that the nonce is non-empty and contains only ASCII
+// URL-safe characters as required by OpenID4VP Section 5.2.
+func validateNonce(nonce string) error {
+	if nonce == "" {
+		return fmt.Errorf("nonce is required")
+	}
+	for _, c := range nonce {
+		if !isASCIIURLSafe(c) {
+			return fmt.Errorf("nonce contains invalid character: %q", c)
+		}
+	}
+	return nil
+}
+
+// isASCIIURLSafe returns true if the rune is an ASCII URL-safe character:
+// uppercase/lowercase letters, digits, hyphen, period, underscore, or tilde.
+func isASCIIURLSafe(c rune) bool {
+	return (c >= 'A' && c <= 'Z') ||
+		(c >= 'a' && c <= 'z') ||
+		(c >= '0' && c <= '9') ||
+		c == '-' || c == '.' || c == '_' || c == '~'
+}
 
 type Jwk any
 
