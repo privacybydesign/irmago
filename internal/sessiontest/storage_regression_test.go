@@ -195,7 +195,7 @@ func performDisclosureSessionForAttribute(t *testing.T, c *client.Client, sessio
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attribute[strings.LastIndex(attribute, ".")+1:]))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
@@ -217,7 +217,7 @@ func performKeyshareDisclosureSession(t *testing.T, c *client.Client, sessionHan
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attribute[strings.LastIndex(attribute, ".")+1:]))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	// The reloaded client needs to authenticate with the keyshare server.
 	session = awaitSessionState(t, sessionHandler)

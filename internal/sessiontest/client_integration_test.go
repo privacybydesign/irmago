@@ -401,24 +401,20 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "Demo Name", credential.Name["en"])
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
 
-		require.Equal(t, "Barry", getLogAttrValue(credential.Attributes, "firstnames"))
-		require.Equal(t, "Bar", getLogAttrValue(credential.Attributes, "firstname"))
-		require.Equal(t, "Batsbak", getLogAttrValue(credential.Attributes, "familyname"))
-		require.Equal(t, "Sir", getLogAttrValue(credential.Attributes, "prefix"))
+		requireAttrsInOrder(t, credential.Attributes,
+			attr([]any{"firstnames"}, "Barry"),
+			attr([]any{"firstname"}, "Bar"),
+			attr([]any{"familyname"}, "Batsbak"),
+			attr([]any{"prefix"}, "Sir"),
+		)
 
-		firstnamesAttr := getLogAttr(credential.Attributes, "firstnames")
-		require.NotNil(t, firstnamesAttr)
-		require.NotNil(t, firstnamesAttr.Description)
-		firstNameDescription := *firstnamesAttr.Description
-		require.Equal(t, "First names", firstnamesAttr.DisplayName["en"])
-		require.Equal(t, "All of your first names", firstNameDescription["en"])
+		require.Equal(t, "First names", credential.Attributes[0].DisplayName["en"])
+		require.NotNil(t, credential.Attributes[0].Description)
+		require.Equal(t, "All of your first names", (*credential.Attributes[0].Description)["en"])
 
-		familynameAttr := getLogAttr(credential.Attributes, "familyname")
-		require.NotNil(t, familynameAttr)
-		require.NotNil(t, familynameAttr.Description)
-		familyNameDescription := *familynameAttr.Description
-		require.Equal(t, "Family name", familynameAttr.DisplayName["en"])
-		require.Equal(t, "Your family name", familyNameDescription["en"])
+		require.Equal(t, "Family name", credential.Attributes[2].DisplayName["en"])
+		require.NotNil(t, credential.Attributes[2].Description)
+		require.Equal(t, "Your family name", (*credential.Attributes[2].Description)["en"])
 
 		c.Close()
 		keyshareServer.Stop()
@@ -572,25 +568,6 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)]))
 }
 
-// getLogAttrValue finds an attribute by ID and returns its string value.
-func getLogAttrValue(attrs []clientmodels.Attribute, id string) string {
-	for _, a := range attrs {
-		if a.Id == id && a.Value != nil && a.Value.String != nil {
-			return *a.Value.String
-		}
-	}
-	return ""
-}
-
-// getLogAttr finds an attribute by ID and returns it, or nil if not found.
-func getLogAttr(attrs []clientmodels.Attribute, id string) *clientmodels.Attribute {
-	for i := range attrs {
-		if attrs[i].Id == id {
-			return &attrs[i]
-		}
-	}
-	return nil
-}
 
 func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, log.Type, clientmodels.LogType_CredentialRemoval)
@@ -601,13 +578,12 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
+	requireAttrsInOrder(t, cred.Attributes,
+		attr([]any{"email"}, "test@gmail.com"),
+	)
+	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
+	require.NotNil(t, cred.Attributes[0].Description)
+	require.Equal(t, "Your verified email address", (*cred.Attributes[0].Description)["en"])
 }
 
 func testIrmaDisclosureSessionLogs(t *testing.T) {
@@ -666,13 +642,12 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
+	requireAttrsInOrder(t, cred.Attributes,
+		attr([]any{"email"}, "test@gmail.com"),
+	)
+	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
+	require.NotNil(t, cred.Attributes[0].Description)
+	require.Equal(t, "Your verified email address", (*cred.Attributes[0].Description)["en"])
 }
 
 func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
@@ -686,13 +661,12 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
+	requireAttrsInOrder(t, cred.Attributes,
+		attr([]any{"email"}, "test@gmail.com"),
+	)
+	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
+	require.NotNil(t, cred.Attributes[0].Description)
+	require.Equal(t, "Your verified email address", (*cred.Attributes[0].Description)["en"])
 }
 
 func testEudiSessionLogs(t *testing.T) {
@@ -747,17 +721,12 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
-
-	// Verify that attribute value is present for OpenID4VP disclosures
-	require.NotNil(t, emailAttr.Value.String)
-	require.Equal(t, "test@gmail.com", *emailAttr.Value.String, "attribute value should match")
+	requireAttrsInOrder(t, cred.Attributes,
+		attr([]any{"email"}, "test@gmail.com"),
+	)
+	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
+	require.NotNil(t, cred.Attributes[0].Description)
+	require.Equal(t, "Your verified email address", (*cred.Attributes[0].Description)["en"])
 }
 
 func requireRegularIrmaIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
@@ -783,13 +752,12 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
+	requireAttrsInOrder(t, cred.Attributes,
+		attr([]any{"email"}, "test@gmail.com"),
+	)
+	require.Equal(t, "Email address", cred.Attributes[0].DisplayName["en"])
+	require.NotNil(t, cred.Attributes[0].Description)
+	require.Equal(t, "Your verified email address", (*cred.Attributes[0].Description)["en"])
 }
 
 func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
@@ -897,7 +865,7 @@ func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionHandler *MockS
 	require.Equal(t, clientmodels.Status_RequestPermission, sessionState.Status)
 
 	emailCred := sessionState.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, sessionState.Id, makeDisclosureChoice(emailCred, "email"))
+	grantPermission(t, c, sessionState.Id, makeDisclosureChoice(emailCred))
 
 	sessionState = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, sessionState.Status)
@@ -939,7 +907,7 @@ func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionHandler
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred, "email"))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
@@ -960,7 +928,7 @@ func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionHandler 
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred, "email"))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
@@ -1229,7 +1197,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		}
 		hasPrefix := false
 		for _, attr := range cred.Attributes {
-			if attr.Id == "prefix" {
+			if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("prefix") {
 				hasPrefix = true
 				break
 			}
@@ -1245,18 +1213,18 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	require.NotNil(t, credWithoutPrefix)
 	attrIds := make([]string, len(credWithoutPrefix.Attributes))
 	for i, attr := range credWithoutPrefix.Attributes {
-		attrIds[i] = attr.Id
+		attrIds[i] = clientmodels.ClaimPathKey(attr.ClaimPath)
 	}
-	require.Equal(t, []string{"firstnames", "firstname", "familyname"}, attrIds,
+	require.Equal(t, []string{pk("firstnames"), pk("firstname"), pk("familyname")}, attrIds,
 		"empty optional attribute 'prefix' should not be included")
 
 	// Credential with prefix: optional non-empty attribute should be included
 	require.NotNil(t, credWithPrefix)
 	attrIds = make([]string, len(credWithPrefix.Attributes))
 	for i, attr := range credWithPrefix.Attributes {
-		attrIds[i] = attr.Id
+		attrIds[i] = clientmodels.ClaimPathKey(attr.ClaimPath)
 	}
-	require.Equal(t, []string{"firstnames", "firstname", "familyname", "prefix"}, attrIds,
+	require.Equal(t, []string{pk("firstnames"), pk("firstname"), pk("familyname"), pk("prefix")}, attrIds,
 		"non-empty optional attribute 'prefix' should be included")
 	require.Equal(t, "Sir", *credWithPrefix.Attributes[3].Value.String)
 
@@ -1287,7 +1255,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 			continue
 		}
 		for _, attr := range cred.Attributes {
-			if attr.Id == "firstname" && attr.Value != nil &&
+			if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("firstname") && attr.Value != nil &&
 				attr.Value.String != nil && *attr.Value.String == "" {
 				credEmptyFirstname = cred
 				break
@@ -1298,8 +1266,8 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	require.NotNil(t, credEmptyFirstname, "credential with empty firstname should exist")
 	attrIds = make([]string, len(credEmptyFirstname.Attributes))
 	for i, attr := range credEmptyFirstname.Attributes {
-		attrIds[i] = attr.Id
+		attrIds[i] = clientmodels.ClaimPathKey(attr.ClaimPath)
 	}
-	require.Equal(t, []string{"firstnames", "firstname", "familyname"}, attrIds,
+	require.Equal(t, []string{pk("firstnames"), pk("firstname"), pk("familyname")}, attrIds,
 		"empty non-optional attribute 'firstname' should still be included")
 }

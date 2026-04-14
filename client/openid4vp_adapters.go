@@ -151,18 +151,18 @@ func checkWrongCredential(cred *clientmodels.Credential, option *clientmodels.Cr
 	var mismatched []clientmodels.Attribute
 	requestedByID := make(map[string]*clientmodels.Attribute)
 	for i := range option.Attributes {
-		requestedByID[option.Attributes[i].Id] = &option.Attributes[i]
+		requestedByID[clientmodels.ClaimPathKey(option.Attributes[i].ClaimPath)] = &option.Attributes[i]
 	}
 
 	for _, attr := range cred.Attributes {
-		req, ok := requestedByID[attr.Id]
+		req, ok := requestedByID[clientmodels.ClaimPathKey(attr.ClaimPath)]
 		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
 			continue
 		}
 		satisfied, _ := SatisfiesRequestedAttributes([]clientmodels.Attribute{attr}, []clientmodels.Attribute{*req})
 		if !satisfied {
 			mismatched = append(mismatched, clientmodels.Attribute{
-				Id:             attr.Id,
+				ClaimPath:      attr.ClaimPath,
 				DisplayName:    attr.DisplayName,
 				Description:    attr.Description,
 				Value:          attr.Value,
@@ -193,7 +193,7 @@ func openid4vpCredentialLogsToIrmaclientLogEntry(
 		attrs := make(map[string]string)
 		for _, a := range cl.Attributes {
 			if a.Value != nil && a.Value.String != nil {
-				attrs[a.Id] = *a.Value.String
+				attrs[clientmodels.ClaimPathKey(a.ClaimPath)] = *a.Value.String
 			}
 		}
 		disclosed = append(disclosed, irmaclient.CredentialLog{

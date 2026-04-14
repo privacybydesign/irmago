@@ -241,13 +241,61 @@ func denyPermission(t *testing.T, c *client.Client, sessionId int) {
 	})
 }
 
-// makeDisclosureChoice creates a disclosure selection from an owned option
 func intPtr(v int) *int { return &v }
 
-func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance, attributeIds ...string) clientmodels.DisclosureDisconSelection {
-	paths := make([][]any, len(attributeIds))
-	for i, id := range attributeIds {
-		paths[i] = []any{id}
+// requireAttr asserts that the attribute map contains an attribute at the given
+// claim path with the expected string value.
+func requireAttr(t *testing.T, am map[string]clientmodels.Attribute, path []any, expectedValue string) {
+	t.Helper()
+	key := clientmodels.ClaimPathKey(path)
+	attr, ok := am[key]
+	require.True(t, ok, "attribute %s should exist", key)
+	require.NotNil(t, attr.Value, "attribute %s should have a value", key)
+	require.NotNil(t, attr.Value.String, "attribute %s should have a string value", key)
+	require.Equal(t, expectedValue, *attr.Value.String, "attribute %s value mismatch", key)
+}
+
+// requireNoAttr asserts that the attribute map does NOT contain an attribute at the given claim path.
+func requireNoAttr(t *testing.T, am map[string]clientmodels.Attribute, path []any) {
+	t.Helper()
+	key := clientmodels.ClaimPathKey(path)
+	_, ok := am[key]
+	require.False(t, ok, "attribute %s should not exist", key)
+}
+
+// expectedAttr describes an expected attribute with its full claim path and string value.
+type expectedAttr struct {
+	Path  []any
+	Value string
+}
+
+// attr builds an expectedAttr.
+func attr(path []any, value string) expectedAttr {
+	return expectedAttr{Path: path, Value: value}
+}
+
+// requireAttrsInOrder asserts that the given attributes match the expected list
+// exactly — same order, same paths, same values, same length.
+func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected ...expectedAttr) {
+	t.Helper()
+	require.Len(t, attrs, len(expected), "attribute count mismatch")
+	for i, exp := range expected {
+		actual := attrs[i]
+		require.Equal(t, clientmodels.ClaimPathKey(exp.Path), clientmodels.ClaimPathKey(actual.ClaimPath),
+			"attribute %d path mismatch", i)
+		require.NotNil(t, actual.Value, "attribute %d should have a value", i)
+		require.NotNil(t, actual.Value.String, "attribute %d should have a string value", i)
+		require.Equal(t, exp.Value, *actual.Value.String,
+			"attribute %d (%s) value mismatch", i, clientmodels.ClaimPathKey(exp.Path))
+	}
+}
+
+// makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
+// attributes of the given credential instance.
+func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance) clientmodels.DisclosureDisconSelection {
+	paths := make([][]any, len(option.Attributes))
+	for i, attr := range option.Attributes {
+		paths[i] = attr.ClaimPath
 	}
 	return clientmodels.DisclosureDisconSelection{
 		Credentials: []clientmodels.SelectedCredential{

@@ -185,11 +185,17 @@ func testOpenId4VciPreAuthFlowNestedClaims(t *testing.T) {
 	// Top-level claim: owner_name
 	requireAttribute(t, attrMap, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Alice")
 
-	// Nested claim: address is an object containing street, city, country
-	attr, ok := attrMap["address"]
-	require.True(t, ok, "attribute \"address\" should exist")
-	require.NotNil(t, attr.Value, "attribute \"address\" should have a value")
-	require.Equal(t, clientmodels.AttributeType_Object, attr.Value.Type, "address should be an object type")
+	// Nested claims: address fields are flattened into separate attributes
+	// with paths like ["address", "street"], keyed by the leaf name in attributeMap.
+	street, ok := attrMap["street"]
+	require.True(t, ok, "attribute \"street\" should exist")
+	require.NotNil(t, street.Value)
+	require.Equal(t, "123 Main St", *street.Value.String)
+
+	city, ok := attrMap["city"]
+	require.True(t, ok, "attribute \"city\" should exist")
+	require.NotNil(t, city.Value)
+	require.Equal(t, "Amsterdam", *city.Value.String)
 }
 
 func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
@@ -243,11 +249,11 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	houseAttrs := attributeMap(houseCred.Attributes)
 	requireAttribute(t, houseAttrs, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Bob")
 
-	// The nested address claim should be stored as an object.
-	addrAttr, ok := houseAttrs["address"]
-	require.True(t, ok, "attribute \"address\" should exist")
-	require.NotNil(t, addrAttr.Value, "attribute \"address\" should have a value")
-	require.Equal(t, clientmodels.AttributeType_Object, addrAttr.Value.Type, "address should be an object type")
+	// Nested address claims are flattened.
+	street, ok := houseAttrs["street"]
+	require.True(t, ok, "attribute \"street\" should exist")
+	require.NotNil(t, street.Value)
+	require.Equal(t, "456 Oak Ave", *street.Value.String)
 }
 
 // ========================================================================
@@ -361,11 +367,11 @@ func testOpenId4VciAuthCodeFlowNestedClaims(t *testing.T) {
 	// Top-level claim: owner_name
 	requireAttribute(t, attrMap, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Charlie")
 
-	// Nested claim: address is an object containing street, city, country
-	addrAttr, ok := attrMap["address"]
-	require.True(t, ok, "attribute \"address\" should exist")
-	require.NotNil(t, addrAttr.Value, "attribute \"address\" should have a value")
-	require.Equal(t, clientmodels.AttributeType_Object, addrAttr.Value.Type, "address should be an object type")
+	// Nested address claims are flattened.
+	street, ok := attrMap["street"]
+	require.True(t, ok, "attribute \"street\" should exist")
+	require.NotNil(t, street.Value)
+	require.Equal(t, "789 Pine Rd", *street.Value.String)
 }
 
 // issueCredentialViaOid4VciAuthCode issues a single credential through the

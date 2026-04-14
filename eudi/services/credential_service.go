@@ -100,19 +100,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 				attrValue := clientmodels.NewAttributeValue(claimValue)
 
-				// Use the last element of the claim path as the attribute ID (e.g., ["address", "city"] → "city").
-				// Only string components are handled here because issuer metadata claim paths always use
-				// string keys. Integer indices and null (used in DCQL queries for array element selection)
-				// do not appear in issuer credential metadata.
-				attrId := ""
-				if len(claimPath) > 0 {
-					if last, ok := claimPath[len(claimPath)-1].(string); ok {
-						attrId = last
-					}
-				}
-
 				attrs[j] = clientmodels.Attribute{
-					Id:          attrId,
+					ClaimPath:   claimPath,
 					DisplayName: attrDisplay,
 					Value:       attrValue,
 				}

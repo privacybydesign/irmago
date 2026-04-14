@@ -208,29 +208,84 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	seenPaths := make(map[string]struct{})
 	requestedKeys := make(map[string]struct{})
 	for _, claim := range claims {
-		pathKey := fmt.Sprintf("%v", []any(claim.Path))
+		pathKey := clientmodels.ClaimPathKey([]any(claim.Path))
 		if _, duplicate := seenPaths[pathKey]; duplicate {
 			continue
 		}
 		seenPaths[pathKey] = struct{}{}
 
 		attrName := claim.Path.LastString()
-		requestedKeys[attrName] = struct{}{}
 
 		val, _ := payload.GetClaimValue([]any(claim.Path))
-		attr := clientmodels.Attribute{
-			Id:          attrName,
-			DisplayName: claimDisplayName(batch, attrName),
+
+		// When the path ends with nil (null wildcard for all array elements),
+		// expand into individual attributes with indexed paths.
+		if len(claim.Path) > 0 && claim.Path[len(claim.Path)-1] == nil {
+			if arr, ok := val.([]any); ok {
+				basePath := []any(claim.Path[:len(claim.Path)-1])
+				displayName := claimDisplayName(batch, attrName)
+				for i, elem := range arr {
+					elemPath := make([]any, len(basePath)+1)
+					copy(elemPath, basePath)
+					elemPath[len(basePath)] = i
+					pk := clientmodels.ClaimPathKey(elemPath)
+					requestedKeys[pk] = struct{}{}
+					attributes = append(attributes, clientmodels.Attribute{
+						ClaimPath:   elemPath,
+						DisplayName: displayName,
+						Value:       clientmodels.NewAttributeValue(elem),
+					})
+				}
+				continue
+			}
 		}
-		attr.Value = clientmodels.NewAttributeValue(val)
-		attributes = append(attributes, attr)
+
+		// When the value is an array (path doesn't end in nil but resolves to an array),
+		// also expand into indexed elements.
+		if arr, ok := val.([]any); ok {
+			displayName := claimDisplayName(batch, attrName)
+			for i, elem := range arr {
+				elemPath := append(append([]any{}, []any(claim.Path)...), i)
+				pk := clientmodels.ClaimPathKey(elemPath)
+				requestedKeys[pk] = struct{}{}
+				attributes = append(attributes, clientmodels.Attribute{
+					ClaimPath:   elemPath,
+					DisplayName: displayName,
+					Value:       clientmodels.NewAttributeValue(elem),
+				})
+			}
+			continue
+		}
+
+		// When the value is a nested object, flatten into individual attributes.
+		if obj, ok := val.(map[string]any); ok {
+			for key, elem := range obj {
+				elemPath := append(append([]any{}, []any(claim.Path)...), key)
+				pk := clientmodels.ClaimPathKey(elemPath)
+				requestedKeys[pk] = struct{}{}
+				attributes = append(attributes, clientmodels.Attribute{
+					ClaimPath:   elemPath,
+					DisplayName: claimDisplayName(batch, key),
+					Value:       clientmodels.NewAttributeValue(elem),
+				})
+			}
+			continue
+		}
+
+		// Scalar value — single attribute.
+		requestedKeys[pathKey] = struct{}{}
+		attributes = append(attributes, clientmodels.Attribute{
+			ClaimPath:   []any(claim.Path),
+			DisplayName: claimDisplayName(batch, attrName),
+			Value:       clientmodels.NewAttributeValue(val),
+		})
 	}
 
 	// Include non-SD claims: these are always visible in the JWT payload and
 	// will be shared regardless of which disclosures the user selects.
 	nonSdClaims := getNonSdClaimNames(batch, credStore)
 	for _, name := range nonSdClaims {
-		if _, alreadyIncluded := requestedKeys[name]; alreadyIncluded {
+		if _, alreadyIncluded := requestedKeys[clientmodels.ClaimPathKey([]any{name})]; alreadyIncluded {
 			continue
 		}
 		val, err := payload.GetClaimValue([]any{name})
@@ -238,7 +293,7 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 			continue
 		}
 		attr := clientmodels.Attribute{
-			Id:          name,
+			ClaimPath:   []any{name},
 			DisplayName: claimDisplayName(batch, name),
 		}
 		attr.Value = clientmodels.NewAttributeValue(val)
@@ -388,7 +443,7 @@ func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clien
 		}
 		attrName := dcql.ClaimsPathPointer(path).LastString()
 		attr := clientmodels.Attribute{
-			Id:          attrName,
+			ClaimPath:   path,
 			DisplayName: claimDisplayName(batch, attrName),
 		}
 		if val, err := payload.GetClaimValue(path); err == nil {

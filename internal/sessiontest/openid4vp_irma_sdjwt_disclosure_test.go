@@ -93,7 +93,7 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
 
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, 1, makeDisclosureChoice(choice, choice.Attributes[0].Id))
+	grantPermission(t, c, 1, makeDisclosureChoice(choice))
 
 	// expect end for issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -157,7 +157,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 2})
 
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, 1, makeDisclosureChoice(choice, choice.Attributes[0].Id))
+	grantPermission(t, c, 1, makeDisclosureChoice(choice))
 
 	// expect end for issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -219,7 +219,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, firstOption.CredentialId, "test.test.email")
 	require.Equal(t, firstOption.Attributes, []clientmodels.Attribute{
 		{
-			Id: "email",
+			ClaimPath: []any{"email"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Email address",
 				"nl": "E-mailadres",
@@ -234,7 +234,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, secondOption.CredentialId, "irma-demo.RU.studentCard")
 	require.Equal(t, secondOption.Attributes, []clientmodels.Attribute{
 		{
-			Id: "university",
+			ClaimPath: []any{"university"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
@@ -244,7 +244,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 			},
 		},
 		{
-			Id: "level",
+			ClaimPath: []any{"level"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
@@ -259,7 +259,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, secondStep.CredentialId, "irma-demo.MijnOverheid.fullName")
 	require.Equal(t, secondStep.Attributes, []clientmodels.Attribute{
 		{
-			Id: "firstname",
+			ClaimPath: []any{"firstname"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "First name",
 				"nl": "Voornaam",
@@ -269,7 +269,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 			},
 		},
 		{
-			Id: "familyname",
+			ClaimPath: []any{"familyname"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Family name",
 				"nl": "Achternaam",
@@ -319,7 +319,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, firstChoice.CredentialId, "irma-demo.RU.studentCard")
 	require.Equal(t, firstChoice.Attributes, []clientmodels.Attribute{
 		{
-			Id: "university",
+			ClaimPath: []any{"university"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
@@ -334,7 +334,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 			},
 		},
 		{
-			Id: "level",
+			ClaimPath: []any{"level"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
@@ -354,8 +354,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 
 	// give permission to disclose
 	grantPermission(t, c, session.Id,
-		makeDisclosureChoice(firstChoice, firstChoice.Attributes[0].Id, firstChoice.Attributes[1].Id),
-		makeDisclosureChoice(secondChoice, secondChoice.Attributes[0].Id, secondChoice.Attributes[1].Id),
+		makeDisclosureChoice(firstChoice),
+		makeDisclosureChoice(secondChoice),
 	)
 
 	// expect issuance session to be done
@@ -434,7 +434,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 	// grant permission with only the required credential; skip the optional one with an empty selection
 	sc := requiredChoice.OwnedOptions[0]
 	grantPermission(t, c, 1,
-		makeDisclosureChoice(sc, sc.Attributes[0].Id),
+		makeDisclosureChoice(sc),
 		clientmodels.DisclosureDisconSelection{},
 	)
 
@@ -479,7 +479,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	expectedUniversityValue := "University of the Arts"
 	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []clientmodels.Attribute{
 		{
-			Id: "university",
+			ClaimPath: []any{"university"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
@@ -490,7 +490,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 			},
 		},
 		{
-			Id: "level",
+			ClaimPath: []any{"level"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
@@ -531,7 +531,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 	// only university (which has a pre-defined value that doesn't match), not level
 	require.Len(t, wrongCred.Attributes, 1)
-	require.Equal(t, "university", wrongCred.Attributes[0].Id)
+	require.Equal(t, []any{"university"}, wrongCred.Attributes[0].ClaimPath)
 	require.Equal(t, "Some Other University", *wrongCred.Attributes[0].Value.String)
 	require.Equal(t, &expectedUniversityValue, wrongCred.Attributes[0].RequestedValue.String)
 
@@ -562,10 +562,10 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	// Find the requested attributes (university and level) and verify their RequestedValue
 	var universityAttr, levelAttr *clientmodels.Attribute
 	for i := range obtainable.Attributes {
-		switch obtainable.Attributes[i].Id {
-		case "university":
+		switch clientmodels.ClaimPathKey(obtainable.Attributes[i].ClaimPath) {
+		case pk("university"):
 			universityAttr = &obtainable.Attributes[i]
-		case "level":
+		case pk("level"):
 			levelAttr = &obtainable.Attributes[i]
 		}
 	}
@@ -589,7 +589,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	// grant permission to disclose the credential with the correct value
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, 1,
-		makeDisclosureChoice(choice, choice.Attributes[0].Id, choice.Attributes[1].Id),
+		makeDisclosureChoice(choice),
 	)
 
 	session = awaitSessionState(t, sessionHandler)
@@ -650,7 +650,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, firstOption.CredentialId, "test.test.email")
 	require.Equal(t, firstOption.Attributes, []clientmodels.Attribute{
 		{
-			Id: "email",
+			ClaimPath: []any{"email"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Email address",
 				"nl": "E-mailadres",
@@ -665,7 +665,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, secondOption.CredentialId, "irma-demo.RU.studentCard")
 	require.Equal(t, secondOption.Attributes, []clientmodels.Attribute{
 		{
-			Id: "university",
+			ClaimPath: []any{"university"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
@@ -675,7 +675,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 			},
 		},
 		{
-			Id: "level",
+			ClaimPath: []any{"level"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
@@ -690,7 +690,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, secondStep.CredentialId, "irma-demo.MijnOverheid.fullName")
 	require.Equal(t, secondStep.Attributes, []clientmodels.Attribute{
 		{
-			Id: "firstname",
+			ClaimPath: []any{"firstname"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "First name",
 				"nl": "Voornaam",
@@ -700,7 +700,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 			},
 		},
 		{
-			Id: "familyname",
+			ClaimPath: []any{"familyname"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Family name",
 				"nl": "Achternaam",
@@ -750,7 +750,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, firstChoice.CredentialId, "irma-demo.RU.studentCard")
 	require.Equal(t, firstChoice.Attributes, []clientmodels.Attribute{
 		{
-			Id: "university",
+			ClaimPath: []any{"university"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
@@ -765,7 +765,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 			},
 		},
 		{
-			Id: "level",
+			ClaimPath: []any{"level"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
@@ -785,8 +785,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 
 	// give permission to disclose
 	grantPermission(t, c, session.Id,
-		makeDisclosureChoice(firstChoice, firstChoice.Attributes[0].Id, firstChoice.Attributes[1].Id),
-		makeDisclosureChoice(secondChoice, secondChoice.Attributes[0].Id, secondChoice.Attributes[1].Id),
+		makeDisclosureChoice(firstChoice),
+		makeDisclosureChoice(secondChoice),
 	)
 
 	// expect issuance session to be done
@@ -844,7 +844,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	require.Equal(t, "irma-demo.RU.studentCard", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
 	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []clientmodels.Attribute{
 		{
-			Id: "university",
+			ClaimPath: []any{"university"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
@@ -854,7 +854,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 			},
 		},
 		{
-			Id: "level",
+			ClaimPath: []any{"level"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
@@ -887,7 +887,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	require.Equal(t, "irma-demo.RU.studentCard", choice.CredentialId)
 	require.Equal(t, choice.Attributes, []clientmodels.Attribute{
 		{
-			Id: "university",
+			ClaimPath: []any{"university"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
@@ -902,7 +902,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 			},
 		},
 		{
-			Id: "level",
+			ClaimPath: []any{"level"},
 			DisplayName: clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
@@ -919,7 +919,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	})
 
 	grantPermission(t, c, 1,
-		makeDisclosureChoice(choice, choice.Attributes[0].Id, choice.Attributes[1].Id),
+		makeDisclosureChoice(choice),
 	)
 
 	session = awaitSessionState(t, sessionHandler)
@@ -982,7 +982,7 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	pick := plan.DisclosureChoicesOverview[0]
 	require.Len(t, pick.OwnedOptions, 3, "should have 3 owned credential instances")
 
-	expectedOrder := []string{"university", "studentCardNumber", "studentID", "level"}
+	expectedOrder := []string{pk("university"), pk("studentCardNumber"), pk("studentID"), pk("level")}
 
 	for i, option := range pick.OwnedOptions {
 		require.Equal(t, "irma-demo.RU.studentCard", option.CredentialId)
@@ -990,7 +990,7 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 
 		actualOrder := make([]string, len(option.Attributes))
 		for j, attr := range option.Attributes {
-			actualOrder[j] = attr.Id
+			actualOrder[j] = clientmodels.ClaimPathKey(attr.ClaimPath)
 		}
 		require.Equal(t, expectedOrder, actualOrder,
 			"option %d: attributes should be in scheme-defined order", i)
@@ -1009,7 +1009,7 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	// Disclose the first option and verify the result
 	chosen := pick.OwnedOptions[0]
 	grantPermission(t, c, session.Id,
-		makeDisclosureChoice(chosen, "university", "studentCardNumber", "studentID", "level"),
+		makeDisclosureChoice(chosen),
 	)
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 4, clientmodels.Type_Disclosure, clientmodels.Status_Success)

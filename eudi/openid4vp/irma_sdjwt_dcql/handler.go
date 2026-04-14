@@ -307,7 +307,7 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 		if !ok {
 			// If the attribute type is not in the schema, create a basic attribute
 			attr := clientmodels.Attribute{
-				Id:          match.attributeName,
+				ClaimPath:   []any{match.attributeName},
 				DisplayName: clientmodels.TranslatedString{"en": match.attributeName},
 			}
 			if rawVal, exists := metadata.Attributes[match.attributeName]; exists {
@@ -321,7 +321,7 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 
 		description := clientmodels.TranslatedString(at.Description)
 		attr := clientmodels.Attribute{
-			Id:          at.ID,
+			ClaimPath:   []any{at.ID},
 			DisplayName: clientmodels.TranslatedString(at.Name),
 			Description: &description,
 		}
@@ -386,7 +386,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 	for _, claim := range claimsToShow {
 		attrName := claim.Path.LastString()
 		attr := clientmodels.Attribute{
-			Id:          attrName,
+			ClaimPath:   []any(claim.Path),
 			DisplayName: clientmodels.TranslatedString{"en": attrName},
 		}
 
@@ -451,7 +451,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 	var attributes []clientmodels.Attribute
 	for _, attrName := range disclosedAttributeNames {
 		attr := clientmodels.Attribute{
-			Id:          attrName,
+			ClaimPath:   []any{attrName},
 			DisplayName: clientmodels.TranslatedString{"en": attrName},
 		}
 

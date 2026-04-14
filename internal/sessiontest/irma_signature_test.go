@@ -74,7 +74,7 @@ func testSignatureRequest(
 	require.NotNil(t, plan.DisclosureChoicesOverview)
 
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(choice, choice.Attributes[0].Id))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(choice))
 
 	// finish email issuance session
 	session = awaitSessionState(t, sessionHandler)

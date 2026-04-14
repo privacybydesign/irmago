@@ -57,7 +57,7 @@ func testSatisfiableSingleCredentialSingleOption(t *testing.T) {
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
 	assert.Equal(t, "test.test.email", plan.DisclosureChoicesOverview[0].OwnedOptions[0].CredentialId)
-	assert.Equal(t, "email", plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes[0].Id)
+	assert.Equal(t, "email", plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes[0].ClaimPath[0].(string))
 }
 
 func testSatisfiableSingleCredentialMultipleInstances(t *testing.T) {
@@ -476,7 +476,7 @@ func testClaimSetsOneOptionSatisfiable(t *testing.T) {
 	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	assert.Equal(t, infoGmail.Hash, owned.Hash)
 	require.Len(t, owned.Attributes, 1)
-	assert.Equal(t, "domain", owned.Attributes[0].Id)
+	assert.Equal(t, "domain", owned.Attributes[0].ClaimPath[0].(string))
 }
 
 func testClaimSetsBothSatisfiablePicksFirst(t *testing.T) {
@@ -501,7 +501,7 @@ func testClaimSetsBothSatisfiablePicksFirst(t *testing.T) {
 	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	assert.Equal(t, infoGmail.Hash, owned.Hash)
 	require.Len(t, owned.Attributes, 1)
-	assert.Equal(t, "email", owned.Attributes[0].Id) // first claim_set wins
+	assert.Equal(t, "email", owned.Attributes[0].ClaimPath[0].(string)) // first claim_set wins
 }
 
 func testClaimSetsBothSatisfiableByDifferentInstances(t *testing.T) {
@@ -527,11 +527,11 @@ func testClaimSetsBothSatisfiableByDifferentInstances(t *testing.T) {
 
 	gmail := byHash[infoGmail.Hash]
 	require.Len(t, gmail.Attributes, 1)
-	assert.Equal(t, "email", gmail.Attributes[0].Id)
+	assert.Equal(t, "email", gmail.Attributes[0].ClaimPath[0].(string))
 
 	hotmail := byHash[infoHotmail.Hash]
 	require.Len(t, hotmail.Attributes, 1)
-	assert.Equal(t, "domain", hotmail.Attributes[0].Id)
+	assert.Equal(t, "domain", hotmail.Attributes[0].ClaimPath[0].(string))
 }
 
 func testClaimSetsNotSatisfiable(t *testing.T) {

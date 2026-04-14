@@ -556,7 +556,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 				rawVal := irma.TranslatedString(attributeValues[atType.Index])
 				description := clientmodels.TranslatedString(atType.Description)
 				attributes = append(attributes, clientmodels.Attribute{
-					Id:          atType.ID,
+					ClaimPath:   []any{atType.ID},
 					DisplayName: clientmodels.TranslatedString(atType.Name),
 					Description: &description,
 					Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
@@ -625,7 +625,7 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 			rawVal := irma.TranslatedString(attr.Value)
 			description := clientmodels.TranslatedString(atType.Description)
 			attributes = append(attributes, clientmodels.Attribute{
-				Id:          atType.ID,
+				ClaimPath:   []any{atType.ID},
 				DisplayName: clientmodels.TranslatedString(atType.Name),
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
@@ -671,7 +671,7 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 			rawVal := irma.TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
 			description := clientmodels.TranslatedString(atType.Description)
 			attributes = append(attributes, clientmodels.Attribute{
-				Id:          atType.ID,
+				ClaimPath:   []any{atType.ID},
 				DisplayName: clientmodels.TranslatedString(atType.Name),
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
@@ -722,7 +722,7 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			irmaVal := irma.NewTranslatedString(&v)
 			description := clientmodels.TranslatedString(atType.Description)
 			attributes = append(attributes, clientmodels.Attribute{
-				Id:          atType.ID,
+				ClaimPath:   []any{atType.ID},
 				DisplayName: clientmodels.TranslatedString(atType.Name),
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &irmaVal),

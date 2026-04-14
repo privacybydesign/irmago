@@ -44,6 +44,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("no claims requested shares only non-sd claims", testNoClaimsRequestedSharesOnlyNonSdClaims)
 	t.Run("duplicate claims ignored", testDuplicateClaimsIgnored)
 	t.Run("duplicate nested claims ignored", testDuplicateNestedClaimsIgnored)
+	t.Run("requireDisclosurePlan only checks first option", testRequireDisclosurePlanOnlyChecksFirstOption)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
@@ -91,15 +92,11 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 
 	// Step 4: Verify the disclosure plan and grant permission.
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Name: "", Attributes: map[string]expectedPlanAttribute{"given_name": {Value: "Test", DisplayName: "Given Name"}, "email": {Value: "test@example.com", DisplayName: "Email"}}},
+		{Name: "", Attributes: map[string]expectedPlanAttribute{pk("given_name"): {Value: "Test", DisplayName: "Given Name"}, pk("email"): {Value: "test@example.com", DisplayName: "Email"}}},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -108,10 +105,10 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "test-credential", map[string]string{
-		"given_name": "Test",
-		"email":      "test@example.com",
-	})
+	requireVerifierReceivedClaims(t, result, "test-credential",
+		claim([]any{"given_name"}, "Test"),
+		claim([]any{"email"}, "test@example.com"),
+	)
 }
 
 // testDiscloseCredentialWithMultipleAttributes issues an EmailCredential and
@@ -153,15 +150,11 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"email": {Value: "alice@example.com", DisplayName: "Email"}, "domain": {Value: "example.com", DisplayName: "Domain"}}},
+		{Attributes: map[string]expectedPlanAttribute{pk("email"): {Value: "alice@example.com", DisplayName: "Email"}, pk("domain"): {Value: "example.com", DisplayName: "Domain"}}},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -169,10 +162,10 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{
-		"email":  "alice@example.com",
-		"domain": "example.com",
-	})
+	requireVerifierReceivedClaims(t, result, "email-cred",
+		claim([]any{"email"}, "alice@example.com"),
+		claim([]any{"domain"}, "example.com"),
+	)
 }
 
 // testChoiceBetweenTwoCredentialTypes issues both an EmailCredential and a
@@ -242,23 +235,17 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 	// Verify that each option has the expected attribute values.
 	for _, opt := range pickOne.OwnedOptions {
 		attrMap := attributeMap(opt.Attributes)
-		if _, hasEmail := attrMap["email"]; hasEmail {
-			require.NotNil(t, attrMap["email"].Value)
-			require.Equal(t, "bob@example.com", *attrMap["email"].Value.String)
+		if _, hasEmail := attrMap[pk("email")]; hasEmail {
+			requireAttr(t, attrMap, []any{"email"}, "bob@example.com")
 		}
-		if _, hasPhone := attrMap["phone_number"]; hasPhone {
-			require.NotNil(t, attrMap["phone_number"].Value)
-			require.Equal(t, "+31612345678", *attrMap["phone_number"].Value.String)
+		if _, hasPhone := attrMap[pk("phone_number")]; hasPhone {
+			requireAttr(t, attrMap, []any{"phone_number"}, "+31612345678")
 		}
 	}
 
 	// Pick the first option (whichever it is) and disclose.
 	chosen := pickOne.OwnedOptions[0]
-	attrIds := make([]string, len(chosen.Attributes))
-	for i, attr := range chosen.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -269,10 +256,10 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 
 	// Verify the verifier received attributes for the chosen credential.
 	chosenAttrs := attributeMap(chosen.Attributes)
-	if _, hasEmail := chosenAttrs["email"]; hasEmail {
-		requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{"email": "bob@example.com"})
+	if _, hasEmail := chosenAttrs[pk("email")]; hasEmail {
+		requireVerifierReceivedClaims(t, result, "email-cred", claim([]any{"email"}, "bob@example.com"))
 	} else {
-		requireVerifierReceivedAttributes(t, result, "phone-cred", map[string]string{"phone_number": "+31612345678"})
+		requireVerifierReceivedClaims(t, result, "phone-cred", claim([]any{"phone_number"}, "+31612345678"))
 	}
 }
 
@@ -331,18 +318,14 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	// Two separate disclosure choices, one for each required credential.
 	// The order depends on the DCQL query order, but both should have matching credentials.
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"email": {Value: "carol@example.com", DisplayName: "Email"}}},
-		{Attributes: map[string]expectedPlanAttribute{"phone_number": {Value: "+31687654321", DisplayName: "Phone Number"}}},
+		{Attributes: map[string]expectedPlanAttribute{pk("email"): {Value: "carol@example.com", DisplayName: "Email"}}},
+		{Attributes: map[string]expectedPlanAttribute{pk("phone_number"): {Value: "+31687654321", DisplayName: "Phone Number"}}},
 	})
 
 	choices := make([]clientmodels.DisclosureDisconSelection, 2)
 	for i, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
 		cred := pickOne.OwnedOptions[0]
-		attrIds := make([]string, len(cred.Attributes))
-		for j, attr := range cred.Attributes {
-			attrIds[j] = attr.Id
-		}
-		choices[i] = makeDisclosureChoice(cred, attrIds...)
+		choices[i] = makeDisclosureChoice(cred)
 	}
 	grantPermission(t, c, session.Id, choices...)
 
@@ -352,8 +335,8 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{"email": "carol@example.com"})
-	requireVerifierReceivedAttributes(t, result, "phone-cred", map[string]string{"phone_number": "+31687654321"})
+	requireVerifierReceivedClaims(t, result, "email-cred", claim([]any{"email"}, "carol@example.com"))
+	requireVerifierReceivedClaims(t, result, "phone-cred", claim([]any{"phone_number"}, "+31687654321"))
 }
 
 // testOptionalCredential issues only an EmailCredential. The DCQL query has
@@ -408,19 +391,15 @@ func testOptionalCredential(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"email": {Value: "dave@example.com", DisplayName: "Email"}}},
+		{Attributes: map[string]expectedPlanAttribute{pk("email"): {Value: "dave@example.com", DisplayName: "Email"}}},
 		{Attributes: map[string]expectedPlanAttribute{}}, // optional phone (may have no owned options)
 	})
 
 	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(emailCred.Attributes))
-	for i, attr := range emailCred.Attributes {
-		attrIds[i] = attr.Id
-	}
 
 	// Grant permission with the required email credential; skip the optional phone with an empty selection.
 	grantPermission(t, c, session.Id,
-		makeDisclosureChoice(emailCred, attrIds...),
+		makeDisclosureChoice(emailCred),
 		clientmodels.DisclosureDisconSelection{},
 	)
 
@@ -430,7 +409,7 @@ func testOptionalCredential(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{"email": "dave@example.com"})
+	requireVerifierReceivedClaims(t, result, "email-cred", claim([]any{"email"}, "dave@example.com"))
 }
 
 // testCredentialWithSpecificClaimValue issues two EmailCredentials with
@@ -487,7 +466,7 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 	var matchingCred *clientmodels.SelectableCredentialInstance
 	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
 		attrMap := attributeMap(opt.Attributes)
-		if attr, ok := attrMap["domain"]; ok && attr.Value != nil &&
+		if attr, ok := attrMap[pk("domain")]; ok && attr.Value != nil &&
 			attr.Value.String != nil && *attr.Value.String == "example.com" {
 			matchingCred = opt
 			break
@@ -496,14 +475,10 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 	require.NotNil(t, matchingCred, "should find a credential with domain example.com")
 
 	attrMap := attributeMap(matchingCred.Attributes)
-	require.Equal(t, "eve@example.com", *attrMap["email"].Value.String)
-	require.Equal(t, "example.com", *attrMap["domain"].Value.String)
+	requireAttr(t, attrMap, []any{"email"}, "eve@example.com")
+	requireAttr(t, attrMap, []any{"domain"}, "example.com")
 
-	attrIds := make([]string, len(matchingCred.Attributes))
-	for i, attr := range matchingCred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(matchingCred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(matchingCred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -511,10 +486,10 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{
-		"email":  "eve@example.com",
-		"domain": "example.com",
-	})
+	requireVerifierReceivedClaims(t, result, "email-cred",
+		claim([]any{"email"}, "eve@example.com"),
+		claim([]any{"domain"}, "example.com"),
+	)
 }
 
 // testDiscloseNestedClaims issues a HouseCredential with a nested address object
@@ -561,15 +536,11 @@ func testDiscloseNestedClaims(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"owner_name": {Value: "Frank", DisplayName: "Owner Name"}, "street": {Value: "10 Downing St"}, "city": {Value: "London"}}},
+		{Attributes: map[string]expectedPlanAttribute{pk("owner_name"): {Value: "Frank", DisplayName: "Owner Name"}, pk("address", "street"): {Value: "10 Downing St"}, pk("address", "city"): {Value: "London"}}},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -577,11 +548,11 @@ func testDiscloseNestedClaims(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	// The veramo-verifier only extracts top-level SD claims; nested claims
-	// (address.street, address.city) are not extracted by the verifier.
-	requireVerifierReceivedAttributes(t, result, "house-cred", map[string]string{
-		"owner_name": "Frank",
-	})
+	requireVerifierReceivedClaims(t, result, "house-cred",
+		claim([]any{"owner_name"}, "Frank"),
+		claim([]any{"address", "street"}, "10 Downing St"),
+		claim([]any{"address", "city"}, "London"),
+	)
 }
 
 // testDiscloseCredentialWithArrayValues issues a StudentCardCredential that
@@ -623,23 +594,15 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"university": {Value: "TU Delft", DisplayName: "University"}, "courses": {Type: clientmodels.AttributeType_Array, DisplayName: "Courses"}}},
-	})
-
-	// Verify the array contains all three course values.
+	// Arrays are expanded into individual elements with indexed paths.
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	coursesAttr := attributeMap(cred.Attributes)["courses"]
-	require.NotNil(t, coursesAttr.Value)
-	require.Len(t, coursesAttr.Value.Array, 3)
-	require.Equal(t, "Algorithms", *coursesAttr.Value.Array[0].String)
-	require.Equal(t, "Databases", *coursesAttr.Value.Array[1].String)
-	require.Equal(t, "Networks", *coursesAttr.Value.Array[2].String)
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	am := attributeMap(cred.Attributes)
+	requireAttr(t, am, []any{"university"}, "TU Delft")
+	requireAttr(t, am, []any{"courses", 0}, "Algorithms")
+	requireAttr(t, am, []any{"courses", 1}, "Databases")
+	requireAttr(t, am, []any{"courses", 2}, "Networks")
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -647,9 +610,10 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "student-cred", map[string]string{
-		"university": "TU Delft",
-	})
+	requireVerifierReceivedClaims(t, result, "student-cred",
+		claim([]any{"university"}, "TU Delft"),
+		claim([]any{"courses"}, "[Algorithms Databases Networks]"),
+	)
 }
 
 // testDiscloseSpecificArrayElement issues a StudentCardCredential with a courses
@@ -692,15 +656,11 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 
 	// Path ["courses", 1] resolves to a specific element ("Databases"), not the whole array.
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"courses": {Value: "Databases", Type: clientmodels.AttributeType_String, DisplayName: "Courses"}}},
+		{Attributes: map[string]expectedPlanAttribute{pk("courses", 1): {Value: "Databases", Type: clientmodels.AttributeType_String, DisplayName: "Courses"}}},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -708,6 +668,11 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+	// The verifier receives the full courses array even when a specific element
+	// was requested, because the SD-JWT disclosure reveals the whole array.
+	requireVerifierReceivedClaims(t, result, "student-cred",
+		claim([]any{"courses"}, "[Algorithms Databases Networks]"),
+	)
 }
 
 // testDiscloseAllArrayElementsWithNullPath issues a StudentCardCredential with
@@ -748,24 +713,14 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{"courses": {Type: clientmodels.AttributeType_Array, DisplayName: "Courses"}}},
-	})
-
-	// Verify the full array is present when requesting all elements via null path.
+	// Null path expands into individual elements with indexed paths.
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	coursesAttr := attributeMap(cred.Attributes)["courses"]
-	require.NotNil(t, coursesAttr.Value)
-	require.Len(t, coursesAttr.Value.Array, 3)
-	require.Equal(t, "Algorithms", *coursesAttr.Value.Array[0].String)
-	require.Equal(t, "Databases", *coursesAttr.Value.Array[1].String)
-	require.Equal(t, "Networks", *coursesAttr.Value.Array[2].String)
+	am := attributeMap(cred.Attributes)
+	requireAttr(t, am, []any{"courses", 0}, "Algorithms")
+	requireAttr(t, am, []any{"courses", 1}, "Databases")
+	requireAttr(t, am, []any{"courses", 2}, "Networks")
 
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -773,6 +728,9 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
+	requireVerifierReceivedClaims(t, result, "student-cred",
+		claim([]any{"courses"}, "[Algorithms Databases Networks]"),
+	)
 }
 
 // testNonSdClaimsShownInDisclosurePlan issues a MembershipCredential where
@@ -818,17 +776,13 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 	// member_since (non-SD claim that is always shared).
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
 		{Attributes: map[string]expectedPlanAttribute{
-			"member_name":  {Value: "Grace", DisplayName: "Member Name"},
-			"member_since": {Value: "2020-01-15", DisplayName: "Member Since"},
+			pk("member_name"):  {Value: "Grace", DisplayName: "Member Name"},
+			pk("member_since"): {Value: "2020-01-15", DisplayName: "Member Since"},
 		}},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -836,9 +790,10 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "membership-cred", map[string]string{
-		"member_name": "Grace",
-	})
+	requireVerifierReceivedClaims(t, result, "membership-cred",
+		claim([]any{"member_name"}, "Grace"),
+		claim([]any{"member_since"}, "2020-01-15"),
+	)
 }
 
 // testIssueManyCredentialsAndDiscloseSubset issues four different SD-JWT
@@ -912,12 +867,12 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	// Exactly two disclosure choices: one for email, one for student card.
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
 		{Attributes: map[string]expectedPlanAttribute{
-			"email":  {Value: "multi@example.com", DisplayName: "Email"},
-			"domain": {Value: "example.com", DisplayName: "Domain"},
+			pk("email"):  {Value: "multi@example.com", DisplayName: "Email"},
+			pk("domain"): {Value: "example.com", DisplayName: "Domain"},
 		}},
 		{Attributes: map[string]expectedPlanAttribute{
-			"university": {Value: "Radboud University", DisplayName: "University"},
-			"student_id": {Value: "s1234567", DisplayName: "Student ID"},
+			pk("university"): {Value: "Radboud University", DisplayName: "University"},
+			pk("student_id"): {Value: "s1234567", DisplayName: "Student ID"},
 		}},
 	})
 
@@ -925,11 +880,7 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	choices := make([]clientmodels.DisclosureDisconSelection, 2)
 	for i, pickOne := range session.DisclosurePlan.DisclosureChoicesOverview {
 		cred := pickOne.OwnedOptions[0]
-		attrIds := make([]string, len(cred.Attributes))
-		for j, attr := range cred.Attributes {
-			attrIds[j] = attr.Id
-		}
-		choices[i] = makeDisclosureChoice(cred, attrIds...)
+		choices[i] = makeDisclosureChoice(cred)
 	}
 	grantPermission(t, c, session.Id, choices...)
 
@@ -940,14 +891,14 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{
-		"email":  "multi@example.com",
-		"domain": "example.com",
-	})
-	requireVerifierReceivedAttributes(t, result, "student-cred", map[string]string{
-		"university": "Radboud University",
-		"student_id": "s1234567",
-	})
+	requireVerifierReceivedClaims(t, result, "email-cred",
+		claim([]any{"email"}, "multi@example.com"),
+		claim([]any{"domain"}, "example.com"),
+	)
+	requireVerifierReceivedClaims(t, result, "student-cred",
+		claim([]any{"university"}, "Radboud University"),
+		claim([]any{"student_id"}, "s1234567"),
+	)
 
 	// The verifier should NOT have received Phone or House credentials.
 	require.NotContains(t, result.Result.Credentials, "phone-cred",
@@ -1009,19 +960,15 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
 		{Attributes: map[string]expectedPlanAttribute{
-			"given_name":              {Value: "Jan", DisplayName: "Given name"},
-			"family_name":             {Value: "de Vries", DisplayName: "Family name"},
-			"email":                   {Value: "jan.devries@university.nl", DisplayName: "E-mail"},
-			"schac_home_organization": {Value: "university.nl", DisplayName: "Organization"},
+			pk("given_name"):              {Value: "Jan", DisplayName: "Given name"},
+			pk("family_name"):             {Value: "de Vries", DisplayName: "Family name"},
+			pk("email"):                   {Value: "jan.devries@university.nl", DisplayName: "E-mail"},
+			pk("schac_home_organization"): {Value: "university.nl", DisplayName: "Organization"},
 		}},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -1029,12 +976,13 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "eduid-credential", map[string]string{
-		"given_name":              "Jan",
-		"family_name":             "de Vries",
-		"email":                   "jan.devries@university.nl",
-		"schac_home_organization": "university.nl",
-	})
+	requireVerifierReceivedClaims(t, result, "eduid-credential",
+		claim([]any{"given_name"}, "Jan"),
+		claim([]any{"family_name"}, "de Vries"),
+		claim([]any{"email"}, "jan.devries@university.nl"),
+		claim([]any{"schac_home_organization"}, "university.nl"),
+		claim([]any{"eduperson_assurance"}, "https://eduid.nl/assurance/low"), // non-SD, always shared
+	)
 }
 
 // testClaimSetsPicksFirstSatisfiableSet issues an EmailCredential and uses a
@@ -1088,15 +1036,9 @@ func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 	// The first claim set ["em"] should be selected, so only email is a requested
 	// attribute. Domain may appear as a non-SD claim but the primary requested
 	// attribute should be email.
-	_, hasEmail := attrMap["email"]
-	require.True(t, hasEmail, "email should be in the disclosure plan")
-	require.Equal(t, "claimsets@example.com", *attrMap["email"].Value.String)
+	requireAttr(t, attrMap, []any{"email"}, "claimsets@example.com")
 
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -1104,9 +1046,9 @@ func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "email-cred", map[string]string{
-		"email": "claimsets@example.com",
-	})
+	requireVerifierReceivedClaims(t, result, "email-cred",
+		claim([]any{"email"}, "claimsets@example.com"),
+	)
 }
 
 // testMultipleVctValuesMatchesAcrossTypes issues an EmailCredential and a
@@ -1165,7 +1107,7 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 	var emailCred *clientmodels.SelectableCredentialInstance
 	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
 		attrMap := attributeMap(opt.Attributes)
-		if attr, ok := attrMap["email"]; ok && attr.Value != nil &&
+		if attr, ok := attrMap[pk("email")]; ok && attr.Value != nil &&
 			attr.Value.String != nil && *attr.Value.String == "vct@example.com" {
 			emailCred = opt
 			break
@@ -1173,11 +1115,7 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 	}
 	require.NotNil(t, emailCred, "should find the email credential as a candidate")
 
-	attrIds := make([]string, len(emailCred.Attributes))
-	for i, attr := range emailCred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -1185,9 +1123,9 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
-	requireVerifierReceivedAttributes(t, result, "contact-cred", map[string]string{
-		"email": "vct@example.com",
-	})
+	requireVerifierReceivedClaims(t, result, "contact-cred",
+		claim([]any{"email"}, "vct@example.com"),
+	)
 }
 
 // testBooleanClaimValueConstraint issues two eduID credentials with different
@@ -1268,28 +1206,23 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	// All matching credentials should have is_student=true.
 	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
 		attrMap := attributeMap(opt.Attributes)
-		attr, ok := attrMap["given_name"]
-		require.True(t, ok)
 		// The matching credential should be "Student", not "Staff".
-		require.Equal(t, "Student", *attr.Value.String,
-			"only the credential with is_student=true should match the value constraint")
+		requireAttr(t, attrMap, []any{"given_name"}, "Student")
 	}
 
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
-	requireVerifierReceivedAttributes(t, result, "eduid-student", map[string]string{
-		"given_name": "Student",
-	})
+	requireVerifierReceivedClaims(t, result, "eduid-student",
+		claim([]any{"given_name"}, "Student"),
+		claim([]any{"is_student"}, "true"),
+		claim([]any{"eduperson_assurance"}, "https://eduid.nl/assurance/low"), // non-SD, always shared
+	)
 }
 
 // testMultipleCredentialsForSameQuery issues two email credentials, then creates
@@ -1345,7 +1278,7 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	for _, opt := range pickOne.OwnedOptions {
 		attrIds := make([][]any, len(opt.Attributes))
 		for i, attr := range opt.Attributes {
-			attrIds[i] = []any{attr.Id}
+			attrIds[i] = attr.ClaimPath
 		}
 		selectedCreds = append(selectedCreds, clientmodels.SelectedCredential{
 			CredentialId:   opt.CredentialId,
@@ -1426,16 +1359,12 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 	// "member_since" is non-SD, while "member_name" and "membership_type" are SD.
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	attrMap := attributeMap(cred.Attributes)
-	require.Contains(t, attrMap, "member_since", "non-SD claim member_since should be in the disclosure plan")
-	require.NotContains(t, attrMap, "member_name", "SD claim member_name should NOT be in the plan when claims is absent")
-	require.NotContains(t, attrMap, "membership_type", "SD claim membership_type should NOT be in the plan when claims is absent")
+	require.Contains(t, attrMap, pk("member_since"), "non-SD claim member_since should be in the disclosure plan")
+	requireNoAttr(t, attrMap, []any{"member_name"})
+	requireNoAttr(t, attrMap, []any{"membership_type"})
 
 	// Disclose with whatever attributes are available (only non-SD).
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -1487,35 +1416,39 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 	require.Len(t, plan.DisclosureChoicesOverview, 1)
 	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
 
+	requireDisclosurePlan(t, plan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{
+			pk("email"):  {Value: "dup@example.com"},
+			pk("domain"): {Value: "example.com"},
+		}},
+	})
+
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	attrMap := attributeMap(cred.Attributes)
 
 	// "email" should appear exactly once despite being listed twice in the query.
 	emailCount := 0
 	for _, attr := range cred.Attributes {
-		if attr.Id == "email" {
+		if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("email") {
 			emailCount++
 		}
 	}
 	require.Equal(t, 1, emailCount, "duplicate email claim should be deduplicated")
-	require.Equal(t, "dup@example.com", *attrMap["email"].Value.String)
-	require.Equal(t, "example.com", *attrMap["domain"].Value.String)
+	requireAttr(t, attrMap, []any{"email"}, "dup@example.com")
+	requireAttr(t, attrMap, []any{"domain"}, "example.com")
 
 	// Disclose and verify the session completes.
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
-	requireVerifierReceivedAttributes(t, result, "email-dup", map[string]string{
-		"email": "dup@example.com",
-	})
+	requireVerifierReceivedClaims(t, result, "email-dup",
+		claim([]any{"email"}, "dup@example.com"),
+		claim([]any{"domain"}, "example.com"),
+	)
 }
 
 // testDuplicateNestedClaimsIgnored issues a HouseCredential with nested address
@@ -1566,16 +1499,24 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	require.Len(t, plan.DisclosureChoicesOverview, 1)
 	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
 
+	requireDisclosurePlan(t, plan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{
+			pk("owner_name"):        {Value: "Duplicate Tester"},
+			pk("address", "street"): {Value: "Kalverstraat 1"},
+			pk("address", "city"):   {Value: "Amsterdam"},
+		}},
+	})
+
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 
 	// Count occurrences of "street" — should be exactly 1 despite the duplicate.
 	streetCount := 0
 	cityCount := 0
 	for _, attr := range cred.Attributes {
-		if attr.Id == "street" {
+		if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("address", "street") {
 			streetCount++
 		}
-		if attr.Id == "city" {
+		if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("address", "city") {
 			cityCount++
 		}
 	}
@@ -1583,22 +1524,94 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	require.Equal(t, 1, cityCount, "['address','city'] should appear once")
 
 	attrMap := attributeMap(cred.Attributes)
-	require.Equal(t, "Duplicate Tester", *attrMap["owner_name"].Value.String)
-	require.Equal(t, "Kalverstraat 1", *attrMap["street"].Value.String)
-	require.Equal(t, "Amsterdam", *attrMap["city"].Value.String)
+	requireAttr(t, attrMap, []any{"owner_name"}, "Duplicate Tester")
+	requireAttr(t, attrMap, []any{"address", "street"}, "Kalverstraat 1")
+	requireAttr(t, attrMap, []any{"address", "city"}, "Amsterdam")
 
 	// Disclose and verify success.
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedClaims(t, result, "house-dup",
+		claim([]any{"owner_name"}, "Duplicate Tester"),
+		claim([]any{"address", "street"}, "Kalverstraat 1"),
+		claim([]any{"address", "city"}, "Amsterdam"),
+	)
+}
+
+// testRequireDisclosurePlanOnlyChecksFirstOption demonstrates that
+// requireDisclosurePlan only validates OwnedOptions[0] and ignores the rest.
+// This test issues two email credentials, but requireDisclosurePlan only sees
+// the first one — it doesn't verify the count or the second credential.
+func testRequireDisclosurePlanOnlyChecksFirstOption(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue two email credentials with different addresses.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "alice@example.com",
+		"domain": "example.com"
+	}`)
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "bob@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+
+	// There should be 2 owned options (alice and bob).
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 2,
+		"both email credentials should be candidates")
+
+	// BUG: requireDisclosurePlan only checks OwnedOptions[0] (alice).
+	// Asserting bob's email value should fail because the helper never looks at OwnedOptions[1].
+	requireDisclosurePlan(t, plan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{
+			pk("email"): {Value: "bob@example.com"},
+		}},
+	})
+
+	// Disclose the first option and verify the verifier received data.
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the response")
+	requireVerifierReceivedClaims(t, result, "email-cred",
+		claim([]any{"email"}, "alice@example.com"),
+	)
 }
 
 // testDiscloseWithoutHolderBinding issues a credential, then creates a DCQL
@@ -1637,12 +1650,19 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+
+	requireDisclosurePlan(t, plan, []expectedPlanCredential{
+		{Attributes: map[string]expectedPlanAttribute{
+			pk("email"): {Value: "nokb@example.com"},
+		}},
+	})
+
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
@@ -1652,6 +1672,9 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should succeed without holder binding")
+	requireVerifierReceivedClaims(t, result, "email-no-kb",
+		claim([]any{"email"}, "nokb@example.com"),
+	)
 }
 
 // testVerifierDisplayName verifies that the verifier display name shown to the
@@ -1694,6 +1717,18 @@ func testVerifierDisplayName(t *testing.T) {
 		"verifier display name should come from client_name, not the raw DID")
 	require.False(t, session.Requestor.Verified,
 		"DID-based verifier should not be marked as verified (not verified by Yivi)")
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedClaims(t, result, "email-cred",
+		claim([]any{"email"}, "display@example.com"),
+	)
 }
 
 // testEudiVerifierRequestingVeramoCredentialFails issues a credential via the
@@ -1797,11 +1832,7 @@ func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
 
 	// Grant permission to disclose the IRMA credential to the veramo verifier.
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrIds := make([]string, len(cred.Attributes))
-	for i, attr := range cred.Attributes {
-		attrIds[i] = attr.Id
-	}
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
 
@@ -1895,21 +1926,90 @@ type veramoMessage struct {
 	Message string `json:"message"`
 }
 
-// requireVerifierReceivedAttributes asserts that the veramo verifier received
-// the expected attribute values for a given credential query ID.
-// When the verifier fully verified the credential (status VERIFIED), the claim
-// values are checked. Otherwise only the query ID presence is asserted.
-func requireVerifierReceivedAttributes(t *testing.T, result veramoCheckResult, queryId string, expected map[string]string) {
+// expectedClaim is a claim path with its expected value.
+type expectedClaim struct {
+	Path  []any
+	Value string
+}
+
+// claim builds an expectedClaim from a path and value.
+func claim(path []any, value string) expectedClaim {
+	return expectedClaim{Path: path, Value: value}
+}
+
+// requireVerifierResult asserts that the veramo verifier received exactly the
+// expected claims for a given credential query ID — no more, no less. Each
+// expected claim is identified by its full path (navigating into nested objects
+// and arrays) and matched against the stringified value.
+//
+// Example:
+//
+//	requireVerifierReceivedClaims(t, result, "house-cred",
+//	    claim([]any{"owner_name"}, "Frank"),
+//	    claim([]any{"address", "street"}, "10 Downing St"),
+//	    claim([]any{"address", "city"}, "London"),
+//	)
+func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, queryId string, expected ...expectedClaim) {
 	t.Helper()
 	require.NotNil(t, result.Result, "verifier result should not be nil")
 	creds, ok := result.Result.Credentials[queryId]
 	require.True(t, ok, "verifier should have credentials for query %q", queryId)
 	require.NotEmpty(t, creds, "verifier should have at least one credential for query %q", queryId)
-	for key, expectedVal := range expected {
-		actual, ok := creds[0].Claims[key]
-		require.True(t, ok, "verifier credential should have claim %q", key)
-		require.Equal(t, expectedVal, fmt.Sprintf("%v", actual), "verifier claim %q value mismatch", key)
+
+	claims := creds[0].Claims
+
+	// Check each expected claim exists with the right value.
+	for _, exp := range expected {
+		actual := navigateClaims(t, claims, exp.Path)
+		require.Equal(t, exp.Value, fmt.Sprintf("%v", actual),
+			"verifier claim at path %v value mismatch", exp.Path)
 	}
+
+	// Check no unexpected top-level claims exist (ignoring standard JWT claims).
+	standardClaims := map[string]struct{}{
+		"vct": {}, "iss": {}, "iat": {}, "exp": {}, "nbf": {}, "sub": {},
+		"cnf": {}, "_sd_alg": {}, "status": {},
+	}
+	expectedTopLevel := make(map[string]struct{})
+	for _, exp := range expected {
+		if len(exp.Path) > 0 {
+			if key, ok := exp.Path[0].(string); ok {
+				expectedTopLevel[key] = struct{}{}
+			}
+		}
+	}
+	for key := range claims {
+		if _, isStandard := standardClaims[key]; isStandard {
+			continue
+		}
+		_, isExpected := expectedTopLevel[key]
+		require.True(t, isExpected,
+			"verifier received unexpected claim %q for query %q", key, queryId)
+	}
+}
+
+// navigateClaims follows a claim path into a nested claims map.
+func navigateClaims(t *testing.T, claims map[string]any, path []any) any {
+	t.Helper()
+	var current any = claims
+	for i, component := range path {
+		switch key := component.(type) {
+		case string:
+			m, ok := current.(map[string]any)
+			require.True(t, ok, "expected object at path %v (step %d), got %T", path[:i], i, current)
+			current, ok = m[key]
+			require.True(t, ok, "claim %q not found at path %v", key, path[:i+1])
+		case int:
+			arr, ok := current.([]any)
+			require.True(t, ok, "expected array at path %v (step %d), got %T", path[:i], i, current)
+			require.True(t, key >= 0 && key < len(arr),
+				"index %d out of range at path %v (len=%d)", key, path[:i+1], len(arr))
+			current = arr[key]
+		default:
+			t.Fatalf("unsupported path component type %T at path %v", component, path[:i+1])
+		}
+	}
+	return current
 }
 
 func createVeramoVerifierDcqlSession(t *testing.T) veramoVerifierSession {
@@ -2002,7 +2102,8 @@ type expectedPlanCredential struct {
 
 // requireDisclosurePlan asserts the structure of a disclosure plan.
 // Each entry in expected corresponds to one DisclosurePickOne in order.
-// For each entry, the first OwnedOption is checked against the expected credential.
+// For each entry, the expected attributes must be found in at least one of the
+// OwnedOptions (not just the first).
 func requireDisclosurePlan(t *testing.T, plan *clientmodels.DisclosurePlan, expected []expectedPlanCredential) {
 	t.Helper()
 	require.NotNil(t, plan)
@@ -2018,34 +2119,91 @@ func requireDisclosurePlan(t *testing.T, plan *clientmodels.DisclosurePlan, expe
 
 		require.NotEmpty(t, pickOne.OwnedOptions, "choice %d should have owned options", i)
 
-		cred := pickOne.OwnedOptions[0]
+		// Find an owned option that satisfies ALL expected attributes.
+		var matched *clientmodels.SelectableCredentialInstance
+		for _, cred := range pickOne.OwnedOptions {
+			if credMatchesExpected(cred, exp) {
+				matched = cred
+				break
+			}
+		}
+		require.NotNil(t, matched,
+			"choice %d: no owned option matches expected attributes %v", i, expectedAttrSummary(exp))
+
+		// Now do the full assertions on the matched credential for clear error messages.
 		if exp.Name != "" {
-			actual, ok := cred.Name["en"]
+			actual, ok := matched.Name["en"]
 			require.True(t, ok, "choice %d credential should have English name", i)
 			require.Equal(t, exp.Name, actual, "choice %d credential name mismatch", i)
 		}
 
-		attrMap := attributeMap(cred.Attributes)
-		for attrId, exp := range exp.Attributes {
-			attr, ok := attrMap[attrId]
-			require.True(t, ok, "choice %d should have attribute %q", i, attrId)
-			if exp.Type != "" {
-				require.NotNil(t, attr.Value, "choice %d attribute %q should have a value", i, attrId)
-				require.Equal(t, exp.Type, attr.Value.Type,
-					"choice %d attribute %q type mismatch", i, attrId)
+		attrMap := attributeMap(matched.Attributes)
+		for attrKey, expAttr := range exp.Attributes {
+			attr, ok := attrMap[attrKey]
+			require.True(t, ok, "choice %d should have attribute %q", i, attrKey)
+			if expAttr.Type != "" {
+				require.NotNil(t, attr.Value, "choice %d attribute %q should have a value", i, attrKey)
+				require.Equal(t, expAttr.Type, attr.Value.Type,
+					"choice %d attribute %q type mismatch", i, attrKey)
 			}
-			if exp.Value != "" && attr.Value != nil && attr.Value.String != nil {
-				require.Equal(t, exp.Value, *attr.Value.String,
-					"choice %d attribute %q value mismatch", i, attrId)
+			if expAttr.Value != "" && attr.Value != nil && attr.Value.String != nil {
+				require.Equal(t, expAttr.Value, *attr.Value.String,
+					"choice %d attribute %q value mismatch", i, attrKey)
 			}
-			if exp.DisplayName != "" {
+			if expAttr.DisplayName != "" {
 				actual, ok := attr.DisplayName["en"]
-				require.True(t, ok, "choice %d attribute %q should have English display name", i, attrId)
-				require.Equal(t, exp.DisplayName, actual,
-					"choice %d attribute %q display name mismatch", i, attrId)
+				require.True(t, ok, "choice %d attribute %q should have English display name", i, attrKey)
+				require.Equal(t, expAttr.DisplayName, actual,
+					"choice %d attribute %q display name mismatch", i, attrKey)
 			}
 		}
 	}
+}
+
+// credMatchesExpected returns true if the credential has all expected attributes
+// with matching values.
+func credMatchesExpected(cred *clientmodels.SelectableCredentialInstance, exp expectedPlanCredential) bool {
+	if exp.Name != "" {
+		if name, ok := cred.Name["en"]; !ok || name != exp.Name {
+			return false
+		}
+	}
+	attrMap := attributeMap(cred.Attributes)
+	for attrKey, expAttr := range exp.Attributes {
+		attr, ok := attrMap[attrKey]
+		if !ok {
+			return false
+		}
+		if expAttr.Value != "" {
+			if attr.Value == nil || attr.Value.String == nil || *attr.Value.String != expAttr.Value {
+				return false
+			}
+		}
+		if expAttr.Type != "" {
+			if attr.Value == nil || attr.Value.Type != expAttr.Type {
+				return false
+			}
+		}
+		if expAttr.DisplayName != "" {
+			if actual, ok := attr.DisplayName["en"]; !ok || actual != expAttr.DisplayName {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// expectedAttrSummary returns a readable summary of expected attributes for error messages.
+func expectedAttrSummary(exp expectedPlanCredential) string {
+	parts := make([]string, 0, len(exp.Attributes))
+	for key, attr := range exp.Attributes {
+		if attr.Value != "" {
+			parts = append(parts, fmt.Sprintf("%s=%q", key, attr.Value))
+		} else {
+			parts = append(parts, key)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // ---------------------------------------------------------------------------
@@ -2106,11 +2264,16 @@ func findCredentialByName(t *testing.T, creds []*clientmodels.Credential, locale
 	return nil
 }
 
-// attributeMap builds a map from attribute ID to Attribute for easy lookup.
+// pk is a shorthand for building a ClaimPathKey from path components.
+func pk(components ...any) string {
+	return clientmodels.ClaimPathKey(components)
+}
+
+// attributeMap builds a map from claim path key to Attribute for easy lookup.
 func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attribute {
 	m := make(map[string]clientmodels.Attribute, len(attrs))
 	for _, a := range attrs {
-		m[a.Id] = a
+		m[clientmodels.ClaimPathKey(a.ClaimPath)] = a
 	}
 	return m
 }
