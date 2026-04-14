@@ -200,12 +200,17 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 
 	// Use a non-nil slice so that non-SD claims can still be appended even when
 	// no SD claims are requested (claims is empty but non-nil).
+	// OpenID4VP Section 6.3: wallets should ignore duplicate claim queries.
 	attributes := make([]clientmodels.Attribute, 0)
 	requestedKeys := make(map[string]struct{})
 	for _, claim := range claims {
-		val, _ := payload.GetClaimValue([]any(claim.Path))
 		attrName := claim.Path.LastString()
+		if _, duplicate := requestedKeys[attrName]; duplicate {
+			continue
+		}
 		requestedKeys[attrName] = struct{}{}
+
+		val, _ := payload.GetClaimValue([]any(claim.Path))
 		attr := clientmodels.Attribute{
 			Id:          attrName,
 			DisplayName: claimDisplayName(batch, attrName),

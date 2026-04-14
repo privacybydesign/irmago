@@ -42,6 +42,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("boolean claim value constraint", testBooleanClaimValueConstraint)
 	t.Run("multiple credentials for same query", testMultipleCredentialsForSameQuery)
 	t.Run("no claims requested shares only non-sd claims", testNoClaimsRequestedSharesOnlyNonSdClaims)
+	t.Run("duplicate claims ignored", testDuplicateClaimsIgnored)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
@@ -1440,6 +1441,80 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+}
+
+// testDuplicateClaimsIgnored issues an EmailCredential, then sends a DCQL query
+// where the "email" claim appears twice. Per OpenID4VP Section 6.3, the wallet
+// should ignore duplicate claim queries — the disclosure plan should contain
+// "email" only once.
+func testDuplicateClaimsIgnored(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "dup@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-dup",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] },
+						{ "path": ["email"] },
+						{ "path": ["domain"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrMap := attributeMap(cred.Attributes)
+
+	// "email" should appear exactly once despite being listed twice in the query.
+	emailCount := 0
+	for _, attr := range cred.Attributes {
+		if attr.Id == "email" {
+			emailCount++
+		}
+	}
+	require.Equal(t, 1, emailCount, "duplicate email claim should be deduplicated")
+	require.Equal(t, "dup@example.com", *attrMap["email"].Value.String)
+	require.Equal(t, "example.com", *attrMap["domain"].Value.String)
+
+	// Disclose and verify the session completes.
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedAttributes(t, result, "email-dup", map[string]string{
+		"email": "dup@example.com",
+	})
 }
 
 // testDiscloseWithoutHolderBinding issues a credential, then creates a DCQL
