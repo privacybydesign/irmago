@@ -43,6 +43,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("multiple credentials for same query", testMultipleCredentialsForSameQuery)
 	t.Run("no claims requested shares only non-sd claims", testNoClaimsRequestedSharesOnlyNonSdClaims)
 	t.Run("duplicate claims ignored", testDuplicateClaimsIgnored)
+	t.Run("duplicate nested claims ignored", testDuplicateNestedClaimsIgnored)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
@@ -1515,6 +1516,89 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 	requireVerifierReceivedAttributes(t, result, "email-dup", map[string]string{
 		"email": "dup@example.com",
 	})
+}
+
+// testDuplicateNestedClaimsIgnored issues a HouseCredential with nested address
+// claims, then sends a DCQL query where ["address", "street"] appears twice and
+// ["address", "city"] appears once. The wallet should deduplicate ["address", "street"]
+// while keeping ["address", "city"] as a separate claim.
+func testDuplicateNestedClaimsIgnored(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+		"owner_name": "Duplicate Tester",
+		"address": {
+			"street": "Kalverstraat 1",
+			"city": "Amsterdam",
+			"country": "NL"
+		}
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "house-dup",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/house"]
+					},
+					"claims": [
+						{ "path": ["owner_name"] },
+						{ "path": ["address", "street"] },
+						{ "path": ["address", "street"] },
+						{ "path": ["address", "city"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+
+	// Count occurrences of "street" — should be exactly 1 despite the duplicate.
+	streetCount := 0
+	cityCount := 0
+	for _, attr := range cred.Attributes {
+		if attr.Id == "street" {
+			streetCount++
+		}
+		if attr.Id == "city" {
+			cityCount++
+		}
+	}
+	require.Equal(t, 1, streetCount, "duplicate ['address','street'] should be deduplicated to one")
+	require.Equal(t, 1, cityCount, "['address','city'] should appear once")
+
+	attrMap := attributeMap(cred.Attributes)
+	require.Equal(t, "Duplicate Tester", *attrMap["owner_name"].Value.String)
+	require.Equal(t, "Kalverstraat 1", *attrMap["street"].Value.String)
+	require.Equal(t, "Amsterdam", *attrMap["city"].Value.String)
+
+	// Disclose and verify success.
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
 }
 
 // testDiscloseWithoutHolderBinding issues a credential, then creates a DCQL
