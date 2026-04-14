@@ -168,9 +168,9 @@ func testDisclosureWithPredefinedValues(
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 	// only university (which has a pre-defined value that doesn't match), not studentID
-	require.Len(t, wrongCred.Attributes, 1)
-	require.Equal(t, []any{"university"}, wrongCred.Attributes[0].ClaimPath)
-	require.Equal(t, "University of the Arts", *wrongCred.Attributes[0].Value.String)
+	requireAttrsInOrder(t, wrongCred.Attributes,
+		expectedAttr{Path: []any{"university"}, DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Value: "University of the Arts"},
+	)
 	require.Equal(t, &expectedValue, wrongCred.Attributes[0].RequestedValue.String)
 
 	// make sure the previous issuance session was finished
@@ -514,9 +514,9 @@ func testWrongCredentialIssuedDuringDisclosure(
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
 	// only university (which has a pre-defined value that doesn't match), not level
-	require.Len(t, wrongCred.Attributes, 1)
-	require.Equal(t, []any{"university"}, wrongCred.Attributes[0].ClaimPath)
-	require.Equal(t, "University of the Arts", *wrongCred.Attributes[0].Value.String)
+	requireAttrsInOrder(t, wrongCred.Attributes,
+		expectedAttr{Path: []any{"university"}, DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Value: "University of the Arts"},
+	)
 	expectedRequiredValue := requiredValue
 	require.Equal(t, &expectedRequiredValue, wrongCred.Attributes[0].RequestedValue.String)
 
@@ -550,9 +550,9 @@ func testWrongCredentialIssuedDuringDisclosure(
 	wrongCred = plan.IssueDuringDislosure.WrongCredentialIssued
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
-	require.Len(t, wrongCred.Attributes, 1)
-	require.Equal(t, []any{"university"}, wrongCred.Attributes[0].ClaimPath)
-	require.Equal(t, "Open University", *wrongCred.Attributes[0].Value.String)
+	requireAttrsInOrder(t, wrongCred.Attributes,
+		expectedAttr{Path: []any{"university"}, DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Value: "Open University"},
+	)
 
 	// Finish the second wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
@@ -673,9 +673,9 @@ func testPreExistingWrongCredentialNotReported(
 	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
 	require.NotNil(t, wrongCred)
 	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
-	require.Len(t, wrongCred.Attributes, 1)
-	require.Equal(t, []any{"university"}, wrongCred.Attributes[0].ClaimPath)
-	require.Equal(t, "Open University", *wrongCred.Attributes[0].Value.String)
+	requireAttrsInOrder(t, wrongCred.Attributes,
+		expectedAttr{Path: []any{"university"}, DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Value: "Open University"},
+	)
 
 	// Finish the wrong issuance session
 	session = awaitSessionState(t, sessionHandler)
