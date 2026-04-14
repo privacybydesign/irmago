@@ -126,7 +126,81 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 		}
 	}
 
+	// SD-JWT spec Section 4.2.6: validate that every selected disclosure is
+	// reachable from the top-level payload through other selected disclosures.
+	// This ensures the verifier can locate all included disclosures.
+	if err := validateDisclosureDependencies(payload, selectedSet, byHash); err != nil {
+		return "", err
+	}
+
 	return CreateSdJwtVc(issuerSignedJwt, selected), nil
+}
+
+// validateDisclosureDependencies checks that every selected disclosure hash is
+// reachable from the top-level JWT payload. A disclosure is reachable if its
+// hash appears in an _sd array or {"..."} entry that can be navigated to from
+// the root, following only other selected disclosures to reveal nested structures.
+func validateDisclosureDependencies(payload map[string]any, selectedSet map[string]struct{}, byHash map[string]indexedDisclosure) error {
+	reachable := make(map[string]struct{})
+	collectReachableHashes(payload, selectedSet, byHash, reachable)
+
+	for hash := range selectedSet {
+		if _, ok := reachable[hash]; !ok {
+			entry := byHash[hash]
+			return fmt.Errorf(
+				"disclosure dependency violation (SD-JWT Section 4.2.6): disclosure for %q is not reachable from the top-level payload — a parent disclosure is missing",
+				entry.decoded.Key,
+			)
+		}
+	}
+	return nil
+}
+
+// collectReachableHashes walks a JSON value and collects all disclosure hashes
+// that are reachable. When a reachable hash belongs to a selected disclosure
+// whose value is an object or array, that value is walked recursively.
+func collectReachableHashes(value any, selectedSet map[string]struct{}, byHash map[string]indexedDisclosure, reachable map[string]struct{}) {
+	switch v := value.(type) {
+	case map[string]any:
+		// Check _sd array for object-level SD claims.
+		if sdArray, ok := v[Key_Sd].([]any); ok {
+			for _, h := range sdArray {
+				hashStr, ok := h.(string)
+				if !ok {
+					continue
+				}
+				reachable[hashStr] = struct{}{}
+				// If this disclosure is selected, recurse into its value.
+				if _, selected := selectedSet[hashStr]; selected {
+					if entry, ok := byHash[hashStr]; ok {
+						collectReachableHashes(entry.decoded.Value, selectedSet, byHash, reachable)
+					}
+				}
+			}
+		}
+		// Recurse into all object values (non-_sd keys may contain nested structures).
+		for key, child := range v {
+			if key != Key_Sd {
+				collectReachableHashes(child, selectedSet, byHash, reachable)
+			}
+		}
+	case []any:
+		for _, elem := range v {
+			// Check for SD array element: {"...": "<digest>"}
+			if obj, ok := elem.(map[string]any); ok {
+				if digest, ok := obj["..."].(string); ok {
+					reachable[digest] = struct{}{}
+					if _, selected := selectedSet[digest]; selected {
+						if entry, ok := byHash[digest]; ok {
+							collectReachableHashes(entry.decoded.Value, selectedSet, byHash, reachable)
+						}
+					}
+					continue
+				}
+			}
+			collectReachableHashes(elem, selectedSet, byHash, reachable)
+		}
+	}
 }
 
 // resolveArrayIndex navigates to a specific index in an array value.

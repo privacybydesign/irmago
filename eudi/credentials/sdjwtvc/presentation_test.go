@@ -796,6 +796,54 @@ func TestCreatePresentation_DeepNested_SelectUniversityNameOnly(t *testing.T) {
 	require.Empty(t, arrayElems, "no faculty or course disclosures should leak")
 }
 
+// TestValidateDisclosureDependencies_MissingParent tests that the validation
+// catches a disclosure that is not reachable from the top-level payload.
+// This simulates a bug where a child disclosure is selected without its parent.
+func TestValidateDisclosureDependencies_MissingParent(t *testing.T) {
+	// Simulate a payload with a nested SD structure:
+	//   top-level _sd contains hash for "parent" disclosure
+	//   "parent" disclosure reveals an object with its own _sd containing hash for "child"
+	parentHash := "parent-hash-123"
+	childHash := "child-hash-456"
+
+	payload := map[string]any{
+		Key_Sd: []any{parentHash},
+	}
+
+	byHash := map[string]indexedDisclosure{
+		parentHash: {
+			decoded: DisclosureContent{Key: "parent", Value: map[string]any{
+				Key_Sd: []any{childHash},
+			}},
+		},
+		childHash: {
+			decoded: DisclosureContent{Key: "child", Value: "secret"},
+		},
+	}
+
+	// Selecting both parent and child is valid.
+	t.Run("both selected is valid", func(t *testing.T) {
+		selected := map[string]struct{}{parentHash: {}, childHash: {}}
+		require.NoError(t, validateDisclosureDependencies(payload, selected, byHash))
+	})
+
+	// Selecting only the child (without the parent) is a violation:
+	// the verifier can't reach childHash because parentHash is not disclosed.
+	t.Run("child without parent is a violation", func(t *testing.T) {
+		selected := map[string]struct{}{childHash: {}}
+		err := validateDisclosureDependencies(payload, selected, byHash)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "disclosure dependency violation")
+		require.Contains(t, err.Error(), "child")
+	})
+
+	// Selecting only the parent is valid (child is not needed).
+	t.Run("parent only is valid", func(t *testing.T) {
+		selected := map[string]struct{}{parentHash: {}}
+		require.NoError(t, validateDisclosureDependencies(payload, selected, byHash))
+	})
+}
+
 func TestCreatePresentation_NonSdArray_NotDisclosed(t *testing.T) {
 	sdJwt := buildSdJwtWithArrays(t)
 
