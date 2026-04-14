@@ -9,6 +9,11 @@ import (
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
+type indexedDisclosure struct {
+	encoded EncodedDisclosure
+	decoded DisclosureContent
+}
+
 // CreatePresentation creates a new SD-JWT VC containing only the disclosures
 // that correspond to the given claim paths. Each path is a list of string keys
 // that navigate into the (possibly nested) SD-JWT payload.
@@ -36,11 +41,6 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 		hashAlg = string(iana.SHA256)
 	}
 
-	// Index all disclosures by their hash.
-	type indexedDisclosure struct {
-		encoded EncodedDisclosure
-		decoded DisclosureContent
-	}
 	byHash := make(map[string]indexedDisclosure, len(allDisclosures))
 	for _, enc := range allDisclosures {
 		hash, err := CreateUrlEncodedHash(iana.HashingAlgorithm(hashAlg), string(enc))
@@ -58,63 +58,101 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 	selectedSet := make(map[string]struct{})
 	var selected []EncodedDisclosure
 
-	for _, path := range claimPaths {
-		currentObj := payload
-		for _, component := range path {
-			// Only string components navigate into objects and _sd arrays.
-			// Integer/null components (array indices) don't affect disclosure selection.
-			key, ok := component.(string)
-			if !ok {
-				continue
+	addDisclosure := func(hashStr string) {
+		if entry, ok := byHash[hashStr]; ok {
+			if _, dup := selectedSet[hashStr]; !dup {
+				selectedSet[hashStr] = struct{}{}
+				selected = append(selected, entry.encoded)
 			}
+		}
+	}
 
-			sdArray, _ := currentObj[Key_Sd].([]any)
+	for _, path := range claimPaths {
+		// currentValue tracks the value at the current position in the path walk.
+		// It starts as the top-level payload (a map) and may become an array or
+		// nested map as we descend.
+		var currentValue any = payload
 
-			if sdArray != nil {
-				// This level has selectively disclosed claims — look for the key in _sd.
-				found := false
-				for _, h := range sdArray {
-					hashStr, ok := h.(string)
-					if !ok {
-						continue
-					}
-					entry, exists := byHash[hashStr]
-					if !exists || entry.decoded.Key != key {
-						continue
-					}
-
-					if _, dup := selectedSet[hashStr]; !dup {
-						selectedSet[hashStr] = struct{}{}
-						selected = append(selected, entry.encoded)
-					}
-
-					// Descend into the disclosure value for the next path segment.
-					if nested, ok := entry.decoded.Value.(map[string]any); ok {
-						currentObj = nested
-					}
-					found = true
+		for _, component := range path {
+			switch key := component.(type) {
+			case string:
+				// String component: navigate into an object, checking _sd for SD claims.
+				obj, ok := currentValue.(map[string]any)
+				if !ok {
+					currentValue = nil
 					break
 				}
-				if !found {
-					// The key might be a plaintext claim at this level (not in _sd).
-					if nested, ok := currentObj[key].(map[string]any); ok {
-						currentObj = nested
-					} else {
+
+				sdArray, _ := obj[Key_Sd].([]any)
+				if sdArray != nil {
+					found := false
+					for _, h := range sdArray {
+						hashStr, ok := h.(string)
+						if !ok {
+							continue
+						}
+						entry, exists := byHash[hashStr]
+						if !exists || entry.decoded.Key != key {
+							continue
+						}
+						addDisclosure(hashStr)
+						currentValue = entry.decoded.Value
+						found = true
 						break
 					}
-				}
-			} else {
-				// No _sd at this level — the key must be a plaintext claim.
-				if nested, ok := currentObj[key].(map[string]any); ok {
-					currentObj = nested
+					if !found {
+						// The key might be a plaintext claim at this level.
+						currentValue = obj[key]
+					}
 				} else {
-					break
+					currentValue = obj[key]
 				}
+
+			case float64:
+				// JSON numbers decode as float64; treat as array index.
+				currentValue = resolveArrayIndex(currentValue, int(key), addDisclosure, byHash)
+
+			case int:
+				currentValue = resolveArrayIndex(currentValue, key, addDisclosure, byHash)
+
+			default:
+				// nil (wildcard) or unsupported — stop descending.
+				currentValue = nil
+			}
+
+			if currentValue == nil {
+				break
 			}
 		}
 	}
 
 	return CreateSdJwtVc(issuerSignedJwt, selected), nil
+}
+
+// resolveArrayIndex navigates to a specific index in an array value.
+// If the element at that index is an SD-JWT array element digest ({"...": hash}),
+// the corresponding disclosure is added via addFn and the disclosed value is returned
+// so that deeper path components can continue navigating into it.
+func resolveArrayIndex(currentValue any, idx int, addFn func(string), byHash map[string]indexedDisclosure) any {
+	arr, ok := currentValue.([]any)
+	if !ok || idx < 0 || idx >= len(arr) {
+		return nil
+	}
+	elem := arr[idx]
+
+	// Check if this is an SD array element: {"...": "<digest>"}
+	if obj, ok := elem.(map[string]any); ok {
+		if digest, ok := obj["..."].(string); ok {
+			addFn(digest)
+			// Return the disclosed value so deeper path components can navigate into it.
+			if entry, ok := byHash[digest]; ok {
+				return entry.decoded.Value
+			}
+			return nil
+		}
+	}
+
+	return elem
 }
 
 // DecodeJwtPayload extracts and decodes the payload of the issuer-signed JWT
