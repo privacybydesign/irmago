@@ -113,7 +113,8 @@ func testDisclosureWithPredefinedValues(
 		},
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -220,6 +221,13 @@ func testDisclosureWithPredefinedValues(
 	// make sure the disclosure session is finished
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "irma-demo.RU.studentCard.studentID", Value: "67890"},
+			{Identifier: "irma-demo.RU.studentCard.university", Value: "Universiteit Utrecht"},
+		},
+	})
 }
 
 func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent(
@@ -340,7 +348,8 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 		mijnOverheidDisclosure()[0],
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -384,6 +393,14 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{}, // optional disjunction, nothing disclosed
+		{
+			{Identifier: "irma-demo.MijnOverheid.fullName.firstnames", Value: "Barry"},
+			{Identifier: "irma-demo.MijnOverheid.fullName.familyname", Value: "Batsbak"},
+		},
+	})
 }
 
 func testMultipleStepsOfIssuanceDuringDisclosure(
@@ -400,7 +417,8 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 		studentCardOrMijnOverheidDisclosure()[0],
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
@@ -459,6 +477,16 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "test.test.email.email", Value: "test@gmail.com"},
+		},
+		{
+			{Identifier: "irma-demo.MijnOverheid.fullName.firstnames", Value: "Barry"},
+			{Identifier: "irma-demo.MijnOverheid.fullName.familyname", Value: "Batsbak"},
+		},
+	})
 }
 
 func testWrongCredentialIssuedDuringDisclosure(
@@ -482,7 +510,8 @@ func testWrongCredentialIssuedDuringDisclosure(
 		},
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -607,6 +636,13 @@ func testWrongCredentialIssuedDuringDisclosure(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "irma-demo.RU.studentCard.university", Value: "Radboud University"},
+			{Identifier: "irma-demo.RU.studentCard.level", Value: "high"},
+		},
+	})
 }
 
 func testPreExistingWrongCredentialNotReported(
@@ -648,7 +684,8 @@ func testPreExistingWrongCredentialNotReported(
 		},
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -731,6 +768,13 @@ func testPreExistingWrongCredentialNotReported(
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "irma-demo.RU.studentCard.university", Value: "Radboud University"},
+			{Identifier: "irma-demo.RU.studentCard.level", Value: "high"},
+		},
+	})
 }
 
 func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
@@ -755,7 +799,8 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 		},
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
@@ -808,6 +853,13 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "irma-demo.RU.studentCard.university", Value: "University of the Arts"},
+			{Identifier: "irma-demo.RU.studentCard.level", Value: "high"},
+		},
+	})
 }
 
 func testChoiceBetweenEmailAndStudentCardBothPresent(
@@ -829,7 +881,8 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 		},
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
@@ -885,6 +938,12 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "test.test.email.email", Value: "test@gmail.com"},
+		},
+	})
 }
 
 func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
@@ -1123,7 +1182,8 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 	}
 
 	c.DeleteKeyshareTokens()
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, disclosureRequest)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
@@ -1153,6 +1213,12 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Protocol_Irma, session.Protocol)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "test.test.email.email", Value: "test@gmail.com"},
+		},
+	})
 }
 
 func testDisclosureClientReturnUrl(

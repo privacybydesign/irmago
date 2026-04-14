@@ -309,6 +309,46 @@ func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected 
 	}
 }
 
+// expectedDisclosedAttr describes an expected disclosed attribute in an IRMA
+// server session result.
+type expectedDisclosedAttr struct {
+	Identifier string // e.g. "irma-demo.RU.studentCard.university"
+	Value      string
+}
+
+// requireIrmaServerResult retrieves the session result from the IRMA server
+// and asserts that the disclosed attributes match the expected list exactly.
+// Each inner slice of expected corresponds to one disjunction in the result.
+func requireIrmaServerResult(t *testing.T, irmaServer *IrmaServer, token irma.RequestorToken, expected [][]expectedDisclosedAttr) {
+	t.Helper()
+	result, err := irmaServer.irma.GetSessionResult(token)
+	require.NoError(t, err)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus, "proof should be valid")
+	require.Len(t, result.Disclosed, len(expected), "number of disclosed disjunctions mismatch")
+
+	for i, expDiscon := range expected {
+		actualDiscon := result.Disclosed[i]
+		require.Len(t, actualDiscon, len(expDiscon),
+			"disjunction %d: number of disclosed attributes mismatch", i)
+		for j, exp := range expDiscon {
+			actual := actualDiscon[j]
+			require.Equal(t, exp.Identifier, actual.Identifier.String(), "disjunction %d attribute %d identifier mismatch", i, j)
+			require.Equal(t, irma.AttributeProofStatusPresent, actual.Status, "disjunction %d attribute %d should be present", i, j)
+			require.NotNil(t, actual.RawValue, "disjunction %d attribute %d should have a raw value", i, j)
+			require.Equal(t, exp.Value, *actual.RawValue, "disjunction %d attribute %d value mismatch", i, j)
+		}
+	}
+}
+
+// requireIrmaServerResultStatus retrieves the session result and checks
+// the proof status without validating individual attributes.
+func requireIrmaServerResultStatus(t *testing.T, irmaServer *IrmaServer, token irma.RequestorToken, expectedStatus irma.ServerStatus) {
+	t.Helper()
+	result, err := irmaServer.irma.GetSessionResult(token)
+	require.NoError(t, err)
+	require.Equal(t, expectedStatus, result.Status, "session status mismatch")
+}
+
 // makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
 // attributes of the given credential instance.
 func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance) clientmodels.DisclosureDisconSelection {

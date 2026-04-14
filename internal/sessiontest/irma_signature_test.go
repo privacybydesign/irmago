@@ -51,7 +51,8 @@ func testSignatureRequest(
 		},
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, signatureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Signature, clientmodels.Status_RequestPermission)
 	require.Equal(t, "Hello, World!", session.MessageToSign)
@@ -83,4 +84,10 @@ func testSignatureRequest(
 	// finish signature session
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Signature, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, signatureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "test.test.email.email", Value: "test@gmail.com"},
+		},
+	})
 }

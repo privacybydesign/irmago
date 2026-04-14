@@ -146,7 +146,8 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	request := createEmailIssuanceRequest()
 	request.Disclose = studentCardOrMijnOverheidDisclosure()
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, issuanceToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
@@ -188,6 +189,13 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	// finish first issuance session
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, issuanceToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "irma-demo.MijnOverheid.fullName.firstnames", Value: "Barry"},
+			{Identifier: "irma-demo.MijnOverheid.fullName.familyname", Value: "Batsbak"},
+		},
+	})
 }
 
 func testSingleCredentialIssuance(t *testing.T, irmaServer *IrmaServer, c *client.Client, sessionHandler *MockSessionHandler) {
@@ -381,7 +389,8 @@ func testTrustedPartyLogoPathsInLogs(
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
+	c.NewSession(sessionJson)
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -389,6 +398,12 @@ func testTrustedPartyLogoPathsInLogs(
 	grantPermission(t, c, 2, makeDisclosureChoice(choice))
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	requireIrmaServerResult(t, irmaServer, disclosureToken, [][]expectedDisclosedAttr{
+		{
+			{Identifier: "irma-demo.RU.studentCard.university", Value: "University of the Arts"},
+		},
+	})
 
 	// Load logs and verify logo paths
 	logs, err := c.LoadNewestLogs(10)

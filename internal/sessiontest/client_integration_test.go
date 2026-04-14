@@ -969,7 +969,12 @@ func startCrossDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req i
 }
 
 func startSameDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req any) string {
-	qr, _, _, err := server.irma.StartSession(req, nil, "")
+	sessionJson, _ := startSameDeviceIrmaSessionAtServerWithToken(t, server, req)
+	return sessionJson
+}
+
+func startSameDeviceIrmaSessionAtServerWithToken(t *testing.T, server *IrmaServer, req any) (string, irma.RequestorToken) {
+	qr, token, _, err := server.irma.StartSession(req, nil, "")
 	require.NoError(t, err)
 	session := client.SessionRequestData{
 		Qr:                     *qr,
@@ -978,7 +983,7 @@ func startSameDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req an
 	}
 	sessionJson, err := json.Marshal(session)
 	require.NoError(t, err)
-	return string(sessionJson)
+	return string(sessionJson), token
 }
 
 func createIrmaIssuanceRequestWithSdJwts(credentialId string, attributeId string) *irma.IssuanceRequest {
