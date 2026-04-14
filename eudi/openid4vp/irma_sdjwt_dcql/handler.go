@@ -39,7 +39,7 @@ func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery
 	if query.Format != "dc+sd-jwt" {
 		return false
 	}
-	for _, vct := range query.Meta.VctValues {
+	for _, vct := range query.VctValues() {
 		parts := strings.Split(vct, ".")
 		if len(parts) != 3 {
 			continue
@@ -57,7 +57,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	result := &dcql.CredentialQueryResult{}
 
 	// For each VCT value, find matching credentials from storage
-	for _, vct := range query.Meta.VctValues {
+	for _, vct := range query.VctValues() {
 		entries := h.storage.GetCredentialsForId(vct)
 		candidates, err := h.filterCredentialsWithClaims(entries, query)
 		if err != nil {

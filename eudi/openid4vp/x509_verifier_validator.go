@@ -134,7 +134,7 @@ func dcqlQueryToCredentialQueryInfos(query dcql.DcqlQuery) []scheme.CredentialQu
 			paths = append(paths, path)
 		}
 		result[i] = scheme.CredentialQueryInfo{
-			VctValues:  cq.Meta.VctValues,
+			VctValues:  cq.VctValues(),
 			ClaimPaths: paths,
 		}
 	}

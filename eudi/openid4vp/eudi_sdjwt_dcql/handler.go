@@ -46,10 +46,10 @@ func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery
 		return false
 	}
 	// Without vct_values, accept all sd-jwt queries (verifier didn't specify type).
-	if len(query.Meta.VctValues) == 0 {
+	if len(query.VctValues()) == 0 {
 		return true
 	}
-	for _, vct := range query.Meta.VctValues {
+	for _, vct := range query.VctValues() {
 		if isURL(vct) {
 			return true
 		}
@@ -99,7 +99,8 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 // one of the requested vct_values are returned. When no vct_values are
 // specified, no batches are returned.
 func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.CredentialBatch, error) {
-	if len(query.Meta.VctValues) == 0 {
+	vctValues := query.VctValues()
+	if len(vctValues) == 0 {
 		return nil, nil
 	}
 
@@ -108,8 +109,8 @@ func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.
 		return nil, err
 	}
 
-	vctSet := make(map[string]struct{}, len(query.Meta.VctValues))
-	for _, vct := range query.Meta.VctValues {
+	vctSet := make(map[string]struct{}, len(vctValues))
+	for _, vct := range vctValues {
 		vctSet[vct] = struct{}{}
 	}
 	var filtered []*models.CredentialBatch
