@@ -264,10 +264,11 @@ func requireNoAttr(t *testing.T, am map[string]clientmodels.Attribute, path []an
 }
 
 // expectedAttr describes an expected attribute with its full claim path,
-// display name, and value.
+// display name, optional description, and value.
 type expectedAttr struct {
 	Path        []any
 	DisplayName clientmodels.TranslatedString
+	Description *clientmodels.TranslatedString // nil to skip description check
 	Value       string
 }
 
@@ -293,6 +294,17 @@ func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected 
 				i, clientmodels.ClaimPathKey(exp.Path), locale)
 			require.Equal(t, expectedName, actualName,
 				"attribute %d (%s) display name [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+		}
+		if exp.Description != nil {
+			require.NotNil(t, actual.Description,
+				"attribute %d (%s) should have a description", i, clientmodels.ClaimPathKey(exp.Path))
+			for locale, expectedDesc := range *exp.Description {
+				actualDesc, ok := (*actual.Description)[locale]
+				require.True(t, ok, "attribute %d (%s) should have description for locale %q",
+					i, clientmodels.ClaimPathKey(exp.Path), locale)
+				require.Equal(t, expectedDesc, actualDesc,
+					"attribute %d (%s) description [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+			}
 		}
 	}
 }
