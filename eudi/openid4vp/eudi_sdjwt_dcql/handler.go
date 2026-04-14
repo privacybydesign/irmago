@@ -273,22 +273,49 @@ func selectClaims(query dcql.CredentialQuery, payload *sdjwtvc.ProcessedSdJwtPay
 }
 
 // claimMatches checks whether a single claim exists in the payload and satisfies
-// any value constraints.
+// any value constraints. Supports string, boolean, and numeric comparisons as
+// required by the DCQL spec (OpenID4VP Section 6.3).
 func claimMatches(claim dcql.Claim, payload *sdjwtvc.ProcessedSdJwtPayload) bool {
 	val, err := payload.GetClaimValue([]any(claim.Path))
 	if err != nil {
 		return false
 	}
 	if len(claim.Values) > 0 {
-		valStr, _ := val.(string)
 		for _, reqVal := range claim.Values {
-			if reqValStr, ok := reqVal.(string); ok && reqValStr == valStr {
+			if claimValuesEqual(val, reqVal) {
 				return true
 			}
 		}
 		return false
 	}
 	return true
+}
+
+// claimValuesEqual compares two values from JSON-decoded data. JSON numbers are
+// float64, so we normalize both sides to float64 for numeric comparison.
+func claimValuesEqual(actual, expected any) bool {
+	// Direct equality covers strings and booleans.
+	if actual == expected {
+		return true
+	}
+	// JSON numbers are float64; the constraint value may also be float64.
+	// Normalize both to float64 for comparison.
+	af, aOk := toFloat64(actual)
+	ef, eOk := toFloat64(expected)
+	return aOk && eOk && af == ef
+}
+
+func toFloat64(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	default:
+		return 0, false
+	}
 }
 
 // getNonSdClaimNames returns the names of claims in the issuer JWT payload that

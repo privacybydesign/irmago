@@ -341,6 +341,103 @@ func TestFindCandidates_ClaimValueMismatch_NoMatch(t *testing.T) {
 	assert.Empty(t, result.OwnedCandidates, "credential with mismatched claim value should not match")
 }
 
+func TestFindCandidates_ClaimValueMatchesBoolean(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	require.NoError(t, store.StoreBatch(newTestBatch("hash-bool", "https://example.com/StudentCredential", map[string]any{
+		"is_student": true,
+		"name":       "Alice",
+	})))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/StudentCredential"]},
+		"claims": [{"path": ["is_student"], "values": [true]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1, "boolean value constraint should match")
+}
+
+func TestFindCandidates_ClaimValueBooleanMismatch_NoMatch(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	require.NoError(t, store.StoreBatch(newTestBatch("hash-bool-mismatch", "https://example.com/StudentCredential", map[string]any{
+		"is_student": false,
+	})))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/StudentCredential"]},
+		"claims": [{"path": ["is_student"], "values": [true]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	assert.Empty(t, result.OwnedCandidates, "boolean false should not match constraint true")
+}
+
+func TestFindCandidates_ClaimValueMatchesInteger(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	require.NoError(t, store.StoreBatch(newTestBatch("hash-int", "https://example.com/AgeCredential", map[string]any{
+		"age": float64(25), // JSON numbers are float64
+	})))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/AgeCredential"]},
+		"claims": [{"path": ["age"], "values": [25]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1, "integer value constraint should match")
+}
+
+func TestFindCandidates_ClaimValueIntegerMismatch_NoMatch(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	require.NoError(t, store.StoreBatch(newTestBatch("hash-int-mismatch", "https://example.com/AgeCredential", map[string]any{
+		"age": float64(30),
+	})))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/AgeCredential"]},
+		"claims": [{"path": ["age"], "values": [25]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	assert.Empty(t, result.OwnedCandidates, "age 30 should not match constraint 25")
+}
+
+func TestFindCandidates_ClaimValueMixedTypes(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	require.NoError(t, store.StoreBatch(newTestBatch("hash-mixed", "https://example.com/ProfileCredential", map[string]any{
+		"status": "active",
+	})))
+
+	// Query accepts either "active" (string) or 1 (integer) — credential has the string.
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/ProfileCredential"]},
+		"claims": [{"path": ["status"], "values": ["active", 1]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1, "string value should match when listed among mixed-type constraints")
+}
+
 // ========================================================================
 // ExpiryDate correctness (expiryUnix bug fix verification)
 // ========================================================================

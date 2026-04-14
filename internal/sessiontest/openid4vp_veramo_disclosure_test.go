@@ -39,6 +39,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("claim sets picks first satisfiable set", testClaimSetsPicksFirstSatisfiableSet)
 	t.Run("multiple vct values matches across types", testMultipleVctValuesMatchesAcrossTypes)
 	t.Run("issue and disclose eduid credential", testIssueAndDiscloseEduIdCredential)
+	t.Run("boolean claim value constraint", testBooleanClaimValueConstraint)
 	t.Run("verifier display name from response_uri", testVerifierDisplayNameFromResponseUri)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
@@ -1181,6 +1182,108 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 		"verifier session should have received or verified the response")
 	requireVerifierReceivedAttributes(t, result, "contact-cred", map[string]string{
 		"email": "vct@example.com",
+	})
+}
+
+// testBooleanClaimValueConstraint issues two eduID credentials with different
+// is_student values (true and false), then creates a DCQL query that constrains
+// is_student to true. Only the credential with is_student=true should match.
+func testBooleanClaimValueConstraint(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue credential with is_student=true.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+		"schac_home_organization": "uni-a.nl",
+		"name": "Student User",
+		"given_name": "Student",
+		"family_name": "User",
+		"email": "student@uni-a.nl",
+		"eduperson_scoped_affiliation": "student@uni-a.nl",
+		"eduperson_assurance": "https://eduid.nl/assurance/low",
+		"is_student": true,
+		"is_faculty": false,
+		"is_member": true,
+		"is_staff": false,
+		"is_alum": false,
+		"is_affiliate": false,
+		"is_employee": false,
+		"is_library-walk-in": false
+	}`)
+
+	// Issue credential with is_student=false.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+		"schac_home_organization": "uni-b.nl",
+		"name": "Staff User",
+		"given_name": "Staff",
+		"family_name": "User",
+		"email": "staff@uni-b.nl",
+		"eduperson_scoped_affiliation": "employee@uni-b.nl",
+		"eduperson_assurance": "https://eduid.nl/assurance/low",
+		"is_student": false,
+		"is_faculty": false,
+		"is_member": true,
+		"is_staff": true,
+		"is_alum": false,
+		"is_affiliate": false,
+		"is_employee": true,
+		"is_library-walk-in": false
+	}`)
+
+	// DCQL query: request eduID credential where is_student is true.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "eduid-student",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/eduid"]
+					},
+					"claims": [
+						{ "path": ["given_name"] },
+						{ "path": ["is_student"], "values": [true] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+
+	// All matching credentials should have is_student=true.
+	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
+		attrMap := attributeMap(opt.Attributes)
+		attr, ok := attrMap["given_name"]
+		require.True(t, ok)
+		// The matching credential should be "Student", not "Staff".
+		require.Equal(t, "Student", *attr.Value.String,
+			"only the credential with is_student=true should match the value constraint")
+	}
+
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedAttributes(t, result, "eduid-student", map[string]string{
+		"given_name": "Student",
 	})
 }
 
