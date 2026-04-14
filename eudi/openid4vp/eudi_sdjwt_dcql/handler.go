@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/models"
 )
@@ -29,10 +30,10 @@ type SdJwtVcDcqlHandler struct {
 
 // NewSdJwtVcDcqlHandler creates a new handler.
 func NewSdJwtVcDcqlHandler(eudiStorage storage.Storage) *SdJwtVcDcqlHandler {
-	keyStore := storage.NewHolderBindingKeyStore(eudiStorage.Db())
+	keyService := services.NewHolderBindingKeyService(eudiStorage)
 	return &SdJwtVcDcqlHandler{
 		credentialStore: storage.NewCredentialStore(eudiStorage),
-		keyBinder:       sdjwtvc.NewDefaultKeyBinder(&eudiKeyBindingStorage{keyStore: keyStore}),
+		keyBinder:       sdjwtvc.NewDefaultKeyBinder(keyService),
 	}
 }
 

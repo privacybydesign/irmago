@@ -78,8 +78,8 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 	}
 
 	// Determine a human-readable display name for the verifier. Priority:
-	// 1. response_uri hostname (consistent with regular IRMA sessions)
-	// 2. client_name from client_metadata (RFC 7591, best-effort)
+	// 1. client_name from client_metadata (RFC 7591, best-effort)
+	// 2. response_uri hostname
 	// 3. domain from did:web
 	// 4. "unknown" (raw did:jwk is never useful to a user)
 	displayName := "unknown"

@@ -40,7 +40,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("multiple vct values matches across types", testMultipleVctValuesMatchesAcrossTypes)
 	t.Run("issue and disclose eduid credential", testIssueAndDiscloseEduIdCredential)
 	t.Run("boolean claim value constraint", testBooleanClaimValueConstraint)
-	t.Run("verifier display name from response_uri", testVerifierDisplayNameFromResponseUri)
+	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
 	t.Run("veramo verifier requesting missing credential errors", testVeramoVerifierRequestingMissingCredentialErrors)
@@ -1287,10 +1287,9 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	})
 }
 
-// testVerifierDisplayNameFromResponseUri verifies that the verifier display name
-// shown to the user comes from the response_uri hostname rather than the raw DID,
-// consistent with how regular IRMA sessions display the verifier.
-func testVerifierDisplayNameFromResponseUri(t *testing.T) {
+// testVerifierDisplayName verifies that the verifier display name shown to the
+// user comes from client_metadata.client_name rather than the raw DID.
+func testVerifierDisplayName(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -1322,10 +1321,10 @@ func testVerifierDisplayNameFromResponseUri(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	// The wallet should use the response_uri hostname as the display name,
-	// consistent with how regular IRMA sessions display the verifier.
-	require.Equal(t, "localhost", session.Requestor.Name["en"],
-		"verifier display name should be the response_uri hostname, not the raw DID")
+	// The wallet should use client_name from client_metadata as the display name
+	// when present, falling back to response_uri hostname otherwise.
+	require.Equal(t, "test-verifier", session.Requestor.Name["en"],
+		"verifier display name should come from client_name, not the raw DID")
 	require.False(t, session.Requestor.Verified,
 		"DID-based verifier should not be marked as verified (not verified by Yivi)")
 }

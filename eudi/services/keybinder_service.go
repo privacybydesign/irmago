@@ -13,13 +13,16 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/models"
 	"gorm.io/datatypes"
 )
 
-// HolderBindingKeyService implements the KeyBinder interface.
+// HolderBindingKeyService manages holder binding keys for both issuance
+// (CreateKeyPairsWithProofs) and disclosure (KeyBindingStorage).
 type HolderBindingKeyService interface {
+	sdjwtvc.KeyBindingStorage
 	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error)
 }
 
@@ -155,18 +158,85 @@ func (s *holderBindingKeyService) storePrivateKeys(keys []keyTuple) (publicKeyId
 }
 
 func (s *holderBindingKeyService) RemoveAllKeys() error {
-	// Removes all holder binding private keys
 	return s.store.DeleteAll()
 }
 
 func (s *holderBindingKeyService) RemoveKeys(ids []datatypes.UUID) error {
-	// Removes holder binding private keys by their IDs
 	for _, id := range ids {
 		if err := s.store.DeleteKey(id); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// sdjwtvc.KeyBindingStorage implementation
+// ---------------------------------------------------------------------------
+
+var _ sdjwtvc.KeyBindingStorage = (*holderBindingKeyService)(nil)
+
+func (s *holderBindingKeyService) GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error) {
+	// Try lookup by DID URL first (if kid is set, e.g. from did:jwk cnf resolution).
+	kid, hasKid := pubKey.KeyID()
+	if hasKid && kid != "" {
+		storedKey, err := s.store.GetByDidUrl(kid)
+		if err == nil {
+			return decodePKCS8PrivateKey(storedKey.PrivateKey)
+		}
+		// Strip fragment and try the base DID.
+		if baseDid := stripFragment(kid); baseDid != kid {
+			storedKey, err = s.store.GetByDidUrl(baseDid)
+			if err == nil {
+				return decodePKCS8PrivateKey(storedKey.PrivateKey)
+			}
+		}
+	}
+
+	// Fall back to thumbprint lookup.
+	thumbprintBytes, err := pubKey.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute thumbprint: %v", err)
+	}
+	thumbprint := hex.EncodeToString(thumbprintBytes)
+
+	storedKey, err := s.store.GetByThumbprint(thumbprint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find holder binding key for thumbprint %s or kid %s: %v", thumbprint, kid, err)
+	}
+
+	return decodePKCS8PrivateKey(storedKey.PrivateKey)
+}
+
+func (s *holderBindingKeyService) StorePrivateKeys(_ []*ecdsa.PrivateKey) error {
+	return fmt.Errorf("use CreateKeyPairsWithProofs to store keys via the OID4VCI issuance flow")
+}
+
+func (s *holderBindingKeyService) RemovePrivateKeys(_ []jwk.Key) error {
+	return nil
+}
+
+func (s *holderBindingKeyService) RemoveAllPrivateKeys() error {
+	return s.store.DeleteAll()
+}
+
+func decodePKCS8PrivateKey(pkcs8Bytes []byte) (*ecdsa.PrivateKey, error) {
+	privKeyAny, err := x509.ParsePKCS8PrivateKey(pkcs8Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse PKCS#8 private key: %v", err)
+	}
+	ecdsaKey, ok := privKeyAny.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("stored key is not an ECDSA private key")
+	}
+	return ecdsaKey, nil
+}
+
+func stripFragment(didUrl string) string {
+	if idx := strings.Index(didUrl, "#"); idx != -1 {
+		return didUrl[:idx]
+	}
+	return didUrl
 }
 
 // extractDidUrlFromProof extracts the DID URL from the `kid` JWS header of a proof JWT,
