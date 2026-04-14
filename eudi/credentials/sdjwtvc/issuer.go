@@ -395,8 +395,9 @@ func (b *SdJwtBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 		SelectivelyDisclosable: false,
 	}
 
-	if rootNode.isSdOrContainsSdChildren() && sdAlg == "" {
-		return "", fmt.Errorf("'%s' is required when sdjwt contains selectively disclosable claims", Key_SdAlg)
+	// SD-JWT spec Section 4.1.1: default to sha-256 if _sd_alg is absent.
+	if sdAlg == "" {
+		sdAlg = iana.SHA256
 	}
 	if sdAlg != iana.SHA256 {
 		return "", fmt.Errorf("'%s' value not supported: %v", Key_SdAlg, sdAlg)

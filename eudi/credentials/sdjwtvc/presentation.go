@@ -30,9 +30,10 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 		return "", err
 	}
 
+	// SD-JWT spec Section 4.1.1: default to sha-256 if _sd_alg is absent.
 	hashAlg, ok := payload[Key_SdAlg].(string)
 	if !ok {
-		return "", fmt.Errorf("missing or invalid %s in JWT payload", Key_SdAlg)
+		hashAlg = string(iana.SHA256)
 	}
 
 	// Index all disclosures by their hash.

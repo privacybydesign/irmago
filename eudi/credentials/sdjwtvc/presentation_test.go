@@ -447,6 +447,45 @@ func TestCreatePresentation_NestedSdClaim_AlongsideSdArray(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func buildTestSdJwtWithoutSdAlg(t *testing.T) SdJwtVc {
+	t.Helper()
+	// Build an SD-JWT without _sd_alg. Per SD-JWT spec Section 4.1.1,
+	// the holder MUST default to sha-256 when _sd_alg is absent.
+	sdJwt, err := NewSdJwtBuilder().
+		WithPayload(
+			Claim(Key_Issuer, "https://example.com"),
+			Claim(Key_VerifiableCredentialType, "TestCredential"),
+			Claim(Key_IssuedAt, 1700000000),
+			SdClaim("given_name", "Alice"),
+			SdClaim("email", "alice@example.com"),
+		).
+		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+	require.NoError(t, err)
+	return sdJwt
+}
+
+func TestCreatePresentation_MissingSdAlg_DefaultsToSha256(t *testing.T) {
+	fullSdJwt := buildTestSdJwtWithoutSdAlg(t)
+
+	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}})
+
+	require.NoError(t, err)
+	disclosures := extractDisclosureKeys(t, result)
+	require.Contains(t, disclosures, "given_name")
+	require.NotContains(t, disclosures, "email")
+}
+
+func TestCreatePresentation_MissingSdAlg_AllClaims(t *testing.T) {
+	fullSdJwt := buildTestSdJwtWithoutSdAlg(t)
+
+	result, err := CreatePresentation(fullSdJwt, [][]any{{"given_name"}, {"email"}})
+
+	require.NoError(t, err)
+	disclosures := extractDisclosureKeys(t, result)
+	require.Contains(t, disclosures, "given_name")
+	require.Contains(t, disclosures, "email")
+}
+
 // extractDisclosureKeys splits the SD-JWT result and returns the keys of all included disclosures.
 func extractDisclosureKeys(t *testing.T, sdJwt SdJwtVc) []string {
 	t.Helper()

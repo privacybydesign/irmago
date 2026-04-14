@@ -232,9 +232,10 @@ func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (iana.HashingAlgorith
 		return "", nil, err
 	}
 
+	// SD-JWT spec Section 4.1.1: default to sha-256 if _sd_alg is absent.
 	alg, ok := claims[Key_SdAlg].(string)
 	if !ok {
-		return "", nil, fmt.Errorf("failed to get %s field from claims", Key_SdAlg)
+		alg = string(iana.SHA256)
 	}
 
 	confirm, err := utils.ExtractOptionalWith(claims, Key_Confirmationkey, parseConfirmField)
