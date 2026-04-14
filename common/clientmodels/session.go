@@ -120,11 +120,13 @@ type DisclosurePlan struct {
 	DisclosureChoicesOverview []DisclosurePickOne `json:"disclosure_choices_overview"`
 }
 
-// DisclosurePickOne is a disjunction where the user needs to pick one credential.
+// DisclosurePickOne is a disjunction where the user needs to pick one or more credentials.
 type DisclosurePickOne struct {
 	// If true, the user can skip this because it isn't required
 	Optional bool `json:"optional"`
-	// The user can pick one of these without having to issue
+	// If true, the user can select multiple credentials (OpenID4VP "multiple" flag)
+	Multiple bool `json:"multiple"`
+	// The user can pick one (or more, if Multiple) of these without having to issue
 	OwnedOptions []*SelectableCredentialInstance `json:"owned_options"`
 	// The user can issue one of these and then use it
 	ObtainableOptions []*CredentialDescriptor `json:"obtainable_options"`

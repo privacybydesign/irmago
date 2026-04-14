@@ -40,6 +40,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("multiple vct values matches across types", testMultipleVctValuesMatchesAcrossTypes)
 	t.Run("issue and disclose eduid credential", testIssueAndDiscloseEduIdCredential)
 	t.Run("boolean claim value constraint", testBooleanClaimValueConstraint)
+	t.Run("multiple credentials for same query", testMultipleCredentialsForSameQuery)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
@@ -1286,6 +1287,95 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	requireVerifierReceivedAttributes(t, result, "eduid-student", map[string]string{
 		"given_name": "Student",
 	})
+}
+
+// testMultipleCredentialsForSameQuery issues two email credentials, then creates
+// a DCQL query with "multiple": true. The user selects both credentials and
+// both should be included in the VP token for the same query ID.
+func testMultipleCredentialsForSameQuery(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "alice@example.com",
+		"domain": "example.com"
+	}`)
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "bob@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-multi",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					],
+					"multiple": true
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+
+	pickOne := plan.DisclosureChoicesOverview[0]
+	require.True(t, pickOne.Multiple, "multiple flag should be true in the disclosure plan")
+	require.Len(t, pickOne.OwnedOptions, 2, "both email credentials should be candidates")
+
+	// Select BOTH credentials (this is the key difference from single-select).
+	var selectedCreds []clientmodels.SelectedCredential
+	for _, opt := range pickOne.OwnedOptions {
+		attrIds := make([][]any, len(opt.Attributes))
+		for i, attr := range opt.Attributes {
+			attrIds[i] = []any{attr.Id}
+		}
+		selectedCreds = append(selectedCreds, clientmodels.SelectedCredential{
+			CredentialId:   opt.CredentialId,
+			CredentialHash: opt.Hash,
+			AttributePaths: attrIds,
+		})
+	}
+
+	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{
+		Credentials: selectedCreds,
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should succeed with multiple credentials")
+
+	// The verifier should have received credentials for the "email-multi" query.
+	creds, ok := result.Result.Credentials["email-multi"]
+	require.True(t, ok, "verifier should have credentials for query 'email-multi'")
+	require.Len(t, creds, 2, "verifier should have received 2 credentials for the same query")
+
+	// Verify both email addresses are present.
+	emails := make([]string, len(creds))
+	for i, cred := range creds {
+		email, ok := cred.Claims["email"]
+		require.True(t, ok)
+		emails[i] = fmt.Sprintf("%v", email)
+	}
+	require.Contains(t, emails, "alice@example.com")
+	require.Contains(t, emails, "bob@example.com")
 }
 
 // testDiscloseWithoutHolderBinding issues a credential, then creates a DCQL
