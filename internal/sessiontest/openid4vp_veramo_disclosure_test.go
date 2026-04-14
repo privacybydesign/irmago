@@ -1937,10 +1937,15 @@ func claim(path []any, value string) expectedClaim {
 	return expectedClaim{Path: path, Value: value}
 }
 
-// requireVerifierResult asserts that the veramo verifier received exactly the
-// expected claims for a given credential query ID — no more, no less. Each
+// requireVerifierReceivedClaims asserts that the veramo verifier received exactly
+// the expected claims for a given credential query ID — no more, no less. Each
 // expected claim is identified by its full path (navigating into nested objects
 // and arrays) and matched against the stringified value.
+//
+// The function also rejects unexpected top-level claims (ignoring standard JWT
+// claims like vct, iss, iat, etc.). This means non-SD claims that are always
+// present in the JWT payload (e.g., eduperson_assurance) must be explicitly
+// included in the expected list, even if they weren't requested by the verifier.
 //
 // Example:
 //
@@ -2096,7 +2101,7 @@ type expectedPlanAttribute struct {
 type expectedPlanCredential struct {
 	// Expected credential name (checked against Name["en"]). Empty to skip check.
 	Name string
-	// Expected attributes: map from attribute ID to expected attribute properties.
+	// Expected attributes: map from claim path key to expected attribute properties.
 	Attributes map[string]expectedPlanAttribute
 }
 
@@ -2264,19 +2269,6 @@ func findCredentialByName(t *testing.T, creds []*clientmodels.Credential, locale
 	return nil
 }
 
-// pk is a shorthand for building a ClaimPathKey from path components.
-func pk(components ...any) string {
-	return clientmodels.ClaimPathKey(components)
-}
-
-// attributeMap builds a map from claim path key to Attribute for easy lookup.
-func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attribute {
-	m := make(map[string]clientmodels.Attribute, len(attrs))
-	for _, a := range attrs {
-		m[clientmodels.ClaimPathKey(a.ClaimPath)] = a
-	}
-	return m
-}
 
 // startOpenID4VPDisclosureSession starts an OpenID4VP disclosure session in the
 // client using the given verifier request URI.

@@ -263,6 +263,21 @@ func requireNoAttr(t *testing.T, am map[string]clientmodels.Attribute, path []an
 	require.False(t, ok, "attribute %s should not exist", key)
 }
 
+// pk is a shorthand for building a ClaimPathKey from path components.
+// pk("email") → "[email]", pk("address", "street") → "[address street]"
+func pk(components ...any) string {
+	return clientmodels.ClaimPathKey(components)
+}
+
+// attributeMap builds a map from the serialized full ClaimPath to the Attribute.
+func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attribute {
+	m := make(map[string]clientmodels.Attribute, len(attrs))
+	for _, a := range attrs {
+		m[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+	return m
+}
+
 // expectedAttr describes an expected attribute with its full claim path,
 // display name, optional description, and value.
 type expectedAttr struct {
@@ -340,14 +355,7 @@ func requireIrmaServerResult(t *testing.T, irmaServer *IrmaServer, token irma.Re
 	}
 }
 
-// requireIrmaServerResultStatus retrieves the session result and checks
-// the proof status without validating individual attributes.
-func requireIrmaServerResultStatus(t *testing.T, irmaServer *IrmaServer, token irma.RequestorToken, expectedStatus irma.ServerStatus) {
-	t.Helper()
-	result, err := irmaServer.irma.GetSessionResult(token)
-	require.NoError(t, err)
-	require.Equal(t, expectedStatus, result.Status, "session status mismatch")
-}
+
 
 // makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
 // attributes of the given credential instance.
