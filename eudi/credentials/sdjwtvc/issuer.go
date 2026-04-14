@@ -105,18 +105,6 @@ type ClaimElement struct {
 	SelectivelyDisclosable bool
 }
 
-func (e *ClaimElement) isSdOrContainsSdChildren() bool {
-	if e.SelectivelyDisclosable {
-		return true
-	}
-	for _, c := range e.SubClaims {
-		if c.isSdOrContainsSdChildren() {
-			return true
-		}
-	}
-	return false
-}
-
 func (e *ClaimElement) encode(mode encodeMode) (SerializedClaim, error) {
 	switch e.Type {
 	case Claim_Array:
