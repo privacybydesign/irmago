@@ -40,6 +40,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("multiple vct values matches across types", testMultipleVctValuesMatchesAcrossTypes)
 	t.Run("issue and disclose eduid credential", testIssueAndDiscloseEduIdCredential)
 	t.Run("boolean claim value constraint", testBooleanClaimValueConstraint)
+	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
@@ -1285,6 +1286,59 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	requireVerifierReceivedAttributes(t, result, "eduid-student", map[string]string{
 		"given_name": "Student",
 	})
+}
+
+// testDiscloseWithoutHolderBinding issues a credential, then creates a DCQL
+// query with require_cryptographic_holder_binding set to false. The wallet should
+// disclose the credential without appending a key binding JWT.
+func testDiscloseWithoutHolderBinding(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "nokb@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-no-kb",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					],
+					"require_cryptographic_holder_binding": false
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// The verifier may or may not verify the response (depends on verifier config),
+	// but the session should complete successfully without a KB-JWT.
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should succeed without holder binding")
 }
 
 // testVerifierDisplayName verifies that the verifier display name shown to the

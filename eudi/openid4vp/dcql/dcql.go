@@ -68,7 +68,16 @@ type CredentialQuery struct {
 	// OPTIONAL. A boolean which indicates whether the Verifier requires a Cryptographic Holder Binding proof.
 	// The default value is true, i.e., a Verifiable Presentation with Cryptographic Holder Binding is required.
 	// If set to false, the Verifier accepts a Credential without Cryptographic Holder Binding proof.
-	RequireHolderBinding bool `json:"require_cryptographic_holder_binding,omitempty"`
+	RequireHolderBinding *bool `json:"require_cryptographic_holder_binding,omitempty"`
+}
+
+// NeedsHolderBinding returns true if the credential query requires a cryptographic
+// holder binding proof. Defaults to true per the OpenID4VP spec when the field is absent.
+func (c CredentialQuery) NeedsHolderBinding() bool {
+	if c.RequireHolderBinding == nil {
+		return true
+	}
+	return *c.RequireHolderBinding
 }
 
 // QueryResponse contains the values required for a response to a query.

@@ -19,6 +19,8 @@ type DisclosureSelection struct {
 	CredentialHash string
 	// The claim paths the user chose to disclose (e.g., [["given_name"], ["address", "street"]])
 	ClaimPaths [][]any
+	// Whether the verifier requires a cryptographic holder binding proof for this credential.
+	RequireHolderBinding bool
 }
 
 // PreparedDisclosure contains the VP token response data and log information

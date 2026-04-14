@@ -153,16 +153,18 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
-		kbjwt, err := sdjwtvc.CreateKbJwt(selected, h.keyBinder, nonce, clientId)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create kbjwt: %w", err)
+		presentation := string(selected)
+		if sel.RequireHolderBinding {
+			kbjwt, err := sdjwtvc.CreateKbJwt(selected, h.keyBinder, nonce, clientId)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
+			}
+			presentation = string(sdjwtvc.AddKeyBindingJwtToSdJwtVc(selected, kbjwt))
 		}
-
-		sdjwtWithKb := sdjwtvc.AddKeyBindingJwtToSdJwtVc(selected, kbjwt)
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
 			QueryId:     sel.QueryId,
-			Credentials: []string{string(sdjwtWithKb)},
+			Credentials: []string{presentation},
 		})
 
 		// Mark the instance as used

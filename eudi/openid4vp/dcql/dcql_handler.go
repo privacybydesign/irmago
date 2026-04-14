@@ -101,6 +101,9 @@ func (h *DcqlHandler) PrepareDisclosure(
 		if !ok {
 			return nil, fmt.Errorf("unknown query id %q in selection", sel.QueryId)
 		}
+		// Propagate the holder binding requirement from the credential query.
+		sel.RequireHolderBinding = credQuery.NeedsHolderBinding()
+
 		handlers := h.findHandlersForQuery(credQuery)
 		if len(handlers) == 0 {
 			return nil, fmt.Errorf("no credential query handler for query %q", sel.QueryId)

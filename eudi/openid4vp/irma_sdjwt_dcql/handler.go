@@ -107,16 +107,18 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
-		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create kbjwt: %w", err)
+		presentation := string(sdjwtSelected)
+		if sel.RequireHolderBinding {
+			kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
+			}
+			presentation = string(sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt))
 		}
-
-		sdjwtWithKb := sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt)
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
 			QueryId:     sel.QueryId,
-			Credentials: []string{string(sdjwtWithKb)},
+			Credentials: []string{presentation},
 		})
 
 		// Extract flat attribute names from claim paths for log display.
