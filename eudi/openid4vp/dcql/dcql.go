@@ -91,18 +91,6 @@ type QueryResponse struct {
 // JSON encoding: ["key", 0, null] → []any{"key", 0, nil}
 type ClaimsPathPointer []any
 
-// StringParts returns only the string components of the path, useful for
-// extracting the object key hierarchy (ignoring array indices and null).
-func (p ClaimsPathPointer) StringParts() []string {
-	var parts []string
-	for _, c := range p {
-		if s, ok := c.(string); ok {
-			parts = append(parts, s)
-		}
-	}
-	return parts
-}
-
 // LastString returns the last string component in the path, or "" if none.
 func (p ClaimsPathPointer) LastString() string {
 	for i := len(p) - 1; i >= 0; i-- {

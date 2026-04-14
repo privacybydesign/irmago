@@ -150,7 +150,7 @@ func dcqlClaimKey(claim dcql.Claim) string {
 	if claim.Id != "" {
 		return claim.Id
 	}
-	return strings.Join(claim.Path.StringParts(), ".")
+	return claim.Path.LastString()
 }
 
 // getClaimMatches checks which claims from the query match the credential's attributes.
@@ -367,7 +367,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		for _, c := range query.Claims {
 			key := c.Id
 			if key == "" {
-				key = strings.Join(c.Path.StringParts(), ".")
+				key = c.Path.LastString()
 			}
 			claimMap[key] = c
 		}
