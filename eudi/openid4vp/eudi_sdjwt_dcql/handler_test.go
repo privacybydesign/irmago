@@ -282,14 +282,16 @@ func TestFindCandidates_NoVctValues_MatchesNone(t *testing.T) {
 // Malformed DCQL queries (missing required fields)
 // ========================================================================
 
-func TestFindCandidates_NoClaims_ReturnsEmptyCandidates(t *testing.T) {
+// TestFindCandidates_NoClaims_MatchesCredential verifies that a query without
+// claims still matches credentials per OpenID4VP Section 6.4.1: "If claims is
+// absent, the Verifier is requesting no claims that are selectively disclosable."
+func TestFindCandidates_NoClaims_MatchesCredential(t *testing.T) {
 	h, store := newTestHandler(t)
 
 	require.NoError(t, store.StoreBatch(newTestBatch("hash-noclaims", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
 	})))
 
-	// Query without any claims — the credential matches the VCT but there's nothing to disclose.
 	query := parseDcqlQuery(t, `{
 		"id": "q1",
 		"format": "dc+sd-jwt",
@@ -298,8 +300,7 @@ func TestFindCandidates_NoClaims_ReturnsEmptyCandidates(t *testing.T) {
 
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
-	// With no claims requested, parseBatchAttributes returns nil (no requested claims to match).
-	assert.Empty(t, result.OwnedCandidates)
+	require.Len(t, result.OwnedCandidates, 1, "credential should match even without claims")
 }
 
 func TestFindCandidates_ClaimPathDoesNotExist_NoMatch(t *testing.T) {

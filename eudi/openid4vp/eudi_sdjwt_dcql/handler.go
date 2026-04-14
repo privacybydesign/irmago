@@ -194,10 +194,13 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 
 	claims := selectClaims(query, &payload)
 	if claims == nil {
+		// nil means the credential doesn't satisfy the query's value constraints.
 		return nil, nil
 	}
 
-	var attributes []clientmodels.Attribute
+	// Use a non-nil slice so that non-SD claims can still be appended even when
+	// no SD claims are requested (claims is empty but non-nil).
+	attributes := make([]clientmodels.Attribute, 0)
 	requestedKeys := make(map[string]struct{})
 	for _, claim := range claims {
 		val, _ := payload.GetClaimValue([]any(claim.Path))
@@ -238,6 +241,13 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 // fully satisfiable set. Without claim_sets, all claims must match.
 // Returns nil if the credential doesn't satisfy the query.
 func selectClaims(query dcql.CredentialQuery, payload *sdjwtvc.ProcessedSdJwtPayload) []dcql.Claim {
+	// OpenID4VP Section 6.4.1: if claims is absent, the verifier requests no
+	// selectively disclosable claims. Return empty (non-nil) to indicate the
+	// credential matches but no SD claims are requested.
+	if len(query.Claims) == 0 {
+		return []dcql.Claim{}
+	}
+
 	if len(query.ClaimSets) == 0 {
 		// No claim_sets: all claims must match.
 		for _, claim := range query.Claims {

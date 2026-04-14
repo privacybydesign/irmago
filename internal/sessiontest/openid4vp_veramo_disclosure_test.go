@@ -41,6 +41,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("issue and disclose eduid credential", testIssueAndDiscloseEduIdCredential)
 	t.Run("boolean claim value constraint", testBooleanClaimValueConstraint)
 	t.Run("multiple credentials for same query", testMultipleCredentialsForSameQuery)
+	t.Run("no claims requested shares only non-sd claims", testNoClaimsRequestedSharesOnlyNonSdClaims)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
@@ -1376,6 +1377,69 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	}
 	require.Contains(t, emails, "alice@example.com")
 	require.Contains(t, emails, "bob@example.com")
+}
+
+// testNoClaimsRequestedSharesOnlyNonSdClaims issues a MembershipCredential
+// (which has SD claims "member_name" and "membership_type", and a non-SD claim
+// "member_since"), then sends a DCQL query with no claims array. Per OpenID4VP
+// Section 6.4.1, when claims is absent the wallet should only share the non-SD
+// claims — no SD disclosures should be included.
+func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+		"member_name": "Alice",
+		"member_since": "2020-01-01",
+		"membership_type": "gold"
+	}`)
+
+	// DCQL query with NO claims array — verifier requests no selective disclosures.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "membership-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/membership"]
+					}
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	plan := session.DisclosurePlan
+	require.NotNil(t, plan)
+	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+
+	// The disclosure plan should only contain non-SD claims.
+	// "member_since" is non-SD, while "member_name" and "membership_type" are SD.
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	attrMap := attributeMap(cred.Attributes)
+	require.Contains(t, attrMap, "member_since", "non-SD claim member_since should be in the disclosure plan")
+	require.NotContains(t, attrMap, "member_name", "SD claim member_name should NOT be in the plan when claims is absent")
+	require.NotContains(t, attrMap, "membership_type", "SD claim membership_type should NOT be in the plan when claims is absent")
+
+	// Disclose with whatever attributes are available (only non-SD).
+	attrIds := make([]string, len(cred.Attributes))
+	for i, attr := range cred.Attributes {
+		attrIds[i] = attr.Id
+	}
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred, attrIds...))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
 }
 
 // testDiscloseWithoutHolderBinding issues a credential, then creates a DCQL
