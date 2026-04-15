@@ -298,9 +298,10 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 		at, ok := attrTypesByID[match.attributeName]
 		if !ok {
 			// If the attribute type is not in the schema, create a basic attribute
+			dn := clientmodels.TranslatedString{"en": match.attributeName}
 			attr := clientmodels.Attribute{
 				ClaimPath:   []any{match.attributeName},
-				DisplayName: clientmodels.TranslatedString{"en": match.attributeName},
+				DisplayName: &dn,
 			}
 			if rawVal, exists := metadata.Attributes[match.attributeName]; exists {
 				if strVal, ok := rawVal.(string); ok {
@@ -312,9 +313,10 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 		}
 
 		description := clientmodels.TranslatedString(at.Description)
+		displayName := clientmodels.TranslatedString(at.Name)
 		attr := clientmodels.Attribute{
 			ClaimPath:   []any{at.ID},
-			DisplayName: clientmodels.TranslatedString(at.Name),
+			DisplayName: &displayName,
 			Description: &description,
 		}
 
@@ -377,15 +379,17 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 	var attributes []clientmodels.Attribute
 	for _, claim := range claimsToShow {
 		pathKey := clientmodels.ClaimPathKey(claim.Path)
+		dn := clientmodels.TranslatedString{"en": pathKey}
 		attr := clientmodels.Attribute{
 			ClaimPath:   claim.Path,
-			DisplayName: clientmodels.TranslatedString{"en": pathKey},
+			DisplayName: &dn,
 		}
 
 		// Look up display metadata from the credential type schema
 		for _, at := range credType.AttributeTypes {
 			if clientmodels.ClaimPathKey([]any{at.ID}) == pathKey {
-				attr.DisplayName = clientmodels.TranslatedString(at.Name)
+				name := clientmodels.TranslatedString(at.Name)
+				attr.DisplayName = &name
 				break
 			}
 		}
@@ -443,9 +447,10 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 	var attributes []clientmodels.Attribute
 	for _, claimPath := range disclosedClaimPaths {
 		pathKey := clientmodels.ClaimPathKey(claimPath)
+		dn := clientmodels.TranslatedString{"en": pathKey}
 		attr := clientmodels.Attribute{
 			ClaimPath:   claimPath,
-			DisplayName: clientmodels.TranslatedString{"en": pathKey},
+			DisplayName: &dn,
 		}
 
 		// Look up display name and value from schema.
@@ -454,7 +459,8 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 		if credType, ok := h.config.CredentialTypes[credTypeId]; ok {
 			for _, at := range credType.AttributeTypes {
 				if clientmodels.ClaimPathKey([]any{at.ID}) == pathKey {
-					attr.DisplayName = clientmodels.TranslatedString(at.Name)
+					name := clientmodels.TranslatedString(at.Name)
+					attr.DisplayName = &name
 					matchedAtType = at
 					break
 				}

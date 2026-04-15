@@ -38,9 +38,10 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 			if attr.RevocationAttribute {
 				continue
 			}
+			dn := clientmodels.TranslatedString(attr.Name)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{attr.ID},
-				DisplayName: clientmodels.TranslatedString(attr.Name),
+				DisplayName: &dn,
 				Value: &clientmodels.AttributeValue{
 					Type: displayHintToAttributeType(attr.DisplayHint),
 				},
@@ -132,9 +133,10 @@ func createCredentialDescriptor(
 					}
 					requestedValue.String = &s
 				}
+				dn := clientmodels.TranslatedString(a.Name)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:      []any{a.ID},
-					DisplayName:    clientmodels.TranslatedString(a.Name),
+					DisplayName:    &dn,
 					RequestedValue: requestedValue,
 				})
 			}
@@ -167,9 +169,10 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		if at.RevocationAttribute {
 			continue
 		}
+		dn := clientmodels.TranslatedString(at.Name)
 		attributes = append(attributes, clientmodels.Attribute{
 			ClaimPath:   []any{at.ID},
-			DisplayName: clientmodels.TranslatedString(at.Name),
+			DisplayName: &dn,
 			Value: &clientmodels.AttributeValue{
 				Type: clientmodels.AttributeType_String,
 			},
@@ -231,9 +234,10 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				if at.IsOptional() && len(attrValue) == 0 {
 					continue
 				}
+				dn := clientmodels.TranslatedString(at.Name)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:   []any{at.ID},
-					DisplayName: clientmodels.TranslatedString(at.Name),
+					DisplayName: &dn,
 					Description: &description,
 					Value:       buildAttributeValue(at.DisplayHint, &attrValue),
 				})

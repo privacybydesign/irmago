@@ -252,7 +252,7 @@ func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, result[0].Attributes, 1)
-	assert.Equal(t, "Family Name", result[0].Attributes[0].DisplayName["en"])
+	assert.Equal(t, "Family Name", (*result[0].Attributes[0].DisplayName)["en"])
 }
 
 func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {

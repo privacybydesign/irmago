@@ -131,7 +131,7 @@ func testDisclosureWithPredefinedValues(
 	require.Equal(t, step1.Options[0].Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"studentID"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"nl": "Studentnummer",
 				"en": "Student number",
 			},
@@ -141,7 +141,7 @@ func testDisclosureWithPredefinedValues(
 		},
 		{
 			ClaimPath: []any{"university"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"nl": "Universiteit",
 				"en": "University",
 			},
@@ -172,7 +172,7 @@ func testDisclosureWithPredefinedValues(
 	requireAttrsInOrder(t, wrongCred.Attributes,
 		expectedAttr{
 			Path:        []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Value:       strVal("University of the Arts"),
 		},
 	)
@@ -550,7 +550,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 	requireAttrsInOrder(t, wrongCred.Attributes,
 		expectedAttr{
 			Path:        []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Value:       strVal("University of the Arts"),
 		},
 	)
@@ -590,7 +590,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 	requireAttrsInOrder(t, wrongCred.Attributes,
 		expectedAttr{
 			Path:        []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Value:       strVal("Open University"),
 		},
 	)
@@ -725,7 +725,7 @@ func testPreExistingWrongCredentialNotReported(
 	requireAttrsInOrder(t, wrongCred.Attributes,
 		expectedAttr{
 			Path:        []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Value:       strVal("Open University"),
 		},
 	)
@@ -828,7 +828,7 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 		[]clientmodels.Attribute{
 			{
 				ClaimPath:   []any{"university"},
-				DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+				DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 				Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
 				Value: &clientmodels.AttributeValue{
 					Type:   clientmodels.AttributeType_String,
@@ -837,7 +837,7 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 			},
 			{
 				ClaimPath:   []any{"level"},
-				DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+				DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 				Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
 				Value: &clientmodels.AttributeValue{
 					Type:   clientmodels.AttributeType_String,
@@ -905,7 +905,7 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 	require.Equal(t, []clientmodels.Attribute{
 		{
 			ClaimPath:   []any{"email"},
-			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
 			Value: &clientmodels.AttributeValue{
 				Type:   clientmodels.AttributeType_String,
@@ -924,7 +924,7 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 	require.Equal(t, []clientmodels.Attribute{
 		{
 			ClaimPath:   []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
 			Value: &clientmodels.AttributeValue{
 				Type:   clientmodels.AttributeType_String,
@@ -1036,14 +1036,14 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 	require.Equal(t, toIssue.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath:   []any{"firstname"},
-			DisplayName: clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
+			DisplayName: &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
 			RequestedValue: &clientmodels.AttributeValue{
 				Type: clientmodels.AttributeType_String,
 			},
 		},
 		{
 			ClaimPath:   []any{"familyname"},
-			DisplayName: clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
+			DisplayName: &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
 			RequestedValue: &clientmodels.AttributeValue{
 				Type: clientmodels.AttributeType_String,
 			},

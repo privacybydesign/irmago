@@ -75,17 +75,17 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"given_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
 			Value:       strVal("Test"),
 		},
 		expectedAttr{
 			Path:        []any{"family_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
 			Value:       strVal("User"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
 			Value:       strVal("test@example.com"),
 		},
 	)
@@ -131,17 +131,17 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"given_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
 			Value:       strVal("Test"),
 		},
 		expectedAttr{
 			Path:        []any{"family_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
 			Value:       strVal("TxCode"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
 			Value:       strVal("txcode@example.com"),
 		},
 	)
@@ -211,31 +211,32 @@ func testOpenId4VciPreAuthFlowNestedClaims(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued HouseCredential should appear in GetCredentials")
 
-	// Nested claims are resolved via their metadata paths. The credential service
-	// iterates metadata claims in DB order (which may differ from config file order).
-	// Use attributeMap for order-independent checks.
-	am := attributeMap(cred.Attributes)
-	require.Len(t, cred.Attributes, 4)
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"owner_name"},
-		DisplayName: clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
-		Value:       strVal("Alice"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"address", "street"},
-		DisplayName: clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
-		Value:       strVal("123 Main St"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"address", "city"},
-		DisplayName: clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
-		Value:       strVal("Amsterdam"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"address", "country"},
-		DisplayName: clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
-		Value:       strVal("NL"),
-	})
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"owner_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+			Value:       strVal("Alice"),
+		},
+		header(
+			[]any{"address"},
+			clientmodels.TranslatedString{"en": "Address", "nl": "Adres"},
+		),
+		expectedAttr{
+			Path:        []any{"address", "street"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+			Value:       strVal("123 Main St"),
+		},
+		expectedAttr{
+			Path:        []any{"address", "city"},
+			DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+			Value:       strVal("Amsterdam"),
+		},
+		expectedAttr{
+			Path:        []any{"address", "country"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
+			Value:       strVal("NL"),
+		},
+	)
 }
 
 func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
@@ -274,12 +275,12 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	requireAttrsInOrder(t, emailCred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
 			Value:       strVal("nested-test@example.com"),
 		},
 		expectedAttr{
 			Path:        []any{"domain"},
-			DisplayName: clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"},
 			Value:       strVal("example.com"),
 		},
 	)
@@ -290,22 +291,22 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	requireAttrsInOrder(t, studentCred.Attributes,
 		expectedAttr{
 			Path:        []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Value:       strVal("TU Delft"),
 		},
 		expectedAttr{
 			Path:        []any{"level"},
-			DisplayName: clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"},
 			Value:       strVal("MSc"),
 		},
 		expectedAttr{
 			Path:        []any{"student_id"},
-			DisplayName: clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"},
 			Value:       strVal("S12345"),
 		},
 		expectedAttr{
 			Path:        []any{"courses"},
-			DisplayName: clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
 			Value:       strVal(""), // not issued, falls back to empty
 		},
 	)
@@ -313,28 +314,32 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	// Verify HouseCredential attributes.
 	houseCred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT)")
 	require.NotNil(t, houseCred, "HouseCredential should appear in GetCredentials")
-	houseAttrs := attributeMap(houseCred.Attributes)
-	require.Len(t, houseCred.Attributes, 4)
-	requireAttrFull(t, houseAttrs, expectedAttr{
-		Path:        []any{"owner_name"},
-		DisplayName: clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
-		Value:       strVal("Bob"),
-	})
-	requireAttrFull(t, houseAttrs, expectedAttr{
-		Path:        []any{"address", "street"},
-		DisplayName: clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
-		Value:       strVal("456 Oak Ave"),
-	})
-	requireAttrFull(t, houseAttrs, expectedAttr{
-		Path:        []any{"address", "city"},
-		DisplayName: clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
-		Value:       strVal("Rotterdam"),
-	})
-	requireAttrFull(t, houseAttrs, expectedAttr{
-		Path:        []any{"address", "country"},
-		DisplayName: clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
-		Value:       strVal("NL"),
-	})
+	requireAttrsInOrder(t, houseCred.Attributes,
+		expectedAttr{
+			Path:        []any{"owner_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+			Value:       strVal("Bob"),
+		},
+		header(
+			[]any{"address"},
+			clientmodels.TranslatedString{"en": "Address", "nl": "Adres"},
+		),
+		expectedAttr{
+			Path:        []any{"address", "street"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+			Value:       strVal("456 Oak Ave"),
+		},
+		expectedAttr{
+			Path:        []any{"address", "city"},
+			DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+			Value:       strVal("Rotterdam"),
+		},
+		expectedAttr{
+			Path:        []any{"address", "country"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
+			Value:       strVal("NL"),
+		},
+	)
 }
 
 func testOpenId4VciPreAuthFlowArrayClaims(t *testing.T) {
@@ -354,37 +359,38 @@ func testOpenId4VciPreAuthFlowArrayClaims(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "Student Card Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued StudentCardCredential should appear in GetCredentials")
 
-	// Array claims are flattened into indexed paths.
+	// Array claims are flattened into indexed paths with a section header.
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Value:       strVal("TU Delft"),
 		},
 		expectedAttr{
 			Path:        []any{"level"},
-			DisplayName: clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"},
 			Value:       strVal("MSc"),
 		},
 		expectedAttr{
 			Path:        []any{"student_id"},
-			DisplayName: clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"},
 			Value:       strVal("S99999"),
 		},
+		header(
+			[]any{"courses"},
+			clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
+		),
 		expectedAttr{
-			Path:        []any{"courses", 0},
-			DisplayName: clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
-			Value:       strVal("Algorithms"),
+			Path:  []any{"courses", 0},
+			Value: strVal("Algorithms"),
 		},
 		expectedAttr{
-			Path:        []any{"courses", 1},
-			DisplayName: clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
-			Value:       strVal("Databases"),
+			Path:  []any{"courses", 1},
+			Value: strVal("Databases"),
 		},
 		expectedAttr{
-			Path:        []any{"courses", 2},
-			DisplayName: clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
-			Value:       strVal("Security"),
+			Path:  []any{"courses", 2},
+			Value: strVal("Security"),
 		},
 	)
 }
@@ -410,17 +416,17 @@ func testOpenId4VciPreAuthFlowMixedSdNonSd(t *testing.T) {
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"member_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Member Name", "nl": "Naam lid"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Member Name", "nl": "Naam lid"},
 			Value:       strVal("Alice"),
 		},
 		expectedAttr{
 			Path:        []any{"member_since"},
-			DisplayName: clientmodels.TranslatedString{"en": "Member Since", "nl": "Lid sinds"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Member Since", "nl": "Lid sinds"},
 			Value:       strVal("2020-01-15"),
 		},
 		expectedAttr{
 			Path:        []any{"membership_type"},
-			DisplayName: clientmodels.TranslatedString{"en": "Membership Type", "nl": "Type lidmaatschap"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Membership Type", "nl": "Type lidmaatschap"},
 			Value:       strVal("gold"),
 		},
 	)
@@ -459,77 +465,77 @@ func testOpenId4VciPreAuthFlowEduIdCredential(t *testing.T) {
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"schac_home_organization"},
-			DisplayName: clientmodels.TranslatedString{"en": "Organization", "nl": "Instelling"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Organization", "nl": "Instelling"},
 			Value:       strVal("university.nl"),
 		},
 		expectedAttr{
 			Path:        []any{"name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Name", "nl": "Naam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Name", "nl": "Naam"},
 			Value:       strVal("Jan de Vries"),
 		},
 		expectedAttr{
 			Path:        []any{"given_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Given name", "nl": "Voornaam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given name", "nl": "Voornaam"},
 			Value:       strVal("Jan"),
 		},
 		expectedAttr{
 			Path:        []any{"family_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
 			Value:       strVal("de Vries"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: clientmodels.TranslatedString{"en": "E-mail", "nl": "E-mail"},
+			DisplayName: &clientmodels.TranslatedString{"en": "E-mail", "nl": "E-mail"},
 			Value:       strVal("jan@university.nl"),
 		},
 		expectedAttr{
 			Path:        []any{"eduperson_scoped_affiliation"},
-			DisplayName: clientmodels.TranslatedString{"en": "Affiliation (scoped)", "nl": "Betrekking (in relatie)"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Affiliation (scoped)", "nl": "Betrekking (in relatie)"},
 			Value:       strVal("student@university.nl"),
 		},
 		expectedAttr{
 			Path:        []any{"eduperson_assurance"},
-			DisplayName: clientmodels.TranslatedString{"en": "Assurance", "nl": "Bevestiging"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Assurance", "nl": "Bevestiging"},
 			Value:       strVal("https://eduid.nl/assurance/low"),
 		},
 		expectedAttr{
 			Path:        []any{"is_student"},
-			DisplayName: clientmodels.TranslatedString{"en": "IsStudent", "nl": "IsStudent"},
+			DisplayName: &clientmodels.TranslatedString{"en": "IsStudent", "nl": "IsStudent"},
 			Value:       boolVal(true),
 		},
 		expectedAttr{
 			Path:        []any{"is_faculty"},
-			DisplayName: clientmodels.TranslatedString{"en": "IsFaculty", "nl": "IsFaculteitslid"},
+			DisplayName: &clientmodels.TranslatedString{"en": "IsFaculty", "nl": "IsFaculteitslid"},
 			Value:       boolVal(false),
 		},
 		expectedAttr{
 			Path:        []any{"is_member"},
-			DisplayName: clientmodels.TranslatedString{"en": "IsMember", "nl": "IsLid"},
+			DisplayName: &clientmodels.TranslatedString{"en": "IsMember", "nl": "IsLid"},
 			Value:       boolVal(true),
 		},
 		expectedAttr{
 			Path:        []any{"is_staff"},
-			DisplayName: clientmodels.TranslatedString{"en": "IsStaff", "nl": "IsStaf"},
+			DisplayName: &clientmodels.TranslatedString{"en": "IsStaff", "nl": "IsStaf"},
 			Value:       boolVal(false),
 		},
 		expectedAttr{
 			Path:        []any{"is_alum"},
-			DisplayName: clientmodels.TranslatedString{"en": "IsAlumnus", "nl": "IsAlumnus"},
+			DisplayName: &clientmodels.TranslatedString{"en": "IsAlumnus", "nl": "IsAlumnus"},
 			Value:       boolVal(false),
 		},
 		expectedAttr{
 			Path:        []any{"is_affiliate"},
-			DisplayName: clientmodels.TranslatedString{"en": "IsAffiliate", "nl": "IsVerbonden"},
+			DisplayName: &clientmodels.TranslatedString{"en": "IsAffiliate", "nl": "IsVerbonden"},
 			Value:       boolVal(false),
 		},
 		expectedAttr{
 			Path:        []any{"is_employee"},
-			DisplayName: clientmodels.TranslatedString{"en": "IsEmployee", "nl": "IsMedewerker"},
+			DisplayName: &clientmodels.TranslatedString{"en": "IsEmployee", "nl": "IsMedewerker"},
 			Value:       boolVal(false),
 		},
 		expectedAttr{
 			Path:        []any{"is_library-walk-in"},
-			DisplayName: clientmodels.TranslatedString{"en": "IsLibraryWalkIn", "nl": "IsBibliotheekBezoeker"},
+			DisplayName: &clientmodels.TranslatedString{"en": "IsLibraryWalkIn", "nl": "IsBibliotheekBezoeker"},
 			Value:       boolVal(false),
 		},
 	)
@@ -603,68 +609,79 @@ func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "Organization Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued OrganizationCredential should appear in GetCredentials")
 
-	am := attributeMap(cred.Attributes)
-	require.Len(t, cred.Attributes, 12)
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "name"},
-		DisplayName: clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
-		Value:       strVal("TU Delft"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 0, "faculty_name"},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("EEMCS"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("Software Technology"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 0},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("Compiler Construction"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 1},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("Distributed Systems"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 2},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("Intro to CS"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("Data Science"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 0, "departments", 1, "courses", 0},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("Machine Learning"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 1, "faculty_name"},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("Architecture"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("Urbanism"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "faculties", 1, "departments", 0, "courses", 0},
-		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
-		Value:       strVal("City Planning"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"university", "founded"},
-		DisplayName: clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
-		Value:       intVal(1842),
-	})
+	deptName := &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"}
+	facName := &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"}
+	departments := clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}
+	courses := clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}
+
+	requireAttrsInOrder(t, cred.Attributes,
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		expectedAttr{
+			Path:        []any{"university", "name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
+			Value:       strVal("TU Delft"),
+		},
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		// Faculty 0 (EEMCS) — keys ordered by metadata: faculty_name, departments.
+		expectedAttr{
+			Path:        []any{"university", "faculties", 0, "faculty_name"},
+			DisplayName: facName,
+			Value:       strVal("EEMCS"),
+		},
+		header([]any{"university", "faculties", 0, "departments"}, departments),
+		// Department 0 (Software Technology) — keys ordered by metadata: dept_name, courses.
+		expectedAttr{
+			Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Software Technology"),
+		},
+		header([]any{"university", "faculties", 0, "departments", 0, "courses"}, courses),
+		expectedAttr{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 0},
+			Value: strVal("Compiler Construction"),
+		},
+		expectedAttr{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 1},
+			Value: strVal("Distributed Systems"),
+		},
+		expectedAttr{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 2},
+			Value: strVal("Intro to CS"),
+		},
+		// Department 1 (Data Science).
+		expectedAttr{
+			Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Data Science"),
+		},
+		header([]any{"university", "faculties", 0, "departments", 1, "courses"}, courses),
+		expectedAttr{
+			Path:  []any{"university", "faculties", 0, "departments", 1, "courses", 0},
+			Value: strVal("Machine Learning"),
+		},
+		// Faculty 1 (Architecture).
+		expectedAttr{
+			Path:        []any{"university", "faculties", 1, "faculty_name"},
+			DisplayName: facName,
+			Value:       strVal("Architecture"),
+		},
+		header([]any{"university", "faculties", 1, "departments"}, departments),
+		expectedAttr{
+			Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Urbanism"),
+		},
+		header([]any{"university", "faculties", 1, "departments", 0, "courses"}, courses),
+		expectedAttr{
+			Path:  []any{"university", "faculties", 1, "departments", 0, "courses", 0},
+			Value: strVal("City Planning"),
+		},
+		expectedAttr{
+			Path:        []any{"university", "founded"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
+			Value:       intVal(1842),
+		},
+	)
 
 	// Verify the credential can be disclosed over OpenID4VP.
 	dcqlQuery := `{
@@ -822,17 +839,17 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"given_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
 			Value:       strVal("Test"),
 		},
 		expectedAttr{
 			Path:        []any{"family_name"},
-			DisplayName: clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
 			Value:       strVal("AuthCode"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
 			Value:       strVal("authcode@example.com"),
 		},
 	)
@@ -878,28 +895,32 @@ func testOpenId4VciAuthCodeFlowNestedClaims(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT, Auth Code)")
 	require.NotNil(t, cred, "issued HouseCredential should appear in GetCredentials")
 
-	am := attributeMap(cred.Attributes)
-	require.Len(t, cred.Attributes, 4)
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"owner_name"},
-		DisplayName: clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
-		Value:       strVal("Charlie"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"address", "street"},
-		DisplayName: clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
-		Value:       strVal("789 Elm St"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"address", "city"},
-		DisplayName: clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
-		Value:       strVal("Utrecht"),
-	})
-	requireAttrFull(t, am, expectedAttr{
-		Path:        []any{"address", "country"},
-		DisplayName: clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
-		Value:       strVal("NL"),
-	})
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"owner_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+			Value:       strVal("Charlie"),
+		},
+		header(
+			[]any{"address"},
+			clientmodels.TranslatedString{"en": "Address", "nl": "Adres"},
+		),
+		expectedAttr{
+			Path:        []any{"address", "street"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+			Value:       strVal("789 Elm St"),
+		},
+		expectedAttr{
+			Path:        []any{"address", "city"},
+			DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+			Value:       strVal("Utrecht"),
+		},
+		expectedAttr{
+			Path:        []any{"address", "country"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
+			Value:       strVal("NL"),
+		},
+	)
 }
 
 // issueCredentialViaOid4VciAuthCode issues a single credential through the

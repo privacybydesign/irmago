@@ -20,6 +20,11 @@ func checkAttributeList(issues *[]string, path string, given, requested []Attrib
 	}
 
 	for _, r := range requested {
+		// Skip section headers — they are structural, not value-bearing.
+		if r.Value == nil && r.RequestedValue == nil {
+			continue
+		}
+
 		key := ClaimPathKey(r.ClaimPath)
 		p := joinPath(path, key)
 
@@ -136,6 +141,10 @@ func attributeListSatisfiesNoReport(given, requested []Attribute) bool {
 		givenByPath[ClaimPathKey(g.ClaimPath)] = g
 	}
 	for _, r := range requested {
+		// Skip section headers.
+		if r.Value == nil && r.RequestedValue == nil {
+			continue
+		}
 		g, ok := givenByPath[ClaimPathKey(r.ClaimPath)]
 		if !ok {
 			return false

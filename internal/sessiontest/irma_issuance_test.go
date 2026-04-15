@@ -288,7 +288,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	requireNoAttr(t, attributeMap(offered.Attributes), []any{"votingnumber"})
 	requireAttrsInOrder(t, offered.Attributes, expectedAttr{
 		Path:        []any{"election"},
-		DisplayName: clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
+		DisplayName: &clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
 		Value:       strVal("plantsoen"),
 	})
 
@@ -340,7 +340,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
 	requireAttrsInOrder(t, owned.Attributes, expectedAttr{
 		Path:        []any{"election"},
-		DisplayName: clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
+		DisplayName: &clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
 		Value:       strVal("plantsoen"),
 	})
 
@@ -471,22 +471,22 @@ func testAttributesOrderedByDisplayIndex(
 	studentCardExpectedAttrs := []expectedAttr{
 		{
 			Path:        []any{"level"},
-			DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 			Value:       strVal("high"),
 		},
 		{
 			Path:        []any{"studentID"},
-			DisplayName: clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
 			Value:       strVal("67890"),
 		},
 		{
 			Path:        []any{"studentCardNumber"},
-			DisplayName: clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
 			Value:       strVal("12345"),
 		},
 		{
 			Path:        []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Value:       strVal("University of the Arts"),
 		},
 	}
@@ -537,7 +537,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	// Prove that the revocation attribute (with empty ID) is not visible — only BSN should be present
 	requireAttrsInOrder(t, rootCred.Attributes, expectedAttr{
 		Path:        []any{"BSN"},
-		DisplayName: clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
+		DisplayName: &clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
 		Value:       strVal("299792458"),
 	})
 
@@ -565,7 +565,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	require.True(t, choice.Revoked, "owned option should show credential as revoked during disclosure permission")
 	requireAttrsInOrder(t, choice.Attributes, expectedAttr{
 		Path:        []any{"BSN"},
-		DisplayName: clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
+		DisplayName: &clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
 		Value:       strVal("299792458"),
 	})
 

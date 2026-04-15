@@ -93,13 +93,14 @@ type Attribute struct {
 	ClaimPath []any `json:"claim_path"`
 
 	// Human-readable name for this attribute, localized.
-	DisplayName TranslatedString `json:"display_name"`
+	// Nil for array item attributes where the parent's name serves as the label.
+	DisplayName *TranslatedString `json:"display_name,omitempty"`
 
 	// Optional longer description for this attribute, localized.
 	Description *TranslatedString `json:"description,omitempty"`
 
 	// The actual value of this attribute as provided by the issuer.
-	// Nil when describing a requested attribute that hasn't been filled yet.
+	// Nil for section header attributes and unfilled requested attributes.
 	Value *AttributeValue `json:"value,omitempty"`
 
 	// The value that a verifier requested for this attribute (if any).

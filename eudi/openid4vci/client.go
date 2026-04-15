@@ -390,21 +390,58 @@ func convertToCredentialInfoList(
 }
 
 func convertClaimsToAttributes(claims []metadata.ClaimsDescription) []clientmodels.Attribute {
+	// Collect all claim paths upfront to detect parent claims.
+	allPaths := make([][]any, len(claims))
+	for i, claim := range claims {
+		allPaths[i] = claim.Path
+	}
+
 	var attrs []clientmodels.Attribute
-	for _, claim := range claims {
-		for _, path := range claim.Path {
-			displayName := clientmodels.NewTranslatedString(&path)
-			if len(claim.Display) > 0 {
-				displays := metadata.ToTranslateableList(claim.Display)
-				displayName = metadata.ConvertDisplayToTranslatedString(displays)
-			}
-			attrs = append(attrs, clientmodels.Attribute{
-				ClaimPath:   []any{path},
-				DisplayName: displayName,
-			})
+	for i, claim := range claims {
+		claimPath := allPaths[i]
+
+		displayName := clientmodels.TranslatedString{}
+		if len(claim.Display) > 0 {
+			displays := metadata.ToTranslateableList(claim.Display)
+			displayName = metadata.ConvertDisplayToTranslatedString(displays)
 		}
+
+		// Parent claims become section headers (DisplayName set, Value nil).
+		if isParentClaim(claimPath, allPaths) {
+			dn := displayName
+			attrs = append(attrs, clientmodels.Attribute{
+				ClaimPath:   claimPath,
+				DisplayName: &dn,
+			})
+			continue
+		}
+
+		dn := displayName
+		attrs = append(attrs, clientmodels.Attribute{
+			ClaimPath:   claimPath,
+			DisplayName: &dn,
+		})
 	}
 	return attrs
+}
+
+// isParentClaim returns true if path is a strict prefix of any other path in allPaths.
+func isParentClaim(path []any, allPaths [][]any) bool {
+	for _, other := range allPaths {
+		if len(other) > len(path) {
+			match := true
+			for i := range path {
+				if fmt.Sprintf("%v", path[i]) != fmt.Sprintf("%v", other[i]) {
+					match = false
+					break
+				}
+			}
+			if match {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata) *clientmodels.TrustedParty {

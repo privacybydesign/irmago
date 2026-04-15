@@ -601,11 +601,26 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 
 	// Arrays are expanded into individual elements with indexed paths.
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	am := attributeMap(cred.Attributes)
-	requireAttr(t, am, []any{"university"}, "TU Delft")
-	requireAttr(t, am, []any{"courses", 0}, "Algorithms")
-	requireAttr(t, am, []any{"courses", 1}, "Databases")
-	requireAttr(t, am, []any{"courses", 2}, "Networks")
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"university"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			Value:       strVal("TU Delft"),
+		},
+		header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
+		expectedAttr{
+			Path:  []any{"courses", 0},
+			Value: strVal("Algorithms"),
+		},
+		expectedAttr{
+			Path:  []any{"courses", 1},
+			Value: strVal("Databases"),
+		},
+		expectedAttr{
+			Path:  []any{"courses", 2},
+			Value: strVal("Networks"),
+		},
+	)
 
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
@@ -661,7 +676,7 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 
 	// Path ["courses", 1] resolves to a specific element ("Databases"), not the whole array.
 	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{pk("courses", 1): {Value: "Databases", Type: clientmodels.AttributeType_String, DisplayName: "Courses"}}},
+		{Attributes: map[string]expectedPlanAttribute{pk("courses", 1): {Value: "Databases", Type: clientmodels.AttributeType_String}}},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -720,10 +735,21 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 
 	// Null path expands into individual elements with indexed paths.
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	am := attributeMap(cred.Attributes)
-	requireAttr(t, am, []any{"courses", 0}, "Algorithms")
-	requireAttr(t, am, []any{"courses", 1}, "Databases")
-	requireAttr(t, am, []any{"courses", 2}, "Networks")
+	requireAttrsInOrder(t, cred.Attributes,
+		header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
+		expectedAttr{
+			Path:  []any{"courses", 0},
+			Value: strVal("Algorithms"),
+		},
+		expectedAttr{
+			Path:  []any{"courses", 1},
+			Value: strVal("Databases"),
+		},
+		expectedAttr{
+			Path:  []any{"courses", 2},
+			Value: strVal("Networks"),
+		},
+	)
 
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
@@ -2295,8 +2321,8 @@ func requireDisclosurePlan(t *testing.T, plan *clientmodels.DisclosurePlan, expe
 				require.Equal(t, expAttr.Value, *attr.Value.String,
 					"choice %d attribute %q value mismatch", i, attrKey)
 			}
-			if expAttr.DisplayName != "" {
-				actual, ok := attr.DisplayName["en"]
+			if expAttr.DisplayName != "" && attr.DisplayName != nil {
+				actual, ok := (*attr.DisplayName)["en"]
 				require.True(t, ok, "choice %d attribute %q should have English display name", i, attrKey)
 				require.Equal(t, expAttr.DisplayName, actual,
 					"choice %d attribute %q display name mismatch", i, attrKey)
@@ -2330,7 +2356,10 @@ func credMatchesExpected(cred *clientmodels.SelectableCredentialInstance, exp ex
 			}
 		}
 		if expAttr.DisplayName != "" {
-			if actual, ok := attr.DisplayName["en"]; !ok || actual != expAttr.DisplayName {
+			if attr.DisplayName == nil {
+				return false
+			}
+			if actual, ok := (*attr.DisplayName)["en"]; !ok || actual != expAttr.DisplayName {
 				return false
 			}
 		}

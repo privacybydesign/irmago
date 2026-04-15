@@ -259,7 +259,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, firstOption.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"email"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Email address",
 				"nl": "E-mailadres",
 			},
@@ -274,7 +274,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, secondOption.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"university"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
 			},
@@ -284,7 +284,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 		},
 		{
 			ClaimPath: []any{"level"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
 			},
@@ -299,7 +299,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, secondStep.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"firstname"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "First name",
 				"nl": "Voornaam",
 			},
@@ -309,7 +309,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 		},
 		{
 			ClaimPath: []any{"familyname"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Family name",
 				"nl": "Achternaam",
 			},
@@ -402,7 +402,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, firstChoice.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"university"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
 			},
@@ -417,7 +417,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 		},
 		{
 			ClaimPath: []any{"level"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
 			},
@@ -586,7 +586,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"university"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
 			},
@@ -597,7 +597,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		},
 		{
 			ClaimPath: []any{"level"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
 			},
@@ -639,7 +639,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	requireAttrsInOrder(t, wrongCred.Attributes,
 		expectedAttr{
 			Path:        []any{"university"},
-			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 			Value:       strVal("Some Other University"),
 		},
 	)
@@ -752,7 +752,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, firstOption.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"email"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Email address",
 				"nl": "E-mailadres",
 			},
@@ -767,7 +767,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, secondOption.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"university"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
 			},
@@ -777,7 +777,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 		},
 		{
 			ClaimPath: []any{"level"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
 			},
@@ -792,7 +792,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, secondStep.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"firstname"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "First name",
 				"nl": "Voornaam",
 			},
@@ -802,7 +802,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 		},
 		{
 			ClaimPath: []any{"familyname"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Family name",
 				"nl": "Achternaam",
 			},
@@ -895,7 +895,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, firstChoice.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"university"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
 			},
@@ -910,7 +910,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 		},
 		{
 			ClaimPath: []any{"level"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
 			},
@@ -989,7 +989,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"university"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
 			},
@@ -999,7 +999,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 		},
 		{
 			ClaimPath: []any{"level"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
 			},
@@ -1048,7 +1048,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	require.Equal(t, choice.Attributes, []clientmodels.Attribute{
 		{
 			ClaimPath: []any{"university"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "University",
 				"nl": "Universiteit",
 			},
@@ -1063,7 +1063,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 		},
 		{
 			ClaimPath: []any{"level"},
-			DisplayName: clientmodels.TranslatedString{
+			DisplayName: &clientmodels.TranslatedString{
 				"en": "Type",
 				"nl": "Soort",
 			},

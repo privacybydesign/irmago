@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -221,65 +222,16 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 
 		// When the path ends with nil (null wildcard for all array elements),
 		// expand into individual attributes with indexed paths.
-		if len(claim.Path) > 0 && claim.Path[len(claim.Path)-1] == nil {
-			if arr, ok := val.([]any); ok {
-				basePath := claim.Path[:len(claim.Path)-1]
-				displayName := claimDisplayName(batch, basePath)
-				for i, elem := range arr {
-					elemPath := make([]any, len(basePath)+1)
-					copy(elemPath, basePath)
-					elemPath[len(basePath)] = i
-					pk := clientmodels.ClaimPathKey(elemPath)
-					requestedKeys[pk] = struct{}{}
-					attributes = append(attributes, clientmodels.Attribute{
-						ClaimPath:   elemPath,
-						DisplayName: displayName,
-						Value:       clientmodels.NewAttributeValue(elem),
-					})
-				}
-				continue
-			}
+		// When the path ends with nil (null wildcard for all array elements),
+		// resolve the base path and expand the array.
+		claimPath := claim.Path
+		if len(claimPath) > 0 && claimPath[len(claimPath)-1] == nil {
+			claimPath = claimPath[:len(claimPath)-1]
+			val, _ = payload.GetClaimValue(claimPath)
 		}
 
-		// When the value is an array (path doesn't end in nil but resolves to an array),
-		// also expand into indexed elements.
-		if arr, ok := val.([]any); ok {
-			displayName := claimDisplayName(batch, claim.Path)
-			for i, elem := range arr {
-				elemPath := append(append([]any{}, claim.Path...), i)
-				pk := clientmodels.ClaimPathKey(elemPath)
-				requestedKeys[pk] = struct{}{}
-				attributes = append(attributes, clientmodels.Attribute{
-					ClaimPath:   elemPath,
-					DisplayName: displayName,
-					Value:       clientmodels.NewAttributeValue(elem),
-				})
-			}
-			continue
-		}
-
-		// When the value is a nested object, flatten into individual attributes.
-		if obj, ok := val.(map[string]any); ok {
-			for key, elem := range obj {
-				elemPath := append(append([]any{}, claim.Path...), key)
-				pk := clientmodels.ClaimPathKey(elemPath)
-				requestedKeys[pk] = struct{}{}
-				attributes = append(attributes, clientmodels.Attribute{
-					ClaimPath:   elemPath,
-					DisplayName: claimDisplayName(batch, elemPath),
-					Value:       clientmodels.NewAttributeValue(elem),
-				})
-			}
-			continue
-		}
-
-		// Scalar value — single attribute.
-		requestedKeys[pathKey] = struct{}{}
-		attributes = append(attributes, clientmodels.Attribute{
-			ClaimPath:   claim.Path,
-			DisplayName: claimDisplayName(batch, claim.Path),
-			Value:       clientmodels.NewAttributeValue(val),
-		})
+		displayName := claimDisplayName(batch, claimPath)
+		attributes = flattenForDisclosure(attributes, requestedKeys, batch, claimPath, val, displayName)
 	}
 
 	// Include non-SD claims: these are always visible in the JWT payload and
@@ -293,9 +245,10 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 		if err != nil {
 			continue
 		}
+		dn := claimDisplayName(batch, []any{name})
 		attr := clientmodels.Attribute{
 			ClaimPath:   []any{name},
-			DisplayName: claimDisplayName(batch, []any{name}),
+			DisplayName: &dn,
 		}
 		attr.Value = clientmodels.NewAttributeValue(val)
 		attributes = append(attributes, attr)
@@ -442,9 +395,10 @@ func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clien
 		if len(path) == 0 {
 			continue
 		}
+		dn := claimDisplayName(batch, path)
 		attr := clientmodels.Attribute{
 			ClaimPath:   path,
-			DisplayName: claimDisplayName(batch, path),
+			DisplayName: &dn,
 		}
 		if val, err := payload.GetClaimValue(path); err == nil {
 			if valStr, ok := val.(string); ok {
@@ -489,14 +443,89 @@ func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
 	return true
 }
 
+// flattenForDisclosure recursively flattens arrays and objects into scalar
+// attributes, emitting a section header (Value == nil) before each compound
+// value that has a display name. Only leaf attributes are added to requestedKeys.
+func flattenForDisclosure(
+	attrs []clientmodels.Attribute,
+	requestedKeys map[string]struct{},
+	batch *models.CredentialBatch,
+	path []any,
+	value any,
+	display clientmodels.TranslatedString,
+) []clientmodels.Attribute {
+	switch v := value.(type) {
+	case []any:
+		if d := claimDisplayName(batch, path); len(d) > 0 {
+			dn := d
+			attrs = append(attrs, clientmodels.Attribute{
+				ClaimPath:   path,
+				DisplayName: &dn,
+			})
+		}
+		for i, elem := range v {
+			elemPath := append(append([]any{}, path...), i)
+			elemDisplay := claimDisplayName(batch, elemPath)
+			if len(elemDisplay) == 0 {
+				elemDisplay = display
+			}
+			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, elem, elemDisplay)
+		}
+	case map[string]any:
+		if d := claimDisplayName(batch, path); len(d) > 0 {
+			dn := d
+			attrs = append(attrs, clientmodels.Attribute{
+				ClaimPath:   path,
+				DisplayName: &dn,
+			})
+		}
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			elemPath := append(append([]any{}, path...), key)
+			elemDisplay := claimDisplayName(batch, elemPath)
+			if len(elemDisplay) == 0 {
+				elemDisplay = display
+			}
+			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, v[key], elemDisplay)
+		}
+	default:
+		pk := clientmodels.ClaimPathKey(path)
+		requestedKeys[pk] = struct{}{}
+		var dn *clientmodels.TranslatedString
+		if len(path) == 0 || !isArrayIndex(path[len(path)-1]) {
+			d := display
+			dn = &d
+		}
+		attrs = append(attrs, clientmodels.Attribute{
+			ClaimPath:   path,
+			DisplayName: dn,
+			Value:       clientmodels.NewAttributeValue(value),
+		})
+	}
+	return attrs
+}
+
+// isArrayIndex returns true if the path component is a numeric array index.
+func isArrayIndex(component any) bool {
+	switch component.(type) {
+	case int, float64:
+		return true
+	}
+	return false
+}
+
 // claimDisplayName looks up the display name for a claim from the stored credential metadata.
 // Falls back to the raw claim name if no display metadata is available.
 func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmodels.TranslatedString {
 	if batch.CredentialMetadata != nil {
 		for _, claim := range batch.CredentialMetadata.Claims {
-			var path []string
+			var path []any
 			if err := json.Unmarshal(claim.Path, &path); err == nil {
-				if claimPathMatchesStringPath(claimPath, path) {
+				if claimPathMatchesMetadataPath(claimPath, path) {
 					ts := clientmodels.TranslatedString{}
 					for _, d := range claim.Display {
 						locale := "en"
@@ -515,23 +544,23 @@ func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmode
 	return clientmodels.TranslatedString{}
 }
 
-// claimPathMatchesStringPath checks if a []any claim path matches a []string
-// metadata path. Integer components in claimPath are skipped for matching
-// (metadata paths don't contain array indices).
-func claimPathMatchesStringPath(claimPath []any, metadataPath []string) bool {
-	// Extract only the string components from the claim path.
-	var stringParts []string
-	for _, c := range claimPath {
-		if s, ok := c.(string); ok {
-			stringParts = append(stringParts, s)
-		}
-	}
-	if len(stringParts) != len(metadataPath) {
+// claimPathMatchesMetadataPath checks if a concrete claim path matches a metadata
+// path that may contain null wildcards. Null in the metadata path matches any
+// integer index in the claim path.
+func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
+	if len(claimPath) != len(metadataPath) {
 		return false
 	}
-	for i := range stringParts {
-		if stringParts[i] != metadataPath[i] {
-			return false
+	for i := range claimPath {
+		if metadataPath[i] == nil {
+			// Null wildcard matches any integer index.
+			if !isArrayIndex(claimPath[i]) {
+				return false
+			}
+		} else {
+			if fmt.Sprintf("%v", claimPath[i]) != fmt.Sprintf("%v", metadataPath[i]) {
+				return false
+			}
 		}
 	}
 	return true

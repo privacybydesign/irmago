@@ -103,7 +103,7 @@ type CredentialDisplay struct {
 }
 type CredentialDisplays []CredentialDisplay
 
-type ClaimsPathPointer []string
+type ClaimsPathPointer []any
 
 type ClaimsDescription struct {
 	Path      ClaimsPathPointer `json:"path"`

@@ -584,9 +584,10 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 				}
 				rawVal := irma.TranslatedString(attributeValues[atType.Index])
 				description := clientmodels.TranslatedString(atType.Description)
+				name := clientmodels.TranslatedString(atType.Name)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:   []any{atType.ID},
-					DisplayName: clientmodels.TranslatedString(atType.Name),
+					DisplayName: &name,
 					Description: &description,
 					Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 				})
@@ -653,9 +654,10 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 			}
 			rawVal := irma.TranslatedString(attr.Value)
 			description := clientmodels.TranslatedString(atType.Description)
+			name := clientmodels.TranslatedString(atType.Name)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{atType.ID},
-				DisplayName: clientmodels.TranslatedString(atType.Name),
+				DisplayName: &name,
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 			})
@@ -699,9 +701,10 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 			}
 			rawVal := irma.TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
 			description := clientmodels.TranslatedString(atType.Description)
+			name := clientmodels.TranslatedString(atType.Name)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{atType.ID},
-				DisplayName: clientmodels.TranslatedString(atType.Name),
+				DisplayName: &name,
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 			})
@@ -750,9 +753,10 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			v := rawVal
 			irmaVal := irma.NewTranslatedString(&v)
 			description := clientmodels.TranslatedString(atType.Description)
+			name := clientmodels.TranslatedString(atType.Name)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{atType.ID},
-				DisplayName: clientmodels.TranslatedString(atType.Name),
+				DisplayName: &name,
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &irmaVal),
 			})

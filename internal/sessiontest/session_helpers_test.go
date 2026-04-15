@@ -267,12 +267,18 @@ func requireAttrFull(t *testing.T, am map[string]clientmodels.Attribute, expecte
 		require.NotNil(t, actual.Value, "attribute %s should have a value", key)
 		require.Equal(t, expected.Value.Type, actual.Value.Type, "attribute %s value type mismatch", key)
 		require.Equal(t, expected.Value, actual.Value, "attribute %s value mismatch", key)
+	} else {
+		require.Nil(t, actual.Value, "attribute %s should be a section header (nil value)", key)
 	}
-	require.NotNil(t, expected.DisplayName, "attribute %s expected DisplayName must be set", key)
-	for locale, expectedName := range expected.DisplayName {
-		actualName, ok := actual.DisplayName[locale]
-		require.True(t, ok, "attribute %s should have display name for locale %q", key, locale)
-		require.Equal(t, expectedName, actualName, "attribute %s display name [%s] mismatch", key, locale)
+	if expected.DisplayName != nil {
+		require.NotNil(t, actual.DisplayName, "attribute %s should have a display name", key)
+		for locale, expectedName := range *expected.DisplayName {
+			actualName, ok := (*actual.DisplayName)[locale]
+			require.True(t, ok, "attribute %s should have display name for locale %q", key, locale)
+			require.Equal(t, expectedName, actualName, "attribute %s display name [%s] mismatch", key, locale)
+		}
+	} else {
+		require.Nil(t, actual.DisplayName, "attribute %s should have nil display name (array item)", key)
 	}
 	if expected.Description != nil {
 		require.NotNil(t, actual.Description, "attribute %s should have a description", key)
@@ -318,8 +324,9 @@ func requireObtainableOption(t *testing.T, obtainable *clientmodels.CredentialDe
 		actual := obtainable.Attributes[i]
 		require.Equal(t, exp.Path, actual.ClaimPath, "obtainable %s attribute %d path mismatch", expected.CredentialId, i)
 		require.NotNil(t, exp.DisplayName, "obtainable %s attribute %d expected DisplayName must be set", expected.CredentialId, i)
+		require.NotNil(t, actual.DisplayName, "obtainable %s attribute %d actual DisplayName must be set", expected.CredentialId, i)
 		for locale, expectedName := range exp.DisplayName {
-			actualName, ok := actual.DisplayName[locale]
+			actualName, ok := (*actual.DisplayName)[locale]
 			require.True(t, ok, "obtainable %s attribute %d should have display name for locale %q", expected.CredentialId, i, locale)
 			require.Equal(t, expectedName, actualName, "obtainable %s attribute %d display name [%s] mismatch", expected.CredentialId, i, locale)
 		}
@@ -357,7 +364,7 @@ func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attrib
 // display name, optional description, and typed value.
 type expectedAttr struct {
 	Path        []any
-	DisplayName clientmodels.TranslatedString
+	DisplayName *clientmodels.TranslatedString
 	Description *clientmodels.TranslatedString // nil to skip description check
 	Value       *clientmodels.AttributeValue
 }
@@ -377,6 +384,14 @@ func intVal(i int64) *clientmodels.AttributeValue {
 	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Int, Int: &i}
 }
 
+// header creates an expectedAttr for a section header (Value == nil).
+func header(path []any, displayName clientmodels.TranslatedString) expectedAttr {
+	return expectedAttr{
+		Path:        path,
+		DisplayName: &displayName,
+	}
+}
+
 // requireAttrsInOrder asserts that the given attributes match the expected list
 // exactly — same order, same paths, same values, same length. When display names
 // are specified, those are checked too.
@@ -393,15 +408,23 @@ func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected 
 				"attribute %d (%s) value type mismatch", i, clientmodels.ClaimPathKey(exp.Path))
 			require.Equal(t, exp.Value, actual.Value,
 				"attribute %d (%s) value mismatch", i, clientmodels.ClaimPathKey(exp.Path))
+		} else {
+			require.Nil(t, actual.Value,
+				"attribute %d (%s) should be a section header (nil value)", i, clientmodels.ClaimPathKey(exp.Path))
 		}
-		require.NotNil(t, exp.DisplayName, "attribute %d (%s) expected DisplayName must be set",
-			i, clientmodels.ClaimPathKey(exp.Path))
-		for locale, expectedName := range exp.DisplayName {
-			actualName, ok := actual.DisplayName[locale]
-			require.True(t, ok, "attribute %d (%s) should have display name for locale %q",
-				i, clientmodels.ClaimPathKey(exp.Path), locale)
-			require.Equal(t, expectedName, actualName,
-				"attribute %d (%s) display name [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+		if exp.DisplayName != nil {
+			require.NotNil(t, actual.DisplayName,
+				"attribute %d (%s) should have a display name", i, clientmodels.ClaimPathKey(exp.Path))
+			for locale, expectedName := range *exp.DisplayName {
+				actualName, ok := (*actual.DisplayName)[locale]
+				require.True(t, ok, "attribute %d (%s) should have display name for locale %q",
+					i, clientmodels.ClaimPathKey(exp.Path), locale)
+				require.Equal(t, expectedName, actualName,
+					"attribute %d (%s) display name [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+			}
+		} else {
+			require.Nil(t, actual.DisplayName,
+				"attribute %d (%s) should have nil display name (array item)", i, clientmodels.ClaimPathKey(exp.Path))
 		}
 		if exp.Description != nil {
 			require.NotNil(t, actual.Description,
@@ -451,9 +474,12 @@ func requireIrmaServerResult(t *testing.T, irmaServer *IrmaServer, token irma.Re
 // makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
 // attributes of the given credential instance.
 func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance) clientmodels.DisclosureDisconSelection {
-	paths := make([][]any, len(option.Attributes))
-	for i, attr := range option.Attributes {
-		paths[i] = attr.ClaimPath
+	var paths [][]any
+	for _, attr := range option.Attributes {
+		if attr.Value == nil {
+			continue // skip section headers
+		}
+		paths = append(paths, attr.ClaimPath)
 	}
 	return clientmodels.DisclosureDisconSelection{
 		Credentials: []clientmodels.SelectedCredential{

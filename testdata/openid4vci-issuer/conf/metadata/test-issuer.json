@@ -317,6 +317,13 @@
             ]
           },
           {
+            "path": ["address"],
+            "display": [
+              { "name": "Address", "locale": "en" },
+              { "name": "Adres", "locale": "nl" }
+            ]
+          },
+          {
             "path": ["address", "street"],
             "display": [
               { "name": "Street", "locale": "en" },
@@ -352,6 +359,13 @@
             "display": [
               { "name": "Owner Name", "locale": "en" },
               { "name": "Eigenaar", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address"],
+            "display": [
+              { "name": "Address", "locale": "en" },
+              { "name": "Adres", "locale": "nl" }
             ]
           },
           {
@@ -743,6 +757,13 @@
         "type": ["VerifiableCredential", "OrganizationCredential"],
         "claims": [
           {
+            "path": ["university"],
+            "display": [
+              { "name": "University", "locale": "en" },
+              { "name": "Universiteit", "locale": "nl" }
+            ]
+          },
+          {
             "path": ["university", "name"],
             "display": [
               { "name": "University Name", "locale": "en" },
@@ -754,6 +775,34 @@
             "display": [
               { "name": "Faculties", "locale": "en" },
               { "name": "Faculteiten", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties", null, "faculty_name"],
+            "display": [
+              { "name": "Faculty Name", "locale": "en" },
+              { "name": "Faculteitsnaam", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties", null, "departments"],
+            "display": [
+              { "name": "Departments", "locale": "en" },
+              { "name": "Afdelingen", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties", null, "departments", null, "dept_name"],
+            "display": [
+              { "name": "Department Name", "locale": "en" },
+              { "name": "Afdelingsnaam", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties", null, "departments", null, "courses"],
+            "display": [
+              { "name": "Courses", "locale": "en" },
+              { "name": "Vakken", "locale": "nl" }
             ]
           },
           {
@@ -773,6 +822,21 @@
           }
         ],
         "claims": [
+          {
+            "path": [
+              "university"
+            ],
+            "display": [
+              {
+                "name": "University",
+                "locale": "en"
+              },
+              {
+                "name": "Universiteit",
+                "locale": "nl"
+              }
+            ]
+          },
           {
             "path": [
               "university",
