@@ -602,11 +602,68 @@ func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "Organization Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued OrganizationCredential should appear in GetCredentials")
 
-	// The credential service sees "university" as a single metadata claim.
-	// Since the value is a map, it gets flattened into its child keys.
-	// The deeply nested structure produces multiple levels of flattening.
-	// For now, just verify the credential was issued and has attributes.
-	require.NotEmpty(t, cred.Attributes, "credential should have attributes")
+	am := attributeMap(cred.Attributes)
+	require.Len(t, cred.Attributes, 12)
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "name"},
+		DisplayName: clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
+		Value:       strVal("TU Delft"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "faculty_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("EEMCS"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Software Technology"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 0},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Compiler Construction"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 1},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Distributed Systems"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 2},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Intro to CS"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Data Science"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 1, "courses", 0},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Machine Learning"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 1, "faculty_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Architecture"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Urbanism"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 1, "departments", 0, "courses", 0},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("City Planning"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "founded"},
+		DisplayName: clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
+		Value:       intVal(1842),
+	})
 
 	// Verify the credential can be disclosed over OpenID4VP.
 	dcqlQuery := `{

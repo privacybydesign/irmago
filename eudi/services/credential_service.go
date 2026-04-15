@@ -121,39 +121,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					claimValue = ""
 				}
 
-				// Flatten arrays and objects into separate attributes with full paths.
-				switch v := claimValue.(type) {
-				case []any:
-					for i, elem := range v {
-						elemPath := append(append([]any{}, claimPath...), i)
-						attrs = append(attrs, clientmodels.Attribute{
-							ClaimPath:   elemPath,
-							DisplayName: childDisplayName(claimDisplayLookup, elemPath, attrDisplay),
-							Value:       clientmodels.NewAttributeValue(elem),
-						})
-					}
-				case map[string]any:
-					// Sort keys for deterministic order.
-					keys := make([]string, 0, len(v))
-					for key := range v {
-						keys = append(keys, key)
-					}
-					sort.Strings(keys)
-					for _, key := range keys {
-						elemPath := append(append([]any{}, claimPath...), key)
-						attrs = append(attrs, clientmodels.Attribute{
-							ClaimPath:   elemPath,
-							DisplayName: childDisplayName(claimDisplayLookup, elemPath, attrDisplay),
-							Value:       clientmodels.NewAttributeValue(v[key]),
-						})
-					}
-				default:
-					attrs = append(attrs, clientmodels.Attribute{
-						ClaimPath:   claimPath,
-						DisplayName: attrDisplay,
-						Value:       clientmodels.NewAttributeValue(claimValue),
-					})
-				}
+				attrs = flattenClaimValue(attrs, claimPath, claimValue, attrDisplay, claimDisplayLookup)
 			}
 		}
 
@@ -310,6 +278,43 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	return s.credentialStore.StoreBatch(batch)
+}
+
+// flattenClaimValue recursively flattens arrays and objects into individual scalar
+// attributes. Each leaf value gets its own Attribute with the full path from root.
+func flattenClaimValue(
+	attrs []clientmodels.Attribute,
+	path []any,
+	value any,
+	display clientmodels.TranslatedString,
+	lookup map[string]clientmodels.TranslatedString,
+) []clientmodels.Attribute {
+	switch v := value.(type) {
+	case []any:
+		for i, elem := range v {
+			childPath := append(append([]any{}, path...), i)
+			childDisplay := childDisplayName(lookup, childPath, display)
+			attrs = flattenClaimValue(attrs, childPath, elem, childDisplay, lookup)
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			childPath := append(append([]any{}, path...), key)
+			childDisplay := childDisplayName(lookup, childPath, display)
+			attrs = flattenClaimValue(attrs, childPath, v[key], childDisplay, lookup)
+		}
+	default:
+		attrs = append(attrs, clientmodels.Attribute{
+			ClaimPath:   path,
+			DisplayName: display,
+			Value:       clientmodels.NewAttributeValue(value),
+		})
+	}
+	return attrs
 }
 
 // childDisplayName looks up display names for a child path created during flattening.
