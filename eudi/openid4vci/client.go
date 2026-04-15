@@ -399,7 +399,7 @@ func convertClaimsToAttributes(claims []metadata.ClaimsDescription) []clientmode
 				displayName = metadata.ConvertDisplayToTranslatedString(displays)
 			}
 			attrs = append(attrs, clientmodels.Attribute{
-				Id:          path,
+				ClaimPath:   []any{path},
 				DisplayName: displayName,
 			})
 		}

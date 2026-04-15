@@ -241,13 +241,219 @@ func denyPermission(t *testing.T, c *client.Client, sessionId int) {
 	})
 }
 
-// makeDisclosureChoice creates a disclosure selection from an owned option
 func intPtr(v int) *int { return &v }
 
-func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance, attributeIds ...string) clientmodels.DisclosureDisconSelection {
-	paths := make([][]any, len(attributeIds))
-	for i, id := range attributeIds {
-		paths[i] = []any{id}
+// requireAttr asserts that the attribute map contains an attribute at the given
+// claim path with the expected string value.
+func requireAttr(t *testing.T, am map[string]clientmodels.Attribute, path []any, expectedValue string) {
+	t.Helper()
+	key := clientmodels.ClaimPathKey(path)
+	attr, ok := am[key]
+	require.True(t, ok, "attribute %s should exist", key)
+	require.NotNil(t, attr.Value, "attribute %s should have a value", key)
+	require.NotNil(t, attr.Value.String, "attribute %s should have a string value", key)
+	require.Equal(t, expectedValue, *attr.Value.String, "attribute %s value mismatch", key)
+}
+
+// requireAttrFull checks that an attribute exists at the given path in the map
+// and matches the expected value, display name, and optional description.
+// Use this for order-independent attribute checks that include display name verification.
+func requireAttrFull(t *testing.T, am map[string]clientmodels.Attribute, expected expectedAttr) {
+	t.Helper()
+	key := clientmodels.ClaimPathKey(expected.Path)
+	actual, ok := am[key]
+	require.True(t, ok, "attribute %s should exist", key)
+	if expected.Value != nil {
+		require.NotNil(t, actual.Value, "attribute %s should have a value", key)
+		require.Equal(t, expected.Value.Type, actual.Value.Type, "attribute %s value type mismatch", key)
+		require.Equal(t, expected.Value, actual.Value, "attribute %s value mismatch", key)
+	}
+	require.NotNil(t, expected.DisplayName, "attribute %s expected DisplayName must be set", key)
+	for locale, expectedName := range expected.DisplayName {
+		actualName, ok := actual.DisplayName[locale]
+		require.True(t, ok, "attribute %s should have display name for locale %q", key, locale)
+		require.Equal(t, expectedName, actualName, "attribute %s display name [%s] mismatch", key, locale)
+	}
+	if expected.Description != nil {
+		require.NotNil(t, actual.Description, "attribute %s should have a description", key)
+		for locale, expectedDesc := range *expected.Description {
+			actualDesc, ok := (*actual.Description)[locale]
+			require.True(t, ok, "attribute %s should have description for locale %q", key, locale)
+			require.Equal(t, expectedDesc, actualDesc, "attribute %s description [%s] mismatch", key, locale)
+		}
+	}
+}
+
+// requireNoAttr asserts that the attribute map does NOT contain an attribute at the given claim path.
+func requireNoAttr(t *testing.T, am map[string]clientmodels.Attribute, path []any) {
+	t.Helper()
+	key := clientmodels.ClaimPathKey(path)
+	_, ok := am[key]
+	require.False(t, ok, "attribute %s should not exist", key)
+}
+
+// expectedObtainable describes an expected obtainable credential descriptor.
+type expectedObtainable struct {
+	CredentialId string
+	Name         clientmodels.TranslatedString
+	// Expected requested attributes. Each has ClaimPath and optionally a
+	// RequestedValue string (nil means type-only constraint, no specific value).
+	Attributes []expectedRequestedAttr
+}
+
+type expectedRequestedAttr struct {
+	Path           []any
+	DisplayName    clientmodels.TranslatedString
+	RequestedValue *string // nil means any value of the type is accepted
+}
+
+// requireObtainableOption asserts that an obtainable credential descriptor
+// matches the expected credential ID, name, and requested attributes.
+func requireObtainableOption(t *testing.T, obtainable *clientmodels.CredentialDescriptor, expected expectedObtainable) {
+	t.Helper()
+	require.Equal(t, expected.CredentialId, obtainable.CredentialId, "obtainable credential ID mismatch")
+	require.Equal(t, expected.Name, obtainable.Name, "obtainable credential name mismatch")
+	require.Len(t, obtainable.Attributes, len(expected.Attributes), "obtainable attribute count mismatch for %s", expected.CredentialId)
+	for i, exp := range expected.Attributes {
+		actual := obtainable.Attributes[i]
+		require.Equal(t, exp.Path, actual.ClaimPath, "obtainable %s attribute %d path mismatch", expected.CredentialId, i)
+		require.NotNil(t, exp.DisplayName, "obtainable %s attribute %d expected DisplayName must be set", expected.CredentialId, i)
+		for locale, expectedName := range exp.DisplayName {
+			actualName, ok := actual.DisplayName[locale]
+			require.True(t, ok, "obtainable %s attribute %d should have display name for locale %q", expected.CredentialId, i, locale)
+			require.Equal(t, expectedName, actualName, "obtainable %s attribute %d display name [%s] mismatch", expected.CredentialId, i, locale)
+		}
+		require.NotNil(t, actual.RequestedValue, "obtainable %s attribute %d should have RequestedValue", expected.CredentialId, i)
+		require.Equal(t, clientmodels.AttributeType_String, actual.RequestedValue.Type,
+			"obtainable %s attribute %d RequestedValue type mismatch", expected.CredentialId, i)
+		if exp.RequestedValue != nil {
+			require.NotNil(t, actual.RequestedValue.String,
+				"obtainable %s attribute %d should have specific RequestedValue", expected.CredentialId, i)
+			require.Equal(t, *exp.RequestedValue, *actual.RequestedValue.String,
+				"obtainable %s attribute %d RequestedValue mismatch", expected.CredentialId, i)
+		} else {
+			require.Nil(t, actual.RequestedValue.String,
+				"obtainable %s attribute %d should not have specific RequestedValue", expected.CredentialId, i)
+		}
+	}
+}
+
+// pk is a shorthand for building a ClaimPathKey from path components.
+// pk("email") → "[email]", pk("address", "street") → "[address street]"
+func pk(components ...any) string {
+	return clientmodels.ClaimPathKey(components)
+}
+
+// attributeMap builds a map from the serialized full ClaimPath to the Attribute.
+func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attribute {
+	m := make(map[string]clientmodels.Attribute, len(attrs))
+	for _, a := range attrs {
+		m[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+	return m
+}
+
+// expectedAttr describes an expected attribute with its full claim path,
+// display name, optional description, and typed value.
+type expectedAttr struct {
+	Path        []any
+	DisplayName clientmodels.TranslatedString
+	Description *clientmodels.TranslatedString // nil to skip description check
+	Value       *clientmodels.AttributeValue
+}
+
+// strVal creates a string AttributeValue.
+func strVal(s string) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &s}
+}
+
+// boolVal creates a boolean AttributeValue.
+func boolVal(b bool) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Bool, Bool: &b}
+}
+
+// intVal creates an integer AttributeValue.
+func intVal(i int64) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Int, Int: &i}
+}
+
+// requireAttrsInOrder asserts that the given attributes match the expected list
+// exactly — same order, same paths, same values, same length. When display names
+// are specified, those are checked too.
+func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected ...expectedAttr) {
+	t.Helper()
+	require.Len(t, attrs, len(expected), "attribute count mismatch")
+	for i, exp := range expected {
+		actual := attrs[i]
+		require.Equal(t, clientmodels.ClaimPathKey(exp.Path), clientmodels.ClaimPathKey(actual.ClaimPath),
+			"attribute %d path mismatch", i)
+		if exp.Value != nil {
+			require.NotNil(t, actual.Value, "attribute %d should have a value", i)
+			require.Equal(t, exp.Value.Type, actual.Value.Type,
+				"attribute %d (%s) value type mismatch", i, clientmodels.ClaimPathKey(exp.Path))
+			require.Equal(t, exp.Value, actual.Value,
+				"attribute %d (%s) value mismatch", i, clientmodels.ClaimPathKey(exp.Path))
+		}
+		require.NotNil(t, exp.DisplayName, "attribute %d (%s) expected DisplayName must be set",
+			i, clientmodels.ClaimPathKey(exp.Path))
+		for locale, expectedName := range exp.DisplayName {
+			actualName, ok := actual.DisplayName[locale]
+			require.True(t, ok, "attribute %d (%s) should have display name for locale %q",
+				i, clientmodels.ClaimPathKey(exp.Path), locale)
+			require.Equal(t, expectedName, actualName,
+				"attribute %d (%s) display name [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+		}
+		if exp.Description != nil {
+			require.NotNil(t, actual.Description,
+				"attribute %d (%s) should have a description", i, clientmodels.ClaimPathKey(exp.Path))
+			for locale, expectedDesc := range *exp.Description {
+				actualDesc, ok := (*actual.Description)[locale]
+				require.True(t, ok, "attribute %d (%s) should have description for locale %q",
+					i, clientmodels.ClaimPathKey(exp.Path), locale)
+				require.Equal(t, expectedDesc, actualDesc,
+					"attribute %d (%s) description [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+			}
+		}
+	}
+}
+
+// expectedDisclosedAttr describes an expected disclosed attribute in an IRMA
+// server session result.
+type expectedDisclosedAttr struct {
+	Identifier string // e.g. "irma-demo.RU.studentCard.university"
+	Value      string
+}
+
+// requireIrmaServerResult retrieves the session result from the IRMA server
+// and asserts that the disclosed attributes match the expected list exactly.
+// Each inner slice of expected corresponds to one disjunction in the result.
+func requireIrmaServerResult(t *testing.T, irmaServer *IrmaServer, token irma.RequestorToken, expected [][]expectedDisclosedAttr) {
+	t.Helper()
+	result, err := irmaServer.irma.GetSessionResult(token)
+	require.NoError(t, err)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus, "proof should be valid")
+	require.Len(t, result.Disclosed, len(expected), "number of disclosed disjunctions mismatch")
+
+	for i, expDiscon := range expected {
+		actualDiscon := result.Disclosed[i]
+		require.Len(t, actualDiscon, len(expDiscon),
+			"disjunction %d: number of disclosed attributes mismatch", i)
+		for j, exp := range expDiscon {
+			actual := actualDiscon[j]
+			require.Equal(t, exp.Identifier, actual.Identifier.String(), "disjunction %d attribute %d identifier mismatch", i, j)
+			require.Equal(t, irma.AttributeProofStatusPresent, actual.Status, "disjunction %d attribute %d should be present", i, j)
+			require.NotNil(t, actual.RawValue, "disjunction %d attribute %d should have a raw value", i, j)
+			require.Equal(t, exp.Value, *actual.RawValue, "disjunction %d attribute %d value mismatch", i, j)
+		}
+	}
+}
+
+// makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
+// attributes of the given credential instance.
+func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance) clientmodels.DisclosureDisconSelection {
+	paths := make([][]any, len(option.Attributes))
+	for i, attr := range option.Attributes {
+		paths[i] = attr.ClaimPath
 	}
 	return clientmodels.DisclosureDisconSelection{
 		Credentials: []clientmodels.SelectedCredential{

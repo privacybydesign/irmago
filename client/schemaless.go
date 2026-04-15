@@ -39,7 +39,7 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 				continue
 			}
 			attributes = append(attributes, clientmodels.Attribute{
-				Id:          attr.ID,
+				ClaimPath:   []any{attr.ID},
 				DisplayName: clientmodels.TranslatedString(attr.Name),
 				Value: &clientmodels.AttributeValue{
 					Type: displayHintToAttributeType(attr.DisplayHint),
@@ -133,7 +133,7 @@ func createCredentialDescriptor(
 					requestedValue.String = &s
 				}
 				attributes = append(attributes, clientmodels.Attribute{
-					Id:             a.ID,
+					ClaimPath:      []any{a.ID},
 					DisplayName:    clientmodels.TranslatedString(a.Name),
 					RequestedValue: requestedValue,
 				})
@@ -168,7 +168,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 			continue
 		}
 		attributes = append(attributes, clientmodels.Attribute{
-			Id:          at.ID,
+			ClaimPath:   []any{at.ID},
 			DisplayName: clientmodels.TranslatedString(at.Name),
 			Value: &clientmodels.AttributeValue{
 				Type: clientmodels.AttributeType_String,
@@ -232,7 +232,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 					continue
 				}
 				attributes = append(attributes, clientmodels.Attribute{
-					Id:          at.ID,
+					ClaimPath:   []any{at.ID},
 					DisplayName: clientmodels.TranslatedString(at.Name),
 					Description: &description,
 					Value:       buildAttributeValue(at.DisplayHint, &attrValue),
@@ -356,13 +356,14 @@ func SatisfiesRequestedAttributes(given, requested []clientmodels.Attribute) (bo
 func checkAttributeList(issues *[]string, path string, given, requested []clientmodels.Attribute) {
 	givenByID := make(map[string]clientmodels.Attribute, len(given))
 	for _, g := range given {
-		givenByID[g.Id] = g
+		givenByID[clientmodels.ClaimPathKey(g.ClaimPath)] = g
 	}
 
 	for _, r := range requested {
-		p := joinPath(path, r.Id)
+		key := clientmodels.ClaimPathKey(r.ClaimPath)
+		p := joinPath(path, key)
 
-		g, ok := givenByID[r.Id]
+		g, ok := givenByID[key]
 		if !ok {
 			*issues = append(*issues, fmt.Sprintf("missing attribute: %s", p))
 			continue
@@ -391,13 +392,6 @@ func checkValueSatisfies(issues *[]string, path string, given clientmodels.Attri
 	}
 
 	switch req.Type {
-	case clientmodels.AttributeType_Object:
-		// Nested attributes must satisfy nested requested constraints.
-		checkAttributeList(issues, path, given.Object, req.Object)
-
-	case clientmodels.AttributeType_Array:
-		checkArrayAllOfUnordered(issues, path, given.Array, req.Array)
-
 	case clientmodels.AttributeType_Int:
 		if req.Int == nil {
 			return
@@ -447,51 +441,6 @@ func checkValueSatisfies(issues *[]string, path string, given clientmodels.Attri
 	}
 }
 
-// Unordered "all-of":
-// Every requested element must be satisfied by some *distinct* element in given.
-// Uses backtracking to avoid greedy mismatches.
-func checkArrayAllOfUnordered(issues *[]string, path string, given, req []clientmodels.AttributeValue) {
-	// If nothing requested, array type is enough.
-	if len(req) == 0 {
-		return
-	}
-	if len(given) < len(req) {
-		*issues = append(*issues, fmt.Sprintf("array too short at %s: have %d want >= %d", path, len(given), len(req)))
-		return
-	}
-
-	used := make([]bool, len(given))
-
-	var dfs func(i int) bool
-	dfs = func(i int) bool {
-		if i == len(req) {
-			return true
-		}
-
-		// Try to match req[i] with any unused given[j]
-		for j := range given {
-			if used[j] {
-				continue
-			}
-			if valueSatisfiesNoReport(given[j], req[i]) {
-				used[j] = true
-				if dfs(i + 1) {
-					return true
-				}
-				used[j] = false
-			}
-		}
-		return false
-	}
-
-	if dfs(0) {
-		return
-	}
-
-	// If it doesn't match, add a helpful (though not minimal) error.
-	*issues = append(*issues, fmt.Sprintf("array mismatch at %s: could not satisfy all requested elements (unordered all-of)", path))
-}
-
 // valueSatisfiesNoReport mirrors checkValueSatisfies but returns bool only (no side-effects).
 // This is used for array matching/backtracking.
 func valueSatisfiesNoReport(given clientmodels.AttributeValue, req clientmodels.AttributeValue) bool {
@@ -500,13 +449,6 @@ func valueSatisfiesNoReport(given clientmodels.AttributeValue, req clientmodels.
 	}
 
 	switch req.Type {
-	case clientmodels.AttributeType_Object:
-		return attributeListSatisfiesNoReport(given.Object, req.Object)
-
-	case clientmodels.AttributeType_Array:
-		// Recurse into unordered all-of arrays as well.
-		return arrayAllOfUnorderedNoReport(given.Array, req.Array)
-
 	case clientmodels.AttributeType_Int:
 		if req.Int == nil {
 			return true
@@ -542,44 +484,13 @@ func valueSatisfiesNoReport(given clientmodels.AttributeValue, req clientmodels.
 	}
 }
 
-func arrayAllOfUnorderedNoReport(given, req []clientmodels.AttributeValue) bool {
-	if len(req) == 0 {
-		return true
-	}
-	if len(given) < len(req) {
-		return false
-	}
-
-	used := make([]bool, len(given))
-	var dfs func(i int) bool
-	dfs = func(i int) bool {
-		if i == len(req) {
-			return true
-		}
-		for j := range given {
-			if used[j] {
-				continue
-			}
-			if valueSatisfiesNoReport(given[j], req[i]) {
-				used[j] = true
-				if dfs(i + 1) {
-					return true
-				}
-				used[j] = false
-			}
-		}
-		return false
-	}
-	return dfs(0)
-}
-
 func attributeListSatisfiesNoReport(given, requested []clientmodels.Attribute) bool {
 	givenByID := make(map[string]clientmodels.Attribute, len(given))
 	for _, g := range given {
-		givenByID[g.Id] = g
+		givenByID[clientmodels.ClaimPathKey(g.ClaimPath)] = g
 	}
 	for _, r := range requested {
-		g, ok := givenByID[r.Id]
+		g, ok := givenByID[clientmodels.ClaimPathKey(r.ClaimPath)]
 		if !ok {
 			return false
 		}

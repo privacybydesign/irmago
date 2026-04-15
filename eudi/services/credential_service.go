@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -75,8 +76,27 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				credentialDisplays[locale] = d.Name
 			}
 
-			attrs = make([]clientmodels.Attribute, len(batch.CredentialMetadata.Claims))
-			for j, claim := range batch.CredentialMetadata.Claims {
+			// Build a display lookup from all metadata claims, keyed by serialized path.
+			// This allows child paths created during flattening to inherit display names
+			// from more specific metadata entries when available.
+			claimDisplayLookup := map[string]clientmodels.TranslatedString{}
+			for _, claim := range batch.CredentialMetadata.Claims {
+				var path []any
+				if err := json.Unmarshal(claim.Path, &path); err != nil {
+					continue
+				}
+				display := clientmodels.TranslatedString{}
+				for _, d := range claim.Display {
+					locale := clientmodels.DefaultFallbackLanguage
+					if d.Locale.Valid {
+						locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+					}
+					display[locale] = d.Name
+				}
+				claimDisplayLookup[clientmodels.ClaimPathKey(path)] = display
+			}
+
+			for _, claim := range batch.CredentialMetadata.Claims {
 				attrDisplay := clientmodels.TranslatedString{}
 				for _, d := range claim.Display {
 					locale := clientmodels.DefaultFallbackLanguage
@@ -86,7 +106,10 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					attrDisplay[locale] = d.Name
 				}
 
-				// Build a slice from the claim path for processing
+				// Build a slice from the claim path for processing.
+				// Only string components are handled here because issuer metadata claim paths
+				// always use string keys. Integer indices and null (used in DCQL queries for
+				// array element selection) do not appear in issuer credential metadata.
 				var claimPath []any
 				if err := json.Unmarshal(claim.Path, &claimPath); err != nil {
 					log.Fatalf("Error unmarshalling JSON: %v", err)
@@ -95,27 +118,10 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				claimValue, err := processedSdJwtPayload.GetClaimValue(claimPath)
 				if err != nil {
 					log.Printf("unrecognized claim at path %v; falling back to empty string for claim with path %v: %v", claim.Path, claimPath, err)
-					claimValue = "" // fallback to an empty string if claim value cannot be extracted
+					claimValue = ""
 				}
 
-				attrValue := clientmodels.NewAttributeValue(claimValue)
-
-				// Use the last element of the claim path as the attribute ID (e.g., ["address", "city"] → "city").
-				// Only string components are handled here because issuer metadata claim paths always use
-				// string keys. Integer indices and null (used in DCQL queries for array element selection)
-				// do not appear in issuer credential metadata.
-				attrId := ""
-				if len(claimPath) > 0 {
-					if last, ok := claimPath[len(claimPath)-1].(string); ok {
-						attrId = last
-					}
-				}
-
-				attrs[j] = clientmodels.Attribute{
-					Id:          attrId,
-					DisplayName: attrDisplay,
-					Value:       attrValue,
-				}
+				attrs = flattenClaimValue(attrs, claimPath, claimValue, attrDisplay, claimDisplayLookup)
 			}
 		}
 
@@ -272,6 +278,53 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	return s.credentialStore.StoreBatch(batch)
+}
+
+// flattenClaimValue recursively flattens arrays and objects into individual scalar
+// attributes. Each leaf value gets its own Attribute with the full path from root.
+func flattenClaimValue(
+	attrs []clientmodels.Attribute,
+	path []any,
+	value any,
+	display clientmodels.TranslatedString,
+	lookup map[string]clientmodels.TranslatedString,
+) []clientmodels.Attribute {
+	switch v := value.(type) {
+	case []any:
+		for i, elem := range v {
+			childPath := append(append([]any{}, path...), i)
+			childDisplay := childDisplayName(lookup, childPath, display)
+			attrs = flattenClaimValue(attrs, childPath, elem, childDisplay, lookup)
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			childPath := append(append([]any{}, path...), key)
+			childDisplay := childDisplayName(lookup, childPath, display)
+			attrs = flattenClaimValue(attrs, childPath, v[key], childDisplay, lookup)
+		}
+	default:
+		attrs = append(attrs, clientmodels.Attribute{
+			ClaimPath:   path,
+			DisplayName: display,
+			Value:       clientmodels.NewAttributeValue(value),
+		})
+	}
+	return attrs
+}
+
+// childDisplayName looks up display names for a child path created during flattening.
+// It first checks whether the metadata contains a claim entry for the exact child path.
+// If not, it falls back to the parent's display names.
+func childDisplayName(lookup map[string]clientmodels.TranslatedString, childPath []any, parentDisplay clientmodels.TranslatedString) clientmodels.TranslatedString {
+	if d, ok := lookup[clientmodels.ClaimPathKey(childPath)]; ok && len(d) > 0 {
+		return d
+	}
+	return parentDisplay
 }
 
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.

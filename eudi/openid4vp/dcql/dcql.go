@@ -91,33 +91,15 @@ type QueryResponse struct {
 	Credentials []string
 }
 
-// ClaimsPathPointer is a list of components that construct a full path to a claim.
-// Each component is one of:
-//   - string: selects a key within an object
-//   - int/float64: selects an element at the given index within an array
-//   - nil: selects all elements within an array
-//
-// JSON encoding: ["key", 0, null] → []any{"key", 0, nil}
-type ClaimsPathPointer []any
-
-// LastString returns the last string component in the path, or "" if none.
-func (p ClaimsPathPointer) LastString() string {
-	for i := len(p) - 1; i >= 0; i-- {
-		if s, ok := p[i].(string); ok {
-			return s
-		}
-	}
-	return ""
-}
-
 type Claim struct {
 	// REQUIRED if claim_sets is present in the credential query, OPTIONAL otherwise.
 	// a string identifying the particular claim. The same id must not be presented more than once.
 	Id string `json:"id"`
 
 	// REQUIRED: A claims path pointer that specifies the path to a claim
-	// within the verifiable credential
-	Path ClaimsPathPointer `json:"path"`
+	// within the verifiable credential. Each component is a string (object key),
+	// int/float64 (array index), or nil (all array elements).
+	Path []any `json:"path"`
 
 	// OPTIONAL: A list of strings, integers or boolean values that specifies the expected values of the claim
 	Values []any `json:"values,omitempty"`

@@ -21,6 +21,10 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("can be dismissed", testOpenId4VciPreAuthFlowCanBeDismissed)
 	t.Run("issues credential with nested claims", testOpenId4VciPreAuthFlowNestedClaims)
 	t.Run("issues multiple credential types", testOpenId4VciPreAuthFlowMultipleCredentialTypes)
+	t.Run("issues credential with array claims", testOpenId4VciPreAuthFlowArrayClaims)
+	t.Run("issues credential with mixed sd and non-sd claims", testOpenId4VciPreAuthFlowMixedSdNonSd)
+	t.Run("issues eduid credential with boolean claims", testOpenId4VciPreAuthFlowEduIdCredential)
+	t.Run("issues deeply nested credential", testOpenId4VciPreAuthFlowDeeplyNestedCredential)
 }
 
 func testOpenId4VciPreAuthFlowReachesPermission(t *testing.T) {
@@ -67,10 +71,23 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued credential should appear in GetCredentials")
 
-	attrMap := attributeMap(cred.Attributes)
-	requireAttribute(t, attrMap, "given_name", clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"}, "Test")
-	requireAttribute(t, attrMap, "family_name", clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"}, "User")
-	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}, "test@example.com")
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			Value:       strVal("Test"),
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			Value:       strVal("User"),
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			Value:       strVal("test@example.com"),
+		},
+	)
 }
 
 func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
@@ -110,10 +127,23 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued credential should appear in GetCredentials")
 
-	attrMap := attributeMap(cred.Attributes)
-	requireAttribute(t, attrMap, "given_name", clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"}, "Test")
-	requireAttribute(t, attrMap, "family_name", clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"}, "TxCode")
-	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}, "txcode@example.com")
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			Value:       strVal("Test"),
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			Value:       strVal("TxCode"),
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			Value:       strVal("txcode@example.com"),
+		},
+	)
 }
 
 func testOpenId4VciPreAuthFlowWithWrongTxCode(t *testing.T) {
@@ -180,16 +210,31 @@ func testOpenId4VciPreAuthFlowNestedClaims(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued HouseCredential should appear in GetCredentials")
 
-	attrMap := attributeMap(cred.Attributes)
-
-	// Top-level claim: owner_name
-	requireAttribute(t, attrMap, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Alice")
-
-	// Nested claim: address is an object containing street, city, country
-	attr, ok := attrMap["address"]
-	require.True(t, ok, "attribute \"address\" should exist")
-	require.NotNil(t, attr.Value, "attribute \"address\" should have a value")
-	require.Equal(t, clientmodels.AttributeType_Object, attr.Value.Type, "address should be an object type")
+	// Nested claims are resolved via their metadata paths. The credential service
+	// iterates metadata claims in DB order (which may differ from config file order).
+	// Use attributeMap for order-independent checks.
+	am := attributeMap(cred.Attributes)
+	require.Len(t, cred.Attributes, 4)
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"owner_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+		Value:       strVal("Alice"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"address", "street"},
+		DisplayName: clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+		Value:       strVal("123 Main St"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"address", "city"},
+		DisplayName: clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+		Value:       strVal("Amsterdam"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"address", "country"},
+		DisplayName: clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
+		Value:       strVal("NL"),
+	})
 }
 
 func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
@@ -225,29 +270,449 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	// Verify EmailCredential attributes.
 	emailCred := findCredentialByName(t, creds, "en", "Email Credential (SD-JWT)")
 	require.NotNil(t, emailCred, "EmailCredential should appear in GetCredentials")
-	emailAttrs := attributeMap(emailCred.Attributes)
-	requireAttribute(t, emailAttrs, "email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}, "nested-test@example.com")
-	requireAttribute(t, emailAttrs, "domain", clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"}, "example.com")
+	requireAttrsInOrder(t, emailCred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			Value:       strVal("nested-test@example.com"),
+		},
+		expectedAttr{
+			Path:        []any{"domain"},
+			DisplayName: clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"},
+			Value:       strVal("example.com"),
+		},
+	)
 
 	// Verify StudentCardCredential attributes.
 	studentCred := findCredentialByName(t, creds, "en", "Student Card Credential (SD-JWT)")
 	require.NotNil(t, studentCred, "StudentCardCredential should appear in GetCredentials")
-	studentAttrs := attributeMap(studentCred.Attributes)
-	requireAttribute(t, studentAttrs, "university", clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, "TU Delft")
-	requireAttribute(t, studentAttrs, "level", clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"}, "MSc")
-	requireAttribute(t, studentAttrs, "student_id", clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"}, "S12345")
+	requireAttrsInOrder(t, studentCred.Attributes,
+		expectedAttr{
+			Path:        []any{"university"},
+			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			Value:       strVal("TU Delft"),
+		},
+		expectedAttr{
+			Path:        []any{"level"},
+			DisplayName: clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"},
+			Value:       strVal("MSc"),
+		},
+		expectedAttr{
+			Path:        []any{"student_id"},
+			DisplayName: clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"},
+			Value:       strVal("S12345"),
+		},
+		expectedAttr{
+			Path:        []any{"courses"},
+			DisplayName: clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
+			Value:       strVal(""), // not issued, falls back to empty
+		},
+	)
 
 	// Verify HouseCredential attributes.
 	houseCred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT)")
 	require.NotNil(t, houseCred, "HouseCredential should appear in GetCredentials")
 	houseAttrs := attributeMap(houseCred.Attributes)
-	requireAttribute(t, houseAttrs, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Bob")
+	require.Len(t, houseCred.Attributes, 4)
+	requireAttrFull(t, houseAttrs, expectedAttr{
+		Path:        []any{"owner_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+		Value:       strVal("Bob"),
+	})
+	requireAttrFull(t, houseAttrs, expectedAttr{
+		Path:        []any{"address", "street"},
+		DisplayName: clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+		Value:       strVal("456 Oak Ave"),
+	})
+	requireAttrFull(t, houseAttrs, expectedAttr{
+		Path:        []any{"address", "city"},
+		DisplayName: clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+		Value:       strVal("Rotterdam"),
+	})
+	requireAttrFull(t, houseAttrs, expectedAttr{
+		Path:        []any{"address", "country"},
+		DisplayName: clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
+		Value:       strVal("NL"),
+	})
+}
 
-	// The nested address claim should be stored as an object.
-	addrAttr, ok := houseAttrs["address"]
-	require.True(t, ok, "attribute \"address\" should exist")
-	require.NotNil(t, addrAttr.Value, "attribute \"address\" should have a value")
-	require.Equal(t, clientmodels.AttributeType_Object, addrAttr.Value.Type, "address should be an object type")
+func testOpenId4VciPreAuthFlowArrayClaims(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+		"university": "TU Delft",
+		"level": "MSc",
+		"student_id": "S99999",
+		"courses": ["Algorithms", "Databases", "Security"]
+	}`)
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	cred := findCredentialByName(t, creds, "en", "Student Card Credential (SD-JWT)")
+	require.NotNil(t, cred, "issued StudentCardCredential should appear in GetCredentials")
+
+	// Array claims are flattened into indexed paths.
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"university"},
+			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			Value:       strVal("TU Delft"),
+		},
+		expectedAttr{
+			Path:        []any{"level"},
+			DisplayName: clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"},
+			Value:       strVal("MSc"),
+		},
+		expectedAttr{
+			Path:        []any{"student_id"},
+			DisplayName: clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"},
+			Value:       strVal("S99999"),
+		},
+		expectedAttr{
+			Path:        []any{"courses", 0},
+			DisplayName: clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
+			Value:       strVal("Algorithms"),
+		},
+		expectedAttr{
+			Path:        []any{"courses", 1},
+			DisplayName: clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
+			Value:       strVal("Databases"),
+		},
+		expectedAttr{
+			Path:        []any{"courses", 2},
+			DisplayName: clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
+			Value:       strVal("Security"),
+		},
+	)
+}
+
+func testOpenId4VciPreAuthFlowMixedSdNonSd(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+		"member_name": "Alice",
+		"member_since": "2020-01-15",
+		"membership_type": "gold"
+	}`)
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	cred := findCredentialByName(t, creds, "en", "Membership Credential (SD-JWT)")
+	require.NotNil(t, cred, "issued MembershipCredential should appear in GetCredentials")
+
+	// member_name and membership_type are SD, member_since is non-SD.
+	// All should appear in GetCredentials regardless.
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"member_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Member Name", "nl": "Naam lid"},
+			Value:       strVal("Alice"),
+		},
+		expectedAttr{
+			Path:        []any{"member_since"},
+			DisplayName: clientmodels.TranslatedString{"en": "Member Since", "nl": "Lid sinds"},
+			Value:       strVal("2020-01-15"),
+		},
+		expectedAttr{
+			Path:        []any{"membership_type"},
+			DisplayName: clientmodels.TranslatedString{"en": "Membership Type", "nl": "Type lidmaatschap"},
+			Value:       strVal("gold"),
+		},
+	)
+}
+
+func testOpenId4VciPreAuthFlowEduIdCredential(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+		"schac_home_organization": "university.nl",
+		"name": "Jan de Vries",
+		"given_name": "Jan",
+		"family_name": "de Vries",
+		"email": "jan@university.nl",
+		"eduperson_scoped_affiliation": "student@university.nl",
+		"eduperson_assurance": "https://eduid.nl/assurance/low",
+		"is_student": true,
+		"is_faculty": false,
+		"is_member": true,
+		"is_staff": false,
+		"is_alum": false,
+		"is_affiliate": false,
+		"is_employee": false,
+		"is_library-walk-in": false
+	}`)
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	cred := findCredentialByName(t, creds, "en", "eduID")
+	require.NotNil(t, cred, "issued EduIdCredential should appear in GetCredentials")
+
+	// All 15 claims should be present. eduperson_assurance is non-SD.
+	// Boolean values are stored as string "true"/"false" via NewAttributeValue.
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"schac_home_organization"},
+			DisplayName: clientmodels.TranslatedString{"en": "Organization", "nl": "Instelling"},
+			Value:       strVal("university.nl"),
+		},
+		expectedAttr{
+			Path:        []any{"name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Name", "nl": "Naam"},
+			Value:       strVal("Jan de Vries"),
+		},
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Given name", "nl": "Voornaam"},
+			Value:       strVal("Jan"),
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			Value:       strVal("de Vries"),
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "E-mail", "nl": "E-mail"},
+			Value:       strVal("jan@university.nl"),
+		},
+		expectedAttr{
+			Path:        []any{"eduperson_scoped_affiliation"},
+			DisplayName: clientmodels.TranslatedString{"en": "Affiliation (scoped)", "nl": "Betrekking (in relatie)"},
+			Value:       strVal("student@university.nl"),
+		},
+		expectedAttr{
+			Path:        []any{"eduperson_assurance"},
+			DisplayName: clientmodels.TranslatedString{"en": "Assurance", "nl": "Bevestiging"},
+			Value:       strVal("https://eduid.nl/assurance/low"),
+		},
+		expectedAttr{
+			Path:        []any{"is_student"},
+			DisplayName: clientmodels.TranslatedString{"en": "IsStudent", "nl": "IsStudent"},
+			Value:       boolVal(true),
+		},
+		expectedAttr{
+			Path:        []any{"is_faculty"},
+			DisplayName: clientmodels.TranslatedString{"en": "IsFaculty", "nl": "IsFaculteitslid"},
+			Value:       boolVal(false),
+		},
+		expectedAttr{
+			Path:        []any{"is_member"},
+			DisplayName: clientmodels.TranslatedString{"en": "IsMember", "nl": "IsLid"},
+			Value:       boolVal(true),
+		},
+		expectedAttr{
+			Path:        []any{"is_staff"},
+			DisplayName: clientmodels.TranslatedString{"en": "IsStaff", "nl": "IsStaf"},
+			Value:       boolVal(false),
+		},
+		expectedAttr{
+			Path:        []any{"is_alum"},
+			DisplayName: clientmodels.TranslatedString{"en": "IsAlumnus", "nl": "IsAlumnus"},
+			Value:       boolVal(false),
+		},
+		expectedAttr{
+			Path:        []any{"is_affiliate"},
+			DisplayName: clientmodels.TranslatedString{"en": "IsAffiliate", "nl": "IsVerbonden"},
+			Value:       boolVal(false),
+		},
+		expectedAttr{
+			Path:        []any{"is_employee"},
+			DisplayName: clientmodels.TranslatedString{"en": "IsEmployee", "nl": "IsMedewerker"},
+			Value:       boolVal(false),
+		},
+		expectedAttr{
+			Path:        []any{"is_library-walk-in"},
+			DisplayName: clientmodels.TranslatedString{"en": "IsLibraryWalkIn", "nl": "IsBibliotheekBezoeker"},
+			Value:       boolVal(false),
+		},
+	)
+}
+
+// testOpenId4VciPreAuthFlowDeeplyNestedCredential issues a credential with
+// deeply nested structure: an object containing an array of objects, each
+// containing an array of objects, each containing an array. This mirrors the
+// structure in buildDeeplyNestedSdJwt from the SD-JWT presentation tests.
+//
+// Structure:
+//
+//	university (object):
+//	  name: "TU Delft"
+//	  faculties (array of objects):
+//	    [0]:
+//	      faculty_name: "EEMCS"
+//	      departments (array of objects):
+//	        [0]:
+//	          dept_name: "Software Technology"
+//	          courses: ["Compiler Construction", "Distributed Systems", "Intro to CS"]
+//	        [1]:
+//	          dept_name: "Data Science"
+//	          courses: ["Machine Learning"]
+//	    [1]:
+//	      faculty_name: "Architecture"
+//	      departments (array of objects):
+//	        [0]:
+//	          dept_name: "Urbanism"
+//	          courses: ["City Planning"]
+//	  founded: 1842
+func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+		"university": {
+			"name": "TU Delft",
+			"faculties": [
+				{
+					"faculty_name": "EEMCS",
+					"departments": [
+						{
+							"dept_name": "Software Technology",
+							"courses": ["Compiler Construction", "Distributed Systems", "Intro to CS"]
+						},
+						{
+							"dept_name": "Data Science",
+							"courses": ["Machine Learning"]
+						}
+					]
+				},
+				{
+					"faculty_name": "Architecture",
+					"departments": [
+						{
+							"dept_name": "Urbanism",
+							"courses": ["City Planning"]
+						}
+					]
+				}
+			],
+			"founded": 1842
+		}
+	}`)
+
+	// Verify the credential appears in GetCredentials.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	cred := findCredentialByName(t, creds, "en", "Organization Credential (SD-JWT)")
+	require.NotNil(t, cred, "issued OrganizationCredential should appear in GetCredentials")
+
+	am := attributeMap(cred.Attributes)
+	require.Len(t, cred.Attributes, 12)
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "name"},
+		DisplayName: clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
+		Value:       strVal("TU Delft"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "faculty_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("EEMCS"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Software Technology"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 0},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Compiler Construction"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 1},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Distributed Systems"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 0, "courses", 2},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Intro to CS"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Data Science"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 0, "departments", 1, "courses", 0},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Machine Learning"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 1, "faculty_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Architecture"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("Urbanism"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "faculties", 1, "departments", 0, "courses", 0},
+		DisplayName: clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"},
+		Value:       strVal("City Planning"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"university", "founded"},
+		DisplayName: clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
+		Value:       intVal(1842),
+	})
+
+	// Verify the credential can be disclosed over OpenID4VP.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "org-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/organization"]
+					},
+					"claims": [
+						{ "path": ["university"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	cred2 := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred2))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// Verify the verifier received the university claim as a nested object.
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+
+	// Check the deeply nested structure was preserved.
+	requireVerifierReceivedClaims(t, result, "org-cred",
+		claim([]any{"university", "name"}, "TU Delft"),
+		claim([]any{"university", "faculties", 0, "faculty_name"}, "EEMCS"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "dept_name"}, "Software Technology"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 0}, "Compiler Construction"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 1}, "Distributed Systems"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 2}, "Intro to CS"),
+		claim([]any{"university", "faculties", 0, "departments", 1, "dept_name"}, "Data Science"),
+		claim([]any{"university", "faculties", 0, "departments", 1, "courses", 0}, "Machine Learning"),
+		claim([]any{"university", "faculties", 1, "faculty_name"}, "Architecture"),
+		claim([]any{"university", "faculties", 1, "departments", 0, "dept_name"}, "Urbanism"),
+		claim([]any{"university", "faculties", 1, "departments", 0, "courses", 0}, "City Planning"),
+		claim([]any{"university", "founded"}, "1842"),
+	)
 }
 
 // ========================================================================
@@ -310,10 +775,23 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT, Auth Code)")
 	require.NotNil(t, cred, "issued credential should appear in GetCredentials")
 
-	attrMap := attributeMap(cred.Attributes)
-	requireAttribute(t, attrMap, "given_name", clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"}, "Test")
-	requireAttribute(t, attrMap, "family_name", clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"}, "AuthCode")
-	requireAttribute(t, attrMap, "email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}, "authcode@example.com")
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			Value:       strVal("Test"),
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			Value:       strVal("AuthCode"),
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			Value:       strVal("authcode@example.com"),
+		},
+	)
 }
 
 func testOpenId4VciAuthCodeFlowCanBeDismissed(t *testing.T) {
@@ -356,16 +834,28 @@ func testOpenId4VciAuthCodeFlowNestedClaims(t *testing.T) {
 	cred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT, Auth Code)")
 	require.NotNil(t, cred, "issued HouseCredential should appear in GetCredentials")
 
-	attrMap := attributeMap(cred.Attributes)
-
-	// Top-level claim: owner_name
-	requireAttribute(t, attrMap, "owner_name", clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}, "Charlie")
-
-	// Nested claim: address is an object containing street, city, country
-	addrAttr, ok := attrMap["address"]
-	require.True(t, ok, "attribute \"address\" should exist")
-	require.NotNil(t, addrAttr.Value, "attribute \"address\" should have a value")
-	require.Equal(t, clientmodels.AttributeType_Object, addrAttr.Value.Type, "address should be an object type")
+	am := attributeMap(cred.Attributes)
+	require.Len(t, cred.Attributes, 4)
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"owner_name"},
+		DisplayName: clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+		Value:       strVal("Charlie"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"address", "street"},
+		DisplayName: clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+		Value:       strVal("789 Elm St"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"address", "city"},
+		DisplayName: clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+		Value:       strVal("Utrecht"),
+	})
+	requireAttrFull(t, am, expectedAttr{
+		Path:        []any{"address", "country"},
+		DisplayName: clientmodels.TranslatedString{"en": "Country", "nl": "Land"},
+		Value:       strVal("NL"),
+	})
 }
 
 // issueCredentialViaOid4VciAuthCode issues a single credential through the

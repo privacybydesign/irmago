@@ -355,7 +355,7 @@ func testChainedSession(
 	choice := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	require.Equal(t, "irma-demo.RU.studentCard", choice.CredentialId)
 
-	grantPermission(t, c, session.Id, makeDisclosureChoice(choice, choice.Attributes[0].Id))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(choice))
 
 	session = awaitSessionState(t, sessionHandler)
 
@@ -378,7 +378,7 @@ func testChainedSession(
 	choice = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	require.Equal(t, "irma-demo.MijnOverheid.fullName", choice.CredentialId)
 
-	grantPermission(t, c, session.Id, makeDisclosureChoice(choice, choice.Attributes[0].Id))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(choice))
 
 	session = awaitSessionState(t, sessionHandler)
 
