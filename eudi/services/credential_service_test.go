@@ -56,6 +56,10 @@ func (m *mockCredentialStore) DeleteBatch(batchID datatypes.UUID) error {
 	return nil
 }
 
+func (m *mockCredentialStore) DeleteBatchByHash(hash string) error {
+	return nil
+}
+
 // --- helpers ---
 
 func newServiceWithMock(mock *mockCredentialStore) *credentialService {

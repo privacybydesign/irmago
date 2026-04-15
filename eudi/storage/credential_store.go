@@ -38,6 +38,10 @@ type CredentialStore interface {
 
 	// DeleteBatch deletes a CredentialBatch and all its instances (via CASCADE).
 	DeleteBatch(batchID datatypes.UUID) error
+
+	// DeleteBatchByHash looks up a CredentialBatch by its deterministic hash and deletes it
+	// along with all its instances (via CASCADE). Returns ErrNotFound if no batch exists with that hash.
+	DeleteBatchByHash(hash string) error
 }
 
 type credentialStore struct {
@@ -149,6 +153,14 @@ func (s *credentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
 		Where("id = (SELECT credential_batch_id FROM issued_credential_instances WHERE id = ?) AND remaining_count > 0", instanceID).
 		UpdateColumn("remaining_count", gorm.Expr("remaining_count - 1")).
 		Error
+}
+
+func (s *credentialStore) DeleteBatchByHash(hash string) error {
+	batch, err := s.GetBatchByHash(hash)
+	if err != nil {
+		return err
+	}
+	return s.DeleteBatch(batch.ID)
 }
 
 func (s *credentialStore) DeleteBatch(batchID datatypes.UUID) error {

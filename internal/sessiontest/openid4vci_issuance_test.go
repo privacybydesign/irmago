@@ -25,6 +25,7 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("issues credential with mixed sd and non-sd claims", testOpenId4VciPreAuthFlowMixedSdNonSd)
 	t.Run("issues eduid credential with boolean claims", testOpenId4VciPreAuthFlowEduIdCredential)
 	t.Run("issues deeply nested credential", testOpenId4VciPreAuthFlowDeeplyNestedCredential)
+	t.Run("issued credential can be deleted", testOpenId4VciPreAuthFlowCredentialDeletion)
 }
 
 func testOpenId4VciPreAuthFlowReachesPermission(t *testing.T) {
@@ -713,6 +714,49 @@ func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 		claim([]any{"university", "faculties", 1, "departments", 0, "courses", 0}, "City Planning"),
 		claim([]any{"university", "founded"}, "1842"),
 	)
+}
+
+// testOpenId4VciPreAuthFlowCredentialDeletion verifies that an EUDI SD-JWT credential
+// issued via OID4VCI can be deleted. The credential only exists in the EUDI GORM storage
+// (not in the IRMA BBolt storage), so its hash won't be found in getIrmaCredentialInfoList().
+// This specifically guards against an index-out-of-range panic when the hash lookup returns -1.
+func testOpenId4VciPreAuthFlowCredentialDeletion(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createPreAuthOffer(t)
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	// Verify the credential was issued.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	cred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	require.NotNil(t, cred, "issued credential should appear in GetCredentials")
+	deletedHash := cred.Hash
+
+	// Delete the EUDI credential using its own instance IDs.
+	// This must not panic even though the hash is absent from the IRMA credential list.
+	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
+
+	// Verify the specific credential is gone by checking no credential has the deleted hash.
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	for _, c := range creds {
+		require.NotEqual(t, deletedHash, c.Hash, "deleted credential (hash %s) should no longer appear in GetCredentials", deletedHash)
+	}
 }
 
 // ========================================================================

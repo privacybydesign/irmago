@@ -316,29 +316,43 @@ func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error
 }
 
 func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.CredentialFormat]string) error {
-	allCreds := client.getIrmaCredentialInfoList()
-	relevantCreds := []*irma.CredentialInfo{}
-	for _, hash := range hashByFormat {
-		relevantCreds = append(relevantCreds, allCreds[slices.IndexFunc(allCreds, func(info *irma.CredentialInfo) bool {
+	// Partition hashes into those found in IRMA storage vs those in EUDI storage.
+	allIrmaCreds := client.getIrmaCredentialInfoList()
+	irmaRelevantCreds := []*irma.CredentialInfo{}
+	eudiHashes := map[clientmodels.CredentialFormat]string{}
+
+	for format, hash := range hashByFormat {
+		idx := slices.IndexFunc(allIrmaCreds, func(info *irma.CredentialInfo) bool {
 			return info.Hash == hash
-		})])
+		})
+		if idx >= 0 {
+			irmaRelevantCreds = append(irmaRelevantCreds, allIrmaCreds[idx])
+		} else {
+			eudiHashes[format] = hash
+		}
 	}
 
-	if len(relevantCreds) == 0 {
+	if len(irmaRelevantCreds) == 0 && len(eudiHashes) == 0 {
 		return fmt.Errorf("trying to delete credential that doesn't exist")
 	}
 
-	if same, err := sameCredentialAndAttributesCombi(relevantCreds); !same || err != nil {
-		if !same {
-			return fmt.Errorf("deleting two different credential instances at once is not supported")
-		} else {
+	// Validate that all IRMA-side credentials refer to the same credential+attributes combo.
+	if len(irmaRelevantCreds) > 0 {
+		if same, err := sameCredentialAndAttributesCombi(irmaRelevantCreds); !same || err != nil {
+			if !same {
+				return fmt.Errorf("deleting two different credential instances at once is not supported")
+			}
 			return fmt.Errorf("error while comparing credential attributes: %v", err)
 		}
 	}
 
-	formats := []clientmodels.CredentialFormat{}
+	// Delete IRMA credentials (existing path).
+	irmaFormats := []clientmodels.CredentialFormat{}
 	for format, hash := range hashByFormat {
-		formats = append(formats, format)
+		if _, isEudi := eudiHashes[format]; isEudi {
+			continue
+		}
+		irmaFormats = append(irmaFormats, format)
 		if format == clientmodels.Format_Idemix {
 			if err := client.irmaClient.RemoveCredentialByHash(hash); err != nil {
 				return err
@@ -355,13 +369,28 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		}
 	}
 
-	info := relevantCreds[0]
-	logEntry, err := createRemovalLog(client.GetIrmaConfiguration(), info.Identifier(), info.Attributes, formats)
-	if err != nil {
-		return fmt.Errorf("failed to create delete log: %v", err)
+	// Delete EUDI credentials.
+	if len(eudiHashes) > 0 {
+		credentialStore := storage.NewCredentialStore(client.eudiStorage)
+		for _, hash := range eudiHashes {
+			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
+				return fmt.Errorf("error while deleting eudi credential: %v", err)
+			}
+		}
 	}
 
-	return client.logsStorage.AddLogEntry(logEntry)
+	// Create removal log for IRMA credentials.
+	// TODO: add removal logging for EUDI credentials.
+	if len(irmaRelevantCreds) > 0 {
+		info := irmaRelevantCreds[0]
+		logEntry, err := createRemovalLog(client.GetIrmaConfiguration(), info.Identifier(), info.Attributes, irmaFormats)
+		if err != nil {
+			return fmt.Errorf("failed to create delete log: %v", err)
+		}
+		return client.logsStorage.AddLogEntry(logEntry)
+	}
+
+	return nil
 }
 
 func createRemovalLog(
