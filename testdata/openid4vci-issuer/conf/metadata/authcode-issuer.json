@@ -41,6 +41,15 @@
           "proof_signing_alg_values_supported": ["ES256"]
         }
       },
+      "credential_definition": {
+        "type": ["VerifiableCredential", "HouseCredential"],
+        "claims": [
+          { "path": ["owner_name"], "display": [{ "name": "Owner Name", "locale": "en" }, { "name": "Eigenaar", "locale": "nl" }] },
+          { "path": ["address", "street"], "display": [{ "name": "Street", "locale": "en" }, { "name": "Straat", "locale": "nl" }] },
+          { "path": ["address", "city"], "display": [{ "name": "City", "locale": "en" }, { "name": "Stad", "locale": "nl" }] },
+          { "path": ["address", "country"], "display": [{ "name": "Country", "locale": "en" }, { "name": "Land", "locale": "nl" }] }
+        ]
+      },
       "credential_metadata": {
         "display": [
           { "name": "House Possession Credential (SD-JWT, Auth Code)", "locale": "en" }

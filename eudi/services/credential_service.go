@@ -76,6 +76,26 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				credentialDisplays[locale] = d.Name
 			}
 
+			// Build a display lookup from all metadata claims, keyed by serialized path.
+			// This allows child paths created during flattening to inherit display names
+			// from more specific metadata entries when available.
+			claimDisplayLookup := map[string]clientmodels.TranslatedString{}
+			for _, claim := range batch.CredentialMetadata.Claims {
+				var path []any
+				if err := json.Unmarshal(claim.Path, &path); err != nil {
+					continue
+				}
+				display := clientmodels.TranslatedString{}
+				for _, d := range claim.Display {
+					locale := clientmodels.DefaultFallbackLanguage
+					if d.Locale.Valid {
+						locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+					}
+					display[locale] = d.Name
+				}
+				claimDisplayLookup[clientmodels.ClaimPathKey(path)] = display
+			}
+
 			for _, claim := range batch.CredentialMetadata.Claims {
 				attrDisplay := clientmodels.TranslatedString{}
 				for _, d := range claim.Display {
@@ -105,12 +125,10 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				switch v := claimValue.(type) {
 				case []any:
 					for i, elem := range v {
-						elemPath := make([]any, len(claimPath)+1)
-						copy(elemPath, claimPath)
-						elemPath[len(claimPath)] = i
+						elemPath := append(append([]any{}, claimPath...), i)
 						attrs = append(attrs, clientmodels.Attribute{
 							ClaimPath:   elemPath,
-							DisplayName: attrDisplay,
+							DisplayName: childDisplayName(claimDisplayLookup, elemPath, attrDisplay),
 							Value:       clientmodels.NewAttributeValue(elem),
 						})
 					}
@@ -122,12 +140,10 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					}
 					sort.Strings(keys)
 					for _, key := range keys {
-						elemPath := make([]any, len(claimPath)+1)
-						copy(elemPath, claimPath)
-						elemPath[len(claimPath)] = key
+						elemPath := append(append([]any{}, claimPath...), key)
 						attrs = append(attrs, clientmodels.Attribute{
 							ClaimPath:   elemPath,
-							DisplayName: attrDisplay,
+							DisplayName: childDisplayName(claimDisplayLookup, elemPath, attrDisplay),
 							Value:       clientmodels.NewAttributeValue(v[key]),
 						})
 					}
@@ -294,6 +310,16 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	return s.credentialStore.StoreBatch(batch)
+}
+
+// childDisplayName looks up display names for a child path created during flattening.
+// It first checks whether the metadata contains a claim entry for the exact child path.
+// If not, it falls back to the parent's display names.
+func childDisplayName(lookup map[string]clientmodels.TranslatedString, childPath []any, parentDisplay clientmodels.TranslatedString) clientmodels.TranslatedString {
+	if d, ok := lookup[clientmodels.ClaimPathKey(childPath)]; ok && len(d) > 0 {
+		return d
+	}
+	return parentDisplay
 }
 
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.

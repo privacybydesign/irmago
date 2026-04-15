@@ -24,6 +24,7 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("issues credential with array claims", testOpenId4VciPreAuthFlowArrayClaims)
 	t.Run("issues credential with mixed sd and non-sd claims", testOpenId4VciPreAuthFlowMixedSdNonSd)
 	t.Run("issues eduid credential with boolean claims", testOpenId4VciPreAuthFlowEduIdCredential)
+	t.Run("issues deeply nested credential", testOpenId4VciPreAuthFlowDeeplyNestedCredential)
 }
 
 func testOpenId4VciPreAuthFlowReachesPermission(t *testing.T) {
@@ -530,6 +531,130 @@ func testOpenId4VciPreAuthFlowEduIdCredential(t *testing.T) {
 			DisplayName: clientmodels.TranslatedString{"en": "IsLibraryWalkIn", "nl": "IsBibliotheekBezoeker"},
 			Value:       boolVal(false),
 		},
+	)
+}
+
+// testOpenId4VciPreAuthFlowDeeplyNestedCredential issues a credential with
+// deeply nested structure: an object containing an array of objects, each
+// containing an array of objects, each containing an array. This mirrors the
+// structure in buildDeeplyNestedSdJwt from the SD-JWT presentation tests.
+//
+// Structure:
+//
+//	university (object):
+//	  name: "TU Delft"
+//	  faculties (array of objects):
+//	    [0]:
+//	      faculty_name: "EEMCS"
+//	      departments (array of objects):
+//	        [0]:
+//	          dept_name: "Software Technology"
+//	          courses: ["Compiler Construction", "Distributed Systems", "Intro to CS"]
+//	        [1]:
+//	          dept_name: "Data Science"
+//	          courses: ["Machine Learning"]
+//	    [1]:
+//	      faculty_name: "Architecture"
+//	      departments (array of objects):
+//	        [0]:
+//	          dept_name: "Urbanism"
+//	          courses: ["City Planning"]
+//	  founded: 1842
+func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+		"university": {
+			"name": "TU Delft",
+			"faculties": [
+				{
+					"faculty_name": "EEMCS",
+					"departments": [
+						{
+							"dept_name": "Software Technology",
+							"courses": ["Compiler Construction", "Distributed Systems", "Intro to CS"]
+						},
+						{
+							"dept_name": "Data Science",
+							"courses": ["Machine Learning"]
+						}
+					]
+				},
+				{
+					"faculty_name": "Architecture",
+					"departments": [
+						{
+							"dept_name": "Urbanism",
+							"courses": ["City Planning"]
+						}
+					]
+				}
+			],
+			"founded": 1842
+		}
+	}`)
+
+	// Verify the credential appears in GetCredentials.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	cred := findCredentialByName(t, creds, "en", "Organization Credential (SD-JWT)")
+	require.NotNil(t, cred, "issued OrganizationCredential should appear in GetCredentials")
+
+	// The credential service sees "university" as a single metadata claim.
+	// Since the value is a map, it gets flattened into its child keys.
+	// The deeply nested structure produces multiple levels of flattening.
+	// For now, just verify the credential was issued and has attributes.
+	require.NotEmpty(t, cred.Attributes, "credential should have attributes")
+
+	// Verify the credential can be disclosed over OpenID4VP.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "org-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/organization"]
+					},
+					"claims": [
+						{ "path": ["university"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	cred2 := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred2))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// Verify the verifier received the university claim as a nested object.
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+
+	// Check the deeply nested structure was preserved.
+	requireVerifierReceivedClaims(t, result, "org-cred",
+		claim([]any{"university", "name"}, "TU Delft"),
+		claim([]any{"university", "faculties", 0, "faculty_name"}, "EEMCS"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "dept_name"}, "Software Technology"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 0}, "Compiler Construction"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 1}, "Distributed Systems"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 2}, "Intro to CS"),
+		claim([]any{"university", "faculties", 0, "departments", 1, "dept_name"}, "Data Science"),
+		claim([]any{"university", "faculties", 0, "departments", 1, "courses", 0}, "Machine Learning"),
+		claim([]any{"university", "faculties", 1, "faculty_name"}, "Architecture"),
+		claim([]any{"university", "faculties", 1, "departments", 0, "dept_name"}, "Urbanism"),
+		claim([]any{"university", "faculties", 1, "departments", 0, "courses", 0}, "City Planning"),
+		claim([]any{"university", "founded"}, "1842"),
 	)
 }
 
