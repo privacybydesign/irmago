@@ -208,22 +208,20 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	seenPaths := make(map[string]struct{})
 	requestedKeys := make(map[string]struct{})
 	for _, claim := range claims {
-		pathKey := clientmodels.ClaimPathKey([]any(claim.Path))
+		pathKey := clientmodels.ClaimPathKey(claim.Path)
 		if _, duplicate := seenPaths[pathKey]; duplicate {
 			continue
 		}
 		seenPaths[pathKey] = struct{}{}
 
-		attrName := claim.Path.LastString()
-
-		val, _ := payload.GetClaimValue([]any(claim.Path))
+		val, _ := payload.GetClaimValue(claim.Path)
 
 		// When the path ends with nil (null wildcard for all array elements),
 		// expand into individual attributes with indexed paths.
 		if len(claim.Path) > 0 && claim.Path[len(claim.Path)-1] == nil {
 			if arr, ok := val.([]any); ok {
-				basePath := []any(claim.Path[:len(claim.Path)-1])
-				displayName := claimDisplayName(batch, attrName)
+				basePath := claim.Path[:len(claim.Path)-1]
+				displayName := claimDisplayName(batch, basePath)
 				for i, elem := range arr {
 					elemPath := make([]any, len(basePath)+1)
 					copy(elemPath, basePath)
@@ -243,9 +241,9 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 		// When the value is an array (path doesn't end in nil but resolves to an array),
 		// also expand into indexed elements.
 		if arr, ok := val.([]any); ok {
-			displayName := claimDisplayName(batch, attrName)
+			displayName := claimDisplayName(batch, claim.Path)
 			for i, elem := range arr {
-				elemPath := append(append([]any{}, []any(claim.Path)...), i)
+				elemPath := append(append([]any{}, claim.Path...), i)
 				pk := clientmodels.ClaimPathKey(elemPath)
 				requestedKeys[pk] = struct{}{}
 				attributes = append(attributes, clientmodels.Attribute{
@@ -260,12 +258,12 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 		// When the value is a nested object, flatten into individual attributes.
 		if obj, ok := val.(map[string]any); ok {
 			for key, elem := range obj {
-				elemPath := append(append([]any{}, []any(claim.Path)...), key)
+				elemPath := append(append([]any{}, claim.Path...), key)
 				pk := clientmodels.ClaimPathKey(elemPath)
 				requestedKeys[pk] = struct{}{}
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:   elemPath,
-					DisplayName: claimDisplayName(batch, key),
+					DisplayName: claimDisplayName(batch, elemPath),
 					Value:       clientmodels.NewAttributeValue(elem),
 				})
 			}
@@ -275,8 +273,8 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 		// Scalar value — single attribute.
 		requestedKeys[pathKey] = struct{}{}
 		attributes = append(attributes, clientmodels.Attribute{
-			ClaimPath:   []any(claim.Path),
-			DisplayName: claimDisplayName(batch, attrName),
+			ClaimPath:   claim.Path,
+			DisplayName: claimDisplayName(batch, claim.Path),
 			Value:       clientmodels.NewAttributeValue(val),
 		})
 	}
@@ -294,7 +292,7 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 		}
 		attr := clientmodels.Attribute{
 			ClaimPath:   []any{name},
-			DisplayName: claimDisplayName(batch, name),
+			DisplayName: claimDisplayName(batch, []any{name}),
 		}
 		attr.Value = clientmodels.NewAttributeValue(val)
 		attributes = append(attributes, attr)
@@ -357,7 +355,7 @@ func selectClaims(query dcql.CredentialQuery, payload *sdjwtvc.ProcessedSdJwtPay
 // any value constraints. Supports string, boolean, and numeric comparisons as
 // required by the DCQL spec (OpenID4VP Section 6.3).
 func claimMatches(claim dcql.Claim, payload *sdjwtvc.ProcessedSdJwtPayload) bool {
-	val, err := payload.GetClaimValue([]any(claim.Path))
+	val, err := payload.GetClaimValue(claim.Path)
 	if err != nil {
 		return false
 	}
@@ -441,10 +439,9 @@ func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clien
 		if len(path) == 0 {
 			continue
 		}
-		attrName := dcql.ClaimsPathPointer(path).LastString()
 		attr := clientmodels.Attribute{
 			ClaimPath:   path,
-			DisplayName: claimDisplayName(batch, attrName),
+			DisplayName: claimDisplayName(batch, path),
 		}
 		if val, err := payload.GetClaimValue(path); err == nil {
 			if valStr, ok := val.(string); ok {
@@ -491,12 +488,12 @@ func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
 
 // claimDisplayName looks up the display name for a claim from the stored credential metadata.
 // Falls back to the raw claim name if no display metadata is available.
-func claimDisplayName(batch *models.CredentialBatch, claimName string) clientmodels.TranslatedString {
+func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmodels.TranslatedString {
 	if batch.CredentialMetadata != nil {
 		for _, claim := range batch.CredentialMetadata.Claims {
 			var path []string
 			if err := json.Unmarshal(claim.Path, &path); err == nil {
-				if len(path) > 0 && path[len(path)-1] == claimName {
+				if claimPathMatchesStringPath(claimPath, path) {
 					ts := clientmodels.TranslatedString{}
 					for _, d := range claim.Display {
 						locale := "en"
@@ -513,4 +510,26 @@ func claimDisplayName(batch *models.CredentialBatch, claimName string) clientmod
 		}
 	}
 	return clientmodels.TranslatedString{}
+}
+
+// claimPathMatchesStringPath checks if a []any claim path matches a []string
+// metadata path. Integer components in claimPath are skipped for matching
+// (metadata paths don't contain array indices).
+func claimPathMatchesStringPath(claimPath []any, metadataPath []string) bool {
+	// Extract only the string components from the claim path.
+	var stringParts []string
+	for _, c := range claimPath {
+		if s, ok := c.(string); ok {
+			stringParts = append(stringParts, s)
+		}
+	}
+	if len(stringParts) != len(metadataPath) {
+		return false
+	}
+	for i := range stringParts {
+		if stringParts[i] != metadataPath[i] {
+			return false
+		}
+	}
+	return true
 }
