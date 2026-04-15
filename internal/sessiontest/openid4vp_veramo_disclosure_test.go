@@ -23,8 +23,8 @@ const (
 	veramoVerifierName       = "test-verifier"
 	veramoVerifierAdminToken = "test-verifier-admin-token"
 
-	batch2IssuerURL   = "https://localhost:8443/batch2-issuer"
-	batch2AdminToken  = "test-admin-token"
+	batch2IssuerURL  = "https://localhost:8443/batch2-issuer"
+	batch2AdminToken = "test-admin-token"
 )
 
 func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
@@ -2635,7 +2635,6 @@ func findCredentialByName(t *testing.T, creds []*clientmodels.Credential, locale
 	}
 	return nil
 }
-
 
 // startOpenID4VPDisclosureSession starts an OpenID4VP disclosure session in the
 // client using the given verifier request URI.

@@ -373,10 +373,10 @@ func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attrib
 type expectedAttr struct {
 	Path           []any
 	DisplayName    *clientmodels.TranslatedString
-	Description    *clientmodels.TranslatedString    // nil to skip description check
-	Value          *clientmodels.AttributeValue       // nil means section header (asserts actual is nil)
-	RequestedValue *clientmodels.AttributeValue       // nil to skip check
-	SkipValueCheck bool                               // true to skip the Value nil/non-nil assertion
+	Description    *clientmodels.TranslatedString // nil to skip description check
+	Value          *clientmodels.AttributeValue   // nil means section header (asserts actual is nil)
+	RequestedValue *clientmodels.AttributeValue   // nil to skip check
+	SkipValueCheck bool                           // true to skip the Value nil/non-nil assertion
 }
 
 // strVal creates a string AttributeValue.
