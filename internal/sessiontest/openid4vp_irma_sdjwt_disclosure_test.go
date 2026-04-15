@@ -75,9 +75,10 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, plan.DisclosureChoicesOverview)
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps:       []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "test.test.email"}}}},
+		IssuedCredentialIds: map[string]struct{}{},
+	})
 
 	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
@@ -88,17 +89,20 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan = session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 1)
-	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
-
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "test.test.email",
-		Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
-		Attributes: []expectedRequestedAttr{
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "test.test.email"}}}},
+		Choices: []expectedPickOneChoice{
 			{
-				Path:        []any{"email"},
-				DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+				Owned: []expectedPlanCredential{{CredentialId: "test.test.email"}},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "test.test.email",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Attributes: []expectedAttr{
+							{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 		},
 	})
@@ -150,9 +154,13 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan := session.DisclosurePlan
-	requireIssuanceSteps(t, plan, 2)
-	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, plan.DisclosureChoicesOverview)
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{
+			{CredentialId: "test.test.email"},
+			{CredentialId: "irma-demo.RU.studentCard"},
+		}}},
+		IssuedCredentialIds: map[string]struct{}{},
+	})
 
 	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
@@ -163,34 +171,28 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan = session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.IssuedCredentialIds, 1)
-	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 2})
-
-	// check obtainable option for test.test.email
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "test.test.email",
-		Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
-		Attributes: []expectedRequestedAttr{
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "irma-demo.RU.studentCard"}}}},
+		Choices: []expectedPickOneChoice{
 			{
-				Path:        []any{"email"},
-				DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			},
-		},
-	})
-
-	// check obtainable option for irma-demo.RU.studentCard
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[1], expectedObtainable{
-		CredentialId: "irma-demo.RU.studentCard",
-		Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-		Attributes: []expectedRequestedAttr{
-			{
-				Path:        []any{"university"},
-				DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			},
-			{
-				Path:        []any{"level"},
-				DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+				Owned: []expectedPlanCredential{{CredentialId: "test.test.email"}},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "test.test.email",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Attributes: []expectedAttr{
+							{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, SkipValueCheck: true},
+						},
+					},
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Attributes: []expectedAttr{
+							{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, SkipValueCheck: true},
+							{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 		},
 	})
@@ -252,75 +254,26 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan := session.DisclosurePlan
-	requireIssuanceSteps(t, plan, 2, 1)
-
-	firstOption := plan.IssueDuringDislosure.Steps[0].Options[0]
-	require.Equal(t, firstOption.CredentialId, "test.test.email")
-	require.Equal(t, firstOption.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Email address",
-				"nl": "E-mailadres",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps: []expectedIssuanceStep{
+			{Options: []expectedCredentialDescriptor{
+				{CredentialId: "test.test.email", Attributes: []expectedAttr{
+					{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+				}},
+				{CredentialId: "irma-demo.RU.studentCard", Attributes: []expectedAttr{
+					{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+					{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+				}},
+			}},
+			{Options: []expectedCredentialDescriptor{
+				{CredentialId: "irma-demo.MijnOverheid.fullName", Attributes: []expectedAttr{
+					{Path: []any{"firstname"}, DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+					{Path: []any{"familyname"}, DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+				}},
+			}},
 		},
+		IssuedCredentialIds: map[string]struct{}{},
 	})
-
-	secondOption := plan.IssueDuringDislosure.Steps[0].Options[1]
-	require.Equal(t, secondOption.CredentialId, "irma-demo.RU.studentCard")
-	require.Equal(t, secondOption.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "University",
-				"nl": "Universiteit",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-		{
-			ClaimPath: []any{"level"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Type",
-				"nl": "Soort",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-	})
-
-	secondStep := plan.IssueDuringDislosure.Steps[1].Options[0]
-	require.Equal(t, secondStep.CredentialId, "irma-demo.MijnOverheid.fullName")
-	require.Equal(t, secondStep.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"firstname"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "First name",
-				"nl": "Voornaam",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-		{
-			ClaimPath: []any{"familyname"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Family name",
-				"nl": "Achternaam",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-	})
-
-	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
 	session = awaitSessionState(t, sessionHandler)
@@ -329,11 +282,9 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan = session.DisclosurePlan
-	require.Equal(t,
-		plan.IssueDuringDislosure.IssuedCredentialIds,
-		map[string]struct{}{"irma-demo.RU.studentCard": {}},
-	)
-	require.Nil(t, plan.DisclosureChoicesOverview)
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}},
+	})
 
 	// expect issuance session end
 	session = awaitSessionState(t, sessionHandler)
@@ -347,91 +298,51 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, session.Id, 1)
 	require.Equal(t, session.Status, clientmodels.Status_RequestPermission)
 	plan = session.DisclosurePlan
-	require.Equal(t,
-		plan.IssueDuringDislosure.IssuedCredentialIds,
-		map[string]struct{}{"irma-demo.RU.studentCard": {}, "irma-demo.MijnOverheid.fullName": {}},
-	)
-	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 2}, expectedPickOne{owned: 1, obtainable: 1})
-
-	// check obtainable options for first pick-one (email || studentCard)
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "test.test.email",
-		Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
-		Attributes: []expectedRequestedAttr{
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}, "irma-demo.MijnOverheid.fullName": {}},
+		Choices: []expectedPickOneChoice{
 			{
-				Path:        []any{"email"},
-				DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			},
-		},
-	})
-
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[1], expectedObtainable{
-		CredentialId: "irma-demo.RU.studentCard",
-		Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-		Attributes: []expectedRequestedAttr{
-			{
-				Path:        []any{"university"},
-				DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			},
-			{
-				Path:        []any{"level"},
-				DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-			},
-		},
-	})
-
-	// check obtainable option for second pick-one (name)
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[1].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "irma-demo.MijnOverheid.fullName",
-		Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
-		Attributes: []expectedRequestedAttr{
-			{
-				Path:        []any{"firstname"},
-				DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+				Owned: []expectedPlanCredential{
+					{CredentialId: "irma-demo.RU.studentCard", Attributes: []expectedAttr{
+						{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"}, Value: strVal("University of the Arts")},
+						{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"}, Value: strVal("high")},
+					}},
+				},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "test.test.email",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Attributes: []expectedAttr{
+							{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, SkipValueCheck: true},
+						},
+					},
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Attributes: []expectedAttr{
+							{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, SkipValueCheck: true},
+							{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 			{
-				Path:        []any{"familyname"},
-				DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+				Owned: []expectedPlanCredential{{CredentialId: "irma-demo.MijnOverheid.fullName"}},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.MijnOverheid.fullName",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						Attributes: []expectedAttr{
+							{Path: []any{"firstname"}, DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"}, SkipValueCheck: true},
+							{Path: []any{"familyname"}, DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 		},
 	})
 
 	firstChoice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-
-	require.Equal(t, firstChoice.CredentialId, "irma-demo.RU.studentCard")
-	require.Equal(t, firstChoice.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "University",
-				"nl": "Universiteit",
-			},
-			Description: &clientmodels.TranslatedString{
-				"en": "The name of the university",
-				"nl": "Naam van de universiteit",
-			},
-			Value: &clientmodels.AttributeValue{
-				Type:   clientmodels.AttributeType_String,
-				String: strPtr("University of the Arts"),
-			},
-		},
-		{
-			ClaimPath: []any{"level"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Type",
-				"nl": "Soort",
-			},
-			Description: &clientmodels.TranslatedString{
-				"en": "Whether you are a regular or PhD student",
-				"nl": "Of u een gewone of PhD student bent",
-			},
-			Value: &clientmodels.AttributeValue{
-				Type:   clientmodels.AttributeType_String,
-				String: strPtr("high"),
-			},
-		},
-	})
-
 	secondChoice := plan.DisclosureChoicesOverview[1].OwnedOptions[0]
 
 	// give permission to disclose
@@ -489,10 +400,10 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 	plan := session.DisclosurePlan
 	// only the required studentCard produces an issuance step;
 	// the optional fullName set is already satisfied by its empty option
-	requireIssuanceSteps(t, plan, 1)
-	require.Equal(t, "irma-demo.RU.studentCard", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
-	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, plan.DisclosureChoicesOverview)
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps:       []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "irma-demo.RU.studentCard"}}}},
+		IssuedCredentialIds: map[string]struct{}{},
+	})
 
 	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
 
@@ -501,32 +412,32 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	plan = session.DisclosurePlan
-	require.Equal(t,
-		map[string]struct{}{"irma-demo.RU.studentCard": {}},
-		plan.IssueDuringDislosure.IssuedCredentialIds,
-	)
-	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1}, expectedPickOne{optional: true, obtainable: 1})
-
-	// check obtainable option for required pick-one (studentCard)
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "irma-demo.RU.studentCard",
-		Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-		Attributes: []expectedRequestedAttr{
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}},
+		Choices: []expectedPickOneChoice{
 			{
-				Path:        []any{"university"},
-				DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+				Owned: []expectedPlanCredential{{CredentialId: "irma-demo.RU.studentCard"}},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Attributes: []expectedAttr{
+							{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
-		},
-	})
-
-	// check obtainable option for optional pick-one (fullName)
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[1].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "irma-demo.MijnOverheid.fullName",
-		Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
-		Attributes: []expectedRequestedAttr{
 			{
-				Path:        []any{"firstname"},
-				DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+				Optional: true,
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.MijnOverheid.fullName",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						Attributes: []expectedAttr{
+							{Path: []any{"firstname"}, DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 		},
 	})
@@ -578,33 +489,14 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	plan := session.DisclosurePlan
-	requireIssuanceSteps(t, plan, 1)
-	require.Nil(t, plan.DisclosureChoicesOverview)
-
 	// the issuance step shows the predefined university value as RequestedValue
-	expectedUniversityValue := "University of the Arts"
-	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "University",
-				"nl": "Universiteit",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type:   clientmodels.AttributeType_String,
-				String: &expectedUniversityValue,
-			},
-		},
-		{
-			ClaimPath: []any{"level"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Type",
-				"nl": "Soort",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{
+			{CredentialId: "irma-demo.RU.studentCard", Attributes: []expectedAttr{
+				{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, RequestedValue: strVal("University of the Arts"), SkipValueCheck: true},
+				{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+			}},
+		}}},
 	})
 
 	// issue a credential with a non-matching university value
@@ -627,23 +519,16 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	plan = session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, plan.DisclosureChoicesOverview)
-
-	// only the mismatched pre-defined attribute should be reported
-	wrongCred := plan.IssueDuringDislosure.WrongCredentialIssued
-	require.NotNil(t, wrongCred)
-	require.Equal(t, "irma-demo.RU.studentCard", wrongCred.CredentialId)
-	// only university (which has a pre-defined value that doesn't match), not level
-	requireAttrsInOrder(t, wrongCred.Attributes,
-		expectedAttr{
-			Path:        []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Value:       strVal("Some Other University"),
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps:       []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "irma-demo.RU.studentCard"}}}},
+		IssuedCredentialIds: map[string]struct{}{},
+		WrongCredentialIssued: &expectedCredentialDescriptor{
+			CredentialId: "irma-demo.RU.studentCard",
+			Attributes: []expectedAttr{
+				{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Value: strVal("Some Other University"), RequestedValue: strVal("University of the Arts")},
+			},
 		},
-	)
-	require.Equal(t, &expectedUniversityValue, wrongCred.Attributes[0].RequestedValue.String)
+	})
 
 	// issuance session ended
 	session = awaitSessionState(t, sessionHandler)
@@ -657,28 +542,23 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	plan = session.DisclosurePlan
-	require.Equal(t,
-		map[string]struct{}{"irma-demo.RU.studentCard": {}},
-		plan.IssueDuringDislosure.IssuedCredentialIds,
-	)
 	// once satisfied, the wrong credential notification should be cleared
-	require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued)
-	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
-
-	// the obtainable option shows the predefined university value as RequestedValue,
-	// and level as a requested attribute without a specific value
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "irma-demo.RU.studentCard",
-		Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-		Attributes: []expectedRequestedAttr{
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuedCredentialIds:      map[string]struct{}{"irma-demo.RU.studentCard": {}},
+		WrongCredentialIssuedNil: true,
+		Choices: []expectedPickOneChoice{
 			{
-				Path:           []any{"university"},
-				DisplayName:    clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-				RequestedValue: strPtr("University of the Arts"),
-			},
-			{
-				Path:        []any{"level"},
-				DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+				Owned: []expectedPlanCredential{{CredentialId: "irma-demo.RU.studentCard"}},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Attributes: []expectedAttr{
+							{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, RequestedValue: strVal("University of the Arts"), SkipValueCheck: true},
+							{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 		},
 	})
@@ -745,75 +625,26 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan := session.DisclosurePlan
-	requireIssuanceSteps(t, plan, 2, 1)
-
-	firstOption := plan.IssueDuringDislosure.Steps[0].Options[0]
-	require.Equal(t, firstOption.CredentialId, "test.test.email")
-	require.Equal(t, firstOption.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Email address",
-				"nl": "E-mailadres",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps: []expectedIssuanceStep{
+			{Options: []expectedCredentialDescriptor{
+				{CredentialId: "test.test.email", Attributes: []expectedAttr{
+					{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+				}},
+				{CredentialId: "irma-demo.RU.studentCard", Attributes: []expectedAttr{
+					{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+					{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+				}},
+			}},
+			{Options: []expectedCredentialDescriptor{
+				{CredentialId: "irma-demo.MijnOverheid.fullName", Attributes: []expectedAttr{
+					{Path: []any{"firstname"}, DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+					{Path: []any{"familyname"}, DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+				}},
+			}},
 		},
+		IssuedCredentialIds: map[string]struct{}{},
 	})
-
-	secondOption := plan.IssueDuringDislosure.Steps[0].Options[1]
-	require.Equal(t, secondOption.CredentialId, "irma-demo.RU.studentCard")
-	require.Equal(t, secondOption.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "University",
-				"nl": "Universiteit",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-		{
-			ClaimPath: []any{"level"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Type",
-				"nl": "Soort",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-	})
-
-	secondStep := plan.IssueDuringDislosure.Steps[1].Options[0]
-	require.Equal(t, secondStep.CredentialId, "irma-demo.MijnOverheid.fullName")
-	require.Equal(t, secondStep.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"firstname"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "First name",
-				"nl": "Voornaam",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-		{
-			ClaimPath: []any{"familyname"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Family name",
-				"nl": "Achternaam",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-	})
-
-	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
 	session = awaitSessionState(t, sessionHandler)
@@ -822,11 +653,9 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Empty(t, session.OfferedCredentials)
 
 	plan = session.DisclosurePlan
-	require.Equal(t,
-		plan.IssueDuringDislosure.IssuedCredentialIds,
-		map[string]struct{}{"irma-demo.RU.studentCard": {}},
-	)
-	require.Nil(t, plan.DisclosureChoicesOverview)
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}},
+	})
 
 	// expect issuance session end
 	session = awaitSessionState(t, sessionHandler)
@@ -840,91 +669,51 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, session.Id, 1)
 	require.Equal(t, session.Status, clientmodels.Status_RequestPermission)
 	plan = session.DisclosurePlan
-	require.Equal(t,
-		plan.IssueDuringDislosure.IssuedCredentialIds,
-		map[string]struct{}{"irma-demo.RU.studentCard": {}, "irma-demo.MijnOverheid.fullName": {}},
-	)
-	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 2}, expectedPickOne{owned: 1, obtainable: 1})
-
-	// check obtainable options for first pick-one (email || studentCard)
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "test.test.email",
-		Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
-		Attributes: []expectedRequestedAttr{
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}, "irma-demo.MijnOverheid.fullName": {}},
+		Choices: []expectedPickOneChoice{
 			{
-				Path:        []any{"email"},
-				DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			},
-		},
-	})
-
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[1], expectedObtainable{
-		CredentialId: "irma-demo.RU.studentCard",
-		Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-		Attributes: []expectedRequestedAttr{
-			{
-				Path:        []any{"university"},
-				DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			},
-			{
-				Path:        []any{"level"},
-				DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-			},
-		},
-	})
-
-	// check obtainable option for second pick-one (name)
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[1].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "irma-demo.MijnOverheid.fullName",
-		Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
-		Attributes: []expectedRequestedAttr{
-			{
-				Path:        []any{"firstname"},
-				DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+				Owned: []expectedPlanCredential{
+					{CredentialId: "irma-demo.RU.studentCard", Attributes: []expectedAttr{
+						{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"}, Value: strVal("University of the Arts")},
+						{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"}, Value: strVal("high")},
+					}},
+				},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "test.test.email",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Attributes: []expectedAttr{
+							{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"}, SkipValueCheck: true},
+						},
+					},
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Attributes: []expectedAttr{
+							{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, SkipValueCheck: true},
+							{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 			{
-				Path:        []any{"familyname"},
-				DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+				Owned: []expectedPlanCredential{{CredentialId: "irma-demo.MijnOverheid.fullName"}},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.MijnOverheid.fullName",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						Attributes: []expectedAttr{
+							{Path: []any{"firstname"}, DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"}, SkipValueCheck: true},
+							{Path: []any{"familyname"}, DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 		},
 	})
 
 	firstChoice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-
-	require.Equal(t, firstChoice.CredentialId, "irma-demo.RU.studentCard")
-	require.Equal(t, firstChoice.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "University",
-				"nl": "Universiteit",
-			},
-			Description: &clientmodels.TranslatedString{
-				"en": "The name of the university",
-				"nl": "Naam van de universiteit",
-			},
-			Value: &clientmodels.AttributeValue{
-				Type:   clientmodels.AttributeType_String,
-				String: strPtr("University of the Arts"),
-			},
-		},
-		{
-			ClaimPath: []any{"level"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Type",
-				"nl": "Soort",
-			},
-			Description: &clientmodels.TranslatedString{
-				"en": "Whether you are a regular or PhD student",
-				"nl": "Of u een gewone of PhD student bent",
-			},
-			Value: &clientmodels.AttributeValue{
-				Type:   clientmodels.AttributeType_String,
-				String: strPtr("high"),
-			},
-		},
-	})
-
 	secondChoice := plan.DisclosureChoicesOverview[1].OwnedOptions[0]
 
 	// give permission to disclose
@@ -980,33 +769,15 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
 
 	plan := session.DisclosurePlan
-	requireIssuanceSteps(t, plan, 1)
-	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
-	require.Nil(t, plan.DisclosureChoicesOverview)
-
 	// the issuance step shows the first claim_set (university + level), not studentID
-	require.Equal(t, "irma-demo.RU.studentCard", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
-	require.Equal(t, plan.IssueDuringDislosure.Steps[0].Options[0].Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "University",
-				"nl": "Universiteit",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
-		{
-			ClaimPath: []any{"level"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Type",
-				"nl": "Soort",
-			},
-			RequestedValue: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_String,
-			},
-		},
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{
+			{CredentialId: "irma-demo.RU.studentCard", Attributes: []expectedAttr{
+				{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+				{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}, SkipValueCheck: true},
+			}},
+		}}},
+		IssuedCredentialIds: map[string]struct{}{},
 	})
 
 	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
@@ -1016,24 +787,26 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	plan = session.DisclosurePlan
-	require.Equal(t,
-		map[string]struct{}{"irma-demo.RU.studentCard": {}},
-		plan.IssueDuringDislosure.IssuedCredentialIds,
-	)
-	requireDisclosureChoices(t, plan, expectedPickOne{owned: 1, obtainable: 1})
-
-	// check obtainable option for studentCard with university and level (first claim_set)
-	requireObtainableOption(t, plan.DisclosureChoicesOverview[0].ObtainableOptions[0], expectedObtainable{
-		CredentialId: "irma-demo.RU.studentCard",
-		Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-		Attributes: []expectedRequestedAttr{
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}},
+		Choices: []expectedPickOneChoice{
 			{
-				Path:        []any{"university"},
-				DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			},
-			{
-				Path:        []any{"level"},
-				DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+				Owned: []expectedPlanCredential{
+					{CredentialId: "irma-demo.RU.studentCard", Attributes: []expectedAttr{
+						{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"}, Value: strVal("University of the Arts")},
+						{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"}, Value: strVal("high")},
+					}},
+				},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Attributes: []expectedAttr{
+							{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}, SkipValueCheck: true},
+							{Path: []any{"level"}, DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"}, SkipValueCheck: true},
+						},
+					},
+				},
 			},
 		},
 	})
@@ -1044,39 +817,6 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 
 	// the first satisfied claim_set (university + level) is offered for disclosure
 	choice := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.Equal(t, "irma-demo.RU.studentCard", choice.CredentialId)
-	require.Equal(t, choice.Attributes, []clientmodels.Attribute{
-		{
-			ClaimPath: []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "University",
-				"nl": "Universiteit",
-			},
-			Description: &clientmodels.TranslatedString{
-				"en": "The name of the university",
-				"nl": "Naam van de universiteit",
-			},
-			Value: &clientmodels.AttributeValue{
-				Type:   clientmodels.AttributeType_String,
-				String: strPtr("University of the Arts"),
-			},
-		},
-		{
-			ClaimPath: []any{"level"},
-			DisplayName: &clientmodels.TranslatedString{
-				"en": "Type",
-				"nl": "Soort",
-			},
-			Description: &clientmodels.TranslatedString{
-				"en": "Whether you are a regular or PhD student",
-				"nl": "Of u een gewone of PhD student bent",
-			},
-			Value: &clientmodels.AttributeValue{
-				Type:   clientmodels.AttributeType_String,
-				String: strPtr("high"),
-			},
-		},
-	})
 
 	grantPermission(t, c, 1,
 		makeDisclosureChoice(choice),
@@ -1159,9 +899,8 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	// Verify that each issued credential is present (order of owned options may differ from issuance order)
 	foundUniversities := map[string]bool{}
 	for _, option := range pick.OwnedOptions {
-		am := attributeMap(option.Attributes)
-		uni, ok := am[pk("university")]
-		require.True(t, ok, "option should have university attribute")
+		uni := findAttr(option.Attributes, "university")
+		require.NotNil(t, uni, "option should have university attribute")
 		require.NotNil(t, uni.Value)
 		require.NotNil(t, uni.Value.String)
 		foundUniversities[*uni.Value.String] = true
@@ -1179,13 +918,12 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 4, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
-	chosenAttrs := attributeMap(chosen.Attributes)
 	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
 		"sc": {
-			"university":        *chosenAttrs[pk("university")].Value.String,
-			"studentCardNumber": *chosenAttrs[pk("studentCardNumber")].Value.String,
-			"studentID":         *chosenAttrs[pk("studentID")].Value.String,
-			"level":             *chosenAttrs[pk("level")].Value.String,
+			"university":        *findAttr(chosen.Attributes, "university").Value.String,
+			"studentCardNumber": *findAttr(chosen.Attributes, "studentCardNumber").Value.String,
+			"studentID":         *findAttr(chosen.Attributes, "studentID").Value.String,
+			"level":             *findAttr(chosen.Attributes, "level").Value.String,
 		},
 	})
 }

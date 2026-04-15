@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -96,8 +97,15 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Step 4: Verify the disclosure plan and grant permission.
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Name: "", Attributes: map[string]expectedPlanAttribute{pk("given_name"): {Value: "Test", DisplayName: "Given Name"}, pk("email"): {Value: "test@example.com", DisplayName: "Email"}}},
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"given_name"}, Value: strVal("Test"), DisplayName: &clientmodels.TranslatedString{"en": "Given Name"}},
+					{Path: []any{"email"}, Value: strVal("test@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
+				}},
+			}},
+		},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -154,8 +162,15 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{pk("email"): {Value: "alice@example.com", DisplayName: "Email"}, pk("domain"): {Value: "example.com", DisplayName: "Domain"}}},
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"email"}, Value: strVal("alice@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
+					{Path: []any{"domain"}, Value: strVal("example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Domain"}},
+				}},
+			}},
+		},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -322,9 +337,19 @@ func testMultipleRequiredCredentials(t *testing.T) {
 
 	// Two separate disclosure choices, one for each required credential.
 	// The order depends on the DCQL query order, but both should have matching credentials.
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{pk("email"): {Value: "carol@example.com", DisplayName: "Email"}}},
-		{Attributes: map[string]expectedPlanAttribute{pk("phone_number"): {Value: "+31687654321", DisplayName: "Phone Number"}}},
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"email"}, Value: strVal("carol@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
+				}},
+			}},
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"phone_number"}, Value: strVal("+31687654321"), DisplayName: &clientmodels.TranslatedString{"en": "Phone Number"}},
+				}},
+			}},
+		},
 	})
 
 	choices := make([]clientmodels.DisclosureDisconSelection, 2)
@@ -395,9 +420,15 @@ func testOptionalCredential(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{pk("email"): {Value: "dave@example.com", DisplayName: "Email"}}},
-		{Attributes: map[string]expectedPlanAttribute{}}, // optional phone (may have no owned options)
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"email"}, Value: strVal("dave@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
+				}},
+			}},
+			{Optional: true}, // optional phone (may have no owned options)
+		},
 	})
 
 	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -540,8 +571,16 @@ func testDiscloseNestedClaims(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{pk("owner_name"): {Value: "Frank", DisplayName: "Owner Name"}, pk("address", "street"): {Value: "10 Downing St"}, pk("address", "city"): {Value: "London"}}},
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"owner_name"}, Value: strVal("Frank"), DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}},
+					{Path: []any{"address", "street"}, Value: strVal("10 Downing St"), DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"}},
+					{Path: []any{"address", "city"}, Value: strVal("London"), DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"}},
+				}},
+			}},
+		},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -675,8 +714,14 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Path ["courses", 1] resolves to a specific element ("Databases"), not the whole array.
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{pk("courses", 1): {Value: "Databases", Type: clientmodels.AttributeType_String}}},
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"courses", 1}, Value: strVal("Databases")},
+				}},
+			}},
+		},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -805,11 +850,15 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 
 	// The disclosure plan should show member_name (requested SD claim) AND
 	// member_since (non-SD claim that is always shared).
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{
-			pk("member_name"):  {Value: "Grace", DisplayName: "Member Name"},
-			pk("member_since"): {Value: "2020-01-15", DisplayName: "Member Since"},
-		}},
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"member_name"}, Value: strVal("Grace"), DisplayName: &clientmodels.TranslatedString{"en": "Member Name"}},
+					{Path: []any{"member_since"}, Value: strVal("2020-01-15"), DisplayName: &clientmodels.TranslatedString{"en": "Member Since"}},
+				}},
+			}},
+		},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -896,15 +945,21 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	requireSessionState(t, session, 5, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Exactly two disclosure choices: one for email, one for student card.
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{
-			pk("email"):  {Value: "multi@example.com", DisplayName: "Email"},
-			pk("domain"): {Value: "example.com", DisplayName: "Domain"},
-		}},
-		{Attributes: map[string]expectedPlanAttribute{
-			pk("university"): {Value: "Radboud University", DisplayName: "University"},
-			pk("student_id"): {Value: "s1234567", DisplayName: "Student ID"},
-		}},
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"email"}, Value: strVal("multi@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
+					{Path: []any{"domain"}, Value: strVal("example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Domain"}},
+				}},
+			}},
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"university"}, Value: strVal("Radboud University"), DisplayName: &clientmodels.TranslatedString{"en": "University"}},
+					{Path: []any{"student_id"}, Value: strVal("s1234567"), DisplayName: &clientmodels.TranslatedString{"en": "Student ID"}},
+				}},
+			}},
+		},
 	})
 
 	// Grant permission for both required credentials.
@@ -989,13 +1044,17 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	requireDisclosurePlan(t, session.DisclosurePlan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{
-			pk("given_name"):              {Value: "Jan", DisplayName: "Given name"},
-			pk("family_name"):             {Value: "de Vries", DisplayName: "Family name"},
-			pk("email"):                   {Value: "jan.devries@university.nl", DisplayName: "E-mail"},
-			pk("schac_home_organization"): {Value: "university.nl", DisplayName: "Organization"},
-		}},
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"given_name"}, Value: strVal("Jan"), DisplayName: &clientmodels.TranslatedString{"en": "Given name"}},
+					{Path: []any{"family_name"}, Value: strVal("de Vries"), DisplayName: &clientmodels.TranslatedString{"en": "Family name"}},
+					{Path: []any{"email"}, Value: strVal("jan.devries@university.nl"), DisplayName: &clientmodels.TranslatedString{"en": "E-mail"}},
+					{Path: []any{"schac_home_organization"}, Value: strVal("university.nl"), DisplayName: &clientmodels.TranslatedString{"en": "Organization"}},
+				}},
+			}},
+		},
 	})
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -1447,11 +1506,15 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 	require.Len(t, plan.DisclosureChoicesOverview, 1)
 	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
 
-	requireDisclosurePlan(t, plan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{
-			pk("email"):  {Value: "dup@example.com"},
-			pk("domain"): {Value: "example.com"},
-		}},
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"email"}, Value: strVal("dup@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}},
+					{Path: []any{"domain"}, Value: strVal("example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"}},
+				}},
+			}},
+		},
 	})
 
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -1530,12 +1593,16 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	require.Len(t, plan.DisclosureChoicesOverview, 1)
 	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
 
-	requireDisclosurePlan(t, plan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{
-			pk("owner_name"):        {Value: "Duplicate Tester"},
-			pk("address", "street"): {Value: "Kalverstraat 1"},
-			pk("address", "city"):   {Value: "Amsterdam"},
-		}},
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"owner_name"}, Value: strVal("Duplicate Tester"), DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}},
+					{Path: []any{"address", "street"}, Value: strVal("Kalverstraat 1"), DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"}},
+					{Path: []any{"address", "city"}, Value: strVal("Amsterdam"), DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"}},
+				}},
+			}},
+		},
 	})
 
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -1624,10 +1691,14 @@ func testRequireDisclosurePlanOnlyChecksFirstOption(t *testing.T) {
 
 	// BUG: requireDisclosurePlan only checks OwnedOptions[0] (alice).
 	// Asserting bob's email value should fail because the helper never looks at OwnedOptions[1].
-	requireDisclosurePlan(t, plan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{
-			pk("email"): {Value: "bob@example.com"},
-		}},
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"email"}, Value: strVal("bob@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}},
+				}},
+			}},
+		},
 	})
 
 	// Disclose the first option and verify the verifier received data.
@@ -1686,10 +1757,14 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 	require.Len(t, plan.DisclosureChoicesOverview, 1)
 	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
 
-	requireDisclosurePlan(t, plan, []expectedPlanCredential{
-		{Attributes: map[string]expectedPlanAttribute{
-			pk("email"): {Value: "nokb@example.com"},
-		}},
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{Owned: []expectedPlanCredential{
+				{Attributes: []expectedAttr{
+					{Path: []any{"email"}, Value: strVal("nokb@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}},
+				}},
+			}},
+		},
 	})
 
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
@@ -2252,114 +2327,191 @@ func checkVeramoVerifierOfferStatus(t *testing.T, state string) veramoCheckResul
 // Disclosure plan assertion helpers
 // ---------------------------------------------------------------------------
 
-// expectedPlanAttribute describes what we expect for a single attribute.
-type expectedPlanAttribute struct {
-	// Expected string value. Empty to only check presence.
-	Value string
-	// Expected display name (checked against DisplayName["en"]). Empty to skip check.
-	DisplayName string
-	// Expected attribute type. Empty to skip check.
-	Type clientmodels.AttributeType
+// expectedDisclosurePlan describes the complete expected disclosure plan.
+type expectedDisclosurePlan struct {
+	// Expected issuance steps. Nil to skip check.
+	IssuanceSteps []expectedIssuanceStep
+	// Expected issued credential ids. Nil to skip check.
+	IssuedCredentialIds map[string]struct{}
+	// Expected wrong credential issued. Nil to skip check entirely.
+	// Use &expectedCredentialDescriptor{} to assert it's non-nil.
+	WrongCredentialIssued *expectedCredentialDescriptor
+	// If true, assert that WrongCredentialIssued is nil.
+	WrongCredentialIssuedNil bool
+	// Expected disclosure choices (one per DisclosurePickOne). Nil to assert nil choices.
+	Choices []expectedPickOneChoice
 }
 
-// expectedPlanCredential describes what we expect for one credential option
-// in the disclosure plan.
+// expectedIssuanceStep describes one step in IssueDuringDislosure.Steps.
+type expectedIssuanceStep struct {
+	Options []expectedCredentialDescriptor
+}
+
+// expectedCredentialDescriptor describes an expected CredentialDescriptor
+// (used for obtainable options and issuance step options).
+type expectedCredentialDescriptor struct {
+	CredentialId string
+	Name         *clientmodels.TranslatedString // nil to skip check
+	Attributes   []expectedAttr
+}
+
+// expectedPickOneChoice describes one DisclosurePickOne entry.
+type expectedPickOneChoice struct {
+	Optional   bool
+	Owned      []expectedPlanCredential
+	Obtainable []expectedCredentialDescriptor
+}
+
+// expectedPlanCredential describes an expected owned credential instance.
 type expectedPlanCredential struct {
-	// Expected credential name (checked against Name["en"]). Empty to skip check.
-	Name string
-	// Expected attributes: map from claim path key to expected attribute properties.
-	Attributes map[string]expectedPlanAttribute
+	CredentialId string
+	Name         *clientmodels.TranslatedString // nil to skip check
+	Attributes   []expectedAttr
 }
 
-// requireDisclosurePlan asserts the structure of a disclosure plan.
-// Each entry in expected corresponds to one DisclosurePickOne in order.
-// For each entry, the expected attributes must be found in at least one of the
-// OwnedOptions (not just the first).
-func requireDisclosurePlan(t *testing.T, plan *clientmodels.DisclosurePlan, expected []expectedPlanCredential) {
+// requireDisclosurePlan asserts the complete structure of a disclosure plan:
+// issuance steps, issued credential ids, wrong credential, and disclosure choices
+// (owned + obtainable options).
+func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expected expectedDisclosurePlan) {
 	t.Helper()
 	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, len(expected),
-		"disclosure plan should have %d choice(s)", len(expected))
 
-	for i, exp := range expected {
+	// --- Issuance steps ---
+	if expected.IssuanceSteps != nil {
+		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
+		require.Len(t, plan.IssueDuringDislosure.Steps, len(expected.IssuanceSteps),
+			"issuance step count mismatch")
+		for i, expStep := range expected.IssuanceSteps {
+			actualStep := plan.IssueDuringDislosure.Steps[i]
+			require.Len(t, actualStep.Options, len(expStep.Options),
+				"issuance step %d option count mismatch", i)
+			for j, expOpt := range expStep.Options {
+				actualOpt := actualStep.Options[j]
+				requireCredentialDescriptor(t, actualOpt, expOpt,
+					fmt.Sprintf("issuance step %d option %d", i, j))
+			}
+		}
+	}
+
+	// --- Issued credential ids ---
+	if expected.IssuedCredentialIds != nil {
+		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
+		require.Equal(t, expected.IssuedCredentialIds, plan.IssueDuringDislosure.IssuedCredentialIds,
+			"issued credential ids mismatch")
+	}
+
+	// --- Wrong credential issued ---
+	if expected.WrongCredentialIssuedNil {
+		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
+		require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued,
+			"wrong credential issued should be nil")
+	}
+	if expected.WrongCredentialIssued != nil {
+		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
+		require.NotNil(t, plan.IssueDuringDislosure.WrongCredentialIssued,
+			"wrong credential issued should not be nil")
+		wrong := plan.IssueDuringDislosure.WrongCredentialIssued
+		if expected.WrongCredentialIssued.CredentialId != "" {
+			require.Equal(t, expected.WrongCredentialIssued.CredentialId, wrong.CredentialId,
+				"wrong credential id mismatch")
+		}
+		if len(expected.WrongCredentialIssued.Attributes) > 0 {
+			requireAttrsInOrder(t, wrong.Attributes, expected.WrongCredentialIssued.Attributes...)
+		}
+	}
+
+	// --- Disclosure choices ---
+	if expected.Choices == nil {
+		require.Nil(t, plan.DisclosureChoicesOverview, "disclosure choices should be nil")
+		return
+	}
+
+	require.Len(t, plan.DisclosureChoicesOverview, len(expected.Choices),
+		"disclosure choice count mismatch")
+
+	for i, expChoice := range expected.Choices {
 		pickOne := plan.DisclosureChoicesOverview[i]
+		require.Equal(t, expChoice.Optional, pickOne.Optional,
+			"choice %d Optional mismatch", i)
 
-		if len(exp.Attributes) == 0 {
-			continue // skip validation for entries with no expected attributes (e.g., optional unowned)
-		}
+		// --- Owned options ---
+		require.Len(t, pickOne.OwnedOptions, len(expChoice.Owned),
+			"choice %d owned option count mismatch", i)
 
-		require.NotEmpty(t, pickOne.OwnedOptions, "choice %d should have owned options", i)
+		for j, expOwned := range expChoice.Owned {
+			// Find a matching credential in OwnedOptions.
+			var matched *clientmodels.SelectableCredentialInstance
+			for _, cred := range pickOne.OwnedOptions {
+				if credMatchesExpected(cred, expOwned) {
+					matched = cred
+					break
+				}
+			}
+			require.NotNil(t, matched,
+				"choice %d owned %d: no option matches expected %v", i, j, expectedPlanSummary(expOwned))
 
-		// Find an owned option that satisfies ALL expected attributes.
-		var matched *clientmodels.SelectableCredentialInstance
-		for _, cred := range pickOne.OwnedOptions {
-			if credMatchesExpected(cred, exp) {
-				matched = cred
-				break
+			// Full assertions on the matched credential.
+			if expOwned.CredentialId != "" {
+				require.Equal(t, expOwned.CredentialId, matched.CredentialId,
+					"choice %d owned %d credential id mismatch", i, j)
+			}
+			if expOwned.Name != nil {
+				require.Equal(t, clientmodels.TranslatedString(*expOwned.Name), matched.Name,
+					"choice %d owned %d credential name mismatch", i, j)
+			}
+			if len(expOwned.Attributes) > 0 {
+				requireAttrsInOrder(t, matched.Attributes, expOwned.Attributes...)
 			}
 		}
-		require.NotNil(t, matched,
-			"choice %d: no owned option matches expected attributes %v", i, expectedAttrSummary(exp))
 
-		// Now do the full assertions on the matched credential for clear error messages.
-		if exp.Name != "" {
-			actual, ok := matched.Name["en"]
-			require.True(t, ok, "choice %d credential should have English name", i)
-			require.Equal(t, exp.Name, actual, "choice %d credential name mismatch", i)
-		}
+		// --- Obtainable options ---
+		require.Len(t, pickOne.ObtainableOptions, len(expChoice.Obtainable),
+			"choice %d obtainable option count mismatch", i)
 
-		attrMap := attributeMap(matched.Attributes)
-		for attrKey, expAttr := range exp.Attributes {
-			attr, ok := attrMap[attrKey]
-			require.True(t, ok, "choice %d should have attribute %q", i, attrKey)
-			if expAttr.Type != "" {
-				require.NotNil(t, attr.Value, "choice %d attribute %q should have a value", i, attrKey)
-				require.Equal(t, expAttr.Type, attr.Value.Type,
-					"choice %d attribute %q type mismatch", i, attrKey)
-			}
-			if expAttr.Value != "" && attr.Value != nil && attr.Value.String != nil {
-				require.Equal(t, expAttr.Value, *attr.Value.String,
-					"choice %d attribute %q value mismatch", i, attrKey)
-			}
-			if expAttr.DisplayName != "" && attr.DisplayName != nil {
-				actual, ok := (*attr.DisplayName)["en"]
-				require.True(t, ok, "choice %d attribute %q should have English display name", i, attrKey)
-				require.Equal(t, expAttr.DisplayName, actual,
-					"choice %d attribute %q display name mismatch", i, attrKey)
-			}
+		for j, expObt := range expChoice.Obtainable {
+			requireCredentialDescriptor(t, pickOne.ObtainableOptions[j], expObt,
+				fmt.Sprintf("choice %d obtainable %d", i, j))
 		}
+	}
+}
+
+// requireCredentialDescriptor asserts a CredentialDescriptor matches expectations.
+func requireCredentialDescriptor(t testingT, actual *clientmodels.CredentialDescriptor, expected expectedCredentialDescriptor, context string) {
+	t.Helper()
+	if expected.CredentialId != "" {
+		require.Equal(t, expected.CredentialId, actual.CredentialId,
+			"%s credential id mismatch", context)
+	}
+	if expected.Name != nil {
+		require.Equal(t, clientmodels.TranslatedString(*expected.Name), actual.Name,
+			"%s credential name mismatch", context)
+	}
+	if len(expected.Attributes) > 0 {
+		requireAttrsInOrder(t, actual.Attributes, expected.Attributes...)
 	}
 }
 
 // credMatchesExpected returns true if the credential has all expected attributes
-// with matching values.
+// with matching paths and values (order-aware).
 func credMatchesExpected(cred *clientmodels.SelectableCredentialInstance, exp expectedPlanCredential) bool {
-	if exp.Name != "" {
-		if name, ok := cred.Name["en"]; !ok || name != exp.Name {
+	if exp.CredentialId != "" && cred.CredentialId != exp.CredentialId {
+		return false
+	}
+	if exp.Name != nil {
+		if !reflect.DeepEqual(clientmodels.TranslatedString(*exp.Name), cred.Name) {
 			return false
 		}
 	}
-	attrMap := attributeMap(cred.Attributes)
-	for attrKey, expAttr := range exp.Attributes {
-		attr, ok := attrMap[attrKey]
-		if !ok {
+	if len(cred.Attributes) != len(exp.Attributes) {
+		return false
+	}
+	for i, expAttr := range exp.Attributes {
+		actual := cred.Attributes[i]
+		if clientmodels.ClaimPathKey(expAttr.Path) != clientmodels.ClaimPathKey(actual.ClaimPath) {
 			return false
 		}
-		if expAttr.Value != "" {
-			if attr.Value == nil || attr.Value.String == nil || *attr.Value.String != expAttr.Value {
-				return false
-			}
-		}
-		if expAttr.Type != "" {
-			if attr.Value == nil || attr.Value.Type != expAttr.Type {
-				return false
-			}
-		}
-		if expAttr.DisplayName != "" {
-			if attr.DisplayName == nil {
-				return false
-			}
-			if actual, ok := (*attr.DisplayName)["en"]; !ok || actual != expAttr.DisplayName {
+		if expAttr.Value != nil {
+			if actual.Value == nil || !reflect.DeepEqual(expAttr.Value, actual.Value) {
 				return false
 			}
 		}
@@ -2367,14 +2519,18 @@ func credMatchesExpected(cred *clientmodels.SelectableCredentialInstance, exp ex
 	return true
 }
 
-// expectedAttrSummary returns a readable summary of expected attributes for error messages.
-func expectedAttrSummary(exp expectedPlanCredential) string {
+// expectedPlanSummary returns a readable summary of an expected credential for error messages.
+func expectedPlanSummary(exp expectedPlanCredential) string {
 	parts := make([]string, 0, len(exp.Attributes))
-	for key, attr := range exp.Attributes {
-		if attr.Value != "" {
-			parts = append(parts, fmt.Sprintf("%s=%q", key, attr.Value))
+	if exp.CredentialId != "" {
+		parts = append(parts, fmt.Sprintf("id=%q", exp.CredentialId))
+	}
+	for _, attr := range exp.Attributes {
+		pathKey := clientmodels.ClaimPathKey(attr.Path)
+		if attr.Value != nil && attr.Value.String != nil {
+			parts = append(parts, fmt.Sprintf("%s=%q", pathKey, *attr.Value.String))
 		} else {
-			parts = append(parts, key)
+			parts = append(parts, pathKey)
 		}
 	}
 	return strings.Join(parts, ", ")

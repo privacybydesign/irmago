@@ -21,6 +21,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testingT is a minimal testing interface that our assertion helpers accept.
+// Both *testing.T and fakeT (for failure tests) satisfy this interface.
+type testingT interface {
+	Errorf(format string, args ...interface{})
+	FailNow()
+	Helper()
+}
+
 func strPtr(s string) *string { return &s }
 
 func userInteraction(t *testing.T, c *client.Client, interaction clientmodels.SessionUserInteraction) {
@@ -315,7 +323,7 @@ type expectedRequestedAttr struct {
 
 // requireObtainableOption asserts that an obtainable credential descriptor
 // matches the expected credential ID, name, and requested attributes.
-func requireObtainableOption(t *testing.T, obtainable *clientmodels.CredentialDescriptor, expected expectedObtainable) {
+func requireObtainableOption(t testingT, obtainable *clientmodels.CredentialDescriptor, expected expectedObtainable) {
 	t.Helper()
 	require.Equal(t, expected.CredentialId, obtainable.CredentialId, "obtainable credential ID mismatch")
 	require.Equal(t, expected.Name, obtainable.Name, "obtainable credential name mismatch")
@@ -363,10 +371,12 @@ func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attrib
 // expectedAttr describes an expected attribute with its full claim path,
 // display name, optional description, and typed value.
 type expectedAttr struct {
-	Path        []any
-	DisplayName *clientmodels.TranslatedString
-	Description *clientmodels.TranslatedString // nil to skip description check
-	Value       *clientmodels.AttributeValue
+	Path           []any
+	DisplayName    *clientmodels.TranslatedString
+	Description    *clientmodels.TranslatedString    // nil to skip description check
+	Value          *clientmodels.AttributeValue       // nil means section header (asserts actual is nil)
+	RequestedValue *clientmodels.AttributeValue       // nil to skip check
+	SkipValueCheck bool                               // true to skip the Value nil/non-nil assertion
 }
 
 // strVal creates a string AttributeValue.
@@ -395,49 +405,71 @@ func header(path []any, displayName clientmodels.TranslatedString) expectedAttr 
 // requireAttrsInOrder asserts that the given attributes match the expected list
 // exactly — same order, same paths, same values, same length. When display names
 // are specified, those are checked too.
-func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected ...expectedAttr) {
+func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ...expectedAttr) {
 	t.Helper()
 	require.Len(t, attrs, len(expected), "attribute count mismatch")
 	for i, exp := range expected {
 		actual := attrs[i]
-		require.Equal(t, clientmodels.ClaimPathKey(exp.Path), clientmodels.ClaimPathKey(actual.ClaimPath),
+		pathKey := clientmodels.ClaimPathKey(exp.Path)
+		require.Equal(t, pathKey, clientmodels.ClaimPathKey(actual.ClaimPath),
 			"attribute %d path mismatch", i)
-		if exp.Value != nil {
-			require.NotNil(t, actual.Value, "attribute %d should have a value", i)
-			require.Equal(t, exp.Value.Type, actual.Value.Type,
-				"attribute %d (%s) value type mismatch", i, clientmodels.ClaimPathKey(exp.Path))
-			require.Equal(t, exp.Value, actual.Value,
-				"attribute %d (%s) value mismatch", i, clientmodels.ClaimPathKey(exp.Path))
-		} else {
-			require.Nil(t, actual.Value,
-				"attribute %d (%s) should be a section header (nil value)", i, clientmodels.ClaimPathKey(exp.Path))
+		if !exp.SkipValueCheck {
+			if exp.Value != nil {
+				require.NotNil(t, actual.Value, "attribute %d (%s) should have a value", i, pathKey)
+				require.Equal(t, exp.Value.Type, actual.Value.Type,
+					"attribute %d (%s) value type mismatch", i, pathKey)
+				require.Equal(t, exp.Value, actual.Value,
+					"attribute %d (%s) value mismatch", i, pathKey)
+			} else {
+				require.Nil(t, actual.Value,
+					"attribute %d (%s) should be a section header (nil value)", i, pathKey)
+			}
 		}
 		if exp.DisplayName != nil {
 			require.NotNil(t, actual.DisplayName,
-				"attribute %d (%s) should have a display name", i, clientmodels.ClaimPathKey(exp.Path))
+				"attribute %d (%s) should have a display name", i, pathKey)
 			for locale, expectedName := range *exp.DisplayName {
 				actualName, ok := (*actual.DisplayName)[locale]
 				require.True(t, ok, "attribute %d (%s) should have display name for locale %q",
-					i, clientmodels.ClaimPathKey(exp.Path), locale)
+					i, pathKey, locale)
 				require.Equal(t, expectedName, actualName,
-					"attribute %d (%s) display name [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+					"attribute %d (%s) display name [%s] mismatch", i, pathKey, locale)
 			}
 		} else {
 			require.Nil(t, actual.DisplayName,
-				"attribute %d (%s) should have nil display name (array item)", i, clientmodels.ClaimPathKey(exp.Path))
+				"attribute %d (%s) should have nil display name (array item)", i, pathKey)
 		}
 		if exp.Description != nil {
 			require.NotNil(t, actual.Description,
-				"attribute %d (%s) should have a description", i, clientmodels.ClaimPathKey(exp.Path))
+				"attribute %d (%s) should have a description", i, pathKey)
 			for locale, expectedDesc := range *exp.Description {
 				actualDesc, ok := (*actual.Description)[locale]
 				require.True(t, ok, "attribute %d (%s) should have description for locale %q",
-					i, clientmodels.ClaimPathKey(exp.Path), locale)
+					i, pathKey, locale)
 				require.Equal(t, expectedDesc, actualDesc,
-					"attribute %d (%s) description [%s] mismatch", i, clientmodels.ClaimPathKey(exp.Path), locale)
+					"attribute %d (%s) description [%s] mismatch", i, pathKey, locale)
 			}
 		}
+		if exp.RequestedValue != nil {
+			require.NotNil(t, actual.RequestedValue,
+				"attribute %d (%s) should have a requested value", i, pathKey)
+			require.Equal(t, exp.RequestedValue.Type, actual.RequestedValue.Type,
+				"attribute %d (%s) requested value type mismatch", i, pathKey)
+			require.Equal(t, exp.RequestedValue, actual.RequestedValue,
+				"attribute %d (%s) requested value mismatch", i, pathKey)
+		}
 	}
+}
+
+// findAttr finds the first attribute with the given claim path in the slice.
+func findAttr(attrs []clientmodels.Attribute, path ...any) *clientmodels.Attribute {
+	key := clientmodels.ClaimPathKey(path)
+	for i := range attrs {
+		if clientmodels.ClaimPathKey(attrs[i].ClaimPath) == key {
+			return &attrs[i]
+		}
+	}
+	return nil
 }
 
 // expectedDisclosedAttr describes an expected disclosed attribute in an IRMA
