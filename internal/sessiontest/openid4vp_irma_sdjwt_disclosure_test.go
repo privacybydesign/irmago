@@ -910,8 +910,16 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 			"credential with university %q should be present", attrs["university"])
 	}
 
-	// Disclose the first option and verify the result
-	chosen := pick.OwnedOptions[0]
+	// Disclose the Amsterdam credential specifically and verify the result with hardcoded values.
+	var chosen *clientmodels.SelectableCredentialInstance
+	for _, opt := range pick.OwnedOptions {
+		if uni := findAttr(opt.Attributes, "university"); uni != nil && *uni.Value.String == "University of Amsterdam" {
+			chosen = opt
+			break
+		}
+	}
+	require.NotNil(t, chosen, "should find the Amsterdam credential")
+
 	grantPermission(t, c, session.Id,
 		makeDisclosureChoice(chosen),
 	)
@@ -920,10 +928,10 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 
 	requireVerifierResult(t, testSession.VerifierSession, expectedVpToken{
 		"sc": {
-			"university":        *findAttr(chosen.Attributes, "university").Value.String,
-			"studentCardNumber": *findAttr(chosen.Attributes, "studentCardNumber").Value.String,
-			"studentID":         *findAttr(chosen.Attributes, "studentID").Value.String,
-			"level":             *findAttr(chosen.Attributes, "level").Value.String,
+			"university":        "University of Amsterdam",
+			"studentCardNumber": "11111",
+			"studentID":         "AAA",
+			"level":             "bachelor",
 		},
 	})
 }
