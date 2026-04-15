@@ -289,7 +289,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	requireAttrsInOrder(t, offered.Attributes, expectedAttr{
 		Path:        []any{"election"},
 		DisplayName: clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
-		Value:       "plantsoen",
+		Value:       strVal("plantsoen"),
 	})
 
 	// Accept the issuance
@@ -341,7 +341,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	requireAttrsInOrder(t, owned.Attributes, expectedAttr{
 		Path:        []any{"election"},
 		DisplayName: clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
-		Value:       "plantsoen",
+		Value:       strVal("plantsoen"),
 	})
 
 	// Now request the votingnumber attribute directly — it should be disclosable
@@ -472,22 +472,22 @@ func testAttributesOrderedByDisplayIndex(
 		{
 			Path:        []any{"level"},
 			DisplayName: clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-			Value:       "high",
+			Value:       strVal("high"),
 		},
 		{
 			Path:        []any{"studentID"},
 			DisplayName: clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
-			Value:       "67890",
+			Value:       strVal("67890"),
 		},
 		{
 			Path:        []any{"studentCardNumber"},
 			DisplayName: clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
-			Value:       "12345",
+			Value:       strVal("12345"),
 		},
 		{
 			Path:        []any{"university"},
 			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Value:       "University of the Arts",
+			Value:       strVal("University of the Arts"),
 		},
 	}
 	requireAttrsInOrder(t, studentCard.Attributes, studentCardExpectedAttrs...)
@@ -538,7 +538,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	requireAttrsInOrder(t, rootCred.Attributes, expectedAttr{
 		Path:        []any{"BSN"},
 		DisplayName: clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
-		Value:       "299792458",
+		Value:       strVal("299792458"),
 	})
 
 	// Revoke the credential on the server
@@ -566,7 +566,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	requireAttrsInOrder(t, choice.Attributes, expectedAttr{
 		Path:        []any{"BSN"},
 		DisplayName: clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
-		Value:       "299792458",
+		Value:       strVal("299792458"),
 	})
 
 	// Grant permission — the client will attempt to construct a proof and discover the revocation

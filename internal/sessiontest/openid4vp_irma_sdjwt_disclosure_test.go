@@ -640,7 +640,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		expectedAttr{
 			Path:        []any{"university"},
 			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Value:       "Some Other University",
+			Value:       strVal("Some Other University"),
 		},
 	)
 	require.Equal(t, &expectedUniversityValue, wrongCred.Attributes[0].RequestedValue.String)

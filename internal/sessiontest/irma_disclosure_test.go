@@ -173,7 +173,7 @@ func testDisclosureWithPredefinedValues(
 		expectedAttr{
 			Path:        []any{"university"},
 			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Value:       "University of the Arts",
+			Value:       strVal("University of the Arts"),
 		},
 	)
 	require.Equal(t, &expectedValue, wrongCred.Attributes[0].RequestedValue.String)
@@ -551,7 +551,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 		expectedAttr{
 			Path:        []any{"university"},
 			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Value:       "University of the Arts",
+			Value:       strVal("University of the Arts"),
 		},
 	)
 	expectedRequiredValue := requiredValue
@@ -591,7 +591,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 		expectedAttr{
 			Path:        []any{"university"},
 			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Value:       "Open University",
+			Value:       strVal("Open University"),
 		},
 	)
 
@@ -726,7 +726,7 @@ func testPreExistingWrongCredentialNotReported(
 		expectedAttr{
 			Path:        []any{"university"},
 			DisplayName: clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Value:       "Open University",
+			Value:       strVal("Open University"),
 		},
 	)
 

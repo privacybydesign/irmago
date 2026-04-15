@@ -406,25 +406,25 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 				Path:        []any{"firstnames"},
 				DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
 				Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
-				Value:       "Barry",
+				Value:       strVal("Barry"),
 			},
 			expectedAttr{
 				Path:        []any{"firstname"},
 				DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
 				Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
-				Value:       "Bar",
+				Value:       strVal("Bar"),
 			},
 			expectedAttr{
 				Path:        []any{"familyname"},
 				DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
 				Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
-				Value:       "Batsbak",
+				Value:       strVal("Batsbak"),
 			},
 			expectedAttr{
 				Path:        []any{"prefix"},
 				DisplayName: clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
 				Description: &clientmodels.TranslatedString{"en": "Family name prefix", "nl": "Tussenvoegsel van uw achternaam"},
-				Value:       "Sir",
+				Value:       strVal("Sir"),
 			},
 		)
 
@@ -594,7 +594,7 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 			Path:        []any{"email"},
 			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
-			Value:       "test@gmail.com",
+			Value:       strVal("test@gmail.com"),
 		},
 	)
 }
@@ -660,7 +660,7 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 			Path:        []any{"email"},
 			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
-			Value:       "test@gmail.com",
+			Value:       strVal("test@gmail.com"),
 		},
 	)
 }
@@ -681,7 +681,7 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 			Path:        []any{"email"},
 			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
-			Value:       "test@gmail.com",
+			Value:       strVal("test@gmail.com"),
 		},
 	)
 }
@@ -743,7 +743,7 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 			Path:        []any{"email"},
 			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
-			Value:       "test@gmail.com",
+			Value:       strVal("test@gmail.com"),
 		},
 	)
 }
@@ -776,7 +776,7 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 			Path:        []any{"email"},
 			DisplayName: clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
-			Value:       "test@gmail.com",
+			Value:       strVal("test@gmail.com"),
 		},
 	)
 }
@@ -1235,17 +1235,17 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		expectedAttr{
 			Path:        []any{"firstnames"},
 			DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-			Value:       "Barry",
+			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
 			DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-			Value:       "Bar",
+			Value:       strVal("Bar"),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
 			DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-			Value:       "Batsbak",
+			Value:       strVal("Batsbak"),
 		},
 	)
 
@@ -1255,22 +1255,22 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		expectedAttr{
 			Path:        []any{"firstnames"},
 			DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-			Value:       "Barry",
+			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
 			DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-			Value:       "Bar",
+			Value:       strVal("Bar"),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
 			DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-			Value:       "Batsbak",
+			Value:       strVal("Batsbak"),
 		},
 		expectedAttr{
 			Path:        []any{"prefix"},
 			DisplayName: clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
-			Value:       "Sir",
+			Value:       strVal("Sir"),
 		},
 	)
 
@@ -1312,17 +1312,17 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		expectedAttr{
 			Path:        []any{"firstnames"},
 			DisplayName: clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-			Value:       "Barry",
+			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
 			DisplayName: clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-			Value:       "",
+			Value:       strVal(""),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
 			DisplayName: clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-			Value:       "Batsbak",
+			Value:       strVal("Batsbak"),
 		},
 	)
 }
