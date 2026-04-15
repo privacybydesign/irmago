@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -75,8 +76,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				credentialDisplays[locale] = d.Name
 			}
 
-			attrs = make([]clientmodels.Attribute, len(batch.CredentialMetadata.Claims))
-			for j, claim := range batch.CredentialMetadata.Claims {
+			for _, claim := range batch.CredentialMetadata.Claims {
 				attrDisplay := clientmodels.TranslatedString{}
 				for _, d := range claim.Display {
 					locale := clientmodels.DefaultFallbackLanguage
@@ -86,7 +86,10 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					attrDisplay[locale] = d.Name
 				}
 
-				// Build a slice from the claim path for processing
+				// Build a slice from the claim path for processing.
+				// Only string components are handled here because issuer metadata claim paths
+				// always use string keys. Integer indices and null (used in DCQL queries for
+				// array element selection) do not appear in issuer credential metadata.
 				var claimPath []any
 				if err := json.Unmarshal(claim.Path, &claimPath); err != nil {
 					log.Fatalf("Error unmarshalling JSON: %v", err)
@@ -95,15 +98,45 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				claimValue, err := processedSdJwtPayload.GetClaimValue(claimPath)
 				if err != nil {
 					log.Printf("unrecognized claim at path %v; falling back to empty string for claim with path %v: %v", claim.Path, claimPath, err)
-					claimValue = "" // fallback to an empty string if claim value cannot be extracted
+					claimValue = ""
 				}
 
-				attrValue := clientmodels.NewAttributeValue(claimValue)
-
-				attrs[j] = clientmodels.Attribute{
-					ClaimPath:   claimPath,
-					DisplayName: attrDisplay,
-					Value:       attrValue,
+				// Flatten arrays and objects into separate attributes with full paths.
+				switch v := claimValue.(type) {
+				case []any:
+					for i, elem := range v {
+						elemPath := make([]any, len(claimPath)+1)
+						copy(elemPath, claimPath)
+						elemPath[len(claimPath)] = i
+						attrs = append(attrs, clientmodels.Attribute{
+							ClaimPath:   elemPath,
+							DisplayName: attrDisplay,
+							Value:       clientmodels.NewAttributeValue(elem),
+						})
+					}
+				case map[string]any:
+					// Sort keys for deterministic order.
+					keys := make([]string, 0, len(v))
+					for key := range v {
+						keys = append(keys, key)
+					}
+					sort.Strings(keys)
+					for _, key := range keys {
+						elemPath := make([]any, len(claimPath)+1)
+						copy(elemPath, claimPath)
+						elemPath[len(claimPath)] = key
+						attrs = append(attrs, clientmodels.Attribute{
+							ClaimPath:   elemPath,
+							DisplayName: attrDisplay,
+							Value:       clientmodels.NewAttributeValue(v[key]),
+						})
+					}
+				default:
+					attrs = append(attrs, clientmodels.Attribute{
+						ClaimPath:   claimPath,
+						DisplayName: attrDisplay,
+						Value:       clientmodels.NewAttributeValue(claimValue),
+					})
 				}
 			}
 		}

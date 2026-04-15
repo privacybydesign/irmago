@@ -255,6 +255,33 @@ func requireAttr(t *testing.T, am map[string]clientmodels.Attribute, path []any,
 	require.Equal(t, expectedValue, *attr.Value.String, "attribute %s value mismatch", key)
 }
 
+// requireAttrFull checks that an attribute exists at the given path in the map
+// and matches the expected value, display name, and optional description.
+// Use this for order-independent attribute checks that include display name verification.
+func requireAttrFull(t *testing.T, am map[string]clientmodels.Attribute, expected expectedAttr) {
+	t.Helper()
+	key := clientmodels.ClaimPathKey(expected.Path)
+	actual, ok := am[key]
+	require.True(t, ok, "attribute %s should exist", key)
+	require.NotNil(t, actual.Value, "attribute %s should have a value", key)
+	actualValueStr := attributeValueToString(actual.Value)
+	require.Equal(t, expected.Value, actualValueStr, "attribute %s value mismatch", key)
+	require.NotNil(t, expected.DisplayName, "attribute %s expected DisplayName must be set", key)
+	for locale, expectedName := range expected.DisplayName {
+		actualName, ok := actual.DisplayName[locale]
+		require.True(t, ok, "attribute %s should have display name for locale %q", key, locale)
+		require.Equal(t, expectedName, actualName, "attribute %s display name [%s] mismatch", key, locale)
+	}
+	if expected.Description != nil {
+		require.NotNil(t, actual.Description, "attribute %s should have a description", key)
+		for locale, expectedDesc := range *expected.Description {
+			actualDesc, ok := (*actual.Description)[locale]
+			require.True(t, ok, "attribute %s should have description for locale %q", key, locale)
+			require.Equal(t, expectedDesc, actualDesc, "attribute %s description [%s] mismatch", key, locale)
+		}
+	}
+}
+
 // requireNoAttr asserts that the attribute map does NOT contain an attribute at the given claim path.
 func requireNoAttr(t *testing.T, am map[string]clientmodels.Attribute, path []any) {
 	t.Helper()
@@ -309,6 +336,30 @@ func requireObtainableOption(t *testing.T, obtainable *clientmodels.CredentialDe
 	}
 }
 
+// attributeValueToString returns a string representation of an AttributeValue
+// for comparison in test assertions. Handles string, bool, int, and image types.
+func attributeValueToString(v *clientmodels.AttributeValue) string {
+	if v == nil {
+		return ""
+	}
+	if v.String != nil {
+		return *v.String
+	}
+	if v.Bool != nil {
+		return fmt.Sprintf("%v", *v.Bool)
+	}
+	if v.Int != nil {
+		return fmt.Sprintf("%d", *v.Int)
+	}
+	if v.ImagePath != nil {
+		return *v.ImagePath
+	}
+	if v.Base64Image != nil {
+		return *v.Base64Image
+	}
+	return ""
+}
+
 // pk is a shorthand for building a ClaimPathKey from path components.
 // pk("email") → "[email]", pk("address", "street") → "[address street]"
 func pk(components ...any) string {
@@ -344,8 +395,8 @@ func requireAttrsInOrder(t *testing.T, attrs []clientmodels.Attribute, expected 
 		require.Equal(t, clientmodels.ClaimPathKey(exp.Path), clientmodels.ClaimPathKey(actual.ClaimPath),
 			"attribute %d path mismatch", i)
 		require.NotNil(t, actual.Value, "attribute %d should have a value", i)
-		require.NotNil(t, actual.Value.String, "attribute %d should have a string value", i)
-		require.Equal(t, exp.Value, *actual.Value.String,
+		actualValueStr := attributeValueToString(actual.Value)
+		require.Equal(t, exp.Value, actualValueStr,
 			"attribute %d (%s) value mismatch", i, clientmodels.ClaimPathKey(exp.Path))
 		require.NotNil(t, exp.DisplayName, "attribute %d (%s) expected DisplayName must be set",
 			i, clientmodels.ClaimPathKey(exp.Path))
