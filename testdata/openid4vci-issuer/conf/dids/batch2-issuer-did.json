@@ -1,0 +1,7 @@
+{
+  "did": "did:web:localhost%3A8443:batch2-issuer:.well-known",
+  "alias": "batch2-issuer-did",
+  "provider": "did:web",
+  "type": "Secp256r1",
+  "services": []
+}

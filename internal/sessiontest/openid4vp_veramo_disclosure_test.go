@@ -21,6 +21,9 @@ const (
 	veramoVerifierBaseURL    = "https://localhost:8444"
 	veramoVerifierName       = "test-verifier"
 	veramoVerifierAdminToken = "test-verifier-admin-token"
+
+	batch2IssuerURL   = "https://localhost:8443/batch2-issuer"
+	batch2AdminToken  = "test-admin-token"
 )
 
 func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
@@ -47,6 +50,8 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("requireDisclosurePlan only checks first option", testRequireDisclosurePlanOnlyChecksFirstOption)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
+	t.Run("batch of one credential remains usable after disclosure", testBatchOfOneCredentialRemainsUsableAfterDisclosure)
+	t.Run("batch of two credential is exhausted after two disclosures", testBatchOfTwoCredentialExhaustedAfterTwoDisclosures)
 	t.Run("eudi verifier requesting veramo credential fails", testEudiVerifierRequestingVeramoCredentialFails)
 	t.Run("veramo verifier requesting irma credential fails", testVeramoVerifierRequestingIrmaCredentialFails)
 	t.Run("veramo verifier requesting missing credential errors", testVeramoVerifierRequestingMissingCredentialErrors)
@@ -1734,6 +1739,141 @@ func testVerifierDisplayName(t *testing.T) {
 // testEudiVerifierRequestingVeramoCredentialFails issues a credential via the
 // veramo issuer (OID4VCI), then starts a disclosure session using the EUDI
 // reference verifier. Because the EUDI verifier uses x509 client_id and a
+// testBatchOfOneCredentialRemainsUsableAfterDisclosure issues a credential via
+// OID4VCI with the default test-issuer (no batch_credential_issuance → batch of 1)
+// and discloses it twice, verifying that the credential remains usable.
+func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [{
+				"id": "test-credential",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["https://localhost:8443/vct/email"] },
+				"claims": [{ "path": ["email"] }]
+			}]
+		}
+	}`
+
+	// Step 1: Issue a credential via OID4VCI (batch of 1, test-issuer default).
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "batch1@example.com",
+		"domain": "example.com"
+	}`)
+
+	// Step 2: First disclosure — should succeed.
+	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession1.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Success, session.Status, "first disclosure should succeed")
+
+	result1 := checkVeramoVerifierOfferStatus(t, veramoSession1.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result1.Status)
+	requireVerifierReceivedClaims(t, result1, "test-credential",
+		claim([]any{"email"}, "batch1@example.com"),
+	)
+
+	// Step 3: Second disclosure — must also succeed (single instance stays reusable).
+	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession2.RequestUri)
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status,
+		"batch-of-1 credential should still be available for a second disclosure")
+
+	cred = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Success, session.Status,
+		"second disclosure of batch-of-1 credential should succeed")
+
+	result2 := checkVeramoVerifierOfferStatus(t, veramoSession2.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result2.Status)
+	requireVerifierReceivedClaims(t, result2, "test-credential",
+		claim([]any{"email"}, "batch1@example.com"),
+	)
+}
+
+// testBatchOfTwoCredentialExhaustedAfterTwoDisclosures issues a credential via
+// the batch2-issuer (batch_credential_issuance.batch_size = 2) and verifies that
+// it can be disclosed exactly twice. A third disclosure attempt should fail
+// because all instances have been used.
+func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [{
+				"id": "test-credential",
+				"format": "dc+sd-jwt",
+				"meta": { "vct_values": ["https://localhost:8443/vct/email"] },
+				"claims": [{ "path": ["email"] }]
+			}]
+		}
+	}`
+
+	// Step 1: Issue a credential via the batch2-issuer (batch of 2).
+	issueCredentialViaOid4VciFromIssuer(t, c, sessionHandler, batch2IssuerURL, batch2AdminToken,
+		"EmailCredentialSdJwt", `{"email": "batch2@example.com", "domain": "example.com"}`)
+
+	// Step 2: First disclosure — uses first instance.
+	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession1.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Success, session.Status, "first disclosure should succeed")
+
+	result1 := checkVeramoVerifierOfferStatus(t, veramoSession1.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result1.Status)
+	requireVerifierReceivedClaims(t, result1, "test-credential",
+		claim([]any{"email"}, "batch2@example.com"),
+	)
+
+	// Step 3: Second disclosure — uses last instance.
+	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession2.RequestUri)
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+
+	cred = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Success, session.Status, "second disclosure should succeed")
+
+	result2 := checkVeramoVerifierOfferStatus(t, veramoSession2.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result2.Status)
+	requireVerifierReceivedClaims(t, result2, "test-credential",
+		claim([]any{"email"}, "batch2@example.com"),
+	)
+
+	// Step 4: Third disclosure — all instances exhausted, should fail.
+	veramoSession3 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession3.RequestUri)
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Error, session.Status,
+		"third disclosure should fail because all batch instances are exhausted")
+}
+
 // different trust model, the session should result in an error.
 func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
@@ -2254,6 +2394,48 @@ func issueCredentialViaOid4Vci(
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
+	require.Equal(t, "CREDENTIAL_ISSUED", status)
+}
+
+// issueCredentialViaOid4VciFromIssuer is like issueCredentialViaOid4Vci but
+// allows specifying a custom issuer URL and admin token.
+func issueCredentialViaOid4VciFromIssuer(
+	t *testing.T,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+	issuerURL string,
+	adminToken string,
+	credentialType string,
+	claimsJSON string,
+) {
+	t.Helper()
+
+	offerBody := fmt.Sprintf(`{
+		"credentials": [%q],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": %s
+	}`, credentialType, claimsJSON)
+
+	offer := postOffer(t, issuerURL, adminToken, offerBody)
+	startOpenID4VCISession(t, c, offer.URI)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	status := checkOfferStatus(t, issuerURL, adminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status)
 }
 

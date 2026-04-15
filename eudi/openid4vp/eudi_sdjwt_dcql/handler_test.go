@@ -443,6 +443,99 @@ func TestFindCandidates_ClaimValueMixedTypes(t *testing.T) {
 // ExpiryDate correctness (expiryUnix bug fix verification)
 // ========================================================================
 
+// validTestSdJwtVc is a valid SD-JWT VC with typ "dc+sd-jwt", vct "test.test.email",
+// and two disclosures: "email" ("test@gmail.com") and "domain" ("gmail.com").
+// Copied from eudi/credentials/sdjwtvc/test_data.go (unexported).
+const validTestSdJwtVc = "eyJhbGciOiJFUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsIng1YyI6WyJNSUlEUERDQ0F1T2dBd0lCQWdJVWVLTzR0L2NOcGo2NTNNaVB6Vk4xL2U2azRKd3dDZ1lJS29aSXpqMEVBd0l3UVRFTE1Ba0dBMVVFQmhNQ1Rrd3hEVEFMQmdOVkJBb01CRmxwZG1reEl6QWhCZ05WQkFNTUdtOXdaVzVwWkRSMll5NXpkR0ZuYVc1bkxubHBkbWt1WVhCd01CNFhEVEkyTURFd09ERTFNemt3T1ZvWERUTTJNREV3TmpFMU16a3dPVm93UVRFTE1Ba0dBMVVFQmhNQ1Rrd3hEVEFMQmdOVkJBb01CRmxwZG1reEl6QWhCZ05WQkFNTUdtOXdaVzVwWkRSMll5NXpkR0ZuYVc1bkxubHBkbWt1WVhCd01Ga3dFd1lIS29aSXpqMENBUVlJS29aSXpqMERBUWNEUWdBRVNyN2JNckRURGUrUi9ISTF3eXdZdEVZcitESmE1SGRUbkk4ZHNqWmVyNmdyUHlaNHZ4VGVPbWRqVTl3cDBXa3pmT05teWs0eHNQZVBvbjRBaHdDSythT0NBYmN3Z2dHek1Fa0dBMVVkRVFSQ01FQ0dJbWgwZEhCek9pOHZiM0JsYm1sa05IWmpMbk4wWVdkcGJtY3VlV2wyYVM1aGNIQ0NHbTl3Wlc1cFpEUjJZeTV6ZEdGbmFXNW5MbmxwZG1rdVlYQndNQklHQTFVZEV3RUIvd1FJTUFZQkFmOENBUUF3Q3dZRFZSMFBCQVFEQWdFR01JSUJKQVlEVVhzQkJJSUJHd3lDQVJkN0luSmxaMmx6ZEhKaGRHbHZiaUk2SW1oMGRIQnpPaTh2Y0c5eWRHRnNMbVJsZGk5dmNtZGhibWw2WVhScGIyNXpMM2xwZG1rdklpd2liM0puWVc1cGVtRjBhVzl1SWpwN0lteGxaMkZzVG1GdFpTSTZleUpsYmlJNklsbHBkbWtnUWk1V0xpSXNJbTVzSWpvaVdXbDJhU0JDTGxZdUluMTlMQ0poY0NJNmV5SmhkWFJvYjNKcGVtVmtJanBiZXlKamNtVmtaVzUwYVdGc0lqb2lkR1Z6ZEM1MFpYTjBMbVZ0WVdsc0lpd2lZWFIwY21saWRYUmxjeUk2V3lKbGJXRnBiQ0lzSUNKa2IyMWhhVzRpWFgwc0lIc2lZM0psWkdWdWRHbGhiQ0k2SW5SbGMzUXVkR1Z6ZEM1dGIySnBiR1Z3YUc5dVpTSXNJbUYwZEhKcFluVjBaWE1pT2xzaWJXOWlhV3hsY0dodmJtVWlYWDFkZlgwd0hRWURWUjBPQkJZRUZEUmFmeUU1YXpacTJrMkRMRGQ0NG8yRkppMTdNQW9HQ0NxR1NNNDlCQU1DQTBjQU1FUUNJRHMwRkNsdEpaNEdtTDhCVEhRS05OUk10Tzd3MVFKUk15Yk11VzZETUI1UkFpQm1rNFRwbWRzZEl1UTFNOHp3YU14RHNDYkxoaW9QUWRRYWVSWk5OKzhzOVE9PSJdfQ.eyJfc2QiOlsiN0JHNnJ6SWpMdHdGNlI5ZlVhYndEV25GaURlcDNHVmF0UHc5Z09lc05nWSIsIjRKTkZMa1BiWXNmdjBWQ1kyeE1hTDZJbXhTcjZSZ0pZNG9uYWN4X0o2UFkiXSwiY25mIjp7Imp3ayI6eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IkpENUVJNmlqT2k2OVd2WUdqVVd4Sm5nYlJEQndCd3NPRjdqMUVSRFdPSjQiLCJ5IjoiNjR1Z0ppcUhvcXRvdGRKZGE5UVVVVURzb3ZWWE9sU3R0eEdDZktNMXlxUSJ9fSwiZXhwIjoxOTQ1Mzk0MTI2LCJpYXQiOjE3NDUzOTQxMjYsImlzcyI6Imh0dHBzOi8vb3BlbmlkNHZjLnN0YWdpbmcueWl2aS5hcHAiLCJuYmYiOjUwLCJ2Y3QiOiJ0ZXN0LnRlc3QuZW1haWwifQ.b3LxuCTv4H3yxFduNNtpUTn89quju6A3NEk1rnrTv76fxilJKnsbMyt_CjoFiJtl6uZ38d5SpfF6M3UCr5gWyg~WyJTV1RJYWY2RjNiOENJMVQwbk1leTd3IiwiZW1haWwiLCJ0ZXN0QGdtYWlsLmNvbSJd~WyJmU21KeXR4Qk01Z3pCOWtXaHhDcG5nIiwiZG9tYWluIiwiZ21haWwuY29tIl0~"
+
+// ========================================================================
+// PrepareDisclosure — batch-of-1 vs batch-of-many
+// ========================================================================
+
+func TestPrepareDisclosure_BatchOfOne_RemainsUsableAfterDisclosure(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	batch := newTestBatch("hash-batch1", "https://example.com/EmailCredential", map[string]any{
+		"email":  "test@gmail.com",
+		"domain": "gmail.com",
+	})
+	batch.BatchSize = 1
+	batch.RemainingCount = 1
+	batch.Instances = []models.IssuedCredentialInstance{
+		{RawCredential: []byte(validTestSdJwtVc)},
+	}
+	require.NoError(t, store.StoreBatch(batch))
+
+	selections := []dcql.DisclosureSelection{{
+		QueryId:        "q1",
+		CredentialHash: "hash-batch1",
+		ClaimPaths:     [][]any{{"email"}},
+	}}
+
+	// First disclosure should succeed.
+	result, err := h.PrepareDisclosure(selections, "nonce1", "client1")
+	require.NoError(t, err)
+	require.Len(t, result.QueryResponses, 1)
+	assert.NotEmpty(t, result.QueryResponses[0].Credentials)
+
+	// Second disclosure should also succeed — the single instance must stay reusable.
+	result2, err := h.PrepareDisclosure(selections, "nonce2", "client2")
+	require.NoError(t, err, "batch-of-1 credential must remain usable after disclosure")
+	require.Len(t, result2.QueryResponses, 1)
+	assert.NotEmpty(t, result2.QueryResponses[0].Credentials)
+
+	// RemainingCount must still be 1.
+	reloaded, err := store.GetBatchByHash("hash-batch1")
+	require.NoError(t, err)
+	assert.Equal(t, uint(1), reloaded.RemainingCount)
+}
+
+func TestPrepareDisclosure_BatchOfTwo_MarksInstanceUsed(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	batch := newTestBatch("hash-batch2", "https://example.com/EmailCredential", map[string]any{
+		"email":  "test@gmail.com",
+		"domain": "gmail.com",
+	})
+	batch.BatchSize = 2
+	batch.RemainingCount = 2
+	batch.Instances = []models.IssuedCredentialInstance{
+		{RawCredential: []byte(validTestSdJwtVc)},
+		{RawCredential: []byte(validTestSdJwtVc)},
+	}
+	require.NoError(t, store.StoreBatch(batch))
+
+	selections := []dcql.DisclosureSelection{{
+		QueryId:        "q1",
+		CredentialHash: "hash-batch2",
+		ClaimPaths:     [][]any{{"email"}},
+	}}
+
+	// First disclosure — uses one instance.
+	_, err := h.PrepareDisclosure(selections, "nonce1", "client1")
+	require.NoError(t, err)
+
+	reloaded, err := store.GetBatchByHash("hash-batch2")
+	require.NoError(t, err)
+	assert.Equal(t, uint(1), reloaded.RemainingCount)
+
+	// Second disclosure — uses the last instance.
+	_, err = h.PrepareDisclosure(selections, "nonce2", "client2")
+	require.NoError(t, err)
+
+	reloaded, err = store.GetBatchByHash("hash-batch2")
+	require.NoError(t, err)
+	assert.Equal(t, uint(0), reloaded.RemainingCount)
+
+	// Third disclosure — no unused instances left, should fail.
+	_, err = h.PrepareDisclosure(selections, "nonce3", "client3")
+	require.Error(t, err, "batch-of-2 with all instances used should fail")
+}
+
+// ========================================================================
+// ExpiryDate correctness (expiryUnix bug fix verification)
+// ========================================================================
+
 func TestFindCandidates_ExpiryDateSetCorrectly(t *testing.T) {
 	h, store := newTestHandler(t)
 

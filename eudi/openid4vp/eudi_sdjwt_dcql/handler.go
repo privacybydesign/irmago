@@ -167,9 +167,12 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			Credentials: []string{presentation},
 		})
 
-		// Mark the instance as used
-		if err := h.credentialStore.MarkInstanceUsed(instance.ID); err != nil {
-			return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+		// Only mark the instance as used when the original batch had multiple instances.
+		// A batch of 1 keeps its single instance reusable.
+		if batch.BatchSize > 1 {
+			if err := h.credentialStore.MarkInstanceUsed(instance.ID); err != nil {
+				return nil, fmt.Errorf("failed to mark instance as used: %w", err)
+			}
 		}
 
 		result.CredentialLogs = append(result.CredentialLogs, buildLogCredential(batch, sel.ClaimPaths))
