@@ -263,6 +263,52 @@ func requireNoAttr(t *testing.T, am map[string]clientmodels.Attribute, path []an
 	require.False(t, ok, "attribute %s should not exist", key)
 }
 
+// expectedObtainable describes an expected obtainable credential descriptor.
+type expectedObtainable struct {
+	CredentialId string
+	Name         clientmodels.TranslatedString
+	// Expected requested attributes. Each has ClaimPath and optionally a
+	// RequestedValue string (nil means type-only constraint, no specific value).
+	Attributes []expectedRequestedAttr
+}
+
+type expectedRequestedAttr struct {
+	Path           []any
+	DisplayName    clientmodels.TranslatedString
+	RequestedValue *string // nil means any value of the type is accepted
+}
+
+// requireObtainableOption asserts that an obtainable credential descriptor
+// matches the expected credential ID, name, and requested attributes.
+func requireObtainableOption(t *testing.T, obtainable *clientmodels.CredentialDescriptor, expected expectedObtainable) {
+	t.Helper()
+	require.Equal(t, expected.CredentialId, obtainable.CredentialId, "obtainable credential ID mismatch")
+	require.Equal(t, expected.Name, obtainable.Name, "obtainable credential name mismatch")
+	require.Len(t, obtainable.Attributes, len(expected.Attributes), "obtainable attribute count mismatch for %s", expected.CredentialId)
+	for i, exp := range expected.Attributes {
+		actual := obtainable.Attributes[i]
+		require.Equal(t, exp.Path, actual.ClaimPath, "obtainable %s attribute %d path mismatch", expected.CredentialId, i)
+		require.NotNil(t, exp.DisplayName, "obtainable %s attribute %d expected DisplayName must be set", expected.CredentialId, i)
+		for locale, expectedName := range exp.DisplayName {
+			actualName, ok := actual.DisplayName[locale]
+			require.True(t, ok, "obtainable %s attribute %d should have display name for locale %q", expected.CredentialId, i, locale)
+			require.Equal(t, expectedName, actualName, "obtainable %s attribute %d display name [%s] mismatch", expected.CredentialId, i, locale)
+		}
+		require.NotNil(t, actual.RequestedValue, "obtainable %s attribute %d should have RequestedValue", expected.CredentialId, i)
+		require.Equal(t, clientmodels.AttributeType_String, actual.RequestedValue.Type,
+			"obtainable %s attribute %d RequestedValue type mismatch", expected.CredentialId, i)
+		if exp.RequestedValue != nil {
+			require.NotNil(t, actual.RequestedValue.String,
+				"obtainable %s attribute %d should have specific RequestedValue", expected.CredentialId, i)
+			require.Equal(t, *exp.RequestedValue, *actual.RequestedValue.String,
+				"obtainable %s attribute %d RequestedValue mismatch", expected.CredentialId, i)
+		} else {
+			require.Nil(t, actual.RequestedValue.String,
+				"obtainable %s attribute %d should not have specific RequestedValue", expected.CredentialId, i)
+		}
+	}
+}
+
 // pk is a shorthand for building a ClaimPathKey from path components.
 // pk("email") → "[email]", pk("address", "street") → "[address street]"
 func pk(components ...any) string {
@@ -354,8 +400,6 @@ func requireIrmaServerResult(t *testing.T, irmaServer *IrmaServer, token irma.Re
 		}
 	}
 }
-
-
 
 // makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
 // attributes of the given credential instance.
