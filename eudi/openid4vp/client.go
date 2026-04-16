@@ -144,12 +144,14 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		requestor := &clientmodels.TrustedParty{
-			Name: clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
-			Image: &clientmodels.Image{
-				Base64:   base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
-				MimeType: &requestorSchemeData.Organization.Logo.MimeType,
-			},
+			Name:     clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
 			Verified: endEntityCert != nil,
+		}
+
+		if len(requestorSchemeData.Organization.Logo.Data) > 0 {
+			requestor.Image = &clientmodels.Image{
+				Base64: base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
+			}
 		}
 
 		eudi.Logger.Infof("auth request: %#v", request)

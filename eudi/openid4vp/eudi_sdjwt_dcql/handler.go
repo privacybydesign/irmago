@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -26,6 +27,7 @@ func isURL(s string) bool {
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
 // credentials stored in the eudi storage (SQLite).
 type SdJwtVcDcqlHandler struct {
+	storage         storage.Storage
 	credentialStore db.CredentialStore
 	keyBinder       sdjwtvc.KeyBinder
 }
@@ -34,6 +36,7 @@ type SdJwtVcDcqlHandler struct {
 func NewSdJwtVcDcqlHandler(eudiStorage storage.Storage) *SdJwtVcDcqlHandler {
 	keyService := services.NewHolderBindingKeyService(eudiStorage.Db())
 	return &SdJwtVcDcqlHandler{
+		storage:         eudiStorage,
 		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
 		keyBinder:       sdjwtvc.NewDefaultKeyBinder(keyService),
 	}
@@ -89,6 +92,29 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
+		// Try to find a reference to an image on disk for this credential
+		// TODO: this logic is more or less duplicated from openid4vci/client.go -> convertToCredentialInfoList(); consider centralizing it
+		var image *clientmodels.Image
+
+		credentialLogoManager := h.storage.FileSystem().Credentials().LogoManager()
+		for _, display := range batch.CredentialMetadata.Display {
+			if display.LogoURI != "" {
+				filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
+				imageData, err := credentialLogoManager.GetLogo(filename)
+				if err != nil {
+					eudi.Logger.Warnf("failed to get credential logo from %q: %v", display.LogoURI, err)
+					continue
+				}
+
+				image = &clientmodels.Image{
+					Base64: *imageData,
+				}
+
+				// TODO: for now, we pick the first logo in a display we can find, but this needs to be based on the locale being used in the app
+				break
+			}
+		}
+
 		result.OwnedCandidates = append(result.OwnedCandidates, &clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
@@ -99,6 +125,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Attributes:                  attributes,
 			IssuanceDate:                batch.IssuedAt.Unix(),
 			ExpiryDate:                  expiryUnix(batch),
+			Image:                       image,
 		})
 	}
 

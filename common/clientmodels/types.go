@@ -191,6 +191,8 @@ type SelectableCredentialInstance struct {
 	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
+	// Base64-encoded image for this credential
+	Image *Image `json:"image,omitempty"`
 	// Absolute path to the image for this credential stored on disk.
 	ImagePath *string `json:"image_path,omitempty"`
 	// The display name for this credential, localized.
