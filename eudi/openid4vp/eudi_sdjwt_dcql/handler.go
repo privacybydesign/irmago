@@ -455,6 +455,7 @@ func getNonSdClaimNames(batch *models.CredentialBatch, credStore db.CredentialSt
 	standardClaims := map[string]struct{}{
 		"iss": {}, "sub": {}, "iat": {}, "exp": {}, "nbf": {},
 		"vct": {}, "cnf": {}, "_sd": {}, "_sd_alg": {}, "status": {},
+		"fed": {},
 	}
 
 	var names []string
