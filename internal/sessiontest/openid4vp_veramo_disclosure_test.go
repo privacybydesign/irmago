@@ -99,12 +99,24 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 	// Step 4: Verify the disclosure plan and grant permission.
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"given_name"}, Value: strVal("Test"), DisplayName: &clientmodels.TranslatedString{"en": "Given Name"}},
-					{Path: []any{"email"}, Value: strVal("test@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"given_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Given Name"},
+								Value:       strVal("Test"),
+							},
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("test@example.com"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -164,12 +176,24 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"email"}, Value: strVal("alice@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
-					{Path: []any{"domain"}, Value: strVal("example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Domain"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("alice@example.com"),
+							},
+							{
+								Path:        []any{"domain"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Domain"},
+								Value:       strVal("example.com"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -339,16 +363,32 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	// The order depends on the DCQL query order, but both should have matching credentials.
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"email"}, Value: strVal("carol@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
-				}},
-			}},
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"phone_number"}, Value: strVal("+31687654321"), DisplayName: &clientmodels.TranslatedString{"en": "Phone Number"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("carol@example.com"),
+							},
+						},
+					},
+				},
+			},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"phone_number"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Phone Number"},
+								Value:       strVal("+31687654321"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -422,11 +462,19 @@ func testOptionalCredential(t *testing.T) {
 
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"email"}, Value: strVal("dave@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("dave@example.com"),
+							},
+						},
+					},
+				},
+			},
 			{Optional: true}, // optional phone (may have no owned options)
 		},
 	})
@@ -573,13 +621,29 @@ func testDiscloseNestedClaims(t *testing.T) {
 
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"owner_name"}, Value: strVal("Frank"), DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}},
-					{Path: []any{"address", "street"}, Value: strVal("10 Downing St"), DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"}},
-					{Path: []any{"address", "city"}, Value: strVal("London"), DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"owner_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+								Value:       strVal("Frank"),
+							},
+							{
+								Path:        []any{"address", "street"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+								Value:       strVal("10 Downing St"),
+							},
+							{
+								Path:        []any{"address", "city"},
+								DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+								Value:       strVal("London"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -716,11 +780,18 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	// Path ["courses", 1] resolves to a specific element ("Databases"), not the whole array.
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"courses", 1}, Value: strVal("Databases")},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:  []any{"courses", 1},
+								Value: strVal("Databases"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -852,12 +923,24 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 	// member_since (non-SD claim that is always shared).
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"member_name"}, Value: strVal("Grace"), DisplayName: &clientmodels.TranslatedString{"en": "Member Name"}},
-					{Path: []any{"member_since"}, Value: strVal("2020-01-15"), DisplayName: &clientmodels.TranslatedString{"en": "Member Since"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"member_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Member Name"},
+								Value:       strVal("Grace"),
+							},
+							{
+								Path:        []any{"member_since"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Member Since"},
+								Value:       strVal("2020-01-15"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -947,18 +1030,42 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	// Exactly two disclosure choices: one for email, one for student card.
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"email"}, Value: strVal("multi@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email"}},
-					{Path: []any{"domain"}, Value: strVal("example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Domain"}},
-				}},
-			}},
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"university"}, Value: strVal("Radboud University"), DisplayName: &clientmodels.TranslatedString{"en": "University"}},
-					{Path: []any{"student_id"}, Value: strVal("s1234567"), DisplayName: &clientmodels.TranslatedString{"en": "Student ID"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("multi@example.com"),
+							},
+							{
+								Path:        []any{"domain"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Domain"},
+								Value:       strVal("example.com"),
+							},
+						},
+					},
+				},
+			},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University"},
+								Value:       strVal("Radboud University"),
+							},
+							{
+								Path:        []any{"student_id"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student ID"},
+								Value:       strVal("s1234567"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -1046,14 +1153,40 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"given_name"}, Value: strVal("Jan"), DisplayName: &clientmodels.TranslatedString{"en": "Given name"}},
-					{Path: []any{"family_name"}, Value: strVal("de Vries"), DisplayName: &clientmodels.TranslatedString{"en": "Family name"}},
-					{Path: []any{"email"}, Value: strVal("jan.devries@university.nl"), DisplayName: &clientmodels.TranslatedString{"en": "E-mail"}},
-					{Path: []any{"schac_home_organization"}, Value: strVal("university.nl"), DisplayName: &clientmodels.TranslatedString{"en": "Organization"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"given_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Given name"},
+								Value:       strVal("Jan"),
+							},
+							{
+								Path:        []any{"family_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Family name"},
+								Value:       strVal("de Vries"),
+							},
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "E-mail"},
+								Value:       strVal("jan.devries@university.nl"),
+							},
+							{
+								Path:        []any{"schac_home_organization"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Organization"},
+								Value:       strVal("university.nl"),
+							},
+							// eduperson_assurance has sd:"never" in the VCT: always disclosed, never selectively hidden.
+							{
+								Path:        []any{"eduperson_assurance"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Assurance"},
+								Value:       strVal("https://eduid.nl/assurance/low"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -1508,12 +1641,24 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"email"}, Value: strVal("dup@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}},
-					{Path: []any{"domain"}, Value: strVal("example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+								Value:       strVal("dup@example.com"),
+							},
+							{
+								Path:        []any{"domain"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"},
+								Value:       strVal("example.com"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -1595,13 +1740,29 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"owner_name"}, Value: strVal("Duplicate Tester"), DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"}},
-					{Path: []any{"address", "street"}, Value: strVal("Kalverstraat 1"), DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"}},
-					{Path: []any{"address", "city"}, Value: strVal("Amsterdam"), DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"owner_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+								Value:       strVal("Duplicate Tester"),
+							},
+							{
+								Path:        []any{"address", "street"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+								Value:       strVal("Kalverstraat 1"),
+							},
+							{
+								Path:        []any{"address", "city"},
+								DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+								Value:       strVal("Amsterdam"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -1693,11 +1854,19 @@ func testRequireDisclosurePlanOnlyChecksFirstOption(t *testing.T) {
 	// Asserting bob's email value should fail because the helper never looks at OwnedOptions[1].
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"email"}, Value: strVal("bob@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+								Value:       strVal("bob@example.com"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -1759,11 +1928,19 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{Attributes: []expectedAttr{
-					{Path: []any{"email"}, Value: strVal("nokb@example.com"), DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}},
-				}},
-			}},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+								Value:       strVal("nokb@example.com"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 

@@ -72,7 +72,8 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
-		attributes, err := parseBatchAttributes(batch, query, h.credentialStore)
+		nonSdClaims := getNonSdClaimNames(batch, h.credentialStore)
+		attributes, err := parseBatchAttributes(batch, query, nonSdClaims)
 		if err != nil {
 			continue
 		}
@@ -190,7 +191,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 // When claim_sets is present, each set is tried in order and the first fully
 // satisfiable set determines which claims are included. Without claim_sets,
 // all claims must match.
-func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, credStore storage.CredentialStore) ([]clientmodels.Attribute, error) {
+func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, nonSdClaims []string) ([]clientmodels.Attribute, error) {
 	var payload sdjwtvc.ProcessedSdJwtPayload
 	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload); err != nil {
 		return nil, err
@@ -236,7 +237,6 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 
 	// Include non-SD claims: these are always visible in the JWT payload and
 	// will be shared regardless of which disclosures the user selects.
-	nonSdClaims := getNonSdClaimNames(batch, credStore)
 	for _, name := range nonSdClaims {
 		if _, alreadyIncluded := requestedKeys[clientmodels.ClaimPathKey([]any{name})]; alreadyIncluded {
 			continue

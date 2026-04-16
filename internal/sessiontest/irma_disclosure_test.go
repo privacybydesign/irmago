@@ -234,26 +234,28 @@ func testDisclosureWithPredefinedValues(
 		IssuedCredentialIds:      map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		WrongCredentialIssuedNil: true,
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"studentID"},
-							DisplayName: &clientmodels.TranslatedString{"nl": "Studentnummer", "en": "Student number"},
-							Description: &clientmodels.TranslatedString{"en": "Your student number", "nl": "Uw studentnummer"},
-							Value:       strVal("67890"),
-						},
-						{
-							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Universiteit", "en": "University"},
-							Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-							Value:          strVal("Universiteit Utrecht"),
-							RequestedValue: strVal("Universiteit Utrecht"),
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"studentID"},
+								DisplayName: &clientmodels.TranslatedString{"nl": "Studentnummer", "en": "Student number"},
+								Description: &clientmodels.TranslatedString{"en": "Your student number", "nl": "Uw studentnummer"},
+								Value:       strVal("67890"),
+							},
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"nl": "Universiteit", "en": "University"},
+								Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								Value:          strVal("Universiteit Utrecht"),
+								RequestedValue: strVal("Universiteit Utrecht"),
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 
@@ -328,32 +330,38 @@ func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		Choices: []expectedPickOneChoice{
-			{Optional: false, Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"university"},
-							DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-							Value:       strVal("University of the Arts"),
+			{
+				Optional: false,
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								Value:       strVal("University of the Arts"),
+							},
 						},
 					},
 				},
-			}},
-			{Optional: true, Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"level"},
-							DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-							Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
-							Value:       strVal("high"),
+			},
+			{
+				Optional: true,
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								Value:       strVal("high"),
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 }
@@ -502,44 +510,49 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 		IssuedCredentialIds: map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
 		// there's two choices, one of which is optional
 		Choices: []expectedPickOneChoice{
-			{Optional: true, Obtainable: []expectedCredentialDescriptor{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
-						},
-						{
-							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
-						},
-					},
-				},
-			}},
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"firstnames"},
-							DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-							Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
-							Value:       strVal("Barry"),
-						},
-						{
-							Path:        []any{"familyname"},
-							DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-							Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
-							Value:       strVal("Batsbak"),
+			{
+				Optional: true,
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
+							{
+								Path:           []any{"level"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
 						},
 					},
 				},
-			}},
+			},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.MijnOverheid.fullName",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"firstnames"},
+								DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+								Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+								Value:       strVal("Barry"),
+							},
+							{
+								Path:        []any{"familyname"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								Value:       strVal("Batsbak"),
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -776,38 +789,42 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 		},
 		IssuedCredentialIds: map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}, "test.test.email": {}},
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "test.test.email",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"email"},
-							DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-							Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
-							Value:       strVal("test@gmail.com"),
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "test.test.email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+								Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+								Value:       strVal("test@gmail.com"),
+							},
 						},
 					},
 				},
-			}},
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"firstnames"},
-							DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-							Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
-							Value:       strVal("Barry"),
-						},
-						{
-							Path:        []any{"familyname"},
-							DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-							Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
-							Value:       strVal("Batsbak"),
+			},
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.MijnOverheid.fullName",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"firstnames"},
+								DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+								Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+								Value:       strVal("Barry"),
+							},
+							{
+								Path:        []any{"familyname"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								Value:       strVal("Batsbak"),
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 
@@ -991,26 +1008,28 @@ func testWrongCredentialIssuedDuringDisclosure(
 		IssuedCredentialIds:      map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		WrongCredentialIssuedNil: true,
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-							Value:          strVal("Radboud University"),
-							RequestedValue: strVal("Radboud University"),
-						},
-						{
-							Path:        []any{"level"},
-							DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-							Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
-							Value:       strVal("high"),
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								Value:          strVal("Radboud University"),
+								RequestedValue: strVal("Radboud University"),
+							},
+							{
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								Value:       strVal("high"),
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 
@@ -1167,26 +1186,28 @@ func testPreExistingWrongCredentialNotReported(
 		IssuedCredentialIds:      map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		WrongCredentialIssuedNil: true,
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-							Value:          strVal("Radboud University"),
-							RequestedValue: strVal("Radboud University"),
-						},
-						{
-							Path:        []any{"level"},
-							DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-							Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
-							Value:       strVal("high"),
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								Value:          strVal("Radboud University"),
+								RequestedValue: strVal("Radboud University"),
+							},
+							{
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								Value:       strVal("high"),
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 
@@ -1516,60 +1537,63 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 		// the disclosure choices overview should allow the user to add new versions of student card
 		// and issue the MijnOverheid credential; only one obtained option should be available
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"university"},
-							DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-							Value:       strVal("University of the Arts"),
-						},
-						{
-							Path:        []any{"level"},
-							DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-							Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
-							Value:       strVal("high"),
-						},
-					},
-				},
-			}, Obtainable: []expectedCredentialDescriptor{
-				{
-					CredentialId: "irma-demo.RU.studentCard",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
-						},
-						{
-							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								Value:       strVal("University of the Arts"),
+							},
+							{
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								Value:       strVal("high"),
+							},
 						},
 					},
 				},
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"firstnames"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
+							{
+								Path:           []any{"level"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
 						},
-						{
-							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
+					},
+					{
+						CredentialId: "irma-demo.MijnOverheid.fullName",
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"firstnames"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
+							{
+								Path:           []any{"familyname"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 
@@ -1684,25 +1708,27 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 		// the disclosure options should contain the option;
 		// no new version of this is obtainable because it's a singleton
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"firstname"},
-							DisplayName: &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
-							Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
-							Value:       strVal("Bar"),
-						},
-						{
-							Path:        []any{"familyname"},
-							DisplayName: &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
-							Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
-							Value:       strVal("Batsbak"),
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.MijnOverheid.fullName",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"firstname"},
+								DisplayName: &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
+								Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+								Value:       strVal("Bar"),
+							},
+							{
+								Path:        []any{"familyname"},
+								DisplayName: &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
+								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								Value:       strVal("Batsbak"),
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 }
@@ -1738,25 +1764,27 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 	// no issuance steps
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "irma-demo.MijnOverheid.fullName",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"firstname"},
-							DisplayName: &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
-							Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
-							Value:       strVal("Bar"),
-						},
-						{
-							Path:        []any{"familyname"},
-							DisplayName: &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
-							Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
-							Value:       strVal("Batsbak"),
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "irma-demo.MijnOverheid.fullName",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"firstname"},
+								DisplayName: &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
+								Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+								Value:       strVal("Bar"),
+							},
+							{
+								Path:        []any{"familyname"},
+								DisplayName: &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
+								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								Value:       strVal("Batsbak"),
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 }
@@ -1830,31 +1858,34 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 		// it's also possible to obtain a new one, since it not a singleton
 		Choices: []expectedPickOneChoice{
-			{Owned: []expectedPlanCredential{
-				{
-					CredentialId: "test.test.email",
-					Attributes: []expectedAttr{
-						{
-							Path:        []any{"email"},
-							DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-							Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
-							Value:       strVal("test@gmail.com"),
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "test.test.email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+								Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+								Value:       strVal("test@gmail.com"),
+							},
 						},
 					},
 				},
-			}, Obtainable: []expectedCredentialDescriptor{
-				{
-					CredentialId: "test.test.email",
-					Attributes: []expectedAttr{
-						{
-							Path:           []any{"email"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "test.test.email",
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"email"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
 						},
 					},
 				},
-			}},
+			},
 		},
 	})
 
