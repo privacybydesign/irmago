@@ -439,7 +439,12 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 			// empty to signal the con above is optional
 			irma.AttributeCon{},
 		},
-		mijnOverheidDisclosure()[0],
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstnames"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
 	}
 
 	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
@@ -598,7 +603,16 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 		irma.AttributeDisCon{
 			irma.AttributeCon{irma.NewAttributeRequest("test.test.email.email")},
 		},
-		studentCardOrMijnOverheidDisclosure()[0],
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.university"),
+				irma.NewAttributeRequest("irma-demo.RU.studentCard.level"),
+			},
+			irma.AttributeCon{
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstnames"),
+				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
+			},
+		},
 	}
 
 	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
