@@ -1421,16 +1421,34 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
-
-	// All matching credentials should have is_student=true.
-	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
-		attrMap := attributeMap(opt.Attributes)
-		// The matching credential should be "Student", not "Staff".
-		requireAttr(t, attrMap, []any{"given_name"}, "Student")
-	}
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/eduid",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"given_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Given name", "nl": "Voornaam"},
+								Value:       strVal("Student"),
+							},
+							{
+								Path:        []any{"is_student"},
+								DisplayName: &clientmodels.TranslatedString{"en": "IsStudent", "nl": "IsStudent"},
+								Value:       boolVal(true),
+							},
+							{
+								Path:        []any{"eduperson_assurance"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Assurance", "nl": "Bevestiging"},
+								Value:       strVal("https://eduid.nl/assurance/low"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
