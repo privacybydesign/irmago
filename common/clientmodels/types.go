@@ -1,6 +1,9 @@
 package clientmodels
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 const DefaultFallbackLanguage = "en"
 
@@ -110,7 +113,8 @@ type Attribute struct {
 // ClaimPathKey produces a deterministic string key from a claim path for use
 // in maps. Go slices can't be map keys, so this serializes the path.
 func ClaimPathKey(path []any) string {
-	return fmt.Sprintf("%v", path)
+	b, _ := json.Marshal(path)
+	return string(b)
 }
 
 // Credential represents a full credential with all its metadata and attribute values.
