@@ -275,12 +275,7 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 			continue
 		}
 		dn := claimDisplayName(batch, []any{name})
-		attr := clientmodels.Attribute{
-			ClaimPath:   []any{name},
-			DisplayName: &dn,
-		}
-		attr.Value = clientmodels.NewAttributeValue(val)
-		attributes = append(attributes, attr)
+		attributes = flattenForDisclosure(attributes, requestedKeys, batch, []any{name}, val, dn, metadataOrder)
 	}
 
 	return attributes, nil

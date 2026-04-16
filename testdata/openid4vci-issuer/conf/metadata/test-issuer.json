@@ -475,6 +475,21 @@
                 "locale": "nl"
               }
             ]
+          },
+          {
+            "path": [
+              "benefits"
+            ],
+            "display": [
+              {
+                "name": "Benefits",
+                "locale": "en"
+              },
+              {
+                "name": "Voordelen",
+                "locale": "nl"
+              }
+            ]
           }
         ]
       },

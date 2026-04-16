@@ -11,7 +11,8 @@
     "claims": [
       { "path": ["member_name"], "sd": "allowed" },
       { "path": ["member_since"] },
-      { "path": ["membership_type"], "sd": "allowed" }
+      { "path": ["membership_type"], "sd": "allowed" },
+      { "path": ["benefits"] }
     ],
     "issuer": "{{ here }}"
   }
