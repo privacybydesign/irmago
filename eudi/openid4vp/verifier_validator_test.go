@@ -224,6 +224,8 @@ func testParseAndVerifyAuthorizationRequestFailureExpiredIntermediate(t *testing
 }
 
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
+	tempDir := t.TempDir()
+
 	// Setup PKI
 	hostname := "example.com"
 	crlDistPoint := "https://yivi.app/crl.crl"
@@ -260,7 +262,7 @@ func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata
 	}
 
 	// Create the TrustModel with the PKI
-	trustModel := eudi.NewTestTrustModel(rootPool, intermediatePool, revocationLists)
+	trustModel := eudi.NewTestTrustModel(tempDir, rootPool, intermediatePool, revocationLists)
 
 	verifierValidator = NewRequestorCertificateStoreVerifierValidator(trustModel, &MockQueryValidatorFactory{})
 

@@ -21,7 +21,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
 )
 
@@ -35,7 +35,6 @@ type session struct {
 	handler                  Handler
 	storage                  storage.Storage
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
-	//keyBinder                sdjwtvc.KeyBinder
 
 	issuerSettings openid4vciSessionIssuerSettings
 }
@@ -273,7 +272,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	}
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
-	keyBindingService := services.NewHolderBindingKeyService(s.storage)
+	keyBindingService := services.NewHolderBindingKeyService(s.storage.Db())
 
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
 	if requireCryptographicKeyBinding {
@@ -463,10 +462,10 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		}
 		verifiedSdJwtVcs[i] = verifiedSdJwt
 
-		if i == 0 {
-			// Log the first credential for debugging purposes
-			eudi.Logger.Infof("Received credential (first from batch only): %s", string(cred.Credential))
-		}
+		// if i == 0 {
+		// 	// Log the first credential for debugging purposes
+		// 	eudi.Logger.Infof("Received credential (first from batch only): %s", string(cred.Credential))
+		// }
 	}
 
 	// Verify uniquness of key binding confirmations if required by the issuer settings

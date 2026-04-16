@@ -3,14 +3,12 @@ package eudi
 import (
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"sync"
 
+	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
-
-const dbFilename = "yivi.db"
 
 type SdJwtVerificationMode int
 
@@ -27,51 +25,38 @@ func init() {
 }
 
 // Configuration keeps track of issuer and requestor trusted chains and certificate revocation lists,
-// retrieving them from the eudi_configuration folder, and downloads and saves new ones on demand.
+// retrieving them from the eudi folder, and downloads and saves new ones on demand.
 // The trust chains are stored in the issuers and verifiers subfolders (.pem files), and the crls in the crls subfolder (.crl files).
 // The trust chains are expected to be in PEM format, where the first certificate is the root, followed by intermediate certificates.
 type Configuration struct {
-	path                   string
 	useStagingTrustAnchors bool
 
+	Storage   storage.Storage
 	Issuers   TrustModel
 	Verifiers TrustModel
 }
 
 // NewConfiguration returns a new configuration. After this ParseFolder() should be called to parse the specified path.
-func NewConfiguration(path string) (conf *Configuration, err error) {
+func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 	httpClient := &http.Client{}
 
 	conf = &Configuration{
-		path: path,
+		Storage: s,
 		Issuers: TrustModel{
-			basePath:                          filepath.Join(path, "issuers"),
+			storageContainer:                  s.FileSystem().Issuers(),
 			logger:                            Logger,
 			httpClient:                        httpClient,
 			revocationListsDistributionPoints: []string{},
 		},
 		Verifiers: TrustModel{
-			basePath:                          filepath.Join(path, "verifiers"),
+			storageContainer:                  s.FileSystem().Verifiers(),
 			logger:                            Logger,
 			httpClient:                        httpClient,
 			revocationListsDistributionPoints: []string{},
 		},
 	}
 
-	err = conf.Issuers.ensureDirectoryExists()
-	if err != nil {
-		return nil, fmt.Errorf("failed to ensure issuer directories exist: %w", err)
-	}
-
-	err = conf.Verifiers.ensureDirectoryExists()
-	if err != nil {
-		return nil, fmt.Errorf("failed to ensure verifier directories exist: %w", err)
-	}
 	return
-}
-
-func (c *Configuration) FullDatabasePath() string {
-	return filepath.Join(c.path, dbFilename)
 }
 
 func (c *Configuration) EnableStagingTrustAnchors() {
@@ -155,16 +140,8 @@ func (c *Configuration) addStagingTrustAnchors() error {
 	return nil
 }
 
-func (c *Configuration) ResolveVerifierLogoPath(filename string) (string, error) {
-	path := filepath.Join(c.Verifiers.GetLogosPath(), filename)
-	exists, err := common.PathExists(path)
-	if err != nil {
-		return "", err
-	}
-	if !exists {
-		return "", fmt.Errorf("verifier logo %v not found", filename)
-	}
-	return path, nil
+func (c *Configuration) ResolveVerifierLogo(filename string) (*string, error) {
+	return c.Verifiers.storageContainer.LogoManager().GetLogo(filename)
 }
 
 func (c *Configuration) UpdateCertificateRevocationLists() error {

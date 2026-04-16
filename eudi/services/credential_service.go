@@ -13,7 +13,9 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"gorm.io/datatypes"
 )
 
@@ -31,12 +33,14 @@ type CredentialService interface {
 }
 
 type credentialService struct {
-	credentialStore storage.CredentialStore
+	credentialStore db.CredentialStore
+	fileStorage     filesystem.FileSystemStorage
 }
 
 func NewCredentialService(s storage.Storage) CredentialService {
 	return &credentialService{
-		credentialStore: storage.NewCredentialStore(s),
+		credentialStore: db.NewCredentialStore(s.Db()),
+		fileStorage:     s.FileSystem(),
 	}
 }
 
@@ -51,7 +55,6 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	for i, batch := range m {
 		var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
 		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &processedSdJwtPayload); err != nil {
-			log.Printf("Error unmarshalling processed SD-JWT payload for batch %s: %v", batch.ID, err)
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
 		}
 
@@ -177,18 +180,64 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			exp = batch.ExpiresAt.V.Unix()
 		}
 
+		// Try get the credential image from filesystem storage, if it exists.
+		credentialLogoManager := c.fileStorage.Credentials().LogoManager()
+		issuerLogoManager := c.fileStorage.Issuers().LogoManager()
+
+		var issuerImage *clientmodels.Image = nil
+		var credentialImage *clientmodels.Image = nil
+
+		// TODO: since we don't know which display is actually used by the client, we are currently just trying to get the logos for the first display. We should implement a more robust solution for this in the future, potentially by storing a separate logo for each display/language in the filesystem and retrieving the correct one based on the client's language preferences.
+		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI != "" {
+			display := batch.IssuerDisplay[0]
+
+			log.Printf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI)
+			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
+
+			if exists, err := issuerLogoManager.LogoExists(filename); err == nil && exists {
+				logoData, err := issuerLogoManager.GetLogo(filename)
+				if err != nil {
+					log.Printf("Error retrieving logo for issuer %s from filesystem storage: %v", batch.ID, err)
+				} else {
+					issuerImage = &clientmodels.Image{
+						Base64: *logoData,
+					}
+				}
+			} else {
+				log.Printf("Couldn't find image")
+			}
+		}
+
+		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
+			log.Printf("Attempting to retrieve logo for credential %s from filesystem storage by uri %s", batch.ID, batch.CredentialMetadata.Display[0].LogoURI)
+			filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(batch.CredentialMetadata.Display[0].LogoURI)
+
+			if exists, err := credentialLogoManager.LogoExists(filename); err == nil && exists {
+				logoData, err := credentialLogoManager.GetLogo(filename)
+				if err != nil {
+					log.Printf("Error retrieving logo for credential %s from filesystem storage: %v", batch.ID, err)
+				} else {
+					credentialImage = &clientmodels.Image{
+						Base64: *logoData,
+					}
+				}
+			} else {
+				log.Printf("Couldn't find image")
+			}
+		}
+
 		clientModels[i] = &clientmodels.Credential{
 			CredentialId: batch.VerifiableCredentialType,
 			Hash:         batch.Hash,
-			ImagePath:    nil, // TODO: storage credential image somewhere
+			Image:        credentialImage,
 			Name:         credentialDisplays,
 			Issuer: clientmodels.TrustedParty{
-				Id:        batch.CredentialIssuer,
-				Name:      issuerDisplays,
-				Url:       nil,
-				ImagePath: nil,
-				Parent:    nil,
-				Verified:  false,
+				Id:       batch.CredentialIssuer,
+				Name:     issuerDisplays,
+				Image:    issuerImage,
+				Url:      nil,
+				Parent:   nil,
+				Verified: false,
 			},
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,

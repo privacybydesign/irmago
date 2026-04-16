@@ -24,6 +24,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -47,6 +48,7 @@ type Client struct {
 func New(
 	storagePath string,
 	irmaConfigurationPath string,
+	eudiAppDataPath string,
 	handler irmaclient.ClientHandler,
 	sessionHandler clientmodels.SessionHandler,
 	signer irmaclient.Signer,
@@ -58,10 +60,7 @@ func New(
 	if err := common.AssertPathExists(irmaConfigurationPath); err != nil {
 		return nil, err
 	}
-
-	eudiConfigurationPath := filepath.Join(storagePath, "eudi_configuration")
-
-	if err := common.EnsureDirectoryExists(eudiConfigurationPath); err != nil {
+	if err := common.EnsureDirectoryExists(eudiAppDataPath); err != nil {
 		return nil, err
 	}
 
@@ -75,13 +74,24 @@ func New(
 	}
 
 	eudi.Logger = irma.Logger
-	eudiConf, err := eudi.NewConfiguration(eudiConfigurationPath)
+
+	// Create the encryption middleware, used for all storage components, so that all data is encrypted at rest
+	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+
+	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
+	dbPath := filepath.Join(eudiAppDataPath, storage.DbFilename)
+	eudiStorage, err := storage.NewStorage(aesKey, encryptionMiddleware, dbPath, eudiAppDataPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
+	}
+
+	eudiConf, err := eudi.NewConfiguration(eudiStorage)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating eudi configuration failed: %v", err)
 	}
 
 	// Initialize DB storage
-	s := clientstorage.NewStorage(storagePath, aesKey)
+	s := clientstorage.NewStorage(storagePath, encryptionMiddleware)
 	irmaStorage := irmaclient.NewIrmaStorage(s, irmaConf)
 
 	// Ensure storage path exists, and populate it with necessary files
@@ -139,16 +149,9 @@ func New(
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
 	}
 
-	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
-	eudiStorage, err := storage.NewStorage(aesKey, eudiConf.FullDatabasePath())
-	if err != nil {
-		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
-	}
-
 	// Initiate the OpenID4VCI client
 	openid4vciClient, err := openid4vci.NewClient(
 		&http.Client{},
-		eudiStorage,
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci),
 	)
@@ -436,14 +439,20 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 	// This hacky solution works around the issue by assuming the image path to be invalid and resolving it based on other information:
 	//  - For OpenID4VP sessions the logo path is resolved based on the image name
 	//  - For IRMA sessions the logo path is resolved based on the requestor ID and using the requestor schemes
+	requestor := entry.ServerName
+
 	if entry.OpenID4VP != nil {
-		requestor := entry.ServerName
+		verifier := requestorInfoToTrustedPartyPtr(requestor)
+
 		if requestor != nil && requestor.Logo != nil {
-			path, err := client.openid4vpClient.Configuration.ResolveVerifierLogoPath(*entry.ServerName.Logo)
+			data, err := client.openid4vpClient.Configuration.ResolveVerifierLogo(*requestor.Logo)
 			if err == nil {
-				requestor.LogoPath = &path
+				verifier.Image = &clientmodels.Image{
+					Base64: *data,
+				}
 			}
 		}
+
 		return clientmodels.LogInfo{
 			ID:   entry.ID,
 			Type: clientmodels.LogType_Disclosure,
@@ -451,13 +460,12 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 			DisclosureLog: &clientmodels.DisclosureLog{
 				Protocol:    clientmodels.Protocol_OpenID4VP,
 				Credentials: openid4vpCredentialLogsToLogCredentials(client.GetIrmaConfiguration(), entry.OpenID4VP.DisclosedCredentials),
-				Verifier:    requestorInfoToTrustedPartyPtr(requestor),
+				Verifier:    verifier,
 			},
 		}, nil
 	}
 
 	// resolve the image for an irma session
-	requestor := entry.ServerName
 	if requestor != nil && requestor.Logo != nil {
 		requestorScheme, ok := client.GetIrmaConfiguration().RequestorSchemes[requestor.ID.RequestorSchemeIdentifier()]
 		if ok && requestorScheme != nil {

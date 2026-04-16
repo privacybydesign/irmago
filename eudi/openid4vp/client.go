@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -121,9 +122,9 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		// Store the verifier logo in the cache
-		_, logoPath, err := client.Configuration.Verifiers.CacheLogo(
+		_, err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().SaveLogo(
 			endEntityCert.SerialNumber.String(),
-			&requestorSchemeData.Organization.Logo,
+			requestorSchemeData.Organization.Logo.Data,
 		)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
@@ -131,9 +132,12 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		requestor := &clientmodels.TrustedParty{
-			Name:      clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
-			ImagePath: &logoPath,
-			Verified:  true,
+			Name: clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
+			Image: &clientmodels.Image{
+				Base64:   base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
+				MimeType: &requestorSchemeData.Organization.Logo.MimeType,
+			},
+			Verified: true,
 		}
 
 		eudi.Logger.Infof("auth request: %#v", request)

@@ -33,7 +33,8 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	defer keyshareServer.Stop()
 	signer := test.NewSigner(t)
 	storagePath, irmaConfigurationPath := createClientStorage(t)
-	c, handler, sessionHandler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, signer)
+	eudiAppDataPath := filepath.Join(storagePath, "eudi")
+	c, handler, sessionHandler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, eudiAppDataPath, signer)
 	keyshareEnrollClient(t, c, handler)
 
 	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
@@ -62,7 +63,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	require.NoError(t, os.RemoveAll(storagePath))
 	require.NoDirExists(t, storagePath)
 
-	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, signer)
+	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, eudiAppDataPath, signer)
 
 	// make sure it can still do sessions
 	issueSdJwtAndIdemixToClientExpectPin(t, newClient, newClientSessionHandler, irmaServer)
@@ -91,7 +92,8 @@ func test_iOSLogoPathBug(t *testing.T) {
 	defer keyshareServer.Stop()
 	signer := test.NewSigner(t)
 	storagePath, irmaConfigurationPath := createClientStorage(t)
-	c, handler, sessionHandler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, signer)
+	eudiAppDataPath := filepath.Join(storagePath, "eudi")
+	c, handler, sessionHandler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, eudiAppDataPath, signer)
 	keyshareEnrollClient(t, c, handler)
 
 	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
@@ -120,7 +122,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	require.NoError(t, os.RemoveAll(storagePath))
 	require.NoDirExists(t, storagePath)
 
-	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, signer)
+	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, eudiAppDataPath, signer)
 
 	// make sure it can still do sessions
 	issueSdJwtAndIdemixToClientExpectPin(t, newClient, newClientSessionHandler, irmaServer)
@@ -168,10 +170,10 @@ func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPat
 
 	// Copy files to storage folder
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration")))
+	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
 
 	// Add test issuer certificates as trusted chain
-	certsPath := filepath.Join(storagePath, "eudi_configuration", "issuers", "certs")
+	certsPath := filepath.Join(storagePath, "eudi", "issuers", "certs")
 	require.NoError(t, common.EnsureDirectoryExists(certsPath))
 	require.NoError(t,
 		common.SaveFile(
@@ -193,6 +195,7 @@ func createClientWithStorageAndSigner(
 	t *testing.T,
 	storagePath,
 	irmaConfigurationPath string,
+	eudiAppDataPath string,
 	signer irmaclient.Signer,
 ) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
@@ -202,7 +205,7 @@ func createClientWithStorageAndSigner(
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	c, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, signer, aesKey)
+	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey)
 	require.NoError(t, err)
 
 	return c, clientHandler, sessionHandler

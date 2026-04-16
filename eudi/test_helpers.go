@@ -2,12 +2,17 @@ package eudi
 
 import (
 	"crypto/x509"
+	"path/filepath"
+
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/internal/mocks"
 )
 
 // NewTestTrustModel creates a TrustModel for testing with the given PKI components.
-func NewTestTrustModel(rootPool, intermediatePool *x509.CertPool, revocationLists []*x509.RevocationList) *TrustModel {
+func NewTestTrustModel(basePath string, rootPool, intermediatePool *x509.CertPool, revocationLists []*x509.RevocationList) *TrustModel {
+	fstorage := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, filepath.Join(basePath, "testdata"))
 	return &TrustModel{
-		basePath:                        "testdata",
+		storageContainer:                fstorage.Issuers(),
 		trustedRootCertificates:         rootPool,
 		trustedIntermediateCertificates: intermediatePool,
 		revocationLists:                 revocationLists,

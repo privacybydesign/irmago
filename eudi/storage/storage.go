@@ -1,23 +1,23 @@
 package storage
 
 import (
-	"errors"
 	"fmt"
 
-	"github.com/privacybydesign/irmago/eudi/storage/models"
-	"github.com/privacybydesign/irmago/eudi/storage/sqlcipher"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"gorm.io/gorm"
 )
 
-// Common errors for storage operations.
-var (
-	ErrNotFound = errors.New("not found")
-)
+const DbFilename = "yivi.db"
 
 type Storage interface {
 	Close() error
+
 	Db() *gorm.DB
+	FileSystem() filesystem.FileSystemStorage
 
 	RemoveAll() error
 }
@@ -25,19 +25,23 @@ type Storage interface {
 // Storage manages the gorm database connection and owns the migration lifecycle.
 type storage struct {
 	db *gorm.DB
+	fs filesystem.FileSystemStorage
 }
 
 // NewStorage opens (or creates) a SQLite database at path, then auto-migrates all registered models.
+// The dbPath can be ":memory:" to use an in-memory database (useful for testing) or a path to a file.
 // Note: the default transaction has been DISABLED, which means, any Create or Update operation should be wrapped in a transaction (either directly or using the UnitOfWork) to ensure data integrity.
-func NewStorage(aesKey [32]byte, storagePath string) (Storage, error) {
+func NewStorage(aesKey [32]byte, filesystemEncryptionMiddleware encryption.EncryptionMiddleware, dbPath string, storagePath string) (Storage, error) {
 	// Ensure the database file exists before opening the connection (file does not always create automatically,
 	// depending on the SQLite version and OS)
-	if err := common.EnsureFileExists(storagePath); err != nil {
-		return nil, fmt.Errorf("failed to ensure database file exists: %w", err)
+	if dbPath != ":memory:" {
+		if err := common.EnsureFileExists(dbPath); err != nil {
+			return nil, fmt.Errorf("failed to ensure database file exists: %w", err)
+		}
 	}
 
 	passphrase := string(aesKey[:])
-	dsn := sqlcipher.DSN(storagePath, passphrase)
+	dsn := sqlcipher.DSN(dbPath, passphrase)
 	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -66,12 +70,17 @@ func NewStorage(aesKey [32]byte, storagePath string) (Storage, error) {
 	// Initialize the repositories, which will auto-migrate their models if needed
 	return &storage{
 		db: db,
+		fs: filesystem.NewFileSystemStorage(filesystemEncryptionMiddleware, storagePath),
 	}, nil
 }
 
 // Db returns the underlying gorm.DB, for use by repositories in this package.
 func (s *storage) Db() *gorm.DB {
 	return s.db
+}
+
+func (s *storage) FileSystem() filesystem.FileSystemStorage {
+	return s.fs
 }
 
 // Close closes the underlying database connection.

@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/scheme"
+	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/mocks"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/sirupsen/logrus"
@@ -51,25 +54,21 @@ func TestTrustModel(t *testing.T) {
 	t.Run("downloadVerifyAndCacheCrl throws error on invalid CRL download content", testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLDownloadContent)
 	t.Run("downloadVerifyAndCacheCrl throws error on invalid CRL signature", testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLSignature)
 
-	t.Run("cacheCrl caches CRL successfully", testCacheCrlCachesCRLSuccessfully)
-	t.Run("cacheCrl fails, given nil CRL", testCacheCrlFailsGivenNilCRL)
-	t.Run("cacheCrl fails, given invalid CRL file name", testCacheCrlFailsGivenInvalidCrlFileName)
-
 	// Logo cache tests
 	t.Run("CacheVerifierLogo caches logo successfully", testCacheLogoCachesLogoSuccessfully)
 	t.Run("CacheVerifierLogo caches logo multiple times successfully", testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully)
 	t.Run("CacheVerifierLogo returns error on nil logo", testCacheVerifierLogoReturnsErrorOnNilLogo)
 	t.Run("CacheVerifierLogo returns error on empty logo data", testCacheVerifierLogoReturnsErrorOnEmptyLogoData)
-	t.Run("CacheVerifierLogo returns error on unknown mime type", testCacheVerifierLogoReturnsErrorOnUnknownMimeType)
 }
 
 func testReloadReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert := testdata.CreateRootCertificate(t, rootDN, testdata.PkiOption_None)
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "root_cert.pem"), rootCert)
+
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "root_cert.pem"), rootCert)
 
 	// Read the trust model
 	err := tm.Reload()
@@ -81,15 +80,15 @@ func testReloadReadsSingleChainRootOnlyNoCrlSuccessfully(t *testing.T) {
 }
 
 func testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing.T) {
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	// Create a root certificate and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 
 	// Write to disk
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
-	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "chain.pem"), rootCert, caCerts[0])
+	err := os.WriteFile(filepath.Join(basePath, "issuers", "crls", filesystem.GetCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
 
 	// Read the trust model
@@ -102,16 +101,16 @@ func testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing
 }
 
 func testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *testing.T) {
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	// Create a (root > CA1) and (root > CA2) chains and write to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 2, testdata.PkiOption_None, &yiviCrlDistPoint)
 
 	// Write to disk
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain1.pem"), rootCert, caCerts[0])
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain2.pem"), rootCert, caCerts[1])
-	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "chain1.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "chain2.pem"), rootCert, caCerts[1])
+	err := os.WriteFile(filepath.Join(basePath, "issuers", "crls", filesystem.GetCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
 
 	// Read the trust model
@@ -124,7 +123,7 @@ func testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *t
 }
 
 func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *testing.T) {
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	yiviSubCrlDistPoint := "https://sub.yivi.app/crl.crl"
 
@@ -134,10 +133,10 @@ func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *
 	_, subCaCert, subCaCrl := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("SUB-CA CERT"), caCerts[0], caKeys[0], testdata.PkiOption_None, &yiviSubCrlDistPoint)
 
 	// Write to disk
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0], subCaCert)
-	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "chain.pem"), rootCert, caCerts[0], subCaCert)
+	err := os.WriteFile(filepath.Join(basePath, "issuers", "crls", filesystem.GetCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviSubCrlDistPoint)), subCaCrl.Raw, 0644)
+	err = os.WriteFile(filepath.Join(basePath, "issuers", "crls", filesystem.GetCrlFileNameForCertDistributionPoint(yiviSubCrlDistPoint)), subCaCrl.Raw, 0644)
 	require.NoError(t, err)
 
 	// Read the trust model
@@ -150,7 +149,7 @@ func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *
 }
 
 func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAddValidChain(t *testing.T) {
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 	yivi2CrlDistPoint := "https://yivi.app/crl2.crl"
 
 	// Create a 2 roots certs (1 revoked, 1 valid) and write it to storage
@@ -159,11 +158,11 @@ func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAdd
 	_, caCert2, caCrl2 := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA CERT 2"), rootCert, rootKey, testdata.PkiOption_None, &yivi2CrlDistPoint)
 
 	// Write to disk
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "revoked.pem"), rootCert, caCerts[0])
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "valid.pem"), rootCert, caCert2)
-	err := os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "revoked.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "valid.pem"), rootCert, caCert2)
+	err := os.WriteFile(filepath.Join(basePath, "issuers", "crls", filesystem.GetCrlFileNameForCertDistributionPoint(yiviCrlDistPoint)), caCrls[0].Raw, 0644)
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yivi2CrlDistPoint)), caCrl2.Raw, 0644)
+	err = os.WriteFile(filepath.Join(basePath, "issuers", "crls", filesystem.GetCrlFileNameForCertDistributionPoint(yivi2CrlDistPoint)), caCrl2.Raw, 0644)
 	require.NoError(t, err)
 
 	// Read the trust model
@@ -176,7 +175,7 @@ func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAdd
 }
 
 func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBothRootCertsButOnlyValidSubCa(t *testing.T) {
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	// Create a 2 roots certs (1 expired, 1 valid) and write it to storage
 	rootDN1 := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -185,8 +184,8 @@ func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBoth
 	_, rootCert2, _, caCerts2, _ := testdata.CreateTestPkiHierarchy(t, rootDN2, 1, testdata.PkiOption_ExpiredRoot, &yiviCrlDistPoint)
 
 	// Write to disk
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain2.pem"), rootCert2, caCerts2[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "chain.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "chain2.pem"), rootCert2, caCerts2[0])
 
 	// Read the trust model
 	err := tm.Reload()
@@ -198,14 +197,14 @@ func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBoth
 }
 
 func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testing.T) {
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	// Create a root cert and an expired sub-CA cert
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_ExpiredIntermediate, &yiviCrlDistPoint)
 
 	// Write to disk
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), rootCert, caCerts[0])
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "chain.pem"), rootCert, caCerts[0])
 
 	// Read the trust model
 	err := tm.Reload()
@@ -220,14 +219,14 @@ func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testin
 }
 
 func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	// Create a root cert and a CA cert, but write them in reversed order
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 
 	// Write to disk in reversed order
-	testdata.WriteCertAsPemFile(t, filepath.Join(tm.GetCertificatePath(), "chain.pem"), caCerts[0], rootCert)
+	testdata.WriteCertAsPemFile(t, filepath.Join(basePath, "issuers", "certificates", "chain.pem"), caCerts[0], rootCert)
 
 	// Read the trust model
 	err := tm.Reload()
@@ -240,7 +239,7 @@ func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t 
 
 func testGetCrlFileNameForCertDistributionPointGeneratesCorrectFilename(t *testing.T) {
 	// Act
-	filename := getCrlFileNameForCertDistributionPoint("https://yivi.app/crl.crl")
+	filename := filesystem.GetCrlFileNameForCertDistributionPoint("https://yivi.app/crl.crl")
 
 	// Assert
 	require.Equal(t, "6114ae2e097c5d91cfc94cc8aa7f026dd7348d68265e4dbb9fab59026d24e03d.crl", filename)
@@ -248,20 +247,20 @@ func testGetCrlFileNameForCertDistributionPointGeneratesCorrectFilename(t *testi
 
 func testSyncCertificateRevocationListsDoesNothingGivenNoCertificateChains(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	// Act
 	tm.syncCertificateRevocationLists()
 
 	// Assert
-	crlFiles, err := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.crl"))
+	crlFiles, err := filepath.Glob(filepath.Join(basePath, "issuers", "crls", "*.crl"))
 	require.NoError(t, err)
 	require.Len(t, crlFiles, 0)
 }
 
 func testSyncCertificateRevocationListsDownloadsFileForNonCachedCrlSuccessfully(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 	var crl *x509.RevocationList
 
 	requestCounter := 0
@@ -286,13 +285,13 @@ func testSyncCertificateRevocationListsDownloadsFileForNonCachedCrlSuccessfully(
 
 	// Assert
 	require.Equal(t, 1, requestCounter)
-	files, _ := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.crl"))
+	files, _ := filepath.Glob(filepath.Join(basePath, "issuers", "crls", "*.crl"))
 	require.Len(t, files, 1)
 }
 
 func testSyncCertificateRevocationListsDownloadsFileForCachedCrlWithInvalidContentSuccessfully(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 	var crl *x509.RevocationList
 
 	requestCounter := 0
@@ -313,7 +312,7 @@ func testSyncCertificateRevocationListsDownloadsFileForCachedCrlWithInvalidConte
 	tm.allCerts = append(tm.allCerts, rootCert)
 
 	// Store an in valid CRL file
-	crlFilepath := path.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(crlDistpoint))
+	crlFilepath := path.Join(basePath, "crls", filesystem.GetCrlFileNameForCertDistributionPoint(crlDistpoint))
 	os.WriteFile(crlFilepath, []byte("invalid"), 0644)
 
 	// Act
@@ -321,13 +320,13 @@ func testSyncCertificateRevocationListsDownloadsFileForCachedCrlWithInvalidConte
 
 	// Assert
 	require.Equal(t, 1, requestCounter)
-	files, _ := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.crl"))
+	files, _ := filepath.Glob(filepath.Join(basePath, "issuers", "crls", "*.crl"))
 	require.Len(t, files, 1)
 }
 
 func testSyncCertificateRevocationListsRemovesCrlGivenNoAuthorityCertificatePresent(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 	var crl *x509.RevocationList
 
 	requestCounter := 0
@@ -347,7 +346,7 @@ func testSyncCertificateRevocationListsRemovesCrlGivenNoAuthorityCertificatePres
 
 	// Store a valid CRL file
 	tm.allCerts = []*x509.Certificate{caCerts[0]}
-	crlFilepath := path.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(crlDistpoint))
+	crlFilepath := path.Join(basePath, "crls", filesystem.GetCrlFileNameForCertDistributionPoint(crlDistpoint))
 	os.WriteFile(crlFilepath, caCrls[0].Raw, 0644)
 
 	// Make sure a 'wrong' CRL is returned, so it will not find the authoritive certificate
@@ -358,14 +357,14 @@ func testSyncCertificateRevocationListsRemovesCrlGivenNoAuthorityCertificatePres
 
 	// Assert
 	require.Equal(t, 1, requestCounter)
-	files, _ := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.crl"))
+	files, _ := filepath.Glob(filepath.Join(basePath, "issuers", "crls", "*.crl"))
 	require.Len(t, files, 0)
 }
 
 func testSyncCertificateRevocationListsReadsCachedCrlAndDoesNotNeedToUpdate(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
-	crlFilePath := filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(yiviCrlDistPoint))
+	tm, basePath := setupTrustModelWithStoragePath(t)
+	crlFilePath := filepath.Join(basePath, "issuers", "crls", filesystem.GetCrlFileNameForCertDistributionPoint(yiviCrlDistPoint))
 
 	// Create a root certificate with distribution point + CRL and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -399,7 +398,7 @@ func testSyncCertificateRevocationListsReadsCachedCrlAndDoesNotNeedToUpdate(t *t
 
 func testSyncCertificateRevocationListsReadsCrlFileAndUpdatesGivenCrlNextUpdateIsInThePast(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 	var updatedCrl *x509.RevocationList
 
 	// Startup a test server, which will count any requests made to it
@@ -412,7 +411,7 @@ func testSyncCertificateRevocationListsReadsCrlFileAndUpdatesGivenCrlNextUpdateI
 	defer ts.Close()
 
 	crlDistPoint := ts.URL + "/crl.crl"
-	crlFilePath := filepath.Join(tm.GetCrlPath(), getCrlFileNameForCertDistributionPoint(crlDistPoint))
+	crlFilePath := filepath.Join(basePath, "issuers", "crls", filesystem.GetCrlFileNameForCertDistributionPoint(crlDistPoint))
 
 	// Create a root certificate with distribution point + CRL and write it to storage
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
@@ -445,7 +444,7 @@ func testSyncCertificateRevocationListsReadsCrlFileAndUpdatesGivenCrlNextUpdateI
 
 func testDownloadVerifyAndCacheCrlDownloadsSavesAndVerifiesSuccessfully(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, basePath := setupTrustModelWithStoragePath(t)
 
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, _, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
@@ -467,12 +466,12 @@ func testDownloadVerifyAndCacheCrlDownloadsSavesAndVerifiesSuccessfully(t *testi
 
 	// Assert
 	require.NoError(t, err)
-	require.FileExists(t, path.Join(tm.GetCrlPath(), expectedFilename))
+	require.FileExists(t, path.Join(basePath, "issuers", "crls", expectedFilename))
 }
 
 func testDownloadVerifyAndCacheCrlThrowsErrorOnUnknownURL(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, _ := setupTrustModelWithStoragePath(t)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -494,7 +493,7 @@ func testDownloadVerifyAndCacheCrlThrowsErrorOnUnknownURL(t *testing.T) {
 
 func testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLDownloadContent(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, _ := setupTrustModelWithStoragePath(t)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("invalid crl content"))
@@ -513,7 +512,7 @@ func testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLDownloadContent(t *test
 
 func testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLSignature(t *testing.T) {
 	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
+	tm, _ := setupTrustModelWithStoragePath(t)
 
 	yivi2CrlDistPoint := "https://yivi.app/crl2.crl"
 
@@ -537,72 +536,38 @@ func testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLSignature(t *testing.T)
 	require.ErrorContains(t, err, "CRL signature is invalid")
 }
 
-func testCacheCrlCachesCRLSuccessfully(t *testing.T) {
-	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
-
-	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
-	_, _, _, _, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
-
-	expectedFilename := fmt.Sprintf("%x.crl", sha256.Sum256([]byte(yiviCrlDistPoint)))
-
-	// Act
-	err := tm.cacheCrl(caCrls[0], expectedFilename)
-
-	// Assert
-	require.NoError(t, err)
-	require.FileExists(t, path.Join(tm.GetCrlPath(), expectedFilename))
-}
-
-func testCacheCrlFailsGivenNilCRL(t *testing.T) {
-	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
-
-	// Act
-	err := tm.cacheCrl(nil, "invalid.crl")
-
-	// Assert
-	require.Error(t, err)
-	require.ErrorContains(t, err, "invalid CRL: crl cannot be nil")
-}
-
-func testCacheCrlFailsGivenInvalidCrlFileName(t *testing.T) {
-	// Arrange
-	tm := setupTrustModelWithStoragePath(t)
-
-	// Act
-	err := tm.cacheCrl(&x509.RevocationList{}, "invalid.txt")
-
-	// Assert
-	require.Error(t, err)
-	require.ErrorContains(t, err, "invalid CRL: crlFileName must have .crl extension")
-}
-
 // HELPER FUNCTIONS
-func setupTrustModelWithStoragePath(t *testing.T) *TrustModel {
+func setupTrustModelWithStoragePath(t *testing.T) (*TrustModel, string) {
 	storageFolder := test.CreateTestStorage(t)
 
+	basePath := filepath.Join(storageFolder, "eudi")
+	encryptionMiddleware := &mocks.MockEncryptionMiddleware{}
+
+	s := filesystem.NewFileSystemStorage(encryptionMiddleware, basePath)
+
 	tm := &TrustModel{
-		basePath: filepath.Join(storageFolder, "eudi_configuration", "issuers"),
-		logger:   logrus.New(),
+		storageContainer: s.Issuers(),
+		logger:           logrus.New(),
 	}
 	tm.clear()
 
-	_ = common.EnsureDirectoryExists(tm.GetCertificatePath())
-	_ = common.EnsureDirectoryExists(tm.GetCrlPath())
-
-	return tm
+	return tm, basePath
 }
 
 func testCacheLogoCachesLogoSuccessfully(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
 
-	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+	eudiConfigPath := filepath.Join(storageFolder, "eudi")
 
 	err := common.EnsureDirectoryExists(eudiConfigPath)
 	require.NoError(t, err)
 
-	conf, err := NewConfiguration(eudiConfigPath)
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
@@ -611,25 +576,29 @@ func testCacheLogoCachesLogoSuccessfully(t *testing.T) {
 		MimeType: "image/png",
 	}
 
-	fullFilename, path, err := conf.Verifiers.CacheLogo("test_logo", logo)
+	filePath, err := conf.Storage.FileSystem().Verifiers().LogoManager().SaveLogo("test_logo", logo.Data)
 	require.NoError(t, err)
-	require.NotEmpty(t, fullFilename)
-	require.NotEmpty(t, path)
+	require.NotEmpty(t, filePath)
 
-	fileInfo, err := os.Stat(path)
+	fileInfo, err := os.Stat(filePath)
 	require.NoError(t, err)
-	require.Equal(t, "test_logo.png", fileInfo.Name())
+	require.Equal(t, "test_logo", fileInfo.Name())
 }
 
 func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
 
-	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+	eudiConfigPath := filepath.Join(storageFolder, "eudi")
 
 	err := common.EnsureDirectoryExists(eudiConfigPath)
 	require.NoError(t, err)
 
-	conf, err := NewConfiguration(eudiConfigPath)
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
@@ -638,23 +607,21 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 		MimeType: "image/png",
 	}
 
-	fullFilename, path, err := conf.Verifiers.CacheLogo("test_logo", logo)
+	filePath, err := conf.Storage.FileSystem().Verifiers().LogoManager().SaveLogo("test_logo", logo.Data)
 	require.NoError(t, err)
-	require.NotEmpty(t, fullFilename)
-	require.NotEmpty(t, path)
+	require.NotEmpty(t, filePath)
 
 	// Change logo data to simulate an update
 	logo.Data = []byte("updated logo data")
-	fullFilename, path, err = conf.Verifiers.CacheLogo("test_logo", logo)
+	filePath, err = conf.Storage.FileSystem().Verifiers().LogoManager().SaveLogo("test_logo", logo.Data)
 	require.NoError(t, err)
-	require.NotEmpty(t, fullFilename)
-	require.NotEmpty(t, path)
+	require.NotEmpty(t, filePath)
 
-	fileInfo, err := os.Stat(path)
+	fileInfo, err := os.Stat(filePath)
 	require.NoError(t, err)
-	require.Equal(t, "test_logo.png", fileInfo.Name())
+	require.Equal(t, "test_logo", fileInfo.Name())
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filePath)
 	require.NoError(t, err)
 	require.Equal(t, "updated logo data", string(data))
 }
@@ -662,29 +629,39 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
 
-	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+	eudiConfigPath := filepath.Join(storageFolder, "eudi")
 
 	err := common.EnsureDirectoryExists(eudiConfigPath)
 	require.NoError(t, err)
 
-	conf, err := NewConfiguration(eudiConfigPath)
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
-	_, _, err = conf.Verifiers.CacheLogo("test_logo", nil)
+	_, err = conf.Storage.FileSystem().Verifiers().LogoManager().SaveLogo("test_logo", nil)
 	require.Error(t, err)
-	require.EqualError(t, err, "invalid logo")
+	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 }
 
 func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
 
-	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
+	eudiConfigPath := filepath.Join(storageFolder, "eudi")
 
 	err := common.EnsureDirectoryExists(eudiConfigPath)
 	require.NoError(t, err)
 
-	conf, err := NewConfiguration(eudiConfigPath)
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiConfigPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
@@ -693,34 +670,12 @@ func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 		MimeType: "image/png",
 	}
 
-	_, _, err = conf.Verifiers.CacheLogo("test_logo", logo)
+	_, err = conf.Storage.FileSystem().Verifiers().LogoManager().SaveLogo("test_logo", logo.Data)
 	require.Error(t, err)
-	require.EqualError(t, err, "invalid logo")
+	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 
 	logo.Data = nil
-	_, _, err = conf.Verifiers.CacheLogo("test_logo", logo)
+	_, err = conf.Storage.FileSystem().Verifiers().LogoManager().SaveLogo("test_logo", logo.Data)
 	require.Error(t, err)
-	require.EqualError(t, err, "invalid logo")
-}
-
-func testCacheVerifierLogoReturnsErrorOnUnknownMimeType(t *testing.T) {
-	storageFolder := test.CreateTestStorage(t)
-
-	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
-
-	err := common.EnsureDirectoryExists(eudiConfigPath)
-	require.NoError(t, err)
-
-	conf, err := NewConfiguration(eudiConfigPath)
-	require.NoError(t, err)
-	require.NoError(t, conf.Reload())
-
-	logo := &scheme.Logo{
-		Data:     []byte("test data"),
-		MimeType: "image/unknown",
-	}
-
-	_, _, err = conf.Verifiers.CacheLogo("test_logo", logo)
-	require.Error(t, err)
-	require.EqualError(t, err, "unknown mime type \"image/unknown\"")
+	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 }

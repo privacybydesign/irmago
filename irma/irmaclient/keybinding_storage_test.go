@@ -9,6 +9,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	clientstorage "github.com/privacybydesign/irmago/internal/clientstorage"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
 )
@@ -134,7 +135,7 @@ func RunTestWithTempBboltKeyBindingStorage(t *testing.T, name string, test func(
 			var aesKey [32]byte
 			copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-			s := clientstorage.NewStorage("does-not-matter", aesKey)
+			s := clientstorage.NewStorage("does-not-matter", encryption.NewAESEncryptionMiddleware(aesKey))
 			s.Db = db
 
 			storage := NewBboltKeyBindingStorage(s)

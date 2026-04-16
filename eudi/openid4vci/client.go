@@ -1,7 +1,6 @@
 package openid4vci
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,8 +13,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/scheme"
-	"github.com/privacybydesign/irmago/eudi/storage"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -28,7 +25,6 @@ type Client struct {
 	Configuration  *eudi.Configuration
 	httpClient     *http.Client
 	currentSession *session
-	storage        storage.Storage
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
 	// Allow non-HTTPS for testing purposes
@@ -36,7 +32,6 @@ type Client struct {
 }
 
 func NewClient(httpClient *http.Client,
-	storage storage.Storage,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 ) (*Client, error) {
@@ -47,7 +42,6 @@ func NewClient(httpClient *http.Client,
 	return &Client{
 		httpClient:     httpClient,
 		Configuration:  config,
-		storage:        storage,
 		holderVerifier: holderVerifier,
 	}, nil
 }
@@ -102,7 +96,7 @@ func (client *Client) handleCredentialOffer(
 	handler Handler,
 ) error {
 	requestorInfo := convertToTrustedParty(credentialIssuerMetadata)
-	creds, err := convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo.Name)
+	creds, err := client.convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo.Name)
 	if err != nil {
 		return fmt.Errorf("failed to convert credential info list: %v", err)
 	}
@@ -115,9 +109,8 @@ func (client *Client) handleCredentialOffer(
 		handler:                  handler,
 		storageClient:            client,
 		httpClient:               client.httpClient,
-		storage:                  client.storage,
 		holderVerifier:           client.holderVerifier,
-		//keyBinder:                client.keyBinder,
+		storage:                  client.Configuration.Storage,
 		// logsStorage:              client.logsStorage,
 	}
 	defer func() {
@@ -274,29 +267,62 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 		return nil, fmt.Errorf("failed to validate credential issuer metadata against credential offer: %v", err)
 	}
 
-	// Valid metadata; download any logos, if present
+	// TODO: parallelize the download of logos for the Credential Issuer and the offered credentials
+
+	// Valid metadata; download any issuer logos, if present
 	// TODO: check which language we are using first, so we have to download only one logo (if it is not already cached), or..
 	// TODO: initiate parallel downloads of logos; but check for unique URLs first
+	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
 	for _, display := range credentialIssuerMetadata.Display {
 		if display.Logo != nil {
 			// TODO: check if logo is already in cache first
-			logoData, logoMimeType, err := client.downloadRemoteImage(*display.Logo)
+			logoData, _, err := client.downloadRemoteImage(*display.Logo)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download issuer logo from %q: %v", display.Logo.Uri, err)
+				continue
 			}
-			// Store the issuer logo in the cache
-			logo := scheme.Logo{
-				MimeType: logoMimeType,
-				Data:     logoData,
+			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
+			_, err = issuerLogoManager.SaveLogo(filename, logoData)
+
+			if err != nil {
+				eudi.Logger.Warnf("failed to cache issuer logo from %q: %v", display.Logo.Uri, err)
 			}
-			filename := getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuerMetadata.CredentialIssuer, display.Locale)
-			_, _, err = client.Configuration.Issuers.CacheLogo(filename, &logo)
-			_ = err
+
 			// TODO: how to handle this error ? Proceed without logo ?
 			// if err != nil {
 			// 	// handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
 			// 	// return
 			// }
+		}
+	}
+
+	// Also download the logos for the offered credentials, if present in the metadata
+	credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
+	for _, offeredConfiguration := range credentialOffer.CredentialConfigurationIds {
+		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[offeredConfiguration]; ok {
+			if config.CredentialMetadata != nil {
+				for _, display := range config.CredentialMetadata.Display {
+					if display.Logo != nil {
+						// TODO: check if logo is already in cache first
+						logoData, _, err := client.downloadRemoteImage(*display.Logo)
+						if err != nil {
+							eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
+							continue
+						}
+						filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
+						_, err = credentialLogoManager.SaveLogo(filename, logoData)
+						if err != nil {
+							eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
+						}
+
+						// TODO: how to handle this error ? Proceed without logo ?
+						// if err != nil {
+						// 	// handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
+						// 	// return
+						// }
+					}
+				}
+			}
 		}
 	}
 
@@ -347,14 +373,7 @@ func constructCredentialIssuerMetadataUrl(credentialIssuer url.URL) string {
 	return url.String()
 }
 
-func getCredentialIssuerLogoFilenameWithoutExtension(credentialIssuer string, locale *string) string {
-	if locale == nil {
-		return fmt.Sprintf("%x", sha256.Sum256([]byte(credentialIssuer)))
-	}
-	return fmt.Sprintf("%x_%s", sha256.Sum256([]byte(credentialIssuer)), *locale)
-}
-
-func convertToCredentialInfoList(
+func (c *Client) convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
 	issuerName clientmodels.TranslatedString,
@@ -375,6 +394,25 @@ func convertToCredentialInfoList(
 
 			displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
 			name := metadata.ConvertDisplayToTranslatedString(displays)
+			var image *clientmodels.Image
+
+			credentialLogoManager := c.Configuration.Storage.FileSystem().Credentials().LogoManager()
+			for _, display := range config.CredentialMetadata.Display {
+				if display.Logo != nil {
+					filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
+					imageData, err := credentialLogoManager.GetLogo(filename)
+					if err != nil {
+						eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
+					}
+
+					image = &clientmodels.Image{
+						Base64: *imageData,
+					}
+
+					// TODO: for now, we pick the first logo in a display we can find, but this needs to be based on the locale being used in the app
+					break
+				}
+			}
 
 			result = append(result, &clientmodels.CredentialDescriptor{
 				CredentialId: config.VerifiableCredentialType,
@@ -383,6 +421,7 @@ func convertToCredentialInfoList(
 					Name: issuerName,
 				},
 				Attributes: convertClaimsToAttributes(config.CredentialMetadata.Claims),
+				Image:      image,
 			})
 		}
 	}

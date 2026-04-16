@@ -12,12 +12,21 @@ type TrustedParty struct {
 	Name TranslatedString `json:"name"`
 	// Url for the party (which can be different per language)
 	Url *TranslatedString `json:"url"`
-	// Absolute path to the image for this party stored on disk
-	ImagePath *string `json:"image_path"`
+	// Absolute path to the image for this party stored on disk (in case of IRMA credentials)
+	ImagePath *string `json:"image_path,omitempty"`
+	// The image data for this party (if any, in case of EUDI credentials)
+	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
 	// Whether this party is verified by the scheme manager
 	Verified bool `json:"verified"`
+}
+
+type Image struct {
+	// Base64-encoded image data
+	Base64 string `json:"base64"`
+	// The MIME type of the image (e.g. "image/png")
+	MimeType *string `json:"mime_type,omitempty"`
 }
 
 // AttributeType indicates the type of an attribute value.
@@ -75,8 +84,10 @@ type Credential struct {
 	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
+	// Base64-encoded image for this credential
+	Image *Image `json:"image"`
 	// Absolute path to the image for this credential stored on disk
-	ImagePath *string `json:"image_path"`
+	ImagePath *string `json:"image_path,omitempty"`
 	// The display name for this credential
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer
@@ -106,6 +117,7 @@ type CredentialDescriptor struct {
 	Issuer       TrustedParty      `json:"issuer"`
 	Category     *TranslatedString `json:"category,omitempty"`
 	ImagePath    *string           `json:"image_path,omitempty"`
+	Image        *Image            `json:"image,omitempty"`
 	Attributes   []Attribute       `json:"attributes"`
 	IssueURL     *TranslatedString `json:"issue_url,omitempty"`
 }
@@ -133,7 +145,7 @@ type SelectableCredentialInstance struct {
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
 	// Absolute path to the image for this credential stored on disk
-	ImagePath *string `json:"image_path"`
+	ImagePath *string `json:"image_path,omitempty"`
 	// The display name for this credential
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer

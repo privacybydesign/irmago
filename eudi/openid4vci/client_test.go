@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
@@ -25,6 +26,9 @@ import (
 )
 
 func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+
 	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
 	sdJwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
@@ -33,12 +37,15 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	storageFolder := test.CreateTestStorage(t)
 	testStoragePath := test.FindTestdataFolder(t)
-	err = common.CopyDirectory(filepath.Join(testStoragePath, "eudi_configuration"), filepath.Join(storageFolder, "eudi_configuration"))
+	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
+	err = common.CopyDirectory(filepath.Join(testStoragePath, "eudi"), eudiAppDataPath)
 	require.NoError(t, err)
 
-	conf, err := eudi.NewConfiguration(
-		filepath.Join(storageFolder, "eudi_configuration"),
-	)
+	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+	s, err := storage.NewStorage(aesKey, encryptionMiddleware, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	conf, err := eudi.NewConfiguration(s)
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
@@ -50,17 +57,11 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
-	var aesKey [32]byte
-	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-
-	storage, err := storage.NewStorage(aesKey, filepath.Join(storageFolder, "eudi_storage.db"))
-	require.NoError(t, err)
-
-	client, err := NewClient(&http.Client{}, storage, conf, holderVerifier)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier)
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 
-	return storage, client
+	return s, client
 }
 
 func TestOpenID4VciClient(t *testing.T) {

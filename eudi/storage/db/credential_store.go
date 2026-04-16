@@ -1,10 +1,10 @@
-package storage
+package db
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -45,9 +45,9 @@ type credentialStore struct {
 }
 
 // NewCredentialStore returns a CredentialStore.
-func NewCredentialStore(storage Storage) CredentialStore {
+func NewCredentialStore(db *gorm.DB) CredentialStore {
 	return &credentialStore{
-		db: storage.Db(),
+		db: db,
 	}
 }
 

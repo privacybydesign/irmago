@@ -13,9 +13,10 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
-	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // HolderBindingKeyService implements the KeyBinder interface.
@@ -24,7 +25,7 @@ type HolderBindingKeyService interface {
 }
 
 type holderBindingKeyService struct {
-	store storage.HolderBindingKeyStore
+	store db.HolderBindingKeyStore
 }
 
 type keyTuple struct {
@@ -34,9 +35,9 @@ type keyTuple struct {
 	didUrl     *string
 }
 
-func NewHolderBindingKeyService(db storage.Storage) *holderBindingKeyService {
+func NewHolderBindingKeyService(d *gorm.DB) *holderBindingKeyService {
 	return &holderBindingKeyService{
-		store: storage.NewHolderBindingKeyStore(db.Db()),
+		store: db.NewHolderBindingKeyStore(d),
 	}
 }
 

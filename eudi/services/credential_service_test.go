@@ -8,8 +8,10 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/internal/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
@@ -37,7 +39,7 @@ func (m *mockCredentialStore) GetCredentialBatchList() ([]*models.CredentialBatc
 }
 
 func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, error) {
-	return nil, storage.ErrNotFound
+	return nil, db.ErrNotFound
 }
 
 func (m *mockCredentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
@@ -45,7 +47,7 @@ func (m *mockCredentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialB
 }
 
 func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {
-	return nil, storage.ErrNotFound
+	return nil, db.ErrNotFound
 }
 
 func (m *mockCredentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
@@ -58,8 +60,11 @@ func (m *mockCredentialStore) DeleteBatch(batchID datatypes.UUID) error {
 
 // --- helpers ---
 
-func newServiceWithMock(mock *mockCredentialStore) *credentialService {
-	return &credentialService{credentialStore: mock}
+func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesystem.FileSystemStorage) *credentialService {
+	return &credentialService{
+		credentialStore: storeMock,
+		fileStorage:     fileStorageMock,
+	}
 }
 
 func strPtr(s string) *string { return &s }
@@ -166,7 +171,8 @@ func newStorageBatch() *models.CredentialBatch {
 
 func TestGetCredentialMetadataList_EmptyStore(t *testing.T) {
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -176,7 +182,8 @@ func TestGetCredentialMetadataList_EmptyStore(t *testing.T) {
 
 func TestGetCredentialMetadataList_StoreError(t *testing.T) {
 	mock := &mockCredentialStore{batchListErr: errors.New("db failure")}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	_, err := svc.GetCredentialMetadataList()
 
@@ -186,7 +193,8 @@ func TestGetCredentialMetadataList_StoreError(t *testing.T) {
 func TestGetCredentialMetadataList_ReturnsSingleCredential(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -197,7 +205,8 @@ func TestGetCredentialMetadataList_ReturnsSingleCredential(t *testing.T) {
 func TestGetCredentialMetadataList_MapsCredentialId(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -208,7 +217,8 @@ func TestGetCredentialMetadataList_MapsCredentialId(t *testing.T) {
 func TestGetCredentialMetadataList_MapsHash(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -219,7 +229,8 @@ func TestGetCredentialMetadataList_MapsHash(t *testing.T) {
 func TestGetCredentialMetadataList_MapsIssuerDisplay(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -231,7 +242,8 @@ func TestGetCredentialMetadataList_MapsIssuerDisplay(t *testing.T) {
 func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -242,7 +254,8 @@ func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -254,7 +267,8 @@ func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -267,7 +281,8 @@ func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {
 func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -284,7 +299,8 @@ func TestGetCredentialMetadataList_NilCredentialMetadata(t *testing.T) {
 	batch := newStorageBatch()
 	batch.CredentialMetadata = nil
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -300,7 +316,8 @@ func TestGetCredentialMetadataList_IssuerDisplayWithoutLocale_ResultsInDefaultLo
 		{Name: "No Locale Issuer", Locale: datatypes.NullString{Valid: false}},
 	}
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -314,7 +331,8 @@ func TestGetCredentialMetadataList_MultipleCredentials(t *testing.T) {
 	batch2.Hash = "testhash2"
 	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch1, batch2}}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	result, err := svc.GetCredentialMetadataList()
 
@@ -326,7 +344,8 @@ func TestGetCredentialMetadataList_MultipleCredentials(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_EmptySlice(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
 		nil,
@@ -342,7 +361,8 @@ func TestVerifyAndStoreIssuedCredentials_EmptySlice(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -358,7 +378,8 @@ func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch_TooManyKeys(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -377,7 +398,8 @@ func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch_TooManyKeys(t *testi
 
 func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_CallsStoreBatch(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -415,7 +437,8 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_CallsStoreBatch(t *testing
 
 func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_NilHolderBindingKeyID(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -433,7 +456,8 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_NilHolderBindingKeyID(t *t
 
 func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc1 := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 	vc2 := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 	keyID1, keyID2 := datatypes.NewUUIDv4(), datatypes.NewUUIDv4()
@@ -456,7 +480,8 @@ func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	issuer := "https://issuer.example.com"
 	vc := newVerifiedVc("https://vct.example.com/Cred", issuer, time.Now().Unix(), 0, 0)
 
@@ -476,7 +501,8 @@ func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vct := "https://vct.example.com/Cred"
 	vc := newVerifiedVc(vct, "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
@@ -494,7 +520,8 @@ func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_SetsFormat(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -511,7 +538,8 @@ func TestVerifyAndStoreIssuedCredentials_SetsFormat(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_ExpirySet(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	expiry := time.Now().Add(24 * time.Hour).Unix()
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), expiry, 0)
 
@@ -530,7 +558,8 @@ func TestVerifyAndStoreIssuedCredentials_ExpirySet(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_ExpiryZero_NilExpiresAt(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -548,7 +577,8 @@ func TestVerifyAndStoreIssuedCredentials_ExpiryZero_NilExpiresAt(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_NotBeforeSet(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	nbf := time.Now().Add(-1 * time.Hour).Unix()
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, nbf)
 
@@ -567,7 +597,8 @@ func TestVerifyAndStoreIssuedCredentials_NotBeforeSet(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_NotBeforeZero_NilNotBefore(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -586,7 +617,8 @@ func TestVerifyAndStoreIssuedCredentials_NotBeforeZero_NilNotBefore(t *testing.T
 func TestVerifyAndStoreIssuedCredentials_StoreError_Propagated(t *testing.T) {
 	storeErr := errors.New("storage failure")
 	mock := &mockCredentialStore{storeBatchErr: storeErr}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -602,7 +634,8 @@ func TestVerifyAndStoreIssuedCredentials_StoreError_Propagated(t *testing.T) {
 
 func TestVerifyAndStoreIssuedCredentials_FullMetadata_ClaimsConverted(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
@@ -624,7 +657,8 @@ func TestVerifyAndStoreIssuedCredentials_FullMetadata_ClaimsConverted(t *testing
 
 func TestVerifyAndStoreIssuedCredentials_NilCredentialMetadata_StoredWithEmptyClaims(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	// metadata config with nil CredentialMetadata
@@ -647,7 +681,8 @@ func TestVerifyAndStoreIssuedCredentials_NilCredentialMetadata_StoredWithEmptyCl
 
 func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 	mock := &mockCredentialStore{}
-	svc := newServiceWithMock(mock)
+	fileStorageMock := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 	m := newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc)
 

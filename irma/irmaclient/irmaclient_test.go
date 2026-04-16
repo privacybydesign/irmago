@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/concmap"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/testdata"
@@ -81,7 +82,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*clientstorage.St
 	)
 	require.NoError(t, err)
 
-	storage := clientstorage.NewStorage(storagePath, aesKey)
+	storage := clientstorage.NewStorage(storagePath, encryption.NewAESEncryptionMiddleware(aesKey))
 	require.NoError(t, storage.Open())
 
 	irmaStorage := NewIrmaStorage(storage, conf)

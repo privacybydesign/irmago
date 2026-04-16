@@ -1,7 +1,7 @@
 package sqlcipher
 
 import (
-	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
 )
 

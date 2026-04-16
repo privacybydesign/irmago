@@ -1,10 +1,10 @@
-package storage
+package db
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/privacybydesign/irmago/eudi/storage/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )

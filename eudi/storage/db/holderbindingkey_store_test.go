@@ -1,11 +1,11 @@
-package storage
+package db
 
 import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/privacybydesign/irmago/eudi/storage/models"
-	"github.com/privacybydesign/irmago/eudi/storage/sqlcipher"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"

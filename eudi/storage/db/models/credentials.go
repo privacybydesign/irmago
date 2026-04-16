@@ -171,6 +171,7 @@ type IssuerMetadataDisplay struct {
 	Locale datatypes.NullString
 
 	// Logo fields are flattened from the logo sub-object.
+	// TODO: should be nullable fields
 	LogoURI     string
 	LogoAltText string
 }
@@ -225,6 +226,7 @@ type CredentialDisplay struct {
 	Locale datatypes.NullString
 
 	// Logo fields are flattened from the logo sub-object.
+	// TODO: should be nullable fields
 	LogoURI     string
 	LogoAltText string
 

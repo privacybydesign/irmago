@@ -1,15 +1,13 @@
 package clientstorage
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"encoding/json"
 	"path/filepath"
 	"time"
 
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 
 	"go.etcd.io/bbolt"
 )
@@ -21,8 +19,8 @@ import (
 type Storage struct {
 	Db *bbolt.DB
 
-	storagePath string
-	aesKey      [32]byte
+	storagePath          string
+	encryptionMiddleware encryption.EncryptionMiddleware
 }
 
 type Transaction struct {
@@ -43,10 +41,10 @@ func (s *Storage) path(p string) string {
 	return filepath.Join(s.storagePath, p)
 }
 
-func NewStorage(storagePath string, aesKey [32]byte) *Storage {
+func NewStorage(storagePath string, encryptionMiddleware encryption.EncryptionMiddleware) *Storage {
 	return &Storage{
-		storagePath: storagePath,
-		aesKey:      aesKey,
+		storagePath:          storagePath,
+		encryptionMiddleware: encryptionMiddleware,
 	}
 }
 
@@ -86,7 +84,7 @@ func (s *Storage) TxStore(tx *Transaction, bucketName string, key string, value 
 		return err
 	}
 
-	ciphertext, err := encrypt(btsValue, s.aesKey)
+	ciphertext, err := s.encryptionMiddleware.Encrypt(btsValue)
 	if err != nil {
 		return err
 	}
@@ -114,7 +112,7 @@ func (s *Storage) TxLoad(tx *Transaction, bucketName string, key string, dest an
 		return false, nil
 	}
 
-	plaintext, err := decrypt(bts, s.aesKey)
+	plaintext, err := s.encryptionMiddleware.Decrypt(bts)
 	if err != nil {
 		return false, err
 	}
@@ -181,48 +179,9 @@ func (s *Storage) DeleteAll() error {
 }
 
 func (s *Storage) Decrypt(ciphertext []byte) ([]byte, error) {
-	return decrypt(ciphertext, s.aesKey)
+	return s.encryptionMiddleware.Decrypt(ciphertext)
 }
 
 func (s *Storage) Encrypt(plaintext []byte) ([]byte, error) {
-	return encrypt(plaintext, s.aesKey)
-}
-
-func decrypt(ciphertext []byte, aesKey [32]byte) ([]byte, error) {
-	block, err := aes.NewCipher(aesKey[:])
-	if err != nil {
-		return nil, err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-
-	plaintext, err := gcm.Open(nil, ciphertext[:12], ciphertext[12:], nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return plaintext, nil
-}
-
-func encrypt(bytes []byte, aesKey [32]byte) ([]byte, error) {
-	block, err := aes.NewCipher(aesKey[:])
-	if err != nil {
-		return nil, err
-	}
-
-	nonce := make([]byte, 12)
-	_, err = rand.Read(nonce)
-	if err != nil {
-		return nil, err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-
-	return gcm.Seal(nonce, nonce, bytes, nil), nil
+	return s.encryptionMiddleware.Encrypt(plaintext)
 }

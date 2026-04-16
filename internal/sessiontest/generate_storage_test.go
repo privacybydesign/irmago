@@ -142,11 +142,12 @@ func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSes
 	storageFolder := test.CreateTestStorage(t)
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
+	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration")))
+	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
 
-	certsPath := filepath.Join(storagePath, "eudi_configuration", "issuers", "certs")
+	certsPath := filepath.Join(storagePath, "eudi", "issuers", "certs")
 	require.NoError(t, common.EnsureDirectoryExists(certsPath))
 	require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
 
@@ -162,7 +163,7 @@ func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSes
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	c, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, signer, aesKey)
+	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey)
 	require.NoError(t, err)
 
 	c.SetPreferences(clientsettings.Preferences{DeveloperMode: true})

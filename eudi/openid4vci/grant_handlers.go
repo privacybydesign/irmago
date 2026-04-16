@@ -172,8 +172,6 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 		return nil, fmt.Errorf("failed to create request for pushed authorization request: %v", err)
 	}
 
-	eudi.Logger.Infof("Sending PAR request: %s", payload.Encode())
-
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := h.httpClient.Do(req)
 	if err != nil {
@@ -185,7 +183,6 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PAR response body: %v", err)
 	}
-	eudi.Logger.Infof("PAR response body: %s", string(responseBody))
 
 	// We accept both 201 + 200, where the specs require 201
 	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {

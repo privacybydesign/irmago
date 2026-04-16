@@ -7,6 +7,9 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
+	"github.com/stretchr/testify/require"
 )
 
 // mockSdJwtVcStorageClient is a test mock implementing SdJwtVcStorageClient.
@@ -226,6 +229,7 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	*mockSdJwtVcStorageClient,
 	*httptest.Server,
 ) {
+	tempDir := t.TempDir()
 	ts := httptest.NewServer(credEndpointHandler)
 
 	scope := "test-scope"
@@ -239,8 +243,17 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 		credentialConfig.Format = metadata.CredentialFormatIdentifier_W3CVC
 	}
 
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+
+	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+
+	eudiStorage, err := storage.NewStorage(aesKey, encryptionMiddleware, ":memory:", tempDir)
+	require.NoError(t, err)
+
 	mockStorageClient := &mockSdJwtVcStorageClient{}
-	s := &session{
+	session := &session{
+		storage: eudiStorage,
 		credentialOffer: &CredentialOffer{
 			CredentialConfigurationIds: []string{"credential-config-1"},
 		},
@@ -258,8 +271,8 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	}
 
 	if opts&NonceNotRequired == NonceNotRequired {
-		s.credentialIssuerMetadata.NonceEndpoint = ""
+		session.credentialIssuerMetadata.NonceEndpoint = ""
 	}
 
-	return s, mockStorageClient, ts
+	return session, mockStorageClient, ts
 }

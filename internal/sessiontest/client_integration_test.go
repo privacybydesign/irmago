@@ -1059,13 +1059,14 @@ func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmac
 	storageFolder := test.CreateTestStorage(t)
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
+	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
 	// Copy files to storage folder
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration")))
+	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
 
 	// Add test issuer certificates as trusted chain
-	certsPath := filepath.Join(storagePath, "eudi_configuration", "issuers", "certs")
+	certsPath := filepath.Join(storagePath, "eudi", "issuers", "certs")
 	require.NoError(t, common.EnsureDirectoryExists(certsPath))
 
 	if issuerChain != nil {
@@ -1079,7 +1080,7 @@ func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmac
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.New(storagePath, irmaConfigurationPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey)
+	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey)
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})

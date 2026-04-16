@@ -5,7 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/mocks"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -19,12 +21,17 @@ func TestMain(m *testing.M) {
 func TestIntegrationConfig(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
 
-	eudiConfigPath := filepath.Join(storageFolder, "eudi_configuration")
-
-	err := common.EnsureDirectoryExists(eudiConfigPath)
+	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
+	err := common.EnsureDirectoryExists(eudiAppDataPath)
 	require.NoError(t, err)
 
-	conf, err := NewConfiguration(eudiConfigPath)
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	// Act
+	conf, err := NewConfiguration(s)
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
@@ -40,22 +47,33 @@ func TestConfig(t *testing.T) {
 func testNewConfigurationSuccessfulInitialization(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
 
-	err := common.EnsureDirectoryExists(filepath.Join(storageFolder, "eudi_configuration"))
+	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
+	err := common.EnsureDirectoryExists(eudiAppDataPath)
 	require.NoError(t, err)
 
-	require.NoDirExists(t, filepath.Join(storageFolder, "eudi_configuration", "issuers"))
-	require.NoDirExists(t, filepath.Join(storageFolder, "eudi_configuration", "verifiers"))
+	issuerBasePath := filepath.Join(eudiAppDataPath, "issuers")
+	verifierBasePath := filepath.Join(eudiAppDataPath, "verifiers")
 
-	conf, err := NewConfiguration(filepath.Join(storageFolder, "eudi_configuration"))
+	require.NoDirExists(t, issuerBasePath)
+	require.NoDirExists(t, verifierBasePath)
+
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	// Act
+	conf, err := NewConfiguration(s)
+
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 	require.NotNil(t, conf)
-	require.DirExists(t, conf.Issuers.GetCertificatePath())
-	require.DirExists(t, conf.Issuers.GetCrlPath())
-	require.DirExists(t, conf.Issuers.GetLogosPath())
-	require.DirExists(t, conf.Verifiers.GetCertificatePath())
-	require.DirExists(t, conf.Verifiers.GetCrlPath())
-	require.DirExists(t, conf.Verifiers.GetLogosPath())
+	require.DirExists(t, filepath.Join(issuerBasePath, "certificates"))
+	require.DirExists(t, filepath.Join(issuerBasePath, "crls"))
+	require.DirExists(t, filepath.Join(issuerBasePath, "logos"))
+	require.DirExists(t, filepath.Join(verifierBasePath, "certificates"))
+	require.DirExists(t, filepath.Join(verifierBasePath, "crls"))
+	require.DirExists(t, filepath.Join(verifierBasePath, "logos"))
 
 	require.NotNil(t, conf.Issuers.trustedRootCertificates)
 	require.NotNil(t, conf.Issuers.trustedRootCertificates)
@@ -69,11 +87,18 @@ func testNewConfigurationSuccessfulInitialization(t *testing.T) {
 
 func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 	storageFolder := test.CreateTestStorage(t)
+	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
 
-	err := common.EnsureDirectoryExists(filepath.Join(storageFolder, "eudi_configuration"))
+	err := common.EnsureDirectoryExists(eudiAppDataPath)
 	require.NoError(t, err)
 
-	conf, err := NewConfiguration(filepath.Join(storageFolder, "eudi_configuration"))
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	// Act
+	conf, err := NewConfiguration(s)
 
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
