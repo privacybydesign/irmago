@@ -93,7 +93,17 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "test.test.email"}}}},
 		Choices: []expectedPickOneChoice{
 			{
-				Owned: []expectedPlanCredential{{CredentialId: "test.test.email"}},
+				Owned: []expectedPlanCredential{{
+					CredentialId: "test.test.email",
+					Attributes: []expectedAttr{
+						{
+							Path:        []any{"email"},
+							DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+							Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+							Value:       strVal("test@gmail.com"),
+						},
+					},
+				}},
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "test.test.email",
@@ -179,7 +189,17 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "irma-demo.RU.studentCard"}}}},
 		Choices: []expectedPickOneChoice{
 			{
-				Owned: []expectedPlanCredential{{CredentialId: "test.test.email"}},
+				Owned: []expectedPlanCredential{{
+					CredentialId: "test.test.email",
+					Attributes: []expectedAttr{
+						{
+							Path:        []any{"email"},
+							DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+							Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+							Value:       strVal("test@gmail.com"),
+						},
+					},
+				}},
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "test.test.email",
@@ -402,7 +422,23 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				},
 			},
 			{
-				Owned: []expectedPlanCredential{{CredentialId: "irma-demo.MijnOverheid.fullName"}},
+				Owned: []expectedPlanCredential{{
+					CredentialId: "irma-demo.MijnOverheid.fullName",
+					Attributes: []expectedAttr{
+						{
+							Path:        []any{"firstname"},
+							DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+							Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+							Value:       strVal("Bar"),
+						},
+						{
+							Path:        []any{"familyname"},
+							DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+							Value:       strVal("Batsbak"),
+						},
+					},
+				}},
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
@@ -499,7 +535,17 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 		IssuedCredentialIds: map[string]struct{}{"irma-demo.RU.studentCard": {}},
 		Choices: []expectedPickOneChoice{
 			{
-				Owned: []expectedPlanCredential{{CredentialId: "irma-demo.RU.studentCard"}},
+				Owned: []expectedPlanCredential{{
+					CredentialId: "irma-demo.RU.studentCard",
+					Attributes: []expectedAttr{
+						{
+							Path:        []any{"university"},
+							DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+							Value:       strVal("University of the Arts"),
+						},
+					},
+				}},
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
@@ -657,7 +703,23 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		WrongCredentialIssuedNil: true,
 		Choices: []expectedPickOneChoice{
 			{
-				Owned: []expectedPlanCredential{{CredentialId: "irma-demo.RU.studentCard"}},
+				Owned: []expectedPlanCredential{{
+					CredentialId: "irma-demo.RU.studentCard",
+					Attributes: []expectedAttr{
+						{
+							Path:        []any{"university"},
+							DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+							Value:       strVal("University of the Arts"),
+						},
+						{
+							Path:        []any{"level"},
+							DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+							Value:       strVal("high"),
+						},
+					},
+				}},
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
@@ -875,7 +937,23 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				},
 			},
 			{
-				Owned: []expectedPlanCredential{{CredentialId: "irma-demo.MijnOverheid.fullName"}},
+				Owned: []expectedPlanCredential{{
+					CredentialId: "irma-demo.MijnOverheid.fullName",
+					Attributes: []expectedAttr{
+						{
+							Path:        []any{"firstname"},
+							DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+							Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+							Value:       strVal("Bar"),
+						},
+						{
+							Path:        []any{"familyname"},
+							DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+							Value:       strVal("Batsbak"),
+						},
+					},
+				}},
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
