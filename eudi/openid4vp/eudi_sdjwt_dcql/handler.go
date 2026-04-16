@@ -67,8 +67,15 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	}
 
 	now := time.Now()
+	hasExhaustedBatch := false
 	for _, batch := range batches {
 		if !isBatchValid(batch, now) {
+			continue
+		}
+		// Skip exhausted batches: when a batch was issued with multiple instances
+		// and all have been used, the credential is no longer disclosable.
+		if batch.BatchSize > 1 && batch.RemainingCount == 0 {
+			hasExhaustedBatch = true
 			continue
 		}
 
@@ -91,6 +98,13 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			IssuanceDate:                batch.IssuedAt.Unix(),
 			ExpiryDate:                  expiryUnix(batch),
 		})
+	}
+
+	// If matching batches exist but all are exhausted and no usable candidates
+	// remain, return an error so the session fails instead of showing an empty
+	// disclosure plan.
+	if hasExhaustedBatch && len(result.OwnedCandidates) == 0 {
+		return nil, fmt.Errorf("all credential instances for the requested type are exhausted")
 	}
 
 	return result, nil
