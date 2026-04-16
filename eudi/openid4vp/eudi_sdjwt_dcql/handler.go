@@ -224,6 +224,7 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	// Dedup by the full serialized path so that different paths with the same
 	// leaf name (e.g., ["address","street"] vs ["billing","street"]) are not
 	// confused.
+	metadataOrder := buildMetadataOrder(batch)
 	attributes := make([]clientmodels.Attribute, 0)
 	seenPaths := make(map[string]struct{})
 	requestedKeys := make(map[string]struct{})
@@ -234,21 +235,23 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 		}
 		seenPaths[pathKey] = struct{}{}
 
-		val, _ := payload.GetClaimValue(claim.Path)
+		// Expand null wildcards in the path into concrete indexed paths.
+		concretePaths := expandNullPaths(claim.Path, &payload)
 
-		// When the path ends with nil (null wildcard for all array elements),
-		// expand into individual attributes with indexed paths.
-		// When the path ends with nil (null wildcard for all array elements),
-		// resolve the base path and expand the array.
-		claimPath := claim.Path
-		if len(claimPath) > 0 && claimPath[len(claimPath)-1] == nil {
-			claimPath = claimPath[:len(claimPath)-1]
-			val, _ = payload.GetClaimValue(claimPath)
+		// Mark the top-level key as requested so the non-SD claims loop
+		// does not re-add parent claims that were already expanded.
+		if len(claim.Path) > 0 {
+			if topKey, ok := claim.Path[0].(string); ok {
+				requestedKeys[clientmodels.ClaimPathKey([]any{topKey})] = struct{}{}
+			}
 		}
 
-		displayName := claimDisplayName(batch, claimPath)
 		prevLen := len(attributes)
-		attributes = flattenForDisclosure(attributes, requestedKeys, batch, claimPath, val, displayName)
+		for _, claimPath := range concretePaths {
+			val, _ := payload.GetClaimValue(claimPath)
+			displayName := claimDisplayName(batch, claimPath)
+			attributes = flattenForDisclosure(attributes, requestedKeys, batch, claimPath, val, displayName, metadataOrder)
+		}
 
 		// When the DCQL claim specifies a value constraint, set RequestedValue on the
 		// newly added leaf attributes so the UI can show what the verifier asked for.
@@ -336,20 +339,64 @@ func selectClaims(query dcql.CredentialQuery, payload *sdjwtvc.ProcessedSdJwtPay
 // claimMatches checks whether a single claim exists in the payload and satisfies
 // any value constraints. Supports string, boolean, and numeric comparisons as
 // required by the DCQL spec (OpenID4VP Section 6.3).
+// Null path components (wildcards) are expanded: the claim matches if ANY array
+// element satisfies the remaining path.
 func claimMatches(claim dcql.Claim, payload *sdjwtvc.ProcessedSdJwtPayload) bool {
-	val, err := payload.GetClaimValue(claim.Path)
+	return claimMatchesPath(claim.Path, claim.Values, payload)
+}
+
+// claimMatchesPath recursively resolves a claim path against the payload,
+// expanding null wildcards into concrete array indices.
+func claimMatchesPath(path []any, values []any, payload *sdjwtvc.ProcessedSdJwtPayload) bool {
+	// Find the first null in the path.
+	nullIdx := -1
+	for i, c := range path {
+		if c == nil {
+			nullIdx = i
+			break
+		}
+	}
+
+	if nullIdx == -1 {
+		// No nulls — resolve directly.
+		val, err := payload.GetClaimValue(path)
+		if err != nil {
+			return false
+		}
+		if len(values) > 0 {
+			for _, reqVal := range values {
+				if claimValuesEqual(val, reqVal) {
+					return true
+				}
+			}
+			return false
+		}
+		return true
+	}
+
+	// Resolve the prefix up to the null to get the array.
+	prefix := path[:nullIdx]
+	arr, err := payload.GetClaimValue(prefix)
 	if err != nil {
 		return false
 	}
-	if len(claim.Values) > 0 {
-		for _, reqVal := range claim.Values {
-			if claimValuesEqual(val, reqVal) {
-				return true
-			}
-		}
+	slice, ok := arr.([]any)
+	if !ok {
 		return false
 	}
-	return true
+
+	// Check if ANY element matches the remaining path after the null.
+	suffix := path[nullIdx+1:]
+	for i := range slice {
+		concretePath := make([]any, 0, len(prefix)+1+len(suffix))
+		concretePath = append(concretePath, prefix...)
+		concretePath = append(concretePath, i)
+		concretePath = append(concretePath, suffix...)
+		if claimMatchesPath(concretePath, values, payload) {
+			return true
+		}
+	}
+	return false
 }
 
 // claimValuesEqual compares two values from JSON-decoded data. JSON numbers are
@@ -471,7 +518,10 @@ func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
 
 // flattenForDisclosure recursively flattens arrays and objects into scalar
 // attributes, emitting a section header (Value == nil) before each compound
-// value that has a display name. Only leaf attributes are added to requestedKeys.
+// value that has a display name. Compound paths are added to requestedKeys
+// so the non-SD claim loop does not re-add them.
+// Object keys are sorted by their position in the credential metadata,
+// falling back to alphabetical for keys not in the metadata.
 func flattenForDisclosure(
 	attrs []clientmodels.Attribute,
 	requestedKeys map[string]struct{},
@@ -479,9 +529,12 @@ func flattenForDisclosure(
 	path []any,
 	value any,
 	display clientmodels.TranslatedString,
+	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
 	switch v := value.(type) {
 	case []any:
+		pk := clientmodels.ClaimPathKey(path)
+		requestedKeys[pk] = struct{}{}
 		if d := claimDisplayName(batch, path); len(d) > 0 {
 			dn := d
 			attrs = append(attrs, clientmodels.Attribute{
@@ -495,9 +548,11 @@ func flattenForDisclosure(
 			if len(elemDisplay) == 0 {
 				elemDisplay = display
 			}
-			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, elem, elemDisplay)
+			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, elem, elemDisplay, metadataOrder)
 		}
 	case map[string]any:
+		pk := clientmodels.ClaimPathKey(path)
+		requestedKeys[pk] = struct{}{}
 		if d := claimDisplayName(batch, path); len(d) > 0 {
 			dn := d
 			attrs = append(attrs, clientmodels.Attribute{
@@ -505,18 +560,14 @@ func flattenForDisclosure(
 				DisplayName: &dn,
 			})
 		}
-		keys := make([]string, 0, len(v))
-		for key := range v {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
+		keys := sortObjectKeysByMetadata(v, path, metadataOrder)
 		for _, key := range keys {
 			elemPath := append(append([]any{}, path...), key)
 			elemDisplay := claimDisplayName(batch, elemPath)
 			if len(elemDisplay) == 0 {
 				elemDisplay = display
 			}
-			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, v[key], elemDisplay)
+			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, v[key], elemDisplay, metadataOrder)
 		}
 	default:
 		pk := clientmodels.ClaimPathKey(path)
@@ -533,6 +584,112 @@ func flattenForDisclosure(
 		})
 	}
 	return attrs
+}
+
+// sortObjectKeysByMetadata returns the keys of an object sorted by their position
+// in the credential metadata. Keys not in the metadata are appended alphabetically.
+func sortObjectKeysByMetadata(obj map[string]any, parentPath []any, metadataOrder map[string]int) []string {
+	keys := make([]string, 0, len(obj))
+	for key := range obj {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		pi := metadataOrderForKey(parentPath, keys[i], metadataOrder)
+		pj := metadataOrderForKey(parentPath, keys[j], metadataOrder)
+		if pi != pj {
+			return pi < pj
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
+}
+
+// expandNullPaths expands a claim path with null wildcards into all concrete
+// paths by replacing each null with every valid array index. Paths without nulls
+// are returned as-is. A trailing null is stripped (the caller will expand the array).
+func expandNullPaths(path []any, payload *sdjwtvc.ProcessedSdJwtPayload) [][]any {
+	// Strip trailing null — the caller handles array expansion via flattenForDisclosure.
+	if len(path) > 0 && path[len(path)-1] == nil {
+		path = path[:len(path)-1]
+	}
+
+	// Find the first null.
+	nullIdx := -1
+	for i, c := range path {
+		if c == nil {
+			nullIdx = i
+			break
+		}
+	}
+
+	if nullIdx == -1 {
+		return [][]any{path}
+	}
+
+	// Resolve prefix to get the array.
+	prefix := path[:nullIdx]
+	arr, err := payload.GetClaimValue(prefix)
+	if err != nil {
+		return nil
+	}
+	slice, ok := arr.([]any)
+	if !ok {
+		return nil
+	}
+
+	suffix := path[nullIdx+1:]
+	var result [][]any
+	for i := range slice {
+		concrete := make([]any, 0, len(prefix)+1+len(suffix))
+		concrete = append(concrete, prefix...)
+		concrete = append(concrete, i)
+		concrete = append(concrete, suffix...)
+		// Recursively expand any remaining nulls.
+		result = append(result, expandNullPaths(concrete, payload)...)
+	}
+	return result
+}
+
+// metadataOrderForKey returns the metadata order index for a child key under parentPath.
+// Tries both exact and wildcard (null) path matching. Returns maxInt if not found.
+func metadataOrderForKey(parentPath []any, key string, metadataOrder map[string]int) int {
+	childPath := append(append([]any{}, parentPath...), key)
+	if idx, ok := metadataOrder[clientmodels.ClaimPathKey(childPath)]; ok {
+		return idx
+	}
+	wildcard := make([]any, len(childPath))
+	hasIndex := false
+	for i, c := range childPath {
+		if isArrayIndex(c) {
+			wildcard[i] = nil
+			hasIndex = true
+		} else {
+			wildcard[i] = c
+		}
+	}
+	if hasIndex {
+		if idx, ok := metadataOrder[clientmodels.ClaimPathKey(wildcard)]; ok {
+			return idx
+		}
+	}
+	return 1<<31 - 1
+}
+
+// buildMetadataOrder creates a map from serialized claim path to position index
+// for ordering object keys by their metadata position.
+func buildMetadataOrder(batch *models.CredentialBatch) map[string]int {
+	order := make(map[string]int)
+	if batch.CredentialMetadata == nil {
+		return order
+	}
+	for i, claim := range batch.CredentialMetadata.Claims {
+		var path []any
+		if err := json.Unmarshal(claim.Path, &path); err != nil {
+			continue
+		}
+		order[clientmodels.ClaimPathKey(path)] = i
+	}
+	return order
 }
 
 // isArrayIndex returns true if the path component is a numeric array index.
