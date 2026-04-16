@@ -113,6 +113,9 @@ func (s *credentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.Iss
 
 	var instance models.IssuedCredentialInstance
 	err := s.db.
+		Preload("HolderBindingKey").
+		Preload("HolderBindingKey.ECDSA").
+		Preload("HolderBindingKey.RSA").
 		Where("credential_batch_id = ? AND used = ?", batchID, false).
 		First(&instance).
 		Error

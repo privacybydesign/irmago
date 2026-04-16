@@ -15,6 +15,13 @@ type CredentialFormat string
 
 const (
 	CredentialFormatSdJwtVc CredentialFormat = "dc+sd-jwt"
+	// CredentialFormatMdoc is the OpenID4VCI identifier for ISO/IEC 18013-5 mdoc
+	// credentials. The stored RawCredential for this format is the raw CBOR
+	// encoding of the IssuerSigned structure; ProcessedSdJwtPayload holds a
+	// JSON projection of {namespace: {element: value}} for display only.
+	// TODO: generalise ProcessedSdJwtPayload into a format-neutral
+	// ProcessedPayload column so the name stops lying.
+	CredentialFormatMdoc CredentialFormat = "mso_mdoc"
 )
 
 // CredentialBatch groups all credential instances issued from a single credential_configuration_id

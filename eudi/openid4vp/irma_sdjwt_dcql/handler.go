@@ -88,7 +88,9 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 }
 
 // PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
+func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, ctx dcql.DisclosureContext) (*dcql.PreparedDisclosure, error) {
+	nonce := ctx.Nonce
+	clientId := ctx.ClientId
 	result := &dcql.PreparedDisclosure{}
 
 	for _, sel := range selections {

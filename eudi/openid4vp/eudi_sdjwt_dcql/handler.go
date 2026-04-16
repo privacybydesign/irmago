@@ -122,7 +122,9 @@ func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.
 	return filtered, nil
 }
 
-func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, nonce string, clientId string) (*dcql.PreparedDisclosure, error) {
+func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelection, ctx dcql.DisclosureContext) (*dcql.PreparedDisclosure, error) {
+	nonce := ctx.Nonce
+	clientId := ctx.ClientId
 	result := &dcql.PreparedDisclosure{}
 
 	// Load all batches with full metadata so buildLogCredential can resolve display names.

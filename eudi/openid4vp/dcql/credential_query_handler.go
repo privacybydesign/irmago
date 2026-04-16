@@ -32,6 +32,19 @@ type PreparedDisclosure struct {
 	CredentialLogs []clientmodels.LogCredential
 }
 
+// DisclosureContext carries the Authorization Request parameters a handler
+// may need while building the VP token response. Adding new fields here is
+// preferred over widening the method signature again.
+type DisclosureContext struct {
+	// Nonce is the verifier-supplied Authorization Request nonce.
+	Nonce string
+	// ClientId is the verifier's Client ID as it appeared in the request.
+	ClientId string
+	// ResponseUri is the `response_uri` parameter from the Authorization
+	// Request. Mdoc needs it to build the OID4VPHandover; SD-JWT ignores it.
+	ResponseUri string
+}
+
 // DcqlCredentialQueryHandler handles DCQL credential queries for a specific credential format.
 type DcqlCredentialQueryHandler interface {
 	// CanHandleCredentialQuery returns true if this handler can process the given credential query.
@@ -41,5 +54,5 @@ type DcqlCredentialQueryHandler interface {
 	FindCandidates(query CredentialQuery) (*CredentialQueryResult, error)
 
 	// PrepareDisclosure prepares the selected credentials for inclusion in the VP token.
-	PrepareDisclosure(selections []DisclosureSelection, nonce string, clientId string) (*PreparedDisclosure, error)
+	PrepareDisclosure(selections []DisclosureSelection, ctx DisclosureContext) (*PreparedDisclosure, error)
 }
