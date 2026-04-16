@@ -276,12 +276,21 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 			continue
 		}
 		dn := claimDisplayName(batch, []any{name})
-		attr := clientmodels.Attribute{
-			ClaimPath:   []any{name},
-			DisplayName: &dn,
+		if len(dn) == 0 {
+			dn = clientmodels.TranslatedString{"en": name}
 		}
-		attr.Value = clientmodels.NewAttributeValue(val)
-		attributes = append(attributes, attr)
+		// For compound non-SD values (arrays/objects), emit a section header
+		// when flattenForDisclosure won't add one itself (no metadata match).
+		switch val.(type) {
+		case []any, map[string]any:
+			if d := claimDisplayName(batch, []any{name}); len(d) == 0 {
+				attributes = append(attributes, clientmodels.Attribute{
+					ClaimPath:   []any{name},
+					DisplayName: &dn,
+				})
+			}
+		}
+		attributes = flattenForDisclosure(attributes, requestedKeys, batch, []any{name}, val, dn, metadataOrder)
 	}
 
 	return attributes, nil
@@ -457,6 +466,24 @@ func getNonSdClaimNames(batch *models.CredentialBatch, credStore db.CredentialSt
 		// it's a non-SD claim.
 		names = append(names, key)
 	}
+	// Sort by metadata position for deterministic ordering. Claims not in
+	// the metadata are placed at the end, sorted alphabetically.
+	metadataOrder := buildMetadataOrder(batch)
+	const noOrder = 1<<31 - 1
+	sort.Slice(names, func(i, j int) bool {
+		oi, okI := metadataOrder[clientmodels.ClaimPathKey([]any{names[i]})]
+		oj, okJ := metadataOrder[clientmodels.ClaimPathKey([]any{names[j]})]
+		if !okI {
+			oi = noOrder
+		}
+		if !okJ {
+			oj = noOrder
+		}
+		if oi != oj {
+			return oi < oj
+		}
+		return names[i] < names[j]
+	})
 	return names
 }
 
