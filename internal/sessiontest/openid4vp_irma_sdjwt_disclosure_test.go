@@ -76,7 +76,13 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 
 	plan := session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps:       []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "test.test.email"}}}},
+		IssuanceSteps: []expectedIssuanceStep{
+			{
+				Options: []expectedCredentialDescriptor{
+					{CredentialId: "test.test.email"},
+				},
+			},
+		},
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
@@ -90,7 +96,13 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 
 	plan = session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "test.test.email"}}}},
+		IssuanceSteps: []expectedIssuanceStep{
+			{
+				Options: []expectedCredentialDescriptor{
+					{CredentialId: "test.test.email"},
+				},
+			},
+		},
 		Choices: []expectedPickOneChoice{
 			{
 				Owned: []expectedPlanCredential{{
@@ -169,10 +181,14 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 
 	plan := session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{
-			{CredentialId: "test.test.email"},
-			{CredentialId: "irma-demo.RU.studentCard"},
-		}}},
+		IssuanceSteps: []expectedIssuanceStep{
+			{
+				Options: []expectedCredentialDescriptor{
+					{CredentialId: "test.test.email"},
+					{CredentialId: "irma-demo.RU.studentCard"},
+				},
+			},
+		},
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
@@ -186,7 +202,15 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 
 	plan = session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "irma-demo.RU.studentCard"}}}},
+		IssuanceSteps: []expectedIssuanceStep{
+			{
+				Options: []expectedCredentialDescriptor{
+					{CredentialId: "test.test.email"},
+					{CredentialId: "irma-demo.RU.studentCard"},
+				},
+			},
+		},
+		IssuedCredentialIds: map[string]struct{}{"test.test.email": {}},
 		Choices: []expectedPickOneChoice{
 			{
 				Owned: []expectedPlanCredential{{
@@ -520,7 +544,13 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 	// only the required studentCard produces an issuance step;
 	// the optional fullName set is already satisfied by its empty option
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps:       []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "irma-demo.RU.studentCard"}}}},
+		IssuanceSteps: []expectedIssuanceStep{
+			{
+				Options: []expectedCredentialDescriptor{
+					{CredentialId: "irma-demo.RU.studentCard"},
+				},
+			},
+		},
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
@@ -628,25 +658,29 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	plan := session.DisclosurePlan
 	// the issuance step shows the predefined university value as RequestedValue
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{
+		IssuanceSteps: []expectedIssuanceStep{
 			{
-				CredentialId: "irma-demo.RU.studentCard",
-				Attributes: []expectedAttr{
+				Options: []expectedCredentialDescriptor{
 					{
-						Path:           []any{"university"},
-						DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-						RequestedValue: strVal("University of the Arts"),
-						SkipValueCheck: true,
-					},
-					{
-						Path:           []any{"level"},
-						DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-						RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						SkipValueCheck: true,
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								RequestedValue: strVal("University of the Arts"),
+								SkipValueCheck: true,
+							},
+							{
+								Path:           []any{"level"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
+						},
 					},
 				},
 			},
-		}}},
+		},
 	})
 
 	// issue a credential with a non-matching university value
@@ -670,7 +704,13 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 
 	plan = session.DisclosurePlan
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps:       []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{{CredentialId: "irma-demo.RU.studentCard"}}}},
+		IssuanceSteps: []expectedIssuanceStep{
+			{
+				Options: []expectedCredentialDescriptor{
+					{CredentialId: "irma-demo.RU.studentCard"},
+				},
+			},
+		},
 		IssuedCredentialIds: map[string]struct{}{},
 		WrongCredentialIssued: &expectedCredentialDescriptor{
 			CredentialId: "irma-demo.RU.studentCard",
@@ -1034,25 +1074,29 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 	plan := session.DisclosurePlan
 	// the issuance step shows the first claim_set (university + level), not studentID
 	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		IssuanceSteps: []expectedIssuanceStep{{Options: []expectedCredentialDescriptor{
+		IssuanceSteps: []expectedIssuanceStep{
 			{
-				CredentialId: "irma-demo.RU.studentCard",
-				Attributes: []expectedAttr{
+				Options: []expectedCredentialDescriptor{
 					{
-						Path:           []any{"university"},
-						DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-						RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						SkipValueCheck: true,
-					},
-					{
-						Path:           []any{"level"},
-						DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-						RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-						SkipValueCheck: true,
+						CredentialId: "irma-demo.RU.studentCard",
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
+							{
+								Path:           []any{"level"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								SkipValueCheck: true,
+							},
+						},
 					},
 				},
 			},
-		}}},
+		},
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
