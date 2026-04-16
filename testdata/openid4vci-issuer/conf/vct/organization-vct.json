@@ -1,0 +1,81 @@
+{
+  "path": "/vct/organization",
+  "credentials": [
+    "OrganizationCredentialSdJwt"
+  ],
+  "document": {
+    "name": "Organization Credential (SD-JWT)",
+    "description": "VCT metadata for deeply nested organization credential with nested SD claims",
+    "language": "en",
+    "display": [
+      {
+        "lang": "en",
+        "name": "Organization Credential (SD-JWT)"
+      }
+    ],
+    "claims": [
+      {
+        "path": [
+          "university",
+          "name"
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": [
+          "university",
+          "faculties"
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": [
+          "university",
+          "founded"
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": [
+          "university",
+          "faculties",
+          null,
+          "faculty_name"
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": [
+          "university",
+          "faculties",
+          null,
+          "departments"
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": [
+          "university",
+          "faculties",
+          null,
+          "departments",
+          null,
+          "dept_name"
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": [
+          "university",
+          "faculties",
+          null,
+          "departments",
+          null,
+          "courses"
+        ],
+        "sd": "allowed"
+      }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

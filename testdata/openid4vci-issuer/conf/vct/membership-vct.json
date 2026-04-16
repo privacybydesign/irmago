@@ -1,0 +1,18 @@
+{
+  "path": "/vct/membership",
+  "credentials": ["MembershipCredentialSdJwt"],
+  "document": {
+    "name": "Membership Credential (SD-JWT)",
+    "description": "VCT metadata for membership SD-JWT credential with mixed SD/non-SD claims",
+    "language": "en",
+    "display": [
+      { "lang": "en", "name": "Membership Credential (SD-JWT)" }
+    ],
+    "claims": [
+      { "path": ["member_name"], "sd": "allowed" },
+      { "path": ["member_since"] },
+      { "path": ["membership_type"], "sd": "allowed" }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

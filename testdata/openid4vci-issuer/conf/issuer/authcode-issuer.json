@@ -1,6 +1,6 @@
 {
   "name": "authcode-issuer",
-  "baseUrl": "http://localhost:8880/authcode-issuer",
+  "baseUrl": "https://localhost:8443/authcode-issuer",
   "adminToken": "authcode-admin-token",
   "did": "authcode-issuer-did",
   "usesNonces": true,

@@ -70,19 +70,17 @@ func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDis
 	var selections []dcql.DisclosureSelection
 	for _, discon := range choices {
 		for _, cred := range discon.Credentials {
-			attrNames := make([]string, 0, len(cred.AttributePaths))
+			claimPaths := make([][]any, 0, len(cred.AttributePaths))
 			for _, path := range cred.AttributePaths {
 				if len(path) > 0 {
-					if name, ok := path[0].(string); ok {
-						attrNames = append(attrNames, name)
-					}
+					claimPaths = append(claimPaths, path)
 				}
 			}
 			queryId := hashToQueryId[cred.CredentialHash]
 			selections = append(selections, dcql.DisclosureSelection{
 				QueryId:        queryId,
 				CredentialHash: cred.CredentialHash,
-				AttributeNames: attrNames,
+				ClaimPaths:     claimPaths,
 			})
 		}
 	}
@@ -153,18 +151,18 @@ func checkWrongCredential(cred *clientmodels.Credential, option *clientmodels.Cr
 	var mismatched []clientmodels.Attribute
 	requestedByID := make(map[string]*clientmodels.Attribute)
 	for i := range option.Attributes {
-		requestedByID[option.Attributes[i].Id] = &option.Attributes[i]
+		requestedByID[clientmodels.ClaimPathKey(option.Attributes[i].ClaimPath)] = &option.Attributes[i]
 	}
 
 	for _, attr := range cred.Attributes {
-		req, ok := requestedByID[attr.Id]
+		req, ok := requestedByID[clientmodels.ClaimPathKey(attr.ClaimPath)]
 		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
 			continue
 		}
 		satisfied, _ := SatisfiesRequestedAttributes([]clientmodels.Attribute{attr}, []clientmodels.Attribute{*req})
 		if !satisfied {
 			mismatched = append(mismatched, clientmodels.Attribute{
-				Id:             attr.Id,
+				ClaimPath:      attr.ClaimPath,
 				DisplayName:    attr.DisplayName,
 				Description:    attr.Description,
 				Value:          attr.Value,
@@ -194,12 +192,8 @@ func openid4vpCredentialLogsToIrmaclientLogEntry(
 	for _, cl := range credentialLogs {
 		attrs := make(map[string]string)
 		for _, a := range cl.Attributes {
-			if a.Value != nil && a.Value.TranslatedString != nil {
-				// Use the first available translation as the string value
-				for _, v := range *a.Value.TranslatedString {
-					attrs[a.Id] = v
-					break
-				}
+			if a.Value != nil && a.Value.String != nil {
+				attrs[clientmodels.ClaimPathKey(a.ClaimPath)] = *a.Value.String
 			}
 		}
 		disclosed = append(disclosed, irmaclient.CredentialLog{

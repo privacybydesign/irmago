@@ -1,22 +1,979 @@
 {
-  "issuer": "http://localhost:8880/test-issuer",
-  "credential_issuer": "http://localhost:8880/test-issuer",
+  "issuer": "https://localhost:8443/test-issuer",
+  "credential_issuer": "https://localhost:8443/test-issuer",
   "authorization_servers": [],
   "credential_configurations_supported": {
     "TestCredentialSdJwt": {
       "format": "vc+sd-jwt",
       "scope": "TestCredentialSdJwt",
       "extends": "TestCredential",
-      "cryptographic_binding_methods_supported": ["did:jwk"],
-      "credential_signing_alg_values_supported": ["ES256"],
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
       "proof_types_supported": {
         "jwt": {
-          "proof_signing_alg_values_supported": ["ES256"]
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
         }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Test Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "given_name"
+            ],
+            "display": [
+              {
+                "name": "Given Name",
+                "locale": "en"
+              },
+              {
+                "name": "Voornaam",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "family_name"
+            ],
+            "display": [
+              {
+                "name": "Family Name",
+                "locale": "en"
+              },
+              {
+                "name": "Achternaam",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "email"
+            ],
+            "display": [
+              {
+                "name": "Email",
+                "locale": "en"
+              },
+              {
+                "name": "E-mailadres",
+                "locale": "nl"
+              }
+            ]
+          }
+        ]
       },
       "display": [
         {
           "name": "Test Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
+    "EmailCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "EmailCredentialSdJwt",
+      "extends": "EmailCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Email Credential (SD-JWT)",
+            "locale": "en"
+          },
+          {
+            "name": "E-mail Credential (SD-JWT)",
+            "locale": "nl"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "email"
+            ],
+            "display": [
+              {
+                "name": "Email",
+                "locale": "en"
+              },
+              {
+                "name": "E-mailadres",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "domain"
+            ],
+            "display": [
+              {
+                "name": "Domain",
+                "locale": "en"
+              },
+              {
+                "name": "Domein",
+                "locale": "nl"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "Email Credential (SD-JWT)",
+          "locale": "en"
+        },
+        {
+          "name": "E-mail Credential (SD-JWT)",
+          "locale": "nl"
+        }
+      ]
+    },
+    "PhoneCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "PhoneCredentialSdJwt",
+      "extends": "PhoneCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Phone Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "phone_number"
+            ],
+            "display": [
+              {
+                "name": "Phone Number",
+                "locale": "en"
+              },
+              {
+                "name": "Telefoonnummer",
+                "locale": "nl"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "Phone Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
+    "StudentCardCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "StudentCardCredentialSdJwt",
+      "extends": "StudentCardCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Student Card Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "university"
+            ],
+            "display": [
+              {
+                "name": "University",
+                "locale": "en"
+              },
+              {
+                "name": "Universiteit",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "level"
+            ],
+            "display": [
+              {
+                "name": "Level",
+                "locale": "en"
+              },
+              {
+                "name": "Niveau",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "student_id"
+            ],
+            "display": [
+              {
+                "name": "Student ID",
+                "locale": "en"
+              },
+              {
+                "name": "Studentnummer",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "courses"
+            ],
+            "display": [
+              {
+                "name": "Courses",
+                "locale": "en"
+              },
+              {
+                "name": "Vakken",
+                "locale": "nl"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "Student Card Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
+    "HouseCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "HouseCredentialSdJwt",
+      "extends": "HouseCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_definition": {
+        "type": ["VerifiableCredential", "HouseCredential"],
+        "claims": [
+          {
+            "path": ["owner_name"],
+            "display": [
+              { "name": "Owner Name", "locale": "en" },
+              { "name": "Eigenaar", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address"],
+            "display": [
+              { "name": "Address", "locale": "en" },
+              { "name": "Adres", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address", "street"],
+            "display": [
+              { "name": "Street", "locale": "en" },
+              { "name": "Straat", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address", "city"],
+            "display": [
+              { "name": "City", "locale": "en" },
+              { "name": "Stad", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address", "country"],
+            "display": [
+              { "name": "Country", "locale": "en" },
+              { "name": "Land", "locale": "nl" }
+            ]
+          }
+        ]
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "House Possession Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": ["owner_name"],
+            "display": [
+              { "name": "Owner Name", "locale": "en" },
+              { "name": "Eigenaar", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address"],
+            "display": [
+              { "name": "Address", "locale": "en" },
+              { "name": "Adres", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address", "street"],
+            "display": [
+              { "name": "Street", "locale": "en" },
+              { "name": "Straat", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address", "city"],
+            "display": [
+              { "name": "City", "locale": "en" },
+              { "name": "Stad", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["address", "country"],
+            "display": [
+              { "name": "Country", "locale": "en" },
+              { "name": "Land", "locale": "nl" }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "House Possession Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
+    "MembershipCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "MembershipCredentialSdJwt",
+      "extends": "MembershipCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Membership Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "member_name"
+            ],
+            "display": [
+              {
+                "name": "Member Name",
+                "locale": "en"
+              },
+              {
+                "name": "Naam lid",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "member_since"
+            ],
+            "display": [
+              {
+                "name": "Member Since",
+                "locale": "en"
+              },
+              {
+                "name": "Lid sinds",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "membership_type"
+            ],
+            "display": [
+              {
+                "name": "Membership Type",
+                "locale": "en"
+              },
+              {
+                "name": "Type lidmaatschap",
+                "locale": "nl"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "Membership Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
+    "EduIdCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "EduIdCredentialSdJwt",
+      "extends": "EduIdCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "eduID",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "schac_home_organization"
+            ],
+            "display": [
+              {
+                "name": "Organization",
+                "locale": "en"
+              },
+              {
+                "name": "Instelling",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "name"
+            ],
+            "display": [
+              {
+                "name": "Name",
+                "locale": "en"
+              },
+              {
+                "name": "Naam",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "given_name"
+            ],
+            "display": [
+              {
+                "name": "Given name",
+                "locale": "en"
+              },
+              {
+                "name": "Voornaam",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "family_name"
+            ],
+            "display": [
+              {
+                "name": "Family name",
+                "locale": "en"
+              },
+              {
+                "name": "Achternaam",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "email"
+            ],
+            "display": [
+              {
+                "name": "E-mail",
+                "locale": "en"
+              },
+              {
+                "name": "E-mail",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "eduperson_scoped_affiliation"
+            ],
+            "display": [
+              {
+                "name": "Affiliation (scoped)",
+                "locale": "en"
+              },
+              {
+                "name": "Betrekking (in relatie)",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "eduperson_assurance"
+            ],
+            "display": [
+              {
+                "name": "Assurance",
+                "locale": "en"
+              },
+              {
+                "name": "Bevestiging",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "is_student"
+            ],
+            "display": [
+              {
+                "name": "IsStudent",
+                "locale": "en"
+              },
+              {
+                "name": "IsStudent",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "is_faculty"
+            ],
+            "display": [
+              {
+                "name": "IsFaculty",
+                "locale": "en"
+              },
+              {
+                "name": "IsFaculteitslid",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "is_member"
+            ],
+            "display": [
+              {
+                "name": "IsMember",
+                "locale": "en"
+              },
+              {
+                "name": "IsLid",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "is_staff"
+            ],
+            "display": [
+              {
+                "name": "IsStaff",
+                "locale": "en"
+              },
+              {
+                "name": "IsStaf",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "is_alum"
+            ],
+            "display": [
+              {
+                "name": "IsAlumnus",
+                "locale": "en"
+              },
+              {
+                "name": "IsAlumnus",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "is_affiliate"
+            ],
+            "display": [
+              {
+                "name": "IsAffiliate",
+                "locale": "en"
+              },
+              {
+                "name": "IsVerbonden",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "is_employee"
+            ],
+            "display": [
+              {
+                "name": "IsEmployee",
+                "locale": "en"
+              },
+              {
+                "name": "IsMedewerker",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "is_library-walk-in"
+            ],
+            "display": [
+              {
+                "name": "IsLibraryWalkIn",
+                "locale": "en"
+              },
+              {
+                "name": "IsBibliotheekBezoeker",
+                "locale": "nl"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "eduID",
+          "locale": "en"
+        }
+      ]
+    },
+    "OrganizationCredentialSdJwt": {
+      "format": "vc+sd-jwt",
+      "scope": "OrganizationCredentialSdJwt",
+      "extends": "OrganizationCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_definition": {
+        "type": ["VerifiableCredential", "OrganizationCredential"],
+        "claims": [
+          {
+            "path": ["university"],
+            "display": [
+              { "name": "University", "locale": "en" },
+              { "name": "Universiteit", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "name"],
+            "display": [
+              { "name": "University Name", "locale": "en" },
+              { "name": "Naam universiteit", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties"],
+            "display": [
+              { "name": "Faculties", "locale": "en" },
+              { "name": "Faculteiten", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties", null, "faculty_name"],
+            "display": [
+              { "name": "Faculty Name", "locale": "en" },
+              { "name": "Faculteitsnaam", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties", null, "departments"],
+            "display": [
+              { "name": "Departments", "locale": "en" },
+              { "name": "Afdelingen", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties", null, "departments", null, "dept_name"],
+            "display": [
+              { "name": "Department Name", "locale": "en" },
+              { "name": "Afdelingsnaam", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "faculties", null, "departments", null, "courses"],
+            "display": [
+              { "name": "Courses", "locale": "en" },
+              { "name": "Vakken", "locale": "nl" }
+            ]
+          },
+          {
+            "path": ["university", "founded"],
+            "display": [
+              { "name": "Founded", "locale": "en" },
+              { "name": "Opgericht", "locale": "nl" }
+            ]
+          }
+        ]
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Organization Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "university"
+            ],
+            "display": [
+              {
+                "name": "University",
+                "locale": "en"
+              },
+              {
+                "name": "Universiteit",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "university",
+              "name"
+            ],
+            "display": [
+              {
+                "name": "University Name",
+                "locale": "en"
+              },
+              {
+                "name": "Naam universiteit",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "university",
+              "faculties"
+            ],
+            "display": [
+              {
+                "name": "Faculties",
+                "locale": "en"
+              },
+              {
+                "name": "Faculteiten",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "university",
+              "founded"
+            ],
+            "display": [
+              {
+                "name": "Founded",
+                "locale": "en"
+              },
+              {
+                "name": "Opgericht",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "university",
+              "faculties",
+              null,
+              "faculty_name"
+            ],
+            "display": [
+              {
+                "name": "Faculty Name",
+                "locale": "en"
+              },
+              {
+                "name": "Faculteitsnaam",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "university",
+              "faculties",
+              null,
+              "departments"
+            ],
+            "display": [
+              {
+                "name": "Departments",
+                "locale": "en"
+              },
+              {
+                "name": "Afdelingen",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "university",
+              "faculties",
+              null,
+              "departments",
+              null,
+              "dept_name"
+            ],
+            "display": [
+              {
+                "name": "Department Name",
+                "locale": "en"
+              },
+              {
+                "name": "Afdelingsnaam",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "university",
+              "faculties",
+              null,
+              "departments",
+              null,
+              "courses"
+            ],
+            "display": [
+              {
+                "name": "Courses",
+                "locale": "en"
+              },
+              {
+                "name": "Vakken",
+                "locale": "nl"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "Organization Credential (SD-JWT)",
           "locale": "en"
         }
       ]

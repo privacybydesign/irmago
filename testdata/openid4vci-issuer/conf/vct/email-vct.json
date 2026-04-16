@@ -1,0 +1,17 @@
+{
+  "path": "/vct/email",
+  "credentials": ["EmailCredentialSdJwt"],
+  "document": {
+    "name": "Email Credential (SD-JWT)",
+    "description": "VCT metadata for email SD-JWT credential",
+    "language": "en",
+    "display": [
+      { "lang": "en", "name": "Email Credential (SD-JWT)" }
+    ],
+    "claims": [
+      { "path": ["email"], "sd": "allowed" },
+      { "path": ["domain"], "sd": "allowed" }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

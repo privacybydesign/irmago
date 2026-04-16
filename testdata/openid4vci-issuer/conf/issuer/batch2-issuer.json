@@ -1,0 +1,7 @@
+{
+  "name": "batch2-issuer",
+  "baseUrl": "https://localhost:8443/batch2-issuer",
+  "adminToken": "test-admin-token",
+  "did": "batch2-issuer-did",
+  "usesNonces": true
+}

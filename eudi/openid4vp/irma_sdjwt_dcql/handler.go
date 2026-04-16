@@ -32,9 +32,24 @@ func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.C
 // Compile-time check that SdJwtVcDcqlHandler implements the interface.
 var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
 
-// Format returns the credential format this handler supports.
-func (h *SdJwtVcDcqlHandler) Format() string {
-	return string(clientmodels.Format_SdJwtVc)
+// CanHandleCredentialQuery returns true when the format is dc+sd-jwt and at least
+// one vct_value is a dot-separated IRMA credential type identifier found in the
+// IRMA configuration (e.g., "test.test.email").
+func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
+	if query.Format != "dc+sd-jwt" {
+		return false
+	}
+	for _, vct := range query.VctValues() {
+		parts := strings.Split(vct, ".")
+		if len(parts) != 3 {
+			continue
+		}
+		credTypeId := irma.NewCredentialTypeIdentifier(vct)
+		if _, ok := h.config.CredentialTypes[credTypeId]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // FindCandidates finds all credential instances that match the given DCQL credential query.
@@ -42,7 +57,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	result := &dcql.CredentialQueryResult{}
 
 	// For each VCT value, find matching credentials from storage
-	for _, vct := range query.Meta.VctValues {
+	for _, vct := range query.VctValues() {
 		entries := h.storage.GetCredentialsForId(vct)
 		candidates, err := h.filterCredentialsWithClaims(entries, query)
 		if err != nil {
@@ -87,24 +102,26 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to remove instance of credential %s: %w", sel.CredentialHash, err)
 		}
 
-		sdjwtSelected, err := sdjwtvc.SelectDisclosures(cred.SdJwtVc, sel.AttributeNames)
+		sdjwtSelected, err := sdjwtvc.CreatePresentation(cred.SdJwtVc, sel.ClaimPaths)
 		if err != nil {
-			return nil, fmt.Errorf("failed to select disclosures: %w", err)
+			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
-		kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create kbjwt: %w", err)
+		presentation := string(sdjwtSelected)
+		if sel.RequireHolderBinding {
+			kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
+			}
+			presentation = string(sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt))
 		}
-
-		sdjwtWithKb := sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt)
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
 			QueryId:     sel.QueryId,
-			Credentials: []string{string(sdjwtWithKb)},
+			Credentials: []string{presentation},
 		})
 
-		credLog := h.buildLogCredential(cred.Metadata, sel.AttributeNames)
+		credLog := h.buildLogCredential(cred.Metadata, sel.ClaimPaths)
 		result.CredentialLogs = append(result.CredentialLogs, credLog)
 	}
 
@@ -122,19 +139,22 @@ type dcqlClaimMatch struct {
 	hasValue       bool
 }
 
-// claimKey returns the claim's ID if set, otherwise its dot-joined path.
+// dcqlClaimKey returns the claim's ID if set, otherwise the serialized claim path.
 func dcqlClaimKey(claim dcql.Claim) string {
 	if claim.Id != "" {
 		return claim.Id
 	}
-	return strings.Join(claim.Path, ".")
+	return clientmodels.ClaimPathKey(claim.Path)
 }
 
 // getClaimMatches checks which claims from the query match the credential's attributes.
 func getClaimMatchesForQuery(metadata irmaclient.SdJwtVcBatchMetadata, claims []dcql.Claim) map[string]dcqlClaimMatch {
 	result := make(map[string]dcqlClaimMatch)
 	for _, claim := range claims {
-		attrName := claim.Path[0]
+		attrName, ok := claim.Path[0].(string)
+		if !ok {
+			continue
+		}
 		attributeValue, ok := metadata.Attributes[attrName]
 		if !ok {
 			continue
@@ -278,9 +298,10 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 		at, ok := attrTypesByID[match.attributeName]
 		if !ok {
 			// If the attribute type is not in the schema, create a basic attribute
+			dn := clientmodels.TranslatedString{"en": match.attributeName}
 			attr := clientmodels.Attribute{
-				Id:          match.attributeName,
-				DisplayName: clientmodels.TranslatedString{"en": match.attributeName},
+				ClaimPath:   []any{match.attributeName},
+				DisplayName: &dn,
 			}
 			if rawVal, exists := metadata.Attributes[match.attributeName]; exists {
 				if strVal, ok := rawVal.(string); ok {
@@ -292,9 +313,10 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 		}
 
 		description := clientmodels.TranslatedString(at.Description)
+		displayName := clientmodels.TranslatedString(at.Name)
 		attr := clientmodels.Attribute{
-			Id:          at.ID,
-			DisplayName: clientmodels.TranslatedString(at.Name),
+			ClaimPath:   []any{at.ID},
+			DisplayName: &displayName,
 			Description: &description,
 		}
 
@@ -307,10 +329,9 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 
 		// Set the requested value if the claim had specific value constraints
 		if match.hasValue {
-			ts := clientmodels.TranslatedString(irma.NewTranslatedString(&match.attributeValue))
 			attr.RequestedValue = &clientmodels.AttributeValue{
-				Type:             clientmodels.AttributeType_TranslatedString,
-				TranslatedString: &ts,
+				Type:   clientmodels.AttributeType_String,
+				String: &match.attributeValue,
 			}
 		}
 
@@ -342,7 +363,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		for _, c := range query.Claims {
 			key := c.Id
 			if key == "" {
-				key = strings.Join(c.Path, ".")
+				key = clientmodels.ClaimPathKey(c.Path)
 			}
 			claimMap[key] = c
 		}
@@ -357,16 +378,18 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 	// Build attributes for the selected claims
 	var attributes []clientmodels.Attribute
 	for _, claim := range claimsToShow {
-		attrName := claim.Path[0]
+		pathKey := clientmodels.ClaimPathKey(claim.Path)
+		dn := clientmodels.TranslatedString{"en": pathKey}
 		attr := clientmodels.Attribute{
-			Id:          attrName,
-			DisplayName: clientmodels.TranslatedString{"en": attrName},
+			ClaimPath:   claim.Path,
+			DisplayName: &dn,
 		}
 
 		// Look up display metadata from the credential type schema
 		for _, at := range credType.AttributeTypes {
-			if at.ID == attrName {
-				attr.DisplayName = clientmodels.TranslatedString(at.Name)
+			if clientmodels.ClaimPathKey([]any{at.ID}) == pathKey {
+				name := clientmodels.TranslatedString(at.Name)
+				attr.DisplayName = &name
 				break
 			}
 		}
@@ -374,12 +397,11 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		// Always set RequestedValue on obtainable descriptors (at minimum with just the type).
 		// When specific values are requested, include the value.
 		requestedValue := &clientmodels.AttributeValue{
-			Type: clientmodels.AttributeType_TranslatedString,
+			Type: clientmodels.AttributeType_String,
 		}
 		if len(claim.Values) != 0 {
 			if firstValue, ok := claim.Values[0].(string); ok {
-				ts := clientmodels.TranslatedString(irma.NewTranslatedString(&firstValue))
-				requestedValue.TranslatedString = &ts
+				requestedValue.String = &firstValue
 			}
 		}
 		attr.RequestedValue = requestedValue
@@ -399,7 +421,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 }
 
 // buildLogCredential creates a LogCredential for a disclosed credential.
-func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatchMetadata, disclosedAttributeNames []string) clientmodels.LogCredential {
+func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatchMetadata, disclosedClaimPaths [][]any) clientmodels.LogCredential {
 	credTypeId := irma.NewCredentialTypeIdentifier(metadata.CredentialType)
 
 	logCred := clientmodels.LogCredential{
@@ -423,35 +445,34 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 
 	// Build disclosed attributes
 	var attributes []clientmodels.Attribute
-	for _, attrName := range disclosedAttributeNames {
+	for _, claimPath := range disclosedClaimPaths {
+		pathKey := clientmodels.ClaimPathKey(claimPath)
+		dn := clientmodels.TranslatedString{"en": pathKey}
 		attr := clientmodels.Attribute{
-			Id:          attrName,
-			DisplayName: clientmodels.TranslatedString{"en": attrName},
+			ClaimPath:   claimPath,
+			DisplayName: &dn,
 		}
 
-		// Look up display name from schema
+		// Look up display name and value from schema.
+		// IRMA attributes are flat, so ClaimPathKey([]any{at.ID}) matches the path key.
+		var matchedAtType *irma.AttributeType
 		if credType, ok := h.config.CredentialTypes[credTypeId]; ok {
 			for _, at := range credType.AttributeTypes {
-				if at.ID == attrName {
-					attr.DisplayName = clientmodels.TranslatedString(at.Name)
+				if clientmodels.ClaimPathKey([]any{at.ID}) == pathKey {
+					name := clientmodels.TranslatedString(at.Name)
+					attr.DisplayName = &name
+					matchedAtType = at
 					break
 				}
 			}
 		}
 
 		// Set the disclosed value
-		if rawVal, exists := metadata.Attributes[attrName]; exists {
-			if strVal, ok := rawVal.(string); ok {
-				displayHint := ""
-				if credType, ok := h.config.CredentialTypes[credTypeId]; ok {
-					for _, at := range credType.AttributeTypes {
-						if at.ID == attrName {
-							displayHint = at.DisplayHint
-							break
-						}
-					}
+		if matchedAtType != nil {
+			if rawVal, exists := metadata.Attributes[matchedAtType.ID]; exists {
+				if strVal, ok := rawVal.(string); ok {
+					attr.Value = buildAttributeValue(matchedAtType.DisplayHint, &strVal)
 				}
-				attr.Value = buildAttributeValue(displayHint, &strVal)
 			}
 		}
 
@@ -507,7 +528,7 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 	case "portraitPhoto":
 		return clientmodels.AttributeType_Base64Image
 	default:
-		return clientmodels.AttributeType_TranslatedString
+		return clientmodels.AttributeType_String
 	}
 }
 
@@ -523,8 +544,7 @@ func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.Att
 	case clientmodels.AttributeType_Base64Image:
 		val.Base64Image = rawValue
 	default:
-		ts := clientmodels.TranslatedString(irma.NewTranslatedString(rawValue))
-		val.TranslatedString = &ts
+		val.String = rawValue
 	}
 	return val
 }

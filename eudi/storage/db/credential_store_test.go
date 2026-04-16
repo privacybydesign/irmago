@@ -407,6 +407,56 @@ func TestMarkInstanceUsed_AlreadyUsed_ReturnsNotFound(t *testing.T) {
 
 // --- DeleteBatch ---
 
+// --- DeleteBatchByHash ---
+
+func TestDeleteBatchByHash_Success(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	batch := newBatch("hash-delete-by-hash")
+	require.NoError(t, store.StoreBatch(batch))
+
+	require.NoError(t, store.DeleteBatchByHash("hash-delete-by-hash"))
+
+	_, err := store.GetBatchByHash("hash-delete-by-hash")
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDeleteBatchByHash_NotFound(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	err := store.DeleteBatchByHash("nonexistent-hash")
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDeleteBatchByHash_CascadeDeletesInstances(t *testing.T) {
+	store := newTestCredentialStore(t)
+	db := store.(*credentialStore).db
+
+	batch := newBatchWithInstances("hash-cascade-delete", 3)
+	require.NoError(t, store.StoreBatch(batch))
+
+	// Verify instances exist before deletion.
+	var countBefore int64
+	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countBefore)
+	assert.Equal(t, int64(3), countBefore)
+
+	require.NoError(t, store.DeleteBatchByHash("hash-cascade-delete"))
+
+	// Verify all instances are gone after deletion.
+	var countAfter int64
+	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countAfter)
+	assert.Equal(t, int64(0), countAfter)
+}
+
+func TestDeleteBatchByHash_EmptyHash(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	err := store.DeleteBatchByHash("")
+	require.Error(t, err)
+}
+
+// --- DeleteBatch ---
+
 func TestDeleteBatch_ZeroBatchID(t *testing.T) {
 	store := newTestCredentialStore(t)
 

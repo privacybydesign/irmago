@@ -1,10 +1,14 @@
 package sessiontest
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +20,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+// testingT is a minimal testing interface that our assertion helpers accept.
+// Both *testing.T and fakeT (for failure tests) satisfy this interface.
+type testingT interface {
+	Errorf(format string, args ...interface{})
+	FailNow()
+	Helper()
+}
+
+func strPtr(s string) *string { return &s }
 
 func userInteraction(t *testing.T, c *client.Client, interaction clientmodels.SessionUserInteraction) {
 	go func() {
@@ -160,18 +174,6 @@ func studentCardDisclosure() irma.AttributeConDisCon {
 	}
 }
 
-// mijnOverheidDisclosure returns a common disclosure request for MijnOverheid fullName
-func mijnOverheidDisclosure() irma.AttributeConDisCon {
-	return irma.AttributeConDisCon{
-		irma.AttributeDisCon{
-			irma.AttributeCon{
-				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.firstnames"),
-				irma.NewAttributeRequest("irma-demo.MijnOverheid.fullName.familyname"),
-			},
-		},
-	}
-}
-
 // studentCardOrMijnOverheidDisclosure returns a disclosure with choice between student card and MijnOverheid
 func studentCardOrMijnOverheidDisclosure() irma.AttributeConDisCon {
 	return irma.AttributeConDisCon{
@@ -198,8 +200,8 @@ func requireSessionState(
 ) {
 	t.Helper()
 	require.Equal(t, id, session.Id)
-	require.Equal(t, sessionType, session.Type)
 	require.Equal(t, status, session.Status)
+	require.Equal(t, sessionType, session.Type)
 }
 
 // requireRequestorInfo validates the standard test requestor info
@@ -235,13 +237,184 @@ func denyPermission(t *testing.T, c *client.Client, sessionId int) {
 	})
 }
 
-// makeDisclosureChoice creates a disclosure selection from an owned option
 func intPtr(v int) *int { return &v }
 
-func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance, attributeIds ...string) clientmodels.DisclosureDisconSelection {
-	paths := make([][]any, len(attributeIds))
-	for i, id := range attributeIds {
-		paths[i] = []any{id}
+// requireAttr asserts that the attribute map contains an attribute at the given
+// claim path with the expected string value.
+func requireAttr(t *testing.T, am map[string]clientmodels.Attribute, path []any, expectedValue string) {
+	t.Helper()
+	key := clientmodels.ClaimPathKey(path)
+	attr, ok := am[key]
+	require.True(t, ok, "attribute %s should exist", key)
+	require.NotNil(t, attr.Value, "attribute %s should have a value", key)
+	require.NotNil(t, attr.Value.String, "attribute %s should have a string value", key)
+	require.Equal(t, expectedValue, *attr.Value.String, "attribute %s value mismatch", key)
+}
+
+// requireNoAttr asserts that the attribute map does NOT contain an attribute at the given claim path.
+func requireNoAttr(t *testing.T, am map[string]clientmodels.Attribute, path []any) {
+	t.Helper()
+	key := clientmodels.ClaimPathKey(path)
+	_, ok := am[key]
+	require.False(t, ok, "attribute %s should not exist", key)
+}
+
+// pk is a shorthand for building a ClaimPathKey from path components.
+// pk("email") → "[email]", pk("address", "street") → "[address street]"
+func pk(components ...any) string {
+	return clientmodels.ClaimPathKey(components)
+}
+
+// attributeMap builds a map from the serialized full ClaimPath to the Attribute.
+func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attribute {
+	m := make(map[string]clientmodels.Attribute, len(attrs))
+	for _, a := range attrs {
+		m[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+	return m
+}
+
+// expectedAttr describes an expected attribute with its full claim path,
+// display name, optional description, and typed value.
+type expectedAttr struct {
+	Path           []any
+	DisplayName    *clientmodels.TranslatedString
+	Description    *clientmodels.TranslatedString // nil to skip description check
+	Value          *clientmodels.AttributeValue   // nil means section header (asserts actual is nil)
+	RequestedValue *clientmodels.AttributeValue   // nil to skip check
+}
+
+// strVal creates a string AttributeValue.
+func strVal(s string) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &s}
+}
+
+// boolVal creates a boolean AttributeValue.
+func boolVal(b bool) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Bool, Bool: &b}
+}
+
+// intVal creates an integer AttributeValue.
+func intVal(i int64) *clientmodels.AttributeValue {
+	return &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Int, Int: &i}
+}
+
+// header creates an expectedAttr for a section header (Value == nil).
+func header(path []any, displayName clientmodels.TranslatedString) expectedAttr {
+	return expectedAttr{
+		Path:        path,
+		DisplayName: &displayName,
+	}
+}
+
+// requireAttrsInOrder asserts that the given attributes match the expected list
+// exactly — same order, same paths, same values, same length. When display names
+// are specified, those are checked too.
+func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ...expectedAttr) {
+	t.Helper()
+	require.Len(t, attrs, len(expected), "attribute count mismatch")
+	for i, exp := range expected {
+		actual := attrs[i]
+		pathKey := clientmodels.ClaimPathKey(exp.Path)
+		require.Equal(t, pathKey, clientmodels.ClaimPathKey(actual.ClaimPath),
+			"attribute %d path mismatch", i)
+		if exp.Value != nil {
+			require.NotNil(t, actual.Value, "attribute %d (%s) should have a value", i, pathKey)
+			require.Equal(t, exp.Value.Type, actual.Value.Type,
+				"attribute %d (%s) value type mismatch", i, pathKey)
+			require.Equal(t, exp.Value, actual.Value,
+				"attribute %d (%s) value mismatch", i, pathKey)
+		} else {
+			require.Nil(t, actual.Value,
+				"attribute %d (%s) should be a section header (nil value)", i, pathKey)
+		}
+		if exp.DisplayName != nil {
+			require.NotNil(t, actual.DisplayName,
+				"attribute %d (%s) should have a display name", i, pathKey)
+			for locale, expectedName := range *exp.DisplayName {
+				actualName, ok := (*actual.DisplayName)[locale]
+				require.True(t, ok, "attribute %d (%s) should have display name for locale %q",
+					i, pathKey, locale)
+				require.Equal(t, expectedName, actualName,
+					"attribute %d (%s) display name [%s] mismatch", i, pathKey, locale)
+			}
+		} else {
+			require.Nil(t, actual.DisplayName,
+				"attribute %d (%s) should have nil display name (array item)", i, pathKey)
+		}
+		if exp.Description != nil {
+			require.NotNil(t, actual.Description,
+				"attribute %d (%s) should have a description", i, pathKey)
+			for locale, expectedDesc := range *exp.Description {
+				actualDesc, ok := (*actual.Description)[locale]
+				require.True(t, ok, "attribute %d (%s) should have description for locale %q",
+					i, pathKey, locale)
+				require.Equal(t, expectedDesc, actualDesc,
+					"attribute %d (%s) description [%s] mismatch", i, pathKey, locale)
+			}
+		}
+		if exp.RequestedValue != nil {
+			require.NotNil(t, actual.RequestedValue,
+				"attribute %d (%s) should have a requested value", i, pathKey)
+			require.Equal(t, exp.RequestedValue.Type, actual.RequestedValue.Type,
+				"attribute %d (%s) requested value type mismatch", i, pathKey)
+			require.Equal(t, exp.RequestedValue, actual.RequestedValue,
+				"attribute %d (%s) requested value mismatch", i, pathKey)
+		}
+	}
+}
+
+// findAttr finds the first attribute with the given claim path in the slice.
+func findAttr(attrs []clientmodels.Attribute, path ...any) *clientmodels.Attribute {
+	key := clientmodels.ClaimPathKey(path)
+	for i := range attrs {
+		if clientmodels.ClaimPathKey(attrs[i].ClaimPath) == key {
+			return &attrs[i]
+		}
+	}
+	return nil
+}
+
+// expectedDisclosedAttr describes an expected disclosed attribute in an IRMA
+// server session result.
+type expectedDisclosedAttr struct {
+	Identifier string // e.g. "irma-demo.RU.studentCard.university"
+	Value      string
+}
+
+// requireIrmaServerResult retrieves the session result from the IRMA server
+// and asserts that the disclosed attributes match the expected list exactly.
+// Each inner slice of expected corresponds to one disjunction in the result.
+func requireIrmaServerResult(t *testing.T, irmaServer *IrmaServer, token irma.RequestorToken, expected [][]expectedDisclosedAttr) {
+	t.Helper()
+	result, err := irmaServer.irma.GetSessionResult(token)
+	require.NoError(t, err)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus, "proof should be valid")
+	require.Len(t, result.Disclosed, len(expected), "number of disclosed disjunctions mismatch")
+
+	for i, expDiscon := range expected {
+		actualDiscon := result.Disclosed[i]
+		require.Len(t, actualDiscon, len(expDiscon),
+			"disjunction %d: number of disclosed attributes mismatch", i)
+		for j, exp := range expDiscon {
+			actual := actualDiscon[j]
+			require.Equal(t, exp.Identifier, actual.Identifier.String(), "disjunction %d attribute %d identifier mismatch", i, j)
+			require.Equal(t, irma.AttributeProofStatusPresent, actual.Status, "disjunction %d attribute %d should be present", i, j)
+			require.NotNil(t, actual.RawValue, "disjunction %d attribute %d should have a raw value", i, j)
+			require.Equal(t, exp.Value, *actual.RawValue, "disjunction %d attribute %d value mismatch", i, j)
+		}
+	}
+}
+
+// makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
+// attributes of the given credential instance.
+func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance) clientmodels.DisclosureDisconSelection {
+	var paths [][]any
+	for _, attr := range option.Attributes {
+		if attr.Value == nil {
+			continue // skip section headers
+		}
+		paths = append(paths, attr.ClaimPath)
 	}
 	return clientmodels.DisclosureDisconSelection{
 		Credentials: []clientmodels.SelectedCredential{
@@ -254,39 +427,8 @@ func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance, att
 	}
 }
 
-// expectedPickOne describes the expected shape of a DisclosurePickOne entry.
-type expectedPickOne struct {
-	optional   bool
-	owned      int
-	obtainable int
-}
-
-// requireIssuanceSteps checks plan.IssueDuringDislosure.Steps.
-// Each optionCount argument gives the expected number of Options for that step,
-// and the total number of arguments must equal the expected number of steps.
-func requireIssuanceSteps(t *testing.T, plan *clientmodels.DisclosurePlan, optionCounts ...int) {
-	t.Helper()
-	require.NotNil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.IssueDuringDislosure.Steps, len(optionCounts))
-	for i, count := range optionCounts {
-		require.Len(t, plan.IssueDuringDislosure.Steps[i].Options, count)
-	}
-}
-
-// requireDisclosureChoices checks plan.DisclosureChoicesOverview against expected values.
-func requireDisclosureChoices(t *testing.T, plan *clientmodels.DisclosurePlan, expected ...expectedPickOne) {
-	t.Helper()
-	require.Len(t, plan.DisclosureChoicesOverview, len(expected))
-	for i, exp := range expected {
-		got := plan.DisclosureChoicesOverview[i]
-		require.Equal(t, exp.optional, got.Optional)
-		require.Len(t, got.OwnedOptions, exp.owned)
-		require.Len(t, got.ObtainableOptions, exp.obtainable)
-	}
-}
-
 const (
-	openid4vciIssuerBaseURL = "http://localhost:8880"
+	openid4vciIssuerBaseURL = "https://localhost:8443"
 
 	preAuthIssuerURL  = openid4vciIssuerBaseURL + "/test-issuer"
 	preAuthAdminToken = "test-admin-token"
@@ -296,6 +438,24 @@ const (
 
 	mockAuthorizationServerURL = "http://localhost:9090"
 )
+
+func init() {
+	// Trust the self-signed localhost certificate used by the TLS proxy in Docker,
+	// so test helpers can make HTTPS calls to the issuer and verifier admin APIs.
+	certFile := filepath.Join(testdataFolder, "configurations", "certs", "localhost.crt")
+	pem, err := os.ReadFile(certFile)
+	if err != nil {
+		return // cert not found; skip (e.g., running without TLS)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	pool.AppendCertsFromPEM(pem)
+	http.DefaultTransport = &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: pool},
+	}
+}
 
 func startOpenID4VCISession(t *testing.T, c *client.Client, credOfferURL string) {
 	t.Helper()

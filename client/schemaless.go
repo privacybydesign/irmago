@@ -38,9 +38,10 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 			if attr.RevocationAttribute {
 				continue
 			}
+			dn := clientmodels.TranslatedString(attr.Name)
 			attributes = append(attributes, clientmodels.Attribute{
-				Id:          attr.ID,
-				DisplayName: clientmodels.TranslatedString(attr.Name),
+				ClaimPath:   []any{attr.ID},
+				DisplayName: &dn,
 				Value: &clientmodels.AttributeValue{
 					Type: displayHintToAttributeType(attr.DisplayHint),
 				},
@@ -123,14 +124,19 @@ func createCredentialDescriptor(
 		for _, a := range info.AttributeTypes {
 			if a.GetAttributeTypeIdentifier() == at.Type {
 				requestedValue := &clientmodels.AttributeValue{
-					Type: clientmodels.AttributeType_TranslatedString,
+					Type: clientmodels.AttributeType_String,
 				}
 				if at.Value != nil {
-					requestedValue.TranslatedString = convertOptionalTranslatedString(&at.Value)
+					s := at.Value["en"]
+					if s == "" {
+						s = at.Value[""]
+					}
+					requestedValue.String = &s
 				}
+				dn := clientmodels.TranslatedString(a.Name)
 				attributes = append(attributes, clientmodels.Attribute{
-					Id:             a.ID,
-					DisplayName:    clientmodels.TranslatedString(a.Name),
+					ClaimPath:      []any{a.ID},
+					DisplayName:    &dn,
 					RequestedValue: requestedValue,
 				})
 			}
@@ -163,11 +169,12 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		if at.RevocationAttribute {
 			continue
 		}
+		dn := clientmodels.TranslatedString(at.Name)
 		attributes = append(attributes, clientmodels.Attribute{
-			Id:          at.ID,
-			DisplayName: clientmodels.TranslatedString(at.Name),
+			ClaimPath:   []any{at.ID},
+			DisplayName: &dn,
 			Value: &clientmodels.AttributeValue{
-				Type: clientmodels.AttributeType_TranslatedString,
+				Type: clientmodels.AttributeType_String,
 			},
 		})
 	}
@@ -227,9 +234,10 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				if at.IsOptional() && len(attrValue) == 0 {
 					continue
 				}
+				dn := clientmodels.TranslatedString(at.Name)
 				attributes = append(attributes, clientmodels.Attribute{
-					Id:          at.ID,
-					DisplayName: clientmodels.TranslatedString(at.Name),
+					ClaimPath:   []any{at.ID},
+					DisplayName: &dn,
 					Description: &description,
 					Value:       buildAttributeValue(at.DisplayHint, &attrValue),
 				})
@@ -307,7 +315,7 @@ func filterOutKeyshareCredentials(conf *irma.Configuration, creds irma.Credentia
 }
 
 func displayHintToAttributeType(s string) clientmodels.AttributeType {
-	result := clientmodels.AttributeType_TranslatedString
+	result := clientmodels.AttributeType_String
 	switch s {
 	case "portraitPhoto":
 		result = clientmodels.AttributeType_Base64Image
@@ -332,8 +340,11 @@ func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *c
 		}
 		val.Base64Image = &s
 	default:
-		ts := clientmodels.TranslatedString(*rawValue)
-		val.TranslatedString = &ts
+		s := (*rawValue)["en"]
+		if s == "" {
+			s = (*rawValue)[""]
+		}
+		val.String = &s
 	}
 	return val
 }
@@ -349,13 +360,14 @@ func SatisfiesRequestedAttributes(given, requested []clientmodels.Attribute) (bo
 func checkAttributeList(issues *[]string, path string, given, requested []clientmodels.Attribute) {
 	givenByID := make(map[string]clientmodels.Attribute, len(given))
 	for _, g := range given {
-		givenByID[g.Id] = g
+		givenByID[clientmodels.ClaimPathKey(g.ClaimPath)] = g
 	}
 
 	for _, r := range requested {
-		p := joinPath(path, r.Id)
+		key := clientmodels.ClaimPathKey(r.ClaimPath)
+		p := joinPath(path, key)
 
-		g, ok := givenByID[r.Id]
+		g, ok := givenByID[key]
 		if !ok {
 			*issues = append(*issues, fmt.Sprintf("missing attribute: %s", p))
 			continue
@@ -384,13 +396,6 @@ func checkValueSatisfies(issues *[]string, path string, given clientmodels.Attri
 	}
 
 	switch req.Type {
-	case clientmodels.AttributeType_Object:
-		// Nested attributes must satisfy nested requested constraints.
-		checkAttributeList(issues, path, given.Object, req.Object)
-
-	case clientmodels.AttributeType_Array:
-		checkArrayAllOfUnordered(issues, path, given.Array, req.Array)
-
 	case clientmodels.AttributeType_Int:
 		if req.Int == nil {
 			return
@@ -407,20 +412,16 @@ func checkValueSatisfies(issues *[]string, path string, given clientmodels.Attri
 			*issues = append(*issues, fmt.Sprintf("bool mismatch at %s", path))
 		}
 
-	case clientmodels.AttributeType_TranslatedString:
-		if req.TranslatedString == nil {
+	case clientmodels.AttributeType_String:
+		if req.String == nil {
 			return
 		}
-		if given.TranslatedString == nil {
-			*issues = append(*issues, fmt.Sprintf("translated_string missing at %s", path))
+		if given.String == nil {
+			*issues = append(*issues, fmt.Sprintf("string missing at %s", path))
 			return
 		}
-		// "All-of" on keys: requested languages must exist with same values.
-		for lang, want := range *req.TranslatedString {
-			have, ok := (*given.TranslatedString)[lang]
-			if !ok || have != want {
-				*issues = append(*issues, fmt.Sprintf("translated_string mismatch at %s.%s", path, lang))
-			}
+		if *given.String != *req.String {
+			*issues = append(*issues, fmt.Sprintf("string mismatch at %s", path))
 		}
 
 	case clientmodels.AttributeType_Image:
@@ -442,164 +443,6 @@ func checkValueSatisfies(issues *[]string, path string, given clientmodels.Attri
 	default:
 		// Unknown / empty requested type => treat as "presence already checked"
 	}
-}
-
-// Unordered "all-of":
-// Every requested element must be satisfied by some *distinct* element in given.
-// Uses backtracking to avoid greedy mismatches.
-func checkArrayAllOfUnordered(issues *[]string, path string, given, req []clientmodels.AttributeValue) {
-	// If nothing requested, array type is enough.
-	if len(req) == 0 {
-		return
-	}
-	if len(given) < len(req) {
-		*issues = append(*issues, fmt.Sprintf("array too short at %s: have %d want >= %d", path, len(given), len(req)))
-		return
-	}
-
-	used := make([]bool, len(given))
-
-	var dfs func(i int) bool
-	dfs = func(i int) bool {
-		if i == len(req) {
-			return true
-		}
-
-		// Try to match req[i] with any unused given[j]
-		for j := range given {
-			if used[j] {
-				continue
-			}
-			if valueSatisfiesNoReport(given[j], req[i]) {
-				used[j] = true
-				if dfs(i + 1) {
-					return true
-				}
-				used[j] = false
-			}
-		}
-		return false
-	}
-
-	if dfs(0) {
-		return
-	}
-
-	// If it doesn't match, add a helpful (though not minimal) error.
-	*issues = append(*issues, fmt.Sprintf("array mismatch at %s: could not satisfy all requested elements (unordered all-of)", path))
-}
-
-// valueSatisfiesNoReport mirrors checkValueSatisfies but returns bool only (no side-effects).
-// This is used for array matching/backtracking.
-func valueSatisfiesNoReport(given clientmodels.AttributeValue, req clientmodels.AttributeValue) bool {
-	if req.Type != "" && given.Type != req.Type {
-		return false
-	}
-
-	switch req.Type {
-	case clientmodels.AttributeType_Object:
-		return attributeListSatisfiesNoReport(given.Object, req.Object)
-
-	case clientmodels.AttributeType_Array:
-		// Recurse into unordered all-of arrays as well.
-		return arrayAllOfUnorderedNoReport(given.Array, req.Array)
-
-	case clientmodels.AttributeType_Int:
-		if req.Int == nil {
-			return true
-		}
-		return given.Int != nil && *given.Int == *req.Int
-
-	case clientmodels.AttributeType_Bool:
-		if req.Bool == nil {
-			return true
-		}
-		return given.Bool != nil && *given.Bool == *req.Bool
-
-	case clientmodels.AttributeType_TranslatedString:
-		if req.TranslatedString == nil {
-			return true
-		}
-		if given.TranslatedString == nil {
-			return false
-		}
-		for lang, want := range *req.TranslatedString {
-			have, ok := (*given.TranslatedString)[lang]
-			if !ok || have != want {
-				return false
-			}
-		}
-		return true
-
-	case clientmodels.AttributeType_Image:
-		if req.ImagePath == nil {
-			return true
-		}
-		return given.ImagePath != nil && *given.ImagePath == *req.ImagePath
-
-	case clientmodels.AttributeType_Base64Image:
-		if req.Base64Image == nil {
-			return true
-		}
-		return given.Base64Image != nil && *given.Base64Image == *req.Base64Image
-
-	default:
-		return true
-	}
-}
-
-func arrayAllOfUnorderedNoReport(given, req []clientmodels.AttributeValue) bool {
-	if len(req) == 0 {
-		return true
-	}
-	if len(given) < len(req) {
-		return false
-	}
-
-	used := make([]bool, len(given))
-	var dfs func(i int) bool
-	dfs = func(i int) bool {
-		if i == len(req) {
-			return true
-		}
-		for j := range given {
-			if used[j] {
-				continue
-			}
-			if valueSatisfiesNoReport(given[j], req[i]) {
-				used[j] = true
-				if dfs(i + 1) {
-					return true
-				}
-				used[j] = false
-			}
-		}
-		return false
-	}
-	return dfs(0)
-}
-
-func attributeListSatisfiesNoReport(given, requested []clientmodels.Attribute) bool {
-	givenByID := make(map[string]clientmodels.Attribute, len(given))
-	for _, g := range given {
-		givenByID[g.Id] = g
-	}
-	for _, r := range requested {
-		g, ok := givenByID[r.Id]
-		if !ok {
-			return false
-		}
-		if r.RequestedValue == nil {
-			continue
-		}
-		if g.Value == nil {
-			return false
-		}
-		if !valueSatisfiesNoReport(*g.Value, *r.RequestedValue) {
-			return false
-		}
-	}
-	return true
 }
 
 func joinPath(prefix, id string) string {

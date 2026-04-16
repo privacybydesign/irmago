@@ -107,6 +107,11 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 
 		defer response.Body.Close()
 
+		if response.StatusCode != http.StatusOK {
+			handleFailure(handler, "openid4vp: authorization request returned HTTP %d", response.StatusCode)
+			return
+		}
+
 		authRequestJwt, err := io.ReadAll(response.Body)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to read authorization request body: %v", err)
@@ -121,14 +126,21 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
-		// Store the verifier logo in the cache
-		_, err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().SaveLogo(
-			endEntityCert.SerialNumber.String(),
-			requestorSchemeData.Organization.Logo.Data,
-		)
-		if err != nil {
-			handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
+		if err := validateNonce(request.Nonce); err != nil {
+			handleFailure(handler, "openid4vp: invalid authorization request: %v", err)
 			return
+		}
+
+		// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
+		if endEntityCert != nil {
+			_, err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().SaveLogo(
+				endEntityCert.SerialNumber.String(),
+				requestorSchemeData.Organization.Logo.Data,
+			)
+			if err != nil {
+				handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
+				return
+			}
 		}
 
 		requestor := &clientmodels.TrustedParty{
@@ -137,7 +149,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 				Base64:   base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
 				MimeType: &requestorSchemeData.Organization.Logo.MimeType,
 			},
-			Verified: true,
+			Verified: endEntityCert != nil,
 		}
 
 		eudi.Logger.Infof("auth request: %#v", request)

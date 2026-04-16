@@ -272,9 +272,8 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	}
 
 	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
-	keyBindingService := services.NewHolderBindingKeyService(s.storage.Db())
-
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
+	keyBindingService := services.NewHolderBindingKeyService(s.storage.Db())
 	if requireCryptographicKeyBinding {
 		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
 		num := uint(1)
@@ -481,7 +480,6 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 	if err != nil {
 		// Error storing credentials; remove the already stored keys for the credentials that were received, to avoid orphaned keys in storage
 		if requireCryptographicKeyBinding {
-			// List all internal IDs of the keys that were stored for this credential request, to be able to remove them from storage
 			keyIds := make([]datatypes.UUID, len(publicKeyIdentifiers))
 			for i, key := range publicKeyIdentifiers {
 				keyIds[i] = key.ID

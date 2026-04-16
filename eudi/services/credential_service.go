@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"reflect"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -44,8 +44,8 @@ func NewCredentialService(s storage.Storage) CredentialService {
 	}
 }
 
-func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
-	m, err := c.credentialStore.GetCredentialBatchList()
+func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
+	m, err := s.credentialStore.GetCredentialBatchList()
 	if err != nil {
 		return nil, err
 	}
@@ -79,8 +79,38 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				credentialDisplays[locale] = d.Name
 			}
 
-			attrs = make([]clientmodels.Attribute, len(batch.CredentialMetadata.Claims))
-			for j, claim := range batch.CredentialMetadata.Claims {
+			// Build a display lookup from all metadata claims, keyed by serialized path.
+			// This allows child paths created during flattening to inherit display names
+			// from more specific metadata entries when available.
+			claimDisplayLookup := map[string]clientmodels.TranslatedString{}
+			for _, claim := range batch.CredentialMetadata.Claims {
+				var path []any
+				if err := json.Unmarshal(claim.Path, &path); err != nil {
+					continue
+				}
+				display := clientmodels.TranslatedString{}
+				for _, d := range claim.Display {
+					locale := clientmodels.DefaultFallbackLanguage
+					if d.Locale.Valid {
+						locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+					}
+					display[locale] = d.Name
+				}
+				key := clientmodels.ClaimPathKey(path)
+				claimDisplayLookup[key] = display
+			}
+
+			metadataOrder := buildMetadataOrder(batch.CredentialMetadata.Claims)
+
+			// Parse all claim paths upfront to detect parent claims.
+			claimPaths := make([][]any, len(batch.CredentialMetadata.Claims))
+			for i, claim := range batch.CredentialMetadata.Claims {
+				if err := json.Unmarshal(claim.Path, &claimPaths[i]); err != nil {
+					log.Fatalf("Error unmarshalling JSON: %v", err)
+				}
+			}
+
+			for i, claim := range batch.CredentialMetadata.Claims {
 				attrDisplay := clientmodels.TranslatedString{}
 				for _, d := range claim.Display {
 					locale := clientmodels.DefaultFallbackLanguage
@@ -90,88 +120,37 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					attrDisplay[locale] = d.Name
 				}
 
-				// Build a slice from the claim path for processing
-				var claimPath []any
-				if err := json.Unmarshal(claim.Path, &claimPath); err != nil {
-					log.Fatalf("Error unmarshalling JSON: %v", err)
+				claimPath := claimPaths[i]
+
+				// Skip wildcard paths (containing null). These are display name
+				// templates used by lookupDisplayName during flattening, not
+				// concrete claims to resolve.
+				if containsNil(claimPath) {
+					continue
+				}
+
+				// If this claim is a parent of another concrete (non-wildcard)
+				// metadata claim, emit only a section header. The concrete children
+				// will be handled by their own entries.
+				// If all children are wildcards, we must flatten the value ourselves.
+				if isParentOfConcreteClaim(claimPath, claimPaths) {
+					if len(attrDisplay) > 0 {
+						d := attrDisplay
+						attrs = append(attrs, clientmodels.Attribute{
+							ClaimPath:   claimPath,
+							DisplayName: &d,
+						})
+					}
+					continue
 				}
 
 				claimValue, err := processedSdJwtPayload.GetClaimValue(claimPath)
 				if err != nil {
 					log.Printf("unrecognized claim at path %v; falling back to empty string for claim with path %v: %v", claim.Path, claimPath, err)
-					claimValue = "" // fallback to an empty string if claim value cannot be extracted
+					claimValue = ""
 				}
 
-				// Build the attribute value, based on the value and type extracted from the processed SD-JWT payload.
-				attrValue := clientmodels.AttributeValue{}
-				rt := reflect.TypeOf(claimValue)
-				switch rt.Kind() {
-				case reflect.String:
-					v := claimValue.(string)
-					attrValue.Type = clientmodels.AttributeType_String
-					attrValue.String = &v
-				case reflect.Bool:
-					v := claimValue.(bool)
-					attrValue.Type = clientmodels.AttributeType_Bool
-					attrValue.Bool = &v
-				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-					v := claimValue.(int64) // JSON numbers are unmarshalled as float64 by default, but if the value is an integer it will be represented as int64 in Go
-					attrValue.Type = clientmodels.AttributeType_Int
-					attrValue.Int = &v
-				case reflect.Float32, reflect.Float64:
-					// JSON numbers are unmarshalled as float64 by default, but we will treat them as ints if they have no fractional part
-					fClaimValue := claimValue.(float64)
-					iClaimValue := int64(fClaimValue)
-					if fClaimValue == float64(iClaimValue) {
-						attrValue.Type = clientmodels.AttributeType_Int
-						attrValue.Int = &iClaimValue
-					} else {
-						attrValue.Type = clientmodels.AttributeType_String
-						str := fmt.Sprintf("%.2f", fClaimValue)
-						attrValue.String = &str
-					}
-				case reflect.Slice, reflect.Array:
-					// TODO: both for slices, arrays and structs/maps, this entire func should be recursive
-					arr := reflect.ValueOf(claimValue)
-
-					attrValue.Type = clientmodels.AttributeType_Array
-					attrValue.Array = make([]clientmodels.AttributeValue, arr.Len())
-
-					for i := 0; i < arr.Len(); i++ {
-						val := arr.Index(i)
-						switch val.Elem().Kind() {
-						case reflect.String:
-							v := val.Interface().(string)
-							attrValue.Array[i] = clientmodels.AttributeValue{
-								Type:   clientmodels.AttributeType_String,
-								String: &v,
-							}
-						default:
-							// TODO:
-							// For simplicity, we will treat all array elements as strings by marshalling them to JSON and storing the JSON string as the value. This is a temporary solution until we have a more robust way to represent different attribute types in the client model.
-							elemBytes, err := json.Marshal(val.Interface())
-							if err != nil {
-								log.Fatalf("Error marshalling array element to JSON: %v", err)
-							}
-							elemStr := string(elemBytes)
-							attrValue.Array[i] = clientmodels.AttributeValue{
-								Type:   clientmodels.AttributeType_String,
-								String: &elemStr,
-							}
-						}
-					}
-				case reflect.Map, reflect.Struct:
-					attrValue.Type = clientmodels.AttributeType_Object
-					// TODO: implement
-				default:
-					// For non-string values, we will treat them as translated strings by marshalling the value to JSON and storing it as a string. This is a temporary solution until we have a more robust way to represent different attribute types in the client model.
-				}
-
-				attrs[j] = clientmodels.Attribute{
-					Id:          "", // TODO: what to assign here? needs to be different per language/locale?
-					DisplayName: attrDisplay,
-					Value:       &attrValue, // TODO: fill attributes here; apply JSON Path Pointer to the ProcessedSdJwtPayload to extract the value for this claim
-				}
+				attrs = flattenClaimValue(attrs, claimPath, claimValue, attrDisplay, claimDisplayLookup, metadataOrder)
 			}
 		}
 
@@ -181,8 +160,8 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		}
 
 		// Try get the credential image from filesystem storage, if it exists.
-		credentialLogoManager := c.fileStorage.Credentials().LogoManager()
-		issuerLogoManager := c.fileStorage.Issuers().LogoManager()
+		credentialLogoManager := s.fileStorage.Credentials().LogoManager()
+		issuerLogoManager := s.fileStorage.Issuers().LogoManager()
 
 		var issuerImage *clientmodels.Image = nil
 		var credentialImage *clientmodels.Image = nil
@@ -242,19 +221,27 @@ func (c *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
 			},
-			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
-				clientmodels.CredentialFormat(batch.Format): &batch.RemainingCount,
-			},
-			Attributes:          attrs,
-			IssuanceDate:        batch.IssuedAt.Unix(),
-			ExpiryDate:          exp,
-			Revoked:             false, // revocation is not yet implemented, so default to false for now
-			RevocationSupported: false,
-			IssueURL:            nil, // TODO: add issue URL to storage model so this can be filled in here
+			BatchInstanceCountsRemaining: batchInstanceCountsRemaining(batch),
+			Attributes:                   attrs,
+			IssuanceDate:                 batch.IssuedAt.Unix(),
+			ExpiryDate:                   exp,
+			Revoked:                      false, // revocation is not yet implemented, so default to false for now
+			RevocationSupported:          false,
+			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
 		}
 	}
 
 	return clientModels, nil
+}
+
+// batchInstanceCountsRemaining returns the remaining instance count map for a credential batch.
+// For batch size 1, the single instance is infinitely reusable, so the count is nil (unlimited).
+func batchInstanceCountsRemaining(batch *models.CredentialBatch) map[clientmodels.CredentialFormat]*uint {
+	format := clientmodels.CredentialFormat(batch.Format)
+	if batch.BatchSize <= 1 {
+		return map[clientmodels.CredentialFormat]*uint{format: nil}
+	}
+	return map[clientmodels.CredentialFormat]*uint{format: &batch.RemainingCount}
 }
 
 // StoreIssuedCredentials builds a CredentialBatch from the supplied verified credentials and
@@ -374,6 +361,202 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	return s.credentialStore.StoreBatch(batch)
+}
+
+// isParentOfConcreteClaim returns true if path is a strict prefix of any other
+// concrete (non-wildcard) path in allPaths.
+func isParentOfConcreteClaim(path []any, allPaths [][]any) bool {
+	for _, other := range allPaths {
+		if containsNil(other) {
+			continue
+		}
+		if len(other) > len(path) {
+			match := true
+			for i := range path {
+				if fmt.Sprintf("%v", path[i]) != fmt.Sprintf("%v", other[i]) {
+					match = false
+					break
+				}
+			}
+			if match {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// flattenClaimValue recursively flattens arrays and objects into individual scalar
+// attributes. Each leaf value gets its own Attribute with the full path from root.
+// A section header (Value == nil) is emitted only when the path has an explicit
+// display name in the metadata lookup — inherited display names don't trigger headers.
+// Object keys are ordered by their position in the metadata (via metadataOrder),
+// falling back to alphabetical for keys not in the metadata.
+func flattenClaimValue(
+	attrs []clientmodels.Attribute,
+	path []any,
+	value any,
+	display clientmodels.TranslatedString,
+	lookup map[string]clientmodels.TranslatedString,
+	metadataOrder map[string]int,
+) []clientmodels.Attribute {
+	switch v := value.(type) {
+	case []any:
+		if d, ok := lookupDisplayName(lookup, path); ok {
+			dn := d
+			attrs = append(attrs, clientmodels.Attribute{
+				ClaimPath:   path,
+				DisplayName: &dn,
+			})
+		}
+		for i, elem := range v {
+			childPath := append(append([]any{}, path...), i)
+			childDisplay := childDisplayName(lookup, childPath, display)
+			attrs = flattenClaimValue(attrs, childPath, elem, childDisplay, lookup, metadataOrder)
+		}
+	case map[string]any:
+		if d, ok := lookupDisplayName(lookup, path); ok {
+			dn := d
+			attrs = append(attrs, clientmodels.Attribute{
+				ClaimPath:   path,
+				DisplayName: &dn,
+			})
+		}
+		keys := sortObjectKeys(v, path, metadataOrder)
+		for _, key := range keys {
+			childPath := append(append([]any{}, path...), key)
+			childDisplay := childDisplayName(lookup, childPath, display)
+			attrs = flattenClaimValue(attrs, childPath, v[key], childDisplay, lookup, metadataOrder)
+		}
+	default:
+		var dn *clientmodels.TranslatedString
+		if len(path) == 0 || !isArrayIndex(path[len(path)-1]) {
+			d := display
+			dn = &d
+		}
+		attrs = append(attrs, clientmodels.Attribute{
+			ClaimPath:   path,
+			DisplayName: dn,
+			Value:       clientmodels.NewAttributeValue(value),
+		})
+	}
+	return attrs
+}
+
+// sortObjectKeys returns the keys of an object sorted by their position in the
+// issuer metadata. Keys not in the metadata are appended alphabetically.
+func sortObjectKeys(obj map[string]any, parentPath []any, metadataOrder map[string]int) []string {
+	keys := make([]string, 0, len(obj))
+	for key := range obj {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		pi := metadataOrderForKey(parentPath, keys[i], metadataOrder)
+		pj := metadataOrderForKey(parentPath, keys[j], metadataOrder)
+		if pi != pj {
+			return pi < pj
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
+}
+
+// metadataOrderForKey returns the metadata order index for a child key under parentPath.
+// Tries both exact and wildcard (null) path matching. Returns maxInt if not found.
+func metadataOrderForKey(parentPath []any, key string, metadataOrder map[string]int) int {
+	childPath := append(append([]any{}, parentPath...), key)
+	// Exact match.
+	if idx, ok := metadataOrder[clientmodels.ClaimPathKey(childPath)]; ok {
+		return idx
+	}
+	// Wildcard match.
+	wildcard := make([]any, len(childPath))
+	hasIndex := false
+	for i, c := range childPath {
+		if isArrayIndex(c) {
+			wildcard[i] = nil
+			hasIndex = true
+		} else {
+			wildcard[i] = c
+		}
+	}
+	if hasIndex {
+		if idx, ok := metadataOrder[clientmodels.ClaimPathKey(wildcard)]; ok {
+			return idx
+		}
+	}
+	return 1<<31 - 1
+}
+
+// buildMetadataOrder creates a map from serialized claim path to position index
+// for ordering object keys by their metadata position.
+func buildMetadataOrder(claims []models.CredentialClaim) map[string]int {
+	order := make(map[string]int, len(claims))
+	for i, claim := range claims {
+		var path []any
+		if err := json.Unmarshal(claim.Path, &path); err != nil {
+			continue
+		}
+		order[clientmodels.ClaimPathKey(path)] = i
+	}
+	return order
+}
+
+// containsNil returns true if the path contains a nil component (null wildcard).
+func containsNil(path []any) bool {
+	for _, c := range path {
+		if c == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// isArrayIndex returns true if the path component is a numeric array index.
+func isArrayIndex(component any) bool {
+	switch component.(type) {
+	case int, float64:
+		return true
+	}
+	return false
+}
+
+// childDisplayName looks up display names for a child path created during flattening.
+// It first checks whether the metadata contains a claim entry for the exact child path.
+// If not, it tries a wildcard match (replacing integer indices with nil).
+// If that also fails, it falls back to the parent's display names.
+func childDisplayName(lookup map[string]clientmodels.TranslatedString, childPath []any, parentDisplay clientmodels.TranslatedString) clientmodels.TranslatedString {
+	if d, ok := lookupDisplayName(lookup, childPath); ok {
+		return d
+	}
+	return parentDisplay
+}
+
+// lookupDisplayName checks the lookup map for the given path, first by exact match,
+// then by replacing integer indices with nil (null wildcard) to match metadata paths
+// like ["faculties", null, "faculty_name"].
+func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []any) (clientmodels.TranslatedString, bool) {
+	// Exact match.
+	if d, ok := lookup[clientmodels.ClaimPathKey(path)]; ok && len(d) > 0 {
+		return d, true
+	}
+	// Wildcard match: replace integer indices with nil.
+	wildcard := make([]any, len(path))
+	hasIndex := false
+	for i, c := range path {
+		if isArrayIndex(c) {
+			wildcard[i] = nil
+			hasIndex = true
+		} else {
+			wildcard[i] = c
+		}
+	}
+	if hasIndex {
+		if d, ok := lookup[clientmodels.ClaimPathKey(wildcard)]; ok && len(d) > 0 {
+			return d, true
+		}
+	}
+	return nil, false
 }
 
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.

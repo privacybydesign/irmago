@@ -7,10 +7,12 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -214,7 +216,7 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string
 
 	hash, err := CreateUrlEncodedHash(alg, string(sdJwt))
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
@@ -230,9 +232,10 @@ func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (iana.HashingAlgorith
 		return "", nil, err
 	}
 
+	// SD-JWT spec Section 4.1.1: default to sha-256 if _sd_alg is absent.
 	alg, ok := claims[Key_SdAlg].(string)
 	if !ok {
-		return "", nil, fmt.Errorf("failed to get %s field from claims", Key_SdAlg)
+		alg = string(iana.SHA256)
 	}
 
 	confirm, err := utils.ExtractOptionalWith(claims, Key_Confirmationkey, parseConfirmField)
@@ -241,14 +244,45 @@ func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (iana.HashingAlgorith
 		return "", nil, err
 	}
 
-	keyJson, err := json.Marshal(confirm.Jwk)
+	key, err := resolveHolderKey(confirm)
 	if err != nil {
 		return "", nil, err
 	}
-	key, err := jwk.ParseKey(keyJson)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to parse key (%v) from json: %v", keyJson, err)
-	}
 
 	return iana.HashingAlgorithm(alg), key, nil
+}
+
+// resolveHolderKey extracts the holder public key from a cnf field.
+// Supports both direct JWK (`cnf.jwk`) and DID-based key references (`cnf.kid`).
+// For `did:jwk:` DIDs, the public key is embedded in the DID string itself.
+func resolveHolderKey(cnf *CnfField) (jwk.Key, error) {
+	if cnf.Jwk != nil {
+		keyJson, err := json.Marshal(cnf.Jwk)
+		if err != nil {
+			return nil, err
+		}
+		return jwk.ParseKey(keyJson)
+	}
+
+	if cnf.Kid != nil {
+		return resolveKeyFromDid(*cnf.Kid)
+	}
+
+	return nil, fmt.Errorf("cnf field has neither jwk nor kid")
+}
+
+// resolveKeyFromDid extracts a public key from a DID URL.
+// Currently supports did:jwk where the key is base64url-encoded in the DID itself.
+func resolveKeyFromDid(kid string) (jwk.Key, error) {
+	if strings.HasPrefix(kid, didjwk.Prefix) || strings.HasPrefix(strings.SplitN(kid, "#", 2)[0], didjwk.Prefix) {
+		key, err := didjwk.Resolve(kid)
+		if err != nil {
+			return nil, err
+		}
+		// Store the kid (DID URL) on the key so callers can use it for lookups
+		key.Set(jwk.KeyIDKey, kid)
+		return key, nil
+	}
+
+	return nil, fmt.Errorf("unsupported DID method in cnf.kid: %s", kid)
 }

@@ -20,8 +20,10 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -39,6 +41,7 @@ type Client struct {
 	irmaClient       *irmaclient.IrmaClient
 	logsStorage      irmaclient.LogsStorage
 	keyBinder        sdjwtvc.KeyBinder
+	didValidator     *openid4vp.DidVerifierValidator
 	scheduler        gocron.Scheduler
 	sessionManager   sessionManager
 	// TODO: move preferences from IrmaClient to here
@@ -103,11 +106,16 @@ func New(
 	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
 	// Verifier verification checks if the verifier is trusted
-	verifierValidator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
+	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
+	didValidator := openid4vp.NewDidVerifierValidator(false)
+	verifierValidator := openid4vp.NewCompositeVerifierValidator(x509Validator, didValidator)
 	sdjwtvcStorage := irmaclient.NewBboltSdJwtVcStorage(s)
 
-	sdjwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{sdjwtDcqlHandler}, verifierValidator)
+	// Register the EUDI SD-JWT handler for credentials issued via OID4VCI
+	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(eudiStorage)
+	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
+
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -174,6 +182,7 @@ func New(
 		irmaClient:       irmaClient,
 		logsStorage:      irmaStorage,
 		keyBinder:        irmaKeyBinder,
+		didValidator:     didValidator,
 		scheduler:        scheduler,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
@@ -310,29 +319,43 @@ func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error
 }
 
 func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.CredentialFormat]string) error {
-	allCreds := client.getIrmaCredentialInfoList()
-	relevantCreds := []*irma.CredentialInfo{}
-	for _, hash := range hashByFormat {
-		relevantCreds = append(relevantCreds, allCreds[slices.IndexFunc(allCreds, func(info *irma.CredentialInfo) bool {
+	// Partition hashes into those found in IRMA storage vs those in EUDI storage.
+	allIrmaCreds := client.getIrmaCredentialInfoList()
+	irmaRelevantCreds := []*irma.CredentialInfo{}
+	eudiHashes := map[clientmodels.CredentialFormat]string{}
+
+	for format, hash := range hashByFormat {
+		idx := slices.IndexFunc(allIrmaCreds, func(info *irma.CredentialInfo) bool {
 			return info.Hash == hash
-		})])
+		})
+		if idx >= 0 {
+			irmaRelevantCreds = append(irmaRelevantCreds, allIrmaCreds[idx])
+		} else {
+			eudiHashes[format] = hash
+		}
 	}
 
-	if len(relevantCreds) == 0 {
+	if len(irmaRelevantCreds) == 0 && len(eudiHashes) == 0 {
 		return fmt.Errorf("trying to delete credential that doesn't exist")
 	}
 
-	if same, err := sameCredentialAndAttributesCombi(relevantCreds); !same || err != nil {
-		if !same {
-			return fmt.Errorf("deleting two different credential instances at once is not supported")
-		} else {
+	// Validate that all IRMA-side credentials refer to the same credential+attributes combo.
+	if len(irmaRelevantCreds) > 0 {
+		if same, err := sameCredentialAndAttributesCombi(irmaRelevantCreds); !same || err != nil {
+			if !same {
+				return fmt.Errorf("deleting two different credential instances at once is not supported")
+			}
 			return fmt.Errorf("error while comparing credential attributes: %v", err)
 		}
 	}
 
-	formats := []clientmodels.CredentialFormat{}
+	// Delete IRMA credentials (existing path).
+	irmaFormats := []clientmodels.CredentialFormat{}
 	for format, hash := range hashByFormat {
-		formats = append(formats, format)
+		if _, isEudi := eudiHashes[format]; isEudi {
+			continue
+		}
+		irmaFormats = append(irmaFormats, format)
 		if format == clientmodels.Format_Idemix {
 			if err := client.irmaClient.RemoveCredentialByHash(hash); err != nil {
 				return err
@@ -349,13 +372,28 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		}
 	}
 
-	info := relevantCreds[0]
-	logEntry, err := createRemovalLog(client.GetIrmaConfiguration(), info.Identifier(), info.Attributes, formats)
-	if err != nil {
-		return fmt.Errorf("failed to create delete log: %v", err)
+	// Delete EUDI credentials.
+	if len(eudiHashes) > 0 {
+		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
+		for _, hash := range eudiHashes {
+			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
+				return fmt.Errorf("error while deleting eudi credential: %v", err)
+			}
+		}
 	}
 
-	return client.logsStorage.AddLogEntry(logEntry)
+	// Create removal log for IRMA credentials.
+	// TODO: add removal logging for EUDI credentials.
+	if len(irmaRelevantCreds) > 0 {
+		info := irmaRelevantCreds[0]
+		logEntry, err := createRemovalLog(client.GetIrmaConfiguration(), info.Identifier(), info.Attributes, irmaFormats)
+		if err != nil {
+			return fmt.Errorf("failed to create delete log: %v", err)
+		}
+		return client.logsStorage.AddLogEntry(logEntry)
+	}
+
+	return nil
 }
 
 func createRemovalLog(
@@ -399,8 +437,6 @@ func (client *Client) InstallScheme(url string, publickey []byte) error {
 }
 
 func (client *Client) RemoveStorage() error {
-	client.sessionManager.Clear()
-
 	if err := client.sdjwtvcStorage.RemoveAll(); err != nil {
 		return fmt.Errorf("failed to remove sdjwtvc storage: %v", err)
 	}
@@ -408,9 +444,7 @@ func (client *Client) RemoveStorage() error {
 		return fmt.Errorf("failed to remove all holder private keys: %v", err)
 	}
 
-	if err := client.eudiStorage.RemoveAll(); err != nil {
-		return fmt.Errorf("failed to remove eudi storage: %v", err)
-	}
+	client.sessionManager.Clear()
 
 	return client.irmaClient.RemoveStorage()
 }
@@ -558,9 +592,10 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 				}
 				rawVal := irma.TranslatedString(attributeValues[atType.Index])
 				description := clientmodels.TranslatedString(atType.Description)
+				name := clientmodels.TranslatedString(atType.Name)
 				attributes = append(attributes, clientmodels.Attribute{
-					Id:          atType.ID,
-					DisplayName: clientmodels.TranslatedString(atType.Name),
+					ClaimPath:   []any{atType.ID},
+					DisplayName: &name,
 					Description: &description,
 					Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 				})
@@ -627,9 +662,10 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 			}
 			rawVal := irma.TranslatedString(attr.Value)
 			description := clientmodels.TranslatedString(atType.Description)
+			name := clientmodels.TranslatedString(atType.Name)
 			attributes = append(attributes, clientmodels.Attribute{
-				Id:          atType.ID,
-				DisplayName: clientmodels.TranslatedString(atType.Name),
+				ClaimPath:   []any{atType.ID},
+				DisplayName: &name,
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 			})
@@ -673,9 +709,10 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 			}
 			rawVal := irma.TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
 			description := clientmodels.TranslatedString(atType.Description)
+			name := clientmodels.TranslatedString(atType.Name)
 			attributes = append(attributes, clientmodels.Attribute{
-				Id:          atType.ID,
-				DisplayName: clientmodels.TranslatedString(atType.Name),
+				ClaimPath:   []any{atType.ID},
+				DisplayName: &name,
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
 			})
@@ -724,9 +761,10 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			v := rawVal
 			irmaVal := irma.NewTranslatedString(&v)
 			description := clientmodels.TranslatedString(atType.Description)
+			name := clientmodels.TranslatedString(atType.Name)
 			attributes = append(attributes, clientmodels.Attribute{
-				Id:          atType.ID,
-				DisplayName: clientmodels.TranslatedString(atType.Name),
+				ClaimPath:   []any{atType.ID},
+				DisplayName: &name,
 				Description: &description,
 				Value:       buildAttributeValue(atType.DisplayHint, &irmaVal),
 			})
@@ -762,6 +800,7 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 	if prefs.DeveloperMode {
 		client.openid4vciClient.AllowInsecureHttpForTesting()
 		client.openid4vciClient.Configuration.SetCertificateVerificationMode(eudi.DeveloperModeCertificateVerification)
+		client.didValidator.SetAllowInsecureDidWeb(true)
 		client.openid4vpClient.Configuration.EnableStagingTrustAnchors()
 
 		if err := client.openid4vpClient.Configuration.Reload(); err != nil {

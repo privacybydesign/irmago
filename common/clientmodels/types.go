@@ -1,5 +1,7 @@
 package clientmodels
 
+import "fmt"
+
 const DefaultFallbackLanguage = "en"
 
 // TranslatedString is a map from language code to translated text.
@@ -33,80 +35,125 @@ type Image struct {
 type AttributeType string
 
 const (
-	AttributeType_Object           AttributeType = "object"
-	AttributeType_Array            AttributeType = "array"
-	AttributeType_String           AttributeType = "string"
-	AttributeType_TranslatedString AttributeType = "translated_string"
-	AttributeType_Bool             AttributeType = "boolean"
-	AttributeType_Int              AttributeType = "integer"
-	AttributeType_Image            AttributeType = "image"
-	AttributeType_Base64Image      AttributeType = "base64_image"
+	AttributeType_String      AttributeType = "string"
+	AttributeType_Bool        AttributeType = "boolean"
+	AttributeType_Int         AttributeType = "integer"
+	AttributeType_Image       AttributeType = "image"
+	AttributeType_Base64Image AttributeType = "base64_image"
 )
 
-// AttributeValue holds a typed attribute value.
+// AttributeValue holds a single scalar attribute value. Compound types (arrays,
+// objects) are represented as multiple Attribute entries with nested claim paths
+// instead.
 type AttributeValue struct {
 	Type AttributeType `json:"type"`
 
-	Int              *int64            `json:"int,omitempty"`
-	Bool             *bool             `json:"bool,omitempty"`
-	TranslatedString *TranslatedString `json:"translated_string,omitempty"`
-	String           *string           `json:"string,omitempty"`
-	Array            []AttributeValue  `json:"array,omitempty"`
-	Object           []Attribute       `json:"object,omitempty"`
-	ImagePath        *string           `json:"image_path,omitempty"`
-	Base64Image      *string           `json:"base64_image,omitempty"`
+	Int         *int64  `json:"int,omitempty"`
+	Bool        *bool   `json:"bool,omitempty"`
+	String      *string `json:"string,omitempty"`
+	ImagePath   *string `json:"image_path,omitempty"`
+	Base64Image *string `json:"base64_image,omitempty"`
+}
+
+// NewAttributeValue converts a scalar Go value into an AttributeValue.
+// Only handles scalar types (string, bool, int64, float64). Returns nil for nil
+// input. Callers must flatten arrays and objects into separate Attribute entries.
+func NewAttributeValue(val any) *AttributeValue {
+	if val == nil {
+		return nil
+	}
+	switch v := val.(type) {
+	case string:
+		return &AttributeValue{Type: AttributeType_String, String: &v}
+	case bool:
+		return &AttributeValue{Type: AttributeType_Bool, Bool: &v}
+	case int64:
+		return &AttributeValue{Type: AttributeType_Int, Int: &v}
+	case float64:
+		i := int64(v)
+		if v == float64(i) {
+			return &AttributeValue{Type: AttributeType_Int, Int: &i}
+		}
+		s := fmt.Sprintf("%g", v)
+		return &AttributeValue{Type: AttributeType_String, String: &s}
+	default:
+		s := fmt.Sprintf("%v", v)
+		return &AttributeValue{Type: AttributeType_String, String: &s}
+	}
 }
 
 // HasValue returns true if this AttributeValue carries an actual value (not just a type constraint).
 func (v *AttributeValue) HasValue() bool {
-	return v.Int != nil || v.Bool != nil || v.TranslatedString != nil || v.String != nil ||
-		len(v.Array) > 0 || len(v.Object) > 0 || v.ImagePath != nil || v.Base64Image != nil
+	return v.Int != nil || v.Bool != nil || v.String != nil ||
+		v.ImagePath != nil || v.Base64Image != nil
 }
 
-// Attribute represents a single credential attribute with display metadata.
+// Attribute represents a single claim within a credential.
 type Attribute struct {
-	// Id for this attribute (only the last part in case of irma/idemix)
-	Id string `json:"id"`
-	// The name for this attribute as displayed to the end user
-	DisplayName TranslatedString `json:"display_name"`
-	// The description for this attribute if any
+	// Canonical identifier: the full claim path as an array of strings and integers.
+	// Examples:
+	//   ["email"]                    — flat IRMA attribute
+	//   ["address", "street"]        — nested SD-JWT claim
+	//   ["courses", 1]              — specific array element
+	//   ["departments", 0, "name"]  — nested object inside array
+	//
+	// The UI sends this path back verbatim in SelectedCredential.AttributePaths
+	// when the user grants disclosure permission.
+	ClaimPath []any `json:"claim_path"`
+
+	// Human-readable name for this attribute, localized.
+	// Nil for array item attributes where the parent's name serves as the label.
+	DisplayName *TranslatedString `json:"display_name,omitempty"`
+
+	// Optional longer description for this attribute, localized.
 	Description *TranslatedString `json:"description,omitempty"`
-	// The value that this attribute has as provided by the issuer (absent when it's just an attribute description)
+
+	// The actual value of this attribute as provided by the issuer.
+	// Nil for section header attributes and unfilled requested attributes.
 	Value *AttributeValue `json:"value,omitempty"`
-	// The value that was requested by a verifier (if any)
+
+	// The value that a verifier requested for this attribute (if any).
 	RequestedValue *AttributeValue `json:"requested_value,omitempty"`
+}
+
+// ClaimPathKey produces a deterministic string key from a claim path for use
+// in maps. Go slices can't be map keys, so this serializes the path.
+func ClaimPathKey(path []any) string {
+	return fmt.Sprintf("%v", path)
 }
 
 // Credential represents a full credential with all its metadata and attribute values.
 type Credential struct {
-	// The id for this credential. For irma/idemix credentials this would look like
-	// `pbdf.sidn-pbdf.email`, for EUDI credentials this would be in the form of `https://example.credential.com`
+	// The id for this credential. For IRMA/idemix credentials this would look like
+	// "pbdf.sidn-pbdf.email", for EUDI credentials this is the VCT URL.
 	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
 	// Base64-encoded image for this credential
-	Image *Image `json:"image"`
-	// Absolute path to the image for this credential stored on disk
+	Image *Image `json:"image,omitempty"`
+	// Absolute path to the image for this credential stored on disk.
 	ImagePath *string `json:"image_path,omitempty"`
-	// The display name for this credential
+	// The display name for this credential, localized.
 	Name TranslatedString `json:"name"`
-	// All information about the credential issuer
+	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
-	// The IDs for all instances of this credential in all different formats it's available in.
+	// The IDs for all instances of this credential in all different formats.
 	CredentialInstanceIds map[CredentialFormat]string `json:"credential_instance_ids"`
-	// The number of credential instances left per credential format (in case they were issued in batches)
+	// The number of credential instances left per format (batched issuance).
 	BatchInstanceCountsRemaining map[CredentialFormat]*uint `json:"batch_instance_counts_remaining"`
-	// All the attributes and their values in this credential
+	// All the attributes and their values in this credential.
+	// Ordered by the source metadata (IRMA scheme or EUDI issuer metadata).
+	// Nested objects and arrays are flattened with full claim paths.
 	Attributes []Attribute `json:"attributes"`
-	// The date and time (unix format) at which this credential was issued
+	// The date and time (unix format) at which this credential was issued.
 	IssuanceDate int64 `json:"issuance_date"`
-	// The date and time (unix format) when this credential expires
-	ExpiryDate int64 `json:"expiry_date"` // TODO: should be optional
-	// Whether or not this credential has been revoked
+	// The date and time (unix format) when this credential expires (0 if no expiry).
+	ExpiryDate int64 `json:"expiry_date"`
+	// Whether or not this credential has been revoked.
 	Revoked bool `json:"revoked"`
-	// Whether or not revocation is supported for this credential
+	// Whether or not revocation is supported for this credential.
 	RevocationSupported bool `json:"revocation_supported"`
-	// Url at which this credential can be issued (if any)
+	// URL at which this credential can be issued (if any).
 	IssueURL *TranslatedString `json:"issue_url"`
 }
 
@@ -139,32 +186,33 @@ type Faq struct {
 // SelectableCredentialInstance represents a single credential instance that
 // the user can select for disclosure.
 type SelectableCredentialInstance struct {
-	// The id for this credential. For irma/idemix credentials this would look like
-	// `pbdf.sidn-pbdf.email`, for EUDI credentials this would be in the form of `https://example.credential.com`
+	// The id for this credential. For IRMA/idemix credentials this would look like
+	// "pbdf.sidn-pbdf.email", for EUDI credentials this is the VCT URL.
 	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
-	// Absolute path to the image for this credential stored on disk
+	// Absolute path to the image for this credential stored on disk.
 	ImagePath *string `json:"image_path,omitempty"`
-	// The display name for this credential
+	// The display name for this credential, localized.
 	Name TranslatedString `json:"name"`
-	// All information about the credential issuer
+	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
-	// The credential format for this instance
+	// The credential format for this instance.
 	Format CredentialFormat `json:"format"`
-	// The number of credential instances left for this credential instance
+	// The number of credential instances left for this credential instance.
 	BatchInstanceCountRemaining *uint `json:"batch_instance_count_remaining"`
-	// All the attributes and their values in this credential that are selectable
+	// The attributes selectable for disclosure, ordered by source metadata.
+	// Requested SD claims appear first (in metadata order), non-SD claims after.
 	Attributes []Attribute `json:"attributes"`
-	// The date and time (unix format) at which this credential was issued
+	// The date and time (unix format) at which this credential was issued.
 	IssuanceDate int64 `json:"issuance_date"`
-	// The date and time (unix format) when this credential expires
+	// The date and time (unix format) when this credential expires.
 	ExpiryDate int64 `json:"expiry_date"`
-	// Whether or not this credential has been revoked
+	// Whether or not this credential has been revoked.
 	Revoked bool `json:"revoked"`
-	// Whether or not revocation is supported for this credential
+	// Whether or not revocation is supported for this credential.
 	RevocationSupported bool `json:"revocation_supported"`
-	// Url at which this credential can be issued (if any)
+	// URL at which this credential can be issued (if any).
 	IssueURL *TranslatedString `json:"issue_url"`
 }
 

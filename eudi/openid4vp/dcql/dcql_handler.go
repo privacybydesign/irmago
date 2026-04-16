@@ -34,19 +34,24 @@ func (h *DcqlHandler) FindCandidates(query DcqlQuery) (*DcqlResult, error) {
 	hashToQueryId := make(map[string]string)
 
 	for _, credQuery := range query.Credentials {
-		handler, err := h.findHandlerForFormat(credQuery.Format)
-		if err != nil {
-			return nil, fmt.Errorf("credential query '%s': %w", credQuery.Id, err)
+		handlers := h.findHandlersForQuery(credQuery)
+		if len(handlers) == 0 {
+			return nil, fmt.Errorf("credential query '%s': no credential query handler for query", credQuery.Id)
 		}
 
-		result, err := handler.FindCandidates(credQuery)
-		if err != nil {
-			return nil, fmt.Errorf("credential query '%s': failed to find candidates: %w", credQuery.Id, err)
+		merged := &CredentialQueryResult{}
+		for _, handler := range handlers {
+			result, err := handler.FindCandidates(credQuery)
+			if err != nil {
+				return nil, fmt.Errorf("credential query '%s': failed to find candidates: %w", credQuery.Id, err)
+			}
+			merged.OwnedCandidates = append(merged.OwnedCandidates, result.OwnedCandidates...)
+			merged.ObtainableDescriptors = append(merged.ObtainableDescriptors, result.ObtainableDescriptors...)
 		}
 
-		queryResults[credQuery.Id] = result
+		queryResults[credQuery.Id] = merged
 
-		for _, owned := range result.OwnedCandidates {
+		for _, owned := range merged.OwnedCandidates {
 			if owned.Hash != "" {
 				hashToQueryId[owned.Hash] = credQuery.Id
 			}
@@ -75,42 +80,51 @@ func (h *DcqlHandler) BuildDisclosurePlan(
 }
 
 // PrepareDisclosure prepares the selected credentials for the VP token by delegating
-// to the appropriate handlers based on credential format.
+// to the appropriate handlers based on the credential query.
 func (h *DcqlHandler) PrepareDisclosure(
 	query DcqlQuery,
 	selections []DisclosureSelection,
 	nonce string,
 	clientId string,
 ) (*PreparedDisclosure, error) {
-	// Build a map from queryId -> format
-	queryFormat := make(map[string]string, len(query.Credentials))
+	// Build a map from queryId -> CredentialQuery
+	queryById := make(map[string]CredentialQuery, len(query.Credentials))
 	for _, cq := range query.Credentials {
-		queryFormat[cq.Id] = cq.Format
+		queryById[cq.Id] = cq
 	}
 
-	// Group selections by format
-	selectionsByFormat := make(map[string][]DisclosureSelection)
+	// Group selections by handler
+	type handlerIndex int
+	selectionsByHandler := make(map[handlerIndex][]DisclosureSelection)
 	for _, sel := range selections {
-		format, ok := queryFormat[sel.QueryId]
+		credQuery, ok := queryById[sel.QueryId]
 		if !ok {
 			return nil, fmt.Errorf("unknown query id %q in selection", sel.QueryId)
 		}
-		selectionsByFormat[format] = append(selectionsByFormat[format], sel)
+		// Propagate the holder binding requirement from the credential query.
+		sel.RequireHolderBinding = credQuery.NeedsHolderBinding()
+
+		handlers := h.findHandlersForQuery(credQuery)
+		if len(handlers) == 0 {
+			return nil, fmt.Errorf("no credential query handler for query %q", sel.QueryId)
+		}
+		// Use the first matching handler
+		for i, handler := range h.credentialQueryHandlers {
+			if handler.CanHandleCredentialQuery(credQuery) {
+				selectionsByHandler[handlerIndex(i)] = append(selectionsByHandler[handlerIndex(i)], sel)
+				break
+			}
+		}
 	}
 
 	result := &PreparedDisclosure{}
 
-	for format, sels := range selectionsByFormat {
-		handler, err := h.findHandlerForFormat(format)
-		if err != nil {
-			return nil, err
-		}
-
+	for idx, sels := range selectionsByHandler {
+		handler := h.credentialQueryHandlers[idx]
 		prepared, err := handler.PrepareDisclosure(sels, nonce, clientId)
 		if err != nil {
-			return nil, fmt.Errorf("failed to prepare disclosure for format %q: %w", format, err)
+			return nil, fmt.Errorf("failed to prepare disclosure: %w", err)
 		}
-
 		result.QueryResponses = append(result.QueryResponses, prepared.QueryResponses...)
 		result.CredentialLogs = append(result.CredentialLogs, prepared.CredentialLogs...)
 	}
@@ -118,13 +132,14 @@ func (h *DcqlHandler) PrepareDisclosure(
 	return result, nil
 }
 
-func (h *DcqlHandler) findHandlerForFormat(format string) (DcqlCredentialQueryHandler, error) {
+func (h *DcqlHandler) findHandlersForQuery(query CredentialQuery) []DcqlCredentialQueryHandler {
+	var result []DcqlCredentialQueryHandler
 	for _, handler := range h.credentialQueryHandlers {
-		if handler.Format() == format {
-			return handler, nil
+		if handler.CanHandleCredentialQuery(query) {
+			result = append(result, handler)
 		}
 	}
-	return nil, fmt.Errorf("no credential query handler for format %q", format)
+	return result
 }
 
 // CollectOwnedHashes extracts all credential hashes from query results.

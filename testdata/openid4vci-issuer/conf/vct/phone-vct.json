@@ -1,0 +1,16 @@
+{
+  "path": "/vct/phone",
+  "credentials": ["PhoneCredentialSdJwt"],
+  "document": {
+    "name": "Phone Credential (SD-JWT)",
+    "description": "VCT metadata for phone SD-JWT credential",
+    "language": "en",
+    "display": [
+      { "lang": "en", "name": "Phone Credential (SD-JWT)" }
+    ],
+    "claims": [
+      { "path": ["phone_number"], "sd": "allowed" }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

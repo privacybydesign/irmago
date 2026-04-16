@@ -105,18 +105,6 @@ type ClaimElement struct {
 	SelectivelyDisclosable bool
 }
 
-func (e *ClaimElement) isSdOrContainsSdChildren() bool {
-	if e.SelectivelyDisclosable {
-		return true
-	}
-	for _, c := range e.SubClaims {
-		if c.isSdOrContainsSdChildren() {
-			return true
-		}
-	}
-	return false
-}
-
 func (e *ClaimElement) encode(mode encodeMode) (SerializedClaim, error) {
 	switch e.Type {
 	case Claim_Array:
@@ -395,8 +383,9 @@ func (b *SdJwtBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 		SelectivelyDisclosable: false,
 	}
 
-	if rootNode.isSdOrContainsSdChildren() && sdAlg == "" {
-		return "", fmt.Errorf("'%s' is required when sdjwt contains selectively disclosable claims", Key_SdAlg)
+	// SD-JWT spec Section 4.1.1: default to sha-256 if _sd_alg is absent.
+	if sdAlg == "" {
+		sdAlg = iana.SHA256
 	}
 	if sdAlg != iana.SHA256 {
 		return "", fmt.Errorf("'%s' value not supported: %v", Key_SdAlg, sdAlg)

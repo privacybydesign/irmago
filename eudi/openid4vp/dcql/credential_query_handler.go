@@ -17,8 +17,10 @@ type DisclosureSelection struct {
 	QueryId string
 	// The hash of the selected credential instance
 	CredentialHash string
-	// The attribute names the user chose to disclose
-	AttributeNames []string
+	// The claim paths the user chose to disclose (e.g., [["given_name"], ["address", "street"]])
+	ClaimPaths [][]any
+	// Whether the verifier requires a cryptographic holder binding proof for this credential.
+	RequireHolderBinding bool
 }
 
 // PreparedDisclosure contains the VP token response data and log information
@@ -32,8 +34,8 @@ type PreparedDisclosure struct {
 
 // DcqlCredentialQueryHandler handles DCQL credential queries for a specific credential format.
 type DcqlCredentialQueryHandler interface {
-	// Format returns the credential format this handler supports (e.g., "dc+sd-jwt").
-	Format() string
+	// CanHandleCredentialQuery returns true if this handler can process the given credential query.
+	CanHandleCredentialQuery(query CredentialQuery) bool
 
 	// FindCandidates finds all credential instances that match the given DCQL credential query.
 	FindCandidates(query CredentialQuery) (*CredentialQueryResult, error)

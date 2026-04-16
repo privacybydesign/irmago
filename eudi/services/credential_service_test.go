@@ -58,6 +58,10 @@ func (m *mockCredentialStore) DeleteBatch(batchID datatypes.UUID) error {
 	return nil
 }
 
+func (m *mockCredentialStore) DeleteBatchByHash(hash string) error {
+	return nil
+}
+
 // --- helpers ---
 
 func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesystem.FileSystemStorage) *credentialService {
@@ -261,7 +265,7 @@ func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, result[0].Attributes, 1)
-	assert.Equal(t, "Family Name", result[0].Attributes[0].DisplayName["en"])
+	assert.Equal(t, "Family Name", (*result[0].Attributes[0].DisplayName)["en"])
 }
 
 func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {
@@ -291,7 +295,13 @@ func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
 	counts := result[0].BatchInstanceCountsRemaining
 	require.Len(t, counts, 1)
 	for _, v := range counts {
-		assert.Equal(t, batch.RemainingCount, *v)
+		// Batch size 1 → nil (unlimited), batch size > 1 → remaining count.
+		if batch.BatchSize <= 1 {
+			assert.Nil(t, v, "batch-of-1 should have nil remaining count")
+		} else {
+			require.NotNil(t, v)
+			assert.Equal(t, batch.RemainingCount, *v)
+		}
 	}
 }
 

@@ -24,6 +24,7 @@ func buildPlanFromCredentialQueries(
 
 		pickOnes = append(pickOnes, clientmodels.DisclosurePickOne{
 			Optional:          false,
+			Multiple:          query.Multiple,
 			OwnedOptions:      result.OwnedCandidates,
 			ObtainableOptions: result.ObtainableDescriptors,
 		})

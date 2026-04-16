@@ -401,24 +401,32 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "Demo Name", credential.Name["en"])
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
 
-		require.Equal(t, "Barry", getLogAttrValue(credential.Attributes, "firstnames"))
-		require.Equal(t, "Bar", getLogAttrValue(credential.Attributes, "firstname"))
-		require.Equal(t, "Batsbak", getLogAttrValue(credential.Attributes, "familyname"))
-		require.Equal(t, "Sir", getLogAttrValue(credential.Attributes, "prefix"))
-
-		firstnamesAttr := getLogAttr(credential.Attributes, "firstnames")
-		require.NotNil(t, firstnamesAttr)
-		require.NotNil(t, firstnamesAttr.Description)
-		firstNameDescription := *firstnamesAttr.Description
-		require.Equal(t, "First names", firstnamesAttr.DisplayName["en"])
-		require.Equal(t, "All of your first names", firstNameDescription["en"])
-
-		familynameAttr := getLogAttr(credential.Attributes, "familyname")
-		require.NotNil(t, familynameAttr)
-		require.NotNil(t, familynameAttr.Description)
-		familyNameDescription := *familynameAttr.Description
-		require.Equal(t, "Family name", familynameAttr.DisplayName["en"])
-		require.Equal(t, "Your family name", familyNameDescription["en"])
+		requireAttrsInOrder(t, credential.Attributes,
+			expectedAttr{
+				Path:        []any{"firstnames"},
+				DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+				Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+				Value:       strVal("Barry"),
+			},
+			expectedAttr{
+				Path:        []any{"firstname"},
+				DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+				Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+				Value:       strVal("Bar"),
+			},
+			expectedAttr{
+				Path:        []any{"familyname"},
+				DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+				Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+				Value:       strVal("Batsbak"),
+			},
+			expectedAttr{
+				Path:        []any{"prefix"},
+				DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
+				Description: &clientmodels.TranslatedString{"en": "Family name prefix", "nl": "Tussenvoegsel van uw achternaam"},
+				Value:       strVal("Sir"),
+			},
+		)
 
 		c.Close()
 		keyshareServer.Stop()
@@ -572,32 +580,6 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	require.Equal(t, 10, int(*cred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)]))
 }
 
-// getLogAttrValue finds an attribute by ID and returns its string value.
-// For TranslatedString values, it prefers the English translation, falling back to any available value.
-func getLogAttrValue(attrs []clientmodels.Attribute, id string) string {
-	for _, a := range attrs {
-		if a.Id == id && a.Value != nil && a.Value.TranslatedString != nil {
-			if v, ok := (*a.Value.TranslatedString)["en"]; ok {
-				return v
-			}
-			for _, v := range *a.Value.TranslatedString {
-				return v
-			}
-		}
-	}
-	return ""
-}
-
-// getLogAttr finds an attribute by ID and returns it, or nil if not found.
-func getLogAttr(attrs []clientmodels.Attribute, id string) *clientmodels.Attribute {
-	for i := range attrs {
-		if attrs[i].Id == id {
-			return &attrs[i]
-		}
-	}
-	return nil
-}
-
 func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, log.Type, clientmodels.LogType_CredentialRemoval)
 	require.Len(t, log.RemovalLog.Credentials, 1)
@@ -607,13 +589,14 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       strVal("test@gmail.com"),
+		},
+	)
 }
 
 func testIrmaDisclosureSessionLogs(t *testing.T) {
@@ -672,13 +655,14 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       strVal("test@gmail.com"),
+		},
+	)
 }
 
 func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
@@ -692,13 +676,14 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       strVal("test@gmail.com"),
+		},
+	)
 }
 
 func testEudiSessionLogs(t *testing.T) {
@@ -753,19 +738,14 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
-
-	// Verify that attribute value translations are present for OpenID4VP disclosures
-	require.NotNil(t, emailAttr.Value.TranslatedString)
-	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)["en"], "attribute value should have 'en' translation")
-	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)["nl"], "attribute value should have 'nl' translation")
-	require.Equal(t, "test@gmail.com", (*emailAttr.Value.TranslatedString)[""], "attribute value should have raw value")
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       strVal("test@gmail.com"),
+		},
+	)
 }
 
 func requireRegularIrmaIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
@@ -791,13 +771,14 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
 
-	emailAttr := getLogAttr(cred.Attributes, "email")
-	require.NotNil(t, emailAttr)
-	require.NotNil(t, emailAttr.Description)
-	emailDescription := *emailAttr.Description
-	require.Equal(t, "test@gmail.com", getLogAttrValue(cred.Attributes, "email"))
-	require.Equal(t, "Email address", emailAttr.DisplayName["en"])
-	require.Equal(t, "Your verified email address", emailDescription["en"])
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			Value:       strVal("test@gmail.com"),
+		},
+	)
 }
 
 func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
@@ -905,7 +886,7 @@ func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionHandler *MockS
 	require.Equal(t, clientmodels.Status_RequestPermission, sessionState.Status)
 
 	emailCred := sessionState.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, sessionState.Id, makeDisclosureChoice(emailCred, "email"))
+	grantPermission(t, c, sessionState.Id, makeDisclosureChoice(emailCred))
 
 	sessionState = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, sessionState.Status)
@@ -947,7 +928,7 @@ func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionHandler
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred, "email"))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
@@ -968,7 +949,7 @@ func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionHandler 
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred, "email"))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
@@ -988,7 +969,12 @@ func startCrossDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req i
 }
 
 func startSameDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req any) string {
-	qr, _, _, err := server.irma.StartSession(req, nil, "")
+	sessionJson, _ := startSameDeviceIrmaSessionAtServerWithToken(t, server, req)
+	return sessionJson
+}
+
+func startSameDeviceIrmaSessionAtServerWithToken(t *testing.T, server *IrmaServer, req any) (string, irma.RequestorToken) {
+	qr, token, _, err := server.irma.StartSession(req, nil, "")
 	require.NoError(t, err)
 	session := client.SessionRequestData{
 		Qr:                     *qr,
@@ -997,7 +983,7 @@ func startSameDeviceIrmaSessionAtServer(t *testing.T, server *IrmaServer, req an
 	}
 	sessionJson, err := json.Marshal(session)
 	require.NoError(t, err)
-	return string(sessionJson)
+	return string(sessionJson), token
 }
 
 func createIrmaIssuanceRequestWithSdJwts(credentialId string, attributeId string) *irma.IssuanceRequest {
@@ -1236,13 +1222,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		if cred.CredentialId != "irma-demo.MijnOverheid.fullName" {
 			continue
 		}
-		hasPrefix := false
-		for _, attr := range cred.Attributes {
-			if attr.Id == "prefix" {
-				hasPrefix = true
-				break
-			}
-		}
+		_, hasPrefix := attributeMap(cred.Attributes)[pk("prefix")]
 		if hasPrefix {
 			credWithPrefix = cred
 		} else {
@@ -1252,22 +1232,48 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 
 	// Credential without prefix: optional empty attribute should be excluded
 	require.NotNil(t, credWithoutPrefix)
-	attrIds := make([]string, len(credWithoutPrefix.Attributes))
-	for i, attr := range credWithoutPrefix.Attributes {
-		attrIds[i] = attr.Id
-	}
-	require.Equal(t, []string{"firstnames", "firstname", "familyname"}, attrIds,
-		"empty optional attribute 'prefix' should not be included")
+	requireAttrsInOrder(t, credWithoutPrefix.Attributes,
+		expectedAttr{
+			Path:        []any{"firstnames"},
+			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			Value:       strVal("Barry"),
+		},
+		expectedAttr{
+			Path:        []any{"firstname"},
+			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			Value:       strVal("Bar"),
+		},
+		expectedAttr{
+			Path:        []any{"familyname"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			Value:       strVal("Batsbak"),
+		},
+	)
 
 	// Credential with prefix: optional non-empty attribute should be included
 	require.NotNil(t, credWithPrefix)
-	attrIds = make([]string, len(credWithPrefix.Attributes))
-	for i, attr := range credWithPrefix.Attributes {
-		attrIds[i] = attr.Id
-	}
-	require.Equal(t, []string{"firstnames", "firstname", "familyname", "prefix"}, attrIds,
-		"non-empty optional attribute 'prefix' should be included")
-	require.Equal(t, "Sir", (*credWithPrefix.Attributes[3].Value.TranslatedString)["en"])
+	requireAttrsInOrder(t, credWithPrefix.Attributes,
+		expectedAttr{
+			Path:        []any{"firstnames"},
+			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			Value:       strVal("Barry"),
+		},
+		expectedAttr{
+			Path:        []any{"firstname"},
+			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			Value:       strVal("Bar"),
+		},
+		expectedAttr{
+			Path:        []any{"familyname"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			Value:       strVal("Batsbak"),
+		},
+		expectedAttr{
+			Path:        []any{"prefix"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
+			Value:       strVal("Sir"),
+		},
+	)
 
 	// Issue a credential with an empty non-optional attribute ("firstname" = "")
 	// Non-optional attributes should always be included, even when empty.
@@ -1295,20 +1301,29 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		if cred.CredentialId != "irma-demo.MijnOverheid.fullName" {
 			continue
 		}
-		for _, attr := range cred.Attributes {
-			if attr.Id == "firstname" && attr.Value != nil &&
-				attr.Value.TranslatedString != nil && (*attr.Value.TranslatedString)[""] == "" {
-				credEmptyFirstname = cred
-				break
-			}
+		am := attributeMap(cred.Attributes)
+		if attr, ok := am[pk("firstname")]; ok && attr.Value != nil &&
+			attr.Value.String != nil && *attr.Value.String == "" {
+			credEmptyFirstname = cred
 		}
 	}
 
 	require.NotNil(t, credEmptyFirstname, "credential with empty firstname should exist")
-	attrIds = make([]string, len(credEmptyFirstname.Attributes))
-	for i, attr := range credEmptyFirstname.Attributes {
-		attrIds[i] = attr.Id
-	}
-	require.Equal(t, []string{"firstnames", "firstname", "familyname"}, attrIds,
-		"empty non-optional attribute 'firstname' should still be included")
+	requireAttrsInOrder(t, credEmptyFirstname.Attributes,
+		expectedAttr{
+			Path:        []any{"firstnames"},
+			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			Value:       strVal("Barry"),
+		},
+		expectedAttr{
+			Path:        []any{"firstname"},
+			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			Value:       strVal(""),
+		},
+		expectedAttr{
+			Path:        []any{"familyname"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			Value:       strVal("Batsbak"),
+		},
+	)
 }

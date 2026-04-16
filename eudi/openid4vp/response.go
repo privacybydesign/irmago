@@ -142,7 +142,7 @@ func pickEncryptionAlgorithm(options []string) (jwa.ContentEncryptionAlgorithm, 
 func createVpToken(queryResponses []dcql.QueryResponse) map[string][]string {
 	content := map[string][]string{}
 	for _, resp := range queryResponses {
-		content[resp.QueryId] = resp.Credentials
+		content[resp.QueryId] = append(content[resp.QueryId], resp.Credentials...)
 	}
 
 	return content

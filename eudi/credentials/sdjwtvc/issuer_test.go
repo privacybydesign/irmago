@@ -87,12 +87,15 @@ func Test_BuildSdJwtVc_WithDisclosures_Success(t *testing.T) {
 	requireValidSdJwtVc(t, builder)
 }
 
-func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_Failure(t *testing.T) {
+// Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_DefaultsToSha256 verifies that
+// omitting _sd_alg defaults to sha-256 per SD-JWT spec Section 4.1.1.
+func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_DefaultsToSha256(t *testing.T) {
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
 
 	builder := NewSdJwtBuilder().
 		WithPayload(
+			Claim(Key_Issuer, "https://example.com"),
 			Claim(Key_ExpiryTime, time.Now().Unix()),
 			Claim(Key_VerifiableCredentialType, "test.test.email"),
 			SdClaim("email", "test@gmail.com"),
@@ -100,7 +103,7 @@ func Test_BuildSdJwtVc_DisclosuresWithoutHashingAlg_Failure(t *testing.T) {
 		).
 		WithIssuerCertificateChain(irmaAppCert)
 
-	requireBuildFailure(t, builder)
+	requireValidSdJwtVc(t, builder)
 }
 
 func Test_BuildSdJwtVc_NoVct_BuildFailure(t *testing.T) {

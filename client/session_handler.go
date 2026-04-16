@@ -143,7 +143,7 @@ func filterRandomBlindAttributes(irmaConfig *irma.Configuration, credentials []*
 		randomBlindIDs := make(map[string]struct{})
 		for _, at := range credType.AttributeTypes {
 			if at.RandomBlind {
-				randomBlindIDs[at.ID] = struct{}{}
+				randomBlindIDs[clientmodels.ClaimPathKey([]any{at.ID})] = struct{}{}
 			}
 		}
 		if len(randomBlindIDs) == 0 {
@@ -151,7 +151,7 @@ func filterRandomBlindAttributes(irmaConfig *irma.Configuration, credentials []*
 		}
 		filtered := make([]clientmodels.Attribute, 0, len(cred.Attributes))
 		for _, attr := range cred.Attributes {
-			if _, isBlind := randomBlindIDs[attr.Id]; !isBlind {
+			if _, isBlind := randomBlindIDs[clientmodels.ClaimPathKey(attr.ClaimPath)]; !isBlind {
 				filtered = append(filtered, attr)
 			}
 		}
@@ -272,12 +272,16 @@ func createDisclosureChoicesOverview(
 					// Populate RequestedValue for the requested attribute
 					attrName := attr.AttributeIdentifier.Type.Name()
 					for i := range choiceTemplates[id].Attributes {
-						if choiceTemplates[id].Attributes[i].Id == attrName {
+						if clientmodels.ClaimPathKey(choiceTemplates[id].Attributes[i].ClaimPath) == clientmodels.ClaimPathKey([]any{attrName}) {
 							requestedValue := &clientmodels.AttributeValue{
-								Type: clientmodels.AttributeType_TranslatedString,
+								Type: clientmodels.AttributeType_String,
 							}
 							if attr.Value != nil {
-								requestedValue.TranslatedString = convertOptionalTranslatedString(&attr.Value)
+								if v, ok := attr.Value["en"]; ok {
+									requestedValue.String = &v
+								} else if v, ok := attr.Value[""]; ok {
+									requestedValue.String = &v
+								}
 							}
 							choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
 							break
@@ -305,6 +309,19 @@ func createDisclosureChoicesOverview(
 					val, ok := lookupAttrValue(orig, attrID)
 					if !ok {
 						return nil, fmt.Errorf("credential %s does not contain attribute %v", hash, attrID)
+					}
+
+					// Populate RequestedValue when the verifier specified a required value.
+					if attr.Value != nil {
+						requestedValue := &clientmodels.AttributeValue{
+							Type: clientmodels.AttributeType_String,
+						}
+						if v, ok := attr.Value["en"]; ok {
+							requestedValue.String = &v
+						} else if v, ok := attr.Value[""]; ok {
+							requestedValue.String = &v
+						}
+						val.RequestedValue = requestedValue
 					}
 
 					f.Attributes = append(f.Attributes, val)
@@ -390,12 +407,12 @@ func getIssuedSinceOriginalPlan(
 func filterCredentialToMismatchedAttributes(cred *clientmodels.Credential, requestedAttrs []clientmodels.Attribute) *clientmodels.Credential {
 	requestedByID := make(map[string]*clientmodels.Attribute, len(requestedAttrs))
 	for i := range requestedAttrs {
-		requestedByID[requestedAttrs[i].Id] = &requestedAttrs[i]
+		requestedByID[clientmodels.ClaimPathKey(requestedAttrs[i].ClaimPath)] = &requestedAttrs[i]
 	}
 
 	var filtered []clientmodels.Attribute
 	for _, attr := range cred.Attributes {
-		req, ok := requestedByID[attr.Id]
+		req, ok := requestedByID[clientmodels.ClaimPathKey(attr.ClaimPath)]
 		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {
 			continue
 		}
@@ -406,7 +423,7 @@ func filterCredentialToMismatchedAttributes(cred *clientmodels.Credential, reque
 		)
 		if !satisfied {
 			filtered = append(filtered, clientmodels.Attribute{
-				Id:             attr.Id,
+				ClaimPath:      attr.ClaimPath,
 				DisplayName:    attr.DisplayName,
 				Description:    attr.Description,
 				Value:          attr.Value,
@@ -480,7 +497,7 @@ func createDisclosurePlan(
 
 func lookupAttrValue(orig *clientmodels.SelectableCredentialInstance, id *irma.AttributeIdentifier) (clientmodels.Attribute, bool) {
 	index := slices.IndexFunc(orig.Attributes, func(att clientmodels.Attribute) bool {
-		return att.Id == id.Type.Name()
+		return clientmodels.ClaimPathKey(att.ClaimPath) == clientmodels.ClaimPathKey([]any{id.Type.Name()})
 	})
 	if index >= 0 {
 		return orig.Attributes[index], true

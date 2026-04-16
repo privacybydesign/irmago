@@ -1,5 +1,5 @@
 {
-  "did": "did:web:localhost%3A8880:authcode-issuer:.well-known",
+  "did": "did:web:localhost%3A8443:authcode-issuer:.well-known",
   "alias": "authcode-issuer-did",
   "provider": "did:web",
   "type": "Secp256r1",

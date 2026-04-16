@@ -1101,13 +1101,16 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 // - [x] missing sd_hash in kb-jwt
 // - [x] sd_hash in KB-JWT does not match calculated hash
 // - [x] missing cnf field in issuer signed JWT, but kb-jwt present
+// - [x] kb-jwt nonce does not match expected nonce
 //
 // succeeds for:
 // - [x] required kb-jwt, valid sd-jwt, matching hash in kb-jwt
 // - [x] non-required kb-jwt, no KB-JWT present
+// - [x] kb-jwt nonce matches expected nonce
 
 func Test_VerifierVerificationProcessor_RequiredKbJwt_NoKbJwtInSdJwt_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "nonce"
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithoutKbJwt))
 	require.ErrorContains(t, err, "key binding jwt is required, but not present in sdjwtvc")
@@ -1115,6 +1118,7 @@ func Test_VerifierVerificationProcessor_RequiredKbJwt_NoKbJwtInSdJwt_Fails(t *te
 
 func Test_VerifierVerificationProcessor_InvalidSdJwtVc_WrongKbJwtTypHeader_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "nonce"
 	holderVerifier := NewVerifierVerificationProcessor(true, context)
 	_, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(invalidSdJwtVC_WrongKbTypHeader))
 	require.Error(t, err)
@@ -1138,9 +1142,40 @@ func Test_VerifierVerificationProcessor_NoCnfFieldInIssuerSignedJwt_WithKbJwt_Fa
 
 func Test_VerifierVerificationProcessor_RequiredKbJwt_WithKbJwtInSdJwt_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "nonce"
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithKbJwt))
 	require.NoError(t, err)
+}
+
+func Test_VerifierVerificationProcessor_KbJwtNonce_MatchesExpectedNonce_Succeeds(t *testing.T) {
+	realNonce := "abc123-real-nonce"
+
+	config := newWorkingSdJwtVcKbTestConfig()
+	config.withKbNonce(realNonce)
+
+	sdjwtvc := createTestSdJwtVcKb(t, config)
+
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = realNonce
+
+	verifier := NewVerifierVerificationProcessor(true, context)
+	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
+	require.NoError(t, err)
+}
+
+func Test_VerifierVerificationProcessor_KbJwtNonce_DoesNotMatchExpectedNonce_Fails(t *testing.T) {
+	config := newWorkingSdJwtVcKbTestConfig()
+	config.withKbNonce("nonce-in-kbjwt")
+
+	sdjwtvc := createTestSdJwtVcKb(t, config)
+
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "different-expected-nonce"
+
+	verifier := NewVerifierVerificationProcessor(true, context)
+	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
+	require.ErrorContains(t, err, "nonce")
 }
 
 func Test_VerifierVerificationProcessor_NonRequiredKbJwt_NoKbJwtInSdJwt_Succeeds(t *testing.T) {
@@ -1171,6 +1206,7 @@ func noErrorTestCaseHolder(t *testing.T, config *testSdJwtVcConfig, message stri
 func errorTestCaseVerifier(t *testing.T, config *testSdJwtVcKbConfig, message string) {
 	sdjwtvc := createTestSdJwtVcKb(t, config)
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "nonce"
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.ErrorContains(t, err, message)

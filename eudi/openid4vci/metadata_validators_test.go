@@ -11,10 +11,6 @@ import (
 
 var locale_EN = "en"
 var locale_EN_US = "en-US"
-var locale_EN_GB = "en-GB"
-var locale_FR = "fr"
-var locale_FR_FR = "fr-FR"
-var locale_ES = "es"
 var invalid_Locale = "invalid_locale"
 
 var scope = "https://pid-issuer/vct/pid"
