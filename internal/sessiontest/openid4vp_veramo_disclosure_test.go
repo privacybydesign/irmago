@@ -2265,6 +2265,8 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Nil(t, cred.BatchInstanceCountRemaining,
+		"batch-of-1 credential should have nil remaining in disclosure plan")
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2288,6 +2290,8 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 		"batch-of-1 credential should still be available for a second disclosure")
 
 	cred = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Nil(t, cred.BatchInstanceCountRemaining,
+		"batch-of-1 credential should still have nil remaining after first disclosure")
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2335,6 +2339,10 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.NotNil(t, cred.BatchInstanceCountRemaining,
+		"batch-of-2 credential should have non-nil remaining in disclosure plan")
+	require.Equal(t, uint(2), *cred.BatchInstanceCountRemaining,
+		"batch-of-2 credential should have 2 remaining before first disclosure")
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -2357,6 +2365,10 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
 	cred = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.NotNil(t, cred.BatchInstanceCountRemaining,
+		"batch-of-2 credential should have non-nil remaining after first disclosure")
+	require.Equal(t, uint(1), *cred.BatchInstanceCountRemaining,
+		"batch-of-2 credential should have 1 remaining before second disclosure")
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)

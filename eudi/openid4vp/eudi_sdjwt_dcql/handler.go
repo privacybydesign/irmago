@@ -95,7 +95,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Name:                        credentialDisplayName(batch),
 			Issuer:                      issuerTrustedParty(batch),
 			Format:                      clientmodels.Format_SdJwtVc,
-			BatchInstanceCountRemaining: &batch.RemainingCount,
+			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
 			IssuanceDate:                batch.IssuedAt.Unix(),
 			ExpiryDate:                  expiryUnix(batch),
@@ -727,6 +727,15 @@ func isArrayIndex(component any) bool {
 		return true
 	}
 	return false
+}
+
+// batchInstanceCountRemaining returns nil for batch-of-1 credentials (infinitely
+// reusable) and a pointer to the remaining count for larger batches.
+func batchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
+	if batch.BatchSize <= 1 {
+		return nil
+	}
+	return &batch.RemainingCount
 }
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display metadata.
