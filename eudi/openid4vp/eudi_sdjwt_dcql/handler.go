@@ -246,7 +246,18 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 		}
 
 		displayName := claimDisplayName(batch, claimPath)
+		prevLen := len(attributes)
 		attributes = flattenForDisclosure(attributes, requestedKeys, batch, claimPath, val, displayName)
+
+		// When the DCQL claim specifies a value constraint, set RequestedValue on the
+		// newly added leaf attributes so the UI can show what the verifier asked for.
+		if len(claim.Values) > 0 {
+			for i := prevLen; i < len(attributes); i++ {
+				if attributes[i].Value != nil {
+					attributes[i].RequestedValue = attributes[i].Value
+				}
+			}
+		}
 	}
 
 	// Include non-SD claims: these are always visible in the JWT payload and

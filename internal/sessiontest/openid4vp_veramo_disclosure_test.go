@@ -482,7 +482,11 @@ func testOptionalCredential(t *testing.T) {
 					},
 				},
 			},
-			{Optional: true}, // optional phone (may have no owned options)
+			{
+				Optional: true,
+				// No owned or obtainable options: the phone credential was not issued
+				// and is not obtainable from the veramo issuer in this test.
+			},
 		},
 	})
 
@@ -560,9 +564,10 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 								Value:       strVal("eve@example.com"),
 							},
 							{
-								Path:        []any{"domain"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Domain"},
-								Value:       strVal("example.com"),
+								Path:           []any{"domain"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Domain"},
+								Value:          strVal("example.com"),
+								RequestedValue: strVal("example.com"),
 							},
 						},
 					},
@@ -713,28 +718,38 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Arrays are expanded into individual elements with indexed paths.
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	requireAttrsInOrder(t, cred.Attributes,
-		expectedAttr{
-			Path:        []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-			Value:       strVal("TU Delft"),
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Value:       strVal("TU Delft"),
+							},
+							header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
+							{
+								Path:  []any{"courses", 0},
+								Value: strVal("Algorithms"),
+							},
+							{
+								Path:  []any{"courses", 1},
+								Value: strVal("Databases"),
+							},
+							{
+								Path:  []any{"courses", 2},
+								Value: strVal("Networks"),
+							},
+						},
+					},
+				},
+			},
 		},
-		header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
-		expectedAttr{
-			Path:  []any{"courses", 0},
-			Value: strVal("Algorithms"),
-		},
-		expectedAttr{
-			Path:  []any{"courses", 1},
-			Value: strVal("Databases"),
-		},
-		expectedAttr{
-			Path:  []any{"courses", 2},
-			Value: strVal("Networks"),
-		},
-	)
+	})
 
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -860,23 +875,33 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Null path expands into individual elements with indexed paths.
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	requireAttrsInOrder(t, cred.Attributes,
-		header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
-		expectedAttr{
-			Path:  []any{"courses", 0},
-			Value: strVal("Algorithms"),
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						Attributes: []expectedAttr{
+							header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
+							{
+								Path:  []any{"courses", 0},
+								Value: strVal("Algorithms"),
+							},
+							{
+								Path:  []any{"courses", 1},
+								Value: strVal("Databases"),
+							},
+							{
+								Path:  []any{"courses", 2},
+								Value: strVal("Networks"),
+							},
+						},
+					},
+				},
+			},
 		},
-		expectedAttr{
-			Path:  []any{"courses", 1},
-			Value: strVal("Databases"),
-		},
-		expectedAttr{
-			Path:  []any{"courses", 2},
-			Value: strVal("Networks"),
-		},
-	)
+	})
 
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1166,6 +1191,7 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 			{
 				Owned: []expectedPlanCredential{
 					{
+						CredentialId: "https://localhost:8443/vct/eduid",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"given_name"},
@@ -1456,9 +1482,10 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 								Value:       strVal("Student"),
 							},
 							{
-								Path:        []any{"is_student"},
-								DisplayName: &clientmodels.TranslatedString{"en": "IsStudent", "nl": "IsStudent"},
-								Value:       boolVal(true),
+								Path:           []any{"is_student"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "IsStudent", "nl": "IsStudent"},
+								Value:          boolVal(true),
+								RequestedValue: boolVal(true),
 							},
 							{
 								Path:        []any{"eduperson_assurance"},
@@ -1528,12 +1555,37 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
+	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("alice@example.com"),
+							},
+						},
+					},
+					{
+						CredentialId: "https://localhost:8443/vct/email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("bob@example.com"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
 	pickOne := plan.DisclosureChoicesOverview[0]
 	require.True(t, pickOne.Multiple, "multiple flag should be true in the disclosure plan")
-	require.Len(t, pickOne.OwnedOptions, 2, "both email credentials should be candidates")
 
 	// Select BOTH credentials (this is the key difference from single-select).
 	var selectedCreds []clientmodels.SelectedCredential
@@ -1641,6 +1693,9 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedClaims(t, result, "membership-cred",
+		claim([]any{"member_since"}, "2020-01-01"),
+	)
 }
 
 // testDuplicateClaimsIgnored issues an EmailCredential, then sends a DCQL query
@@ -1878,14 +1933,24 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
-	// The verifier may or may not verify the response (depends on verifier config),
-	// but the session should complete successfully without a KB-JWT.
+	// The session should complete successfully without a KB-JWT because
+	// require_cryptographic_holder_binding was set to false in the DCQL query.
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should succeed without holder binding")
 	requireVerifierReceivedClaims(t, result, "email-no-kb",
 		claim([]any{"email"}, "nokb@example.com"),
 	)
+	// Verify the verifier did not report any holder binding verification.
+	// The veramo API does not expose the raw KB-JWT directly, but if holder binding
+	// had been required and was missing, the verifier would report an error.
+	// We verify indirectly: the query set require_cryptographic_holder_binding=false,
+	// so success here means no KB-JWT was expected or verified.
+	require.NotNil(t, result.Result)
+	for _, msg := range result.Result.Messages {
+		require.NotContains(t, msg.Message, "holder binding",
+			"verifier should not report holder binding issues when it was not required")
+	}
 }
 
 // testVerifierDisplayName verifies that the verifier display name shown to the
@@ -2072,12 +2137,17 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	)
 
 	// Step 4: Third disclosure — all instances exhausted, should fail.
+	// Design decision: when all batch instances are exhausted, the session reports an
+	// error rather than showing a permission request with empty owned options. This is
+	// because the credential type is known but unusable, which is a hard failure rather
+	// than a "missing credential" scenario where issuance could help.
 	veramoSession3 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 	startOpenID4VPDisclosureSession(t, c, veramoSession3.RequestUri)
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Error, session.Status,
 		"third disclosure should fail because all batch instances are exhausted")
+	require.NotNil(t, session.Error, "session should contain an error when batch is exhausted")
 }
 
 // different trust model, the session should result in an error.
@@ -2171,10 +2241,36 @@ func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
 	// The IRMA handler finds the credential matching test.test.email and offers it.
 	// The session reaches permission request with the IRMA credential as an option.
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
-	require.NotNil(t, session.DisclosurePlan)
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions,
-		"IRMA credential should be found as a candidate")
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "test.test.email",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+								Value:       strVal("test@gmail.com"),
+							},
+						},
+					},
+				},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "test.test.email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
 	// Grant permission to disclose the IRMA credential to the veramo verifier.
 	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
