@@ -172,9 +172,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
 			},
-			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
-				clientmodels.CredentialFormat(batch.Format): &batch.RemainingCount,
-			},
+			BatchInstanceCountsRemaining: batchInstanceCountsRemaining(batch),
 			Attributes:          attrs,
 			IssuanceDate:        batch.IssuedAt.Unix(),
 			ExpiryDate:          exp,
@@ -185,6 +183,16 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	}
 
 	return clientModels, nil
+}
+
+// batchInstanceCountsRemaining returns the remaining instance count map for a credential batch.
+// For batch size 1, the single instance is infinitely reusable, so the count is nil (unlimited).
+func batchInstanceCountsRemaining(batch *models.CredentialBatch) map[clientmodels.CredentialFormat]*uint {
+	format := clientmodels.CredentialFormat(batch.Format)
+	if batch.BatchSize <= 1 {
+		return map[clientmodels.CredentialFormat]*uint{format: nil}
+	}
+	return map[clientmodels.CredentialFormat]*uint{format: &batch.RemainingCount}
 }
 
 // StoreIssuedCredentials builds a CredentialBatch from the supplied verified credentials and

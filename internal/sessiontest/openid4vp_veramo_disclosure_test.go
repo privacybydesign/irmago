@@ -2034,6 +2034,10 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 		"domain": "example.com"
 	}`)
 
+	// Batch-of-1 credentials are infinitely reusable, so the remaining count
+	// should be nil (not a pointer to 1) to signal "unlimited" to the UI.
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", nil)
+
 	// Step 2: First disclosure — should succeed.
 	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 	startOpenID4VPDisclosureSession(t, c, veramoSession1.RequestUri)
@@ -2052,6 +2056,9 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 	requireVerifierReceivedClaims(t, result1, "test-credential",
 		claim([]any{"email"}, "batch1@example.com"),
 	)
+
+	// Remaining count should still be nil after disclosure.
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", nil)
 
 	// Step 3: Second disclosure — must also succeed (single instance stays reusable).
 	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
@@ -2098,6 +2105,9 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	issueCredentialViaOid4VciFromIssuer(t, c, sessionHandler, batch2IssuerURL, batch2AdminToken,
 		"EmailCredentialSdJwt", `{"email": "batch2@example.com", "domain": "example.com"}`)
 
+	// Batch-of-2 should have a non-nil remaining count of 2.
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT, Batch 2)", uintPtr(2))
+
 	// Step 2: First disclosure — uses first instance.
 	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 	startOpenID4VPDisclosureSession(t, c, veramoSession1.RequestUri)
@@ -2116,6 +2126,9 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	requireVerifierReceivedClaims(t, result1, "test-credential",
 		claim([]any{"email"}, "batch2@example.com"),
 	)
+
+	// After first disclosure, remaining should be 1.
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT, Batch 2)", uintPtr(1))
 
 	// Step 3: Second disclosure — uses last instance.
 	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
@@ -2836,6 +2849,27 @@ func findCredentialByName(t *testing.T, creds []*clientmodels.Credential, locale
 	}
 	return nil
 }
+
+// requireBatchRemaining asserts the BatchInstanceCountsRemaining for a credential
+// found by display name. Pass expected=nil for unlimited (batch-of-1), or a *uint for finite counts.
+func requireBatchRemaining(t *testing.T, c *client.Client, credName string, expected *uint) {
+	t.Helper()
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialByName(t, creds, "en", credName)
+	require.NotNil(t, cred, "credential %q not found", credName)
+	require.Len(t, cred.BatchInstanceCountsRemaining, 1)
+	for _, remaining := range cred.BatchInstanceCountsRemaining {
+		if expected == nil {
+			require.Nil(t, remaining, "expected nil remaining count (unlimited) for %q", credName)
+		} else {
+			require.NotNil(t, remaining, "expected non-nil remaining count for %q", credName)
+			require.Equal(t, *expected, *remaining, "remaining count mismatch for %q", credName)
+		}
+	}
+}
+
+func uintPtr(v uint) *uint { return &v }
 
 // startOpenID4VPDisclosureSession starts an OpenID4VP disclosure session in the
 // client using the given verifier request URI.

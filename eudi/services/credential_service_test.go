@@ -280,7 +280,13 @@ func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
 	counts := result[0].BatchInstanceCountsRemaining
 	require.Len(t, counts, 1)
 	for _, v := range counts {
-		assert.Equal(t, batch.RemainingCount, *v)
+		// Batch size 1 → nil (unlimited), batch size > 1 → remaining count.
+		if batch.BatchSize <= 1 {
+			assert.Nil(t, v, "batch-of-1 should have nil remaining count")
+		} else {
+			require.NotNil(t, v)
+			assert.Equal(t, batch.RemainingCount, *v)
+		}
 	}
 }
 
