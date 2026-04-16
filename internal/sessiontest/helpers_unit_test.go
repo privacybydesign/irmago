@@ -249,28 +249,49 @@ func testCredMatchesExpected(t *testing.T) {
 	}
 
 	t.Run("matches by id and attributes", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
+		name := clientmodels.TranslatedString{"en": "Email"}
+		cred := makeCred("test.email", name, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
+			Name:         &name,
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
 	})
 
-	t.Run("skips id check when empty", func(t *testing.T) {
+	t.Run("false when expected id empty but actual has id", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
-			CredentialId: "", // skip
+			CredentialId: "",
+			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
+		})
+		require.False(t, result, "empty expected id should not match non-empty actual id")
+	})
+
+	t.Run("matches when both id empty", func(t *testing.T) {
+		cred := makeCred("", clientmodels.TranslatedString{}, emailAttr)
+		result := credMatchesExpected(cred, expectedPlanCredential{
+			CredentialId: "",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
 	})
 
-	t.Run("skips name check when nil", func(t *testing.T) {
+	t.Run("false when expected name nil but actual has name", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         nil, // skip
+			Name:         nil,
+			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
+		})
+		require.False(t, result, "nil expected name should not match non-empty actual name")
+	})
+
+	t.Run("matches when both name empty", func(t *testing.T) {
+		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
+		result := credMatchesExpected(cred, expectedPlanCredential{
+			CredentialId: "test.email",
+			Name:         nil,
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
@@ -280,8 +301,9 @@ func testCredMatchesExpected(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mail"}, emailAttr)
 		name := clientmodels.TranslatedString{"en": "Email", "nl": "E-mail"}
 		result := credMatchesExpected(cred, expectedPlanCredential{
-			Name:       &name,
-			Attributes: []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
+			CredentialId: "test.email",
+			Name:         &name,
+			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
 	})
@@ -299,8 +321,9 @@ func testCredMatchesExpected(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
 		wrongName := clientmodels.TranslatedString{"en": "Phone"}
 		result := credMatchesExpected(cred, expectedPlanCredential{
-			Name:       &wrongName,
-			Attributes: []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
+			CredentialId: "test.email",
+			Name:         &wrongName,
+			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.False(t, result)
 	})
@@ -308,6 +331,7 @@ func testCredMatchesExpected(t *testing.T) {
 	t.Run("false on attribute count mismatch", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
+			CredentialId: "test.email",
 			Attributes: []expectedAttr{
 				{Path: []any{"email"}, Value: strVal("test@example.com")},
 				{Path: []any{"domain"}, Value: strVal("example.com")},
@@ -319,7 +343,8 @@ func testCredMatchesExpected(t *testing.T) {
 	t.Run("false on path mismatch", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
-			Attributes: []expectedAttr{{Path: []any{"phone"}, Value: strVal("test@example.com")}},
+			CredentialId: "test.email",
+			Attributes:   []expectedAttr{{Path: []any{"phone"}, Value: strVal("test@example.com")}},
 		})
 		require.False(t, result)
 	})
@@ -327,7 +352,8 @@ func testCredMatchesExpected(t *testing.T) {
 	t.Run("false on value mismatch", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
-			Attributes: []expectedAttr{{Path: []any{"email"}, Value: strVal("wrong@example.com")}},
+			CredentialId: "test.email",
+			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("wrong@example.com")}},
 		})
 		require.False(t, result)
 	})
@@ -335,7 +361,8 @@ func testCredMatchesExpected(t *testing.T) {
 	t.Run("skips value comparison when expected nil", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
-			Attributes: []expectedAttr{{Path: []any{"email"}, Value: nil}},
+			CredentialId: "test.email",
+			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: nil}},
 		})
 		require.True(t, result)
 	})
@@ -569,16 +596,21 @@ func testRequireDisclosurePlan(t *testing.T) {
 			},
 		}
 		// Expect the Delft credential — credMatchesExpected should find it even though Amsterdam comes first.
+		scName := clientmodels.TranslatedString{"en": "Student Card"}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
 				{
 					Owned: []expectedPlanCredential{
 						{
+							CredentialId: "sc",
+							Name:         &scName,
 							Attributes: []expectedAttr{
 								{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University"}, Value: strVal("Amsterdam")},
 							},
 						},
 						{
+							CredentialId: "sc",
+							Name:         &scName,
 							Attributes: []expectedAttr{
 								{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University"}, Value: strVal("Delft")},
 							},

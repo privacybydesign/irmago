@@ -91,7 +91,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		result.OwnedCandidates = append(result.OwnedCandidates, &clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
-			Name:                        clientmodels.TranslatedString{"en": batch.VerifiableCredentialType},
+			Name:                        credentialDisplayName(batch),
 			Format:                      clientmodels.Format_SdJwtVc,
 			BatchInstanceCountRemaining: &batch.RemainingCount,
 			Attributes:                  attributes,
@@ -439,7 +439,7 @@ func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clien
 	return clientmodels.LogCredential{
 		CredentialId: batch.VerifiableCredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
-		Name:         clientmodels.TranslatedString{"en": batch.VerifiableCredentialType},
+		Name:         credentialDisplayName(batch),
 		Attributes:   attrs,
 		IssuanceDate: batch.IssuedAt.Unix(),
 		ExpiryDate:   expiryUnix(batch),
@@ -541,6 +541,25 @@ func isArrayIndex(component any) bool {
 		return true
 	}
 	return false
+}
+
+// credentialDisplayName returns the display name for a credential from its stored metadata.
+// Falls back to the VCT if no display metadata is available.
+func credentialDisplayName(batch *models.CredentialBatch) clientmodels.TranslatedString {
+	if batch.CredentialMetadata != nil {
+		ts := clientmodels.TranslatedString{}
+		for _, d := range batch.CredentialMetadata.Display {
+			locale := "en"
+			if d.Locale.Valid {
+				locale = d.Locale.V
+			}
+			ts[locale] = d.Name
+		}
+		if len(ts) > 0 {
+			return ts
+		}
+	}
+	return clientmodels.TranslatedString{"en": batch.VerifiableCredentialType}
 }
 
 // claimDisplayName looks up the display name for a claim from the stored credential metadata.

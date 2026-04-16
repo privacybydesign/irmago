@@ -107,6 +107,7 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 			{
 				Owned: []expectedPlanCredential{{
 					CredentialId: "test.test.email",
+					Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
 					Attributes: []expectedAttr{
 						{
 							Path:        []any{"email"},
@@ -214,6 +215,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 			{
 				Owned: []expectedPlanCredential{{
 					CredentialId: "test.test.email",
+					Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
 					Attributes: []expectedAttr{
 						{
 							Path:        []any{"email"},
@@ -390,6 +392,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
@@ -436,6 +439,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 			{
 				Owned: []expectedPlanCredential{{
 					CredentialId: "irma-demo.MijnOverheid.fullName",
+					Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
 					Attributes: []expectedAttr{
 						{
 							Path:        []any{"firstname"},
@@ -553,6 +557,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 			{
 				Owned: []expectedPlanCredential{{
 					CredentialId: "irma-demo.RU.studentCard",
+					Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 					Attributes: []expectedAttr{
 						{
 							Path:        []any{"university"},
@@ -727,6 +732,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 			{
 				Owned: []expectedPlanCredential{{
 					CredentialId: "irma-demo.RU.studentCard",
+					Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 					Attributes: []expectedAttr{
 						{
 							Path:        []any{"university"},
@@ -905,6 +911,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
@@ -951,6 +958,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 			{
 				Owned: []expectedPlanCredential{{
 					CredentialId: "irma-demo.MijnOverheid.fullName",
+					Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
 					Attributes: []expectedAttr{
 						{
 							Path:        []any{"firstname"},
@@ -1082,6 +1090,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},

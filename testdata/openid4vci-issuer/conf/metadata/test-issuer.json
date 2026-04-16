@@ -104,6 +104,10 @@
           {
             "name": "Email Credential (SD-JWT)",
             "locale": "en"
+          },
+          {
+            "name": "E-mail Credential (SD-JWT)",
+            "locale": "nl"
           }
         ],
         "claims": [
@@ -143,6 +147,10 @@
         {
           "name": "Email Credential (SD-JWT)",
           "locale": "en"
+        },
+        {
+          "name": "E-mail Credential (SD-JWT)",
+          "locale": "nl"
         }
       ]
     },
