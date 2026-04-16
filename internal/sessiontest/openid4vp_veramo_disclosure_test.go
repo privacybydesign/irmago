@@ -40,6 +40,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("disclose all array elements with null path", testDiscloseAllArrayElementsWithNullPath)
 	t.Run("non-sd claims shown in disclosure plan", testNonSdClaimsShownInDisclosurePlan)
 	t.Run("non-sd array claims flattened in disclosure plan", testNonSdArrayClaimsFlattenedInDisclosurePlan)
+	t.Run("non-sd single item array flattened in disclosure plan", testNonSdSingleItemArrayFlattenedInDisclosurePlan)
 	t.Run("issue many credentials and disclose subset", testIssueManyCredentialsAndDiscloseSubset)
 	t.Run("claim sets picks first satisfiable set", testClaimSetsPicksFirstSatisfiableSet)
 	t.Run("multiple vct values matches across types", testMultipleVctValuesMatchesAcrossTypes)
@@ -1075,7 +1076,7 @@ func testNonSdArrayClaimsFlattenedInDisclosurePlan(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// The disclosure plan should show member_name (SD) and the non-SD claims:
-	// member_since (scalar) and benefits (array, flattened into indexed elements).
+	// member_since (scalar) and benefits (array, flattened into header + indexed elements).
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -1095,6 +1096,7 @@ func testNonSdArrayClaimsFlattenedInDisclosurePlan(t *testing.T) {
 								DisplayName: &clientmodels.TranslatedString{"en": "Member Since"},
 								Value:       strVal("2020-01-15"),
 							},
+							header([]any{"benefits"}, clientmodels.TranslatedString{"en": "benefits"}),
 							{
 								Path:  []any{"benefits", 0},
 								Value: strVal("Lounge access"),
@@ -1106,6 +1108,75 @@ func testNonSdArrayClaimsFlattenedInDisclosurePlan(t *testing.T) {
 							{
 								Path:  []any{"benefits", 2},
 								Value: strVal("Priority support"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+}
+
+// testNonSdSingleItemArrayFlattenedInDisclosurePlan verifies that a non-SD
+// claim containing a single-element array is correctly flattened into a section
+// header and one indexed attribute instead of being stringified.
+func testNonSdSingleItemArrayFlattenedInDisclosurePlan(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+		"member_name": "Alice",
+		"member_since": "2023-06-01",
+		"membership_type": "Silver",
+		"benefits": ["Early access"]
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "membership-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/membership"]
+					},
+					"claims": [
+						{ "path": ["member_name"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/membership",
+						Name:         clientmodels.TranslatedString{"en": "Membership Credential (SD-JWT)"},
+						IssuerName:   clientmodels.TranslatedString{},
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"member_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Member Name"},
+								Value:       strVal("Alice"),
+							},
+							{
+								Path:        []any{"member_since"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Member Since"},
+								Value:       strVal("2023-06-01"),
+							},
+							header([]any{"benefits"}, clientmodels.TranslatedString{"en": "benefits"}),
+							{
+								Path:  []any{"benefits", 0},
+								Value: strVal("Early access"),
 							},
 						},
 					},
