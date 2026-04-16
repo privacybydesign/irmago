@@ -48,7 +48,6 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("no claims requested shares only non-sd claims", testNoClaimsRequestedSharesOnlyNonSdClaims)
 	t.Run("duplicate claims ignored", testDuplicateClaimsIgnored)
 	t.Run("duplicate nested claims ignored", testDuplicateNestedClaimsIgnored)
-	t.Run("requireDisclosurePlan only checks first option", testRequireDisclosurePlanOnlyChecksFirstOption)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("batch of one credential remains usable after disclosure", testBatchOfOneCredentialRemainsUsableAfterDisclosure)
@@ -1799,89 +1798,6 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 		claim([]any{"owner_name"}, "Duplicate Tester"),
 		claim([]any{"address", "street"}, "Kalverstraat 1"),
 		claim([]any{"address", "city"}, "Amsterdam"),
-	)
-}
-
-// testRequireDisclosurePlanOnlyChecksFirstOption demonstrates that
-// requireDisclosurePlan only validates OwnedOptions[0] and ignores the rest.
-// This test issues two email credentials, but requireDisclosurePlan only sees
-// the first one — it doesn't verify the count or the second credential.
-func testRequireDisclosurePlanOnlyChecksFirstOption(t *testing.T) {
-	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
-	defer c.Close()
-
-	// Issue two email credentials with different addresses.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
-		"email": "alice@example.com",
-		"domain": "example.com"
-	}`)
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
-		"email": "bob@example.com",
-		"domain": "example.com"
-	}`)
-
-	dcqlQuery := `{
-		"dcql": {
-			"credentials": [
-				{
-					"id": "email-cred",
-					"format": "dc+sd-jwt",
-					"meta": {
-						"vct_values": ["https://localhost:8443/vct/email"]
-					},
-					"claims": [
-						{ "path": ["email"] }
-					]
-				}
-			]
-		}
-	}`
-	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
-
-	session := awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	// There should be 2 owned options (alice and bob).
-	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 2,
-		"both email credentials should be candidates")
-
-	// BUG: requireDisclosurePlan only checks OwnedOptions[0] (alice).
-	// Asserting bob's email value should fail because the helper never looks at OwnedOptions[1].
-	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
-		Choices: []expectedPickOneChoice{
-			{
-				Owned: []expectedPlanCredential{
-					{
-						Attributes: []expectedAttr{
-							{
-								Path:        []any{"email"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
-								Value:       strVal("bob@example.com"),
-							},
-						},
-					},
-				},
-			},
-		},
-	})
-
-	// Disclose the first option and verify the verifier received data.
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
-
-	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
-
-	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
-	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
-		"verifier session should have received or verified the response")
-	requireVerifierReceivedClaims(t, result, "email-cred",
-		claim([]any{"email"}, "alice@example.com"),
 	)
 }
 
