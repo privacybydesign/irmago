@@ -216,7 +216,7 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string
 
 	hash, err := CreateUrlEncodedHash(alg, string(sdJwt))
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)

@@ -329,25 +329,6 @@ func isParentOfConcreteClaim(path []any, allPaths [][]any) bool {
 	return false
 }
 
-// isParentClaim returns true if path is a strict prefix of any other path in allPaths.
-func isParentClaim(path []any, allPaths [][]any) bool {
-	for _, other := range allPaths {
-		if len(other) > len(path) {
-			match := true
-			for i := range path {
-				if fmt.Sprintf("%v", path[i]) != fmt.Sprintf("%v", other[i]) {
-					match = false
-					break
-				}
-			}
-			if match {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // flattenClaimValue recursively flattens arrays and objects into individual scalar
 // attributes. Each leaf value gets its own Attribute with the full path from root.
 // A section header (Value == nil) is emitted only when the path has an explicit

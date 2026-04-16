@@ -100,68 +100,6 @@ func checkValueSatisfies(issues *[]string, path string, given AttributeValue, re
 	}
 }
 
-func valueSatisfiesNoReport(given AttributeValue, req AttributeValue) bool {
-	if req.Type != "" && given.Type != req.Type {
-		return false
-	}
-	switch req.Type {
-	case AttributeType_Int:
-		if req.Int == nil {
-			return true
-		}
-		return given.Int != nil && *given.Int == *req.Int
-	case AttributeType_Bool:
-		if req.Bool == nil {
-			return true
-		}
-		return given.Bool != nil && *given.Bool == *req.Bool
-	case AttributeType_String:
-		if req.String == nil {
-			return true
-		}
-		return given.String != nil && *given.String == *req.String
-	case AttributeType_Image:
-		if req.ImagePath == nil {
-			return true
-		}
-		return given.ImagePath != nil && *given.ImagePath == *req.ImagePath
-	case AttributeType_Base64Image:
-		if req.Base64Image == nil {
-			return true
-		}
-		return given.Base64Image != nil && *given.Base64Image == *req.Base64Image
-	default:
-		return true
-	}
-}
-
-func attributeListSatisfiesNoReport(given, requested []Attribute) bool {
-	givenByPath := make(map[string]Attribute, len(given))
-	for _, g := range given {
-		givenByPath[ClaimPathKey(g.ClaimPath)] = g
-	}
-	for _, r := range requested {
-		// Skip section headers.
-		if r.Value == nil && r.RequestedValue == nil {
-			continue
-		}
-		g, ok := givenByPath[ClaimPathKey(r.ClaimPath)]
-		if !ok {
-			return false
-		}
-		if r.RequestedValue == nil {
-			continue
-		}
-		if g.Value == nil {
-			return false
-		}
-		if !valueSatisfiesNoReport(*g.Value, *r.RequestedValue) {
-			return false
-		}
-	}
-	return true
-}
-
 func joinPath(parent, child string) string {
 	if parent == "" {
 		return child
