@@ -173,12 +173,12 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,
 			},
 			BatchInstanceCountsRemaining: batchInstanceCountsRemaining(batch),
-			Attributes:          attrs,
-			IssuanceDate:        batch.IssuedAt.Unix(),
-			ExpiryDate:          exp,
-			Revoked:             false, // revocation is not yet implemented, so default to false for now
-			RevocationSupported: false,
-			IssueURL:            nil, // TODO: add issue URL to storage model so this can be filled in here
+			Attributes:                   attrs,
+			IssuanceDate:                 batch.IssuedAt.Unix(),
+			ExpiryDate:                   exp,
+			Revoked:                      false, // revocation is not yet implemented, so default to false for now
+			RevocationSupported:          false,
+			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
 		}
 	}
 

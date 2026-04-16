@@ -232,7 +232,8 @@ func testDisclosureWithPredefinedValues(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"studentID"},
@@ -329,7 +330,8 @@ func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
@@ -349,7 +351,8 @@ func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"level"},
@@ -549,7 +552,8 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstnames"},
@@ -801,7 +805,8 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "test.test.email",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo test issuer", "nl": "Demo test issuer"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -820,7 +825,8 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstnames"},
@@ -1026,7 +1032,8 @@ func testWrongCredentialIssuedDuringDisclosure(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"university"},
@@ -1203,7 +1210,8 @@ func testPreExistingWrongCredentialNotReported(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"university"},
@@ -1280,7 +1288,8 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
@@ -1298,7 +1307,8 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 					},
 					{
 						CredentialId: "test.test.email",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo test issuer", "nl": "Demo test issuer"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -1408,7 +1418,8 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "test.test.email",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo test issuer", "nl": "Demo test issuer"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -1420,7 +1431,8 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 					},
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
@@ -1565,7 +1577,8 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
@@ -1753,7 +1766,8 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstname"},
@@ -1810,7 +1824,8 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstname"},
@@ -1905,7 +1920,8 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "test.test.email",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Demo test issuer", "nl": "Demo test issuer"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},

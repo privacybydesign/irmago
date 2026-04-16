@@ -253,7 +253,7 @@ func testCredMatchesExpected(t *testing.T) {
 		cred := makeCred("test.email", name, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         &name,
+			Name:         name,
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
@@ -269,7 +269,7 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("matches when both id empty", func(t *testing.T) {
-		cred := makeCred("", clientmodels.TranslatedString{}, emailAttr)
+		cred := makeCred("", nil, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
@@ -277,21 +277,20 @@ func testCredMatchesExpected(t *testing.T) {
 		require.True(t, result)
 	})
 
-	t.Run("false when expected name nil but actual has name", func(t *testing.T) {
+	t.Run("false when expected name empty but actual has name", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         nil,
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
-		require.False(t, result, "nil expected name should not match non-empty actual name")
+		require.False(t, result, "empty expected name should not match non-empty actual name")
 	})
 
 	t.Run("matches when both name empty", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         nil,
+			Name:         clientmodels.TranslatedString{},
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
@@ -299,10 +298,9 @@ func testCredMatchesExpected(t *testing.T) {
 
 	t.Run("matches by name", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mail"}, emailAttr)
-		name := clientmodels.TranslatedString{"en": "Email", "nl": "E-mail"}
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         &name,
+			Name:         clientmodels.TranslatedString{"en": "Email", "nl": "E-mail"},
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
@@ -319,10 +317,9 @@ func testCredMatchesExpected(t *testing.T) {
 
 	t.Run("false on name mismatch", func(t *testing.T) {
 		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
-		wrongName := clientmodels.TranslatedString{"en": "Phone"}
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         &wrongName,
+			Name:         clientmodels.TranslatedString{"en": "Phone"},
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.False(t, result)
@@ -359,7 +356,7 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("skips value comparison when expected nil", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
+		cred := makeCred("test.email", nil, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: nil}},
@@ -505,7 +502,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 					Owned: []expectedPlanCredential{
 						{
 							CredentialId: "test.email",
-							Name:         &clientmodels.TranslatedString{"en": "Email Cred"},
+							Name:         clientmodels.TranslatedString{"en": "Email Cred"},
 							Attributes: []expectedAttr{
 								{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("a@b.com")},
 							},
@@ -596,21 +593,20 @@ func testRequireDisclosurePlan(t *testing.T) {
 			},
 		}
 		// Expect the Delft credential — credMatchesExpected should find it even though Amsterdam comes first.
-		scName := clientmodels.TranslatedString{"en": "Student Card"}
 		requireDisclosurePlan(t, plan, expectedDisclosurePlan{
 			Choices: []expectedPickOneChoice{
 				{
 					Owned: []expectedPlanCredential{
 						{
 							CredentialId: "sc",
-							Name:         &scName,
+							Name:         clientmodels.TranslatedString{"en": "Student Card"},
 							Attributes: []expectedAttr{
 								{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University"}, Value: strVal("Amsterdam")},
 							},
 						},
 						{
 							CredentialId: "sc",
-							Name:         &scName,
+							Name:         clientmodels.TranslatedString{"en": "Student Card"},
 							Attributes: []expectedAttr{
 								{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University"}, Value: strVal("Delft")},
 							},

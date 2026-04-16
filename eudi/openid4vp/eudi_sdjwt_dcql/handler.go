@@ -92,6 +92,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch),
+			Issuer:                      issuerTrustedParty(batch),
 			Format:                      clientmodels.Format_SdJwtVc,
 			BatchInstanceCountRemaining: &batch.RemainingCount,
 			Attributes:                  attributes,
@@ -541,6 +542,22 @@ func isArrayIndex(component any) bool {
 		return true
 	}
 	return false
+}
+
+// issuerTrustedParty builds a TrustedParty from the stored issuer display metadata.
+func issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty {
+	name := clientmodels.TranslatedString{}
+	for _, d := range batch.IssuerDisplay {
+		locale := clientmodels.DefaultFallbackLanguage
+		if d.Locale.Valid {
+			locale = d.Locale.V
+		}
+		name[locale] = d.Name
+	}
+	return clientmodels.TrustedParty{
+		Id:   batch.CredentialIssuer,
+		Name: name,
+	}
 }
 
 // credentialDisplayName returns the display name for a credential from its stored metadata.
