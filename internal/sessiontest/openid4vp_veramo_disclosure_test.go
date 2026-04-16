@@ -48,6 +48,9 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("no claims requested shares only non-sd claims", testNoClaimsRequestedSharesOnlyNonSdClaims)
 	t.Run("duplicate claims ignored", testDuplicateClaimsIgnored)
 	t.Run("duplicate nested claims ignored", testDuplicateNestedClaimsIgnored)
+	t.Run("disclose deeply nested organization credential", testDiscloseDeeplyNestedOrganizationCredential)
+	t.Run("disclose specific nested array element from organization", testDiscloseSpecificNestedArrayElement)
+	t.Run("disclose nested array with null path from organization", testDiscloseNestedArrayWithNullPath)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("batch of one credential remains usable after disclosure", testBatchOfOneCredentialRemainsUsableAfterDisclosure)
@@ -2388,6 +2391,404 @@ func testVeramoVerifierRequestingMissingCredentialErrors(t *testing.T) {
 		"should have no owned credentials since the wallet is empty")
 	require.Empty(t, session.DisclosurePlan.DisclosureChoicesOverview[0].ObtainableOptions,
 		"should have no obtainable credentials")
+}
+
+// testDiscloseDeeplyNestedOrganizationCredential issues an OrganizationCredential
+// with a deeply nested structure (university > faculties[] > departments[] > courses[])
+// and discloses the entire university claim. The disclosure plan should correctly
+// expand all nested arrays and objects into individual attributes with proper paths.
+func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+		"university": {
+			"name": "TU Delft",
+			"faculties": [
+				{
+					"faculty_name": "EEMCS",
+					"departments": [
+						{
+							"dept_name": "Software Technology",
+							"courses": ["Compiler Construction", "Distributed Systems", "Intro to CS"]
+						},
+						{
+							"dept_name": "Data Science",
+							"courses": ["Machine Learning"]
+						}
+					]
+				},
+				{
+					"faculty_name": "Architecture",
+					"departments": [
+						{
+							"dept_name": "Urbanism",
+							"courses": ["City Planning"]
+						}
+					]
+				}
+			],
+			"founded": 1842
+		}
+	}`)
+
+	// Request the entire university claim — forces expansion of all nested arrays.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "org-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/organization"]
+					},
+					"claims": [
+						{ "path": ["university"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	deptName := &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"}
+	facName := &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"}
+	departments := clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}
+	courses := clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}
+
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/organization",
+						Name:         &clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
+						Attributes: []expectedAttr{
+							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+							{
+								Path:        []any{"university", "name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
+								Value:       strVal("TU Delft"),
+							},
+							header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+							// Faculty 0 (EEMCS).
+							{
+								Path:        []any{"university", "faculties", 0, "faculty_name"},
+								DisplayName: facName,
+								Value:       strVal("EEMCS"),
+							},
+							header([]any{"university", "faculties", 0, "departments"}, departments),
+							// Department 0 (Software Technology).
+							{
+								Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+								DisplayName: deptName,
+								Value:       strVal("Software Technology"),
+							},
+							header([]any{"university", "faculties", 0, "departments", 0, "courses"}, courses),
+							{
+								Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 0},
+								Value: strVal("Compiler Construction"),
+							},
+							{
+								Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 1},
+								Value: strVal("Distributed Systems"),
+							},
+							{
+								Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 2},
+								Value: strVal("Intro to CS"),
+							},
+							// Department 1 (Data Science).
+							{
+								Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+								DisplayName: deptName,
+								Value:       strVal("Data Science"),
+							},
+							header([]any{"university", "faculties", 0, "departments", 1, "courses"}, courses),
+							{
+								Path:  []any{"university", "faculties", 0, "departments", 1, "courses", 0},
+								Value: strVal("Machine Learning"),
+							},
+							// Faculty 1 (Architecture).
+							{
+								Path:        []any{"university", "faculties", 1, "faculty_name"},
+								DisplayName: facName,
+								Value:       strVal("Architecture"),
+							},
+							header([]any{"university", "faculties", 1, "departments"}, departments),
+							{
+								Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+								DisplayName: deptName,
+								Value:       strVal("Urbanism"),
+							},
+							header([]any{"university", "faculties", 1, "departments", 0, "courses"}, courses),
+							{
+								Path:  []any{"university", "faculties", 1, "departments", 0, "courses", 0},
+								Value: strVal("City Planning"),
+							},
+							{
+								Path:        []any{"university", "founded"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
+								Value:       intVal(1842),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedClaims(t, result, "org-cred",
+		claim([]any{"university", "name"}, "TU Delft"),
+		claim([]any{"university", "faculties", 0, "faculty_name"}, "EEMCS"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "dept_name"}, "Software Technology"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 0}, "Compiler Construction"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 1}, "Distributed Systems"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 2}, "Intro to CS"),
+		claim([]any{"university", "faculties", 0, "departments", 1, "dept_name"}, "Data Science"),
+		claim([]any{"university", "faculties", 0, "departments", 1, "courses", 0}, "Machine Learning"),
+		claim([]any{"university", "faculties", 1, "faculty_name"}, "Architecture"),
+		claim([]any{"university", "faculties", 1, "departments", 0, "dept_name"}, "Urbanism"),
+		claim([]any{"university", "faculties", 1, "departments", 0, "courses", 0}, "City Planning"),
+		claim([]any{"university", "founded"}, "1842"),
+	)
+}
+
+// testDiscloseSpecificNestedArrayElement issues an OrganizationCredential and
+// requests a specific faculty's department name by index path. This tests that
+// deeply nested array indexing works correctly in the disclosure plan.
+func testDiscloseSpecificNestedArrayElement(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+		"university": {
+			"name": "TU Delft",
+			"faculties": [
+				{
+					"faculty_name": "EEMCS",
+					"departments": [
+						{
+							"dept_name": "Software Technology",
+							"courses": ["Compiler Construction", "Distributed Systems"]
+						},
+						{
+							"dept_name": "Data Science",
+							"courses": ["Machine Learning", "Statistics"]
+						}
+					]
+				},
+				{
+					"faculty_name": "Architecture",
+					"departments": [
+						{
+							"dept_name": "Urbanism",
+							"courses": ["City Planning"]
+						}
+					]
+				}
+			],
+			"founded": 1842
+		}
+	}`)
+
+	// Request specific nested paths: second department of first faculty and
+	// the second faculty's name.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "org-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/organization"]
+					},
+					"claims": [
+						{ "path": ["university", "faculties", 0, "departments", 1, "dept_name"] },
+						{ "path": ["university", "faculties", 1, "faculty_name"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/organization",
+						Name:         &clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+								Value:       strVal("Data Science"),
+							},
+							{
+								Path:        []any{"university", "faculties", 1, "faculty_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
+								Value:       strVal("Architecture"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedClaims(t, result, "org-cred",
+		claim([]any{"university", "faculties", 0, "departments", 1, "dept_name"}, "Data Science"),
+		claim([]any{"university", "faculties", 1, "faculty_name"}, "Architecture"),
+	)
+}
+
+// testDiscloseNestedArrayWithNullPath issues an OrganizationCredential and
+// uses null path components to request all faculty names and all department
+// names across all faculties. This tests deeply nested wildcard expansion.
+func testDiscloseNestedArrayWithNullPath(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+		"university": {
+			"name": "TU Delft",
+			"faculties": [
+				{
+					"faculty_name": "EEMCS",
+					"departments": [
+						{
+							"dept_name": "Software Technology",
+							"courses": ["Compiler Construction", "Distributed Systems"]
+						},
+						{
+							"dept_name": "Data Science",
+							"courses": ["Machine Learning"]
+						}
+					]
+				},
+				{
+					"faculty_name": "Architecture",
+					"departments": [
+						{
+							"dept_name": "Urbanism",
+							"courses": ["City Planning"]
+						}
+					]
+				}
+			],
+			"founded": 1842
+		}
+	}`)
+
+	// Use null path to request all faculty names and all department names.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "org-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/organization"]
+					},
+					"claims": [
+						{ "path": ["university", "faculties", null, "faculty_name"] },
+						{ "path": ["university", "faculties", null, "departments", null, "dept_name"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/organization",
+						Name:         &clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
+						Attributes: []expectedAttr{
+							// Null path expands into concrete indices for each faculty.
+							{
+								Path:        []any{"university", "faculties", 0, "faculty_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
+								Value:       strVal("EEMCS"),
+							},
+							{
+								Path:        []any{"university", "faculties", 1, "faculty_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
+								Value:       strVal("Architecture"),
+							},
+							// Null path for departments expands across all faculties.
+							{
+								Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+								Value:       strVal("Software Technology"),
+							},
+							{
+								Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+								Value:       strVal("Data Science"),
+							},
+							{
+								Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+								Value:       strVal("Urbanism"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedClaims(t, result, "org-cred",
+		claim([]any{"university", "faculties", 0, "faculty_name"}, "EEMCS"),
+		claim([]any{"university", "faculties", 1, "faculty_name"}, "Architecture"),
+		claim([]any{"university", "faculties", 0, "departments", 0, "dept_name"}, "Software Technology"),
+		claim([]any{"university", "faculties", 0, "departments", 1, "dept_name"}, "Data Science"),
+		claim([]any{"university", "faculties", 1, "departments", 0, "dept_name"}, "Urbanism"),
+	)
 }
 
 // ---------------------------------------------------------------------------
