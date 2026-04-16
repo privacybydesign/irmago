@@ -311,6 +311,19 @@ func createDisclosureChoicesOverview(
 						return nil, fmt.Errorf("credential %s does not contain attribute %v", hash, attrID)
 					}
 
+					// Populate RequestedValue when the verifier specified a required value.
+					if attr.Value != nil {
+						requestedValue := &clientmodels.AttributeValue{
+							Type: clientmodels.AttributeType_String,
+						}
+						if v, ok := attr.Value["en"]; ok {
+							requestedValue.String = &v
+						} else if v, ok := attr.Value[""]; ok {
+							requestedValue.String = &v
+						}
+						val.RequestedValue = requestedValue
+					}
+
 					f.Attributes = append(f.Attributes, val)
 				}
 			}

@@ -101,9 +101,8 @@ func testRequireAttrsInOrder(t *testing.T) {
 		})
 	})
 
-	t.Run("skip value check", func(t *testing.T) {
+	t.Run("value with string", func(t *testing.T) {
 		dn := clientmodels.TranslatedString{"en": "Email"}
-		// Actual has a value, but SkipValueCheck means we don't assert on it.
 		attrs := []clientmodels.Attribute{
 			{
 				ClaimPath:   []any{"email"},
@@ -114,7 +113,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:           []any{"email"},
 			DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
-			SkipValueCheck: true,
+			Value:          strVal("foo@bar.com"),
 		})
 	})
 
@@ -126,7 +125,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:           []any{"email"},
 			DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
-			SkipValueCheck: true,
+			Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 		})
 	})
 
@@ -144,7 +143,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:           []any{"university"},
 			DisplayName:    &clientmodels.TranslatedString{"en": "University"},
-			SkipValueCheck: true,
+			Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 			RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("TU Delft")},
 		})
 	})
@@ -402,7 +401,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 								Path:           []any{"email"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								SkipValueCheck: true,
+								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},
@@ -538,7 +537,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 									Path:           []any{"email"},
 									DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
 									RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-									SkipValueCheck: true,
+									Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								},
 							},
 						},
@@ -714,7 +713,7 @@ func testRequireCredentialDescriptor(t *testing.T) {
 					Path:           []any{"email"},
 					DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
 					RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-					SkipValueCheck: true,
+					Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 				},
 			},
 		}, "test")
@@ -853,7 +852,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 			expectedAttr{
 				Path:           []any{"email"},
 				DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
-				SkipValueCheck: true,
+				Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 				RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("expected")},
 			},
 		)
@@ -869,7 +868,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 			expectedAttr{
 				Path:           []any{"email"},
 				DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
-				SkipValueCheck: true,
+				Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 				RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 			},
 		)
@@ -1096,7 +1095,7 @@ func testRequireCredentialDescriptor_Failures(t *testing.T) {
 		requireCredentialDescriptor(t, desc, expectedCredentialDescriptor{
 			CredentialId: "test.email",
 			Attributes: []expectedAttr{
-				{Path: []any{"phone"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, SkipValueCheck: true},
+				{Path: []any{"phone"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}},
 			},
 		}, "test")
 	})

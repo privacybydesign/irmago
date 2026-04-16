@@ -376,7 +376,6 @@ type expectedAttr struct {
 	Description    *clientmodels.TranslatedString // nil to skip description check
 	Value          *clientmodels.AttributeValue   // nil means section header (asserts actual is nil)
 	RequestedValue *clientmodels.AttributeValue   // nil to skip check
-	SkipValueCheck bool                           // true to skip the Value nil/non-nil assertion
 }
 
 // strVal creates a string AttributeValue.
@@ -413,17 +412,15 @@ func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ..
 		pathKey := clientmodels.ClaimPathKey(exp.Path)
 		require.Equal(t, pathKey, clientmodels.ClaimPathKey(actual.ClaimPath),
 			"attribute %d path mismatch", i)
-		if !exp.SkipValueCheck {
-			if exp.Value != nil {
-				require.NotNil(t, actual.Value, "attribute %d (%s) should have a value", i, pathKey)
-				require.Equal(t, exp.Value.Type, actual.Value.Type,
-					"attribute %d (%s) value type mismatch", i, pathKey)
-				require.Equal(t, exp.Value, actual.Value,
-					"attribute %d (%s) value mismatch", i, pathKey)
-			} else {
-				require.Nil(t, actual.Value,
-					"attribute %d (%s) should be a section header (nil value)", i, pathKey)
-			}
+		if exp.Value != nil {
+			require.NotNil(t, actual.Value, "attribute %d (%s) should have a value", i, pathKey)
+			require.Equal(t, exp.Value.Type, actual.Value.Type,
+				"attribute %d (%s) value type mismatch", i, pathKey)
+			require.Equal(t, exp.Value, actual.Value,
+				"attribute %d (%s) value mismatch", i, pathKey)
+		} else {
+			require.Nil(t, actual.Value,
+				"attribute %d (%s) should be a section header (nil value)", i, pathKey)
 		}
 		if exp.DisplayName != nil {
 			require.NotNil(t, actual.DisplayName,

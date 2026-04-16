@@ -124,7 +124,7 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 							{
 								Path:           []any{"email"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -232,7 +232,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 							{
 								Path:           []any{"email"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -243,12 +243,12 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 							{
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								SkipValueCheck: true,
+
 							},
 							{
 								Path:           []any{"level"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -324,7 +324,6 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 							Path:           []any{"email"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 					},
 				},
@@ -335,13 +334,11 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 							Path:           []any{"university"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 						{
 							Path:           []any{"level"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 					},
 				},
@@ -354,13 +351,11 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 							Path:           []any{"firstname"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 						{
 							Path:           []any{"familyname"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 					},
 				},
@@ -423,7 +418,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 							{
 								Path:           []any{"email"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -434,12 +429,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 							{
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								SkipValueCheck: true,
+
 							},
 							{
 								Path:           []any{"level"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -471,12 +466,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 							{
 								Path:           []any{"firstname"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-								SkipValueCheck: true,
+
 							},
 							{
 								Path:           []any{"familyname"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -584,7 +579,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 							{
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -600,7 +595,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 							{
 								Path:           []any{"firstname"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -668,13 +663,11 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 								RequestedValue: strVal("University of the Arts"),
-								SkipValueCheck: true,
 							},
 							{
 								Path:           []any{"level"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								SkipValueCheck: true,
 							},
 						},
 					},
@@ -769,12 +762,12 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 								RequestedValue: strVal("University of the Arts"),
-								SkipValueCheck: true,
+
 							},
 							{
 								Path:           []any{"level"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -855,7 +848,6 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 							Path:           []any{"email"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 					},
 				},
@@ -866,13 +858,11 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 							Path:           []any{"university"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 						{
 							Path:           []any{"level"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 					},
 				},
@@ -885,13 +875,11 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 							Path:           []any{"firstname"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 						{
 							Path:           []any{"familyname"},
 							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-							SkipValueCheck: true,
 						},
 					},
 				},
@@ -954,7 +942,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 							{
 								Path:           []any{"email"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -965,12 +953,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 							{
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								SkipValueCheck: true,
+
 							},
 							{
 								Path:           []any{"level"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -1002,12 +990,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 							{
 								Path:           []any{"firstname"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-								SkipValueCheck: true,
+
 							},
 							{
 								Path:           []any{"familyname"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
@@ -1084,13 +1072,11 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								SkipValueCheck: true,
 							},
 							{
 								Path:           []any{"level"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								SkipValueCheck: true,
 							},
 						},
 					},
@@ -1138,12 +1124,12 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 							{
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								SkipValueCheck: true,
+
 							},
 							{
 								Path:           []any{"level"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								SkipValueCheck: true,
+
 							},
 						},
 					},
