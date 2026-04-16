@@ -122,9 +122,8 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"email"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 							},
 						},
 					},
@@ -230,9 +229,8 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"email"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 							},
 						},
 					},
@@ -241,14 +239,12 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 							{
-								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							},
 						},
 					},
@@ -416,9 +412,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"email"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 							},
 						},
 					},
@@ -427,14 +422,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 							{
-								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							},
 						},
 					},
@@ -464,14 +457,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"firstname"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-
+								Path:        []any{"firstname"},
+								DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
 							},
 							{
-								Path:           []any{"familyname"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-
+								Path:        []any{"familyname"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
 							},
 						},
 					},
@@ -577,9 +568,8 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 						},
 					},
@@ -593,9 +583,8 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"firstname"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-
+								Path:        []any{"firstname"},
+								DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
 							},
 						},
 					},
@@ -762,12 +751,10 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 								RequestedValue: strVal("University of the Arts"),
-
 							},
 							{
-								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							},
 						},
 					},
@@ -940,9 +927,8 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"email"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
 							},
 						},
 					},
@@ -951,14 +937,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 							{
-								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							},
 						},
 					},
@@ -988,14 +972,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"firstname"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-
+								Path:        []any{"firstname"},
+								DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
 							},
 							{
-								Path:           []any{"familyname"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-
+								Path:        []any{"familyname"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
 							},
 						},
 					},
@@ -1122,14 +1104,12 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 							{
-								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							},
 						},
 					},

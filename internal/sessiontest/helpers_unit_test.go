@@ -111,21 +111,9 @@ func testRequireAttrsInOrder(t *testing.T) {
 			},
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
-			Path:           []any{"email"},
-			DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
-			Value:          strVal("foo@bar.com"),
-		})
-	})
-
-	t.Run("skip value check allows nil actual value", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
-		attrs := []clientmodels.Attribute{
-			{ClaimPath: []any{"email"}, DisplayName: &dn, Value: nil},
-		}
-		requireAttrsInOrder(t, attrs, expectedAttr{
-			Path:           []any{"email"},
-			DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
-			Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+			Value:       strVal("foo@bar.com"),
 		})
 	})
 
@@ -136,14 +124,12 @@ func testRequireAttrsInOrder(t *testing.T) {
 			{
 				ClaimPath:      []any{"university"},
 				DisplayName:    &dn,
-				Value:          nil,
 				RequestedValue: reqVal,
 			},
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:           []any{"university"},
 			DisplayName:    &clientmodels.TranslatedString{"en": "University"},
-			Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 			RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("TU Delft")},
 		})
 	})
@@ -401,7 +387,6 @@ func testRequireDisclosurePlan(t *testing.T) {
 								Path:           []any{"email"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},
@@ -537,7 +522,6 @@ func testRequireDisclosurePlan(t *testing.T) {
 									Path:           []any{"email"},
 									DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
 									RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-									Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								},
 							},
 						},
@@ -703,6 +687,7 @@ func testRequireCredentialDescriptor(t *testing.T) {
 					ClaimPath:      []any{"email"},
 					DisplayName:    &dn,
 					RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+					Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 				},
 			},
 		}

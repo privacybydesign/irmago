@@ -523,14 +523,14 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"studentID"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								Path:        []any{"studentID"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"studentCardNumber"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								Path:        []any{"studentCardNumber"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
@@ -1310,14 +1310,14 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"studentID"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								Path:        []any{"studentID"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"studentCardNumber"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								Path:        []any{"studentCardNumber"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
@@ -1580,14 +1580,14 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"studentID"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								Path:        []any{"studentID"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"studentCardNumber"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								Path:        []any{"studentCardNumber"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
@@ -1607,9 +1607,9 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"firstname"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								Path:        []any{"firstname"},
+								DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"familyname"},
@@ -1618,9 +1618,9 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"prefix"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
-								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								Path:        []any{"prefix"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
 					},

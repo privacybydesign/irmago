@@ -55,6 +55,11 @@ type SdJwtVcVerificationContext struct {
 	JwtVerifier JwtVerifier
 
 	VerifyVerifiableCredentialTypeInRequestorInfo bool
+
+	// ExpectedNonce is the nonce from the OpenID4VP authorization request that the KB-JWT nonce
+	// must match. This prevents replay attacks by ensuring the presentation was created for this
+	// specific request.
+	ExpectedNonce string
 }
 
 func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationContext {
@@ -741,8 +746,8 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, fmt.Errorf("issuer signed jwt hash doesn't equal sd_hash found in kbjwt")
 	}
 
-	if payload.Nonce != "nonce" {
-		return nil, fmt.Errorf("kbjwt 'nonce' field was expected to contain 'nonce', but contained '%s' instead", payload.Nonce)
+	if payload.Nonce != v.verificationContext.ExpectedNonce {
+		return nil, fmt.Errorf("kbjwt 'nonce' field was expected to contain '%s', but contained '%s' instead", v.verificationContext.ExpectedNonce, payload.Nonce)
 	}
 
 	now := v.verificationContext.Clock.Now()
