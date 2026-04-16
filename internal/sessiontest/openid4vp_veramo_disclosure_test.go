@@ -266,28 +266,37 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-
-	// There should be one pick-one set with two owned options (email and phone).
-	pickOne := plan.DisclosureChoicesOverview[0]
-	require.GreaterOrEqual(t, len(pickOne.OwnedOptions), 2,
-		"should have at least two credential options to choose from")
-
-	// Verify that each option has the expected attribute values.
-	for _, opt := range pickOne.OwnedOptions {
-		attrMap := attributeMap(opt.Attributes)
-		if _, hasEmail := attrMap[pk("email")]; hasEmail {
-			requireAttr(t, attrMap, []any{"email"}, "bob@example.com")
-		}
-		if _, hasPhone := attrMap[pk("phone_number")]; hasPhone {
-			requireAttr(t, attrMap, []any{"phone_number"}, "+31612345678")
-		}
-	}
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("bob@example.com"),
+							},
+						},
+					},
+					{
+						CredentialId: "https://localhost:8443/vct/phone",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"phone_number"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Phone Number"},
+								Value:       strVal("+31612345678"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
 	// Pick the first option (whichever it is) and disclose.
-	chosen := pickOne.OwnedOptions[0]
+	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -298,8 +307,7 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 		"verifier session should have received or verified the response")
 
 	// Verify the verifier received attributes for the chosen credential.
-	chosenAttrs := attributeMap(chosen.Attributes)
-	if _, hasEmail := chosenAttrs[pk("email")]; hasEmail {
+	if chosen.CredentialId == "https://localhost:8443/vct/email" {
 		requireVerifierReceivedClaims(t, result, "email-cred", claim([]any{"email"}, "bob@example.com"))
 	} else {
 		requireVerifierReceivedClaims(t, result, "phone-cred", claim([]any{"phone_number"}, "+31612345678"))
@@ -539,28 +547,31 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("eve@example.com"),
+							},
+							{
+								Path:        []any{"domain"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Domain"},
+								Value:       strVal("example.com"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
-	// Only the credential with domain "example.com" should match the value constraint.
-	// Find the matching credential among the owned options.
-	var matchingCred *clientmodels.SelectableCredentialInstance
-	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
-		attrMap := attributeMap(opt.Attributes)
-		if attr, ok := attrMap[pk("domain")]; ok && attr.Value != nil &&
-			attr.Value.String != nil && *attr.Value.String == "example.com" {
-			matchingCred = opt
-			break
-		}
-	}
-	require.NotNil(t, matchingCred, "should find a credential with domain example.com")
-
-	attrMap := attributeMap(matchingCred.Attributes)
-	requireAttr(t, attrMap, []any{"email"}, "eve@example.com")
-	requireAttr(t, attrMap, []any{"domain"}, "example.com")
-
+	matchingCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(matchingCred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1246,20 +1257,28 @@ func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	// The first claim set (email only) should be picked.
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
-
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrMap := attributeMap(cred.Attributes)
-
 	// The first claim set ["em"] should be selected, so only email is a requested
-	// attribute. Domain may appear as a non-SD claim but the primary requested
-	// attribute should be email.
-	requireAttr(t, attrMap, []any{"email"}, "claimsets@example.com")
+	// attribute.
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("claimsets@example.com"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1318,25 +1337,28 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions,
-		"should have at least one matching credential")
-
 	// The email credential should match (it has an "email" claim).
 	// The phone credential should NOT match (it has no "email" claim).
-	var emailCred *clientmodels.SelectableCredentialInstance
-	for _, opt := range plan.DisclosureChoicesOverview[0].OwnedOptions {
-		attrMap := attributeMap(opt.Attributes)
-		if attr, ok := attrMap[pk("email")]; ok && attr.Value != nil &&
-			attr.Value.String != nil && *attr.Value.String == "vct@example.com" {
-			emailCred = opt
-			break
-		}
-	}
-	require.NotNil(t, emailCred, "should find the email credential as a candidate")
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/email",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+								Value:       strVal("vct@example.com"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
+	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1590,20 +1612,28 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
-
 	// The disclosure plan should only contain non-SD claims.
 	// "member_since" is non-SD, while "member_name" and "membership_type" are SD.
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrMap := attributeMap(cred.Attributes)
-	require.Contains(t, attrMap, pk("member_since"), "non-SD claim member_since should be in the disclosure plan")
-	requireNoAttr(t, attrMap, []any{"member_name"})
-	requireNoAttr(t, attrMap, []any{"membership_type"})
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/membership",
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"member_since"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Member Since"},
+								Value:       strVal("2020-01-01"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
-	// Disclose with whatever attributes are available (only non-SD).
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1651,25 +1681,23 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
-
-	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+	// The requireDisclosurePlan call below asserts exactly 2 attributes (email + domain),
+	// proving that the duplicate "email" claim was deduplicated to one.
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
 				Owned: []expectedPlanCredential{
 					{
+						CredentialId: "https://localhost:8443/vct/email",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email"},
 								Value:       strVal("dup@example.com"),
 							},
 							{
 								Path:        []any{"domain"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Domain", "nl": "Domein"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Domain"},
 								Value:       strVal("example.com"),
 							},
 						},
@@ -1679,21 +1707,8 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 		},
 	})
 
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	attrMap := attributeMap(cred.Attributes)
-
-	// "email" should appear exactly once despite being listed twice in the query.
-	emailCount := 0
-	for _, attr := range cred.Attributes {
-		if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("email") {
-			emailCount++
-		}
-	}
-	require.Equal(t, 1, emailCount, "duplicate email claim should be deduplicated")
-	requireAttr(t, attrMap, []any{"email"}, "dup@example.com")
-	requireAttr(t, attrMap, []any{"domain"}, "example.com")
-
 	// Disclose and verify the session completes.
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -1750,16 +1765,15 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	plan := session.DisclosurePlan
-	require.NotNil(t, plan)
-	require.Len(t, plan.DisclosureChoicesOverview, 1)
-	require.NotEmpty(t, plan.DisclosureChoicesOverview[0].OwnedOptions)
-
-	requireDisclosurePlan(t, plan, expectedDisclosurePlan{
+	// The requireDisclosurePlan call below asserts exactly 3 attributes (owner_name,
+	// address/street, address/city), proving that the duplicate address/street was
+	// deduplicated to one.
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
 				Owned: []expectedPlanCredential{
 					{
+						CredentialId: "https://localhost:8443/vct/house",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"owner_name"},
@@ -1783,28 +1797,8 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 		},
 	})
 
-	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
-
-	// Count occurrences of "street" — should be exactly 1 despite the duplicate.
-	streetCount := 0
-	cityCount := 0
-	for _, attr := range cred.Attributes {
-		if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("address", "street") {
-			streetCount++
-		}
-		if clientmodels.ClaimPathKey(attr.ClaimPath) == pk("address", "city") {
-			cityCount++
-		}
-	}
-	require.Equal(t, 1, streetCount, "duplicate ['address','street'] should be deduplicated to one")
-	require.Equal(t, 1, cityCount, "['address','city'] should appear once")
-
-	attrMap := attributeMap(cred.Attributes)
-	requireAttr(t, attrMap, []any{"owner_name"}, "Duplicate Tester")
-	requireAttr(t, attrMap, []any{"address", "street"}, "Kalverstraat 1")
-	requireAttr(t, attrMap, []any{"address", "city"}, "Amsterdam")
-
 	// Disclose and verify success.
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
 
 	session = awaitSessionState(t, sessionHandler)
