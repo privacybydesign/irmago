@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
@@ -1061,6 +1062,14 @@ func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmac
 		// TODO: certificate has wrong Usage flag; need to fix that in testdata
 		require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
 	}
+
+	// Add test verifier CA certificate as trusted chain (encrypted, since the
+	// EUDI filesystem storage decrypts files on read).
+	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
+	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
+	encryptedCA, err := encryption.NewAESEncryptionMiddleware(aesKey).Encrypt(testdata.VerifierCACertBytes)
+	require.NoError(t, err)
+	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encryptedCA))
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{

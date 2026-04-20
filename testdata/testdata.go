@@ -57,6 +57,9 @@ var IssuerCertChain_irma_app_Bytes []byte
 //go:embed eudi/verifier/verifier_scheme_data.json
 var VerifierCertSchemeData string
 
+//go:embed eudi/verifier/ca.crt
+var VerifierCACertBytes []byte
+
 //go:embed eudi/issuer/well_known_configuration_response.json
 var OpenID4VciIssuerWellKnownConfigurationResponse string
 
