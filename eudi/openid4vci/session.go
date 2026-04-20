@@ -100,8 +100,20 @@ func (s *session) perform() error {
 		return nil
 	}
 
+	// Fetch and verify credentials (but do not store yet).
+	fetched, err := s.fetchCredentials(permission.GetAccessToken())
+	if err != nil {
+		eudi.Logger.Infof("error fetching credentials: %v", err)
+		s.handler.Failure(&clientmodels.SessionError{
+			WrappedError: fmt.Sprintf("could not fetch credentials: %v", err),
+		})
+		return nil
+	}
+
+	// Build offered credentials with actual attribute values from the verified SD-JWTs.
+	offeredCredentials := s.buildOfferedCredentials(fetched)
+
 	// Ask user for permission to add the offered credentials to the wallet.
-	offeredCredentials := descriptorsToOfferedCredentials(s.credentials)
 	permissionChannel := make(chan bool, 1)
 	s.handler.RequestPermission(
 		offeredCredentials,
@@ -113,16 +125,17 @@ func (s *session) perform() error {
 
 	permissionGranted := <-permissionChannel
 	if !permissionGranted {
+		for _, fc := range fetched {
+			fc.cleanupKeys()
+		}
 		s.handler.Cancelled()
 		return nil
 	}
 
-	// AccessToken received and permission granted;
-	err = s.requestCredentials(permission.GetAccessToken())
-	if err != nil {
-		eudi.Logger.Infof("error requesting credentials: %v", err)
+	// Permission granted — store the fetched credentials.
+	if err := s.storeCredentials(fetched); err != nil {
 		s.handler.Failure(&clientmodels.SessionError{
-			WrappedError: fmt.Sprintf("could not request credentials: %v", err),
+			WrappedError: fmt.Sprintf("could not store credentials: %v", err),
 		})
 		return nil
 	}
@@ -131,24 +144,219 @@ func (s *session) perform() error {
 	return nil
 }
 
-// descriptorsToOfferedCredentials converts credential descriptors (type/metadata
-// info from issuer metadata) to Credential instances suitable for the
-// OfferedCredentials field on the session state. Attribute values are not yet
-// available at this point, so only structural metadata (paths, display names) is
-// populated.
-func descriptorsToOfferedCredentials(descriptors []*clientmodels.CredentialDescriptor) []*clientmodels.Credential {
-	result := make([]*clientmodels.Credential, 0, len(descriptors))
-	for _, d := range descriptors {
+// fetchedCredential holds the result of fetching and verifying credentials
+// for a single credential configuration, before they are stored.
+type fetchedCredential struct {
+	credentialConfigurationId      string
+	verifiedSdJwtVcs               []*sdjwtvc.VerifiedSdJwtVc
+	requireCryptographicKeyBinding bool
+	publicKeyIdentifiers           []models.PublicHolderBindingKey
+	keyBindingService              services.HolderBindingKeyService
+}
+
+func (fc *fetchedCredential) cleanupKeys() {
+	if !fc.requireCryptographicKeyBinding || len(fc.publicKeyIdentifiers) == 0 || fc.keyBindingService == nil {
+		return
+	}
+	keyIds := make([]datatypes.UUID, len(fc.publicKeyIdentifiers))
+	for i, key := range fc.publicKeyIdentifiers {
+		keyIds[i] = key.ID
+	}
+	if err := fc.keyBindingService.RemoveKeys(keyIds); err != nil {
+		eudi.Logger.Warnf("failed to remove holder binding keys: %v", err)
+	}
+}
+
+func (s *session) fetchCredentials(accessToken string) ([]*fetchedCredential, error) {
+	var cNonce *string
+	if s.credentialIssuerMetadata.NonceEndpoint != "" {
+		cNonceValue, err := s.requestNonce()
+		if err != nil {
+			return nil, fmt.Errorf("could not obtain nonce from issuer: %v", err)
+		}
+		cNonce = &cNonceValue
+	}
+
+	var result []*fetchedCredential
+	for _, credentialConfigurationId := range s.credentialOffer.CredentialConfigurationIds {
+		fc, err := s.fetchCredential(credentialConfigurationId, cNonce, accessToken)
+		if err != nil {
+			for _, prev := range result {
+				prev.cleanupKeys()
+			}
+			return nil, fmt.Errorf("could not fetch credential %q: %v", credentialConfigurationId, err)
+		}
+		result = append(result, fc)
+	}
+	return result, nil
+}
+
+func (s *session) storeCredentials(fetched []*fetchedCredential) error {
+	credentialService := services.NewCredentialService(s.storage)
+	for _, fc := range fetched {
+		err := credentialService.VerifyAndStoreIssuedCredentials(
+			fc.verifiedSdJwtVcs,
+			fc.credentialConfigurationId,
+			*s.credentialIssuerMetadata,
+			fc.requireCryptographicKeyBinding,
+			fc.publicKeyIdentifiers,
+		)
+		if err != nil {
+			fc.cleanupKeys()
+			return fmt.Errorf("failed to store credentials for %q: %v", fc.credentialConfigurationId, err)
+		}
+	}
+	return nil
+}
+
+// buildOfferedCredentials creates Credential instances for the permission dialog
+// by combining issuer metadata (display names, claim paths) with actual attribute
+// values from the fetched and verified SD-JWT VCs.
+func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clientmodels.Credential {
+	batch := s.credentialIssuerMetadata.BatchCredentialIssuance
+	result := make([]*clientmodels.Credential, 0, len(fetched))
+
+	for _, fc := range fetched {
+		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId]
+		if !ok || config.CredentialMetadata == nil {
+			continue
+		}
+
+		// Use the first credential in the batch as source of attribute values.
+		var payload sdjwtvc.ProcessedSdJwtPayload
+		if len(fc.verifiedSdJwtVcs) > 0 {
+			payload = fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
+		}
+
+		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
+		name := metadata.ConvertDisplayToTranslatedString(displays)
+
+		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
+		issuerName := metadata.ConvertDisplayToTranslatedString(issuerDisplays)
+
+		var image *clientmodels.Image
+		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
+		for _, display := range config.CredentialMetadata.Display {
+			if display.Logo != nil {
+				imageData, err := credentialLogoManager.GetLogo(
+					credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri),
+				)
+				if err == nil && imageData != nil {
+					image = &clientmodels.Image{Base64: *imageData}
+				}
+				break
+			}
+		}
+
+		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload)
+
+		var batchSize *uint
+		if batch != nil {
+			n := batch.BatchSize
+			batchSize = &n
+		}
+
 		result = append(result, &clientmodels.Credential{
-			CredentialId: d.CredentialId,
-			Name:         d.Name,
-			Issuer:       d.Issuer,
-			Image:        d.Image,
-			ImagePath:    d.ImagePath,
-			Attributes:   d.Attributes,
+			CredentialId: config.VerifiableCredentialType,
+			Name:         name,
+			Issuer:       clientmodels.TrustedParty{Name: issuerName},
+			Image:        image,
+			Attributes:   attrs,
+			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
+				clientmodels.Format_SdJwtVc: batchSize,
+			},
 		})
 	}
 	return result
+}
+
+// buildAttributesWithValues builds an ordered attribute list from credential
+// metadata claims, resolving actual values from the processed SD-JWT payload.
+func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwtvc.ProcessedSdJwtPayload) []clientmodels.Attribute {
+	allPaths := make([][]any, len(claims))
+	for i, c := range claims {
+		allPaths[i] = c.Path
+	}
+
+	displayLookup := map[string]clientmodels.TranslatedString{}
+	metadataOrder := map[string]int{}
+	for i, c := range claims {
+		d := claimDisplayToTranslatedString(c.Display)
+		key := clientmodels.ClaimPathKey(c.Path)
+		displayLookup[key] = d
+		metadataOrder[key] = i
+	}
+
+	var attrs []clientmodels.Attribute
+	for i, c := range claims {
+		path := allPaths[i]
+		if containsNil(path) {
+			continue
+		}
+
+		display := claimDisplayToTranslatedString(c.Display)
+
+		if isParentOfConcreteClaim(path, allPaths) {
+			if len(display) > 0 {
+				d := display
+				attrs = append(attrs, clientmodels.Attribute{ClaimPath: path, DisplayName: &d})
+			}
+			continue
+		}
+
+		if payload == nil {
+			d := display
+			attrs = append(attrs, clientmodels.Attribute{ClaimPath: path, DisplayName: &d})
+			continue
+		}
+
+		value, err := payload.GetClaimValue(path)
+		if err != nil {
+			value = ""
+		}
+		attrs = services.FlattenClaimValue(attrs, path, value, display, displayLookup, metadataOrder)
+	}
+	return attrs
+}
+
+func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.TranslatedString {
+	result := clientmodels.TranslatedString{}
+	for _, d := range displays {
+		locale := clientmodels.DefaultFallbackLanguage
+		if d.Locale != nil {
+			locale, _ = metadata.TryGetBaseLanguageFromLocale(*d.Locale)
+		}
+		result[locale] = d.Name
+	}
+	return result
+}
+
+func containsNil(path []any) bool {
+	for _, p := range path {
+		if p == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func isParentOfConcreteClaim(path []any, allPaths [][]any) bool {
+	for _, other := range allPaths {
+		if len(other) <= len(path) || containsNil(other) {
+			continue
+		}
+		match := true
+		for i := range path {
+			if fmt.Sprintf("%v", path[i]) != fmt.Sprintf("%v", other[i]) {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *session) configureIssuerSettings() error {
@@ -257,71 +465,41 @@ func (s *session) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
-func (s *session) requestCredentials(accessToken string) error {
-	// If the issuer provides a Nonce endpoint, we should get a fresh c_nonce here and use it in all credential requests that require proof of possession
-	var cNonce *string
-	if s.credentialIssuerMetadata.NonceEndpoint != "" {
-		cNonceValue, err := s.requestNonce()
-		if err != nil {
-			return fmt.Errorf("could not obtain nonce from issuer: %v", err)
-		}
-		cNonce = &cNonceValue
-	}
-
-	// TODO: Request credentials in parallel
-	for _, credentialConfigurationId := range s.credentialOffer.CredentialConfigurationIds {
-		// TODO: check if/how we need to set/pass credential_identifier or credential_configuration_id field to the Credential Request
-		// As the credential identifier can be returned from the Authorization Details in the Token Response from authorization code flow
-		err := s.requestCredential(credentialConfigurationId, cNonce, accessToken)
-		if err != nil {
-			// TODO: how to handle if a single request fails but others succeed?
-			// I think, we need to add transaction support; if a single Credential Configuration fails, the entire Credential Offer fails and no credentials should be stored
-			return fmt.Errorf("could not request credential %q: %v", credentialConfigurationId, err)
-		}
-	}
-	return nil
-}
-
-// requestCredential requests a credential for the given credential configuration ID. Make sure the cNonce is provided if required (Nonce Endpoint is available) and is fresh.
-func (s *session) requestCredential(credentialConfigurationId string, cNonce *string, accessToken string) error {
+// fetchCredential requests and verifies a credential for a given configuration
+// ID without storing it. The caller stores via storeCredentials or cleans up
+// via cleanupKeys.
+func (s *session) fetchCredential(credentialConfigurationId string, cNonce *string, accessToken string) (*fetchedCredential, error) {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
-		return fmt.Errorf("credential request requires nonce but none was provided")
+		return nil, fmt.Errorf("credential request requires nonce but none was provided")
 	}
 
 	credentialConfig, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 	if !ok {
-		return fmt.Errorf("credential configuration %q not found in issuer metadata", credentialConfigurationId)
+		return nil, fmt.Errorf("credential configuration %q not found in issuer metadata", credentialConfigurationId)
 	}
 
 	credentialConfigurationValidator := CredentialConfigurationValidator{}
 	if err := credentialConfigurationValidator.ValidateSupportedFeatures(&credentialConfig); err != nil {
-		return fmt.Errorf("credential configuration %q is not supported: %v", credentialConfigurationId, err)
+		return nil, fmt.Errorf("credential configuration %q is not supported: %v", credentialConfigurationId, err)
 	}
 
-	// TODO: determine credential specific settings (like cryptographic key binding requirements) based on the credential configuration metadata, and pass those to the requestCredential function
 	credentialRequestPreferences := getCredentialRequestPreferences(credentialConfig)
 	requireCryptographicKeyBinding := credentialRequestPreferences.cryptographicBindingMethod != nil
 
-	// TODO: fill correct fields in Credential Request..
-	// For now, we only support the credential_configuration_id parameter, no credential_identifier from authorization details
 	request := &CredentialRequest{
 		CredentialConfigurationId: &credentialConfigurationId,
 	}
 
-	// If Cryptographic Key Binding is required, we need to create key binding keys and proofs
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
 	keyBindingService := services.NewHolderBindingKeyService(s.storage.Db())
 	if requireCryptographicKeyBinding {
-		// Create a number (equals to the desired batch size or 1 otherwise) of key binding keys and proofs using the c_nonce
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
 			num = s.credentialIssuerMetadata.BatchCredentialIssuance.BatchSize
 		}
 
-		// Since we now only support JWT proofs (and the issuer supports this, as checked with ValidateSupportedFeatures), we can directly use that to create the key pairs with JWT proofs
 		proofType := credentialConfig.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]
 
-		// Determine signing algorithm for key binding proofs
 		var alg jwa.SignatureAlgorithm
 		for _, algName := range proofType.ProofSigningAlgValuesSupported {
 			foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
@@ -331,12 +509,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 			}
 		}
 
-		// According to the spec, the 'issuer' should be an identifier which identifies the wallet TYPE, not the wallet INSTANCE
-		// Fow now, we just use our applicationId as a fixed value
-		// TODO: replace with value from wallet attestation?
 		issuer := "org.irmacard.cardemu"
-
-		// Create a Proof builder, matching the `proofType` from the supported proof types
 		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
 
 		var proofs []string
@@ -344,14 +517,9 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 
 		publicKeyIdentifiers, proofs, err = keyBindingService.CreateKeyPairsWithProofs(num, proofBuilder)
 		if err != nil {
-			return fmt.Errorf("could not create key pairs: %v", err)
+			return nil, fmt.Errorf("could not create key pairs: %v", err)
 		}
 
-		// Use unsafe to convert []string to []any without allocations
-		// If we use type-safe conversion, we would need to allocate and copy each element
-		// which is costly when dealing with many key bindings
-		// x := *(*[]any)(unsafe.Pointer(&proofJwts))
-		// x = x[:len(proofJwts)]
 		x := make([]any, len(proofs))
 		for i, v := range proofs {
 			x[i] = v
@@ -362,13 +530,11 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		}
 	}
 
-	// If the issuer requires encryption of the credential request, we need to handle that here
 	var requestBody []byte
 	var contentType string
 	if s.issuerSettings.useCredentialRequestEncryption {
 		contentType = "application/jwt"
 
-		// TODO: handle alg/key errors
 		alg, _ := (*s.issuerSettings.credentialRequestEncryptionKey).Algorithm()
 		key, _ := (*s.issuerSettings.credentialRequestEncryptionKey).PublicKey()
 
@@ -378,8 +544,7 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 			Build()
 
 		if err != nil {
-			eudi.Logger.Errorf("failed to build jwt for credential request: %v", err)
-			return err
+			return nil, fmt.Errorf("failed to build jwt for credential request: %v", err)
 		}
 
 		encryptedToken, err := jwt.NewSerializer().
@@ -389,13 +554,12 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		requestBody = encryptedToken
 
 		if err != nil {
-			eudi.Logger.Errorf("failed to encrypt jwt for credential request: %v", err)
-			return err
+			return nil, fmt.Errorf("failed to encrypt jwt for credential request: %v", err)
 		}
 	} else {
 		jsonRequest, err := json.Marshal(request)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		contentType = "application/json"
@@ -404,13 +568,11 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 
 	eudi.Logger.Infof("Sending credential request: %s = %s", contentType, string(requestBody))
 
-	// Send the request
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Set the headers
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", contentType)
 
@@ -422,20 +584,16 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 		}
 	}()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Process the response
 	deferredResponse := false
 	if resp.StatusCode == http.StatusAccepted {
-		//deferredResponse = true
-		return fmt.Errorf("wallet does not accept deferred credential responses for now")
+		return nil, fmt.Errorf("wallet does not accept deferred credential responses for now")
 	} else if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		// Parse the error from the WWW-Authenticate header
 		authHeader := resp.Header.Get("WWW-Authenticate")
 		authHeader = strings.TrimPrefix(authHeader, "Bearer ")
 
-		// Example header: WWW-Authenticate: Bearer error="invalid_token", error_description="The access token expired"
 		var errMsg, errDesc, errUri, scope string
 		parts := strings.SplitSeq(authHeader, ",")
 		for part := range parts {
@@ -462,74 +620,52 @@ func (s *session) requestCredential(credentialConfigurationId string, cNonce *st
 			if scope != "" {
 				errLog += fmt.Sprintf(" (required scope: %s)", scope)
 			}
-			return fmt.Errorf("%s", errLog)
+			return nil, fmt.Errorf("%s", errLog)
 		}
-		return fmt.Errorf("credential request unauthorized")
+		return nil, fmt.Errorf("credential request unauthorized")
 	} else if resp.StatusCode == http.StatusBadRequest {
 		var errorResponse CredentialErrorResponse
 		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
 		if err != nil {
-			return fmt.Errorf("could not decode credential error response: %v", err)
+			return nil, fmt.Errorf("could not decode credential error response: %v", err)
 		}
-		return fmt.Errorf("credential request failed with error %s: %s", errorResponse.Error, errorResponse.ErrorDescription)
+		return nil, fmt.Errorf("credential request failed with error %s: %s", errorResponse.Error, errorResponse.ErrorDescription)
 	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		// TODO: we're handling 201: Created as OK for now, but that is not completely according to spec
-		return fmt.Errorf("credential request failed: %s", resp.Status)
+		return nil, fmt.Errorf("credential request failed: %s", resp.Status)
 	}
 
 	var credentialResponse CredentialResponse
 	err = json.NewDecoder(resp.Body).Decode(&credentialResponse)
 	if err != nil {
-		return fmt.Errorf("could not decode credential response: %v", err)
+		return nil, fmt.Errorf("could not decode credential response: %v", err)
 	}
 
 	err = credentialResponse.Validate(deferredResponse)
 	if err != nil {
-		return fmt.Errorf("invalid credential response: %v", err)
+		return nil, fmt.Errorf("invalid credential response: %v", err)
 	}
 
-	// Verify and store the received credentials
 	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
-		// Verify the credential
 		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
 		if err != nil {
-			return fmt.Errorf("failed to verify credential: %v", err)
+			return nil, fmt.Errorf("failed to verify credential: %v", err)
 		}
 		verifiedSdJwtVcs[i] = verifiedSdJwt
-
-		// if i == 0 {
-		// 	// Log the first credential for debugging purposes
-		// 	eudi.Logger.Infof("Received credential (first from batch only): %s", string(cred.Credential))
-		// }
 	}
 
-	// Verify uniquness of key binding confirmations if required by the issuer settings
 	err = sdjwtvc.CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs)
 	if err != nil {
-		return fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
+		return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
 	}
 
-	// Store the credentials + holder-binding keys + metadata (+ images?) in the storage (in bulk), so we can use a transaction and make sure everything is stored correctly, and also for performance reasons when dealing with batch issuance
-	credentialService := services.NewCredentialService(s.storage)
-
-	err = credentialService.VerifyAndStoreIssuedCredentials(verifiedSdJwtVcs, credentialConfigurationId, *s.credentialIssuerMetadata, requireCryptographicKeyBinding, publicKeyIdentifiers)
-	if err != nil {
-		// Error storing credentials; remove the already stored keys for the credentials that were received, to avoid orphaned keys in storage
-		if requireCryptographicKeyBinding {
-			keyIds := make([]datatypes.UUID, len(publicKeyIdentifiers))
-			for i, key := range publicKeyIdentifiers {
-				keyIds[i] = key.ID
-			}
-			err := keyBindingService.RemoveKeys(keyIds)
-			if err != nil {
-				eudi.Logger.Warnf("failed to remove key binding keys after credential storage failure: %v", err)
-			}
-		}
-		return fmt.Errorf("failed to verify and store issued credentials: %v", err)
-	}
-
-	return nil
+	return &fetchedCredential{
+		credentialConfigurationId:      credentialConfigurationId,
+		verifiedSdJwtVcs:               verifiedSdJwtVcs,
+		requireCryptographicKeyBinding: requireCryptographicKeyBinding,
+		publicKeyIdentifiers:           publicKeyIdentifiers,
+		keyBindingService:              keyBindingService,
+	}, nil
 }
 
 // requestNonce requests a fresh nonce from the issuer's nonce endpoint

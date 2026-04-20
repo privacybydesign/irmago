@@ -27,6 +27,8 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("issues eduid credential with boolean claims", testOpenId4VciPreAuthFlowEduIdCredential)
 	t.Run("issues deeply nested credential", testOpenId4VciPreAuthFlowDeeplyNestedCredential)
 	t.Run("issued credential can be deleted", testOpenId4VciPreAuthFlowCredentialDeletion)
+	t.Run("batch size 1 has nil remaining count", testOpenId4VciPreAuthFlowBatchSize1)
+	t.Run("batch size 2 has remaining count", testOpenId4VciPreAuthFlowBatchSize2)
 }
 
 func testOpenId4VciPreAuthFlowReachesPermission(t *testing.T) {
@@ -69,14 +71,17 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		expectedAttr{
 			Path:        []any{"given_name"},
 			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			Value:       strVal("Test"),
 		},
 		expectedAttr{
 			Path:        []any{"family_name"},
 			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			Value:       strVal("User"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
 			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			Value:       strVal("test@example.com"),
 		},
 	)
 
@@ -630,7 +635,15 @@ func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	offer := postOffer(t, preAuthIssuerURL, preAuthAdminToken, fmt.Sprintf(`{
+		"credentials": ["OrganizationCredentialSdJwt"],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": %s
+	}`, `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -659,7 +672,99 @@ func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 			],
 			"founded": 1842
 		}
-	}`)
+	}`))
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	deptName := &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"}
+	facName := &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"}
+	departments := clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}
+	courses := clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}
+
+	// Verify offered credentials contain the deeply nested attribute values.
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "Organization Credential (SD-JWT)", offered.Name["en"])
+	requireAttrsInOrder(t, offered.Attributes,
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		expectedAttr{
+			Path:        []any{"university", "name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
+			Value:       strVal("TU Delft"),
+		},
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		expectedAttr{
+			Path:        []any{"university", "faculties", 0, "faculty_name"},
+			DisplayName: facName,
+			Value:       strVal("EEMCS"),
+		},
+		header([]any{"university", "faculties", 0, "departments"}, departments),
+		expectedAttr{
+			Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Software Technology"),
+		},
+		header([]any{"university", "faculties", 0, "departments", 0, "courses"}, courses),
+		expectedAttr{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 0},
+			Value: strVal("Compiler Construction"),
+		},
+		expectedAttr{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 1},
+			Value: strVal("Distributed Systems"),
+		},
+		expectedAttr{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 2},
+			Value: strVal("Intro to CS"),
+		},
+		expectedAttr{
+			Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Data Science"),
+		},
+		header([]any{"university", "faculties", 0, "departments", 1, "courses"}, courses),
+		expectedAttr{
+			Path:  []any{"university", "faculties", 0, "departments", 1, "courses", 0},
+			Value: strVal("Machine Learning"),
+		},
+		expectedAttr{
+			Path:        []any{"university", "faculties", 1, "faculty_name"},
+			DisplayName: facName,
+			Value:       strVal("Architecture"),
+		},
+		header([]any{"university", "faculties", 1, "departments"}, departments),
+		expectedAttr{
+			Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Urbanism"),
+		},
+		header([]any{"university", "faculties", 1, "departments", 0, "courses"}, courses),
+		expectedAttr{
+			Path:  []any{"university", "faculties", 1, "departments", 0, "courses", 0},
+			Value: strVal("City Planning"),
+		},
+		expectedAttr{
+			Path:        []any{"university", "founded"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
+			Value:       intVal(1842),
+		},
+	)
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Verify the credential appears in GetCredentials.
 	creds, err := c.GetCredentials()
@@ -667,11 +772,6 @@ func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 
 	cred := findCredentialByName(t, creds, "en", "Organization Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued OrganizationCredential should appear in GetCredentials")
-
-	deptName := &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"}
-	facName := &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"}
-	departments := clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}
-	courses := clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}
 
 	requireAttrsInOrder(t, cred.Attributes,
 		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
@@ -762,14 +862,14 @@ func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
 
-	session := awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+	disclosureSession := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	cred2 := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred2))
+	cred2 := disclosureSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, disclosureSession.Id, makeDisclosureChoice(cred2))
 
-	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+	disclosureSession = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 
 	// Verify the verifier received the university claim as a nested object.
 	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
@@ -841,6 +941,87 @@ func testOpenId4VciPreAuthFlowCredentialDeletion(t *testing.T) {
 	}
 }
 
+func testOpenId4VciPreAuthFlowBatchSize1(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createPreAuthOffer(t)
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	// Default issuer has no batch_credential_issuance, so the map should exist
+	// but the count for sd-jwt should be nil.
+	offered := session.OfferedCredentials[0]
+	require.NotNil(t, offered.BatchInstanceCountsRemaining)
+	require.Len(t, offered.BatchInstanceCountsRemaining, 1)
+	require.Nil(t, offered.BatchInstanceCountsRemaining[clientmodels.Format_SdJwtVc],
+		"batch remaining count should be nil for single-instance issuance")
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+}
+
+func testOpenId4VciPreAuthFlowBatchSize2(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := postOffer(t, batch2IssuerURL, batch2AdminToken, `{
+		"credentials": ["EmailCredentialSdJwt"],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": {
+			"email": "batch@example.com",
+			"domain": "example.com"
+		}
+	}`)
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	// batch2-issuer has batch_credential_issuance.batch_size = 2.
+	offered := session.OfferedCredentials[0]
+	require.NotNil(t, offered.BatchInstanceCountsRemaining,
+		"batch remaining should be set for batch issuance")
+	require.Len(t, offered.BatchInstanceCountsRemaining, 1)
+	remaining := offered.BatchInstanceCountsRemaining[clientmodels.Format_SdJwtVc]
+	require.NotNil(t, remaining)
+	require.Equal(t, uint(2), *remaining,
+		"batch remaining should equal the issuer's batch_size")
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+}
+
 // ========================================================================
 // Authorization code flow
 // ========================================================================
@@ -899,14 +1080,17 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		expectedAttr{
 			Path:        []any{"given_name"},
 			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			Value:       strVal("Test"),
 		},
 		expectedAttr{
 			Path:        []any{"family_name"},
 			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			Value:       strVal("AuthCode"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
 			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			Value:       strVal("authcode@example.com"),
 		},
 	)
 

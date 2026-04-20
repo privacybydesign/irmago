@@ -25,6 +25,7 @@ import (
 type HolderBindingKeyService interface {
 	sdjwtvc.KeyBindingStorage
 	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error)
+	RemoveKeys(ids []datatypes.UUID) error
 }
 
 type holderBindingKeyService struct {

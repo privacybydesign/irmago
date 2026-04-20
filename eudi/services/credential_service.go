@@ -150,7 +150,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 					claimValue = ""
 				}
 
-				attrs = flattenClaimValue(attrs, claimPath, claimValue, attrDisplay, claimDisplayLookup, metadataOrder)
+				attrs = FlattenClaimValue(attrs, claimPath, claimValue, attrDisplay, claimDisplayLookup, metadataOrder)
 			}
 		}
 
@@ -392,7 +392,7 @@ func isParentOfConcreteClaim(path []any, allPaths [][]any) bool {
 // display name in the metadata lookup — inherited display names don't trigger headers.
 // Object keys are ordered by their position in the metadata (via metadataOrder),
 // falling back to alphabetical for keys not in the metadata.
-func flattenClaimValue(
+func FlattenClaimValue(
 	attrs []clientmodels.Attribute,
 	path []any,
 	value any,
@@ -412,7 +412,7 @@ func flattenClaimValue(
 		for i, elem := range v {
 			childPath := append(append([]any{}, path...), i)
 			childDisplay := childDisplayName(lookup, childPath, display)
-			attrs = flattenClaimValue(attrs, childPath, elem, childDisplay, lookup, metadataOrder)
+			attrs = FlattenClaimValue(attrs, childPath, elem, childDisplay, lookup, metadataOrder)
 		}
 	case map[string]any:
 		if d, ok := lookupDisplayName(lookup, path); ok {
@@ -426,7 +426,7 @@ func flattenClaimValue(
 		for _, key := range keys {
 			childPath := append(append([]any{}, path...), key)
 			childDisplay := childDisplayName(lookup, childPath, display)
-			attrs = flattenClaimValue(attrs, childPath, v[key], childDisplay, lookup, metadataOrder)
+			attrs = FlattenClaimValue(attrs, childPath, v[key], childDisplay, lookup, metadataOrder)
 		}
 	default:
 		var dn *clientmodels.TranslatedString

@@ -50,7 +50,7 @@ func Test_openid4vciSession_requestCredential_checksFail(t *testing.T) {
 			session, _, ts := setupTestEnvironment(t, tt.testOptions, credEndpointHandler)
 			defer ts.Close()
 
-			err := session.requestCredential("credential-config-1", nil, tt.accessToken)
+			_, err := session.fetchCredential("credential-config-1", nil, tt.accessToken)
 
 			if err == nil {
 				t.Errorf("Expected error, got nil")
@@ -150,7 +150,7 @@ func Test_openid4vciSession_requestCredential_errorResponses(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.s.requestCredential("credential-config-1", tt.nonce, tt.accessToken)
+			_, err := tt.s.fetchCredential("credential-config-1", tt.nonce, tt.accessToken)
 
 			if err == nil {
 				t.Errorf("Expected error, got nil")
