@@ -1052,24 +1052,29 @@ func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmac
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
 
-	// Add test issuer certificates as trusted chain
-	certsPath := filepath.Join(storagePath, "eudi", "issuers", "certs")
-	require.NoError(t, common.EnsureDirectoryExists(certsPath))
+	// Add test issuer certificates as trusted chain (encrypted, since the
+	// EUDI filesystem storage decrypts files on read).
+	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+
+	issuerCertsPath := filepath.Join(storagePath, "eudi", "issuers", "certificates")
+	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
 
 	if issuerChain != nil {
-		require.NoError(t, common.SaveFile(filepath.Join(certsPath, "integrationtest-chain.pem"), issuerChain))
+		encIssuer, err := encMiddleware.Encrypt(issuerChain)
+		require.NoError(t, err)
+		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "integrationtest-chain.pem"), encIssuer))
 	} else {
-		// TODO: certificate has wrong Usage flag; need to fix that in testdata
-		require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
+		encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+		require.NoError(t, err)
+		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
 	}
 
-	// Add test verifier CA certificate as trusted chain (encrypted, since the
-	// EUDI filesystem storage decrypts files on read).
+	// Add test verifier CA certificate as trusted chain.
 	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
 	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
-	encryptedCA, err := encryption.NewAESEncryptionMiddleware(aesKey).Encrypt(testdata.VerifierCACertBytes)
+	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
 	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encryptedCA))
+	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{
