@@ -80,6 +80,12 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 	})
 
 	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.NotEmpty(t, session.OfferedCredentials)
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
@@ -3423,6 +3429,12 @@ func issueCredentialViaOid4Vci(
 	})
 
 	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.NotEmpty(t, session.OfferedCredentials)
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	status := checkOfferStatus(t, preAuthIssuerURL, preAuthAdminToken, offer.ID)
@@ -3463,6 +3475,12 @@ func issueCredentialViaOid4VciFromIssuer(
 		Type:      clientmodels.UI_PreAuthorizedCode,
 		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
 	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.NotEmpty(t, session.OfferedCredentials)
+
+	grantPermission(t, c, session.Id)
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_Success)

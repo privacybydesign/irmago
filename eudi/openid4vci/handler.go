@@ -14,6 +14,10 @@ type TokenHandler func(proceed bool, accessToken string, refreshToken *string)
 // TokenPermissionHandler is a callback for providing permission for an Pre-Authorized Code issuance session to proceed.
 type TokenPermissionHandler func(proceed bool, transactionCode *string)
 
+// PermissionHandler is a callback for the user granting or denying permission
+// to add the offered credentials to the wallet.
+type PermissionHandler func(proceed bool)
+
 // SessionDismisser allows dismissing the current session.
 type SessionDismisser interface {
 	Dismiss()
@@ -36,5 +40,14 @@ type Handler interface {
 		request *clientmodels.AuthorizationCodeFlowRequest,
 		requestorInfo *clientmodels.TrustedParty,
 		callback AuthCodeHandler,
+	)
+
+	// RequestPermission asks the user whether the offered credentials may be
+	// added to the wallet. Called after the grant handler has obtained an access
+	// token but before the credentials are actually fetched.
+	RequestPermission(
+		offeredCredentials []*clientmodels.Credential,
+		requestorInfo *clientmodels.TrustedParty,
+		callback PermissionHandler,
 	)
 }

@@ -16,6 +16,7 @@ import (
 func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("reaches permission request", testOpenId4VciPreAuthFlowReachesPermission)
 	t.Run("grants permission and exchanges token", testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken)
+	t.Run("denies permission after grant", testOpenId4VciPreAuthFlowDeniesPermission)
 	t.Run("with tx_code grants permission and exchanges token", testOpenId4VciPreAuthFlowWithTxCode)
 	t.Run("with wrong tx_code fails", testOpenId4VciPreAuthFlowWithWrongTxCode)
 	t.Run("can be dismissed", testOpenId4VciPreAuthFlowCanBeDismissed)
@@ -57,6 +58,30 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
 	})
 
+	// Await the permission request and verify offered credentials.
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "Test Credential (SD-JWT)", offered.Name["en"])
+	requireAttrsInOrder(t, offered.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+		},
+	)
+
+	grantPermission(t, c, session.Id)
+
 	// The test issuer uses did:web, so full credential verification should work.
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
@@ -91,6 +116,32 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	)
 }
 
+func testOpenId4VciPreAuthFlowDeniesPermission(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createPreAuthOffer(t)
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.NotEmpty(t, session.OfferedCredentials)
+
+	denyPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
+}
+
 func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
@@ -114,6 +165,14 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 			TransactionCode: &offer.TxCode,
 		},
 	})
+
+	// Await the permission request and verify offered credentials.
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+	require.Equal(t, "Test Credential (SD-JWT)", session.OfferedCredentials[0].Name["en"])
+
+	grantPermission(t, c, session.Id)
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
@@ -754,6 +813,12 @@ func testOpenId4VciPreAuthFlowCredentialDeletion(t *testing.T) {
 	})
 
 	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.NotEmpty(t, session.OfferedCredentials)
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// Verify the credential was issued.
@@ -783,6 +848,7 @@ func testOpenId4VciPreAuthFlowCredentialDeletion(t *testing.T) {
 func testSessionHandlerForOpenID4VCIAuthCode(t *testing.T) {
 	t.Run("reaches auth request", testOpenId4VciAuthCodeFlowReachesAuthRequest)
 	t.Run("grants permission and exchanges token", testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken)
+	t.Run("denies permission after grant", testOpenId4VciAuthCodeFlowDeniesPermission)
 	t.Run("can be dismissed", testOpenId4VciAuthCodeFlowCanBeDismissed)
 	t.Run("issues credential with nested claims", testOpenId4VciAuthCodeFlowNestedClaims)
 }
@@ -822,6 +888,30 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 		},
 	})
 
+	// Await the permission request and verify offered credentials.
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "Test Credential (SD-JWT, Auth Code)", offered.Name["en"])
+	requireAttrsInOrder(t, offered.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+		},
+	)
+
+	grantPermission(t, c, session.Id)
+
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
@@ -853,6 +943,37 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 			Value:       strVal("authcode@example.com"),
 		},
 	)
+}
+
+func testOpenId4VciAuthCodeFlowDeniesPermission(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createAuthCodeOffer(t)
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
+
+	code := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_AuthorizationCode,
+		Payload: clientmodels.SessionAuthCodeInteractionPayload{
+			Code:    &code,
+			Proceed: true,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.NotEmpty(t, session.OfferedCredentials)
+
+	denyPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
 }
 
 func testOpenId4VciAuthCodeFlowCanBeDismissed(t *testing.T) {
@@ -960,6 +1081,12 @@ func issueCredentialViaOid4VciAuthCode(
 			Proceed: true,
 		},
 	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.NotEmpty(t, session.OfferedCredentials)
+
+	grantPermission(t, c, session.Id)
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_Success)

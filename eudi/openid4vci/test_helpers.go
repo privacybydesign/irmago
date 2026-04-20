@@ -15,6 +15,7 @@ type MockSessionHandler struct {
 	authCodeRequestChannel        chan AuthCodeHandler
 	tokenRequestChannel           chan TokenHandler
 	tokenPermissionRequestChannel chan TokenPermissionHandler
+	permissionRequestChannel      chan PermissionHandler
 	log                           bool
 }
 
@@ -25,6 +26,7 @@ func newMockSessionHandler(t *testing.T) *MockSessionHandler {
 		authCodeRequestChannel:        make(chan AuthCodeHandler, 1),
 		tokenRequestChannel:           make(chan TokenHandler, 1),
 		tokenPermissionRequestChannel: make(chan TokenPermissionHandler, 1),
+		permissionRequestChannel:      make(chan PermissionHandler, 1),
 		log:                           false,
 	}
 }
@@ -83,4 +85,16 @@ func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
 	}
 
 	h.tokenPermissionRequestChannel <- callback
+}
+
+func (h *MockSessionHandler) RequestPermission(
+	offeredCredentials []*clientmodels.Credential,
+	requestorInfo *clientmodels.TrustedParty,
+	callback PermissionHandler,
+) {
+	if h.log {
+		fmt.Printf("RequestPermission: %d offered credentials\n", len(offeredCredentials))
+	}
+
+	h.permissionRequestChannel <- callback
 }

@@ -73,6 +73,17 @@ func (a *openid4vciSessionAdapter) RequestAuthorizationCodeFlowPermission(
 	a.session.dispatchState()
 }
 
+func (a *openid4vciSessionAdapter) RequestPermission(
+	offeredCredentials []*clientmodels.Credential,
+	requestorInfo *clientmodels.TrustedParty,
+	callback openid4vci.PermissionHandler,
+) {
+	a.session.State.OfferedCredentials = offeredCredentials
+	a.session.State.Status = clientmodels.Status_RequestPermission
+	a.session.oid4vciPermissionHandler = callback
+	a.session.dispatchState()
+}
+
 func (a *openid4vciSessionAdapter) RequestPreAuthorizedCodeFlowPermission(
 	request *clientmodels.PreAuthorizedCodeFlowPermissionRequest,
 	requestorInfo *clientmodels.TrustedParty,

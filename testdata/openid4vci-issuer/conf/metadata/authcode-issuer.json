@@ -3,7 +3,7 @@
   "credential_issuer": "https://localhost:8443/authcode-issuer",
   "credential_configurations_supported": {
     "TestCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "TestCredentialSdJwt",
       "extends": "TestCredential",
       "cryptographic_binding_methods_supported": ["did:jwk"],
@@ -31,7 +31,7 @@
       ]
     },
     "HouseCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "HouseCredentialSdJwt",
       "extends": "HouseCredential",
       "cryptographic_binding_methods_supported": ["did:jwk"],

@@ -100,7 +100,24 @@ func (s *session) perform() error {
 		return nil
 	}
 
-	// AccessToken received;
+	// Ask user for permission to add the offered credentials to the wallet.
+	offeredCredentials := descriptorsToOfferedCredentials(s.credentials)
+	permissionChannel := make(chan bool, 1)
+	s.handler.RequestPermission(
+		offeredCredentials,
+		s.requestorInfo,
+		PermissionHandler(func(proceed bool) {
+			permissionChannel <- proceed
+		}),
+	)
+
+	permissionGranted := <-permissionChannel
+	if !permissionGranted {
+		s.handler.Cancelled()
+		return nil
+	}
+
+	// AccessToken received and permission granted;
 	err = s.requestCredentials(permission.GetAccessToken())
 	if err != nil {
 		eudi.Logger.Infof("error requesting credentials: %v", err)
@@ -112,6 +129,26 @@ func (s *session) perform() error {
 
 	s.handler.Success("openid4vci session completed")
 	return nil
+}
+
+// descriptorsToOfferedCredentials converts credential descriptors (type/metadata
+// info from issuer metadata) to Credential instances suitable for the
+// OfferedCredentials field on the session state. Attribute values are not yet
+// available at this point, so only structural metadata (paths, display names) is
+// populated.
+func descriptorsToOfferedCredentials(descriptors []*clientmodels.CredentialDescriptor) []*clientmodels.Credential {
+	result := make([]*clientmodels.Credential, 0, len(descriptors))
+	for _, d := range descriptors {
+		result = append(result, &clientmodels.Credential{
+			CredentialId: d.CredentialId,
+			Name:         d.Name,
+			Issuer:       d.Issuer,
+			Image:        d.Image,
+			ImagePath:    d.ImagePath,
+			Attributes:   d.Attributes,
+		})
+	}
+	return result
 }
 
 func (s *session) configureIssuerSettings() error {

@@ -7,7 +7,7 @@
   },
   "credential_configurations_supported": {
     "EmailCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "EmailCredentialSdJwt",
       "extends": "EmailCredential",
       "cryptographic_binding_methods_supported": [

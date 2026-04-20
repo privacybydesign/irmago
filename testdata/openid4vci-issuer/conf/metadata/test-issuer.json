@@ -4,7 +4,7 @@
   "authorization_servers": [],
   "credential_configurations_supported": {
     "TestCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "TestCredentialSdJwt",
       "extends": "TestCredential",
       "cryptographic_binding_methods_supported": [
@@ -83,7 +83,7 @@
       ]
     },
     "EmailCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "EmailCredentialSdJwt",
       "extends": "EmailCredential",
       "cryptographic_binding_methods_supported": [
@@ -155,7 +155,7 @@
       ]
     },
     "PhoneCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "PhoneCredentialSdJwt",
       "extends": "PhoneCredential",
       "cryptographic_binding_methods_supported": [
@@ -204,7 +204,7 @@
       ]
     },
     "StudentCardCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "StudentCardCredentialSdJwt",
       "extends": "StudentCardCredential",
       "cryptographic_binding_methods_supported": [
@@ -298,7 +298,7 @@
       ]
     },
     "HouseCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "HouseCredentialSdJwt",
       "extends": "HouseCredential",
       "cryptographic_binding_methods_supported": [
@@ -407,7 +407,7 @@
       ]
     },
     "MembershipCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "MembershipCredentialSdJwt",
       "extends": "MembershipCredential",
       "cryptographic_binding_methods_supported": [
@@ -501,7 +501,7 @@
       ]
     },
     "EduIdCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "EduIdCredentialSdJwt",
       "extends": "EduIdCredential",
       "cryptographic_binding_methods_supported": [
@@ -760,7 +760,7 @@
       ]
     },
     "OrganizationCredentialSdJwt": {
-      "format": "vc+sd-jwt",
+      "format": "dc+sd-jwt",
       "scope": "OrganizationCredentialSdJwt",
       "extends": "OrganizationCredential",
       "cryptographic_binding_methods_supported": [

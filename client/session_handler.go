@@ -26,6 +26,7 @@ type session struct {
 	chained                    bool
 	authCodeHandler            openid4vci.AuthCodeHandler
 	preAuthorizedCodeHandler   openid4vci.TokenPermissionHandler
+	oid4vciPermissionHandler   openid4vci.PermissionHandler
 	openid4vpPermissionHandler openid4vp.PermissionHandler
 	openid4vpHashToQueryId     map[string]string // credential hash → DCQL query ID
 	// Hashes of credentials that already existed when the disclosure plan was first created.
@@ -561,6 +562,9 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 			// OpenID4VP flow: convert UI selections to DisclosureSelections
 			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpHashToQueryId)
 			session.openid4vpPermissionHandler(payload.Granted, selections)
+		} else if session.oid4vciPermissionHandler != nil {
+			// OpenID4VCI flow: no disclosure choices needed
+			session.oid4vciPermissionHandler(payload.Granted)
 		} else {
 			// IRMA flow
 			choices, err := choicesToAnswer(payload.DisclosureChoices)
