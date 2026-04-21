@@ -16,6 +16,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("eudi credential removal log has attributes", testEudiCredentialRemovalLogHasAttributes)
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
 	t.Run("deeply nested removal log", testDeeplyNestedRemovalLog)
+	t.Run("complex disclosure log only contains shared subset", testComplexDisclosureLogOnlyContainsSharedSubset)
 }
 
 func testOpenId4VciPreAuthFlowCreatesIssuanceLog(t *testing.T) {
@@ -359,4 +360,144 @@ func testDeeplyNestedRemovalLog(t *testing.T) {
 	removalCred := removalLog.RemovalLog.Credentials[0]
 	require.Equal(t, "Organization Credential (SD-JWT)", removalCred.Name["en"])
 	requireAttrsInOrder(t, removalCred.Attributes, expectedOrganizationAttrs()...)
+}
+
+// testComplexDisclosureLogOnlyContainsSharedSubset issues two credentials
+// (TestCredential and HouseCredential), then creates a DCQL query that asks
+// for a subset of attributes from each. After disclosure, the test verifies
+// the log only contains the attributes the user actually shared — not the
+// full credential contents.
+func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue two credentials.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Selective",
+		"family_name": "Disclosure",
+		"email": "selective@example.com"
+	}`)
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+		"owner_name": "Selective Owner",
+		"address": {
+			"street": "Secret Street 1",
+			"city": "Amsterdam",
+			"country": "NL"
+		}
+	}`)
+
+	// Create a DCQL query that asks for:
+	//  - TestCredential: only given_name and email (NOT family_name)
+	//  - HouseCredential: only owner_name and address.city (NOT street, NOT country)
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "test-partial",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/test"]
+					},
+					"claims": [
+						{ "path": ["given_name"] },
+						{ "path": ["email"] }
+					]
+				},
+				{
+					"id": "house-partial",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/house"]
+					},
+					"claims": [
+						{ "path": ["owner_name"] },
+						{ "path": ["address", "city"] }
+					]
+				}
+			]
+		}
+	}`
+
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
+
+	// Grant permission for both credentials, selecting the attributes shown in the plan.
+	plan := session.DisclosurePlan
+	require.Len(t, plan.DisclosureChoicesOverview, 2)
+
+	var choices []clientmodels.DisclosureDisconSelection
+	for _, pickOne := range plan.DisclosureChoicesOverview {
+		require.NotEmpty(t, pickOne.OwnedOptions)
+		choices = append(choices, makeDisclosureChoice(pickOne.OwnedOptions[0]))
+	}
+
+	grantPermission(t, c, session.Id, choices...)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// Load logs and find the disclosure entry.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	var disclosureLog *clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			disclosureLog = &logs[i]
+			break
+		}
+	}
+	require.NotNil(t, disclosureLog, "should have a disclosure log")
+	require.NotNil(t, disclosureLog.DisclosureLog)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, disclosureLog.DisclosureLog.Protocol)
+	require.Len(t, disclosureLog.DisclosureLog.Credentials, 2,
+		"log should have entries for both disclosed credentials")
+
+	// Find the test credential and house credential logs (order is not guaranteed).
+	var testCredLog, houseCredLog *clientmodels.LogCredential
+	for i := range disclosureLog.DisclosureLog.Credentials {
+		cred := &disclosureLog.DisclosureLog.Credentials[i]
+		switch cred.Name["en"] {
+		case "Test Credential (SD-JWT)":
+			testCredLog = cred
+		case "House Possession Credential (SD-JWT)":
+			houseCredLog = cred
+		}
+	}
+
+	// Verify the test credential log has exactly given_name and email with values.
+	// family_name was NOT requested and must be absent.
+	require.NotNil(t, testCredLog, "should have a log for TestCredential")
+	requireAttrsInOrder(t, testCredLog.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			Value:       strVal("Selective"),
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			Value:       strVal("selective@example.com"),
+		},
+	)
+
+	// Verify the house credential log has exactly owner_name and address.city.
+	// address.street and address.country were NOT requested and must be absent.
+	require.NotNil(t, houseCredLog, "should have a log for HouseCredential")
+	requireAttrsInOrder(t, houseCredLog.Attributes,
+		expectedAttr{
+			Path:        []any{"owner_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+			Value:       strVal("Selective Owner"),
+		},
+		expectedAttr{
+			Path:        []any{"address", "city"},
+			DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+			Value:       strVal("Amsterdam"),
+		},
+	)
 }
