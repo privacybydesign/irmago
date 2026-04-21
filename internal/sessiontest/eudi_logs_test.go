@@ -2,8 +2,11 @@ package sessiontest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/internal/testkeyshare"
+	"github.com/privacybydesign/irmago/irma"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,6 +20,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
 	t.Run("deeply nested removal log", testDeeplyNestedRemovalLog)
 	t.Run("complex disclosure log only contains shared subset", testComplexDisclosureLogOnlyContainsSharedSubset)
+	t.Run("irma and eudi logs merged chronologically", testIrmaAndEudiLogsMergedChronologically)
 }
 
 func testOpenId4VciPreAuthFlowCreatesIssuanceLog(t *testing.T) {
@@ -500,4 +504,125 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 			Value:       strVal("Amsterdam"),
 		},
 	)
+}
+
+// testIrmaAndEudiLogsMergedChronologically performs a mix of IRMA and EUDI
+// activities and verifies that LoadNewestLogs returns all of them merged in
+// reverse-chronological order (newest first), regardless of storage backend.
+//
+// Sequence:
+//  1. Keyshare enrollment      → bbolt log (issuance)
+//  2. IRMA issuance            → bbolt log (issuance)
+//  3. OID4VCI issuance         → SQLCipher log (issuance)
+//  4. IRMA disclosure          → bbolt log (disclosure)
+//  5. OID4VP disclosure        → SQLCipher log (disclosure)
+//  6. EUDI credential removal  → SQLCipher log (removal)
+func testIrmaAndEudiLogsMergedChronologically(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t) // includes keyshare enrollment → 1 bbolt log
+	defer c.Close()
+
+	// Helper to get the protocol from a log entry.
+	logProtocol := func(l clientmodels.LogInfo) clientmodels.Protocol {
+		switch {
+		case l.IssuanceLog != nil:
+			return l.IssuanceLog.Protocol
+		case l.DisclosureLog != nil:
+			return l.DisclosureLog.Protocol
+		default:
+			return ""
+		}
+	}
+
+	// IRMA timestamps have second-level granularity. Sleep between activities
+	// so that every log gets a distinct timestamp and the ordering is deterministic.
+	sep := func() { time.Sleep(1100 * time.Millisecond) }
+
+	// 1. Verify enrollment log is present.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 1, "should have keyshare enrollment log")
+
+	// 2. IRMA issuance of test.test.email with SD-JWT → bbolt log.
+	sep()
+	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	awaitSessionState(t, sessionHandler) // success
+
+	// 3. OID4VCI issuance → SQLCipher log.
+	sep()
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Combined",
+		"family_name": "Test",
+		"email": "combined@example.com"
+	}`)
+
+	// 4. IRMA disclosure of test.test.email → bbolt log.
+	sep()
+	performIrmaDisclosureSession(t, c, sessionHandler, irmaServer)
+
+	// 5. OID4VP disclosure of TestCredentialSdJwt → SQLCipher log.
+	sep()
+	veramoSession := createVeramoVerifierDcqlSession(t)
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
+
+	// 6. Remove the EUDI credential → SQLCipher log.
+	sep()
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	eudiCred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	require.NotNil(t, eudiCred)
+	require.NoError(t, c.RemoveCredentialsByHash(eudiCred.CredentialInstanceIds))
+
+	// Final check: all 6 logs present, sorted newest-first, in the exact order
+	// they happened (newest at index 0).
+	logs, err = c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 6)
+
+	// Strictly descending timestamps.
+	for i := 0; i < len(logs)-1; i++ {
+		require.True(t, logs[i].Time.After(logs[i+1].Time),
+			"log[%d] (%s/%s at %v) should be strictly after log[%d] (%s/%s at %v)",
+			i, logs[i].Type, logProtocol(logs[i]), logs[i].Time,
+			i+1, logs[i+1].Type, logProtocol(logs[i+1]), logs[i+1].Time)
+	}
+
+	// Exact order, newest first:
+	//   [0] removal          (EUDI)
+	//   [1] disclosure       (OID4VP)
+	//   [2] disclosure       (IRMA)
+	//   [3] issuance         (OID4VCI)
+	//   [4] issuance         (IRMA)
+	//   [5] issuance         (IRMA, keyshare enrollment)
+	require.Equal(t, clientmodels.LogType_CredentialRemoval, logs[0].Type)
+
+	require.Equal(t, clientmodels.LogType_Disclosure, logs[1].Type)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, logs[1].DisclosureLog.Protocol)
+
+	require.Equal(t, clientmodels.LogType_Disclosure, logs[2].Type)
+	require.Equal(t, clientmodels.Protocol_Irma, logs[2].DisclosureLog.Protocol)
+
+	require.Equal(t, clientmodels.LogType_Issuance, logs[3].Type)
+	require.Equal(t, clientmodels.Protocol_OpenID4VCI, logs[3].IssuanceLog.Protocol)
+
+	require.Equal(t, clientmodels.LogType_Issuance, logs[4].Type)
+	require.Equal(t, clientmodels.Protocol_Irma, logs[4].IssuanceLog.Protocol)
+
+	require.Equal(t, clientmodels.LogType_Issuance, logs[5].Type)
+	require.Equal(t, clientmodels.Protocol_Irma, logs[5].IssuanceLog.Protocol)
 }
