@@ -46,6 +46,12 @@ func testOpenId4VciPreAuthFlowCreatesIssuanceLog(t *testing.T) {
 	cred := log.IssuanceLog.Credentials[0]
 	require.NotEmpty(t, cred.CredentialId)
 	require.Equal(t, "Test Credential (SD-JWT)", cred.Name["en"])
+	require.Contains(t, cred.Formats, clientmodels.Format_SdJwtVc,
+		"issuance log credential should include the sd-jwt format")
+	// The test issuer has no logo configured, so Image should be nil.
+	// Real issuers with logo URLs in credential_metadata.display will have
+	// the logo resolved from disk via the logo manager.
+	require.Nil(t, cred.Image, "test credential has no logo")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -157,6 +163,8 @@ func testOpenId4VpDisclosureCreatesLog(t *testing.T) {
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, disclosureLog.DisclosureLog.Protocol)
 	require.Len(t, disclosureLog.DisclosureLog.Credentials, 1)
 	require.NotEmpty(t, disclosureLog.DisclosureLog.Credentials[0].CredentialId)
+	require.Contains(t, disclosureLog.DisclosureLog.Credentials[0].Formats, clientmodels.Format_SdJwtVc,
+		"disclosure log credential should include the sd-jwt format")
 }
 
 func testEudiCredentialRemovalCreatesLog(t *testing.T) {

@@ -114,12 +114,16 @@ func (m *sessionManager) NewSession() *session {
 }
 
 func requestorInfoToTrustedParty(info *irma.RequestorInfo) clientmodels.TrustedParty {
+	var image *clientmodels.Image
+	if info.LogoPath != nil {
+		image = clientmodels.ImageFromFile(*info.LogoPath)
+	}
 	return clientmodels.TrustedParty{
-		Id:        info.ID.String(),
-		Name:      clientmodels.TranslatedString(info.Name),
-		ImagePath: info.LogoPath,
-		Parent:    nil,
-		Verified:  !info.Unverified,
+		Id:       info.ID.String(),
+		Name:     clientmodels.TranslatedString(info.Name),
+		Image:    image,
+		Parent:   nil,
+		Verified: !info.Unverified,
 	}
 }
 
@@ -168,7 +172,7 @@ func findCredential(credentials []*clientmodels.Credential, hash string) *client
 				return &clientmodels.SelectableCredentialInstance{
 					CredentialId:                c.CredentialId,
 					Hash:                        h,
-					ImagePath:                   c.ImagePath,
+					Image:                       c.Image,
 					Name:                        c.Name,
 					Issuer:                      c.Issuer,
 					Format:                      format,

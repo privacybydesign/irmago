@@ -656,7 +656,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 			removedCreds = append(removedCreds, clientmodels.LogCredential{
 				CredentialId: credentialTypeId.String(),
 				Formats:      formats,
-				ImagePath:    credTypeInfo.Logo(irmaConfig),
+				Image:        clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 				Name:         clientmodels.TranslatedString(credTypeInfo.Name),
 				Issuer: clientmodels.TrustedParty{
 					Id:   issuer.Identifier().String(),
@@ -726,7 +726,7 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 		result = append(result, clientmodels.LogCredential{
 			CredentialId: credTypeId.String(),
 			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_Idemix},
-			ImagePath:    credTypeInfo.Logo(irmaConfig),
+			Image:        clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 			Name:         clientmodels.TranslatedString(credTypeInfo.Name),
 			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:   attributes,
@@ -773,7 +773,7 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 		result = append(result, clientmodels.LogCredential{
 			CredentialId:        credTypeId.String(),
 			Formats:             formats,
-			ImagePath:           credTypeInfo.Logo(irmaConfig),
+			Image:               clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 			Name:                clientmodels.TranslatedString(credTypeInfo.Name),
 			Issuer:              buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:          attributes,
@@ -825,7 +825,7 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 		result = append(result, clientmodels.LogCredential{
 			CredentialId: log.CredentialType,
 			Formats:      formats,
-			ImagePath:    credTypeInfo.Logo(irmaConfig),
+			Image:        clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 			Name:         clientmodels.TranslatedString(credTypeInfo.Name),
 			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:   attributes,

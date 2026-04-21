@@ -235,12 +235,12 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerName := metadata.ConvertDisplayToTranslatedString(issuerDisplays)
 
 		var image *clientmodels.Image
+		var logoFilename string
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
 		for _, display := range config.CredentialMetadata.Display {
 			if display.Logo != nil {
-				imageData, err := credentialLogoManager.GetLogo(
-					credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri),
-				)
+				logoFilename = credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
+				imageData, err := credentialLogoManager.GetLogo(logoFilename)
 				if err == nil && imageData != nil {
 					image = &clientmodels.Image{Base64: *imageData}
 				}
@@ -268,6 +268,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			Name:                 name,
 			Issuer:               clientmodels.TrustedParty{Name: issuerName},
 			Image:                image,
+			ImagePath:            &logoFilename, // internal only, not serialized to JSON
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
 				clientmodels.Format_SdJwtVc: batchSize,

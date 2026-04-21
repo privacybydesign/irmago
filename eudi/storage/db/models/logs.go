@@ -30,6 +30,9 @@ type EudiLogCredential struct {
 	// VCT URL or IRMA credential type identifier.
 	CredentialId string
 
+	// JSON-encoded []string of credential formats (e.g. ["dc+sd-jwt"]).
+	Formats datatypes.JSON `gorm:"type:json"`
+
 	// JSON-encoded TranslatedString for display name and issuer name.
 	Name       datatypes.JSON `gorm:"type:json"`
 	IssuerName datatypes.JSON `gorm:"type:json"`
@@ -37,4 +40,9 @@ type EudiLogCredential struct {
 	// JSON-encoded []clientmodels.Attribute — full attribute list with paths,
 	// display names, and values. Stored as a blob since logs are write-once.
 	Attributes datatypes.JSON `gorm:"type:json"`
+
+	// Filename (without extension) of the credential logo stored by the logo
+	// manager. Empty when no logo is available. Resolved to a full base64
+	// image when loading logs.
+	LogoFilename string
 }
