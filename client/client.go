@@ -22,6 +22,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
@@ -372,18 +373,43 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		}
 	}
 
-	// Delete EUDI credentials.
+	// Delete EUDI credentials (read metadata first for the removal log).
 	if len(eudiHashes) > 0 {
+		credentialService := services.NewCredentialService(client.eudiStorage)
+		allEudiCreds, err := credentialService.GetCredentialMetadataList()
+		if err != nil {
+			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
+		}
+
+		// Find the credentials being deleted.
+		hashSet := map[string]struct{}{}
+		for _, h := range eudiHashes {
+			hashSet[h] = struct{}{}
+		}
+		var removedCreds []*clientmodels.Credential
+		for _, c := range allEudiCreds {
+			if _, ok := hashSet[c.Hash]; ok {
+				removedCreds = append(removedCreds, c)
+			}
+		}
+
 		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
 		for _, hash := range eudiHashes {
 			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}
+
+		// Create removal log for EUDI credentials.
+		if len(removedCreds) > 0 {
+			logService := services.NewEudiLogService(client.eudiStorage)
+			if err := logService.AddRemovalLog(removedCreds); err != nil {
+				return fmt.Errorf("failed to create eudi removal log: %v", err)
+			}
+		}
 	}
 
 	// Create removal log for IRMA credentials.
-	// TODO: add removal logging for EUDI credentials.
 	if len(irmaRelevantCreds) > 0 {
 		info := irmaRelevantCreds[0]
 		logEntry, err := createRemovalLog(client.GetIrmaConfiguration(), info.Identifier(), info.Attributes, irmaFormats)
@@ -450,11 +476,24 @@ func (client *Client) RemoveStorage() error {
 }
 
 func (client *Client) LoadNewestLogs(max int) ([]clientmodels.LogInfo, error) {
+	// Load IRMA logs from bbolt.
 	rawLogs, err := client.irmaClient.LoadNewestLogs(max)
 	if err != nil {
 		return nil, err
 	}
-	return client.rawLogEntriesToLogInfo(rawLogs)
+	irmaLogs, err := client.rawLogEntriesToLogInfo(rawLogs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load EUDI logs from SQLCipher.
+	logService := services.NewEudiLogService(client.eudiStorage)
+	eudiLogs, err := logService.GetNewestLogs(max)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeLogsByTime(irmaLogs, eudiLogs, max), nil
 }
 
 func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]clientmodels.LogInfo, error) {
@@ -463,6 +502,19 @@ func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]clientmodel
 		return nil, err
 	}
 	return client.rawLogEntriesToLogInfo(rawLogs)
+}
+
+// mergeLogsByTime merges two log slices (each already sorted newest-first) into
+// a single newest-first slice of at most max entries.
+func mergeLogsByTime(a, b []clientmodels.LogInfo, max int) []clientmodels.LogInfo {
+	merged := append(a, b...)
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Time.After(merged[j].Time)
+	})
+	if len(merged) > max {
+		merged = merged[:max]
+	}
+	return merged
 }
 
 func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmodels.LogInfo, error) {

@@ -140,7 +140,7 @@ func (s *session) perform() error {
 		return nil
 	}
 
-	s.handler.Success("openid4vci session completed")
+	s.handler.Success("openid4vci session completed", offeredCredentials)
 	return nil
 }
 
@@ -256,15 +256,25 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			batchSize = &n
 		}
 
+		var issuanceDate, expiryDate int64
+		if len(fc.verifiedSdJwtVcs) > 0 {
+			jwt := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload
+			issuanceDate = jwt.IssuedAt
+			expiryDate = jwt.Expiry
+		}
+
 		result = append(result, &clientmodels.Credential{
-			CredentialId: config.VerifiableCredentialType,
-			Name:         name,
-			Issuer:       clientmodels.TrustedParty{Name: issuerName},
-			Image:        image,
-			Attributes:   attrs,
+			CredentialId:         config.VerifiableCredentialType,
+			Name:                 name,
+			Issuer:               clientmodels.TrustedParty{Name: issuerName},
+			Image:                image,
+			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
 				clientmodels.Format_SdJwtVc: batchSize,
 			},
+			Attributes:   attrs,
+			IssuanceDate: issuanceDate,
+			ExpiryDate:   expiryDate,
 		})
 	}
 	return result

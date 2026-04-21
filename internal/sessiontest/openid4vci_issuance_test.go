@@ -3,6 +3,7 @@ package sessiontest
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -84,6 +85,12 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 			Value:       strVal("test@example.com"),
 		},
 	)
+
+	// The offered credential must have a valid issuance date (the test issuer
+	// does not set exp, so expiry may be 0).
+	now := time.Now().Unix()
+	require.InDelta(t, now, offered.IssuanceDate, 60,
+		"issuance date should be approximately now")
 
 	grantPermission(t, c, session.Id)
 
