@@ -143,7 +143,7 @@ func loadClientFromFixture(t *testing.T, db2Path string) (*client.Client, *MockS
 	storagePath := filepath.Join(storageFolder, "client")
 
 	require.NoError(t, common.CopyDirectory(filepath.Join(testdataPath, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.CopyDirectory(filepath.Join(testdataPath, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(storagePath, "eudi")))
 
 	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
 

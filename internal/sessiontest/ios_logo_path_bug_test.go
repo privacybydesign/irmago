@@ -186,7 +186,7 @@ func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPat
 
 	// Copy files to storage folder
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(storagePath, "eudi")))
 
 	// Add test issuer certificates as trusted chain (encrypted, since the
 	// EUDI filesystem storage decrypts files on read).
