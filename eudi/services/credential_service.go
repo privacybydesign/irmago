@@ -187,12 +187,13 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			}
 		}
 
+		var credentialLogoFilename string
 		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
 			log.Printf("Attempting to retrieve logo for credential %s from filesystem storage by uri %s", batch.ID, batch.CredentialMetadata.Display[0].LogoURI)
-			filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(batch.CredentialMetadata.Display[0].LogoURI)
+			credentialLogoFilename = credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(batch.CredentialMetadata.Display[0].LogoURI)
 
-			if exists, err := credentialLogoManager.LogoExists(filename); err == nil && exists {
-				logoData, err := credentialLogoManager.GetLogo(filename)
+			if exists, err := credentialLogoManager.LogoExists(credentialLogoFilename); err == nil && exists {
+				logoData, err := credentialLogoManager.GetLogo(credentialLogoFilename)
 				if err != nil {
 					log.Printf("Error retrieving logo for credential %s from filesystem storage: %v", batch.ID, err)
 				} else {
@@ -209,6 +210,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			CredentialId: batch.VerifiableCredentialType,
 			Hash:         batch.Hash,
 			Image:        credentialImage,
+			ImagePath:    &credentialLogoFilename, // internal only (json:"-"), used by log service
 			Name:         credentialDisplays,
 			Issuer: clientmodels.TrustedParty{
 				Id:       batch.CredentialIssuer,
