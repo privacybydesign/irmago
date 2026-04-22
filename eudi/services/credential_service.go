@@ -282,6 +282,14 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 
 	hash := hashForSdJwtVc(first.IssuerSignedJwtPayload.VerifiableCredentialType, processedSdJwtPayloadBytes)
 
+	// If a batch with this hash already exists, delete it so the new issuance
+	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
+	if existing, err := s.credentialStore.GetBatchByHash(hash); err == nil {
+		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
+			return fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
+		}
+	}
+
 	issuedAt := time.Unix(first.IssuerSignedJwtPayload.IssuedAt, 0)
 
 	// Since Expiry and NotBefore are not (yet) optional, we will directly assign them to time.Unix, potentially resulting in a zero time if the claims are missing
@@ -561,16 +569,45 @@ func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []a
 	return nil, false
 }
 
+// issuerMetadataKeys lists JWT-registered and SD-JWT-specific claims that must be
+// excluded from the credential hash because they vary between issuances of the same
+// logical credential (e.g. timestamps, holder key binding).
+var issuerMetadataKeys = []string{
+	sdjwtvc.Key_Issuer,
+	sdjwtvc.Key_IssuedAt,
+	sdjwtvc.Key_ExpiryTime,
+	sdjwtvc.Key_NotBefore,
+	sdjwtvc.Key_Subject,
+	sdjwtvc.Key_VerifiableCredentialType,
+	sdjwtvc.Key_Confirmationkey,
+	sdjwtvc.Key_Status,
+	sdjwtvc.Key_Sd,
+	sdjwtvc.Key_SdAlg,
+}
+
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.
 // The algorithm mirrors irmaclient.CreateHashForSdJwtVc so that hashes are consistent
-// across both the IRMA client and the EUDI storage.
+// across both the IRMA client and the EUDI storage. Issuer metadata fields (iat, exp,
+// nbf, iss, sub, vct, cnf, status) are stripped before hashing so that two issuances
+// of the same credential with identical claims produce the same hash.
 func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) string {
-	credTypeBytes := []byte(credType)
+	// Unmarshal into a map so we can strip issuer metadata keys before hashing.
+	var payload map[string]any
+	if err := json.Unmarshal(processedSdJwtPayloadBytes, &payload); err != nil {
+		// processedSdJwtPayloadBytes is always valid JSON produced by json.Marshal;
+		// an error here indicates a programming bug.
+		panic(fmt.Errorf("hashForSdJwtVc: failed to unmarshal payload: %w", err))
+	}
 
-	// TODO: processedSdJwtPayload should not contain fields like iis, iat, nbf before hashing, so only the actual claim fields are compared
+	for _, key := range issuerMetadataKeys {
+		delete(payload, key)
+	}
 
-	combinedBytes := append([]byte(nil), credTypeBytes...)
-	combinedBytes = append(combinedBytes, processedSdJwtPayloadBytes...)
+	cleanedBytes, err := json.Marshal(payload)
+	if err != nil {
+		panic(fmt.Errorf("hashForSdJwtVc: failed to marshal cleaned payload: %w", err))
+	}
 
-	return fmt.Sprintf("%x", sha256.Sum256(combinedBytes))
+	combined := append([]byte(credType), cleanedBytes...)
+	return fmt.Sprintf("%x", sha256.Sum256(combined))
 }

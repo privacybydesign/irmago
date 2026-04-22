@@ -20,6 +20,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
 	t.Run("deeply nested removal log", testDeeplyNestedRemovalLog)
 	t.Run("complex disclosure log only contains shared subset", testComplexDisclosureLogOnlyContainsSharedSubset)
+	t.Run("duplicate credential removal leaves none and creates log", testDuplicateCredentialRemovalCreatesLog)
 	t.Run("irma and eudi logs merged chronologically", testIrmaAndEudiLogsMergedChronologically)
 }
 
@@ -512,6 +513,68 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 			Value:       strVal("Amsterdam"),
 		},
 	)
+}
+
+// testDuplicateCredentialRemovalCreatesLog issues the same credential type
+// multiple times with identical claims, then deletes it. Because the hash is
+// deterministic over claim values (not timestamps), duplicate issuances are
+// deduplicated into a single batch. Deleting that batch removes the credential
+// entirely and produces a removal log.
+func testDuplicateCredentialRemovalCreatesLog(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	claims := `{"given_name": "Alice", "family_name": "Duplicate", "email": "alice@example.com"}`
+
+	// Issue the same credential type three times with identical attribute values.
+	// Because the hash is now based solely on claim values, the second and third
+	// issuances are deduplicated — only one credential batch is stored.
+	for range 3 {
+		issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", claims)
+	}
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+
+	count := 0
+	for _, cr := range creds {
+		if name, ok := cr.Name["en"]; ok && name == "Test Credential (SD-JWT)" {
+			count++
+		}
+	}
+	require.Equal(t, 1, count, "duplicate issuances should be deduplicated into one credential")
+
+	// Delete the credential.
+	target := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	require.NotNil(t, target)
+
+	require.NoError(t, c.RemoveCredentialsByHash(target.CredentialInstanceIds))
+
+	// Verify the credential is gone.
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	for _, cr := range creds {
+		if name, ok := cr.Name["en"]; ok {
+			require.NotEqual(t, "Test Credential (SD-JWT)", name,
+				"deleted credential should no longer appear in GetCredentials")
+		}
+	}
+
+	// Verify a removal log was created.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	var removalLog *clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_CredentialRemoval {
+			removalLog = &logs[i]
+			break
+		}
+	}
+	require.NotNil(t, removalLog, "should have a removal log")
+	require.NotNil(t, removalLog.RemovalLog)
+	require.Len(t, removalLog.RemovalLog.Credentials, 1)
+	require.Equal(t, "Test Credential (SD-JWT)", removalLog.RemovalLog.Credentials[0].Name["en"])
 }
 
 // testIrmaAndEudiLogsMergedChronologically performs a mix of IRMA and EUDI

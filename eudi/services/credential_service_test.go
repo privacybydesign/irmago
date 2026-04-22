@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -712,24 +713,93 @@ func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 // ========== hashForSdJwtVc ==========
 
 func TestHashForSdJwtVc_NonEmpty(t *testing.T) {
-	h := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user"}`))
+	h := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
 	assert.NotEmpty(t, h)
 }
 
 func TestHashForSdJwtVc_Deterministic(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user"}`))
+	h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
 	assert.Equal(t, h1, h2)
 }
 
 func TestHashForSdJwtVc_DifferentVCT(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/CredA", []byte(`{"sub":"user"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/CredB", []byte(`{"sub":"user"}`))
+	h1 := hashForSdJwtVc("https://vct.example.com/CredA", []byte(`{"given_name":"Alice"}`))
+	h2 := hashForSdJwtVc("https://vct.example.com/CredB", []byte(`{"given_name":"Alice"}`))
 	assert.NotEqual(t, h1, h2)
 }
 
 func TestHashForSdJwtVc_DifferentPayload(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user1"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user2"}`))
+	h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Bob"}`))
 	assert.NotEqual(t, h1, h2)
+}
+
+func TestHashForSdJwtVc_IgnoresIssuerMetadata(t *testing.T) {
+	// Two payloads with identical claim values but different issuer metadata (iat, exp, nbf, sub, cnf).
+	// The hash should be the same because only the actual claims matter for deduplication.
+	payload1 := []byte(`{"email":"a@b.com","given_name":"Alice","iat":1000,"exp":2000,"nbf":900,"iss":"https://issuer.example","sub":"user1","vct":"TestCred","cnf":{"jwk":{"kty":"EC"}}}`)
+	payload2 := []byte(`{"email":"a@b.com","given_name":"Alice","iat":9999,"exp":9998,"nbf":9997,"iss":"https://issuer.example","sub":"user2","vct":"TestCred","cnf":{"jwk":{"kty":"OKP"}}}`)
+
+	h1 := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
+	h2 := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	assert.Equal(t, h1, h2, "hashes should be equal when only issuer metadata differs")
+}
+
+func TestHashForSdJwtVc_IgnoresAllKnownMetadataKeys(t *testing.T) {
+	// A payload containing every known metadata key alongside actual claims.
+	withMetadata := []byte(`{"given_name":"Alice","iss":"https://issuer","iat":1000,"exp":2000,"nbf":900,"sub":"subj","vct":"type","cnf":{"jwk":{}},"status":"active","_sd":["abc"],"_sd_alg":"sha-256"}`)
+	withoutMetadata := []byte(`{"given_name":"Alice"}`)
+
+	h1 := hashForSdJwtVc("https://vct.example.com/Cred", withMetadata)
+	h2 := hashForSdJwtVc("https://vct.example.com/Cred", withoutMetadata)
+	assert.Equal(t, h1, h2, "metadata keys should not affect the hash")
+}
+
+func TestHashForSdJwtVc_ClaimValuesDetermineHash(t *testing.T) {
+	// Same metadata, different actual claim values → different hash.
+	base := `{"iat":1000,"exp":2000,"iss":"https://issuer","given_name":"%s"}`
+	payload1 := []byte(fmt.Sprintf(base, "Alice"))
+	payload2 := []byte(fmt.Sprintf(base, "Bob"))
+
+	h1 := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
+	h2 := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	assert.NotEqual(t, h1, h2, "different claim values should produce different hashes")
+}
+
+func TestHashForSdJwtVc_KeyOrderIrrelevant(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload1 string
+		payload2 string
+	}{
+		{
+			name:     "flat claims",
+			payload1: `{"given_name":"Alice","email":"a@b.com"}`,
+			payload2: `{"email":"a@b.com","given_name":"Alice"}`,
+		},
+		{
+			name:     "nested object with swapped keys",
+			payload1: `{"address":{"city":"Amsterdam","street":"Main St"},"name":"Alice"}`,
+			payload2: `{"name":"Alice","address":{"street":"Main St","city":"Amsterdam"}}`,
+		},
+		{
+			name:     "deeply nested with swapped keys at every level",
+			payload1: `{"university":{"name":"TU Delft","faculties":[{"departments":[{"dept_name":"CS","courses":["ML","AI"]}],"faculty_name":"EEMCS"}],"founded":1842}}`,
+			payload2: `{"university":{"founded":1842,"faculties":[{"faculty_name":"EEMCS","departments":[{"courses":["ML","AI"],"dept_name":"CS"}]}],"name":"TU Delft"}}`,
+		},
+		{
+			name:     "nested with issuer metadata mixed in",
+			payload1: `{"iat":1000,"address":{"street":"A","city":"B"},"name":"Alice","exp":2000}`,
+			payload2: `{"exp":9999,"name":"Alice","iat":5555,"address":{"city":"B","street":"A"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(tt.payload1))
+			h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(tt.payload2))
+			assert.Equal(t, h1, h2, "key order should not affect the hash")
+		})
+	}
 }
