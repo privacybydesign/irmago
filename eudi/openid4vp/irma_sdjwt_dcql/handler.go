@@ -459,7 +459,9 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 			for _, at := range credType.AttributeTypes {
 				if clientmodels.ClaimPathKey([]any{at.ID}) == pathKey {
 					name := clientmodels.TranslatedString(at.Name)
+					description := clientmodels.TranslatedString(at.Description)
 					attr.DisplayName = &name
+					attr.Description = &description
 					matchedAtType = at
 					break
 				}
