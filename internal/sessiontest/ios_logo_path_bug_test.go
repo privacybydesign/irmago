@@ -9,6 +9,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
@@ -37,9 +38,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	c, handler, sessionHandler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, eudiAppDataPath, signer)
 	keyshareEnrollClient(t, c, handler)
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
-
-	awaitSessionState(t, sessionHandler)
+	issueWithPinToClient(t, c, sessionHandler, irmaServer)
 	discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
 
 	logs, err := c.LoadNewestLogs(1)
@@ -96,9 +95,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	c, handler, sessionHandler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, eudiAppDataPath, signer)
 	keyshareEnrollClient(t, c, handler)
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
-
-	awaitSessionState(t, sessionHandler)
+	issueWithPinToClient(t, c, sessionHandler, irmaServer)
 
 	logs, err := c.LoadNewestLogs(1)
 	require.NoError(t, err)
@@ -143,6 +140,29 @@ func test_iOSLogoPathBug(t *testing.T) {
 	newClient.Close()
 }
 
+// issueWithPinToClient issues a test.test.email credential via IRMA,
+// handling the full session flow including pin entry.
+func issueWithPinToClient(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
+	t.Helper()
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	// Depending on the keyshare server state, the session may ask for a pin or succeed directly.
+	if session.Status == clientmodels.Status_RequestPin {
+		userInteraction(t, c, clientmodels.SessionUserInteraction{
+			SessionId: session.Id,
+			Type:      clientmodels.UI_EnteredPin,
+			Payload:   clientmodels.PinInteractionPayload{Pin: "12345", Proceed: true},
+		})
+		session = awaitSessionState(t, sessionHandler)
+	}
+	require.Equal(t, clientmodels.Status_Success, session.Status)
+}
+
 func issueSdJwtAndIdemixToClientExpectPin(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	session := awaitSessionState(t, sessionHandler)
@@ -164,6 +184,9 @@ func issueSdJwtAndIdemixToClientExpectPin(t *testing.T, c *client.Client, sessio
 }
 
 func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPath string) {
+	var aesKey [32]byte
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+
 	path := test.FindTestdataFolder(t)
 	storageFolder := test.CreateTestStorage(t)
 	storagePath = filepath.Join(storageFolder, "client")
@@ -172,15 +195,23 @@ func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPat
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
 
-	// Add test issuer certificates as trusted chain
-	certsPath := filepath.Join(storagePath, "eudi", "issuers", "certs")
-	require.NoError(t, common.EnsureDirectoryExists(certsPath))
-	require.NoError(t,
-		common.SaveFile(
-			filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"),
-			testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
-		),
-	)
+	// Add test issuer certificates as trusted chain (encrypted, since the
+	// EUDI filesystem storage decrypts files on read).
+	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+
+	issuerCertsPath := filepath.Join(storagePath, "eudi", "issuers", "certificates")
+	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
+	encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	require.NoError(t, err)
+	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
+
+	// Add test verifier CA certificate as trusted chain.
+	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
+	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
+	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
+	require.NoError(t, err)
+	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
+
 	return storagePath, filepath.Join(path, "irma_configuration")
 }
 
