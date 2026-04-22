@@ -22,17 +22,35 @@ type EudiLogService interface {
 }
 
 type eudiLogService struct {
-	store             db.EudiLogStore
-	credLogoManager   filesystem.LogoManager
-	issuerLogoManager filesystem.LogoManager
+	store           db.EudiLogStore
+	credentialStore db.CredentialStore
+	credLogoManager filesystem.LogoManager
 }
 
 func NewEudiLogService(s storage.Storage) EudiLogService {
 	return &eudiLogService{
-		store:             db.NewEudiLogStore(s.Db()),
-		credLogoManager:   s.FileSystem().Credentials().LogoManager(),
-		issuerLogoManager: s.FileSystem().Issuers().LogoManager(),
+		store:           db.NewEudiLogStore(s.Db()),
+		credentialStore: db.NewCredentialStore(s.Db()),
+		credLogoManager: s.FileSystem().Credentials().LogoManager(),
 	}
+}
+
+// resolveLogoFilename looks up the logo filename for a credential by its VCT.
+// Returns an empty string if no logo is configured.
+func (s *eudiLogService) resolveLogoFilename(credentialId string) string {
+	batches, err := s.credentialStore.GetBatchesByVCT(credentialId)
+	if err != nil || len(batches) == 0 {
+		return ""
+	}
+	batch := batches[0]
+	if batch.CredentialMetadata == nil || len(batch.CredentialMetadata.Display) == 0 {
+		return ""
+	}
+	logoURI := batch.CredentialMetadata.Display[0].LogoURI
+	if logoURI == "" {
+		return ""
+	}
+	return s.credLogoManager.GetLogoFilenameWithoutExtensionFromUrl(logoURI)
 }
 
 func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []*clientmodels.Credential) error {
@@ -43,7 +61,7 @@ func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer c
 		CreatedAt:     time.Now(),
 		RequestorId:   issuer.Id,
 		RequestorName: mustJSON(issuer.Name),
-		Credentials:   credentialsToLogCredentials(credentials),
+		Credentials:   s.credentialsToLogCredentials(credentials),
 	}
 	return s.store.AddLog(entry)
 }
@@ -66,7 +84,7 @@ func (s *eudiLogService) AddRemovalLog(credentials []*clientmodels.Credential) e
 		ID:          datatypes.NewUUIDv4(),
 		Type:        string(clientmodels.LogType_CredentialRemoval),
 		CreatedAt:   time.Now(),
-		Credentials: credentialsToLogCredentials(credentials),
+		Credentials: s.credentialsToLogCredentials(credentials),
 	}
 	return s.store.AddLog(entry)
 }
@@ -90,7 +108,7 @@ func (s *eudiLogService) GetLogsBefore(before time.Time, max int) ([]clientmodel
 
 // --- conversion helpers ---
 
-func credentialsToLogCredentials(creds []*clientmodels.Credential) []models.EudiLogCredential {
+func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Credential) []models.EudiLogCredential {
 	result := make([]models.EudiLogCredential, len(creds))
 	for i, c := range creds {
 		// Derive formats from the credential's instance IDs (one format per key).
@@ -104,10 +122,6 @@ func credentialsToLogCredentials(creds []*clientmodels.Credential) []models.Eudi
 				formats = append(formats, f)
 			}
 		}
-		var logoFilename string
-		if c.ImagePath != nil {
-			logoFilename = *c.ImagePath
-		}
 		result[i] = models.EudiLogCredential{
 			ID:           datatypes.NewUUIDv4(),
 			CredentialId: c.CredentialId,
@@ -115,7 +129,7 @@ func credentialsToLogCredentials(creds []*clientmodels.Credential) []models.Eudi
 			Name:         mustJSON(c.Name),
 			IssuerName:   mustJSON(c.Issuer.Name),
 			Attributes:   mustJSON(c.Attributes),
-			LogoFilename: logoFilename,
+			LogoFilename: s.resolveLogoFilename(c.CredentialId),
 		}
 	}
 	return result

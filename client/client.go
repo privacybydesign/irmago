@@ -393,18 +393,19 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			}
 		}
 
-		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
-		for _, hash := range eudiHashes {
-			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
-				return fmt.Errorf("error while deleting eudi credential: %v", err)
-			}
-		}
-
-		// Create removal log for EUDI credentials.
+		// Create removal log before deleting, so the log service can still
+		// look up batch metadata to resolve the credential logo filename.
 		if len(removedCreds) > 0 {
 			logService := services.NewEudiLogService(client.eudiStorage)
 			if err := logService.AddRemovalLog(removedCreds); err != nil {
 				return fmt.Errorf("failed to create eudi removal log: %v", err)
+			}
+		}
+
+		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
+		for _, hash := range eudiHashes {
+			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
+				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}
 	}

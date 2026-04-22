@@ -78,7 +78,6 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.Tra
 	return &t
 }
 
-
 // buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo
 // and the scheme manager as parent.
 func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer) clientmodels.TrustedParty {
@@ -88,10 +87,11 @@ func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer
 		Name:     clientmodels.TranslatedString(scheme.Name),
 		Verified: scheme.Status == irma.SchemeManagerStatusValid,
 	}
+	logoPath := issuer.Logo(irmaConfig)
 	return clientmodels.TrustedParty{
 		Id:       issuer.Identifier().String(),
 		Name:     clientmodels.TranslatedString(issuer.Name),
-		Image:    clientmodels.ImageFromFile(issuer.Logo(irmaConfig)),
+		Image:    clientmodels.ImageFromFile(logoPath),
 		Verified: scheme.Status == irma.SchemeManagerStatusValid,
 		Parent:   &parent,
 	}

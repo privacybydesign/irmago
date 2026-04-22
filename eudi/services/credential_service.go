@@ -210,7 +210,6 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			CredentialId: batch.VerifiableCredentialType,
 			Hash:         batch.Hash,
 			Image:        credentialImage,
-			ImagePath:    &credentialLogoFilename, // internal only (json:"-"), used by log service
 			Name:         credentialDisplays,
 			Issuer: clientmodels.TrustedParty{
 				Id:       batch.CredentialIssuer,

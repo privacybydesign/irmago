@@ -50,8 +50,9 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
 	require.Contains(t, log.Protocol, clientmodels.Protocol_OpenID4VP)
 
-	// require the logo of the requestor to be an existing file
-	require.FileExists(t, *log.Verifier.ImagePath)
+	// require the verifier to have a logo
+	require.NotNil(t, log.Verifier.Image, "verifier Image should not be nil")
+	require.NotEmpty(t, log.Verifier.Image.Base64, "verifier Image should have base64 data")
 
 	c.Close()
 
@@ -77,8 +78,9 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
 	require.Contains(t, log.Protocol, clientmodels.Protocol_OpenID4VP)
 
-	// require the logo of the requestor to be an existing file
-	require.FileExists(t, *log.Verifier.ImagePath)
+	// require the verifier to have a logo
+	require.NotNil(t, log.Verifier.Image, "verifier Image should not be nil")
+	require.NotEmpty(t, log.Verifier.Image.Base64, "verifier Image should have base64 data")
 
 	newClient.Close()
 }
@@ -107,8 +109,9 @@ func test_iOSLogoPathBug(t *testing.T) {
 	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_Idemix)
 	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_SdJwtVc)
 
-	// require the logo of the requestor to be an existing file
-	require.FileExists(t, *log.Issuer.ImagePath)
+	// require the issuer to have a logo
+	require.NotNil(t, log.Issuer.Image, "issuer Image should not be nil")
+	require.NotEmpty(t, log.Issuer.Image.Base64, "issuer Image should have base64 data")
 
 	c.Close()
 
@@ -134,8 +137,9 @@ func test_iOSLogoPathBug(t *testing.T) {
 	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_Idemix)
 	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_SdJwtVc)
 
-	// require the logo of the requestor to be an existing file
-	require.FileExists(t, *log.Issuer.ImagePath)
+	// require the issuer to have a logo
+	require.NotNil(t, log.Issuer.Image, "issuer Image should not be nil")
+	require.NotEmpty(t, log.Issuer.Image.Base64, "issuer Image should have base64 data")
 
 	newClient.Close()
 }

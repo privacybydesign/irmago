@@ -18,8 +18,6 @@ type TrustedParty struct {
 	Name TranslatedString `json:"name"`
 	// Url for the party (which can be different per language)
 	Url *TranslatedString `json:"url"`
-	// ImagePath is used internally only (not serialized to JSON).
-	ImagePath *string `json:"-"`
 	// The image data for this party.
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
@@ -148,8 +146,6 @@ type Credential struct {
 	Hash string `json:"hash"`
 	// Base64-encoded image for this credential.
 	Image *Image `json:"image,omitempty"`
-	// ImagePath is used internally only (not serialized to JSON).
-	ImagePath *string `json:"-"`
 	// The display name for this credential, localized.
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer.
@@ -209,8 +205,6 @@ type SelectableCredentialInstance struct {
 	Hash string `json:"hash"`
 	// Base64-encoded image for this credential.
 	Image *Image `json:"image,omitempty"`
-	// ImagePath is used internally only (not serialized to JSON).
-	ImagePath *string `json:"-"`
 	// The display name for this credential, localized.
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer.

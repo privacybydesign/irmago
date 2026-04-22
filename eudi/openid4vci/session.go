@@ -268,7 +268,6 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			Name:                  name,
 			Issuer:                clientmodels.TrustedParty{Name: issuerName},
 			Image:                 image,
-			ImagePath:             &logoFilename, // internal only, not serialized to JSON
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
 				clientmodels.Format_SdJwtVc: batchSize,

@@ -515,7 +515,6 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.Tra
 	return &t
 }
 
-
 // displayHintToAttributeType converts an irma display hint to a clientmodels.AttributeType.
 func displayHintToAttributeType(s string) clientmodels.AttributeType {
 	switch s {
