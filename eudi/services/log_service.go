@@ -22,9 +22,9 @@ type EudiLogService interface {
 }
 
 type eudiLogService struct {
-	store              db.EudiLogStore
-	credLogoManager    filesystem.LogoManager
-	issuerLogoManager  filesystem.LogoManager
+	store             db.EudiLogStore
+	credLogoManager   filesystem.LogoManager
+	issuerLogoManager filesystem.LogoManager
 }
 
 func NewEudiLogService(s storage.Storage) EudiLogService {
@@ -63,10 +63,10 @@ func (s *eudiLogService) AddDisclosureLog(verifier clientmodels.TrustedParty, cr
 
 func (s *eudiLogService) AddRemovalLog(credentials []*clientmodels.Credential) error {
 	entry := &models.EudiLogEntry{
-		ID:            datatypes.NewUUIDv4(),
-		Type:          string(clientmodels.LogType_CredentialRemoval),
-		CreatedAt:     time.Now(),
-		Credentials:   credentialsToLogCredentials(credentials),
+		ID:          datatypes.NewUUIDv4(),
+		Type:        string(clientmodels.LogType_CredentialRemoval),
+		CreatedAt:   time.Now(),
+		Credentials: credentialsToLogCredentials(credentials),
 	}
 	return s.store.AddLog(entry)
 }

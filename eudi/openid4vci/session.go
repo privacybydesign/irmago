@@ -264,11 +264,11 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		result = append(result, &clientmodels.Credential{
-			CredentialId:         config.VerifiableCredentialType,
-			Name:                 name,
-			Issuer:               clientmodels.TrustedParty{Name: issuerName},
-			Image:                image,
-			ImagePath:            &logoFilename, // internal only, not serialized to JSON
+			CredentialId:          config.VerifiableCredentialType,
+			Name:                  name,
+			Issuer:                clientmodels.TrustedParty{Name: issuerName},
+			Image:                 image,
+			ImagePath:             &logoFilename, // internal only, not serialized to JSON
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
 				clientmodels.Format_SdJwtVc: batchSize,

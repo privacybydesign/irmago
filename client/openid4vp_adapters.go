@@ -178,4 +178,3 @@ func checkWrongCredential(cred *clientmodels.Credential, option *clientmodels.Cr
 		Attributes:   mismatched,
 	}
 }
-
