@@ -78,12 +78,6 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.Tra
 	return &t
 }
 
-func optionalString(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
 
 // buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo
 // and the scheme manager as parent.

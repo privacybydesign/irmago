@@ -373,7 +373,7 @@ func constructCredentialIssuerMetadataUrl(credentialIssuer url.URL) string {
 	return url.String()
 }
 
-func (c *Client) convertToCredentialInfoList(
+func (client *Client) convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
 	issuerName clientmodels.TranslatedString,
@@ -396,7 +396,7 @@ func (c *Client) convertToCredentialInfoList(
 			name := metadata.ConvertDisplayToTranslatedString(displays)
 			var image *clientmodels.Image
 
-			credentialLogoManager := c.Configuration.Storage.FileSystem().Credentials().LogoManager()
+			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
 			for _, display := range config.CredentialMetadata.Display {
 				if display.Logo != nil {
 					filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)

@@ -396,7 +396,7 @@ func isParentOfConcreteClaim(path []any, allPaths [][]any) bool {
 	return false
 }
 
-// flattenClaimValue recursively flattens arrays and objects into individual scalar
+// FlattenClaimValue recursively flattens arrays and objects into individual scalar
 // attributes. Each leaf value gets its own Attribute with the full path from root.
 // A section header (Value == nil) is emitted only when the path has an explicit
 // display name in the metadata lookup — inherited display names don't trigger headers.

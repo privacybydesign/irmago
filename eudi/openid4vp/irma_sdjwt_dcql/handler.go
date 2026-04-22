@@ -513,13 +513,6 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.Tra
 	return &t
 }
 
-// optionalString returns nil when s is empty, otherwise a pointer to s.
-func optionalString(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
 
 // displayHintToAttributeType converts an irma display hint to a clientmodels.AttributeType.
 func displayHintToAttributeType(s string) clientmodels.AttributeType {
