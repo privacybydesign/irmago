@@ -90,7 +90,7 @@ jobs:
       run: go install github.com/client9/misspell/cmd/misspell@latest
       
     - name: Run misspell
-      run: find . -type f -not -path './testdata/*.json' | xargs misspell -error
+      run: find . -type f -not -path './testdata/*.json' | xargs misspell -error -i "adres,instelling,relatie"
 
     - name: Install staticcheck
       run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
