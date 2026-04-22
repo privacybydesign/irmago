@@ -585,10 +585,10 @@ var issuerMetadataKeys = []string{
 }
 
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.
-// The algorithm mirrors irmaclient.CreateHashForSdJwtVc so that hashes are consistent
-// across both the IRMA client and the EUDI storage. Issuer metadata fields (iat, exp,
-// nbf, iss, sub, vct, cnf, status) are stripped before hashing so that two issuances
-// of the same credential with identical claims produce the same hash.
+// Issuer metadata fields (iat, exp, nbf, iss, sub, vct, cnf, status) are stripped
+// before hashing so that two issuances of the same credential with identical claims
+// produce the same hash. Note: this hash is intentionally different from
+// irmaclient.CreateHashForSdJwtVc, which is used for IRMA-issued SD-JWTs.
 func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) string {
 	// Unmarshal into a map so we can strip issuer metadata keys before hashing.
 	var payload map[string]any
