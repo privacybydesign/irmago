@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
+	"time"
 
 	"github.com/privacybydesign/gabi"
 	"github.com/privacybydesign/gabi/revocation"
@@ -367,12 +368,26 @@ func (s *storage) TxDeleteLogs(tx *clientstorage.Transaction) error {
 	return tx.DeleteBucket([]byte(logsBucket))
 }
 
-// Returns all logs stored before log with ID 'index' sorted from new to old with
-// a maximum result length of 'max'.
-func (s *storage) LoadLogsBefore(index uint64, max int) ([]*LogEntry, error) {
-	return s.loadLogs(max, func(c *bbolt.Cursor) (key, value []byte) {
-		c.Seek(logEntryKeyToBytes(index))
-		return c.Prev()
+// LoadLogsBeforeTime returns logs with a timestamp strictly before 'before',
+// sorted from new to old, with a maximum result length of 'max'.
+func (s *storage) LoadLogsBeforeTime(before time.Time, max int) ([]*LogEntry, error) {
+	logs := make([]*LogEntry, 0, max)
+	return logs, s.dbStorage.Db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(logsBucket))
+		if bucket == nil {
+			return nil
+		}
+		c := bucket.Cursor()
+		for k, v := c.Last(); k != nil && len(logs) < max; k, v = c.Prev() {
+			log, err := s.decryptLog(v)
+			if err != nil {
+				return err
+			}
+			if time.Time(log.Time).Before(before) {
+				logs = append(logs, log)
+			}
+		}
+		return nil
 	})
 }
 

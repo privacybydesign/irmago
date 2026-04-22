@@ -22,6 +22,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("complex disclosure log only contains shared subset", testComplexDisclosureLogOnlyContainsSharedSubset)
 	t.Run("duplicate credential removal leaves none and creates log", testDuplicateCredentialRemovalCreatesLog)
 	t.Run("irma and eudi logs merged chronologically", testIrmaAndEudiLogsMergedChronologically)
+	t.Run("load logs before includes both irma and eudi logs", testLoadLogsBeforeIncludesBothSources)
 }
 
 func testOpenId4VciPreAuthFlowCreatesIssuanceLog(t *testing.T) {
@@ -696,4 +697,73 @@ func testIrmaAndEudiLogsMergedChronologically(t *testing.T) {
 
 	require.Equal(t, clientmodels.LogType_Issuance, logs[5].Type)
 	require.Equal(t, clientmodels.Protocol_Irma, logs[5].IssuanceLog.Protocol)
+}
+
+// testLoadLogsBeforeIncludesBothSources verifies that LoadLogsBefore returns
+// logs from both bbolt (IRMA) and SQLCipher (EUDI) when paginating.
+//
+// Sequence (with 1s sleeps between each):
+//  1. Keyshare enrollment      → bbolt  (issuance)
+//  2. IRMA issuance            → bbolt  (issuance)
+//  3. OID4VCI issuance         → SQLCipher (issuance)
+//  4. IRMA disclosure          → bbolt  (disclosure)
+//
+// LoadNewestLogs(2) returns [4, 3]. LoadLogsBefore(logs[1].Time, 10) should
+// return [2, 1] — one from each backend.
+func testLoadLogsBeforeIncludesBothSources(t *testing.T) {
+	irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+	defer irmaServer.Stop()
+
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	sep := func() { time.Sleep(1100 * time.Millisecond) }
+
+	// 1. Keyshare enrollment log already exists.
+
+	// 2. IRMA issuance.
+	sep()
+	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	awaitSessionState(t, sessionHandler)
+
+	// 3. OID4VCI issuance.
+	sep()
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Page",
+		"family_name": "Test",
+		"email": "page@example.com"
+	}`)
+
+	// 4. IRMA disclosure.
+	sep()
+	performIrmaDisclosureSession(t, c, sessionHandler, irmaServer)
+
+	// First page: 2 newest logs.
+	firstPage, err := c.LoadNewestLogs(2)
+	require.NoError(t, err)
+	require.Len(t, firstPage, 2)
+	// [0] = IRMA disclosure, [1] = OID4VCI issuance
+	require.Equal(t, clientmodels.LogType_Disclosure, firstPage[0].Type)
+	require.Equal(t, clientmodels.LogType_Issuance, firstPage[1].Type)
+	require.Equal(t, clientmodels.Protocol_OpenID4VCI, firstPage[1].IssuanceLog.Protocol)
+
+	// Second page: logs before the oldest entry on the first page.
+	secondPage, err := c.LoadLogsBefore(firstPage[1].Time, 10)
+	require.NoError(t, err)
+	require.Len(t, secondPage, 2, "should contain IRMA issuance + keyshare enrollment")
+
+	// Both should be IRMA issuance logs (from bbolt).
+	require.Equal(t, clientmodels.LogType_Issuance, secondPage[0].Type)
+	require.Equal(t, clientmodels.Protocol_Irma, secondPage[0].IssuanceLog.Protocol)
+	require.Equal(t, clientmodels.LogType_Issuance, secondPage[1].Type)
+	require.Equal(t, clientmodels.Protocol_Irma, secondPage[1].IssuanceLog.Protocol)
+
+	// All second page entries must be strictly before the cursor.
+	for i, l := range secondPage {
+		require.True(t, l.Time.Before(firstPage[1].Time),
+			"secondPage[%d].Time (%v) should be before cursor (%v)", i, l.Time, firstPage[1].Time)
+	}
 }

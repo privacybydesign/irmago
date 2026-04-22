@@ -497,12 +497,25 @@ func (client *Client) LoadNewestLogs(max int) ([]clientmodels.LogInfo, error) {
 	return mergeLogsByTime(irmaLogs, eudiLogs, max), nil
 }
 
-func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]clientmodels.LogInfo, error) {
-	rawLogs, err := client.irmaClient.LoadLogsBefore(beforeIndex, max)
+func (client *Client) LoadLogsBefore(before time.Time, max int) ([]clientmodels.LogInfo, error) {
+	// Load IRMA logs from bbolt.
+	rawLogs, err := client.irmaClient.LoadLogsBeforeTime(before, max)
 	if err != nil {
 		return nil, err
 	}
-	return client.rawLogEntriesToLogInfo(rawLogs)
+	irmaLogs, err := client.rawLogEntriesToLogInfo(rawLogs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load EUDI logs from SQLCipher.
+	logService := services.NewEudiLogService(client.eudiStorage)
+	eudiLogs, err := logService.GetLogsBefore(before, max)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeLogsByTime(irmaLogs, eudiLogs, max), nil
 }
 
 // mergeLogsByTime merges two log slices (each already sorted newest-first) into
