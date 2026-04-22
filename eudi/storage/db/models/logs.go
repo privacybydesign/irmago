@@ -15,8 +15,9 @@ type EudiLogEntry struct {
 	CreatedAt time.Time
 
 	// Requestor/verifier/issuer info (JSON-encoded TranslatedString for name).
-	RequestorId   string
-	RequestorName datatypes.JSON `gorm:"type:json"`
+	RequestorId           string
+	RequestorName         datatypes.JSON `gorm:"type:json"`
+	RequestorLogoFilename string         // Logo filename managed by the verifier logo manager. Empty when no logo is available.
 
 	// Logged credentials.
 	Credentials []EudiLogCredential `gorm:"foreignKey:EudiLogEntryID;constraint:OnDelete:CASCADE"`

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
@@ -67,21 +68,26 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, newEudiAppDataPath, signer)
 
 	// make sure it can still do sessions
+	// Sleep to ensure the new issuance gets a later timestamp than the disclosure,
+	// since IRMA logs (bbolt/JSON) only have second precision while EUDI logs
+	// (SQLCipher) have sub-second precision.
+	time.Sleep(time.Second)
 	issueWithPinToClient(t, newClient, newClientSessionHandler, irmaServer)
 
-	logs, err = newClient.LoadNewestLogs(2)
+	// 4 logs: new issuance, disclosure, old issuance, keyshare enrollment
+	logs, err = newClient.LoadNewestLogs(10)
 	require.NoError(t, err)
-	require.Len(t, logs, 2)
-	// need the second to last one, because that log used the previous storage
+	require.GreaterOrEqual(t, len(logs), 2)
 	log = logs[1].DisclosureLog
+	require.NotNil(t, log, "logs[1] should be the disclosure log")
 
 	// make sure we have the correct OpenID4VP log
 	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
 	require.Contains(t, log.Protocol, clientmodels.Protocol_OpenID4VP)
 
-	// require the verifier to have a logo
-	require.NotNil(t, log.Verifier.Image, "verifier Image should not be nil")
-	require.NotEmpty(t, log.Verifier.Image.Base64, "verifier Image should have base64 data")
+	// require the verifier logo survives the storage move
+	require.NotNil(t, log.Verifier.Image, "verifier Image should not be nil after storage move")
+	require.NotEmpty(t, log.Verifier.Image.Base64, "verifier Image should have base64 data after storage move")
 
 	newClient.Close()
 }
@@ -132,16 +138,17 @@ func test_iOSLogoPathBug(t *testing.T) {
 	logs, err = newClient.LoadNewestLogs(2)
 	require.NoError(t, err)
 	require.Len(t, logs, 2)
-	// need the second to last one, because that log used the previous storage
+	// Newest first: [0] = new issuance, [1] = old issuance
 	log = logs[1].IssuanceLog
+	require.NotNil(t, log, "logs[1] should be the issuance log from before the storage move")
 
 	require.Contains(t, log.Credentials[0].CredentialId, "test.test.email")
 	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_Idemix)
 	require.Contains(t, log.Credentials[0].Formats, clientmodels.Format_SdJwtVc)
 
-	// require the issuer to have a logo
-	require.NotNil(t, log.Issuer.Image, "issuer Image should not be nil")
-	require.NotEmpty(t, log.Issuer.Image.Base64, "issuer Image should have base64 data")
+	// require the issuer logo survives the storage move
+	require.NotNil(t, log.Issuer.Image, "issuer Image should not be nil after storage move")
+	require.NotEmpty(t, log.Issuer.Image.Base64, "issuer Image should have base64 data after storage move")
 
 	newClient.Close()
 }

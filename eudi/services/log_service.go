@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"time"
 
@@ -22,16 +23,18 @@ type EudiLogService interface {
 }
 
 type eudiLogService struct {
-	store           db.EudiLogStore
-	credentialStore db.CredentialStore
-	credLogoManager filesystem.LogoManager
+	store               db.EudiLogStore
+	credentialStore     db.CredentialStore
+	credLogoManager     filesystem.LogoManager
+	verifierLogoManager filesystem.LogoManager
 }
 
 func NewEudiLogService(s storage.Storage) EudiLogService {
 	return &eudiLogService{
-		store:           db.NewEudiLogStore(s.Db()),
-		credentialStore: db.NewCredentialStore(s.Db()),
-		credLogoManager: s.FileSystem().Credentials().LogoManager(),
+		store:               db.NewEudiLogStore(s.Db()),
+		credentialStore:     db.NewCredentialStore(s.Db()),
+		credLogoManager:     s.FileSystem().Credentials().LogoManager(),
+		verifierLogoManager: s.FileSystem().Verifiers().LogoManager(),
 	}
 }
 
@@ -55,26 +58,28 @@ func (s *eudiLogService) resolveLogoFilename(credentialId string) string {
 
 func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []*clientmodels.Credential) error {
 	entry := &models.EudiLogEntry{
-		ID:            datatypes.NewUUIDv4(),
-		Type:          string(clientmodels.LogType_Issuance),
-		Protocol:      string(protocol),
-		CreatedAt:     time.Now(),
-		RequestorId:   issuer.Id,
-		RequestorName: mustJSON(issuer.Name),
-		Credentials:   s.credentialsToLogCredentials(credentials),
+		ID:                    datatypes.NewUUIDv4(),
+		Type:                  string(clientmodels.LogType_Issuance),
+		Protocol:              string(protocol),
+		CreatedAt:             time.Now(),
+		RequestorId:           issuer.Id,
+		RequestorName:         mustJSON(issuer.Name),
+		RequestorLogoFilename: s.saveRequestorLogo(issuer),
+		Credentials:           s.credentialsToLogCredentials(credentials),
 	}
 	return s.store.AddLog(entry)
 }
 
 func (s *eudiLogService) AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error {
 	entry := &models.EudiLogEntry{
-		ID:            datatypes.NewUUIDv4(),
-		Type:          string(clientmodels.LogType_Disclosure),
-		Protocol:      string(clientmodels.Protocol_OpenID4VP),
-		CreatedAt:     time.Now(),
-		RequestorId:   verifier.Id,
-		RequestorName: mustJSON(verifier.Name),
-		Credentials:   logCredentialsToModelCredentials(credentials),
+		ID:                    datatypes.NewUUIDv4(),
+		Type:                  string(clientmodels.LogType_Disclosure),
+		Protocol:              string(clientmodels.Protocol_OpenID4VP),
+		CreatedAt:             time.Now(),
+		RequestorId:           verifier.Id,
+		RequestorName:         mustJSON(verifier.Name),
+		RequestorLogoFilename: s.saveRequestorLogo(verifier),
+		Credentials:           logCredentialsToModelCredentials(credentials),
 	}
 	return s.store.AddLog(entry)
 }
@@ -177,9 +182,17 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.Lo
 	if e.RequestorName != nil {
 		_ = json.Unmarshal(e.RequestorName, &requestorName)
 	}
+	var requestorImage *clientmodels.Image
+	if e.RequestorLogoFilename != "" {
+		imageData, err := s.verifierLogoManager.GetLogo(e.RequestorLogoFilename)
+		if err == nil && imageData != nil {
+			requestorImage = &clientmodels.Image{Base64: *imageData}
+		}
+	}
 	requestor := &clientmodels.TrustedParty{
-		Id:   e.RequestorId,
-		Name: requestorName,
+		Id:    e.RequestorId,
+		Name:  requestorName,
+		Image: requestorImage,
 	}
 
 	switch clientmodels.LogType(e.Type) {
@@ -246,6 +259,24 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		}
 	}
 	return result, nil
+}
+
+// saveRequestorLogo persists the requestor's logo image (if any) to the
+// verifier logo storage and returns the filename used for storage.
+// Returns "" if the requestor has no image.
+func (s *eudiLogService) saveRequestorLogo(tp clientmodels.TrustedParty) string {
+	if tp.Image == nil || tp.Image.Base64 == "" || tp.Id == "" {
+		return ""
+	}
+	rawBytes, err := base64.StdEncoding.DecodeString(tp.Image.Base64)
+	if err != nil {
+		return ""
+	}
+	filename := tp.Id
+	if _, err := s.verifierLogoManager.SaveLogo(filename, rawBytes); err != nil {
+		return ""
+	}
+	return filename
 }
 
 func mustJSON(v any) datatypes.JSON {

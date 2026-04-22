@@ -147,6 +147,9 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			Name:     clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
 			Verified: endEntityCert != nil,
 		}
+		if endEntityCert != nil {
+			requestor.Id = endEntityCert.SerialNumber.String()
+		}
 
 		if len(requestorSchemeData.Organization.Logo.Data) > 0 {
 			requestor.Image = &clientmodels.Image{
