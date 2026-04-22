@@ -176,26 +176,6 @@ func issueWithPinToClient(t *testing.T, c *client.Client, sessionHandler *MockSe
 	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
-func issueSdJwtAndIdemixToClientExpectPin(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
-	session := awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
-
-	grantPermission(t, c, session.Id)
-
-	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_RequestPin, session.Status)
-
-	userInteraction(t, c, clientmodels.SessionUserInteraction{
-		SessionId: session.Id,
-		Type:      clientmodels.UI_EnteredPin,
-		Payload:   clientmodels.PinInteractionPayload{Pin: "12345", Proceed: true},
-	})
-
-	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_Success, session.Status)
-}
-
 func createClientStorage(t *testing.T) (storagePath string, irmaConfigurationPath string) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
