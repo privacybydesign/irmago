@@ -96,22 +96,24 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		// TODO: this logic is more or less duplicated from openid4vci/client.go -> convertToCredentialInfoList(); consider centralizing it
 		var image *clientmodels.Image
 
-		credentialLogoManager := h.storage.FileSystem().Credentials().LogoManager()
-		for _, display := range batch.CredentialMetadata.Display {
-			if display.LogoURI != "" {
-				filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
-				imageData, err := credentialLogoManager.GetLogo(filename)
-				if err != nil {
-					eudi.Logger.Warnf("failed to get credential logo from %q: %v", display.LogoURI, err)
-					continue
-				}
+		if batch.CredentialMetadata != nil {
+			credentialLogoManager := h.storage.FileSystem().Credentials().LogoManager()
+			for _, display := range batch.CredentialMetadata.Display {
+				if display.LogoURI != "" {
+					filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
+					imageData, err := credentialLogoManager.GetLogo(filename)
+					if err != nil {
+						eudi.Logger.Warnf("failed to get credential logo from %q: %v", display.LogoURI, err)
+						continue
+					}
 
-				image = &clientmodels.Image{
-					Base64: *imageData,
-				}
+					image = &clientmodels.Image{
+						Base64: *imageData,
+					}
 
-				// TODO: for now, we pick the first logo in a display we can find, but this needs to be based on the locale being used in the app
-				break
+					// TODO: for now, we pick the first logo in a display we can find, but this needs to be based on the locale being used in the app
+					break
+				}
 			}
 		}
 
