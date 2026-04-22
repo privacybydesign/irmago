@@ -63,10 +63,11 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	require.NoError(t, os.RemoveAll(storagePath))
 	require.NoDirExists(t, storagePath)
 
-	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, eudiAppDataPath, signer)
+	newEudiAppDataPath := filepath.Join(newStoragePath, "eudi")
+	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, newEudiAppDataPath, signer)
 
 	// make sure it can still do sessions
-	issueSdJwtAndIdemixToClientExpectPin(t, newClient, newClientSessionHandler, irmaServer)
+	issueWithPinToClient(t, newClient, newClientSessionHandler, irmaServer)
 
 	logs, err = newClient.LoadNewestLogs(2)
 	require.NoError(t, err)
@@ -122,10 +123,11 @@ func test_iOSLogoPathBug(t *testing.T) {
 	require.NoError(t, os.RemoveAll(storagePath))
 	require.NoDirExists(t, storagePath)
 
-	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, eudiAppDataPath, signer)
+	newEudiAppDataPath := filepath.Join(newStoragePath, "eudi")
+	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, newEudiAppDataPath, signer)
 
 	// make sure it can still do sessions
-	issueSdJwtAndIdemixToClientExpectPin(t, newClient, newClientSessionHandler, irmaServer)
+	issueWithPinToClient(t, newClient, newClientSessionHandler, irmaServer)
 
 	logs, err = newClient.LoadNewestLogs(2)
 	require.NoError(t, err)
