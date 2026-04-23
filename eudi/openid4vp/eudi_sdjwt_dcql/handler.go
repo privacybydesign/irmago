@@ -98,7 +98,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch),
-			Issuer:                      issuerTrustedParty(batch),
+			Issuer:                      h.issuerTrustedParty(batch),
 			Format:                      clientmodels.Format_SdJwtVc,
 			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
@@ -517,7 +517,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 		Name:         credentialDisplayName(batch),
 		Image:        h.credentialImage(batch),
-		Issuer:       issuerTrustedParty(batch),
+		Issuer:       h.issuerTrustedParty(batch),
 		Attributes:   attrs,
 		IssuanceDate: batch.IssuedAt.Unix(),
 		ExpiryDate:   expiryUnix(batch),
@@ -762,8 +762,9 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch) *cli
 	return nil
 }
 
-// issuerTrustedParty builds a TrustedParty from the stored issuer display metadata.
-func issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty {
+// issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
+// including the issuer logo if available on disk.
+func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty {
 	name := clientmodels.TranslatedString{}
 	for _, d := range batch.IssuerDisplay {
 		locale := clientmodels.DefaultFallbackLanguage
@@ -773,9 +774,29 @@ func issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty
 		name[locale] = d.Name
 	}
 	return clientmodels.TrustedParty{
-		Id:   batch.CredentialIssuer,
-		Name: name,
+		Id:    batch.CredentialIssuer,
+		Name:  name,
+		Image: h.issuerImage(batch),
 	}
+}
+
+// issuerImage resolves the issuer logo from the batch's issuer display metadata.
+// Returns nil if no logo is configured or the logo cannot be loaded.
+func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientmodels.Image {
+	logoManager := h.storage.FileSystem().Issuers().LogoManager()
+	for _, d := range batch.IssuerDisplay {
+		if d.LogoURI == "" {
+			continue
+		}
+		filename := logoManager.GetLogoFilenameWithoutExtensionFromUrl(d.LogoURI)
+		imageData, err := logoManager.GetLogo(filename)
+		if err != nil {
+			eudi.Logger.Warnf("failed to get issuer logo from %q: %v", d.LogoURI, err)
+			continue
+		}
+		return &clientmodels.Image{Base64: *imageData}
+	}
+	return nil
 }
 
 // credentialDisplayName returns the display name for a credential from its stored metadata.

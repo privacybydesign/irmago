@@ -1,12 +1,13 @@
 package services
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -25,36 +26,18 @@ type EudiLogService interface {
 
 type eudiLogService struct {
 	store               db.EudiLogStore
-	credentialStore     db.CredentialStore
 	credLogoManager     filesystem.LogoManager
+	issuerLogoManager   filesystem.LogoManager
 	verifierLogoManager filesystem.LogoManager
 }
 
 func NewEudiLogService(s storage.Storage) EudiLogService {
 	return &eudiLogService{
 		store:               db.NewEudiLogStore(s.Db()),
-		credentialStore:     db.NewCredentialStore(s.Db()),
 		credLogoManager:     s.FileSystem().Credentials().LogoManager(),
+		issuerLogoManager:   s.FileSystem().Issuers().LogoManager(),
 		verifierLogoManager: s.FileSystem().Verifiers().LogoManager(),
 	}
-}
-
-// resolveLogoFilename looks up the logo filename for a credential by its VCT.
-// Returns an empty string if no logo is configured.
-func (s *eudiLogService) resolveLogoFilename(credentialId string) string {
-	batches, err := s.credentialStore.GetBatchesByVCT(credentialId)
-	if err != nil || len(batches) == 0 {
-		return ""
-	}
-	batch := batches[0]
-	if batch.CredentialMetadata == nil || len(batch.CredentialMetadata.Display) == 0 {
-		return ""
-	}
-	logoURI := batch.CredentialMetadata.Display[0].LogoURI
-	if logoURI == "" {
-		return ""
-	}
-	return s.credLogoManager.GetLogoFilenameWithoutExtensionFromUrl(logoURI)
 }
 
 func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []*clientmodels.Credential) error {
@@ -129,13 +112,14 @@ func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Crede
 			}
 		}
 		result[i] = models.EudiLogCredential{
-			ID:           datatypes.NewUUIDv4(),
-			CredentialId: c.CredentialId,
-			Formats:      mustJSON(formats),
-			Name:         mustJSON(c.Name),
-			IssuerName:   mustJSON(c.Issuer.Name),
-			Attributes:   mustJSON(c.Attributes),
-			LogoFilename: s.resolveLogoFilename(c.CredentialId),
+			ID:                 datatypes.NewUUIDv4(),
+			CredentialId:       c.CredentialId,
+			Formats:            mustJSON(formats),
+			Name:               mustJSON(c.Name),
+			IssuerName:         mustJSON(c.Issuer.Name),
+			Attributes:         mustJSON(c.Attributes),
+			LogoFilename:       saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
+			IssuerLogoFilename: saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
 		}
 	}
 	return result
@@ -145,13 +129,14 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 	result := make([]models.EudiLogCredential, len(creds))
 	for i, c := range creds {
 		result[i] = models.EudiLogCredential{
-			ID:           datatypes.NewUUIDv4(),
-			CredentialId: c.CredentialId,
-			Formats:      mustJSON(c.Formats),
-			Name:         mustJSON(c.Name),
-			IssuerName:   mustJSON(c.Issuer.Name),
-			Attributes:   mustJSON(c.Attributes),
-			LogoFilename: s.saveCredentialLogo(c),
+			ID:                 datatypes.NewUUIDv4(),
+			CredentialId:       c.CredentialId,
+			Formats:            mustJSON(c.Formats),
+			Name:               mustJSON(c.Name),
+			IssuerName:         mustJSON(c.Issuer.Name),
+			Attributes:         mustJSON(c.Attributes),
+			LogoFilename:       saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
+			IssuerLogoFilename: saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
 		}
 	}
 	return result
@@ -170,7 +155,7 @@ func (s *eudiLogService) entriesToLogInfos(entries []*models.EudiLogEntry) ([]cl
 }
 
 func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.LogInfo, error) {
-	logCreds, err := modelCredentialsToLogCredentials(e.Credentials, s.credLogoManager)
+	logCreds, err := modelCredentialsToLogCredentials(e.Credentials, s.credLogoManager, s.issuerLogoManager)
 	if err != nil {
 		return clientmodels.LogInfo{}, err
 	}
@@ -219,7 +204,7 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.Lo
 	return info, nil
 }
 
-func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogoManager filesystem.LogoManager) ([]clientmodels.LogCredential, error) {
+func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogoManager filesystem.LogoManager, issuerLogoManager filesystem.LogoManager) ([]clientmodels.LogCredential, error) {
 	result := make([]clientmodels.LogCredential, len(creds))
 	for i, c := range creds {
 		var name clientmodels.TranslatedString
@@ -244,45 +229,43 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		if formats == nil {
 			formats = []clientmodels.CredentialFormat{}
 		}
-		var image *clientmodels.Image
+		var credImage *clientmodels.Image
 		if c.LogoFilename != "" && credLogoManager != nil {
-			imageData, err := credLogoManager.GetLogo(c.LogoFilename)
-			if err == nil && imageData != nil {
-				image = &clientmodels.Image{Base64: *imageData}
+			if imageData, err := credLogoManager.GetLogo(c.LogoFilename); err == nil && imageData != nil {
+				credImage = &clientmodels.Image{Base64: *imageData}
+			}
+		}
+		var issuerImage *clientmodels.Image
+		if c.IssuerLogoFilename != "" && issuerLogoManager != nil {
+			if imageData, err := issuerLogoManager.GetLogo(c.IssuerLogoFilename); err == nil && imageData != nil {
+				issuerImage = &clientmodels.Image{Base64: *imageData}
 			}
 		}
 		result[i] = clientmodels.LogCredential{
 			CredentialId: c.CredentialId,
 			Formats:      formats,
 			Name:         name,
-			Image:        image,
-			Issuer:       clientmodels.TrustedParty{Name: issuerName},
+			Image:        credImage,
+			Issuer:       clientmodels.TrustedParty{Name: issuerName, Image: issuerImage},
 			Attributes:   attrs,
 		}
 	}
 	return result, nil
 }
 
-// saveCredentialLogo persists a credential's logo image to the credential
-// logo storage. It first tries to resolve the filename from the database
-// (works for EUDI-issued credentials). If that fails but the LogCredential
-// has pre-resolved image data (e.g. from the OpenID4VP handler), it saves
-// that image to disk instead.
-func (s *eudiLogService) saveCredentialLogo(cred clientmodels.LogCredential) string {
-	if filename := s.resolveLogoFilename(cred.CredentialId); filename != "" {
-		return filename
-	}
-	if cred.Image == nil || cred.Image.Base64 == "" {
+// saveLogoFromBase64 persists a base64-encoded image to the given logo manager
+// under a deterministic filename derived from the provided key (SHA256).
+// Returns the filename on success, or "" if no image is available.
+func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clientmodels.Image) string {
+	if image == nil || image.Base64 == "" || key == "" {
 		return ""
 	}
-	rawBytes, err := base64.StdEncoding.DecodeString(cred.Image.Base64)
+	rawBytes, err := base64.StdEncoding.DecodeString(image.Base64)
 	if err != nil {
-		eudi.Logger.Warnf("failed to decode credential logo base64 for %q: %v", cred.CredentialId, err)
 		return ""
 	}
-	filename := cred.CredentialId
-	if _, err := s.credLogoManager.SaveLogo(filename, rawBytes); err != nil {
-		eudi.Logger.Warnf("failed to save credential logo for %q: %v", cred.CredentialId, err)
+	filename := fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
+	if _, err := manager.SaveLogo(filename, rawBytes); err != nil {
 		return ""
 	}
 	return filename

@@ -42,8 +42,11 @@ type EudiLogCredential struct {
 	// display names, and values. Stored as a blob since logs are write-once.
 	Attributes datatypes.JSON `gorm:"type:json"`
 
-	// Filename (without extension) of the credential logo stored by the logo
-	// manager. Empty when no logo is available. Resolved to a full base64
-	// image when loading logs.
+	// Filename (without extension) of the credential logo stored by the
+	// credential logo manager. Empty when no logo is available.
 	LogoFilename string
+
+	// Filename (without extension) of the issuer logo stored by the
+	// issuer logo manager. Empty when no logo is available.
+	IssuerLogoFilename string
 }
