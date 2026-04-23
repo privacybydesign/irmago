@@ -11,6 +11,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -3065,10 +3066,6 @@ func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, query
 	}
 
 	// Check no unexpected top-level claims exist (ignoring standard JWT claims).
-	standardClaims := map[string]struct{}{
-		"vct": {}, "iss": {}, "iat": {}, "exp": {}, "nbf": {}, "sub": {},
-		"cnf": {}, "_sd_alg": {}, "status": {},
-	}
 	expectedTopLevel := make(map[string]struct{})
 	for _, exp := range expected {
 		if len(exp.Path) > 0 {
@@ -3078,7 +3075,7 @@ func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, query
 		}
 	}
 	for key := range claims {
-		if _, isStandard := standardClaims[key]; isStandard {
+		if _, isStandard := sdjwtvc.StandardClaims[key]; isStandard {
 			continue
 		}
 		_, isExpected := expectedTopLevel[key]

@@ -568,29 +568,13 @@ func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []a
 	return nil, false
 }
 
-// issuerMetadataKeys lists JWT-registered and SD-JWT-specific claims that must be
-// excluded from the credential hash because they vary between issuances of the same
-// logical credential (e.g. timestamps, holder key binding).
-var issuerMetadataKeys = []string{
-	sdjwtvc.Key_Issuer,
-	sdjwtvc.Key_IssuedAt,
-	sdjwtvc.Key_ExpiryTime,
-	sdjwtvc.Key_NotBefore,
-	sdjwtvc.Key_Subject,
-	sdjwtvc.Key_VerifiableCredentialType,
-	sdjwtvc.Key_Confirmationkey,
-	sdjwtvc.Key_Status,
-	sdjwtvc.Key_Sd,
-	sdjwtvc.Key_SdAlg,
-}
-
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.
-// Issuer metadata fields (iat, exp, nbf, iss, sub, vct, cnf, status) are stripped
+// Standard claims (iat, exp, nbf, iss, sub, vct, cnf, status, etc.) are stripped
 // before hashing so that two issuances of the same credential with identical claims
 // produce the same hash. Note: this hash is intentionally different from
 // irmaclient.CreateHashForSdJwtVc, which is used for IRMA-issued SD-JWTs.
 func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) string {
-	// Unmarshal into a map so we can strip issuer metadata keys before hashing.
+	// Unmarshal into a map so we can strip standard claims before hashing.
 	var payload map[string]any
 	if err := json.Unmarshal(processedSdJwtPayloadBytes, &payload); err != nil {
 		// processedSdJwtPayloadBytes is always valid JSON produced by json.Marshal;
@@ -598,7 +582,7 @@ func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) string {
 		panic(fmt.Errorf("hashForSdJwtVc: failed to unmarshal payload: %w", err))
 	}
 
-	for _, key := range issuerMetadataKeys {
+	for key := range sdjwtvc.StandardClaims {
 		delete(payload, key)
 	}
 

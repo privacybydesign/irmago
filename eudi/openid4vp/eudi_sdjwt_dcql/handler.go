@@ -480,16 +480,9 @@ func getNonSdClaimNames(batch *models.CredentialBatch, credStore db.CredentialSt
 		return nil
 	}
 
-	// Standard SD-JWT claims that are not user data.
-	standardClaims := map[string]struct{}{
-		"iss": {}, "sub": {}, "iat": {}, "exp": {}, "nbf": {},
-		"vct": {}, "cnf": {}, "_sd": {}, "_sd_alg": {}, "status": {},
-		"fed": {},
-	}
-
 	var names []string
 	for key := range jwtPayload {
-		if _, isStandard := standardClaims[key]; isStandard {
+		if _, isStandard := sdjwtvc.StandardClaims[key]; isStandard {
 			continue
 		}
 		// If the key is directly in the payload (not a nested _sd reference),
