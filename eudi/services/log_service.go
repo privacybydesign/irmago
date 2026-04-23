@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -150,7 +151,7 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			Name:         mustJSON(c.Name),
 			IssuerName:   mustJSON(c.Issuer.Name),
 			Attributes:   mustJSON(c.Attributes),
-			LogoFilename: s.resolveLogoFilename(c.CredentialId),
+			LogoFilename: s.saveCredentialLogo(c),
 		}
 	}
 	return result
@@ -260,6 +261,31 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		}
 	}
 	return result, nil
+}
+
+// saveCredentialLogo persists a credential's logo image to the credential
+// logo storage. It first tries to resolve the filename from the database
+// (works for EUDI-issued credentials). If that fails but the LogCredential
+// has pre-resolved image data (e.g. from the OpenID4VP handler), it saves
+// that image to disk instead.
+func (s *eudiLogService) saveCredentialLogo(cred clientmodels.LogCredential) string {
+	if filename := s.resolveLogoFilename(cred.CredentialId); filename != "" {
+		return filename
+	}
+	if cred.Image == nil || cred.Image.Base64 == "" {
+		return ""
+	}
+	rawBytes, err := base64.StdEncoding.DecodeString(cred.Image.Base64)
+	if err != nil {
+		eudi.Logger.Warnf("failed to decode credential logo base64 for %q: %v", cred.CredentialId, err)
+		return ""
+	}
+	filename := cred.CredentialId
+	if _, err := s.credLogoManager.SaveLogo(filename, rawBytes); err != nil {
+		eudi.Logger.Warnf("failed to save credential logo for %q: %v", cred.CredentialId, err)
+		return ""
+	}
+	return filename
 }
 
 // saveRequestorLogo persists the requestor's logo image (if any) to the

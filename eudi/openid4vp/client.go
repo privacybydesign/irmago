@@ -282,8 +282,6 @@ func (session *openid4vpSession) perform() error {
 		return err
 	}
 
-	logMarshalled("credentials for choice:", queryResponses)
-
 	httpClient := http.Client{}
 	responseConfig := authorizationResponseConfig{
 		State:          session.request.State,

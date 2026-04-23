@@ -55,6 +55,10 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	require.NotNil(t, log.Verifier.Image, "verifier Image should not be nil")
 	require.NotEmpty(t, log.Verifier.Image.Base64, "verifier Image should have base64 data")
 
+	// require the credential to have a logo
+	require.NotNil(t, log.Credentials[0].Image, "credential Image should not be nil")
+	require.NotEmpty(t, log.Credentials[0].Image.Base64, "credential Image should have base64 data")
+
 	c.Close()
 
 	// move the storage to a new path
@@ -88,6 +92,10 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	// require the verifier logo survives the storage move
 	require.NotNil(t, log.Verifier.Image, "verifier Image should not be nil after storage move")
 	require.NotEmpty(t, log.Verifier.Image.Base64, "verifier Image should have base64 data after storage move")
+
+	// require the credential logo survives the storage move
+	require.NotNil(t, log.Credentials[0].Image, "credential Image should not be nil after storage move")
+	require.NotEmpty(t, log.Credentials[0].Image.Base64, "credential Image should have base64 data after storage move")
 
 	newClient.Close()
 }
