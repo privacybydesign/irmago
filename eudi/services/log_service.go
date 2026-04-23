@@ -79,7 +79,7 @@ func (s *eudiLogService) AddDisclosureLog(verifier clientmodels.TrustedParty, cr
 		RequestorId:           verifier.Id,
 		RequestorName:         mustJSON(verifier.Name),
 		RequestorLogoFilename: s.saveRequestorLogo(verifier),
-		Credentials:           logCredentialsToModelCredentials(credentials),
+		Credentials:           s.logCredentialsToModelCredentials(credentials),
 	}
 	return s.store.AddLog(entry)
 }
@@ -140,7 +140,7 @@ func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Crede
 	return result
 }
 
-func logCredentialsToModelCredentials(creds []clientmodels.LogCredential) []models.EudiLogCredential {
+func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.LogCredential) []models.EudiLogCredential {
 	result := make([]models.EudiLogCredential, len(creds))
 	for i, c := range creds {
 		result[i] = models.EudiLogCredential{
@@ -150,6 +150,7 @@ func logCredentialsToModelCredentials(creds []clientmodels.LogCredential) []mode
 			Name:         mustJSON(c.Name),
 			IssuerName:   mustJSON(c.Issuer.Name),
 			Attributes:   mustJSON(c.Attributes),
+			LogoFilename: s.resolveLogoFilename(c.CredentialId),
 		}
 	}
 	return result

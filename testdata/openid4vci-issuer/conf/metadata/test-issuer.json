@@ -2,6 +2,16 @@
   "issuer": "https://localhost:8443/test-issuer",
   "credential_issuer": "https://localhost:8443/test-issuer",
   "authorization_servers": [],
+  "display": [
+    {
+      "name": "Test Issuer",
+      "locale": "en"
+    },
+    {
+      "name": "Test Uitgever",
+      "locale": "nl"
+    }
+  ],
   "credential_configurations_supported": {
     "TestCredentialSdJwt": {
       "format": "dc+sd-jwt",

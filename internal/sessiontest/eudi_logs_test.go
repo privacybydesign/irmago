@@ -15,6 +15,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("oid4vci auth-code issuance creates log", testOpenId4VciAuthCodeFlowCreatesIssuanceLog)
 	t.Run("oid4vci denied permission creates no log", testOpenId4VciDeniedPermissionCreatesNoLog)
 	t.Run("oid4vp disclosure creates log", testOpenId4VpDisclosureCreatesLog)
+	t.Run("oid4vp disclosure log has issuer name and credential image", testOpenId4VpDisclosureLogHasIssuerNameAndImage)
 	t.Run("eudi credential removal creates log", testEudiCredentialRemovalCreatesLog)
 	t.Run("eudi credential removal log has attributes", testEudiCredentialRemovalLogHasAttributes)
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
@@ -167,6 +168,65 @@ func testOpenId4VpDisclosureCreatesLog(t *testing.T) {
 	require.NotEmpty(t, disclosureLog.DisclosureLog.Credentials[0].CredentialId)
 	require.Contains(t, disclosureLog.DisclosureLog.Credentials[0].Formats, clientmodels.Format_SdJwtVc,
 		"disclosure log credential should include the sd-jwt format")
+}
+
+// testOpenId4VpDisclosureLogHasIssuerNameAndImage verifies that credentials in
+// OpenID4VP disclosure logs contain the issuer display name and credential image.
+// Currently these fields are NOT populated by the EUDI SD-JWT disclosure handler,
+// so this test documents the shortcoming.
+func testOpenId4VpDisclosureLogHasIssuerNameAndImage(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue a credential first.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "IssuerLog",
+		"family_name": "Test",
+		"email": "issuerlog@example.com"
+	}`)
+
+	// Verify the issuance log DOES have the issuer name (as a baseline).
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	issuanceCred := logs[0].IssuanceLog.Credentials[0]
+	require.Equal(t, "Test Issuer", issuanceCred.Issuer.Name["en"],
+		"issuance log should have issuer name (baseline)")
+
+	// Disclose it via OpenID4VP.
+	veramoSession := createVeramoVerifierDcqlSession(t)
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// Load the disclosure log.
+	logs, err = c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	var disclosureLog *clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			disclosureLog = &logs[i]
+			break
+		}
+	}
+	require.NotNil(t, disclosureLog, "should have a disclosure log")
+	require.Len(t, disclosureLog.DisclosureLog.Credentials, 1)
+
+	disclosureCred := disclosureLog.DisclosureLog.Credentials[0]
+
+	// The disclosure log credential should have the same issuer name as the issuance log.
+	require.Equal(t, "Test Issuer", disclosureCred.Issuer.Name["en"],
+		"disclosure log credential should contain the issuer display name")
+	require.Equal(t, "Test Uitgever", disclosureCred.Issuer.Name["nl"],
+		"disclosure log credential should contain the issuer display name in all locales")
 }
 
 func testEudiCredentialRemovalCreatesLog(t *testing.T) {
