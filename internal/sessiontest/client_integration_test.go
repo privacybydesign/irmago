@@ -39,6 +39,7 @@ func TestEudiClient(t *testing.T) {
 	t.Run("test logs for completely optional disclosure", testLogsForCompletelyOptionalDisclosure)
 	t.Run("remove storage empty client", testRemoveStorageEmptyClient)
 	t.Run("remove storage with only idemix credentials", testRemoveStorageWithOnlyIdemixCredentials)
+	t.Run("remove storage clears eudi database and filesystem", testRemoveStorageClearsEudiDatabaseAndFilesystem)
 
 	t.Run("irma disclosure session logs", testIrmaDisclosureSessionLogs)
 	t.Run("signature session logs", testIrmaSignatureSessionLogs)
@@ -364,6 +365,87 @@ func testRemoveStorageEmptyClient(t *testing.T) {
 	defer c.Close()
 
 	require.NoError(t, c.RemoveStorage())
+}
+
+func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issue a credential so that the EUDI database and filesystem are populated.
+	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Storage",
+		"family_name": "Cleanup",
+		"email": "cleanup@example.com"
+	}`)
+
+	// Verify credentials exist before removal.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	require.NotEmpty(t, creds, "should have at least one credential after issuance")
+
+	// Verify logs exist before removal.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.NotEmpty(t, logs, "should have at least one log after issuance")
+
+	// Derive the EUDI storage path from the client's temp directory.
+	// instantiateClient creates: storageFolder/client/eudi/
+	eudiPath := filepath.Join(c.GetIrmaConfiguration().Path, "..", "eudi")
+
+	// Verify the EUDI database file exists.
+	dbPath := filepath.Join(eudiPath, "yivi.db")
+	_, err = os.Stat(dbPath)
+	require.NoError(t, err, "EUDI database should exist before RemoveStorage")
+
+	// Verify the EUDI filesystem directories have content (certificates at minimum).
+	requireDirHasFiles(t, eudiPath, "EUDI storage directory should have content before RemoveStorage")
+
+	// Act: remove all storage.
+	require.NoError(t, c.RemoveStorage())
+
+	// Assert: EUDI credentials are gone.
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	require.Empty(t, creds, "credentials should be empty after RemoveStorage")
+
+	// Assert: EUDI logs are gone.
+	logs, err = c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Empty(t, logs, "logs should be empty after RemoveStorage")
+
+	// Assert: EUDI filesystem directories are cleaned up.
+	for _, subdir := range []string{
+		"credentials/logos",
+		"issuers/logos",
+		"verifiers/logos",
+		"issuers/certificates",
+		"verifiers/certificates",
+	} {
+		dir := filepath.Join(eudiPath, subdir)
+		if _, err := os.Stat(dir); err == nil {
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Empty(t, entries,
+				"directory %s should be empty after RemoveStorage, but has %d files", subdir, len(entries))
+		}
+	}
+}
+
+// requireDirHasFiles asserts that a directory tree contains at least one regular file.
+func requireDirHasFiles(t *testing.T, dir string, msg string) {
+	t.Helper()
+	found := false
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	require.True(t, found, msg)
 }
 
 func testIdemixOnlyCredentialRemovalLog(t *testing.T) {

@@ -18,6 +18,9 @@ type FileSystemStorage interface {
 	Credentials() FileSystemContainer
 	Issuers() FileSystemContainer
 	Verifiers() FileSystemContainer
+
+	// RemoveAllFiles removes all files from all containers (logos, certificates, CRLs).
+	RemoveAllFiles() error
 }
 
 type fileSystemStorage struct {
@@ -59,6 +62,39 @@ func newFileSystemContainer(storageMiddleware *fsStorage, basePath string) *File
 		certificateManager:               newCertificateManager(basePath, storageMiddleware),
 		certificateRevocationListManager: newCertificateRevocationListManager(basePath, storageMiddleware),
 	}
+}
+
+func (s *fileSystemStorage) RemoveAllFiles() error {
+	for _, c := range []FileSystemContainer{s.credentialsContainer, s.issuersContainer, s.verifiersContainer} {
+		for _, mgr := range []fileManager{
+			c.logoManager.(*logoManager).fileManager,
+			c.certificateManager.(*certificateManager).fileManager,
+			c.certificateRevocationListManager.(*certificateRevocationListManager).fileManager,
+		} {
+			if err := removeDirectoryContents(mgr.basePath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// removeDirectoryContents removes all files and subdirectories inside a directory
+// without removing the directory itself.
+func removeDirectoryContents(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read directory %s: %w", dir, err)
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			return fmt.Errorf("failed to remove %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
 }
 
 func (s *fileSystemStorage) Credentials() FileSystemContainer {

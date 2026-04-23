@@ -470,6 +470,9 @@ func (client *Client) RemoveStorage() error {
 	if err := client.keyBinder.RemoveAllPrivateKeys(); err != nil {
 		return fmt.Errorf("failed to remove all holder private keys: %v", err)
 	}
+	if err := client.eudiStorage.RemoveAll(); err != nil {
+		return fmt.Errorf("failed to remove eudi storage: %v", err)
+	}
 
 	client.sessionManager.Clear()
 
