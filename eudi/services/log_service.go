@@ -119,6 +119,11 @@ func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Crede
 			IssuerName:         mustJSON(c.Issuer.Name),
 			IssuerId:           c.Issuer.Id,
 			Attributes:         mustJSON(c.Attributes),
+			IssuanceDate:       c.IssuanceDate,
+			ExpiryDate:         c.ExpiryDate,
+			Revoked:            c.Revoked,
+			RevocationSupported: c.RevocationSupported,
+			IssueURL:           mustJSON(c.IssueURL),
 			LogoFilename:       saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
 			IssuerLogoFilename: saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
 		}
@@ -137,6 +142,11 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			IssuerName:         mustJSON(c.Issuer.Name),
 			IssuerId:           c.Issuer.Id,
 			Attributes:         mustJSON(c.Attributes),
+			IssuanceDate:       c.IssuanceDate,
+			ExpiryDate:         c.ExpiryDate,
+			Revoked:            c.Revoked,
+			RevocationSupported: c.RevocationSupported,
+			IssueURL:           mustJSON(c.IssueURL),
 			LogoFilename:       saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
 			IssuerLogoFilename: saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
 		}
@@ -243,13 +253,23 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 				issuerImage = &clientmodels.Image{Base64: *imageData}
 			}
 		}
+		var issueURL *clientmodels.TranslatedString
+		if c.IssueURL != nil {
+			issueURL = &clientmodels.TranslatedString{}
+			_ = json.Unmarshal(c.IssueURL, issueURL)
+		}
 		result[i] = clientmodels.LogCredential{
-			CredentialId: c.CredentialId,
-			Formats:      formats,
-			Name:         name,
-			Image:        credImage,
-			Issuer:       clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage},
-			Attributes:   attrs,
+			CredentialId:        c.CredentialId,
+			Formats:             formats,
+			Name:                name,
+			Image:               credImage,
+			Issuer:              clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage},
+			Attributes:          attrs,
+			IssuanceDate:        c.IssuanceDate,
+			ExpiryDate:          c.ExpiryDate,
+			Revoked:             c.Revoked,
+			RevocationSupported: c.RevocationSupported,
+			IssueURL:            issueURL,
 		}
 	}
 	return result, nil

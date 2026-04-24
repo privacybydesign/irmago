@@ -43,6 +43,13 @@ type EudiLogCredential struct {
 	// display names, and values. Stored as a blob since logs are write-once.
 	Attributes datatypes.JSON `gorm:"type:json"`
 
+	// Credential timing and status metadata.
+	IssuanceDate        int64
+	ExpiryDate          int64
+	Revoked             bool
+	RevocationSupported bool
+	IssueURL            datatypes.JSON `gorm:"type:json"` // JSON-encoded *TranslatedString, nil when not set.
+
 	// Filename (without extension) of the credential logo stored by the
 	// credential logo manager. Empty when no logo is available.
 	LogoFilename string
