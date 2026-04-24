@@ -1,6 +1,8 @@
 package db
 
 import (
+	"time"
+
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/gorm"
 )
@@ -9,7 +11,7 @@ import (
 type EudiLogStore interface {
 	AddLog(entry *models.EudiLogEntry) error
 	GetNewestLogs(max int) ([]*models.EudiLogEntry, error)
-	GetLogsBefore(before *models.EudiLogEntry, max int) ([]*models.EudiLogEntry, error)
+	GetLogsBefore(before time.Time, max int) ([]*models.EudiLogEntry, error)
 	DeleteAll() error
 }
 
@@ -35,11 +37,11 @@ func (s *eudiLogStore) GetNewestLogs(max int) ([]*models.EudiLogEntry, error) {
 	return entries, err
 }
 
-func (s *eudiLogStore) GetLogsBefore(before *models.EudiLogEntry, max int) ([]*models.EudiLogEntry, error) {
+func (s *eudiLogStore) GetLogsBefore(before time.Time, max int) ([]*models.EudiLogEntry, error) {
 	var entries []*models.EudiLogEntry
 	err := s.db.
 		Preload("Credentials").
-		Where("created_at < ?", before.CreatedAt).
+		Where("created_at < ?", before).
 		Order("created_at DESC").
 		Limit(max).
 		Find(&entries).Error

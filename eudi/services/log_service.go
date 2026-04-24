@@ -108,8 +108,7 @@ func (s *eudiLogService) GetNewestLogs(max int) ([]clientmodels.LogInfo, error) 
 }
 
 func (s *eudiLogService) GetLogsBefore(before time.Time, max int) ([]clientmodels.LogInfo, error) {
-	// Create a dummy entry with the timestamp for the store query.
-	entries, err := s.store.GetLogsBefore(&models.EudiLogEntry{CreatedAt: before}, max)
+	entries, err := s.store.GetLogsBefore(before, max)
 	if err != nil {
 		return nil, err
 	}
