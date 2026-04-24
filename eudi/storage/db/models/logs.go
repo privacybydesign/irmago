@@ -12,7 +12,7 @@ type EudiLogEntry struct {
 	ID        datatypes.UUID `gorm:"type:uuid;primaryKey"`
 	Type      string         // "issuance", "disclosure", "removal"
 	Protocol  string         // "openid4vci", "openid4vp", or empty for removal
-	CreatedAt time.Time `gorm:"index"`
+	CreatedAt time.Time      `gorm:"index"`
 
 	// Requestor/verifier/issuer info (JSON-encoded TranslatedString for name).
 	RequestorId           string

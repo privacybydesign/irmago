@@ -253,4 +253,3 @@ func TestGetLogsBefore_Pagination(t *testing.T) {
 	require.Equal(t, "second", older[0].IssuanceLog.Credentials[0].Name["en"])
 	require.Equal(t, "first", older[1].IssuanceLog.Credentials[0].Name["en"])
 }
-

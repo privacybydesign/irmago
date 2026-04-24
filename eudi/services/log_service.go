@@ -373,4 +373,3 @@ func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clien
 func (s *eudiLogService) saveRequestorLogo(tp clientmodels.TrustedParty) string {
 	return saveLogoFromBase64(s.verifierLogoManager, tp.Id, tp.Image)
 }
-
