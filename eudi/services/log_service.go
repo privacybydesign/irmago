@@ -371,17 +371,6 @@ func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clien
 // verifier logo storage and returns the filename used for storage.
 // Returns "" if the requestor has no image.
 func (s *eudiLogService) saveRequestorLogo(tp clientmodels.TrustedParty) string {
-	if tp.Image == nil || tp.Image.Base64 == "" || tp.Id == "" {
-		return ""
-	}
-	rawBytes, err := base64.StdEncoding.DecodeString(tp.Image.Base64)
-	if err != nil {
-		return ""
-	}
-	filename := tp.Id
-	if _, err := s.verifierLogoManager.SaveLogo(filename, rawBytes); err != nil {
-		return ""
-	}
-	return filename
+	return saveLogoFromBase64(s.verifierLogoManager, tp.Id, tp.Image)
 }
 
