@@ -504,12 +504,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 			DisplayName: &dn,
 		}
 		if val, err := payload.GetClaimValue(path); err == nil {
-			if valStr, ok := val.(string); ok {
-				attr.Value = &clientmodels.AttributeValue{
-					Type:   clientmodels.AttributeType_String,
-					String: &valStr,
-				}
-			}
+			attr.Value = clientmodels.NewAttributeValue(val)
 		}
 		attrs = append(attrs, attr)
 	}
