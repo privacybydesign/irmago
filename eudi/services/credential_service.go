@@ -279,7 +279,10 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
 	}
 
-	hash := hashForSdJwtVc(first.IssuerSignedJwtPayload.VerifiableCredentialType, processedSdJwtPayloadBytes)
+	hash, err := hashForSdJwtVc(first.IssuerSignedJwtPayload.VerifiableCredentialType, processedSdJwtPayloadBytes)
+	if err != nil {
+		return fmt.Errorf("failed to compute credential hash: %w", err)
+	}
 
 	// If a batch with this hash already exists, delete it so the new issuance
 	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
@@ -573,13 +576,11 @@ func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []a
 // before hashing so that two issuances of the same credential with identical claims
 // produce the same hash. Note: this hash is intentionally different from
 // irmaclient.CreateHashForSdJwtVc, which is used for IRMA-issued SD-JWTs.
-func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) string {
+func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) (string, error) {
 	// Unmarshal into a map so we can strip standard claims before hashing.
 	var payload map[string]any
 	if err := json.Unmarshal(processedSdJwtPayloadBytes, &payload); err != nil {
-		// processedSdJwtPayloadBytes is always valid JSON produced by json.Marshal;
-		// an error here indicates a programming bug.
-		panic(fmt.Errorf("hashForSdJwtVc: failed to unmarshal payload: %w", err))
+		return "", fmt.Errorf("hashForSdJwtVc: failed to unmarshal payload: %w", err)
 	}
 
 	for key := range sdjwtvc.StandardClaims {
@@ -588,9 +589,9 @@ func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) string {
 
 	cleanedBytes, err := json.Marshal(payload)
 	if err != nil {
-		panic(fmt.Errorf("hashForSdJwtVc: failed to marshal cleaned payload: %w", err))
+		return "", fmt.Errorf("hashForSdJwtVc: failed to marshal cleaned payload: %w", err)
 	}
 
 	combined := append([]byte(credType), cleanedBytes...)
-	return fmt.Sprintf("%x", sha256.Sum256(combined))
+	return fmt.Sprintf("%x", sha256.Sum256(combined)), nil
 }

@@ -713,25 +713,32 @@ func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 // ========== hashForSdJwtVc ==========
 
 func TestHashForSdJwtVc_NonEmpty(t *testing.T) {
-	h := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	h, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
 	assert.NotEmpty(t, h)
 }
 
 func TestHashForSdJwtVc_Deterministic(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
 	assert.Equal(t, h1, h2)
 }
 
 func TestHashForSdJwtVc_DifferentVCT(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/CredA", []byte(`{"given_name":"Alice"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/CredB", []byte(`{"given_name":"Alice"}`))
+	h1, err := hashForSdJwtVc("https://vct.example.com/CredA", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/CredB", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
 	assert.NotEqual(t, h1, h2)
 }
 
 func TestHashForSdJwtVc_DifferentPayload(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Bob"}`))
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Bob"}`))
+	require.NoError(t, err)
 	assert.NotEqual(t, h1, h2)
 }
 
@@ -741,8 +748,10 @@ func TestHashForSdJwtVc_IgnoresIssuerMetadata(t *testing.T) {
 	payload1 := []byte(`{"email":"a@b.com","given_name":"Alice","iat":1000,"exp":2000,"nbf":900,"iss":"https://issuer.example","sub":"user1","vct":"TestCred","cnf":{"jwk":{"kty":"EC"}}}`)
 	payload2 := []byte(`{"email":"a@b.com","given_name":"Alice","iat":9999,"exp":9998,"nbf":9997,"iss":"https://issuer.example","sub":"user2","vct":"TestCred","cnf":{"jwk":{"kty":"OKP"}}}`)
 
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	require.NoError(t, err)
 	assert.Equal(t, h1, h2, "hashes should be equal when only issuer metadata differs")
 }
 
@@ -751,8 +760,10 @@ func TestHashForSdJwtVc_IgnoresAllKnownMetadataKeys(t *testing.T) {
 	withMetadata := []byte(`{"given_name":"Alice","iss":"https://issuer","iat":1000,"exp":2000,"nbf":900,"sub":"subj","vct":"type","cnf":{"jwk":{}},"status":"active","_sd":["abc"],"_sd_alg":"sha-256"}`)
 	withoutMetadata := []byte(`{"given_name":"Alice"}`)
 
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", withMetadata)
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", withoutMetadata)
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", withMetadata)
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", withoutMetadata)
+	require.NoError(t, err)
 	assert.Equal(t, h1, h2, "metadata keys should not affect the hash")
 }
 
@@ -762,8 +773,10 @@ func TestHashForSdJwtVc_ClaimValuesDetermineHash(t *testing.T) {
 	payload1 := []byte(fmt.Sprintf(base, "Alice"))
 	payload2 := []byte(fmt.Sprintf(base, "Bob"))
 
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	require.NoError(t, err)
 	assert.NotEqual(t, h1, h2, "different claim values should produce different hashes")
 }
 
@@ -797,8 +810,10 @@ func TestHashForSdJwtVc_KeyOrderIrrelevant(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(tt.payload1))
-			h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(tt.payload2))
+			h1, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(tt.payload1))
+			require.NoError(t, err)
+			h2, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(tt.payload2))
+			require.NoError(t, err)
 			assert.Equal(t, h1, h2, "key order should not affect the hash")
 		})
 	}
