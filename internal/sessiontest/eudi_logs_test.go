@@ -780,6 +780,8 @@ func testLoadLogsBeforeIncludesBothSources(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
+	// IRMA timestamps have second-level granularity. Sleep between activities
+	// so that every log gets a distinct timestamp and the ordering is deterministic.
 	sep := func() { time.Sleep(1100 * time.Millisecond) }
 
 	// 1. Keyshare enrollment log already exists.
