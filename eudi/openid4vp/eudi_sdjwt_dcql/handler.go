@@ -490,7 +490,9 @@ func getNonSdClaimNames(batch *models.CredentialBatch, credStore db.CredentialSt
 func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
 	var attrs []clientmodels.Attribute
 	var payload sdjwtvc.ProcessedSdJwtPayload
-	json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload)
+	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload); err != nil {
+		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.VerifiableCredentialType, err)
+	}
 
 	for _, path := range claimPaths {
 		if len(path) == 0 {

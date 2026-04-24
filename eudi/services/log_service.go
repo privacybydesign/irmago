@@ -220,6 +220,7 @@ func (s *eudiLogService) entriesToLogInfos(entries []*models.EudiLogEntry) ([]cl
 	for _, e := range entries {
 		info, err := s.entryToLogInfo(e)
 		if err != nil {
+			eudi.Logger.Warnf("failed to convert log entry %s: %v", e.ID, err)
 			continue
 		}
 		result = append(result, info)
