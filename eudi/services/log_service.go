@@ -117,6 +117,7 @@ func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Crede
 			Formats:            mustJSON(formats),
 			Name:               mustJSON(c.Name),
 			IssuerName:         mustJSON(c.Issuer.Name),
+			IssuerId:           c.Issuer.Id,
 			Attributes:         mustJSON(c.Attributes),
 			LogoFilename:       saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
 			IssuerLogoFilename: saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
@@ -134,6 +135,7 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			Formats:            mustJSON(c.Formats),
 			Name:               mustJSON(c.Name),
 			IssuerName:         mustJSON(c.Issuer.Name),
+			IssuerId:           c.Issuer.Id,
 			Attributes:         mustJSON(c.Attributes),
 			LogoFilename:       saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
 			IssuerLogoFilename: saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
@@ -246,7 +248,7 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 			Formats:      formats,
 			Name:         name,
 			Image:        credImage,
-			Issuer:       clientmodels.TrustedParty{Name: issuerName, Image: issuerImage},
+			Issuer:       clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage},
 			Attributes:   attrs,
 		}
 	}
