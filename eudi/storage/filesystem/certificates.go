@@ -13,6 +13,7 @@ const certificatesDirName = "certificates"
 type CertificateManager interface {
 	InstallCertificate(pemData []byte) error
 	GetRawCertificates() ([][]byte, error)
+	RemoveAll() error
 }
 
 type certificateManager struct {

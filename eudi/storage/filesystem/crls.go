@@ -19,6 +19,7 @@ type CertificateRevocationListManager interface {
 	ReadFromFileName(filename string) (*x509.RevocationList, error)
 	RemoveByFileName(filename string) error
 	GetAllFileNames() ([]string, error)
+	RemoveAll() error
 }
 
 type certificateRevocationListManager struct {

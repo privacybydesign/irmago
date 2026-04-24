@@ -14,6 +14,11 @@ type fileManager struct {
 	internalStorage *fsStorage
 }
 
+// RemoveAll removes all files and subdirectories inside this manager's directory.
+func (m *fileManager) RemoveAll() error {
+	return removeDirectoryContents(m.basePath)
+}
+
 type FileSystemStorage interface {
 	Credentials() FileSystemContainer
 	Issuers() FileSystemContainer
@@ -66,14 +71,14 @@ func newFileSystemContainer(storageMiddleware *fsStorage, basePath string) *File
 
 func (s *fileSystemStorage) RemoveAllFiles() error {
 	for _, c := range []FileSystemContainer{s.credentialsContainer, s.issuersContainer, s.verifiersContainer} {
-		for _, mgr := range []fileManager{
-			c.logoManager.(*logoManager).fileManager,
-			c.certificateManager.(*certificateManager).fileManager,
-			c.certificateRevocationListManager.(*certificateRevocationListManager).fileManager,
-		} {
-			if err := removeDirectoryContents(mgr.basePath); err != nil {
-				return err
-			}
+		if err := c.logoManager.RemoveAll(); err != nil {
+			return err
+		}
+		if err := c.certificateManager.RemoveAll(); err != nil {
+			return err
+		}
+		if err := c.certificateRevocationListManager.RemoveAll(); err != nil {
+			return err
 		}
 	}
 	return nil

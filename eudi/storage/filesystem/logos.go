@@ -16,6 +16,7 @@ type LogoManager interface {
 	SaveLogo(filename string, data []byte) (string, error)
 	LogoExists(filename string) (bool, error)
 	GetLogo(filename string) (*string, error)
+	RemoveAll() error
 }
 
 type logoManager struct {
