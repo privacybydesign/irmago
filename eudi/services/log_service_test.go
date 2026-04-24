@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/base64"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -176,5 +177,80 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 
 	// Issuer ID survives round-trip.
 	require.Equal(t, "https://example.com/issuer", cred.Issuer.Id)
+}
+
+func TestRemovalLogRoundTrip(t *testing.T) {
+	svc := newTestLogService(t)
+
+	creds := []*clientmodels.Credential{
+		{
+			CredentialId: "https://example.com/vct/removed",
+			Name:         clientmodels.TranslatedString{"en": "Removed Credential"},
+			Issuer: clientmodels.TrustedParty{
+				Id:   "https://example.com/issuer",
+				Name: clientmodels.TranslatedString{"en": "Test Issuer"},
+			},
+			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
+				clientmodels.Format_SdJwtVc: "hash456",
+			},
+			Attributes:   []clientmodels.Attribute{},
+			IssuanceDate: 1700000000,
+			ExpiryDate:   1800000000,
+		},
+	}
+
+	require.NoError(t, svc.AddRemovalLog(creds))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+
+	require.Equal(t, clientmodels.LogType_CredentialRemoval, logs[0].Type)
+	require.NotNil(t, logs[0].RemovalLog)
+	require.Len(t, logs[0].RemovalLog.Credentials, 1)
+
+	cred := logs[0].RemovalLog.Credentials[0]
+	require.Equal(t, "https://example.com/vct/removed", cred.CredentialId)
+	require.Equal(t, "Removed Credential", cred.Name["en"])
+	require.Equal(t, "https://example.com/issuer", cred.Issuer.Id)
+	require.Equal(t, int64(1700000000), cred.IssuanceDate)
+}
+
+func TestGetLogsBefore_Pagination(t *testing.T) {
+	svc := newTestLogService(t)
+
+	// Create 3 logs with distinct timestamps.
+	for i, name := range []string{"first", "second", "third"} {
+		creds := []*clientmodels.Credential{
+			{
+				CredentialId: "https://example.com/vct/" + name,
+				Name:         clientmodels.TranslatedString{"en": name},
+				Issuer:       clientmodels.TrustedParty{Id: "https://example.com/issuer"},
+				CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
+					clientmodels.Format_SdJwtVc: "hash-" + name,
+				},
+				Attributes: []clientmodels.Attribute{},
+			},
+		}
+		issuer := clientmodels.TrustedParty{Id: "issuer-" + name}
+		require.NoError(t, svc.AddIssuanceLog(clientmodels.Protocol_OpenID4VCI, issuer, creds))
+		// Ensure distinct timestamps (SQLite has millisecond precision).
+		if i < 2 {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	all, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, all, 3)
+	// Newest first.
+	require.Equal(t, "third", all[0].IssuanceLog.Credentials[0].Name["en"])
+
+	// Get logs before the newest entry → should return the 2 older ones.
+	older, err := svc.GetLogsBefore(all[0].Time, 10)
+	require.NoError(t, err)
+	require.Len(t, older, 2)
+	require.Equal(t, "second", older[0].IssuanceLog.Credentials[0].Name["en"])
+	require.Equal(t, "first", older[1].IssuanceLog.Credentials[0].Name["en"])
 }
 
