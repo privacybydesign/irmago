@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -239,7 +240,9 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.Lo
 
 	var requestorName clientmodels.TranslatedString
 	if e.RequestorName != nil {
-		_ = json.Unmarshal(e.RequestorName, &requestorName)
+		if err := json.Unmarshal(e.RequestorName, &requestorName); err != nil {
+			eudi.Logger.Warnf("failed to unmarshal requestor name for log %s: %v", e.ID, err)
+		}
 	}
 	var requestorImage *clientmodels.Image
 	if e.RequestorLogoFilename != "" {
@@ -281,22 +284,30 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 	for i, c := range creds {
 		var name clientmodels.TranslatedString
 		if c.Name != nil {
-			_ = json.Unmarshal(c.Name, &name)
+			if err := json.Unmarshal(c.Name, &name); err != nil {
+				eudi.Logger.Warnf("failed to unmarshal credential name for %q: %v", c.CredentialId, err)
+			}
 		}
 		var issuerName clientmodels.TranslatedString
 		if c.IssuerName != nil {
-			_ = json.Unmarshal(c.IssuerName, &issuerName)
+			if err := json.Unmarshal(c.IssuerName, &issuerName); err != nil {
+				eudi.Logger.Warnf("failed to unmarshal issuer name for %q: %v", c.CredentialId, err)
+			}
 		}
 		var attrs []clientmodels.Attribute
 		if c.Attributes != nil {
-			_ = json.Unmarshal(c.Attributes, &attrs)
+			if err := json.Unmarshal(c.Attributes, &attrs); err != nil {
+				eudi.Logger.Warnf("failed to unmarshal attributes for %q: %v", c.CredentialId, err)
+			}
 		}
 		if attrs == nil {
 			attrs = []clientmodels.Attribute{}
 		}
 		var formats []clientmodels.CredentialFormat
 		if c.Formats != nil {
-			_ = json.Unmarshal(c.Formats, &formats)
+			if err := json.Unmarshal(c.Formats, &formats); err != nil {
+				eudi.Logger.Warnf("failed to unmarshal formats for %q: %v", c.CredentialId, err)
+			}
 		}
 		if formats == nil {
 			formats = []clientmodels.CredentialFormat{}
@@ -316,7 +327,10 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		var issueURL *clientmodels.TranslatedString
 		if c.IssueURL != nil {
 			issueURL = &clientmodels.TranslatedString{}
-			_ = json.Unmarshal(c.IssueURL, issueURL)
+			if err := json.Unmarshal(c.IssueURL, issueURL); err != nil {
+				eudi.Logger.Warnf("failed to unmarshal issue URL for %q: %v", c.CredentialId, err)
+				issueURL = nil
+			}
 		}
 		result[i] = clientmodels.LogCredential{
 			CredentialId:        c.CredentialId,
