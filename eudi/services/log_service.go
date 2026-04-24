@@ -41,39 +41,59 @@ func NewEudiLogService(s storage.Storage) EudiLogService {
 }
 
 func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []*clientmodels.Credential) error {
+	requestorName, err := json.Marshal(issuer.Name)
+	if err != nil {
+		return err
+	}
+	creds, err := s.credentialsToLogCredentials(credentials)
+	if err != nil {
+		return err
+	}
 	entry := &models.EudiLogEntry{
 		ID:                    datatypes.NewUUIDv4(),
 		Type:                  string(clientmodels.LogType_Issuance),
 		Protocol:              string(protocol),
 		CreatedAt:             time.Now(),
 		RequestorId:           issuer.Id,
-		RequestorName:         mustJSON(issuer.Name),
+		RequestorName:         requestorName,
 		RequestorLogoFilename: s.saveRequestorLogo(issuer),
-		Credentials:           s.credentialsToLogCredentials(credentials),
+		Credentials:           creds,
 	}
 	return s.store.AddLog(entry)
 }
 
 func (s *eudiLogService) AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error {
+	requestorName, err := json.Marshal(verifier.Name)
+	if err != nil {
+		return err
+	}
+	creds, err := s.logCredentialsToModelCredentials(credentials)
+	if err != nil {
+		return err
+	}
 	entry := &models.EudiLogEntry{
 		ID:                    datatypes.NewUUIDv4(),
 		Type:                  string(clientmodels.LogType_Disclosure),
 		Protocol:              string(clientmodels.Protocol_OpenID4VP),
 		CreatedAt:             time.Now(),
 		RequestorId:           verifier.Id,
-		RequestorName:         mustJSON(verifier.Name),
+		RequestorName:         requestorName,
 		RequestorLogoFilename: s.saveRequestorLogo(verifier),
-		Credentials:           s.logCredentialsToModelCredentials(credentials),
+		Credentials:           creds,
 	}
 	return s.store.AddLog(entry)
 }
 
 func (s *eudiLogService) AddRemovalLog(credentials []*clientmodels.Credential) error {
+	creds, err := s.credentialsToLogCredentials(credentials)
+	if err != nil {
+		return err
+	}
 	entry := &models.EudiLogEntry{
 		ID:          datatypes.NewUUIDv4(),
 		Type:        string(clientmodels.LogType_CredentialRemoval),
 		CreatedAt:   time.Now(),
-		Credentials: s.credentialsToLogCredentials(credentials),
+		Credentials: creds,
 	}
 	return s.store.AddLog(entry)
 }
@@ -97,7 +117,7 @@ func (s *eudiLogService) GetLogsBefore(before time.Time, max int) ([]clientmodel
 
 // --- conversion helpers ---
 
-func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Credential) []models.EudiLogCredential {
+func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Credential) ([]models.EudiLogCredential, error) {
 	result := make([]models.EudiLogCredential, len(creds))
 	for i, c := range creds {
 		// Derive formats from the credential's instance IDs (one format per key).
@@ -111,47 +131,87 @@ func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Crede
 				formats = append(formats, f)
 			}
 		}
+		formatsJSON, err := json.Marshal(formats)
+		if err != nil {
+			return nil, fmt.Errorf("marshal formats for %q: %w", c.CredentialId, err)
+		}
+		nameJSON, err := json.Marshal(c.Name)
+		if err != nil {
+			return nil, fmt.Errorf("marshal name for %q: %w", c.CredentialId, err)
+		}
+		issuerNameJSON, err := json.Marshal(c.Issuer.Name)
+		if err != nil {
+			return nil, fmt.Errorf("marshal issuer name for %q: %w", c.CredentialId, err)
+		}
+		attrsJSON, err := json.Marshal(c.Attributes)
+		if err != nil {
+			return nil, fmt.Errorf("marshal attributes for %q: %w", c.CredentialId, err)
+		}
+		issueURLJSON, err := json.Marshal(c.IssueURL)
+		if err != nil {
+			return nil, fmt.Errorf("marshal issue URL for %q: %w", c.CredentialId, err)
+		}
 		result[i] = models.EudiLogCredential{
-			ID:                 datatypes.NewUUIDv4(),
-			CredentialId:       c.CredentialId,
-			Formats:            mustJSON(formats),
-			Name:               mustJSON(c.Name),
-			IssuerName:         mustJSON(c.Issuer.Name),
-			IssuerId:           c.Issuer.Id,
-			Attributes:         mustJSON(c.Attributes),
-			IssuanceDate:       c.IssuanceDate,
-			ExpiryDate:         c.ExpiryDate,
-			Revoked:            c.Revoked,
+			ID:                  datatypes.NewUUIDv4(),
+			CredentialId:        c.CredentialId,
+			Formats:             formatsJSON,
+			Name:                nameJSON,
+			IssuerName:          issuerNameJSON,
+			IssuerId:            c.Issuer.Id,
+			Attributes:          attrsJSON,
+			IssuanceDate:        c.IssuanceDate,
+			ExpiryDate:          c.ExpiryDate,
+			Revoked:             c.Revoked,
 			RevocationSupported: c.RevocationSupported,
-			IssueURL:           mustJSON(c.IssueURL),
-			LogoFilename:       saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
-			IssuerLogoFilename: saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
+			IssueURL:            issueURLJSON,
+			LogoFilename:        saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
+			IssuerLogoFilename:  saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
 		}
 	}
-	return result
+	return result, nil
 }
 
-func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.LogCredential) []models.EudiLogCredential {
+func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.LogCredential) ([]models.EudiLogCredential, error) {
 	result := make([]models.EudiLogCredential, len(creds))
 	for i, c := range creds {
+		formatsJSON, err := json.Marshal(c.Formats)
+		if err != nil {
+			return nil, fmt.Errorf("marshal formats for %q: %w", c.CredentialId, err)
+		}
+		nameJSON, err := json.Marshal(c.Name)
+		if err != nil {
+			return nil, fmt.Errorf("marshal name for %q: %w", c.CredentialId, err)
+		}
+		issuerNameJSON, err := json.Marshal(c.Issuer.Name)
+		if err != nil {
+			return nil, fmt.Errorf("marshal issuer name for %q: %w", c.CredentialId, err)
+		}
+		attrsJSON, err := json.Marshal(c.Attributes)
+		if err != nil {
+			return nil, fmt.Errorf("marshal attributes for %q: %w", c.CredentialId, err)
+		}
+		issueURLJSON, err := json.Marshal(c.IssueURL)
+		if err != nil {
+			return nil, fmt.Errorf("marshal issue URL for %q: %w", c.CredentialId, err)
+		}
 		result[i] = models.EudiLogCredential{
-			ID:                 datatypes.NewUUIDv4(),
-			CredentialId:       c.CredentialId,
-			Formats:            mustJSON(c.Formats),
-			Name:               mustJSON(c.Name),
-			IssuerName:         mustJSON(c.Issuer.Name),
-			IssuerId:           c.Issuer.Id,
-			Attributes:         mustJSON(c.Attributes),
-			IssuanceDate:       c.IssuanceDate,
-			ExpiryDate:         c.ExpiryDate,
-			Revoked:            c.Revoked,
+			ID:                  datatypes.NewUUIDv4(),
+			CredentialId:        c.CredentialId,
+			Formats:             formatsJSON,
+			Name:                nameJSON,
+			IssuerName:          issuerNameJSON,
+			IssuerId:            c.Issuer.Id,
+			Attributes:          attrsJSON,
+			IssuanceDate:        c.IssuanceDate,
+			ExpiryDate:          c.ExpiryDate,
+			Revoked:             c.Revoked,
 			RevocationSupported: c.RevocationSupported,
-			IssueURL:           mustJSON(c.IssueURL),
-			LogoFilename:       saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
-			IssuerLogoFilename: saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
+			IssueURL:            issueURLJSON,
+			LogoFilename:        saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
+			IssuerLogoFilename:  saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
 		}
 	}
-	return result
+	return result, nil
 }
 
 func (s *eudiLogService) entriesToLogInfos(entries []*models.EudiLogEntry) ([]clientmodels.LogInfo, error) {
@@ -311,7 +371,3 @@ func (s *eudiLogService) saveRequestorLogo(tp clientmodels.TrustedParty) string 
 	return filename
 }
 
-func mustJSON(v any) datatypes.JSON {
-	b, _ := json.Marshal(v)
-	return b
-}
