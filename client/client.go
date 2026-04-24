@@ -522,14 +522,25 @@ func (client *Client) LoadLogsBefore(before time.Time, max int) ([]clientmodels.
 }
 
 // mergeLogsByTime merges two log slices (each already sorted newest-first) into
-// a single newest-first slice of at most max entries.
+// a single newest-first slice of at most max entries using a two-pointer merge.
 func mergeLogsByTime(a, b []clientmodels.LogInfo, max int) []clientmodels.LogInfo {
-	merged := append(a, b...)
-	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Time.After(merged[j].Time)
-	})
-	if len(merged) > max {
-		merged = merged[:max]
+	merged := make([]clientmodels.LogInfo, 0, min(len(a)+len(b), max))
+	i, j := 0, 0
+	for len(merged) < max && (i < len(a) || j < len(b)) {
+		switch {
+		case i >= len(a):
+			merged = append(merged, b[j])
+			j++
+		case j >= len(b):
+			merged = append(merged, a[i])
+			i++
+		case !a[i].Time.Before(b[j].Time): // a[i] >= b[j], take a
+			merged = append(merged, a[i])
+			i++
+		default:
+			merged = append(merged, b[j])
+			j++
+		}
 	}
 	return merged
 }
