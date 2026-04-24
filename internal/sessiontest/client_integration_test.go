@@ -40,6 +40,7 @@ func TestEudiClient(t *testing.T) {
 	t.Run("remove storage empty client", testRemoveStorageEmptyClient)
 	t.Run("remove storage with only idemix credentials", testRemoveStorageWithOnlyIdemixCredentials)
 	t.Run("remove storage clears eudi database and filesystem", testRemoveStorageClearsEudiDatabaseAndFilesystem)
+	t.Run("credential store items have images", testCredentialStoreItemsHaveImages)
 
 	t.Run("irma disclosure session logs", testIrmaDisclosureSessionLogs)
 	t.Run("signature session logs", testIrmaSignatureSessionLogs)
@@ -365,6 +366,49 @@ func testRemoveStorageEmptyClient(t *testing.T) {
 	defer c.Close()
 
 	require.NoError(t, c.RemoveStorage())
+}
+
+func testCredentialStoreItemsHaveImages(t *testing.T) {
+	c, _ := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Mark test.test.email as a credential store item so GetCredentialStore() includes it.
+	emailCredId := irma.NewCredentialTypeIdentifier("test.test.email")
+	credType := c.GetIrmaConfiguration().CredentialTypes[emailCredId]
+	require.NotNil(t, credType, "test.test.email should exist in the configuration")
+
+	issueURL := irma.TranslatedString{"en": "https://example.com/issue/email"}
+	credType.IsInCredentialStore = true
+	credType.IssueURL = &issueURL
+
+	// Verify this credential type has a logo file on disk (the test scheme includes logo.png).
+	logoPath := credType.Logo(c.GetIrmaConfiguration())
+	require.NotEmpty(t, logoPath, "test.test.email should have a logo.png in the scheme")
+
+	store, err := c.GetCredentialStore()
+	require.NoError(t, err)
+	require.NotEmpty(t, store, "credential store should contain at least one item")
+
+	var emailItem *clientmodels.CredentialStoreItem
+	for _, item := range store {
+		if item.Credential.CredentialId == emailCredId.String() {
+			emailItem = item
+			break
+		}
+	}
+	require.NotNil(t, emailItem, "credential store should contain test.test.email")
+
+	// The credential store item should have a valid image from the scheme's logo.png.
+	require.NotNil(t, emailItem.Credential.Image,
+		"credential store item should have an image (logo.png exists at %s)", logoPath)
+	require.NotEmpty(t, emailItem.Credential.Image.Base64,
+		"credential store item image should have base64 data")
+
+	// The issuer should also have an image.
+	require.NotNil(t, emailItem.Credential.Issuer.Image,
+		"credential store item issuer should have an image")
+	require.NotEmpty(t, emailItem.Credential.Issuer.Image.Base64,
+		"credential store item issuer image should have base64 data")
 }
 
 func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
