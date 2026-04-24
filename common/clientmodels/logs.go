@@ -45,7 +45,6 @@ type SignedMessageLog struct {
 
 // LogInfo is a credential format & protocol agnostic log entry with full credential metadata.
 type LogInfo struct {
-	ID               uint64            `json:"id"`
 	Type             LogType           `json:"type"`
 	Time             time.Time         `json:"time"`
 	RemovalLog       *RemovalLog       `json:"removal_log,omitempty"`

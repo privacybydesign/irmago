@@ -557,7 +557,6 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 		}
 
 		return clientmodels.LogInfo{
-			ID:   entry.ID,
 			Type: clientmodels.LogType_Disclosure,
 			Time: time.Time(entry.Time),
 			DisclosureLog: &clientmodels.DisclosureLog{
@@ -597,7 +596,6 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 
 		if entry.Type == irma.ActionSigning {
 			return clientmodels.LogInfo{
-				ID:   entry.ID,
 				Type: clientmodels.LogType_Signature,
 				Time: time.Time(entry.Time),
 				SignedMessageLog: &clientmodels.SignedMessageLog{
@@ -607,7 +605,6 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 			}, nil
 		}
 		return clientmodels.LogInfo{
-			ID:            entry.ID,
 			Type:          clientmodels.LogType_Disclosure,
 			Time:          time.Time(entry.Time),
 			DisclosureLog: disclosureLog,
@@ -631,7 +628,6 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 			return clientmodels.LogInfo{}, err
 		}
 		return clientmodels.LogInfo{
-			ID:   entry.ID,
 			Time: time.Time(entry.Time),
 			Type: clientmodels.LogType_Issuance,
 			IssuanceLog: &clientmodels.IssuanceLog{
@@ -684,7 +680,6 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 			})
 		}
 		return clientmodels.LogInfo{
-			ID:   entry.ID,
 			Time: time.Time(entry.Time),
 			Type: clientmodels.LogType_CredentialRemoval,
 			RemovalLog: &clientmodels.RemovalLog{
