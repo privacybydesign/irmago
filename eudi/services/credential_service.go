@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"log"
+	"github.com/privacybydesign/irmago/eudi"
 	"slices"
 	"sort"
 	"time"
@@ -146,7 +146,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 				claimValue, err := processedSdJwtPayload.GetClaimValue(claimPath)
 				if err != nil {
-					log.Printf("unrecognized claim at path %v; falling back to empty string for claim with path %v: %v", claim.Path, claimPath, err)
+					eudi.Logger.Debugf("unrecognized claim at path %v; falling back to empty string for claim with path %v: %v", claim.Path, claimPath, err)
 					claimValue = ""
 				}
 
@@ -170,39 +170,39 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI != "" {
 			display := batch.IssuerDisplay[0]
 
-			log.Printf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI)
+			eudi.Logger.Debugf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI)
 			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
 
 			if exists, err := issuerLogoManager.LogoExists(filename); err == nil && exists {
 				logoData, err := issuerLogoManager.GetLogo(filename)
 				if err != nil {
-					log.Printf("Error retrieving logo for issuer %s from filesystem storage: %v", batch.ID, err)
+					eudi.Logger.Debugf("Error retrieving logo for issuer %s from filesystem storage: %v", batch.ID, err)
 				} else {
 					issuerImage = &clientmodels.Image{
 						Base64: *logoData,
 					}
 				}
 			} else {
-				log.Printf("Couldn't find image")
+				eudi.Logger.Debugf("Couldn't find image")
 			}
 		}
 
 		var credentialLogoFilename string
 		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
-			log.Printf("Attempting to retrieve logo for credential %s from filesystem storage by uri %s", batch.ID, batch.CredentialMetadata.Display[0].LogoURI)
+			eudi.Logger.Debugf("Attempting to retrieve logo for credential %s from filesystem storage by uri %s", batch.ID, batch.CredentialMetadata.Display[0].LogoURI)
 			credentialLogoFilename = credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(batch.CredentialMetadata.Display[0].LogoURI)
 
 			if exists, err := credentialLogoManager.LogoExists(credentialLogoFilename); err == nil && exists {
 				logoData, err := credentialLogoManager.GetLogo(credentialLogoFilename)
 				if err != nil {
-					log.Printf("Error retrieving logo for credential %s from filesystem storage: %v", batch.ID, err)
+					eudi.Logger.Debugf("Error retrieving logo for credential %s from filesystem storage: %v", batch.ID, err)
 				} else {
 					credentialImage = &clientmodels.Image{
 						Base64: *logoData,
 					}
 				}
 			} else {
-				log.Printf("Couldn't find image")
+				eudi.Logger.Debugf("Couldn't find image")
 			}
 		}
 
