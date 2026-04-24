@@ -818,3 +818,16 @@ func TestHashForSdJwtVc_KeyOrderIrrelevant(t *testing.T) {
 		})
 	}
 }
+
+func TestHashForSdJwtVc_ArrayOrderMatters(t *testing.T) {
+	// Array element order is semantically meaningful in SD-JWT claims,
+	// so different orderings must produce different hashes.
+	payload1 := []byte(`{"courses":["ML","AI"]}`)
+	payload2 := []byte(`{"courses":["AI","ML"]}`)
+
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	require.NoError(t, err)
+	assert.NotEqual(t, h1, h2, "different array ordering should produce different hashes")
+}

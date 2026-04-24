@@ -576,6 +576,11 @@ func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []a
 // before hashing so that two issuances of the same credential with identical claims
 // produce the same hash. Note: this hash is intentionally different from
 // irmaclient.CreateHashForSdJwtVc, which is used for IRMA-issued SD-JWTs.
+//
+// Stability: json.Marshal sorts map keys at every nesting level, so object key
+// order in the input does not affect the hash. Array element order IS significant
+// — ["A","B"] and ["B","A"] produce different hashes, which is the correct
+// behaviour since array ordering is meaningful in SD-JWT claims.
 func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) (string, error) {
 	// Unmarshal into a map so we can strip standard claims before hashing.
 	var payload map[string]any
