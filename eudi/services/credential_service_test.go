@@ -3,20 +3,29 @@ package services
 import (
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/internal/mocks"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 )
+
+func TestMain(m *testing.M) {
+	eudi.Logger = logrus.New()
+	eudi.Logger.SetLevel(logrus.WarnLevel)
+	os.Exit(m.Run())
+}
 
 // --- mock CredentialStore ---
 

@@ -106,7 +106,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			claimPaths := make([][]any, len(batch.CredentialMetadata.Claims))
 			for i, claim := range batch.CredentialMetadata.Claims {
 				if err := json.Unmarshal(claim.Path, &claimPaths[i]); err != nil {
-					log.Fatalf("Error unmarshalling JSON: %v", err)
+					eudi.Logger.Warnf("failed to unmarshal claim path for credential %s: %v", batch.VerifiableCredentialType, err)
 				}
 			}
 
