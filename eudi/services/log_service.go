@@ -291,4 +291,3 @@ func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clien
 		eudi.Logger.Warnf("failed to cache logo for key %q: %v", key, err)
 	}
 }
-
