@@ -30,6 +30,9 @@ func newLogoManager(basePath string, internalStorage *fsStorage) LogoManager {
 }
 
 func (s *logoManager) Save(key string, data []byte) error {
+	if key == "" {
+		return fmt.Errorf("invalid logo: key cannot be empty")
+	}
 	if len(data) == 0 {
 		return fmt.Errorf("invalid logo: data cannot be nil or empty")
 	}

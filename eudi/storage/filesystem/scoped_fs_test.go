@@ -37,26 +37,55 @@ func frozenLogoScope(t *testing.T) *scopedFS {
 	return fs.credentialsContainer.logoManager.(*logoManager).scope
 }
 
+// frozenVectorInputs is the canonical input set for the frozen-vector
+// regression test. It is also the input set the regen helper iterates over,
+// so the two stay in sync by construction.
+var frozenVectorInputs = []string{
+	"",
+	"https://example.org/a.png",
+	"https://example.org/b.png",
+	"https://yivi.app/crl.crl",
+}
+
 // TestScopedFS_FrozenVectors locks the on-disk filename construction to a
 // specific AES-derived key and a specific HMAC-SHA256 keyed-hash. Any change
 // to the HKDF info string, the HMAC layout, the hash function, or the hex
 // encoding will fail this test and must be reflected in updated vectors.
+//
+// To regenerate after a deliberate construction change, run:
+//
+//	IRMAGO_REGEN_FS_TEST_VECTORS=1 go test ./eudi/storage/filesystem -run TestScopedFS_RegenerateFrozenVectors -v
+//
+// then copy the printed literals into the cases slice below.
 func TestScopedFS_FrozenVectors(t *testing.T) {
 	scope := frozenLogoScope(t)
 
-	cases := []struct {
-		input    string
-		expected string
-	}{
-		{"", "a93bf766ae99efa4686bd5dc424b4925ee95c378aff3e7ca9e98cab6198c3c00"},
-		{"https://example.org/a.png", "b8528a16a1667b9533f8418755d9c201f82146a870bf37e5f177b0265d0f027b"},
-		{"https://example.org/b.png", "8ffcbec7e4568cd8ceeaae74792d00f765a9e6fb5fd67038477c155fe156f836"},
-		{"https://yivi.app/crl.crl", "5af1206ef9a2183e70b18882114db8cb31de478990199acac7e6a661b66f14ff"},
+	expected := map[string]string{
+		"":                          "a93bf766ae99efa4686bd5dc424b4925ee95c378aff3e7ca9e98cab6198c3c00",
+		"https://example.org/a.png": "b8528a16a1667b9533f8418755d9c201f82146a870bf37e5f177b0265d0f027b",
+		"https://example.org/b.png": "8ffcbec7e4568cd8ceeaae74792d00f765a9e6fb5fd67038477c155fe156f836",
+		"https://yivi.app/crl.crl":  "5af1206ef9a2183e70b18882114db8cb31de478990199acac7e6a661b66f14ff",
 	}
 
-	for _, tc := range cases {
-		require.Equal(t, tc.expected, scope.hashName(tc.input),
-			"frozen vector regression for input %q — if this change is intentional, regenerate vectors and update the literals", tc.input)
+	for _, input := range frozenVectorInputs {
+		require.Equal(t, expected[input], scope.hashName(input),
+			"frozen vector regression for input %q — if this change is intentional, regenerate vectors via IRMAGO_REGEN_FS_TEST_VECTORS=1 and update the literals", input)
+	}
+}
+
+// TestScopedFS_RegenerateFrozenVectors prints fresh expected vectors for the
+// frozen AES key and the canonical input set. It is gated behind the
+// IRMAGO_REGEN_FS_TEST_VECTORS env var so it never runs in CI; the only
+// reason to invoke it is when bumping the HKDF info string or otherwise
+// intentionally changing the on-disk filename construction.
+func TestScopedFS_RegenerateFrozenVectors(t *testing.T) {
+	if os.Getenv("IRMAGO_REGEN_FS_TEST_VECTORS") == "" {
+		t.Skip("set IRMAGO_REGEN_FS_TEST_VECTORS=1 to regenerate frozen vectors")
+	}
+	scope := frozenLogoScope(t)
+	t.Log("Copy the lines below into the expected map in TestScopedFS_FrozenVectors:")
+	for _, input := range frozenVectorInputs {
+		t.Logf("  %q: %q,", input, scope.hashName(input))
 	}
 }
 

@@ -147,6 +147,14 @@ func TestLogoManager_Save_NilData(t *testing.T) {
 	require.Contains(t, err.Error(), "data cannot be nil or empty")
 }
 
+func TestLogoManager_Save_EmptyKey(t *testing.T) {
+	storage, _ := newTestStorage(t)
+
+	err := storage.LogoManager().Save("", []byte("logo data"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "key cannot be empty")
+}
+
 func TestLogoManager_Get_RoundTrip(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	originalData := []byte("logo content")
@@ -303,4 +311,30 @@ func TestCrlManager_LoadAll_OnErrorContinuesPastBadFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, crls, 1)
 	require.Len(t, errs, 1)
+}
+
+// TestCrlManager_LoadAll_OnErrorSurfacesParseFailures verifies that a file
+// which decrypts cleanly but does not parse as a CRL reaches onError via the
+// fn-returns-error path of Walk, and that iteration continues.
+func TestCrlManager_LoadAll_OnErrorSurfacesParseFailures(t *testing.T) {
+	storage, _ := newTestStorage(t)
+	crl := newTestCrl(t)
+	mgr := storage.CertificateRevocationListManager()
+
+	require.NoError(t, mgr.Save(crl, "https://example.org/good.crl"))
+
+	// Write a payload through the same scope so it round-trips through AES-GCM
+	// but fails x509.ParseRevocationList — exercises the fn-returns-error path
+	// of Walk, distinct from the decrypt-failure path covered above.
+	mgrImpl := mgr.(*certificateRevocationListManager)
+	require.NoError(t, mgrImpl.scope.Write("https://example.org/notacrl", crlExtension, []byte("decrypts but not a crl")))
+
+	var errs []error
+	crls, err := mgr.LoadAll(func(loadErr error) {
+		errs = append(errs, loadErr)
+	})
+	require.NoError(t, err)
+	require.Len(t, crls, 1)
+	require.Len(t, errs, 1)
+	require.Contains(t, errs[0].Error(), "parse crl")
 }

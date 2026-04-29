@@ -278,6 +278,7 @@ func (s *scopedFS) Walk(fn func(data []byte) error, onError func(err error)) err
 				return err
 			}
 			onError(err)
+			continue
 		}
 	}
 	return nil
