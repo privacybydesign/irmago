@@ -130,6 +130,10 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 		if err != nil {
 			return nil, fmt.Errorf("marshal issue URL for %q: %w", c.CredentialId, err)
 		}
+		var expiryDate datatypes.NullTime
+		if c.ExpiryDate != 0 {
+			expiryDate = datatypes.NullTime{V: time.Unix(c.ExpiryDate, 0), Valid: true}
+		}
 		result[i] = models.EudiLogCredential{
 			ID:                  datatypes.NewUUIDv4(),
 			CredentialId:        c.CredentialId,
@@ -138,8 +142,8 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			IssuerName:          issuerNameJSON,
 			IssuerId:            c.Issuer.Id,
 			Attributes:          attrsJSON,
-			IssuanceDate:        c.IssuanceDate,
-			ExpiryDate:          c.ExpiryDate,
+			IssuanceDate:        time.Unix(c.IssuanceDate, 0),
+			ExpiryDate:          expiryDate,
 			Revoked:             c.Revoked,
 			RevocationSupported: c.RevocationSupported,
 			IssueURL:            issueURLJSON,
@@ -268,6 +272,10 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 				issueURL = nil
 			}
 		}
+		var expiryDate int64
+		if c.ExpiryDate.Valid {
+			expiryDate = c.ExpiryDate.V.Unix()
+		}
 		result[i] = clientmodels.LogCredential{
 			CredentialId:        c.CredentialId,
 			Formats:             formats,
@@ -275,8 +283,8 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 			Image:               credImage,
 			Issuer:              clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage},
 			Attributes:          attrs,
-			IssuanceDate:        c.IssuanceDate,
-			ExpiryDate:          c.ExpiryDate,
+			IssuanceDate:        c.IssuanceDate.Unix(),
+			ExpiryDate:          expiryDate,
 			Revoked:             c.Revoked,
 			RevocationSupported: c.RevocationSupported,
 			IssueURL:            issueURL,
