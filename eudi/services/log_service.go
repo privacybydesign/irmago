@@ -18,9 +18,9 @@ import (
 
 // EudiLogService creates and retrieves EUDI activity log entries.
 type EudiLogService interface {
-	AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []*clientmodels.Credential) error
+	AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error
 	AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error
-	AddRemovalLog(credentials []*clientmodels.Credential) error
+	AddRemovalLog(credentials []clientmodels.LogCredential) error
 	GetNewestLogs(max int) ([]clientmodels.LogInfo, error)
 	GetLogsBefore(before time.Time, max int) ([]clientmodels.LogInfo, error)
 }
@@ -41,52 +41,42 @@ func NewEudiLogService(s storage.Storage) EudiLogService {
 	}
 }
 
-func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []*clientmodels.Credential) error {
-	requestorName, err := json.Marshal(issuer.Name)
-	if err != nil {
-		return err
-	}
-	creds, err := s.credentialsToLogCredentials(credentials)
-	if err != nil {
-		return err
-	}
-	entry := &models.EudiLogEntry{
-		ID:                    datatypes.NewUUIDv4(),
-		Type:                  string(clientmodels.LogType_Issuance),
-		Protocol:              string(protocol),
-		CreatedAt:             time.Now(),
-		RequestorId:           issuer.Id,
-		RequestorName:         requestorName,
-		RequestorLogoFilename: s.saveRequestorLogo(issuer),
-		Credentials:           creds,
-	}
-	return s.store.AddLog(entry)
-}
-
-func (s *eudiLogService) AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error {
-	requestorName, err := json.Marshal(verifier.Name)
-	if err != nil {
-		return err
-	}
+func (s *eudiLogService) AddIssuanceLog(protocol clientmodels.Protocol, issuer clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error {
 	creds, err := s.logCredentialsToModelCredentials(credentials)
 	if err != nil {
 		return err
 	}
+	return s.addSessionLog(clientmodels.LogType_Issuance, protocol, issuer, creds)
+}
+
+func (s *eudiLogService) AddDisclosureLog(verifier clientmodels.TrustedParty, credentials []clientmodels.LogCredential) error {
+	creds, err := s.logCredentialsToModelCredentials(credentials)
+	if err != nil {
+		return err
+	}
+	return s.addSessionLog(clientmodels.LogType_Disclosure, clientmodels.Protocol_OpenID4VP, verifier, creds)
+}
+
+func (s *eudiLogService) addSessionLog(logType clientmodels.LogType, protocol clientmodels.Protocol, requestor clientmodels.TrustedParty, creds []models.EudiLogCredential) error {
+	requestorName, err := json.Marshal(requestor.Name)
+	if err != nil {
+		return err
+	}
 	entry := &models.EudiLogEntry{
 		ID:                    datatypes.NewUUIDv4(),
-		Type:                  string(clientmodels.LogType_Disclosure),
-		Protocol:              string(clientmodels.Protocol_OpenID4VP),
+		Type:                  string(logType),
+		Protocol:              string(protocol),
 		CreatedAt:             time.Now(),
-		RequestorId:           verifier.Id,
+		RequestorId:           requestor.Id,
 		RequestorName:         requestorName,
-		RequestorLogoFilename: s.saveRequestorLogo(verifier),
+		RequestorLogoFilename: s.saveRequestorLogo(requestor),
 		Credentials:           creds,
 	}
 	return s.store.AddLog(entry)
 }
 
-func (s *eudiLogService) AddRemovalLog(credentials []*clientmodels.Credential) error {
-	creds, err := s.credentialsToLogCredentials(credentials)
+func (s *eudiLogService) AddRemovalLog(credentials []clientmodels.LogCredential) error {
+	creds, err := s.logCredentialsToModelCredentials(credentials)
 	if err != nil {
 		return err
 	}
@@ -116,60 +106,6 @@ func (s *eudiLogService) GetLogsBefore(before time.Time, max int) ([]clientmodel
 }
 
 // --- conversion helpers ---
-
-func (s *eudiLogService) credentialsToLogCredentials(creds []*clientmodels.Credential) ([]models.EudiLogCredential, error) {
-	result := make([]models.EudiLogCredential, len(creds))
-	for i, c := range creds {
-		// Derive formats from the credential's instance IDs (one format per key).
-		formats := make([]clientmodels.CredentialFormat, 0, len(c.CredentialInstanceIds))
-		for f := range c.CredentialInstanceIds {
-			formats = append(formats, f)
-		}
-		// Fall back to BatchInstanceCountsRemaining keys if no instance IDs.
-		if len(formats) == 0 {
-			for f := range c.BatchInstanceCountsRemaining {
-				formats = append(formats, f)
-			}
-		}
-		formatsJSON, err := json.Marshal(formats)
-		if err != nil {
-			return nil, fmt.Errorf("marshal formats for %q: %w", c.CredentialId, err)
-		}
-		nameJSON, err := json.Marshal(c.Name)
-		if err != nil {
-			return nil, fmt.Errorf("marshal name for %q: %w", c.CredentialId, err)
-		}
-		issuerNameJSON, err := json.Marshal(c.Issuer.Name)
-		if err != nil {
-			return nil, fmt.Errorf("marshal issuer name for %q: %w", c.CredentialId, err)
-		}
-		attrsJSON, err := json.Marshal(c.Attributes)
-		if err != nil {
-			return nil, fmt.Errorf("marshal attributes for %q: %w", c.CredentialId, err)
-		}
-		issueURLJSON, err := json.Marshal(c.IssueURL)
-		if err != nil {
-			return nil, fmt.Errorf("marshal issue URL for %q: %w", c.CredentialId, err)
-		}
-		result[i] = models.EudiLogCredential{
-			ID:                  datatypes.NewUUIDv4(),
-			CredentialId:        c.CredentialId,
-			Formats:             formatsJSON,
-			Name:                nameJSON,
-			IssuerName:          issuerNameJSON,
-			IssuerId:            c.Issuer.Id,
-			Attributes:          attrsJSON,
-			IssuanceDate:        c.IssuanceDate,
-			ExpiryDate:          c.ExpiryDate,
-			Revoked:             c.Revoked,
-			RevocationSupported: c.RevocationSupported,
-			IssueURL:            issueURLJSON,
-			LogoFilename:        saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
-			IssuerLogoFilename:  saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
-		}
-	}
-	return result, nil
-}
 
 func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.LogCredential) ([]models.EudiLogCredential, error) {
 	result := make([]models.EudiLogCredential, len(creds))

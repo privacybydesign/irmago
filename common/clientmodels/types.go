@@ -170,6 +170,33 @@ type Credential struct {
 	IssueURL *TranslatedString `json:"issue_url"`
 }
 
+// CredentialToLogCredential converts a Credential to a LogCredential, extracting formats
+// from CredentialInstanceIds (falling back to BatchInstanceCountsRemaining).
+func CredentialToLogCredential(c *Credential) LogCredential {
+	formats := make([]CredentialFormat, 0, len(c.CredentialInstanceIds))
+	for f := range c.CredentialInstanceIds {
+		formats = append(formats, f)
+	}
+	if len(formats) == 0 {
+		for f := range c.BatchInstanceCountsRemaining {
+			formats = append(formats, f)
+		}
+	}
+	return LogCredential{
+		CredentialId:        c.CredentialId,
+		Formats:             formats,
+		Image:               c.Image,
+		Name:                c.Name,
+		Issuer:              c.Issuer,
+		Attributes:          c.Attributes,
+		IssuanceDate:        c.IssuanceDate,
+		ExpiryDate:          c.ExpiryDate,
+		Revoked:             c.Revoked,
+		RevocationSupported: c.RevocationSupported,
+		IssueURL:            c.IssueURL,
+	}
+}
+
 // CredentialDescriptor describes a credential type without any instance-specific values.
 type CredentialDescriptor struct {
 	CredentialId string            `json:"credential_id"`

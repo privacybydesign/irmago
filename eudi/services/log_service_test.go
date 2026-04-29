@@ -133,7 +133,7 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 	credImageData := base64.StdEncoding.EncodeToString([]byte("fake-credential-png"))
 	issuerImageData := base64.StdEncoding.EncodeToString([]byte("fake-issuer-png"))
 
-	creds := []*clientmodels.Credential{
+	creds := []clientmodels.LogCredential{
 		{
 			CredentialId: "https://example.com/vct/test",
 			Image:        &clientmodels.Image{Base64: credImageData},
@@ -143,9 +143,7 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 				Name:  clientmodels.TranslatedString{"en": "Test Issuer"},
 				Image: &clientmodels.Image{Base64: issuerImageData},
 			},
-			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
-				clientmodels.Format_SdJwtVc: "hash123",
-			},
+			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 			Attributes:   []clientmodels.Attribute{},
 			IssuanceDate: 1700000000,
 			ExpiryDate:   1800000000,
@@ -182,7 +180,7 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 func TestRemovalLogRoundTrip(t *testing.T) {
 	svc := newTestLogService(t)
 
-	creds := []*clientmodels.Credential{
+	creds := []clientmodels.LogCredential{
 		{
 			CredentialId: "https://example.com/vct/removed",
 			Name:         clientmodels.TranslatedString{"en": "Removed Credential"},
@@ -190,9 +188,7 @@ func TestRemovalLogRoundTrip(t *testing.T) {
 				Id:   "https://example.com/issuer",
 				Name: clientmodels.TranslatedString{"en": "Test Issuer"},
 			},
-			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
-				clientmodels.Format_SdJwtVc: "hash456",
-			},
+			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 			Attributes:   []clientmodels.Attribute{},
 			IssuanceDate: 1700000000,
 			ExpiryDate:   1800000000,
@@ -221,15 +217,13 @@ func TestGetLogsBefore_Pagination(t *testing.T) {
 
 	// Create 3 logs with distinct timestamps.
 	for i, name := range []string{"first", "second", "third"} {
-		creds := []*clientmodels.Credential{
+		creds := []clientmodels.LogCredential{
 			{
 				CredentialId: "https://example.com/vct/" + name,
 				Name:         clientmodels.TranslatedString{"en": name},
 				Issuer:       clientmodels.TrustedParty{Id: "https://example.com/issuer"},
-				CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
-					clientmodels.Format_SdJwtVc: "hash-" + name,
-				},
-				Attributes: []clientmodels.Attribute{},
+				Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
+				Attributes:   []clientmodels.Attribute{},
 			},
 		}
 		issuer := clientmodels.TrustedParty{Id: "issuer-" + name}

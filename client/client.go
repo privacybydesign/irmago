@@ -386,10 +386,10 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		for _, h := range eudiHashes {
 			hashSet[h] = struct{}{}
 		}
-		var removedCreds []*clientmodels.Credential
+		var removedCreds []clientmodels.LogCredential
 		for _, c := range allEudiCreds {
 			if _, ok := hashSet[c.Hash]; ok {
-				removedCreds = append(removedCreds, c)
+				removedCreds = append(removedCreds, clientmodels.CredentialToLogCredential(c))
 			}
 		}
 

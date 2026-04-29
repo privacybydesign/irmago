@@ -39,11 +39,15 @@ func (a *openid4vciSessionAdapter) Success(result string, issuedCredentials []*c
 
 	// Store issuance log.
 	if len(issuedCredentials) > 0 {
+		logCreds := make([]clientmodels.LogCredential, len(issuedCredentials))
+		for i, c := range issuedCredentials {
+			logCreds[i] = clientmodels.CredentialToLogCredential(c)
+		}
 		logService := services.NewEudiLogService(a.session.client.eudiStorage)
 		if err := logService.AddIssuanceLog(
 			clientmodels.Protocol_OpenID4VCI,
 			a.session.State.Requestor,
-			issuedCredentials,
+			logCreds,
 		); err != nil {
 			eudi.Logger.Errorf("failed to store openid4vci issuance log: %v", err)
 		}
