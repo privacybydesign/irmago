@@ -6,8 +6,8 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/services"
-	"github.com/privacybydesign/irmago/irma"
 )
 
 func parseAuthorizationEndpoint(endpoint string) (*url.URL, error) {
@@ -35,7 +35,7 @@ func (a *openid4vciSessionAdapter) Cancelled() {
 }
 
 func (a *openid4vciSessionAdapter) Success(result string, issuedCredentials []*clientmodels.Credential) {
-	irma.Logger.Infof("openid4vci session success: %s", result)
+	eudi.Logger.Infof("openid4vci session success: %s", result)
 
 	// Store issuance log.
 	if len(issuedCredentials) > 0 {
@@ -45,7 +45,7 @@ func (a *openid4vciSessionAdapter) Success(result string, issuedCredentials []*c
 			a.session.State.Requestor,
 			issuedCredentials,
 		); err != nil {
-			irma.Logger.Errorf("failed to store openid4vci issuance log: %v", err)
+			eudi.Logger.Errorf("failed to store openid4vci issuance log: %v", err)
 		}
 	}
 

@@ -4,8 +4,8 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/services"
-	"github.com/privacybydesign/irmago/irma"
 )
 
 // openid4vpSessionAdapter adapts the session struct to the openid4vp client's Handler interface.
@@ -25,13 +25,13 @@ func (a *openid4vpSessionAdapter) Cancelled() {
 }
 
 func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []clientmodels.LogCredential) {
-	irma.Logger.Infof("openid4vp session success: %s", result)
+	eudi.Logger.Infof("openid4vp session success: %s", result)
 
 	// Store the disclosure log in the EUDI SQLCipher database.
 	if len(credentialLogs) > 0 {
 		logService := services.NewEudiLogService(a.session.client.eudiStorage)
 		if err := logService.AddDisclosureLog(a.session.State.Requestor, credentialLogs); err != nil {
-			irma.Logger.Errorf("failed to store openid4vp disclosure log: %v", err)
+			eudi.Logger.Errorf("failed to store openid4vp disclosure log: %v", err)
 		}
 	}
 
