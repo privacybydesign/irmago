@@ -69,7 +69,7 @@ func (s *eudiLogService) addSessionLog(logType clientmodels.LogType, protocol cl
 		CreatedAt:             time.Now(),
 		RequestorId:           requestor.Id,
 		RequestorName:         requestorName,
-		RequestorLogoFilename: s.saveRequestorLogo(requestor),
+		RequestorLogoFilename: saveLogoFromBase64(s.verifierLogoManager, requestor.Id, requestor.Image),
 		Credentials:           creds,
 	}
 	return s.store.AddLog(entry)
@@ -303,9 +303,3 @@ func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clien
 	return filename
 }
 
-// saveRequestorLogo persists the requestor's logo image (if any) to the
-// verifier logo storage and returns the filename used for storage.
-// Returns "" if the requestor has no image.
-func (s *eudiLogService) saveRequestorLogo(tp clientmodels.TrustedParty) string {
-	return saveLogoFromBase64(s.verifierLogoManager, tp.Id, tp.Image)
-}
