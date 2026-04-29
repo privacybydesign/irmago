@@ -2,6 +2,7 @@ package openid4vci
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -235,14 +236,12 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerName := metadata.ConvertDisplayToTranslatedString(issuerDisplays)
 
 		var image *clientmodels.Image
-		var logoFilename string
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
 		for _, display := range config.CredentialMetadata.Display {
 			if display.Logo != nil {
-				logoFilename = credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
-				imageData, err := credentialLogoManager.GetLogo(logoFilename)
+				imageData, err := credentialLogoManager.Get(display.Logo.Uri)
 				if err == nil && imageData != nil {
-					image = &clientmodels.Image{Base64: *imageData}
+					image = &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(imageData)}
 				}
 				break
 			}

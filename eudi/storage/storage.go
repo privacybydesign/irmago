@@ -7,7 +7,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"gorm.io/gorm"
 )
 
@@ -31,7 +30,7 @@ type storage struct {
 // NewStorage opens (or creates) a SQLite database at path, then auto-migrates all registered models.
 // The dbPath can be ":memory:" to use an in-memory database (useful for testing) or a path to a file.
 // Note: the default transaction has been DISABLED, which means, any Create or Update operation should be wrapped in a transaction (either directly or using the UnitOfWork) to ensure data integrity.
-func NewStorage(aesKey [32]byte, filesystemEncryptionMiddleware encryption.EncryptionMiddleware, dbPath string, storagePath string) (Storage, error) {
+func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, error) {
 	// Ensure the database file exists before opening the connection (file does not always create automatically,
 	// depending on the SQLite version and OS)
 	if dbPath != ":memory:" {
@@ -72,7 +71,7 @@ func NewStorage(aesKey [32]byte, filesystemEncryptionMiddleware encryption.Encry
 	// Initialize the repositories, which will auto-migrate their models if needed
 	return &storage{
 		db: db,
-		fs: filesystem.NewFileSystemStorage(filesystemEncryptionMiddleware, storagePath),
+		fs: filesystem.NewFileSystemStorage(aesKey, storagePath),
 	}, nil
 }
 

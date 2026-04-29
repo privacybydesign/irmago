@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -206,7 +207,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 			data, err := client.openid4vpClient.Configuration.ResolveVerifierLogo(*requestor.Logo)
 			if err == nil {
 				verifier.Image = &clientmodels.Image{
-					Base64: *data,
+					Base64: base64.StdEncoding.EncodeToString(data),
 				}
 			}
 		}

@@ -140,8 +140,12 @@ func (c *Configuration) addStagingTrustAnchors() error {
 	return nil
 }
 
-func (c *Configuration) ResolveVerifierLogo(filename string) (*string, error) {
-	return c.Verifiers.storageContainer.LogoManager().GetLogo(filename)
+// ResolveVerifierLogo returns the raw logo bytes for the given verifier key
+// (typically the verifier's certificate serial number) or an error if no logo
+// is cached. Callers wrap the bytes in a clientmodels.Image with base64
+// encoding at the call site.
+func (c *Configuration) ResolveVerifierLogo(key string) ([]byte, error) {
+	return c.Verifiers.storageContainer.LogoManager().Get(key)
 }
 
 func (c *Configuration) UpdateCertificateRevocationLists() error {

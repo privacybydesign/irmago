@@ -2,26 +2,26 @@ package filesystem
 
 import (
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/pem"
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/privacybydesign/irmago/internal/mocks"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
 // --- Helpers ---
 
+// newTestStorage builds a FileSystemContainer wired through real AES-GCM with a
+// zero key. Tests round-trip data through the encrypted layer; they don't
+// inspect raw on-disk bytes.
 func newTestStorage(t *testing.T) (*FileSystemContainer, string) {
 	t.Helper()
 	basePath := t.TempDir()
-	storageMiddleware := NewStorageMiddleware(&mocks.MockEncryptionMiddleware{})
-	return newFileSystemContainer(storageMiddleware, basePath), basePath
+	fs := NewFileSystemStorage([32]byte{}, basePath)
+	container := fs.Credentials()
+	return &container, filepath.Join(basePath, "credentials")
 }
 
 func certsToPem(certs ...*x509.Certificate) []byte {
@@ -35,71 +35,18 @@ func certsToPem(certs ...*x509.Certificate) []byte {
 	return result
 }
 
-type failingEncryptionMiddleware struct{}
-
-func (m *failingEncryptionMiddleware) Encrypt(_ []byte) ([]byte, error) {
-	return nil, fmt.Errorf("encryption failed")
-}
-
-func (m *failingEncryptionMiddleware) Decrypt(_ []byte) ([]byte, error) {
-	return nil, fmt.Errorf("decryption failed")
-}
-
-// --- fsStorage tests ---
-
-func TestFsStorage_WriteAndReadFile_RoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStorageMiddleware(&mocks.MockEncryptionMiddleware{})
-
-	data := []byte("hello filesystem")
-	filePath := filepath.Join(dir, "test.bin")
-
-	require.NoError(t, s.writeFile(filePath, data))
-
-	got, err := s.readFile(filePath)
-	require.NoError(t, err)
-	require.Equal(t, data, got)
-}
-
-func TestFsStorage_WriteFile_EncryptionError(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStorageMiddleware(&failingEncryptionMiddleware{})
-
-	err := s.writeFile(filepath.Join(dir, "test.bin"), []byte("data"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "encryption failed")
-}
-
-func TestFsStorage_ReadFile_FileNotFound(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStorageMiddleware(&mocks.MockEncryptionMiddleware{})
-
-	_, err := s.readFile(filepath.Join(dir, "nonexistent.bin"))
-	require.Error(t, err)
-	require.True(t, errors.Is(err, os.ErrNotExist))
-}
-
-func TestFsStorage_ReadFile_DecryptionError(t *testing.T) {
-	dir := t.TempDir()
-	filePath := filepath.Join(dir, "test.bin")
-	require.NoError(t, os.WriteFile(filePath, []byte("data"), 0644))
-
-	s := NewStorageMiddleware(&failingEncryptionMiddleware{})
-	_, err := s.readFile(filePath)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "decryption failed")
-}
-
 // --- NewFileSystemStorage tests ---
 
 func TestNewFileSystemStorage_CreatesSubDirectories(t *testing.T) {
 	basePath := t.TempDir()
-	storage := newFileSystemContainer(NewStorageMiddleware(&mocks.MockEncryptionMiddleware{}), basePath)
-	require.NotNil(t, storage)
+	fs := NewFileSystemStorage([32]byte{}, basePath)
+	require.NotNil(t, fs)
 
-	require.DirExists(t, filepath.Join(basePath, certificatesDirName))
-	require.DirExists(t, filepath.Join(basePath, logosDirName))
-	require.DirExists(t, filepath.Join(basePath, crlsDirName))
+	for _, container := range []string{"credentials", "issuers", "verifiers"} {
+		require.DirExists(t, filepath.Join(basePath, container, certificatesDirName))
+		require.DirExists(t, filepath.Join(basePath, container, logosDirName))
+		require.DirExists(t, filepath.Join(basePath, container, crlsDirName))
+	}
 }
 
 func TestNewFileSystemStorage_ExposesAllManagers(t *testing.T) {
@@ -178,64 +125,68 @@ func TestCertificateManager_InstallCertificate_Idempotent(t *testing.T) {
 
 // --- LogoManager tests ---
 
-func TestLogoManager_SaveLogo_ValidData(t *testing.T) {
+func TestLogoManager_Save_ValidData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	savedPath, err := storage.LogoManager().SaveLogo("test-logo", []byte("logo data"))
-	require.NoError(t, err)
-	require.NotEmpty(t, savedPath)
-	require.FileExists(t, savedPath)
+	require.NoError(t, storage.LogoManager().Save("https://example.org/a.png", []byte("logo data")))
 }
 
-func TestLogoManager_SaveLogo_EmptyData(t *testing.T) {
+func TestLogoManager_Save_EmptyData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	_, err := storage.LogoManager().SaveLogo("test-logo", []byte{})
+	err := storage.LogoManager().Save("https://example.org/a.png", []byte{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "data cannot be nil or empty")
 }
 
-func TestLogoManager_SaveLogo_NilData(t *testing.T) {
+func TestLogoManager_Save_NilData(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	_, err := storage.LogoManager().SaveLogo("test-logo", nil)
+	err := storage.LogoManager().Save("https://example.org/a.png", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "data cannot be nil or empty")
 }
 
-func TestLogoManager_GetLogo_ExistingFile(t *testing.T) {
+func TestLogoManager_Get_RoundTrip(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	originalData := []byte("logo content")
 
-	savedPath, err := storage.LogoManager().SaveLogo("mylogo", originalData)
-	require.NoError(t, err)
+	require.NoError(t, storage.LogoManager().Save("mylogo", originalData))
 
-	readData, err := storage.LogoManager().GetLogo(filepath.Base(savedPath))
+	readData, err := storage.LogoManager().Get("mylogo")
 	require.NoError(t, err)
-	expected := base64.StdEncoding.EncodeToString(originalData)
-	require.Equal(t, &expected, readData)
+	require.Equal(t, originalData, readData)
 }
 
-func TestLogoManager_GetLogo_NonExistingFile(t *testing.T) {
+func TestLogoManager_Get_MissingKey(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	_, err := storage.LogoManager().GetLogo("nonexistent.png")
+	_, err := storage.LogoManager().Get("nonexistent")
 	require.Error(t, err)
 }
 
-func TestLogoManager_SaveLogo_OverwritesExisting(t *testing.T) {
+func TestLogoManager_Save_Overwrites(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	savedPath, err := storage.LogoManager().SaveLogo("mylogo", []byte("original"))
-	require.NoError(t, err)
+	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("original")))
+	require.NoError(t, storage.LogoManager().Save("mylogo", []byte("updated")))
 
-	_, err = storage.LogoManager().SaveLogo("mylogo", []byte("updated"))
+	readData, err := storage.LogoManager().Get("mylogo")
 	require.NoError(t, err)
+	require.Equal(t, []byte("updated"), readData)
+}
 
-	readData, err := storage.LogoManager().GetLogo(filepath.Base(savedPath))
+func TestLogoManager_Exists(t *testing.T) {
+	storage, _ := newTestStorage(t)
+
+	exists, err := storage.LogoManager().Exists("k")
 	require.NoError(t, err)
-	expected := base64.StdEncoding.EncodeToString([]byte("updated"))
-	require.Equal(t, &expected, readData)
+	require.False(t, exists)
+
+	require.NoError(t, storage.LogoManager().Save("k", []byte("v")))
+	exists, err = storage.LogoManager().Exists("k")
+	require.NoError(t, err)
+	require.True(t, exists)
 }
 
 // --- CertificateRevocationListManager tests ---
@@ -246,131 +197,110 @@ func newTestCrl(t *testing.T) *x509.RevocationList {
 	return crls[0]
 }
 
-func TestCrlManager_CrlExists_NonExistingFile(t *testing.T) {
+func TestCrlManager_Exists_NonExistingDistPoint(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	present, err := storage.CertificateRevocationListManager().CrlExists("nonexistent.crl")
+	present, err := storage.CertificateRevocationListManager().Exists("https://example.org/missing.crl")
 	require.NoError(t, err)
 	require.False(t, present)
 }
 
-func TestCrlManager_CrlExists_ExistingFile(t *testing.T) {
+func TestCrlManager_Exists_AfterSave(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	crl := newTestCrl(t)
+	const distPoint = "https://example.org/test.crl"
 
-	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, "test.crl"))
+	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, distPoint))
 
-	present, err := storage.CertificateRevocationListManager().CrlExists("test.crl")
+	present, err := storage.CertificateRevocationListManager().Exists(distPoint)
 	require.NoError(t, err)
 	require.True(t, present)
-}
-
-func TestCrlManager_Save_ValidCrl(t *testing.T) {
-	storage, _ := newTestStorage(t)
-	crl := newTestCrl(t)
-
-	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, "test.crl"))
 }
 
 func TestCrlManager_Save_NilCrl(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	err := storage.CertificateRevocationListManager().Save(nil, "test.crl")
+	err := storage.CertificateRevocationListManager().Save(nil, "https://example.org/x.crl")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "crl cannot be nil")
 }
 
-func TestCrlManager_Save_MissingCrlExtension(t *testing.T) {
+func TestCrlManager_Read_RoundTrip(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	crl := newTestCrl(t)
+	const distPoint = "https://example.org/test.crl"
 
-	err := storage.CertificateRevocationListManager().Save(crl, "test.txt")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), ".crl extension")
-}
+	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, distPoint))
 
-func TestCrlManager_ReadFromFileName_ExistingCrl(t *testing.T) {
-	storage, _ := newTestStorage(t)
-	crl := newTestCrl(t)
-
-	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, "test.crl"))
-
-	readCrl, err := storage.CertificateRevocationListManager().ReadFromFileName("test.crl")
+	readCrl, err := storage.CertificateRevocationListManager().Read(distPoint)
 	require.NoError(t, err)
 	require.NotNil(t, readCrl)
 	require.Equal(t, crl.Number, readCrl.Number)
 }
 
-func TestCrlManager_ReadFromFileName_NonExistingFile(t *testing.T) {
+func TestCrlManager_Read_NonExistingDistPoint(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	_, err := storage.CertificateRevocationListManager().ReadFromFileName("nonexistent.crl")
+	_, err := storage.CertificateRevocationListManager().Read("https://example.org/missing.crl")
 	require.Error(t, err)
 }
 
-func TestCrlManager_ReadFromFileName_InvalidContent(t *testing.T) {
-	storage, basePath := newTestStorage(t)
-	crlPath := filepath.Join(basePath, crlsDirName, "invalid.crl")
-	require.NoError(t, os.WriteFile(crlPath, []byte("this is not a valid crl"), 0644))
-
-	_, err := storage.CertificateRevocationListManager().ReadFromFileName("invalid.crl")
-	require.Error(t, err)
-}
-
-func TestCrlManager_Remove_ExistingFile(t *testing.T) {
+func TestCrlManager_Remove_AfterSave(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	crl := newTestCrl(t)
+	const distPoint = "https://example.org/test.crl"
 
-	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, "test.crl"))
-	require.NoError(t, storage.CertificateRevocationListManager().RemoveByFileName("test.crl"))
+	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, distPoint))
+	require.NoError(t, storage.CertificateRevocationListManager().Remove(distPoint))
 
-	present, err := storage.CertificateRevocationListManager().CrlExists("test.crl")
+	present, err := storage.CertificateRevocationListManager().Exists(distPoint)
 	require.NoError(t, err)
 	require.False(t, present)
 }
 
-func TestCrlManager_Remove_NonExistingFile(t *testing.T) {
+func TestCrlManager_Remove_NonExisting(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	err := storage.CertificateRevocationListManager().RemoveByFileName("nonexistent.crl")
+	err := storage.CertificateRevocationListManager().Remove("https://example.org/missing.crl")
 	require.Error(t, err)
 }
 
-func TestCrlManager_GetAllFileNames_Empty(t *testing.T) {
+func TestCrlManager_LoadAll_Empty(t *testing.T) {
 	storage, _ := newTestStorage(t)
 
-	names, err := storage.CertificateRevocationListManager().GetAllFileNames()
+	crls, err := storage.CertificateRevocationListManager().LoadAll(nil)
 	require.NoError(t, err)
-	require.Empty(t, names)
+	require.Empty(t, crls)
 }
 
-func TestCrlManager_GetAllFileNames_ReturnsBaseNamesOnly(t *testing.T) {
+func TestCrlManager_LoadAll_ReturnsAllSavedCrls(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	crl := newTestCrl(t)
+	mgr := storage.CertificateRevocationListManager()
 
-	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, "first.crl"))
-	require.NoError(t, storage.CertificateRevocationListManager().Save(crl, "second.crl"))
+	require.NoError(t, mgr.Save(crl, "https://example.org/first.crl"))
+	require.NoError(t, mgr.Save(crl, "https://example.org/second.crl"))
 
-	names, err := storage.CertificateRevocationListManager().GetAllFileNames()
+	crls, err := mgr.LoadAll(nil)
 	require.NoError(t, err)
-	require.Len(t, names, 2)
-	require.Contains(t, names, "first.crl")
-	require.Contains(t, names, "second.crl")
+	require.Len(t, crls, 2)
 }
 
-func TestGetCrlFileNameForCertDistributionPoint_IsDeterministic(t *testing.T) {
-	dp := "https://yivi.app/crl.crl"
+func TestCrlManager_LoadAll_OnErrorContinuesPastBadFile(t *testing.T) {
+	storage, basePath := newTestStorage(t)
+	crl := newTestCrl(t)
+	mgr := storage.CertificateRevocationListManager()
 
-	name1 := GetCrlFileNameForCertDistributionPoint(dp)
-	name2 := GetCrlFileNameForCertDistributionPoint(dp)
+	require.NoError(t, mgr.Save(crl, "https://example.org/good.crl"))
 
-	require.Equal(t, name1, name2)
-	require.Contains(t, name1, ".crl")
-}
+	// Drop a file in the CRL dir that won't decrypt — simulates corruption.
+	require.NoError(t, os.WriteFile(filepath.Join(basePath, crlsDirName, "garbage.crl"), []byte("not ciphertext"), 0644))
 
-func TestGetCrlFileNameForCertDistributionPoint_DifferentInputsDifferentNames(t *testing.T) {
-	name1 := GetCrlFileNameForCertDistributionPoint("https://yivi.app/crl1.crl")
-	name2 := GetCrlFileNameForCertDistributionPoint("https://yivi.app/crl2.crl")
-
-	require.NotEqual(t, name1, name2)
+	var errs []error
+	crls, err := mgr.LoadAll(func(loadErr error) {
+		errs = append(errs, loadErr)
+	})
+	require.NoError(t, err)
+	require.Len(t, crls, 1)
+	require.Len(t, errs, 1)
 }

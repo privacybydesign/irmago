@@ -16,7 +16,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
@@ -41,8 +40,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	err = common.CopyDirectory(filepath.Join(testStoragePath, "eudi"), eudiAppDataPath)
 	require.NoError(t, err)
 
-	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
-	s, err := storage.NewStorage(aesKey, encryptionMiddleware, ":memory:", eudiAppDataPath)
+	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
 	require.NoError(t, err)
 
 	conf, err := eudi.NewConfiguration(s)

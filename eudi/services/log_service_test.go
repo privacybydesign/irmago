@@ -10,7 +10,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
-	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -31,8 +30,7 @@ func newTestLogService(t *testing.T) EudiLogService {
 
 	var aesKey [32]byte
 	copy(aesKey[:], passphrase)
-	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
-	fs := filesystem.NewFileSystemStorage(encMiddleware, t.TempDir())
+	fs := filesystem.NewFileSystemStorage(aesKey, t.TempDir())
 
 	return &eudiLogService{
 		store:               db.NewEudiLogStore(database),
