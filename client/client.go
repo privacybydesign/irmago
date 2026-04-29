@@ -545,7 +545,6 @@ func mergeLogsByTime(a, b []clientmodels.LogInfo, max int) []clientmodels.LogInf
 	return merged
 }
 
-
 func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 	client.irmaClient.SetPreferences(prefs)
 	if prefs.DeveloperMode {

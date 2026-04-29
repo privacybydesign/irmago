@@ -44,8 +44,8 @@ type EudiLogCredential struct {
 	Attributes datatypes.JSON `gorm:"type:json"`
 
 	// Credential timing and status metadata.
-	IssuanceDate time.Time
-	ExpiryDate   datatypes.NullTime
+	IssuanceDate        time.Time
+	ExpiryDate          datatypes.NullTime
 	Revoked             bool
 	RevocationSupported bool
 	IssueURL            datatypes.JSON `gorm:"type:json"` // JSON-encoded *TranslatedString, nil when not set.

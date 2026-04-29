@@ -310,4 +310,3 @@ func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clien
 	}
 	return filename
 }
-
