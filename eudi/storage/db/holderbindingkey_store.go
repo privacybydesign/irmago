@@ -16,6 +16,7 @@ type HolderBindingKeyStore interface {
 	GetByID(id datatypes.UUID) (*models.HolderBindingKey, error)
 	GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error)
 	GetByDidUrl(didUrl string) (*models.HolderBindingKey, error)
+	LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error
 	DeleteKey(id datatypes.UUID) error
 	DeleteKeys(ids []datatypes.UUID) error
 	DeleteAll() error
@@ -81,6 +82,21 @@ func (r *holderBindingKeyStore) GetByThumbprint(thumbprint string) (*models.Hold
 	}
 
 	return &key, nil
+}
+
+// LinkToInstance sets the IssuedCredentialInstanceID on the given holder binding key,
+// binding it to the specified credential instance.
+func (r *holderBindingKeyStore) LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+	res := r.db.Model(&models.HolderBindingKey{}).
+		Where("id = ?", keyID).
+		Update("issued_credential_instance_id", instanceID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // DeleteKey deletes the base row.

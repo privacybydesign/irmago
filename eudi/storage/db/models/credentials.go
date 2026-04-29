@@ -143,6 +143,10 @@ func (i *IssuedCredentialInstance) BeforeCreate(tx *gorm.DB) error {
 		i.ID = datatypes.NewUUIDv4()
 	}
 	if i.HolderBindingKey != nil {
+		if i.HolderBindingKey.IssuedCredentialInstanceID != nil && !i.HolderBindingKey.IssuedCredentialInstanceID.IsNil() {
+			return fmt.Errorf("holder binding key %s is already bound to credential instance %s",
+				i.HolderBindingKey.ID, *i.HolderBindingKey.IssuedCredentialInstanceID)
+		}
 		i.HolderBindingKey.IssuedCredentialInstanceID = &i.ID
 	}
 	return i.validate()
