@@ -1,7 +1,6 @@
 package openid4vci
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -398,16 +397,7 @@ func (client *Client) convertToCredentialInfoList(
 			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
 			for _, display := range config.CredentialMetadata.Display {
 				if display.Logo != nil {
-					imageData, err := credentialLogoManager.Get(display.Logo.Uri)
-					if err != nil {
-						eudi.Logger.Warnf("failed to read credential logo from cache for %q: %v", display.Logo.Uri, err)
-						break
-					}
-
-					image = &clientmodels.Image{
-						Base64: base64.StdEncoding.EncodeToString(imageData),
-					}
-
+					image = eudi.LoadLogoImage(credentialLogoManager, display.Logo.Uri)
 					// TODO: for now, we pick the first logo in a display we can find, but this needs to be based on the locale being used in the app
 					break
 				}

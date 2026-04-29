@@ -183,7 +183,7 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.Lo
 			eudi.Logger.Warnf("failed to unmarshal requestor name for log %s: %v", e.ID, err)
 		}
 	}
-	requestorImage := loadLogoImage(s.verifierLogoManager, e.RequestorId)
+	requestorImage := eudi.LoadLogoImage(s.verifierLogoManager, e.RequestorId)
 	requestor := &clientmodels.TrustedParty{
 		Id:    e.RequestorId,
 		Name:  requestorName,
@@ -245,8 +245,8 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		if formats == nil {
 			formats = []clientmodels.CredentialFormat{}
 		}
-		credImage := loadLogoImage(credLogoManager, c.CredentialId)
-		issuerImage := loadLogoImage(issuerLogoManager, c.IssuerId)
+		credImage := eudi.LoadLogoImage(credLogoManager, c.CredentialId)
+		issuerImage := eudi.LoadLogoImage(issuerLogoManager, c.IssuerId)
 		var issueURL *clientmodels.TranslatedString
 		if c.IssueURL != nil {
 			issueURL = &clientmodels.TranslatedString{}
@@ -292,20 +292,3 @@ func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clien
 	}
 }
 
-// loadLogoImage looks up a previously-saved logo by its logical key and wraps
-// it as a base64-encoded clientmodels.Image. Returns nil when the key is empty,
-// the manager is unavailable, or no logo is cached.
-func loadLogoImage(manager filesystem.LogoManager, key string) *clientmodels.Image {
-	if key == "" || manager == nil {
-		return nil
-	}
-	exists, err := manager.Exists(key)
-	if err != nil || !exists {
-		return nil
-	}
-	data, err := manager.Get(key)
-	if err != nil {
-		return nil
-	}
-	return &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(data)}
-}

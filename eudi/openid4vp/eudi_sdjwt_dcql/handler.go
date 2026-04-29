@@ -3,7 +3,6 @@
 package eudi_sdjwt_dcql
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -749,12 +748,9 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch) *cli
 		if display.LogoURI == "" {
 			continue
 		}
-		imageData, err := logoManager.Get(display.LogoURI)
-		if err != nil {
-			eudi.Logger.Warnf("failed to get credential logo from %q: %v", display.LogoURI, err)
-			continue
+		if img := eudi.LoadLogoImage(logoManager, display.LogoURI); img != nil {
+			return img
 		}
-		return &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(imageData)}
 	}
 	return nil
 }
@@ -785,12 +781,9 @@ func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientm
 		if d.LogoURI == "" {
 			continue
 		}
-		imageData, err := logoManager.Get(d.LogoURI)
-		if err != nil {
-			eudi.Logger.Warnf("failed to get issuer logo from %q: %v", d.LogoURI, err)
-			continue
+		if img := eudi.LoadLogoImage(logoManager, d.LogoURI); img != nil {
+			return img
 		}
-		return &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(imageData)}
 	}
 	return nil
 }
