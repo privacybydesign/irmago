@@ -172,16 +172,6 @@ func (s *credentialStore) DeleteBatch(batchID datatypes.UUID) error {
 		return fmt.Errorf("batchID is required")
 	}
 
-	// Explicitly delete holder binding keys (and their cascaded metadata) that belong
-	// to this batch's instances. The FK lives on IssuedCredentialInstance (belongs-to),
-	// so the DB-level ON DELETE CASCADE does not cover this direction.
-	if err := s.db.Exec(`DELETE FROM holder_binding_keys WHERE id IN (
-		SELECT holder_binding_key_id FROM issued_credential_instances
-		WHERE credential_batch_id = ? AND holder_binding_key_id IS NOT NULL
-	)`, batchID).Error; err != nil {
-		return err
-	}
-
 	res := s.db.Delete(&models.CredentialBatch{}, "id = ?", batchID)
 	if res.Error != nil {
 		return res.Error

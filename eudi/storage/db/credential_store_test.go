@@ -489,8 +489,8 @@ func TestDeleteBatchByHash_CascadeDeletesHolderBindingKeys(t *testing.T) {
 	// Collect holder binding key IDs from the stored instances.
 	var keyIDs []datatypes.UUID
 	for _, inst := range batch.Instances {
-		require.NotNil(t, inst.HolderBindingKeyID)
-		keyIDs = append(keyIDs, *inst.HolderBindingKeyID)
+		require.NotNil(t, inst.HolderBindingKey)
+		keyIDs = append(keyIDs, inst.HolderBindingKey.ID)
 	}
 
 	// Verify keys and ECDSA metadata exist before deletion.

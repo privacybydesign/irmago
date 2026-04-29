@@ -125,10 +125,9 @@ type IssuedCredentialInstance struct {
 
 	CredentialBatchID datatypes.UUID
 
-	// HolderBindingKeyID is the FK to the key pair bound to this credential instance during issuance.
+	// HolderBindingKey is the key pair bound to this credential instance during issuance.
 	// Nil if the credential configuration did not require cryptographic key binding.
-	HolderBindingKeyID *datatypes.UUID
-	HolderBindingKey   *HolderBindingKey `gorm:"constraint:OnDelete:CASCADE"`
+	HolderBindingKey *HolderBindingKey `gorm:"constraint:OnDelete:CASCADE"`
 
 	// RawCredential is the raw SD-JWT VC token (without key binding JWT).
 	// The surrounding SQLCipher layer encrypts this at rest.
@@ -143,8 +142,8 @@ func (i *IssuedCredentialInstance) BeforeCreate(tx *gorm.DB) error {
 	if i.ID.IsNil() {
 		i.ID = datatypes.NewUUIDv4()
 	}
-	if (i.HolderBindingKeyID == nil || i.HolderBindingKeyID.IsNil()) && i.HolderBindingKey != nil {
-		i.HolderBindingKeyID = &i.HolderBindingKey.ID
+	if i.HolderBindingKey != nil {
+		i.HolderBindingKey.IssuedCredentialInstanceID = &i.ID
 	}
 	return i.validate()
 }

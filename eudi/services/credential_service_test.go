@@ -471,7 +471,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_NilHolderBindingKeyID(t *t
 
 	require.NoError(t, err)
 	require.Len(t, mock.storedBatches, 1)
-	assert.Nil(t, mock.storedBatches[0].Instances[0].HolderBindingKeyID)
+	assert.Nil(t, mock.storedBatches[0].Instances[0].HolderBindingKey)
 }
 
 func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {

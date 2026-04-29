@@ -97,9 +97,6 @@ func (s *storage) Close() error {
 func (s *storage) RemoveAll() error {
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		session := tx.Session(&gorm.Session{AllowGlobalUpdate: true})
-		if err := session.Delete(&models.HolderBindingKey{}).Error; err != nil {
-			return err
-		}
 		if err := session.Delete(&models.CredentialBatch{}).Error; err != nil {
 			return err
 		}
