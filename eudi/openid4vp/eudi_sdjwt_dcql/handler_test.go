@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/internal/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
@@ -49,9 +50,11 @@ func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
 		&models.IssuedCredentialInstance{},
 	))
 
-	ts := &testStorage{db: d}
+	fs := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	ts := &testStorage{db: d, fs: fs}
 	credStore := db.NewCredentialStore(ts.Db())
 	handler := &SdJwtVcDcqlHandler{
+		storage:         ts,
 		credentialStore: credStore,
 	}
 	return handler, credStore

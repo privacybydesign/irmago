@@ -25,6 +25,10 @@ const (
 type HolderBindingKey struct {
 	ID datatypes.UUID `gorm:"primaryKey"`
 
+	// FK back to the owning credential instance (Has One from IssuedCredentialInstance).
+	// Nil when the key has not yet been bound to a credential instance.
+	IssuedCredentialInstanceID *datatypes.UUID
+
 	Algorithm KeyAlgorithm `gorm:"type:text;not null;index"`
 
 	// Secondary lookup, either by PublicKeyThumbprint or DidUrl, not primary identity. Mutually exclusive with each other, but this is not enforced by the database.

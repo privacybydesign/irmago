@@ -1,6 +1,10 @@
 package clientmodels
 
-import "fmt"
+import (
+	"encoding/base64"
+	"fmt"
+	"os"
+)
 
 const DefaultFallbackLanguage = "en"
 
@@ -14,9 +18,7 @@ type TrustedParty struct {
 	Name TranslatedString `json:"name"`
 	// Url for the party (which can be different per language)
 	Url *TranslatedString `json:"url"`
-	// Absolute path to the image for this party stored on disk (in case of IRMA credentials)
-	ImagePath *string `json:"image_path,omitempty"`
-	// The image data for this party (if any, in case of EUDI credentials)
+	// The image data for this party.
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
@@ -29,6 +31,19 @@ type Image struct {
 	Base64 string `json:"base64"`
 	// The MIME type of the image (e.g. "image/png")
 	MimeType *string `json:"mime_type,omitempty"`
+}
+
+// ImageFromFile reads an image file from disk and returns it as a base64-encoded Image.
+// Returns nil if the path is empty or the file cannot be read.
+func ImageFromFile(path string) *Image {
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return &Image{Base64: base64.StdEncoding.EncodeToString(data)}
 }
 
 // AttributeType indicates the type of an attribute value.
@@ -129,10 +144,8 @@ type Credential struct {
 	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
-	// Base64-encoded image for this credential
+	// Base64-encoded image for this credential.
 	Image *Image `json:"image,omitempty"`
-	// Absolute path to the image for this credential stored on disk.
-	ImagePath *string `json:"image_path,omitempty"`
 	// The display name for this credential, localized.
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer.
@@ -157,13 +170,39 @@ type Credential struct {
 	IssueURL *TranslatedString `json:"issue_url"`
 }
 
+// CredentialToLogCredential converts a Credential to a LogCredential, extracting formats
+// from CredentialInstanceIds (falling back to BatchInstanceCountsRemaining).
+func CredentialToLogCredential(c *Credential) LogCredential {
+	formats := make([]CredentialFormat, 0, len(c.CredentialInstanceIds))
+	for f := range c.CredentialInstanceIds {
+		formats = append(formats, f)
+	}
+	if len(formats) == 0 {
+		for f := range c.BatchInstanceCountsRemaining {
+			formats = append(formats, f)
+		}
+	}
+	return LogCredential{
+		CredentialId:        c.CredentialId,
+		Formats:             formats,
+		Image:               c.Image,
+		Name:                c.Name,
+		Issuer:              c.Issuer,
+		Attributes:          c.Attributes,
+		IssuanceDate:        c.IssuanceDate,
+		ExpiryDate:          c.ExpiryDate,
+		Revoked:             c.Revoked,
+		RevocationSupported: c.RevocationSupported,
+		IssueURL:            c.IssueURL,
+	}
+}
+
 // CredentialDescriptor describes a credential type without any instance-specific values.
 type CredentialDescriptor struct {
 	CredentialId string            `json:"credential_id"`
 	Name         TranslatedString  `json:"name"`
 	Issuer       TrustedParty      `json:"issuer"`
 	Category     *TranslatedString `json:"category,omitempty"`
-	ImagePath    *string           `json:"image_path,omitempty"`
 	Image        *Image            `json:"image,omitempty"`
 	Attributes   []Attribute       `json:"attributes"`
 	IssueURL     *TranslatedString `json:"issue_url,omitempty"`
@@ -191,10 +230,8 @@ type SelectableCredentialInstance struct {
 	CredentialId string `json:"credential_id"`
 	// Hash over all attribute values and the credential id.
 	Hash string `json:"hash"`
-	// Base64-encoded image for this credential
+	// Base64-encoded image for this credential.
 	Image *Image `json:"image,omitempty"`
-	// Absolute path to the image for this credential stored on disk.
-	ImagePath *string `json:"image_path,omitempty"`
 	// The display name for this credential, localized.
 	Name TranslatedString `json:"name"`
 	// All information about the credential issuer.

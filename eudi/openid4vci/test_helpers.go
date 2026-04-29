@@ -39,7 +39,7 @@ func (h *MockSessionHandler) AwaitAuthCodeRequest() AuthCodeHandler {
 	return <-h.authCodeRequestChannel
 }
 
-func (h *MockSessionHandler) Success(result string) {
+func (h *MockSessionHandler) Success(result string, issuedCredentials []*clientmodels.Credential) {
 	if h.log {
 		fmt.Printf("session success: %s\n", result)
 	}

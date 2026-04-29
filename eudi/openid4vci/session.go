@@ -140,7 +140,7 @@ func (s *session) perform() error {
 		return nil
 	}
 
-	s.handler.Success("openid4vci session completed")
+	s.handler.Success("openid4vci session completed", offeredCredentials)
 	return nil
 }
 
@@ -235,12 +235,12 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerName := metadata.ConvertDisplayToTranslatedString(issuerDisplays)
 
 		var image *clientmodels.Image
+		var logoFilename string
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
 		for _, display := range config.CredentialMetadata.Display {
 			if display.Logo != nil {
-				imageData, err := credentialLogoManager.GetLogo(
-					credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri),
-				)
+				logoFilename = credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
+				imageData, err := credentialLogoManager.GetLogo(logoFilename)
 				if err == nil && imageData != nil {
 					image = &clientmodels.Image{Base64: *imageData}
 				}
@@ -256,15 +256,25 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			batchSize = &n
 		}
 
+		var issuanceDate, expiryDate int64
+		if len(fc.verifiedSdJwtVcs) > 0 {
+			jwt := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload
+			issuanceDate = jwt.IssuedAt
+			expiryDate = jwt.Expiry
+		}
+
 		result = append(result, &clientmodels.Credential{
-			CredentialId: config.VerifiableCredentialType,
-			Name:         name,
-			Issuer:       clientmodels.TrustedParty{Name: issuerName},
-			Image:        image,
-			Attributes:   attrs,
+			CredentialId:          config.VerifiableCredentialType,
+			Name:                  name,
+			Issuer:                clientmodels.TrustedParty{Name: issuerName},
+			Image:                 image,
+			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
 				clientmodels.Format_SdJwtVc: batchSize,
 			},
+			Attributes:   attrs,
+			IssuanceDate: issuanceDate,
+			ExpiryDate:   expiryDate,
 		})
 	}
 	return result

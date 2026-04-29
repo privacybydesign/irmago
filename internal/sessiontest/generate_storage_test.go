@@ -145,7 +145,7 @@ func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSes
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
+	require.NoError(t, common.EnsureDirectoryExists(eudiAppDataPath))
 
 	certsPath := filepath.Join(storagePath, "eudi", "issuers", "certs")
 	require.NoError(t, common.EnsureDirectoryExists(certsPath))

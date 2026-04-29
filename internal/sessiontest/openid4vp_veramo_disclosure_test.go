@@ -11,6 +11,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
@@ -114,7 +115,7 @@ func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/test",
 						Name:         clientmodels.TranslatedString{"en": "Test Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"given_name"},
@@ -194,7 +195,7 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -290,7 +291,7 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -302,7 +303,7 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/phone",
 						Name:         clientmodels.TranslatedString{"en": "Phone Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"phone_number"},
@@ -396,7 +397,7 @@ func testMultipleRequiredCredentials(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -412,7 +413,7 @@ func testMultipleRequiredCredentials(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/phone",
 						Name:         clientmodels.TranslatedString{"en": "Phone Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"phone_number"},
@@ -501,7 +502,7 @@ func testOptionalCredential(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -588,7 +589,7 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -673,7 +674,7 @@ func testDiscloseNestedClaims(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/house",
 						Name:         clientmodels.TranslatedString{"en": "House Possession Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"owner_name"},
@@ -760,7 +761,7 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/studentcard",
 						Name:         clientmodels.TranslatedString{"en": "Student Card Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
@@ -848,7 +849,7 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/studentcard",
 						Name:         clientmodels.TranslatedString{"en": "Student Card Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:  []any{"courses", 1},
@@ -923,7 +924,7 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/studentcard",
 						Name:         clientmodels.TranslatedString{"en": "Student Card Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
 							{
@@ -1007,7 +1008,7 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/membership",
 						Name:         clientmodels.TranslatedString{"en": "Membership Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"member_name"},
@@ -1090,7 +1091,7 @@ func testNonSdArrayClaimsFlattenedInDisclosurePlan(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/membership",
 						Name:         clientmodels.TranslatedString{"en": "Membership Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"member_name"},
@@ -1167,7 +1168,7 @@ func testNonSdSingleItemArrayFlattenedInDisclosurePlan(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/membership",
 						Name:         clientmodels.TranslatedString{"en": "Membership Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"member_name"},
@@ -1268,7 +1269,7 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -1289,7 +1290,7 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/studentcard",
 						Name:         clientmodels.TranslatedString{"en": "Student Card Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
@@ -1397,7 +1398,7 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/eduid",
 						Name:         clientmodels.TranslatedString{"en": "eduID"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"given_name"},
@@ -1498,7 +1499,7 @@ func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -1580,7 +1581,7 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -1686,7 +1687,7 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/eduid",
 						Name:         clientmodels.TranslatedString{"en": "eduID"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"given_name"},
@@ -1774,7 +1775,7 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -1786,7 +1787,7 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -1889,7 +1890,7 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/membership",
 						Name:         clientmodels.TranslatedString{"en": "Membership Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"member_since"},
@@ -1963,7 +1964,7 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -2050,7 +2051,7 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/house",
 						Name:         clientmodels.TranslatedString{"en": "House Possession Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"owner_name"},
@@ -2138,7 +2139,7 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/email",
 						Name:         clientmodels.TranslatedString{"en": "Email Credential (SD-JWT)", "nl": "E-mail Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
@@ -2665,7 +2666,7 @@ func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
 							{
@@ -2835,7 +2836,7 @@ func testDiscloseSpecificNestedArrayElement(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
@@ -2938,7 +2939,7 @@ func testDiscloseNestedArrayWithNullPath(t *testing.T) {
 					{
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
-						IssuerName:   clientmodels.TranslatedString{},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
 							// Null path expands into concrete indices for each faculty.
 							{
@@ -3065,10 +3066,6 @@ func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, query
 	}
 
 	// Check no unexpected top-level claims exist (ignoring standard JWT claims).
-	standardClaims := map[string]struct{}{
-		"vct": {}, "iss": {}, "iat": {}, "exp": {}, "nbf": {}, "sub": {},
-		"cnf": {}, "_sd_alg": {}, "status": {},
-	}
 	expectedTopLevel := make(map[string]struct{})
 	for _, exp := range expected {
 		if len(exp.Path) > 0 {
@@ -3078,7 +3075,7 @@ func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, query
 		}
 	}
 	for key := range claims {
-		if _, isStandard := standardClaims[key]; isStandard {
+		if _, isStandard := sdjwtvc.StandardClaims[key]; isStandard {
 			continue
 		}
 		_, isExpected := expectedTopLevel[key]

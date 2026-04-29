@@ -411,20 +411,20 @@ func testDisclosureTrustedPartyLogoPaths(
 
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	// Requestor should have a logo that exists on disk
-	require.NotNil(t, session.Requestor.ImagePath, "requestor ImagePath should not be nil")
-	require.FileExists(t, *session.Requestor.ImagePath)
+	// Requestor should have a logo
+	require.NotNil(t, session.Requestor.Image, "requestor Image should not be nil")
+	require.NotEmpty(t, session.Requestor.Image.Base64, "requestor Image should have base64 data")
 
-	// Disclosure plan credential issuers should have logos that exist on disk
+	// Disclosure plan credential issuers should have logos
 	require.NotNil(t, session.DisclosurePlan)
 	for _, choice := range session.DisclosurePlan.DisclosureChoicesOverview {
 		for _, opt := range choice.OwnedOptions {
-			require.NotNil(t, opt.Issuer.ImagePath, "issuer ImagePath for %s should not be nil", opt.CredentialId)
-			require.FileExists(t, *opt.Issuer.ImagePath)
+			require.NotNil(t, opt.Issuer.Image, "issuer Image for %s should not be nil", opt.CredentialId)
+			require.NotEmpty(t, opt.Issuer.Image.Base64, "issuer Image for %s should have base64 data", opt.CredentialId)
 		}
 		for _, opt := range choice.ObtainableOptions {
-			require.NotNil(t, opt.Issuer.ImagePath, "issuer ImagePath for %s should not be nil", opt.CredentialId)
-			require.FileExists(t, *opt.Issuer.ImagePath)
+			require.NotNil(t, opt.Issuer.Image, "issuer Image for %s should not be nil", opt.CredentialId)
+			require.NotEmpty(t, opt.Issuer.Image.Base64, "issuer Image for %s should have base64 data", opt.CredentialId)
 		}
 	}
 }

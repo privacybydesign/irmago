@@ -2,6 +2,7 @@ package sessiontest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/stretchr/testify/require"
@@ -67,10 +68,10 @@ func TestLogging(t *testing.T) {
 	require.NotEmpty(t, disclosed)
 
 	// Test before parameter
-	logs, err = client.LoadLogsBefore(entry.ID, 100)
+	logs, err = client.LoadLogsBeforeTime(time.Time(entry.Time), 100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
-	require.True(t, logs[0].ID < entry.ID)
+	require.True(t, time.Time(logs[0].Time).Before(time.Time(entry.Time)))
 
 	// Test max parameter
 	logs, err = client.LoadNewestLogs(1)

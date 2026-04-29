@@ -34,15 +34,24 @@ func TestSessionHandlerInvokedOnCancel(t *testing.T) {
 
 	request := irma.NewDisclosureRequest(irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID"))
 
-	var handlerInvoked bool
+	handlerDone := make(chan struct{})
 	_, token, _, err := s.StartSession(request, func(result *server.SessionResult) {
-		handlerInvoked = true
+		close(handlerDone)
 	}, "")
 	require.NoError(t, err)
 
+	// Give the handler goroutine time to subscribe to status updates
+	// before cancelling, so it doesn't miss the status change.
+	time.Sleep(100 * time.Millisecond)
+
 	require.NoError(t, s.CancelSession(token))
-	time.Sleep(100 * time.Millisecond) // give session handler time to run
-	require.True(t, handlerInvoked)
+
+	select {
+	case <-handlerDone:
+		// success
+	case <-time.After(5 * time.Second):
+		t.Fatal("session handler was not invoked within timeout")
+	}
 }
 
 func TestSessionHandlerInvokedOnTimeout(t *testing.T) {

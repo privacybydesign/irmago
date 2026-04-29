@@ -219,11 +219,28 @@ const (
 	Key_Typ                      string = "typ"
 	Key_X5c                      string = "x5c"
 	Key_Ellipsis                 string = "..."
+	Key_Federation               string = "fed"
 
 	SdJwtVcTyp        string = "dc+sd-jwt"
 	SdJwtVcTyp_Legacy string = "vc+sd-jwt"
 	KbJwtTyp          string = "kb+jwt"
 )
+
+// StandardClaims contains JWT-registered and SD-JWT-specific claims that are not user data.
+// Use this to distinguish issuer/protocol metadata from actual credential attributes.
+var StandardClaims = map[string]struct{}{
+	Key_Issuer:                   {},
+	Key_IssuedAt:                 {},
+	Key_ExpiryTime:               {},
+	Key_NotBefore:                {},
+	Key_Subject:                  {},
+	Key_VerifiableCredentialType: {},
+	Key_Confirmationkey:          {},
+	Key_Status:                   {},
+	Key_Sd:                       {},
+	Key_SdAlg:                    {},
+	Key_Federation:               {},
+}
 
 // IssuerSignedJwtPayload is a representation of the payload of the issuer signed jwt part of an SD-JWT VC
 type IssuerSignedJwtPayload struct {

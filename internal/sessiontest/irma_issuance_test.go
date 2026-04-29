@@ -105,15 +105,15 @@ func testIssuanceTrustedPartyLogoPaths(
 
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	// Requestor should have a logo that exists on disk
-	require.NotNil(t, session.Requestor.ImagePath, "requestor ImagePath should not be nil")
-	require.FileExists(t, *session.Requestor.ImagePath)
+	// Requestor should have a logo
+	require.NotNil(t, session.Requestor.Image, "requestor Image should not be nil")
+	require.NotEmpty(t, session.Requestor.Image.Base64, "requestor Image should have base64 data")
 
-	// Each offered credential's issuer should have a logo that exists on disk
+	// Each offered credential's issuer should have a logo
 	require.NotEmpty(t, session.OfferedCredentials, "expected at least one offered credential")
 	for _, cred := range session.OfferedCredentials {
-		require.NotNil(t, cred.Issuer.ImagePath, "issuer ImagePath for %s should not be nil", cred.CredentialId)
-		require.FileExists(t, *cred.Issuer.ImagePath)
+		require.NotNil(t, cred.Issuer.Image, "issuer Image for %s should not be nil", cred.CredentialId)
+		require.NotEmpty(t, cred.Issuer.Image.Base64, "issuer Image for %s should have base64 data", cred.CredentialId)
 	}
 }
 
@@ -425,21 +425,21 @@ func testTrustedPartyLogoPathsInLogs(
 	require.NotNil(t, issuanceLog, "should have an issuance log")
 	require.NotNil(t, disclosureLog, "should have a disclosure log")
 
-	// The credential issuer's image path should be set in the issuance log
+	// The credential issuer's image should be set in the issuance log
 	require.NotEmpty(t, issuanceLog.Credentials, "issuance log should have credentials")
 	issuedCred := issuanceLog.Credentials[0]
-	require.NotNil(t, issuedCred.Issuer.ImagePath,
-		"issued credential's issuer image path should not be nil")
-	require.FileExists(t, *issuedCred.Issuer.ImagePath,
-		"issued credential's issuer image path should point to an existing file")
+	require.NotNil(t, issuedCred.Issuer.Image,
+		"issued credential's issuer image should not be nil")
+	require.NotEmpty(t, issuedCred.Issuer.Image.Base64,
+		"issued credential's issuer image should have base64 data")
 
-	// The credential issuer's image path should be set in the disclosure log
+	// The credential issuer's image should be set in the disclosure log
 	require.NotEmpty(t, disclosureLog.Credentials, "disclosure log should have credentials")
 	disclosedCred := disclosureLog.Credentials[0]
-	require.NotNil(t, disclosedCred.Issuer.ImagePath,
-		"disclosed credential's issuer image path should not be nil")
-	require.FileExists(t, *disclosedCred.Issuer.ImagePath,
-		"disclosed credential's issuer image path should point to an existing file")
+	require.NotNil(t, disclosedCred.Issuer.Image,
+		"disclosed credential's issuer image should not be nil")
+	require.NotEmpty(t, disclosedCred.Issuer.Image.Base64,
+		"disclosed credential's issuer image should have base64 data")
 }
 
 func testAttributesOrderedByDisplayIndex(

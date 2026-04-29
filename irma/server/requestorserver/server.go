@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,6 +32,7 @@ type Server struct {
 	conf     *Configuration
 	irmaserv *irmaserver.Server
 	stop     chan struct{}
+	stopOnce sync.Once
 	stopped  chan struct{}
 }
 
@@ -77,16 +79,12 @@ func (s *Server) Start(config *Configuration) error {
 		done <- s.startRequestorServer()
 	}()
 
-	var stopped bool
 	var err error
 	for i := 0; i < cap(done); i++ {
 		if err = <-done; err != nil {
 			_ = server.LogError(err)
 		}
-		if !stopped {
-			stopped = true
-			close(s.stop)
-		}
+		s.stopOnce.Do(func() { close(s.stop) })
 	}
 
 	return err
@@ -135,7 +133,7 @@ func (s *Server) startServer(handler http.Handler, name, addr string, port int, 
 
 func (s *Server) Stop() {
 	s.irmaserv.Stop()
-	s.stop <- struct{}{}
+	s.stopOnce.Do(func() { close(s.stop) })
 	<-s.stopped
 	if s.conf.separateClientServer() {
 		<-s.stopped

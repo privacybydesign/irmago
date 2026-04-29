@@ -102,7 +102,11 @@ func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch
 	}
 
 	var batches []*models.CredentialBatch
-	err := s.db.Where("verifiable_credential_type = ?", vct).Find(&batches).Error
+	err := s.db.
+		Preload("CredentialMetadata").
+		Preload("CredentialMetadata.Display").
+		Where("verifiable_credential_type = ?", vct).
+		Find(&batches).Error
 	if err != nil {
 		return nil, err
 	}

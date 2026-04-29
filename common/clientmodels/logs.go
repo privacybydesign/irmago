@@ -6,7 +6,7 @@ import "time"
 type LogCredential struct {
 	CredentialId        string             `json:"credential_id"`
 	Formats             []CredentialFormat `json:"formats"`
-	ImagePath           string             `json:"image_path"`
+	Image               *Image             `json:"image,omitempty"`
 	Name                TranslatedString   `json:"name"`
 	Issuer              TrustedParty       `json:"issuer"`
 	Attributes          []Attribute        `json:"attributes"`
@@ -45,7 +45,6 @@ type SignedMessageLog struct {
 
 // LogInfo is a credential format & protocol agnostic log entry with full credential metadata.
 type LogInfo struct {
-	ID               uint64            `json:"id"`
 	Type             LogType           `json:"type"`
 	Time             time.Time         `json:"time"`
 	RemovalLog       *RemovalLog       `json:"removal_log,omitempty"`

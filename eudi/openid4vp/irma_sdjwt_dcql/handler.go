@@ -264,11 +264,10 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 	attributes := h.buildMatchedAttributes(credType, candidate.claimMatches, metadata)
 
 	remainingCount := metadata.RemainingInstanceCount
-	logo := credType.Logo(h.config)
 	return &clientmodels.SelectableCredentialInstance{
 		CredentialId:                credTypeId.String(),
 		Hash:                        metadata.Hash,
-		ImagePath:                   &logo,
+		Image:                       clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Name:                        clientmodels.TranslatedString(credType.Name),
 		Issuer:                      buildIssuerTrustedParty(h.config, issuer),
 		Format:                      clientmodels.Format_SdJwtVc,
@@ -414,7 +413,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		Name:         clientmodels.TranslatedString(credType.Name),
 		Issuer:       buildIssuerTrustedParty(h.config, issuer),
 		Category:     convertOptionalTranslatedString(credType.Category),
-		ImagePath:    optionalString(credType.Logo(h.config)),
+		Image:        clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Attributes:   attributes,
 		IssueURL:     convertOptionalTranslatedString(credType.IssueURL),
 	}, nil
@@ -434,7 +433,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 	// Enrich with display metadata if available
 	if credType, ok := h.config.CredentialTypes[credTypeId]; ok {
 		logCred.Name = clientmodels.TranslatedString(credType.Name)
-		logCred.ImagePath = credType.Logo(h.config)
+		logCred.Image = clientmodels.ImageFromFile(credType.Logo(h.config))
 
 		if issuer, ok := h.config.Issuers[credType.IssuerIdentifier()]; ok {
 			logCred.Issuer = buildIssuerTrustedParty(h.config, issuer)
@@ -460,7 +459,9 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 			for _, at := range credType.AttributeTypes {
 				if clientmodels.ClaimPathKey([]any{at.ID}) == pathKey {
 					name := clientmodels.TranslatedString(at.Name)
+					description := clientmodels.TranslatedString(at.Description)
 					attr.DisplayName = &name
+					attr.Description = &description
 					matchedAtType = at
 					break
 				}
@@ -497,11 +498,11 @@ func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer
 		Verified: scheme.Status == irma.SchemeManagerStatusValid,
 	}
 	return clientmodels.TrustedParty{
-		Id:        issuer.Identifier().String(),
-		Name:      clientmodels.TranslatedString(issuer.Name),
-		ImagePath: optionalString(issuer.Logo(irmaConfig)),
-		Verified:  scheme.Status == irma.SchemeManagerStatusValid,
-		Parent:    &parent,
+		Id:       issuer.Identifier().String(),
+		Name:     clientmodels.TranslatedString(issuer.Name),
+		Image:    clientmodels.ImageFromFile(issuer.Logo(irmaConfig)),
+		Verified: scheme.Status == irma.SchemeManagerStatusValid,
+		Parent:   &parent,
 	}
 }
 
@@ -512,14 +513,6 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.Tra
 	}
 	t := clientmodels.TranslatedString(*s)
 	return &t
-}
-
-// optionalString returns nil when s is empty, otherwise a pointer to s.
-func optionalString(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 // displayHintToAttributeType converts an irma display hint to a clientmodels.AttributeType.

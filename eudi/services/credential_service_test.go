@@ -1,174 +1,36 @@
 package services
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/internal/mocks"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 )
 
-// --- mock CredentialStore ---
-
-type mockCredentialStore struct {
-	storedBatches   []*models.CredentialBatch
-	batchListResult []*models.CredentialBatch
-	storeBatchErr   error
-	batchListErr    error
-}
-
-func (m *mockCredentialStore) StoreBatch(batch *models.CredentialBatch) error {
-	if m.storeBatchErr != nil {
-		return m.storeBatchErr
-	}
-	m.storedBatches = append(m.storedBatches, batch)
-	return nil
-}
-
-func (m *mockCredentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
-	return m.batchListResult, m.batchListErr
-}
-
-func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, error) {
-	return nil, db.ErrNotFound
-}
-
-func (m *mockCredentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
-	return nil, nil
-}
-
-func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {
-	return nil, db.ErrNotFound
-}
-
-func (m *mockCredentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
-	return nil
-}
-
-func (m *mockCredentialStore) DeleteBatch(batchID datatypes.UUID) error {
-	return nil
-}
-
-func (m *mockCredentialStore) DeleteBatchByHash(hash string) error {
-	return nil
-}
-
-// --- helpers ---
-
-func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesystem.FileSystemStorage) *credentialService {
-	return &credentialService{
-		credentialStore: storeMock,
-		fileStorage:     fileStorageMock,
-	}
-}
-
-func strPtr(s string) *string { return &s }
-
-func boolPtr(b bool) *bool { return &b }
-
-func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
-	return &sdjwtvc.VerifiedSdJwtVc{
-		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
-			Issuer:                   issuer,
-			VerifiableCredentialType: vct,
-			IssuedAt:                 issuedAt,
-			Expiry:                   expiry,
-			NotBefore:                notBefore,
-		},
-		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
-			"sub": "user123",
-		},
-	}
-}
-
-func newMinimalIssuerMetadata(configID string, format metadata.CredentialFormatIdentifier) metadata.CredentialIssuerMetadata {
-	return metadata.CredentialIssuerMetadata{
-		CredentialIssuer: "https://issuer.example.com",
-		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Test Issuer", Locale: strPtr("en")}},
-		},
-		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
-			configID: {Format: format},
-		},
-	}
-}
-
-func newFullIssuerMetadata(configID string) metadata.CredentialIssuerMetadata {
-	return metadata.CredentialIssuerMetadata{
-		CredentialIssuer: "https://issuer.example.com",
-		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Test Issuer", Locale: strPtr("en")}},
-			{Display: metadata.Display{Name: "Test Issuer NL", Locale: strPtr("nl")}},
-		},
-		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
-			configID: {
-				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
-				CredentialMetadata: &metadata.CredentialMetadata{
-					Display: metadata.CredentialDisplays{
-						{Display: metadata.Display{Name: "My Credential", Locale: strPtr("en")}},
-					},
-					Claims: []metadata.ClaimsDescription{
-						{
-							Path:      metadata.ClaimsPathPointer{"family_name"},
-							Mandatory: boolPtr(true),
-							Display: []metadata.Display{
-								{Name: "Family Name", Locale: strPtr("en")},
-								{Name: "Achternaam", Locale: strPtr("nl")},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
-// newStorageBatch builds a models.CredentialBatch suitable for GetCredentialBatchList results.
-func newStorageBatch() *models.CredentialBatch {
-	now := time.Now().UTC().Truncate(time.Second)
-	exp := now.Add(24 * time.Hour)
-	remaining := uint(1)
-	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "testhash",
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 now,
-		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
-		BatchSize:                1,
-		RemainingCount:           remaining,
-		CredentialIssuer:         "https://issuer.example.com",
-		IssuerDisplay: []models.IssuerMetadataDisplay{
-			{Name: "Test Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
-		},
-		CredentialMetadata: &models.CredentialMetadata{
-			Display: []models.CredentialDisplay{
-				{Name: "My Credential", Locale: datatypes.NullString{V: "en", Valid: true}},
-			},
-			Claims: []models.CredentialClaim{
-				{
-					Path:      datatypes.JSON(`["family_name"]`),
-					Mandatory: true,
-					Display: []models.ClaimDisplay{
-						{Name: "Family Name", Locale: datatypes.NullString{V: "en", Valid: true}},
-					},
-				},
-			},
-		},
-		Instances: []models.IssuedCredentialInstance{
-			{RawCredential: []byte("raw-token")},
-		},
-	}
+func TestMain(m *testing.M) {
+	eudi.Logger = logrus.New()
+	eudi.Logger.SetLevel(logrus.WarnLevel)
+	os.Exit(m.Run())
 }
 
 // ========== GetCredentialMetadataList ==========
@@ -461,7 +323,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_NilHolderBindingKeyID(t *t
 
 	require.NoError(t, err)
 	require.Len(t, mock.storedBatches, 1)
-	assert.Nil(t, mock.storedBatches[0].Instances[0].HolderBindingKeyID)
+	assert.Nil(t, mock.storedBatches[0].Instances[0].HolderBindingKey)
 }
 
 func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
@@ -470,14 +332,13 @@ func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
 	svc := newServiceWithMocks(mock, fileStorageMock)
 	vc1 := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 	vc2 := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
-	keyID1, keyID2 := datatypes.NewUUIDv4(), datatypes.NewUUIDv4()
 
 	err := svc.VerifyAndStoreIssuedCredentials(
 		[]*sdjwtvc.VerifiedSdJwtVc{vc1, vc2},
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
-		true,
-		[]models.PublicHolderBindingKey{{ID: keyID1}, {ID: keyID2}},
+		false,
+		nil,
 	)
 
 	require.NoError(t, err)
@@ -712,24 +573,519 @@ func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 // ========== hashForSdJwtVc ==========
 
 func TestHashForSdJwtVc_NonEmpty(t *testing.T) {
-	h := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user"}`))
+	h, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
 	assert.NotEmpty(t, h)
 }
 
 func TestHashForSdJwtVc_Deterministic(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user"}`))
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
 	assert.Equal(t, h1, h2)
 }
 
 func TestHashForSdJwtVc_DifferentVCT(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/CredA", []byte(`{"sub":"user"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/CredB", []byte(`{"sub":"user"}`))
+	h1, err := hashForSdJwtVc("https://vct.example.com/CredA", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/CredB", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
 	assert.NotEqual(t, h1, h2)
 }
 
 func TestHashForSdJwtVc_DifferentPayload(t *testing.T) {
-	h1 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user1"}`))
-	h2 := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"sub":"user2"}`))
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Alice"}`))
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(`{"given_name":"Bob"}`))
+	require.NoError(t, err)
 	assert.NotEqual(t, h1, h2)
+}
+
+func TestHashForSdJwtVc_IgnoresIssuerMetadata(t *testing.T) {
+	// Two payloads with identical claim values but different issuer metadata (iat, exp, nbf, sub, cnf).
+	// The hash should be the same because only the actual claims matter for deduplication.
+	payload1 := []byte(`{"email":"a@b.com","given_name":"Alice","iat":1000,"exp":2000,"nbf":900,"iss":"https://issuer.example","sub":"user1","vct":"TestCred","cnf":{"jwk":{"kty":"EC"}}}`)
+	payload2 := []byte(`{"email":"a@b.com","given_name":"Alice","iat":9999,"exp":9998,"nbf":9997,"iss":"https://issuer.example","sub":"user2","vct":"TestCred","cnf":{"jwk":{"kty":"OKP"}}}`)
+
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	require.NoError(t, err)
+	assert.Equal(t, h1, h2, "hashes should be equal when only issuer metadata differs")
+}
+
+func TestHashForSdJwtVc_IgnoresAllKnownMetadataKeys(t *testing.T) {
+	// A payload containing every known metadata key alongside actual claims.
+	withMetadata := []byte(`{"given_name":"Alice","iss":"https://issuer","iat":1000,"exp":2000,"nbf":900,"sub":"subj","vct":"type","cnf":{"jwk":{}},"status":"active","_sd":["abc"],"_sd_alg":"sha-256"}`)
+	withoutMetadata := []byte(`{"given_name":"Alice"}`)
+
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", withMetadata)
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", withoutMetadata)
+	require.NoError(t, err)
+	assert.Equal(t, h1, h2, "metadata keys should not affect the hash")
+}
+
+func TestHashForSdJwtVc_ClaimValuesDetermineHash(t *testing.T) {
+	// Same metadata, different actual claim values → different hash.
+	base := `{"iat":1000,"exp":2000,"iss":"https://issuer","given_name":"%s"}`
+	payload1 := []byte(fmt.Sprintf(base, "Alice"))
+	payload2 := []byte(fmt.Sprintf(base, "Bob"))
+
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	require.NoError(t, err)
+	assert.NotEqual(t, h1, h2, "different claim values should produce different hashes")
+}
+
+func TestHashForSdJwtVc_KeyOrderIrrelevant(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload1 string
+		payload2 string
+	}{
+		{
+			name:     "flat claims",
+			payload1: `{"given_name":"Alice","email":"a@b.com"}`,
+			payload2: `{"email":"a@b.com","given_name":"Alice"}`,
+		},
+		{
+			name:     "nested object with swapped keys",
+			payload1: `{"address":{"city":"Amsterdam","street":"Main St"},"name":"Alice"}`,
+			payload2: `{"name":"Alice","address":{"street":"Main St","city":"Amsterdam"}}`,
+		},
+		{
+			name:     "deeply nested with swapped keys at every level",
+			payload1: `{"university":{"name":"TU Delft","faculties":[{"departments":[{"dept_name":"CS","courses":["ML","AI"]}],"faculty_name":"EEMCS"}],"founded":1842}}`,
+			payload2: `{"university":{"founded":1842,"faculties":[{"faculty_name":"EEMCS","departments":[{"courses":["ML","AI"],"dept_name":"CS"}]}],"name":"TU Delft"}}`,
+		},
+		{
+			name:     "nested with issuer metadata mixed in",
+			payload1: `{"iat":1000,"address":{"street":"A","city":"B"},"name":"Alice","exp":2000}`,
+			payload2: `{"exp":9999,"name":"Alice","iat":5555,"address":{"city":"B","street":"A"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h1, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(tt.payload1))
+			require.NoError(t, err)
+			h2, err := hashForSdJwtVc("https://vct.example.com/Cred", []byte(tt.payload2))
+			require.NoError(t, err)
+			assert.Equal(t, h1, h2, "key order should not affect the hash")
+		})
+	}
+}
+
+func TestHashForSdJwtVc_ArrayOrderMatters(t *testing.T) {
+	// Array element order is semantically meaningful in SD-JWT claims,
+	// so different orderings must produce different hashes.
+	payload1 := []byte(`{"courses":["ML","AI"]}`)
+	payload2 := []byte(`{"courses":["AI","ML"]}`)
+
+	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
+	require.NoError(t, err)
+	h2, err := hashForSdJwtVc("https://vct.example.com/Cred", payload2)
+	require.NoError(t, err)
+	assert.NotEqual(t, h1, h2, "different array ordering should produce different hashes")
+}
+
+// ========== matchHolderBindingKey ==========
+
+func generateTestJwk(t *testing.T) (jwk.Key, string) {
+	t.Helper()
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	jwkKey, err := jwk.Import(privKey)
+	require.NoError(t, err)
+	pubKey, err := jwkKey.PublicKey()
+	require.NoError(t, err)
+	thumbprintBytes, err := pubKey.Thumbprint(crypto.SHA256)
+	require.NoError(t, err)
+	return pubKey, hex.EncodeToString(thumbprintBytes)
+}
+
+func TestMatchHolderBindingKey_ByThumbprint(t *testing.T) {
+	pubKey, thumbprint := generateTestJwk(t)
+	expectedID := datatypes.NewUUIDv4()
+
+	keyByThumbprint := map[string]datatypes.UUID{thumbprint: expectedID}
+	keyByDidUrl := map[string]datatypes.UUID{}
+
+	cnf := &sdjwtvc.CnfField{Jwk: &pubKey}
+	keyID, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
+
+	require.NoError(t, err)
+	assert.Equal(t, expectedID, keyID)
+}
+
+func TestMatchHolderBindingKey_ByDidUrl(t *testing.T) {
+	expectedID := datatypes.NewUUIDv4()
+	didUrl := "did:jwk:eyJrdHkiOiJFQyJ9#0"
+
+	keyByThumbprint := map[string]datatypes.UUID{}
+	keyByDidUrl := map[string]datatypes.UUID{didUrl: expectedID}
+
+	cnf := &sdjwtvc.CnfField{Kid: &didUrl}
+	keyID, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
+
+	require.NoError(t, err)
+	assert.Equal(t, expectedID, keyID)
+}
+
+func TestMatchHolderBindingKey_DidUrlTakesPrecedence(t *testing.T) {
+	pubKey, thumbprint := generateTestJwk(t)
+	thumbprintKeyID := datatypes.NewUUIDv4()
+	didKeyID := datatypes.NewUUIDv4()
+	didUrl := "did:jwk:eyJrdHkiOiJFQyJ9#0"
+
+	keyByThumbprint := map[string]datatypes.UUID{thumbprint: thumbprintKeyID}
+	keyByDidUrl := map[string]datatypes.UUID{didUrl: didKeyID}
+
+	cnf := &sdjwtvc.CnfField{Jwk: &pubKey, Kid: &didUrl}
+	keyID, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
+
+	require.NoError(t, err)
+	assert.Equal(t, didKeyID, keyID, "DID URL should take precedence over JWK thumbprint")
+}
+
+func TestMatchHolderBindingKey_UnknownKey_ReturnsError(t *testing.T) {
+	pubKey, _ := generateTestJwk(t)
+
+	keyByThumbprint := map[string]datatypes.UUID{}
+	keyByDidUrl := map[string]datatypes.UUID{}
+
+	cnf := &sdjwtvc.CnfField{Jwk: &pubKey}
+	_, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no matching holder binding key found")
+}
+
+func TestMatchHolderBindingKey_NoCnfFields_ReturnsError(t *testing.T) {
+	cnf := &sdjwtvc.CnfField{}
+	_, err := matchHolderBindingKey(cnf, map[string]datatypes.UUID{}, map[string]datatypes.UUID{})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no matching holder binding key found")
+}
+
+// ========== holder binding key linking integration ==========
+
+func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwtvc.CnfField) *sdjwtvc.VerifiedSdJwtVc {
+	return &sdjwtvc.VerifiedSdJwtVc{
+		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
+			Issuer:                   issuer,
+			VerifiableCredentialType: vct,
+			IssuedAt:                 time.Now().Unix(),
+			Confirm:                  cnf,
+		},
+		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
+			"sub": "user123",
+		},
+	}
+}
+
+func TestVerifyAndStore_LinksHolderBindingKeyByThumbprint(t *testing.T) {
+	credStore := &mockCredentialStore{}
+	keyStore := &mockHolderBindingKeyStore{}
+	fileStorage := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage}
+
+	pubKey, thumbprint := generateTestJwk(t)
+	keyID := datatypes.NewUUIDv4()
+
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Jwk: &pubKey})
+
+	err := svc.VerifyAndStoreIssuedCredentials(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		"config-id",
+		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
+		true,
+		[]models.PublicHolderBindingKey{{ID: keyID, PublicKeyThumbprint: &thumbprint}},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, keyStore.linkedKeys, 1)
+	assert.Equal(t, keyID, keyStore.linkedKeys[0].KeyID)
+}
+
+func TestVerifyAndStore_LinksHolderBindingKeyByDidUrl(t *testing.T) {
+	credStore := &mockCredentialStore{}
+	keyStore := &mockHolderBindingKeyStore{}
+	fileStorage := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage}
+
+	didUrl := "did:jwk:eyJrdHkiOiJFQyJ9#0"
+	keyID := datatypes.NewUUIDv4()
+
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Kid: &didUrl})
+
+	err := svc.VerifyAndStoreIssuedCredentials(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		"config-id",
+		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
+		true,
+		[]models.PublicHolderBindingKey{{ID: keyID, DidUrl: &didUrl}},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, keyStore.linkedKeys, 1)
+	assert.Equal(t, keyID, keyStore.linkedKeys[0].KeyID)
+}
+
+func TestVerifyAndStore_UnknownCnfKey_ReturnsError(t *testing.T) {
+	credStore := &mockCredentialStore{}
+	fileStorage := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(credStore, fileStorage)
+
+	// Generate a key that is NOT in the publicKeyIdentifiers
+	unknownPubKey, _ := generateTestJwk(t)
+	knownKeyID := datatypes.NewUUIDv4()
+	knownThumbprint := "some-other-thumbprint"
+
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Jwk: &unknownPubKey})
+
+	err := svc.VerifyAndStoreIssuedCredentials(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		"config-id",
+		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
+		true,
+		[]models.PublicHolderBindingKey{{ID: knownKeyID, PublicKeyThumbprint: &knownThumbprint}},
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no matching holder binding key found")
+	assert.Empty(t, credStore.storedBatches)
+}
+
+func TestVerifyAndStore_MissingCnfClaim_ReturnsError(t *testing.T) {
+	credStore := &mockCredentialStore{}
+	fileStorage := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := newServiceWithMocks(credStore, fileStorage)
+
+	// Credential has no cnf claim despite requiring key binding.
+	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
+	keyID := datatypes.NewUUIDv4()
+	thumbprint := "some-thumbprint"
+
+	err := svc.VerifyAndStoreIssuedCredentials(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		"config-id",
+		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
+		true,
+		[]models.PublicHolderBindingKey{{ID: keyID, PublicKeyThumbprint: &thumbprint}},
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "has no cnf claim")
+	assert.Empty(t, credStore.storedBatches)
+}
+
+func TestVerifyAndStore_NoKeyBinding_DoesNotLink(t *testing.T) {
+	credStore := &mockCredentialStore{}
+	keyStore := &mockHolderBindingKeyStore{}
+	fileStorage := filesystem.NewFileSystemStorage(&mocks.MockEncryptionMiddleware{}, t.TempDir())
+	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage}
+
+	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
+
+	err := svc.VerifyAndStoreIssuedCredentials(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		"config-id",
+		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
+		false,
+		nil,
+	)
+
+	require.NoError(t, err)
+	assert.Empty(t, keyStore.linkedKeys)
+}
+
+// --- mock CredentialStore ---
+
+type mockCredentialStore struct {
+	storedBatches   []*models.CredentialBatch
+	batchListResult []*models.CredentialBatch
+	storeBatchErr   error
+	batchListErr    error
+}
+
+func (m *mockCredentialStore) StoreBatch(batch *models.CredentialBatch) error {
+	if m.storeBatchErr != nil {
+		return m.storeBatchErr
+	}
+	m.storedBatches = append(m.storedBatches, batch)
+	return nil
+}
+
+func (m *mockCredentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
+	return m.batchListResult, m.batchListErr
+}
+
+func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, error) {
+	return nil, db.ErrNotFound
+}
+
+func (m *mockCredentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
+	return nil, nil
+}
+
+func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {
+	return nil, db.ErrNotFound
+}
+
+func (m *mockCredentialStore) MarkInstanceUsed(instanceID datatypes.UUID) error {
+	return nil
+}
+
+func (m *mockCredentialStore) DeleteBatch(batchID datatypes.UUID) error {
+	return nil
+}
+
+func (m *mockCredentialStore) DeleteBatchByHash(hash string) error {
+	return nil
+}
+
+// --- mock HolderBindingKeyStore ---
+
+type mockHolderBindingKeyStore struct {
+	linkedKeys []linkRecord
+}
+
+type linkRecord struct {
+	KeyID      datatypes.UUID
+	InstanceID datatypes.UUID
+}
+
+func (m *mockHolderBindingKeyStore) LinkToInstance(keyID datatypes.UUID, instanceID datatypes.UUID) error {
+	m.linkedKeys = append(m.linkedKeys, linkRecord{KeyID: keyID, InstanceID: instanceID})
+	return nil
+}
+
+func (m *mockHolderBindingKeyStore) StoreKey(key *models.HolderBindingKey) error    { return nil }
+func (m *mockHolderBindingKeyStore) StoreKeys(keys []models.HolderBindingKey) error { return nil }
+func (m *mockHolderBindingKeyStore) GetByID(id datatypes.UUID) (*models.HolderBindingKey, error) {
+	return nil, db.ErrNotFound
+}
+func (m *mockHolderBindingKeyStore) GetByThumbprint(thumbprint string) (*models.HolderBindingKey, error) {
+	return nil, db.ErrNotFound
+}
+func (m *mockHolderBindingKeyStore) GetByDidUrl(didUrl string) (*models.HolderBindingKey, error) {
+	return nil, db.ErrNotFound
+}
+func (m *mockHolderBindingKeyStore) DeleteKey(id datatypes.UUID) error     { return nil }
+func (m *mockHolderBindingKeyStore) DeleteKeys(ids []datatypes.UUID) error { return nil }
+func (m *mockHolderBindingKeyStore) DeleteAll() error                      { return nil }
+
+// --- helpers ---
+
+func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesystem.FileSystemStorage) *credentialService {
+	return &credentialService{
+		credentialStore:       storeMock,
+		holderBindingKeyStore: &mockHolderBindingKeyStore{},
+		fileStorage:           fileStorageMock,
+	}
+}
+
+func strPtr(s string) *string { return &s }
+
+func boolPtr(b bool) *bool { return &b }
+
+func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
+	return &sdjwtvc.VerifiedSdJwtVc{
+		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
+			Issuer:                   issuer,
+			VerifiableCredentialType: vct,
+			IssuedAt:                 issuedAt,
+			Expiry:                   expiry,
+			NotBefore:                notBefore,
+		},
+		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
+			"sub": "user123",
+		},
+	}
+}
+
+func newMinimalIssuerMetadata(configID string, format metadata.CredentialFormatIdentifier) metadata.CredentialIssuerMetadata {
+	return metadata.CredentialIssuerMetadata{
+		CredentialIssuer: "https://issuer.example.com",
+		Display: metadata.CredentialIssuerDisplays{
+			{Display: metadata.Display{Name: "Test Issuer", Locale: strPtr("en")}},
+		},
+		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+			configID: {Format: format},
+		},
+	}
+}
+
+func newFullIssuerMetadata(configID string) metadata.CredentialIssuerMetadata {
+	return metadata.CredentialIssuerMetadata{
+		CredentialIssuer: "https://issuer.example.com",
+		Display: metadata.CredentialIssuerDisplays{
+			{Display: metadata.Display{Name: "Test Issuer", Locale: strPtr("en")}},
+			{Display: metadata.Display{Name: "Test Issuer NL", Locale: strPtr("nl")}},
+		},
+		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+			configID: {
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
+				CredentialMetadata: &metadata.CredentialMetadata{
+					Display: metadata.CredentialDisplays{
+						{Display: metadata.Display{Name: "My Credential", Locale: strPtr("en")}},
+					},
+					Claims: []metadata.ClaimsDescription{
+						{
+							Path:      metadata.ClaimsPathPointer{"family_name"},
+							Mandatory: boolPtr(true),
+							Display: []metadata.Display{
+								{Name: "Family Name", Locale: strPtr("en")},
+								{Name: "Achternaam", Locale: strPtr("nl")},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// newStorageBatch builds a models.CredentialBatch suitable for GetCredentialBatchList results.
+func newStorageBatch() *models.CredentialBatch {
+	now := time.Now().UTC().Truncate(time.Second)
+	exp := now.Add(24 * time.Hour)
+	remaining := uint(1)
+	return &models.CredentialBatch{
+		IssuerURL:                "https://issuer.example.com",
+		VerifiableCredentialType: "https://vct.example.com/MyCredential",
+		Format:                   models.CredentialFormatSdJwtVc,
+		Hash:                     "testhash",
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                 now,
+		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
+		BatchSize:                1,
+		RemainingCount:           remaining,
+		CredentialIssuer:         "https://issuer.example.com",
+		IssuerDisplay: []models.IssuerMetadataDisplay{
+			{Name: "Test Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
+		},
+		CredentialMetadata: &models.CredentialMetadata{
+			Display: []models.CredentialDisplay{
+				{Name: "My Credential", Locale: datatypes.NullString{V: "en", Valid: true}},
+			},
+			Claims: []models.CredentialClaim{
+				{
+					Path:      datatypes.JSON(`["family_name"]`),
+					Mandatory: true,
+					Display: []models.ClaimDisplay{
+						{Name: "Family Name", Locale: datatypes.NullString{V: "en", Valid: true}},
+					},
+				},
+			},
+		},
+		Instances: []models.IssuedCredentialInstance{
+			{RawCredential: []byte("raw-token")},
+		},
+	}
 }

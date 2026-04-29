@@ -61,6 +61,8 @@ func NewStorage(aesKey [32]byte, filesystemEncryptionMiddleware encryption.Encry
 		&models.ClaimDisplay{},
 		&models.CredentialBatch{},
 		&models.IssuedCredentialInstance{},
+		&models.EudiLogEntry{},
+		&models.EudiLogCredential{},
 	)
 
 	if err != nil {
@@ -93,11 +95,15 @@ func (s *storage) Close() error {
 }
 
 func (s *storage) RemoveAll() error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).
-			Delete(&models.HolderBindingKey{}). // CASCADE should take care of deleting related metadata
-			Delete(&models.CredentialBatch{})   // CASCADE should take care of deleting related instances and metadata
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		session := tx.Session(&gorm.Session{AllowGlobalUpdate: true})
+		if err := session.Delete(&models.CredentialBatch{}).Error; err != nil {
+			return err
+		}
+		return session.Delete(&models.EudiLogEntry{}).Error
+	}); err != nil {
+		return err
+	}
 
-		return result.Error
-	})
+	return s.fs.RemoveAllFiles()
 }

@@ -25,7 +25,7 @@ type SessionDismisser interface {
 
 type Handler interface {
 	// Shared interface functions with irmaclient.Handler
-	Success(result string)
+	Success(result string, issuedCredentials []*clientmodels.Credential)
 	Cancelled()
 	Failure(err *clientmodels.SessionError)
 

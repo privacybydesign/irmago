@@ -5,8 +5,9 @@ import (
 	"net/url"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
-	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/eudi/services"
 )
 
 func parseAuthorizationEndpoint(endpoint string) (*url.URL, error) {
@@ -33,8 +34,25 @@ func (a *openid4vciSessionAdapter) Cancelled() {
 	a.session.dispatchState()
 }
 
-func (a *openid4vciSessionAdapter) Success(result string) {
-	irma.Logger.Infof("openid4vci session success: %s", result)
+func (a *openid4vciSessionAdapter) Success(result string, issuedCredentials []*clientmodels.Credential) {
+	eudi.Logger.Infof("openid4vci session success: %s", result)
+
+	// Store issuance log.
+	if len(issuedCredentials) > 0 {
+		logCreds := make([]clientmodels.LogCredential, len(issuedCredentials))
+		for i, c := range issuedCredentials {
+			logCreds[i] = clientmodels.CredentialToLogCredential(c)
+		}
+		logService := services.NewEudiLogService(a.session.client.eudiStorage)
+		if err := logService.AddIssuanceLog(
+			clientmodels.Protocol_OpenID4VCI,
+			a.session.State.Requestor,
+			logCreds,
+		); err != nil {
+			eudi.Logger.Errorf("failed to store openid4vci issuance log: %v", err)
+		}
+	}
+
 	a.session.State.Status = clientmodels.Status_Success
 	a.session.dispatchState()
 }

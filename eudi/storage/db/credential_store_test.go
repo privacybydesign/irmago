@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -127,6 +128,36 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 				Locale: datatypes.NullString{V: "en", Valid: true},
 				Name:   "Issuer Name",
 			},
+		},
+		Instances: instances,
+	}
+}
+
+func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.CredentialBatch {
+	instances := make([]models.IssuedCredentialInstance, instanceCount)
+	for i := range instances {
+		instances[i] = models.IssuedCredentialInstance{
+			RawCredential: []byte("raw-credential-token"),
+			HolderBindingKey: &models.HolderBindingKey{
+				Algorithm:           models.KeyAlgorithmECDSA,
+				PublicKeyThumbprint: datatypes.NullString{V: fmt.Sprintf("thumbprint-%s-%d", hash, i), Valid: true},
+				PrivateKey:          []byte("fake-pkcs8-private-key"),
+				ECDSA:               &models.ECDSAKeyMetadata{CurveName: "P-256"},
+			},
+		}
+	}
+	return &models.CredentialBatch{
+		IssuerURL:                "https://issuer.example.com",
+		VerifiableCredentialType: "https://vct.example.com/MyCredential",
+		Format:                   models.CredentialFormatSdJwtVc,
+		Hash:                     hash,
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
+		IssuedAt:                 time.Now().UTC().Truncate(time.Second),
+		BatchSize:                uint(instanceCount),
+		RemainingCount:           uint(instanceCount),
+		CredentialIssuer:         "https://issuer.example.com",
+		IssuerDisplay: []models.IssuerMetadataDisplay{
+			{Locale: datatypes.NullString{V: "en", Valid: true}, Name: "Issuer Name"},
 		},
 		Instances: instances,
 	}
@@ -446,6 +477,43 @@ func TestDeleteBatchByHash_CascadeDeletesInstances(t *testing.T) {
 	var countAfter int64
 	db.Model(&models.IssuedCredentialInstance{}).Where("credential_batch_id = ?", batch.ID).Count(&countAfter)
 	assert.Equal(t, int64(0), countAfter)
+}
+
+func TestDeleteBatchByHash_CascadeDeletesHolderBindingKeys(t *testing.T) {
+	store := newTestCredentialStore(t)
+	db := store.(*credentialStore).db
+
+	batch := newBatchWithInstancesAndKeys("hash-cascade-delete-keys", 2)
+	require.NoError(t, store.StoreBatch(batch))
+
+	// Collect holder binding key IDs from the stored instances.
+	var keyIDs []datatypes.UUID
+	for _, inst := range batch.Instances {
+		require.NotNil(t, inst.HolderBindingKey)
+		keyIDs = append(keyIDs, inst.HolderBindingKey.ID)
+	}
+
+	// Verify keys and ECDSA metadata exist before deletion.
+	var keyCountBefore int64
+	db.Model(&models.HolderBindingKey{}).Where("id IN ?", keyIDs).Count(&keyCountBefore)
+	assert.Equal(t, int64(2), keyCountBefore)
+
+	var ecdsaCountBefore int64
+	db.Model(&models.ECDSAKeyMetadata{}).Where("holder_binding_key_id IN ?", keyIDs).Count(&ecdsaCountBefore)
+	assert.Equal(t, int64(2), ecdsaCountBefore)
+
+	// Delete the batch.
+	require.NoError(t, store.DeleteBatchByHash("hash-cascade-delete-keys"))
+
+	// Verify keys are gone.
+	var keyCountAfter int64
+	db.Model(&models.HolderBindingKey{}).Where("id IN ?", keyIDs).Count(&keyCountAfter)
+	assert.Equal(t, int64(0), keyCountAfter)
+
+	// Verify ECDSA metadata is gone.
+	var ecdsaCountAfter int64
+	db.Model(&models.ECDSAKeyMetadata{}).Where("holder_binding_key_id IN ?", keyIDs).Count(&ecdsaCountAfter)
+	assert.Equal(t, int64(0), ecdsaCountAfter)
 }
 
 func TestDeleteBatchByHash_EmptyHash(t *testing.T) {

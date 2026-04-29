@@ -55,7 +55,7 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 				IssueURL:     convertOptionalTranslatedString(cred.IssueURL),
 				Category:     convertOptionalTranslatedString(cred.Category),
-				ImagePath:    optionalString(cred.Logo(irmaConfig)),
+				Image:        clientmodels.ImageFromFile(cred.Logo(irmaConfig)),
 				Attributes:   attributes,
 			},
 			Faq: clientmodels.Faq{
@@ -78,13 +78,6 @@ func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.Tra
 	return &t
 }
 
-func optionalString(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 // buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo
 // and the scheme manager as parent.
 func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer) clientmodels.TrustedParty {
@@ -94,12 +87,13 @@ func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer
 		Name:     clientmodels.TranslatedString(scheme.Name),
 		Verified: scheme.Status == irma.SchemeManagerStatusValid,
 	}
+	logoPath := issuer.Logo(irmaConfig)
 	return clientmodels.TrustedParty{
-		Id:        issuer.Identifier().String(),
-		Name:      clientmodels.TranslatedString(issuer.Name),
-		ImagePath: optionalString(issuer.Logo(irmaConfig)),
-		Verified:  scheme.Status == irma.SchemeManagerStatusValid,
-		Parent:    &parent,
+		Id:       issuer.Identifier().String(),
+		Name:     clientmodels.TranslatedString(issuer.Name),
+		Image:    clientmodels.ImageFromFile(logoPath),
+		Verified: scheme.Status == irma.SchemeManagerStatusValid,
+		Parent:   &parent,
 	}
 }
 
@@ -148,7 +142,7 @@ func createCredentialDescriptor(
 		Name:         clientmodels.TranslatedString(info.Name),
 		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 		Category:     convertOptionalTranslatedString(info.Category),
-		ImagePath:    optionalString(info.Logo(irmaConfig)),
+		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
 		IssueURL:     convertOptionalTranslatedString(info.IssueURL),
 	}, nil
@@ -184,7 +178,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		Name:         clientmodels.TranslatedString(info.Name),
 		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 		Category:     convertOptionalTranslatedString(info.Category),
-		ImagePath:    optionalString(info.Logo(irmaConfig)),
+		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
 		IssueURL:     convertOptionalTranslatedString(info.IssueURL),
 	}, nil
@@ -243,12 +237,10 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				})
 			}
 
-			logo := info.Logo(irmaConfig)
-
 			newCred := clientmodels.Credential{
 				CredentialId: cred.Identifier().String(),
 				Hash:         instanceHash,
-				ImagePath:    &logo,
+				Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 				Name:         clientmodels.TranslatedString(info.Name),
 				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
 				CredentialInstanceIds: map[clientmodels.CredentialFormat]string{

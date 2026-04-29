@@ -22,6 +22,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
@@ -372,8 +373,35 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		}
 	}
 
-	// Delete EUDI credentials.
+	// Delete EUDI credentials (read metadata first for the removal log).
 	if len(eudiHashes) > 0 {
+		credentialService := services.NewCredentialService(client.eudiStorage)
+		allEudiCreds, err := credentialService.GetCredentialMetadataList()
+		if err != nil {
+			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
+		}
+
+		// Find the credentials being deleted.
+		hashSet := map[string]struct{}{}
+		for _, h := range eudiHashes {
+			hashSet[h] = struct{}{}
+		}
+		var removedCreds []clientmodels.LogCredential
+		for _, c := range allEudiCreds {
+			if _, ok := hashSet[c.Hash]; ok {
+				removedCreds = append(removedCreds, clientmodels.CredentialToLogCredential(c))
+			}
+		}
+
+		// Create removal log before deleting, so the log service can still
+		// look up batch metadata to resolve the credential logo filename.
+		if len(removedCreds) > 0 {
+			logService := services.NewEudiLogService(client.eudiStorage)
+			if err := logService.AddRemovalLog(removedCreds); err != nil {
+				return fmt.Errorf("failed to create eudi removal log: %v", err)
+			}
+		}
+
 		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
 		for _, hash := range eudiHashes {
 			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
@@ -383,7 +411,6 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 	}
 
 	// Create removal log for IRMA credentials.
-	// TODO: add removal logging for EUDI credentials.
 	if len(irmaRelevantCreds) > 0 {
 		info := irmaRelevantCreds[0]
 		logEntry, err := createRemovalLog(client.GetIrmaConfiguration(), info.Identifier(), info.Attributes, irmaFormats)
@@ -443,6 +470,9 @@ func (client *Client) RemoveStorage() error {
 	if err := client.keyBinder.RemoveAllPrivateKeys(); err != nil {
 		return fmt.Errorf("failed to remove all holder private keys: %v", err)
 	}
+	if err := client.eudiStorage.RemoveAll(); err != nil {
+		return fmt.Errorf("failed to remove eudi storage: %v", err)
+	}
 
 	client.sessionManager.Clear()
 
@@ -450,349 +480,69 @@ func (client *Client) RemoveStorage() error {
 }
 
 func (client *Client) LoadNewestLogs(max int) ([]clientmodels.LogInfo, error) {
+	// Load IRMA logs from bbolt.
 	rawLogs, err := client.irmaClient.LoadNewestLogs(max)
 	if err != nil {
 		return nil, err
 	}
-	return client.rawLogEntriesToLogInfo(rawLogs)
-}
-
-func (client *Client) LoadLogsBefore(beforeIndex uint64, max int) ([]clientmodels.LogInfo, error) {
-	rawLogs, err := client.irmaClient.LoadLogsBefore(beforeIndex, max)
+	irmaLogs, err := client.rawLogEntriesToLogInfo(rawLogs)
 	if err != nil {
 		return nil, err
 	}
-	return client.rawLogEntriesToLogInfo(rawLogs)
+
+	// Load EUDI logs from SQLCipher.
+	logService := services.NewEudiLogService(client.eudiStorage)
+	eudiLogs, err := logService.GetNewestLogs(max)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeLogsByTime(irmaLogs, eudiLogs, max), nil
 }
 
-func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmodels.LogInfo, error) {
-	// NOTE: iOS builds change the container ID of the app, meaning that after every compilation/app update the location
-	// of all app data changes. Logs store an absolute path to requestor logo's, which becomes invalid when the data is moved,
-	// resulting in the logo's not being found for existing logs when an iOS app is updated.
-	// Solving this issue correctly would require a deep refactor of many components and would likely introduce some very obscure bugs.
-	// This hacky solution works around the issue by assuming the image path to be invalid and resolving it based on other information:
-	//  - For OpenID4VP sessions the logo path is resolved based on the image name
-	//  - For IRMA sessions the logo path is resolved based on the requestor ID and using the requestor schemes
-	requestor := entry.ServerName
-
-	if entry.OpenID4VP != nil {
-		verifier := requestorInfoToTrustedPartyPtr(requestor)
-
-		if requestor != nil && requestor.Logo != nil {
-			data, err := client.openid4vpClient.Configuration.ResolveVerifierLogo(*requestor.Logo)
-			if err == nil {
-				verifier.Image = &clientmodels.Image{
-					Base64: *data,
-				}
-			}
-		}
-
-		return clientmodels.LogInfo{
-			ID:   entry.ID,
-			Type: clientmodels.LogType_Disclosure,
-			Time: time.Time(entry.Time),
-			DisclosureLog: &clientmodels.DisclosureLog{
-				Protocol:    clientmodels.Protocol_OpenID4VP,
-				Credentials: openid4vpCredentialLogsToLogCredentials(client.GetIrmaConfiguration(), entry.OpenID4VP.DisclosedCredentials),
-				Verifier:    verifier,
-			},
-		}, nil
+func (client *Client) LoadLogsBefore(before time.Time, max int) ([]clientmodels.LogInfo, error) {
+	// Load IRMA logs from bbolt.
+	rawLogs, err := client.irmaClient.LoadLogsBeforeTime(before, max)
+	if err != nil {
+		return nil, err
+	}
+	irmaLogs, err := client.rawLogEntriesToLogInfo(rawLogs)
+	if err != nil {
+		return nil, err
 	}
 
-	// resolve the image for an irma session
-	if requestor != nil && requestor.Logo != nil {
-		requestorScheme, ok := client.GetIrmaConfiguration().RequestorSchemes[requestor.ID.RequestorSchemeIdentifier()]
-		if ok && requestorScheme != nil {
-			path := requestor.ResolveLogoPath(requestorScheme)
-			requestor.LogoPath = &path
-		}
+	// Load EUDI logs from SQLCipher.
+	logService := services.NewEudiLogService(client.eudiStorage)
+	eudiLogs, err := logService.GetLogsBefore(before, max)
+	if err != nil {
+		return nil, err
 	}
 
-	irmaConfig := client.GetIrmaConfiguration()
-
-	switch entry.Type {
-	case irma.ActionDisclosing, irma.ActionSigning:
-		attributes, err := entry.GetDisclosedCredentials(irmaConfig)
-		if err != nil {
-			return clientmodels.LogInfo{}, err
-		}
-		credLog, err := disclosedAttributesToLogCredentials(irmaConfig, attributes)
-		if err != nil {
-			return clientmodels.LogInfo{}, err
-		}
-		disclosureLog := &clientmodels.DisclosureLog{
-			Protocol:    clientmodels.Protocol_Irma,
-			Credentials: credLog,
-			Verifier:    requestorInfoToTrustedPartyPtr(requestor),
-		}
-
-		if entry.Type == irma.ActionSigning {
-			return clientmodels.LogInfo{
-				ID:   entry.ID,
-				Type: clientmodels.LogType_Signature,
-				Time: time.Time(entry.Time),
-				SignedMessageLog: &clientmodels.SignedMessageLog{
-					Message:       string(entry.SignedMessage),
-					DisclosureLog: *disclosureLog,
-				},
-			}, nil
-		}
-		return clientmodels.LogInfo{
-			ID:            entry.ID,
-			Type:          clientmodels.LogType_Disclosure,
-			Time:          time.Time(entry.Time),
-			DisclosureLog: disclosureLog,
-		}, nil
-
-	case irma.ActionIssuing:
-		attributes, err := entry.GetDisclosedCredentials(irmaConfig)
-		if err != nil {
-			return clientmodels.LogInfo{}, err
-		}
-		credLog, err := disclosedAttributesToLogCredentials(irmaConfig, attributes)
-		if err != nil {
-			return clientmodels.LogInfo{}, err
-		}
-		issued, err := entry.GetIssuedCredentials(irmaConfig)
-		if err != nil {
-			return clientmodels.LogInfo{}, err
-		}
-		issuedLog, err := issuedCredentialsToLogCredentials(irmaConfig, issued)
-		if err != nil {
-			return clientmodels.LogInfo{}, err
-		}
-		return clientmodels.LogInfo{
-			ID:   entry.ID,
-			Time: time.Time(entry.Time),
-			Type: clientmodels.LogType_Issuance,
-			IssuanceLog: &clientmodels.IssuanceLog{
-				Protocol:             clientmodels.Protocol_Irma,
-				Credentials:          issuedLog,
-				DisclosedCredentials: credLog,
-				Issuer:               requestorInfoToTrustedPartyPtr(requestor),
-			},
-		}, nil
-
-	case irmaclient.ActionRemoval:
-		removedCreds := []clientmodels.LogCredential{}
-
-		for credentialTypeId, attributeValues := range entry.Removed {
-			credTypeInfo := irmaConfig.CredentialTypes[credentialTypeId]
-			issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
-
-			formats := make([]clientmodels.CredentialFormat, len(entry.RemovedFormats))
-			for i, f := range entry.RemovedFormats {
-				formats[i] = clientmodels.CredentialFormat(f)
-			}
-
-			attributes := []clientmodels.Attribute{}
-			for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
-				if atType.RevocationAttribute {
-					continue
-				}
-				rawVal := irma.TranslatedString(attributeValues[atType.Index])
-				description := clientmodels.TranslatedString(atType.Description)
-				name := clientmodels.TranslatedString(atType.Name)
-				attributes = append(attributes, clientmodels.Attribute{
-					ClaimPath:   []any{atType.ID},
-					DisplayName: &name,
-					Description: &description,
-					Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
-				})
-			}
-
-			removedCreds = append(removedCreds, clientmodels.LogCredential{
-				CredentialId: credentialTypeId.String(),
-				Formats:      formats,
-				ImagePath:    credTypeInfo.Logo(irmaConfig),
-				Name:         clientmodels.TranslatedString(credTypeInfo.Name),
-				Issuer: clientmodels.TrustedParty{
-					Id:   issuer.Identifier().String(),
-					Name: clientmodels.TranslatedString(issuer.Name),
-				},
-				Attributes: attributes,
-				IssueURL:   convertOptionalTranslatedString(credTypeInfo.IssueURL),
-			})
-		}
-		return clientmodels.LogInfo{
-			ID:   entry.ID,
-			Time: time.Time(entry.Time),
-			Type: clientmodels.LogType_CredentialRemoval,
-			RemovalLog: &clientmodels.RemovalLog{
-				Credentials: removedCreds,
-			},
-		}, nil
-	}
-
-	return clientmodels.LogInfo{}, nil
+	return mergeLogsByTime(irmaLogs, eudiLogs, max), nil
 }
 
-// disclosedAttributesToLogCredentials converts IRMA disclosed attributes to LogCredential list.
-// Attributes are ordered per the credential type definition.
-func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attributes [][]*irma.DisclosedAttribute) ([]clientmodels.LogCredential, error) {
-	// Group disclosed attributes by credential type, preserving per-attr metadata
-	grouped := map[irma.CredentialTypeIdentifier]map[string]*irma.DisclosedAttribute{}
-	issuanceTimes := map[irma.CredentialTypeIdentifier]int64{}
-
-	for _, con := range attributes {
-		for _, attr := range con {
-			credTypeId := attr.Identifier.CredentialTypeIdentifier()
-			if _, ok := grouped[credTypeId]; !ok {
-				grouped[credTypeId] = map[string]*irma.DisclosedAttribute{}
-				issuanceTimes[credTypeId] = time.Time(attr.IssuanceTime).Unix()
-			}
-			grouped[credTypeId][attr.Identifier.Name()] = attr
+// mergeLogsByTime merges two log slices (each already sorted newest-first) into
+// a single newest-first slice of at most max entries using a two-pointer merge.
+func mergeLogsByTime(a, b []clientmodels.LogInfo, max int) []clientmodels.LogInfo {
+	merged := make([]clientmodels.LogInfo, 0, min(len(a)+len(b), max))
+	i, j := 0, 0
+	for len(merged) < max && (i < len(a) || j < len(b)) {
+		switch {
+		case i >= len(a):
+			merged = append(merged, b[j])
+			j++
+		case j >= len(b):
+			merged = append(merged, a[i])
+			i++
+		case !a[i].Time.Before(b[j].Time): // a[i] >= b[j], take a
+			merged = append(merged, a[i])
+			i++
+		default:
+			merged = append(merged, b[j])
+			j++
 		}
 	}
-
-	result := []clientmodels.LogCredential{}
-	for credTypeId, disclosedByName := range grouped {
-		credTypeInfo := irmaConfig.CredentialTypes[credTypeId]
-		issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
-
-		// Build attributes in display order, only for those that were disclosed
-		attributes := []clientmodels.Attribute{}
-		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
-			if atType.RevocationAttribute {
-				continue
-			}
-			attr, disclosed := disclosedByName[atType.ID]
-			if !disclosed {
-				continue
-			}
-			rawVal := irma.TranslatedString(attr.Value)
-			description := clientmodels.TranslatedString(atType.Description)
-			name := clientmodels.TranslatedString(atType.Name)
-			attributes = append(attributes, clientmodels.Attribute{
-				ClaimPath:   []any{atType.ID},
-				DisplayName: &name,
-				Description: &description,
-				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
-			})
-		}
-
-		result = append(result, clientmodels.LogCredential{
-			CredentialId: credTypeId.String(),
-			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_Idemix},
-			ImagePath:    credTypeInfo.Logo(irmaConfig),
-			Name:         clientmodels.TranslatedString(credTypeInfo.Name),
-			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
-			Attributes:   attributes,
-			IssuanceDate: issuanceTimes[credTypeId],
-			IssueURL:     convertOptionalTranslatedString(credTypeInfo.IssueURL),
-		})
-	}
-	return result, nil
-}
-
-// issuedCredentialsToLogCredentials converts an IRMA credential info list to LogCredential list.
-func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irma.CredentialInfoList) ([]clientmodels.LogCredential, error) {
-	result := []clientmodels.LogCredential{}
-	for _, cred := range creds {
-		if cred == nil {
-			continue
-		}
-
-		credTypeId := cred.Identifier()
-		credTypeInfo := irmaConfig.CredentialTypes[credTypeId]
-		issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
-
-		formats := []clientmodels.CredentialFormat{clientmodels.Format_Idemix}
-		if cred.InstanceCount != nil && *cred.InstanceCount > 0 {
-			formats = append(formats, clientmodels.Format_SdJwtVc)
-		}
-
-		attributes := []clientmodels.Attribute{}
-		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
-			if atType.RevocationAttribute {
-				continue
-			}
-			rawVal := irma.TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
-			description := clientmodels.TranslatedString(atType.Description)
-			name := clientmodels.TranslatedString(atType.Name)
-			attributes = append(attributes, clientmodels.Attribute{
-				ClaimPath:   []any{atType.ID},
-				DisplayName: &name,
-				Description: &description,
-				Value:       buildAttributeValue(atType.DisplayHint, &rawVal),
-			})
-		}
-
-		result = append(result, clientmodels.LogCredential{
-			CredentialId:        credTypeId.String(),
-			Formats:             formats,
-			ImagePath:           credTypeInfo.Logo(irmaConfig),
-			Name:                clientmodels.TranslatedString(credTypeInfo.Name),
-			Issuer:              buildIssuerTrustedParty(irmaConfig, issuer),
-			Attributes:          attributes,
-			IssuanceDate:        time.Time(cred.SignedOn).Unix(),
-			ExpiryDate:          time.Time(cred.Expires).Unix(),
-			Revoked:             cred.Revoked,
-			RevocationSupported: cred.RevocationSupported,
-			IssueURL:            convertOptionalTranslatedString(credTypeInfo.IssueURL),
-		})
-	}
-	return result, nil
-}
-
-// openid4vpCredentialLogsToLogCredentials converts stored SD-JWT credential logs (name→value map)
-// to LogCredential list, enriched with display metadata from irmaConfig.
-func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, logs []irmaclient.CredentialLog) []clientmodels.LogCredential {
-	result := []clientmodels.LogCredential{}
-	for _, log := range logs {
-		credTypeId := irma.NewCredentialTypeIdentifier(log.CredentialType)
-		credTypeInfo := irmaConfig.CredentialTypes[credTypeId]
-		issuer := irmaConfig.Issuers[credTypeInfo.IssuerIdentifier()]
-
-		formats := make([]clientmodels.CredentialFormat, len(log.Formats))
-		for i, f := range log.Formats {
-			formats[i] = clientmodels.CredentialFormat(f)
-		}
-
-		attributes := []clientmodels.Attribute{}
-		for _, atType := range sortedAttributeTypes(credTypeInfo.AttributeTypes) {
-			if atType.RevocationAttribute {
-				continue
-			}
-			rawVal, disclosed := log.Attributes[atType.ID]
-			if !disclosed {
-				continue
-			}
-			v := rawVal
-			irmaVal := irma.NewTranslatedString(&v)
-			description := clientmodels.TranslatedString(atType.Description)
-			name := clientmodels.TranslatedString(atType.Name)
-			attributes = append(attributes, clientmodels.Attribute{
-				ClaimPath:   []any{atType.ID},
-				DisplayName: &name,
-				Description: &description,
-				Value:       buildAttributeValue(atType.DisplayHint, &irmaVal),
-			})
-		}
-
-		result = append(result, clientmodels.LogCredential{
-			CredentialId: log.CredentialType,
-			Formats:      formats,
-			ImagePath:    credTypeInfo.Logo(irmaConfig),
-			Name:         clientmodels.TranslatedString(credTypeInfo.Name),
-			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
-			Attributes:   attributes,
-			IssueURL:     convertOptionalTranslatedString(credTypeInfo.IssueURL),
-		})
-	}
-	return result
-}
-
-func (client *Client) rawLogEntriesToLogInfo(entries []*irmaclient.LogEntry) ([]clientmodels.LogInfo, error) {
-	result := []clientmodels.LogInfo{}
-	for _, e := range entries {
-		info, err := client.rawLogEntryToLogInfo(e)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert log entry to info: %v", err)
-		}
-		result = append(result, info)
-	}
-	return result, nil
+	return merged
 }
 
 func (client *Client) SetPreferences(prefs clientsettings.Preferences) {

@@ -24,7 +24,7 @@ type LogsStorage interface {
 	AddLogEntry(entry *LogEntry) error
 	DeleteLogEntry(entryId uint64) error
 	LoadNewestLogs(max int) ([]*LogEntry, error)
-	LoadLogsBefore(index uint64, max int) ([]*LogEntry, error)
+	LoadLogsBeforeTime(before time.Time, max int) ([]*LogEntry, error)
 	DeleteLogs() error
 }
 
@@ -209,8 +209,17 @@ func (s *InMemoryLogsStorage) LoadNewestLogs(max int) ([]*LogEntry, error) {
 	return s.logs, nil
 }
 
-func (s *InMemoryLogsStorage) LoadLogsBefore(index uint64, max int) ([]*LogEntry, error) {
-	return s.logs, nil
+func (s *InMemoryLogsStorage) LoadLogsBeforeTime(before time.Time, max int) ([]*LogEntry, error) {
+	var result []*LogEntry
+	for _, e := range s.logs {
+		if time.Time(e.Time).Before(before) {
+			result = append(result, e)
+			if len(result) >= max {
+				break
+			}
+		}
+	}
+	return result, nil
 }
 
 func (s *InMemoryLogsStorage) DeleteLogs() error {

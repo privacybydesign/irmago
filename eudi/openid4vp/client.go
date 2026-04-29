@@ -147,6 +147,9 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			Name:     clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
 			Verified: endEntityCert != nil,
 		}
+		if endEntityCert != nil {
+			requestor.Id = endEntityCert.SerialNumber.String()
+		}
 
 		if len(requestorSchemeData.Organization.Logo.Data) > 0 {
 			requestor.Image = &clientmodels.Image{
@@ -278,8 +281,6 @@ func (session *openid4vpSession) perform() error {
 	if err != nil {
 		return err
 	}
-
-	logMarshalled("credentials for choice:", queryResponses)
 
 	httpClient := http.Client{}
 	responseConfig := authorizationResponseConfig{

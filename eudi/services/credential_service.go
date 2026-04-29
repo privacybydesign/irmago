@@ -1,15 +1,17 @@
 package services
 
 import (
+	"crypto"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"slices"
 	"sort"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -33,14 +35,16 @@ type CredentialService interface {
 }
 
 type credentialService struct {
-	credentialStore db.CredentialStore
-	fileStorage     filesystem.FileSystemStorage
+	credentialStore       db.CredentialStore
+	holderBindingKeyStore db.HolderBindingKeyStore
+	fileStorage           filesystem.FileSystemStorage
 }
 
 func NewCredentialService(s storage.Storage) CredentialService {
 	return &credentialService{
-		credentialStore: db.NewCredentialStore(s.Db()),
-		fileStorage:     s.FileSystem(),
+		credentialStore:       db.NewCredentialStore(s.Db()),
+		holderBindingKeyStore: db.NewHolderBindingKeyStore(s.Db()),
+		fileStorage:           s.FileSystem(),
 	}
 }
 
@@ -106,7 +110,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			claimPaths := make([][]any, len(batch.CredentialMetadata.Claims))
 			for i, claim := range batch.CredentialMetadata.Claims {
 				if err := json.Unmarshal(claim.Path, &claimPaths[i]); err != nil {
-					log.Fatalf("Error unmarshalling JSON: %v", err)
+					eudi.Logger.Warnf("failed to unmarshal claim path for credential %s: %v", batch.VerifiableCredentialType, err)
 				}
 			}
 
@@ -146,7 +150,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 				claimValue, err := processedSdJwtPayload.GetClaimValue(claimPath)
 				if err != nil {
-					log.Printf("unrecognized claim at path %v; falling back to empty string for claim with path %v: %v", claim.Path, claimPath, err)
+					eudi.Logger.Debugf("unrecognized claim at path %v; falling back to empty string for claim with path %v: %v", claim.Path, claimPath, err)
 					claimValue = ""
 				}
 
@@ -170,38 +174,39 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI != "" {
 			display := batch.IssuerDisplay[0]
 
-			log.Printf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI)
+			eudi.Logger.Debugf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI)
 			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
 
 			if exists, err := issuerLogoManager.LogoExists(filename); err == nil && exists {
 				logoData, err := issuerLogoManager.GetLogo(filename)
 				if err != nil {
-					log.Printf("Error retrieving logo for issuer %s from filesystem storage: %v", batch.ID, err)
+					eudi.Logger.Debugf("Error retrieving logo for issuer %s from filesystem storage: %v", batch.ID, err)
 				} else {
 					issuerImage = &clientmodels.Image{
 						Base64: *logoData,
 					}
 				}
 			} else {
-				log.Printf("Couldn't find image")
+				eudi.Logger.Debugf("Couldn't find image")
 			}
 		}
 
+		var credentialLogoFilename string
 		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
-			log.Printf("Attempting to retrieve logo for credential %s from filesystem storage by uri %s", batch.ID, batch.CredentialMetadata.Display[0].LogoURI)
-			filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(batch.CredentialMetadata.Display[0].LogoURI)
+			eudi.Logger.Debugf("Attempting to retrieve logo for credential %s from filesystem storage by uri %s", batch.ID, batch.CredentialMetadata.Display[0].LogoURI)
+			credentialLogoFilename = credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(batch.CredentialMetadata.Display[0].LogoURI)
 
-			if exists, err := credentialLogoManager.LogoExists(filename); err == nil && exists {
-				logoData, err := credentialLogoManager.GetLogo(filename)
+			if exists, err := credentialLogoManager.LogoExists(credentialLogoFilename); err == nil && exists {
+				logoData, err := credentialLogoManager.GetLogo(credentialLogoFilename)
 				if err != nil {
-					log.Printf("Error retrieving logo for credential %s from filesystem storage: %v", batch.ID, err)
+					eudi.Logger.Debugf("Error retrieving logo for credential %s from filesystem storage: %v", batch.ID, err)
 				} else {
 					credentialImage = &clientmodels.Image{
 						Base64: *logoData,
 					}
 				}
 			} else {
-				log.Printf("Couldn't find image")
+				eudi.Logger.Debugf("Couldn't find image")
 			}
 		}
 
@@ -253,7 +258,7 @@ func batchInstanceCountsRemaining(batch *models.CredentialBatch) map[clientmodel
 func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	verifiedSdJwtVcs []*sdjwtvc.VerifiedSdJwtVc,
 	credentialConfigurationId string,
-	metadata metadata.CredentialIssuerMetadata,
+	issuerMetadata metadata.CredentialIssuerMetadata,
 	requireCryptographicKeyBinding bool,
 	publicKeyIdentifiers []models.PublicHolderBindingKey,
 ) error {
@@ -268,99 +273,207 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		)
 	}
 
+	// Match all holder binding keys upfront before any side effects, so that a
+	// mismatch aborts the issuance without deleting the user's existing batch.
+	var matchedKeyIDs []datatypes.UUID
+	if requireCryptographicKeyBinding {
+		var err error
+		matchedKeyIDs, err = matchAllHolderBindingKeys(verifiedSdJwtVcs, publicKeyIdentifiers)
+		if err != nil {
+			s.deleteOrphanedKeys(publicKeyIdentifiers)
+			return err
+		}
+	}
+
 	// All instances in a batch share the same vct, issuer, and timing claims.
 	// Use the first credential as the source of truth for batch-level metadata.
 	first := verifiedSdJwtVcs[0]
 
-	// The hash will be a hash over the ProcessedSdJwtPayload, which is the same for all credentials in the batch since they share the same claims.
-	processedSdJwtPayloadBytes, err := json.Marshal(first.ProcessedSdJwtPayload)
+	hash, processedPayload, err := s.computeHashAndDeleteExisting(first)
 	if err != nil {
-		return fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
+		return err
 	}
 
-	hash := hashForSdJwtVc(first.IssuerSignedJwtPayload.VerifiableCredentialType, processedSdJwtPayloadBytes)
-
-	issuedAt := time.Unix(first.IssuerSignedJwtPayload.IssuedAt, 0)
-
-	// Since Expiry and NotBefore are not (yet) optional, we will directly assign them to time.Unix, potentially resulting in a zero time if the claims are missing
-	exp := datatypes.NullTime{
-		V:     time.Unix(first.IssuerSignedJwtPayload.Expiry, 0),
-		Valid: true,
-	}
-	nbf := datatypes.NullTime{
-		V:     time.Unix(first.IssuerSignedJwtPayload.NotBefore, 0),
-		Valid: true,
-	}
-
-	batchSize := uint(len(verifiedSdJwtVcs))
-	instances := make([]models.IssuedCredentialInstance, batchSize)
-	for i, v := range verifiedSdJwtVcs {
-		instances[i] = models.IssuedCredentialInstance{
-			RawCredential: []byte(v.GetRawSdJwtVc()),
-		}
-
-		// TODO: optional check for future development: search the correct key in the key store based on the cnf in the credential and assign its ID here, instead of assuming the order of publicKeyIdentifiers matches the order of verifiedSdJwtVcs
-		//if requireCryptographicKeyBinding {		}
-	}
-
-	// Convert metadata to the format expected by storage
-	credentialConfiguration := metadata.CredentialConfigurationsSupported[credentialConfigurationId]
-	credentialConfigurationModel := models.CredentialMetadata{}
-	if credentialConfiguration.CredentialMetadata != nil {
-		claimModels := make([]models.CredentialClaim, len(credentialConfiguration.CredentialMetadata.Claims))
-		for i, claim := range credentialConfiguration.CredentialMetadata.Claims {
-			claimPath, err := json.Marshal(claim.Path)
-			if err != nil {
-				return fmt.Errorf("failed to marshal claim path: %w", err)
-			}
-
-			displays := make([]models.ClaimDisplay, len(claim.Display))
-			for j, display := range claim.Display {
-				locale := datatypes.NullString{}
-				if display.Locale != nil {
-					locale.V = *display.Locale
-					locale.Valid = true
-				}
-				displays[j] = models.ClaimDisplay{
-					Name:   display.Name,
-					Locale: locale,
-				}
-			}
-
-			mandatory := false
-			if claim.Mandatory != nil {
-				mandatory = *claim.Mandatory
-			}
-
-			claimModels[i] = models.CredentialClaim{
-				Path:      datatypes.JSON(claimPath),
-				Mandatory: mandatory,
-				Display:   displays,
-			}
-		}
-
-		credentialConfigurationModel.Claims = claimModels
-		credentialConfigurationModel.Display = slices.Collect(credentialConfiguration.CredentialMetadata.Display.ToStorageModelIterator())
-	}
+	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
 	batch := &models.CredentialBatch{
 		IssuerURL:                first.IssuerSignedJwtPayload.Issuer,
 		VerifiableCredentialType: first.IssuerSignedJwtPayload.VerifiableCredentialType,
 		Format:                   models.CredentialFormat(credentialConfiguration.Format),
 		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(processedSdJwtPayloadBytes),
+		ProcessedSdJwtPayload:    datatypes.JSON(processedPayload),
 		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
-		IssuerDisplay:            slices.Collect(metadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:       &credentialConfigurationModel,
-		IssuedAt:                 issuedAt,
-		ExpiresAt:                exp,
-		NotBefore:                nbf,
-		BatchSize:                batchSize,
-		RemainingCount:           batchSize,
-		Instances:                instances,
+		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
+		IssuedAt:                 time.Unix(first.IssuerSignedJwtPayload.IssuedAt, 0),
+		ExpiresAt:                datatypes.NullTime{V: time.Unix(first.IssuerSignedJwtPayload.Expiry, 0), Valid: true},
+		NotBefore:                datatypes.NullTime{V: time.Unix(first.IssuerSignedJwtPayload.NotBefore, 0), Valid: true},
+		BatchSize:                uint(len(verifiedSdJwtVcs)),
+		RemainingCount:           uint(len(verifiedSdJwtVcs)),
+		Instances:                buildInstances(verifiedSdJwtVcs),
 	}
 
-	return s.credentialStore.StoreBatch(batch)
+	if err := s.credentialStore.StoreBatch(batch); err != nil {
+		return err
+	}
+
+	if requireCryptographicKeyBinding {
+		s.linkHolderBindingKeys(matchedKeyIDs, batch.Instances)
+	}
+
+	return nil
+}
+
+func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJwtVc) (string, []byte, error) {
+	processedPayload, err := json.Marshal(vc.ProcessedSdJwtPayload)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
+	}
+
+	hash, err := hashForSdJwtVc(vc.IssuerSignedJwtPayload.VerifiableCredentialType, processedPayload)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to compute credential hash: %w", err)
+	}
+
+	// If a batch with this hash already exists, delete it so the new issuance
+	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
+	if existing, err := s.credentialStore.GetBatchByHash(hash); err == nil {
+		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
+			return "", nil, fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
+		}
+	}
+
+	return hash, processedPayload, nil
+}
+
+func buildInstances(vcs []*sdjwtvc.VerifiedSdJwtVc) []models.IssuedCredentialInstance {
+	instances := make([]models.IssuedCredentialInstance, len(vcs))
+	for i, v := range vcs {
+		instances[i] = models.IssuedCredentialInstance{
+			RawCredential: []byte(v.GetRawSdJwtVc()),
+		}
+	}
+	return instances
+}
+
+func convertCredentialMetadata(config metadata.CredentialConfiguration) *models.CredentialMetadata {
+	result := &models.CredentialMetadata{}
+	if config.CredentialMetadata == nil {
+		return result
+	}
+
+	claimModels := make([]models.CredentialClaim, len(config.CredentialMetadata.Claims))
+	for i, claim := range config.CredentialMetadata.Claims {
+		claimPath, err := json.Marshal(claim.Path)
+		if err != nil {
+			eudi.Logger.Warnf("failed to marshal claim path: %v", err)
+			continue
+		}
+
+		displays := make([]models.ClaimDisplay, len(claim.Display))
+		for j, display := range claim.Display {
+			locale := datatypes.NullString{}
+			if display.Locale != nil {
+				locale.V = *display.Locale
+				locale.Valid = true
+			}
+			displays[j] = models.ClaimDisplay{
+				Name:   display.Name,
+				Locale: locale,
+			}
+		}
+
+		mandatory := false
+		if claim.Mandatory != nil {
+			mandatory = *claim.Mandatory
+		}
+
+		claimModels[i] = models.CredentialClaim{
+			Path:      datatypes.JSON(claimPath),
+			Mandatory: mandatory,
+			Display:   displays,
+		}
+	}
+
+	result.Claims = claimModels
+	result.Display = slices.Collect(config.CredentialMetadata.Display.ToStorageModelIterator())
+	return result
+}
+
+// matchAllHolderBindingKeys matches every credential's cnf claim to a stored
+// holder binding key. Returns an error if any credential cannot be matched,
+// ensuring the caller can abort before any side effects.
+func matchAllHolderBindingKeys(
+	vcs []*sdjwtvc.VerifiedSdJwtVc,
+	publicKeyIdentifiers []models.PublicHolderBindingKey,
+) ([]datatypes.UUID, error) {
+	keyByThumbprint := map[string]datatypes.UUID{}
+	keyByDidUrl := map[string]datatypes.UUID{}
+	for _, pk := range publicKeyIdentifiers {
+		if pk.PublicKeyThumbprint != nil {
+			keyByThumbprint[*pk.PublicKeyThumbprint] = pk.ID
+		}
+		if pk.DidUrl != nil {
+			keyByDidUrl[*pk.DidUrl] = pk.ID
+		}
+	}
+
+	result := make([]datatypes.UUID, len(vcs))
+	for i, v := range vcs {
+		cnf := v.IssuerSignedJwtPayload.Confirm
+		if cnf == nil {
+			return nil, fmt.Errorf("credential %d requires holder binding but has no cnf claim", i)
+		}
+		keyID, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
+		if err != nil {
+			return nil, fmt.Errorf("credential %d: %w", i, err)
+		}
+		result[i] = keyID
+	}
+	return result, nil
+}
+
+func (s *credentialService) deleteOrphanedKeys(publicKeyIdentifiers []models.PublicHolderBindingKey) {
+	ids := make([]datatypes.UUID, len(publicKeyIdentifiers))
+	for i, pk := range publicKeyIdentifiers {
+		ids[i] = pk.ID
+	}
+	if err := s.holderBindingKeyStore.DeleteKeys(ids); err != nil {
+		eudi.Logger.Warnf("failed to clean up orphaned holder binding keys: %v", err)
+	}
+}
+
+func (s *credentialService) linkHolderBindingKeys(keyIDs []datatypes.UUID, instances []models.IssuedCredentialInstance) {
+	for i, keyID := range keyIDs {
+		if err := s.holderBindingKeyStore.LinkToInstance(keyID, instances[i].ID); err != nil {
+			eudi.Logger.Warnf("failed to link holder binding key %s to instance %s: %v", keyID, instances[i].ID, err)
+		}
+	}
+}
+
+// matchHolderBindingKey resolves the holder binding key ID from the credential's cnf claim
+// by matching against the known thumbprints and DID URLs.
+func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]datatypes.UUID, keyByDidUrl map[string]datatypes.UUID) (datatypes.UUID, error) {
+	// Try DID URL (kid) first.
+	if cnf.Kid != nil {
+		if keyID, ok := keyByDidUrl[*cnf.Kid]; ok {
+			return keyID, nil
+		}
+	}
+
+	// Try JWK thumbprint.
+	if cnf.Jwk != nil {
+		thumbprintBytes, err := (*cnf.Jwk).Thumbprint(crypto.SHA256)
+		if err != nil {
+			return datatypes.UUID{}, fmt.Errorf("failed to compute thumbprint from cnf.jwk: %w", err)
+		}
+		thumbprint := hex.EncodeToString(thumbprintBytes)
+		if keyID, ok := keyByThumbprint[thumbprint]; ok {
+			return keyID, nil
+		}
+	}
+
+	return datatypes.UUID{}, fmt.Errorf("no matching holder binding key found for cnf claim")
 }
 
 // isParentOfConcreteClaim returns true if path is a strict prefix of any other
@@ -386,7 +499,7 @@ func isParentOfConcreteClaim(path []any, allPaths [][]any) bool {
 	return false
 }
 
-// flattenClaimValue recursively flattens arrays and objects into individual scalar
+// FlattenClaimValue recursively flattens arrays and objects into individual scalar
 // attributes. Each leaf value gets its own Attribute with the full path from root.
 // A section header (Value == nil) is emitted only when the path has an explicit
 // display name in the metadata lookup — inherited display names don't trigger headers.
@@ -560,15 +673,31 @@ func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []a
 }
 
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.
-// The algorithm mirrors irmaclient.CreateHashForSdJwtVc so that hashes are consistent
-// across both the IRMA client and the EUDI storage.
-func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) string {
-	credTypeBytes := []byte(credType)
+// Standard claims (iat, exp, nbf, iss, sub, vct, cnf, status, etc.) are stripped
+// before hashing so that two issuances of the same credential with identical claims
+// produce the same hash. Note: this hash is intentionally different from
+// irmaclient.CreateHashForSdJwtVc, which is used for IRMA-issued SD-JWTs.
+//
+// Stability: json.Marshal sorts map keys at every nesting level, so object key
+// order in the input does not affect the hash. Array element order IS significant
+// — ["A","B"] and ["B","A"] produce different hashes, which is the correct
+// behaviour since array ordering is meaningful in SD-JWT claims.
+func hashForSdJwtVc(credType string, processedSdJwtPayloadBytes []byte) (string, error) {
+	// Unmarshal into a map so we can strip standard claims before hashing.
+	var payload map[string]any
+	if err := json.Unmarshal(processedSdJwtPayloadBytes, &payload); err != nil {
+		return "", fmt.Errorf("hashForSdJwtVc: failed to unmarshal payload: %w", err)
+	}
 
-	// TODO: processedSdJwtPayload should not contain fields like iis, iat, nbf before hashing, so only the actual claim fields are compared
+	for key := range sdjwtvc.StandardClaims {
+		delete(payload, key)
+	}
 
-	combinedBytes := append([]byte(nil), credTypeBytes...)
-	combinedBytes = append(combinedBytes, processedSdJwtPayloadBytes...)
+	cleanedBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("hashForSdJwtVc: failed to marshal cleaned payload: %w", err)
+	}
 
-	return fmt.Sprintf("%x", sha256.Sum256(combinedBytes))
+	combined := append([]byte(credType), cleanedBytes...)
+	return fmt.Sprintf("%x", sha256.Sum256(combined)), nil
 }

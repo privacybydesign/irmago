@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
@@ -142,11 +143,21 @@ func loadClientFromFixture(t *testing.T, db2Path string) (*client.Client, *MockS
 	storagePath := filepath.Join(storageFolder, "client")
 
 	require.NoError(t, common.CopyDirectory(filepath.Join(testdataPath, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.CopyDirectory(filepath.Join(testdataPath, "eudi_configuration"), filepath.Join(storagePath, "eudi")))
+	require.NoError(t, common.EnsureDirectoryExists(filepath.Join(storagePath, "eudi")))
 
-	certsPath := filepath.Join(storagePath, "eudi", "issuers", "certs")
-	require.NoError(t, common.EnsureDirectoryExists(certsPath))
-	require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
+	encMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+
+	issuerCertsPath := filepath.Join(storagePath, "eudi", "issuers", "certificates")
+	require.NoError(t, common.EnsureDirectoryExists(issuerCertsPath))
+	encIssuer, err := encMiddleware.Encrypt(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	require.NoError(t, err)
+	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
+
+	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
+	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
+	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
+	require.NoError(t, err)
+	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
 
 	// Copy the saved db2 into the storage path (always as "db2", which is what the client expects)
 	copyFile(t, db2Path, filepath.Join(storagePath, "db2"))

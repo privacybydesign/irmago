@@ -1452,10 +1452,10 @@ func (client *IrmaClient) LoadNewestLogs(max int) ([]*LogEntry, error) {
 	return client.storage.LoadNewestLogs(max)
 }
 
-// LoadLogsBefore returns the log entries of past events that took place before log entry with ID 'beforeIndex'
+// LoadLogsBeforeTime returns log entries with a timestamp strictly before 'before'
 // (sorted from new to old, the result length is limited to max).
-func (client *IrmaClient) LoadLogsBefore(beforeIndex uint64, max int) ([]*LogEntry, error) {
-	return client.storage.LoadLogsBefore(beforeIndex, max)
+func (client *IrmaClient) LoadLogsBeforeTime(before time.Time, max int) ([]*LogEntry, error) {
+	return client.storage.LoadLogsBeforeTime(before, max)
 }
 
 func (client *IrmaClient) SetPreferences(pref clientsettings.Preferences) {

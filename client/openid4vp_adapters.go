@@ -1,14 +1,11 @@
 package client
 
 import (
-	"path/filepath"
-	"time"
-
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/irma"
-	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/eudi/services"
 )
 
 // openid4vpSessionAdapter adapts the session struct to the openid4vp client's Handler interface.
@@ -28,13 +25,13 @@ func (a *openid4vpSessionAdapter) Cancelled() {
 }
 
 func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []clientmodels.LogCredential) {
-	irma.Logger.Infof("openid4vp session success: %s", result)
+	eudi.Logger.Infof("openid4vp session success: %s", result)
 
-	// Store the disclosure log
-	if a.session.client.logsStorage != nil && len(credentialLogs) > 0 {
-		logEntry := openid4vpCredentialLogsToIrmaclientLogEntry(credentialLogs, a.session.State.Requestor)
-		if err := a.session.client.logsStorage.AddLogEntry(logEntry); err != nil {
-			irma.Logger.Errorf("failed to store openid4vp log: %v", err)
+	// Store the disclosure log in the EUDI SQLCipher database.
+	if len(credentialLogs) > 0 {
+		logService := services.NewEudiLogService(a.session.client.eudiStorage)
+		if err := logService.AddDisclosureLog(a.session.State.Requestor, credentialLogs); err != nil {
+			eudi.Logger.Errorf("failed to store openid4vp disclosure log: %v", err)
 		}
 	}
 
@@ -179,44 +176,5 @@ func checkWrongCredential(cred *clientmodels.Credential, option *clientmodels.Cr
 		CredentialId: cred.CredentialId,
 		Hash:         cred.Hash,
 		Attributes:   mismatched,
-	}
-}
-
-// openid4vpCredentialLogsToIrmaclientLogEntry converts OpenID4VP credential logs
-// into an irmaclient LogEntry for storage.
-func openid4vpCredentialLogsToIrmaclientLogEntry(
-	credentialLogs []clientmodels.LogCredential,
-	requestor clientmodels.TrustedParty,
-) *irmaclient.LogEntry {
-	var disclosed []irmaclient.CredentialLog
-	for _, cl := range credentialLogs {
-		attrs := make(map[string]string)
-		for _, a := range cl.Attributes {
-			if a.Value != nil && a.Value.String != nil {
-				attrs[clientmodels.ClaimPathKey(a.ClaimPath)] = *a.Value.String
-			}
-		}
-		disclosed = append(disclosed, irmaclient.CredentialLog{
-			Formats:        cl.Formats,
-			CredentialType: cl.CredentialId,
-			Attributes:     attrs,
-		})
-	}
-	requestorInfo := &irma.RequestorInfo{
-		ID:       irma.NewRequestorIdentifier(requestor.Id),
-		Name:     irma.TranslatedString(requestor.Name),
-		LogoPath: requestor.ImagePath,
-	}
-	// Store just the filename in Logo for later re-resolution (iOS logo path bug workaround)
-	if requestor.ImagePath != nil {
-		filename := filepath.Base(*requestor.ImagePath)
-		requestorInfo.Logo = &filename
-	}
-	return &irmaclient.LogEntry{
-		Time:       irma.Timestamp(time.Now()),
-		ServerName: requestorInfo,
-		OpenID4VP: &irmaclient.OpenID4VPDisclosureLog{
-			DisclosedCredentials: disclosed,
-		},
 	}
 }

@@ -92,34 +92,13 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
-		// Try to find a reference to an image on disk for this credential
-		// TODO: this logic is more or less duplicated from openid4vci/client.go -> convertToCredentialInfoList(); consider centralizing it
-		var image *clientmodels.Image
-
-		credentialLogoManager := h.storage.FileSystem().Credentials().LogoManager()
-		for _, display := range batch.CredentialMetadata.Display {
-			if display.LogoURI != "" {
-				filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
-				imageData, err := credentialLogoManager.GetLogo(filename)
-				if err != nil {
-					eudi.Logger.Warnf("failed to get credential logo from %q: %v", display.LogoURI, err)
-					continue
-				}
-
-				image = &clientmodels.Image{
-					Base64: *imageData,
-				}
-
-				// TODO: for now, we pick the first logo in a display we can find, but this needs to be based on the locale being used in the app
-				break
-			}
-		}
+		image := h.credentialImage(batch)
 
 		result.OwnedCandidates = append(result.OwnedCandidates, &clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch),
-			Issuer:                      issuerTrustedParty(batch),
+			Issuer:                      h.issuerTrustedParty(batch),
 			Format:                      clientmodels.Format_SdJwtVc,
 			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
@@ -220,7 +199,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			}
 		}
 
-		result.CredentialLogs = append(result.CredentialLogs, buildLogCredential(batch, sel.ClaimPaths))
+		result.CredentialLogs = append(result.CredentialLogs, h.buildLogCredential(batch, sel.ClaimPaths))
 	}
 
 	return result, nil
@@ -478,16 +457,9 @@ func getNonSdClaimNames(batch *models.CredentialBatch, credStore db.CredentialSt
 		return nil
 	}
 
-	// Standard SD-JWT claims that are not user data.
-	standardClaims := map[string]struct{}{
-		"iss": {}, "sub": {}, "iat": {}, "exp": {}, "nbf": {},
-		"vct": {}, "cnf": {}, "_sd": {}, "_sd_alg": {}, "status": {},
-		"fed": {},
-	}
-
 	var names []string
 	for key := range jwtPayload {
-		if _, isStandard := standardClaims[key]; isStandard {
+		if _, isStandard := sdjwtvc.StandardClaims[key]; isStandard {
 			continue
 		}
 		// If the key is directly in the payload (not a nested _sd reference),
@@ -515,10 +487,12 @@ func getNonSdClaimNames(batch *models.CredentialBatch, credStore db.CredentialSt
 	return names
 }
 
-func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
+func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
 	var attrs []clientmodels.Attribute
 	var payload sdjwtvc.ProcessedSdJwtPayload
-	json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload)
+	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload); err != nil {
+		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.VerifiableCredentialType, err)
+	}
 
 	for _, path := range claimPaths {
 		if len(path) == 0 {
@@ -530,12 +504,7 @@ func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clien
 			DisplayName: &dn,
 		}
 		if val, err := payload.GetClaimValue(path); err == nil {
-			if valStr, ok := val.(string); ok {
-				attr.Value = &clientmodels.AttributeValue{
-					Type:   clientmodels.AttributeType_String,
-					String: &valStr,
-				}
-			}
+			attr.Value = clientmodels.NewAttributeValue(val)
 		}
 		attrs = append(attrs, attr)
 	}
@@ -544,6 +513,8 @@ func buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clien
 		CredentialId: batch.VerifiableCredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 		Name:         credentialDisplayName(batch),
+		Image:        h.credentialImage(batch),
+		Issuer:       h.issuerTrustedParty(batch),
 		Attributes:   attrs,
 		IssuanceDate: batch.IssuedAt.Unix(),
 		ExpiryDate:   expiryUnix(batch),
@@ -766,8 +737,31 @@ func batchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
 	return &batch.RemainingCount
 }
 
-// issuerTrustedParty builds a TrustedParty from the stored issuer display metadata.
-func issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty {
+// credentialImage resolves the credential logo from the batch's display metadata.
+// Returns nil if no logo is configured or the logo cannot be loaded.
+func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch) *clientmodels.Image {
+	if batch.CredentialMetadata == nil {
+		return nil
+	}
+	logoManager := h.storage.FileSystem().Credentials().LogoManager()
+	for _, display := range batch.CredentialMetadata.Display {
+		if display.LogoURI == "" {
+			continue
+		}
+		filename := logoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
+		imageData, err := logoManager.GetLogo(filename)
+		if err != nil {
+			eudi.Logger.Warnf("failed to get credential logo from %q: %v", display.LogoURI, err)
+			continue
+		}
+		return &clientmodels.Image{Base64: *imageData}
+	}
+	return nil
+}
+
+// issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
+// including the issuer logo if available on disk.
+func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty {
 	name := clientmodels.TranslatedString{}
 	for _, d := range batch.IssuerDisplay {
 		locale := clientmodels.DefaultFallbackLanguage
@@ -777,9 +771,29 @@ func issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty
 		name[locale] = d.Name
 	}
 	return clientmodels.TrustedParty{
-		Id:   batch.CredentialIssuer,
-		Name: name,
+		Id:    batch.CredentialIssuer,
+		Name:  name,
+		Image: h.issuerImage(batch),
 	}
+}
+
+// issuerImage resolves the issuer logo from the batch's issuer display metadata.
+// Returns nil if no logo is configured or the logo cannot be loaded.
+func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientmodels.Image {
+	logoManager := h.storage.FileSystem().Issuers().LogoManager()
+	for _, d := range batch.IssuerDisplay {
+		if d.LogoURI == "" {
+			continue
+		}
+		filename := logoManager.GetLogoFilenameWithoutExtensionFromUrl(d.LogoURI)
+		imageData, err := logoManager.GetLogo(filename)
+		if err != nil {
+			eudi.Logger.Warnf("failed to get issuer logo from %q: %v", d.LogoURI, err)
+			continue
+		}
+		return &clientmodels.Image{Base64: *imageData}
+	}
+	return nil
 }
 
 // credentialDisplayName returns the display name for a credential from its stored metadata.
