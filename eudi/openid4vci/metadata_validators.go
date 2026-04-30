@@ -93,7 +93,6 @@ func (v *CredentialIssuerMetadataValidator) Verify(m metadata.CredentialIssuerMe
 	// }
 
 	// --- Batch issuance validation ---
-	// TODO: determine if we want to support credentials WITHOUT batch issuance
 	if m.BatchCredentialIssuance != nil && m.BatchCredentialIssuance.BatchSize <= 1 {
 		return fmt.Errorf("'batch_size' in 'batch_credential_issuance' must be > 1")
 	}

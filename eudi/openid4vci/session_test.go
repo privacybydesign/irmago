@@ -5,22 +5,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/stretchr/testify/require"
 )
-
-// mockSdJwtVcStorageClient is a test mock implementing SdJwtVcStorageClient.
-type mockSdJwtVcStorageClient struct {
-	Sdjwts []sdjwtvc.SdJwtVcKb
-}
-
-func (m *mockSdJwtVcStorageClient) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, validateUniqueKeyBindingConfirmations bool) error {
-	m.Sdjwts = sdjwts
-	return nil
-}
 
 func Test_openid4vciSession_requestCredential_checksFail(t *testing.T) {
 	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
@@ -47,10 +36,10 @@ func Test_openid4vciSession_requestCredential_checksFail(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Initialize environment
-			session, _, ts := setupTestEnvironment(t, tt.testOptions, credEndpointHandler)
+			session, ts := setupTestEnvironment(t, tt.testOptions, credEndpointHandler)
 			defer ts.Close()
 
-			_, err := session.fetchCredential("credential-config-1", nil, tt.accessToken)
+			_, err := session.obtainCredential("credential-config-1", nil, tt.accessToken)
 
 			if err == nil {
 				t.Errorf("Expected error, got nil")
@@ -100,7 +89,7 @@ func Test_openid4vciSession_requestCredential_errorResponses(t *testing.T) {
 		}
 	})
 
-	s, _, ts := setupTestEnvironment(t, 0, credEndpointHandler)
+	s, ts := setupTestEnvironment(t, 0, credEndpointHandler)
 	defer ts.Close()
 
 	tests := []struct {
@@ -150,7 +139,7 @@ func Test_openid4vciSession_requestCredential_errorResponses(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.s.fetchCredential("credential-config-1", tt.nonce, tt.accessToken)
+			_, err := tt.s.obtainCredential("credential-config-1", tt.nonce, tt.accessToken)
 
 			if err == nil {
 				t.Errorf("Expected error, got nil")
@@ -226,7 +215,6 @@ const (
 
 func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credEndpointHandler http.Handler) (
 	*session,
-	*mockSdJwtVcStorageClient,
 	*httptest.Server,
 ) {
 	tempDir := t.TempDir()
@@ -251,7 +239,6 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	eudiStorage, err := storage.NewStorage(aesKey, encryptionMiddleware, ":memory:", tempDir)
 	require.NoError(t, err)
 
-	mockStorageClient := &mockSdJwtVcStorageClient{}
 	session := &session{
 		storage: eudiStorage,
 		credentialOffer: &CredentialOffer{
@@ -265,7 +252,6 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 			},
 		},
 		httpClient:     ts.Client(),
-		storageClient:  mockStorageClient,
 		handler:        newMockSessionHandler(t),
 		issuerSettings: openid4vciSessionIssuerSettings{},
 	}
@@ -274,5 +260,5 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 		session.credentialIssuerMetadata.NonceEndpoint = ""
 	}
 
-	return session, mockStorageClient, ts
+	return session, ts
 }

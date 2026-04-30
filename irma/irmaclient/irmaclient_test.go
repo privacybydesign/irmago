@@ -557,7 +557,7 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 	cred := irma.CredentialRequest{}
 
 	// Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
-	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVcKb{sdjwtvc.SdJwtVcKb(sdjwt)}, []*irma.CredentialRequest{&cred})
+	err = client.verifyAndStoreSdJwts([]sdjwtvc.SdJwtVcKb{sdjwtvc.SdJwtVcKb(sdjwt)}, []*irma.CredentialRequest{&cred})
 
 	require.NoError(t, err)
 }
@@ -579,7 +579,7 @@ func TestVerifyAndStoreSdJwtVc_ValidSdJwts_GivenDuplicateHolderKey_Fails(t *test
 		sdjwtKbs[i] = sdjwtvc.SdJwtVcKb(sdjwt)
 	}
 
-	err := client.VerifyAndStoreSdJwts(sdjwtKbs, []*irma.CredentialRequest{&cred})
+	err := client.verifyAndStoreSdJwts(sdjwtKbs, []*irma.CredentialRequest{&cred})
 	require.ErrorContains(t, err, "duplicate cryptographic key binding confirmation found for SD-JWT with vct \"test.test.mobilephone\"")
 }
 
@@ -608,7 +608,7 @@ func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 	cred := irma.CredentialRequest{}
 
 	// Convert to SdJwtVcKb since we need to assume the holder doesn't know if a Key Binding JWT is present
-	err = client.VerifyAndStoreSdJwts([]sdjwtvc.SdJwtVcKb{sdjwtvc.SdJwtVcKb(sdjwt)}, []*irma.CredentialRequest{&cred})
+	err = client.verifyAndStoreSdJwts([]sdjwtvc.SdJwtVcKb{sdjwtvc.SdJwtVcKb(sdjwt)}, []*irma.CredentialRequest{&cred})
 
 	require.Error(t, err)
 }

@@ -171,11 +171,11 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		var credentialImage *clientmodels.Image = nil
 
 		// TODO: since we don't know which display is actually used by the client, we are currently just trying to get the logos for the first display. We should implement a more robust solution for this in the future, potentially by storing a separate logo for each display/language in the filesystem and retrieving the correct one based on the client's language preferences.
-		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI != "" {
+		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI.Valid {
 			display := batch.IssuerDisplay[0]
 
 			eudi.Logger.Debugf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI)
-			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
+			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI.V)
 
 			if exists, err := issuerLogoManager.LogoExists(filename); err == nil && exists {
 				logoData, err := issuerLogoManager.GetLogo(filename)

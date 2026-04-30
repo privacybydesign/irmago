@@ -79,8 +79,6 @@ func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
 	callback TokenPermissionHandler,
 ) {
 	if h.log {
-		//issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
-		//require.NoError(h.t, err)
 		fmt.Printf("OpenId4VciPreAuthorizedCodeTokenRequest")
 	}
 

@@ -77,8 +77,6 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	if challengeProvider != nil {
 		pkce.CodeVerifier = oauth2.GenerateDefaultSizeVerifier()
 		pkce.CodeChallenge = challengeProvider.GenerateCodeChallenge(pkce.CodeVerifier)
-	} else {
-		eudi.Logger.Info("AS does not support PKCE code challenge methods, proceeding without code challenge")
 	}
 
 	// ClientIds for testing:  how do we differentiate between them?
@@ -88,13 +86,13 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	//clientId := "eudiw" // TODO: replace with Client Attestation once we have that, and fetch the client_id from the AS metadata instead of hardcoding it here
 	clientId := YiviClientId
 
-	authRequest := BuildAuthorizationRequestValues(
+	// Build the authorization request parameters
+	// The 'state' parameter will be added by the openid4vciSessionAdapter, so it can correlate the authorization response to the session when receiving the callback
+	authRequest := buildAuthorizationRequestValues(
 		YiviAppRedirectUri,
 		&clientId,
 		&pkce.CodeChallenge,
 		s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
-		// TODO: state -> should we generate a random state here to correlate the authorization response to the session
-		// We will need a func in the client.Client that can correlate the authorization response to the session based on the state, since the authorization response will be received in the app's main activity, which does not have access to the session directly, and then pass the authorization response (or just the code) to the session that initiated the authorization request
 	)
 
 	// Add `authorization_details` if the AS supports the feature and the Credential Issuer offers multiple credentials in the Credential Offer
@@ -166,22 +164,48 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		*userInteraction.code, pkce, scopes, authDetails)
 }
 
+func buildAuthorizationRequestValues(
+	redirectUri string,
+	clientId *string,
+	pkce *oauth2.CodeChallenge,
+	issuerState *string,
+) url.Values {
+	q := url.Values{}
+	q.Add("response_type", "code")
+	q.Add("redirect_uri", redirectUri)
+
+	if clientId != nil {
+		q.Add("client_id", *clientId)
+	}
+
+	if pkce != nil {
+		q.Add("code_challenge", pkce.GetCodeChallenge())
+		q.Add("code_challenge_method", pkce.GetCodeChallengeMethod())
+	}
+	if issuerState != nil {
+		q.Add("issuer_state", *issuerState)
+	}
+
+	// The `state` parameter is added in the adapter, where it is used to correlate the authorization response to the session initiating the request, since we have a browser-based redirect.
+	return q
+}
+
 func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint string, payload url.Values) (*oauth2.PushedAuthorizationResponse, error) {
 	req, err := http.NewRequest(http.MethodPost, parEndpoint, bytes.NewBufferString(payload.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request for pushed authorization request: %v", err)
+		return nil, fmt.Errorf("failed to create Pushed Authorization Request: %v", err)
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := h.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute pushed authorization request: %v", err)
+		return nil, fmt.Errorf("failed to execute Pushed Authorization Request: %v", err)
 	}
 	defer response.Body.Close()
 
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read PAR response body: %v", err)
+		return nil, fmt.Errorf("failed to read Pushed Authorization Request response body: %v", err)
 	}
 
 	// We accept both 201 + 200, where the specs require 201
@@ -190,7 +214,7 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 		var errResponse oauth2.ErrorResponse
 		err := json.NewDecoder(bytes.NewReader(responseBody)).Decode(&errResponse)
 		if err != nil {
-			return nil, fmt.Errorf("pushed authorization request returned status code: %d, %s", response.StatusCode, err)
+			return nil, fmt.Errorf("failed to decode Pushed Authorization Request error response: %v", err)
 		}
 		errDescription := ""
 		if errResponse.ErrorDescription != nil {
@@ -200,13 +224,13 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 		if errResponse.ErrorUri != nil {
 			errUri = " More info: " + *errResponse.ErrorUri
 		}
-		return nil, fmt.Errorf("pushed authorization request returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
+		return nil, fmt.Errorf("Pushed Authorization Request returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
 	}
 
 	var parResponse oauth2.PushedAuthorizationResponse
 	err = json.NewDecoder(bytes.NewReader(responseBody)).Decode(&parResponse)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode pushed authorization response: %v", err)
+		return nil, fmt.Errorf("failed to decode Pushed Authorization Response: %v", err)
 	}
 
 	return &parResponse, nil
@@ -242,13 +266,13 @@ func (h *AuthorizationCodeFlowHandler) doTokenRequest(
 
 	req, err := http.NewRequest(http.MethodPost, tokenEndpoint, bytes.NewBufferString(payload.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request for token request: %v", err)
+		return nil, fmt.Errorf("failed to create request for Token Request: %v", err)
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := h.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute token request: %v", err)
+		return nil, fmt.Errorf("failed to execute Token Request: %v", err)
 	}
 	defer response.Body.Close()
 
@@ -316,7 +340,7 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCod
 	// If a tx_code is required, it should be asked from the user via the TokenPermissionHandler callback
 	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {
 		if transactionCode == nil {
-			return nil, fmt.Errorf("transaction code is required by issuer, but was not provided by user")
+			return nil, fmt.Errorf("transaction code is required by issuer, but was not provided")
 		}
 		values.Add("tx_code", *transactionCode)
 	}
@@ -333,13 +357,13 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCod
 	// Initiate request
 	req, err := http.NewRequest(http.MethodPost, s.issuerSettings.authorizationServerMetadata.TokenEndpoint, bytes.NewBufferString(values.Encode()))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create request for Token Request: %v", err)
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := s.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to execute Token Request: %v", err)
 	}
 	defer response.Body.Close()
 
@@ -349,14 +373,14 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCod
 func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read token response body: %v", err)
+		return nil, fmt.Errorf("failed to read Token Response body: %v", err)
 	}
 
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
 		var errResponse oauth2.ErrorResponse
 		err := json.NewDecoder(bytes.NewReader(responseBody)).Decode(&errResponse)
 		if err != nil {
-			return nil, fmt.Errorf("token endpoint returned status code: %d, %s", response.StatusCode, err)
+			return nil, fmt.Errorf("failed to decode Token Response error: %v", err)
 		}
 		errDescription := ""
 		if errResponse.ErrorDescription != nil {
@@ -366,13 +390,13 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 		if errResponse.ErrorUri != nil {
 			errUri = " More info: " + *errResponse.ErrorUri
 		}
-		return nil, fmt.Errorf("token endpoint returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
+		return nil, fmt.Errorf("Token Response returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
 	}
 
 	var tokenResponse oauth2.TokenResponse
 	err = json.NewDecoder(bytes.NewReader(responseBody)).Decode(&tokenResponse)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode Token Response: %v", err)
 	}
 
 	return &authTokenResponse{

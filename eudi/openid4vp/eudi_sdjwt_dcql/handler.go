@@ -782,13 +782,13 @@ func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) c
 func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
 	for _, d := range batch.IssuerDisplay {
-		if d.LogoURI == "" {
+		if !d.LogoURI.Valid || d.LogoURI.V == "" {
 			continue
 		}
-		filename := logoManager.GetLogoFilenameWithoutExtensionFromUrl(d.LogoURI)
+		filename := logoManager.GetLogoFilenameWithoutExtensionFromUrl(d.LogoURI.V)
 		imageData, err := logoManager.GetLogo(filename)
 		if err != nil {
-			eudi.Logger.Warnf("failed to get issuer logo from %q: %v", d.LogoURI, err)
+			eudi.Logger.Warnf("failed to get issuer logo from %q: %v", d.LogoURI.V, err)
 			continue
 		}
 		return &clientmodels.Image{Base64: *imageData}

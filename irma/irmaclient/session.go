@@ -582,7 +582,7 @@ func (session *session) sendResponse(message any) {
 				return
 			}
 
-			if err = session.client.VerifyAndStoreSdJwts(serverResponse.SdJwts, issuanceRequest.Credentials); err != nil {
+			if err = session.client.verifyAndStoreSdJwts(serverResponse.SdJwts, issuanceRequest.Credentials); err != nil {
 				// TODO: should we revert/remove all SD-JWTs and the stored IRMA credentials if this fails?
 				// TODO: add new error type for this; could be crypto related, but also verification/spec related
 				session.fail(&irma.SessionError{ErrorType: irma.ErrorCrypto, Err: err})
