@@ -238,7 +238,7 @@ func (v *W3CVCFormatVerifier) Verify(credentialConfiguration *metadata.Credentia
 	return nil
 }
 
-// Verify returns nil for now, as we don't support W3C Verifiable Credentials, so just return nil and accept any metadata that we get
+// Verify returns nil for now, as we don't support W3C Verifiable Credentials JSON-LD, so just return nil and accept any metadata that we get
 func (v *W3CVCLDFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
 	return nil
 }

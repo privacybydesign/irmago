@@ -29,7 +29,7 @@ func Test_openid4vciSession_requestCredential_checksFail(t *testing.T) {
 			name:        "credential configuration not supported",
 			accessToken: "not-checked",
 			testOptions: NonceNotRequired | CredentialConfigurationWithUnsupportedFeature,
-			expectedErr: `credential configuration "credential-config-1" is not supported: unsupported credential format "jwt_vc_json"`,
+			expectedErr: `credential configuration "credential-config-1" is not supported: unsupported credential format "jwt_vc_json-ld"`,
 		},
 	}
 
@@ -228,7 +228,7 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 
 	if opts&CredentialConfigurationWithUnsupportedFeature == CredentialConfigurationWithUnsupportedFeature {
 		// Configure unsupported format to force 'unsupported'
-		credentialConfig.Format = metadata.CredentialFormatIdentifier_W3CVC
+		credentialConfig.Format = metadata.CredentialFormatIdentifier_W3CVCLD
 	}
 
 	var aesKey [32]byte

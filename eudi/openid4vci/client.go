@@ -61,7 +61,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, hand
 	go func() {
 		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
 		if err != nil {
-			handleFailure(handler, err.Error())
+			handleFailure(handler, "%s", err.Error())
 			return
 		}
 

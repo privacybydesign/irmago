@@ -174,7 +174,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI.Valid {
 			display := batch.IssuerDisplay[0]
 
-			eudi.Logger.Debugf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI)
+			eudi.Logger.Debugf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI.V)
 			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI.V)
 
 			if exists, err := issuerLogoManager.LogoExists(filename); err == nil && exists {
