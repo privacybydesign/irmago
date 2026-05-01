@@ -141,11 +141,11 @@ func TryFetchAuthorizationServerMetadata(authorizationServerUrl string) (*Author
 		return nil, err
 	}
 	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(url)
-	if err == nil {
-		return asMetadata, nil
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("could not fetch authorization server metadata from authorization server %s", authorizationServerUrl)
+	return asMetadata, nil
 }
 
 func fetchUnsignedAuthorizationServerMetadata(url string) (*AuthorizationServerMetadata, error) {
@@ -156,7 +156,7 @@ func fetchUnsignedAuthorizationServerMetadata(url string) (*AuthorizationServerM
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("could not obtain authorization server metadata from %s (StatusCode: %d)", url, response.StatusCode)
+		return nil, fmt.Errorf("could not fetch authorization server metadata from %s (status: %d)", url, response.StatusCode)
 	}
 
 	var asMetadata AuthorizationServerMetadata

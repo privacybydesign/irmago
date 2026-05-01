@@ -93,7 +93,6 @@ func (v *CredentialIssuerMetadataValidator) Verify(m metadata.CredentialIssuerMe
 	// }
 
 	// --- Batch issuance validation ---
-	// TODO: determine if we want to support credentials WITHOUT batch issuance
 	if m.BatchCredentialIssuance != nil && m.BatchCredentialIssuance.BatchSize <= 1 {
 		return fmt.Errorf("'batch_size' in 'batch_credential_issuance' must be > 1")
 	}
@@ -239,7 +238,7 @@ func (v *W3CVCFormatVerifier) Verify(credentialConfiguration *metadata.Credentia
 	return nil
 }
 
-// Verify returns nil for now, as we don't support W3C Verifiable Credentials, so just return nil and accept any metadata that we get
+// Verify returns nil for now, as we don't support W3C Verifiable Credentials JSON-LD, so just return nil and accept any metadata that we get
 func (v *W3CVCLDFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
 	return nil
 }

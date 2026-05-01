@@ -358,8 +358,8 @@ func (d CredentialIssuerDisplays) ToStorageModelIterator() iter.Seq[models.Issue
 			}
 
 			if item.Logo != nil {
-				m.LogoURI = item.Logo.Uri
-				m.LogoAltText = item.Logo.AltText
+				m.LogoURI = datatypes.NullString{Valid: true, V: item.Logo.Uri}
+				m.LogoAltText = datatypes.NullString{Valid: true, V: item.Logo.AltText}
 			}
 
 			if !yield(m) {

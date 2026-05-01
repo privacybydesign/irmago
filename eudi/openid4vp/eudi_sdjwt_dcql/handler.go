@@ -778,10 +778,10 @@ func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) c
 func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
 	for _, d := range batch.IssuerDisplay {
-		if d.LogoURI == "" {
+		if !d.LogoURI.Valid || d.LogoURI.V == "" {
 			continue
 		}
-		if img := eudi.LoadLogoImage(logoManager, d.LogoURI); img != nil {
+		if img := eudi.LoadLogoImage(logoManager, d.LogoURI.V); img != nil {
 			return img
 		}
 	}

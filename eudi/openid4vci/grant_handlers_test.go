@@ -100,7 +100,7 @@ func TestPushAuthorizationRequest_ErrorStatusWithInvalidJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !contains(err.Error(), "pushed authorization request returned status code") {
+	if !contains(err.Error(), "failed to decode Pushed Authorization Request error response") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -121,7 +121,7 @@ func TestPushAuthorizationRequest_SuccessWithInvalidJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !contains(err.Error(), "failed to decode pushed authorization response") {
+	if !contains(err.Error(), "failed to decode Pushed Authorization Response") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }

@@ -30,7 +30,6 @@ type session struct {
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata
 	requestorInfo            *clientmodels.TrustedParty
 	credentials              []*clientmodels.CredentialDescriptor
-	storageClient            SdJwtVcStorageClient
 	httpClient               *http.Client
 	handler                  Handler
 	storage                  storage.Storage
@@ -56,7 +55,7 @@ type sessionCredentialRequestPreferences struct {
 	cryptographicBindingMethod *proofs.CryptographicBindingMethod
 }
 
-func (s *session) perform() error {
+func (s *session) perform() {
 	// TODO: validate all session properties are correctly set
 
 	// Determine all settings for the session based on the Credential Offer and Credential Issuer metadata
@@ -65,7 +64,7 @@ func (s *session) perform() error {
 		s.handler.Failure(&clientmodels.SessionError{
 			WrappedError: fmt.Sprintf("could not configure the session: %v", err),
 		})
-		return nil
+		return
 	}
 
 	// Based on the grant type, perform the appropriate flow
@@ -80,34 +79,34 @@ func (s *session) perform() error {
 	default:
 		s.handler.Failure(&clientmodels.SessionError{
 			ErrorType:    "invalidRequest",
-			WrappedError: "unsupported grant type",
+			WrappedError: "unsupported grant_type",
 		})
-		return nil
+		return
 	}
 
 	// Await permission and access token
 	permission, err := grantHandler.HandleGrant(s)
 	if err != nil {
 		s.handler.Failure(&clientmodels.SessionError{
-			WrappedError: fmt.Sprintf("could not obtain permission to continue issuance session: %v", err),
+			WrappedError: fmt.Sprintf("could not continue issuance session: %v", err),
 		})
-		return nil
+		return
 	}
 
 	// Check if permission was granted
 	if permission == nil || !permission.PermissionGranted() {
 		s.handler.Cancelled()
-		return nil
+		return
 	}
 
 	// Fetch and verify credentials (but do not store yet).
-	fetched, err := s.fetchCredentials(permission.GetAccessToken())
+	fetched, err := s.obtainCredentials(permission.GetAccessToken())
 	if err != nil {
-		eudi.Logger.Infof("error fetching credentials: %v", err)
+		eudi.Logger.Infof("error obtaining credentials: %v", err)
 		s.handler.Failure(&clientmodels.SessionError{
-			WrappedError: fmt.Sprintf("could not fetch credentials: %v", err),
+			WrappedError: err.Error(),
 		})
-		return nil
+		return
 	}
 
 	// Build offered credentials with actual attribute values from the verified SD-JWTs.
@@ -129,7 +128,7 @@ func (s *session) perform() error {
 			fc.cleanupKeys()
 		}
 		s.handler.Cancelled()
-		return nil
+		return
 	}
 
 	// Permission granted — store the fetched credentials.
@@ -137,11 +136,11 @@ func (s *session) perform() error {
 		s.handler.Failure(&clientmodels.SessionError{
 			WrappedError: fmt.Sprintf("could not store credentials: %v", err),
 		})
-		return nil
+		return
 	}
 
 	s.handler.Success("openid4vci session completed", offeredCredentials)
-	return nil
+	return
 }
 
 // fetchedCredential holds the result of fetching and verifying credentials
@@ -167,24 +166,25 @@ func (fc *fetchedCredential) cleanupKeys() {
 	}
 }
 
-func (s *session) fetchCredentials(accessToken string) ([]*fetchedCredential, error) {
+func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, error) {
 	var cNonce *string
 	if s.credentialIssuerMetadata.NonceEndpoint != "" {
 		cNonceValue, err := s.requestNonce()
 		if err != nil {
-			return nil, fmt.Errorf("could not obtain nonce from issuer: %v", err)
+			return nil, err
 		}
 		cNonce = &cNonceValue
 	}
 
+	// TODO: handle in parallel
 	var result []*fetchedCredential
 	for _, credentialConfigurationId := range s.credentialOffer.CredentialConfigurationIds {
-		fc, err := s.fetchCredential(credentialConfigurationId, cNonce, accessToken)
+		fc, err := s.obtainCredential(credentialConfigurationId, cNonce, accessToken)
 		if err != nil {
 			for _, prev := range result {
 				prev.cleanupKeys()
 			}
-			return nil, fmt.Errorf("could not fetch credential %q: %v", credentialConfigurationId, err)
+			return nil, fmt.Errorf("could not obtain credential %q: %v", credentialConfigurationId, err)
 		}
 		result = append(result, fc)
 	}
@@ -473,7 +473,7 @@ func (s *session) getAuthorizationServer() (string, error) {
 // fetchCredential requests and verifies a credential for a given configuration
 // ID without storing it. The caller stores via storeCredentials or cleans up
 // via cleanupKeys.
-func (s *session) fetchCredential(credentialConfigurationId string, cNonce *string, accessToken string) (*fetchedCredential, error) {
+func (s *session) obtainCredential(credentialConfigurationId string, cNonce *string, accessToken string) (*fetchedCredential, error) {
 	if s.credentialIssuerMetadata.NonceEndpoint != "" && cNonce == nil {
 		return nil, fmt.Errorf("credential request requires nonce but none was provided")
 	}
@@ -685,7 +685,7 @@ func (s *session) requestNonce() (string, error) {
 	defer func() {
 		err = resp.Body.Close()
 		if err != nil {
-			eudi.Logger.Warnf("failed to close credential request response body: %v", err)
+			eudi.Logger.Warnf("failed to close nonce response body: %v", err)
 		}
 	}()
 	if err != nil {

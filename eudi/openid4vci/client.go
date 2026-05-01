@@ -2,6 +2,7 @@ package openid4vci
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,33 +60,30 @@ func (client *Client) NewSession(credentialOfferEndpointUrl string, handler Hand
 func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, handler Handler) {
 	go func() {
 		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
-
 		if err != nil {
-			handleFailure(handler, "openid4vci: failed to validate credential offer endpoint: %v", err)
+			handleFailure(handler, "%s", err.Error())
 			return
 		}
 
 		// Validate the Credential Offer parameters
 		credentialOffer, err := client.ParseAndValidateCredentialOffer(credentialOfferJson)
 		if err != nil {
-			handleFailure(handler, "openid4vci: failed to parse and validate credential offer: %v", err)
+			handleFailure(handler, "failed to parse and validate credential offer: %v", err)
 			return
 		}
 
 		// Obtain Credential Issuer metadata
 		credentialIssuerMetadata, err := client.GetAndVerifyCredentialIssuerMetadata(credentialOffer)
 		if err != nil {
-			handleFailure(handler, "openid4vci: failed to get and verify credential issuer metadata: %v", err)
+			handleFailure(handler, "failed to get and verify credential issuer metadata: %v", err)
 			return
 		}
-
-		// TODO: Validate the Credential Offer against the Yivi scheme ?
 
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
 		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, handler)
 
 		if err != nil {
-			handleFailure(handler, "openid4vci: failed to handle credential offer: %v", err)
+			handleFailure(handler, "failed to handle credential offer: %v", err)
 		}
 	}()
 }
@@ -107,7 +105,6 @@ func (client *Client) handleCredentialOffer(
 		requestorInfo:            requestorInfo,
 		credentials:              creds,
 		handler:                  handler,
-		storageClient:            client,
 		httpClient:               client.httpClient,
 		holderVerifier:           client.holderVerifier,
 		storage:                  client.Configuration.Storage,
@@ -117,14 +114,12 @@ func (client *Client) handleCredentialOffer(
 		client.currentSession = nil
 	}()
 
-	// For now; we only support requesting credentials based on the `scope` parameter
-
-	return client.currentSession.perform()
+	client.currentSession.perform()
+	return nil
 }
 
 func (client *Client) validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialEndpointUrl string) (string, error) {
 	parsedUrl, err := url.Parse(credentialEndpointUrl)
-
 	if err != nil {
 		return "", fmt.Errorf("failed to parse credential endpoint URI: %v", err)
 	}
@@ -134,20 +129,24 @@ func (client *Client) validateCredentialOfferEndpointAndObtainCredentialOfferPar
 	credentialOfferUri := parsedUrl.Query().Get("credential_offer_uri")
 
 	if credentialOffer == "" && credentialOfferUri == "" {
-		return "", fmt.Errorf("no credential_offer or credential_offer_uri found in URI")
+		return "", fmt.Errorf("no credential_offer or credential_offer_uri parameter found in credential offer")
 	} else if credentialOffer != "" && credentialOfferUri != "" {
-		return "", fmt.Errorf("both credential_offer and credential_offer_uri found in URI, only one is allowed")
+		return "", fmt.Errorf("both credential_offer and credential_offer_uri parameters found in credential offer, only one is allowed")
 	} else if credentialOfferUri != "" {
 		// Perform HTTP GET on the URI to obtain the Credential Offer parameters
 		response, err := client.httpClient.Get(credentialOfferUri)
 		if err != nil {
-			return "", fmt.Errorf("failed to get credential offer from Credential Offer URI: %v", err)
+			return "", fmt.Errorf("failed to get credential offer from URI: %v", err)
 		}
 		defer func() {
 			if closeErr := response.Body.Close(); closeErr != nil {
 				eudi.Logger.Warnf("failed to close credential offer response body: %v", closeErr)
 			}
 		}()
+
+		if response.StatusCode != http.StatusOK {
+			return "", errors.New("credential offer not found or expired")
+		}
 
 		credentialOfferBytes, err := io.ReadAll(response.Body)
 		if err != nil {
@@ -348,14 +347,6 @@ func (client *Client) downloadRemoteImage(remoteImage metadata.RemoteImage) ([]b
 	}
 
 	return bytes, response.Header.Get("Content-Type"), nil
-}
-
-func (client *Client) VerifyAndStoreSdJwts(sdjwts []sdjwtvc.SdJwtVcKb, validateUniqueKeyBindingConfirmations bool) error {
-	// The openid4vci client now handles verification and storage internally via session.requestCredential.
-	// This method is kept for backward compatibility with the SdJwtVcStorageClient interface.
-	// The actual verification and storage is done in session.requestCredential using the holderVerifier
-	// and the eudi storage directly.
-	return nil
 }
 
 func (client *Client) Dismiss() {

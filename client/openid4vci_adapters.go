@@ -10,14 +10,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 )
 
-func parseAuthorizationEndpoint(endpoint string) (*url.URL, error) {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse authorization endpoint URL: %v", err)
-	}
-	return u, nil
-}
-
 // openid4vciSessionAdapter adapts the session struct to the openid4vci client's Handler interface.
 type openid4vciSessionAdapter struct {
 	session *session
@@ -69,11 +61,12 @@ func (a *openid4vciSessionAdapter) RequestAuthorizationCodeFlowPermission(
 	authParams.Add("state", a.session.State.Oid4VciState)
 
 	// Construct the URL that the client should open in the browser to start the authorization code flow
-	authRequestUrl, err := parseAuthorizationEndpoint(request.AuthorizationEndpoint)
+	authRequestUrl, err := url.Parse(request.AuthorizationEndpoint)
 	if err != nil {
-		a.session.error(err)
+		a.session.error(fmt.Errorf("failed to parse authorization endpoint URL: %v", err))
 		return
 	}
+
 	authRequestUrl.RawQuery = authParams.Encode()
 
 	a.session.State.Status = clientmodels.Status_RequestAuthorizationCode

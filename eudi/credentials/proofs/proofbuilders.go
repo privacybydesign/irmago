@@ -92,8 +92,6 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 		// For JWK method, include the public key in the JWT header
 		headers.Set(jws.JWKKey, pubJwk)
 	case CryptographicBindingMethod_DID_KEY:
-		// TODO: should we store the DID (or at least the generated b64url value) as the identifier in the key storage, so that we can easily retrieve the correct private key when given the DID in the request?
-
 		// TODO: the issuer should be a `did:web:...` reference. We need to perform some kind of check somewhere to ensure that the issuer DID is actually controlled by the issuer, otherwise an attacker could generate a random DID and include it in the proof JWT to trick the client into using a key that is not actually controlled by the issuer
 		didBuilder := didjwk.DocumentBuilder{}
 		did, err := didBuilder.FromJwk(pubJwk)
