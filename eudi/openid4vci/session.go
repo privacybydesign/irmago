@@ -140,7 +140,6 @@ func (s *session) perform() {
 	}
 
 	s.handler.Success("openid4vci session completed", offeredCredentials)
-	return
 }
 
 // fetchedCredential holds the result of fetching and verifying credentials
