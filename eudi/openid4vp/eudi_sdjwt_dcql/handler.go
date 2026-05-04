@@ -355,14 +355,6 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
-		// Strict authorization: refuse to send a presentation that would
-		// reveal more than the user approved. SD-JWT disclosures are
-		// atomic, so coarse issuer-side bundling can otherwise cause
-		// silent over-sharing.
-		if err := sdjwtvc.ValidateAuthorization(selected, sel.ClaimPaths); err != nil {
-			return nil, fmt.Errorf("disclosure refused for credential %q: %w", batch.VerifiableCredentialType, err)
-		}
-
 		presentation := string(selected)
 		if sel.RequireHolderBinding {
 			kbjwt, err := sdjwtvc.CreateKbJwt(selected, h.keyBinder, nonce, clientId)
