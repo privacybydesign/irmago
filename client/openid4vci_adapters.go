@@ -109,6 +109,7 @@ func (a *openid4vciSessionAdapter) RequestPreAuthorizedCodeFlowPermission(
 	if request.TransactionCodeParameters != nil {
 		a.session.State.TransactionCodeParameters = request.TransactionCodeParameters
 	}
+	a.session.State.RemainingTxCodeAttempts = request.RemainingAttempts
 	a.session.preAuthorizedCodeHandler = callback
 
 	// Quick fix for OID4VCI flow, to open the correct success-screen after issuance
