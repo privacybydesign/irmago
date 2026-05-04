@@ -672,6 +672,24 @@ func testDiscloseNestedClaims(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	expectedAttrs := []expectedAttr{
+		{
+			Path:        []any{"owner_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+			Value:       strVal("Frank"),
+		},
+		header([]any{"address"}, clientmodels.TranslatedString{"en": "Address", "nl": "Adres"}),
+		{
+			Path:        []any{"address", "street"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+			Value:       strVal("10 Downing St"),
+		},
+		{
+			Path:        []any{"address", "city"},
+			DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+			Value:       strVal("London"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -680,24 +698,7 @@ func testDiscloseNestedClaims(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/house",
 						Name:         clientmodels.TranslatedString{"en": "House Possession Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							{
-								Path:        []any{"owner_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
-								Value:       strVal("Frank"),
-							},
-							header([]any{"address"}, clientmodels.TranslatedString{"en": "Address", "nl": "Adres"}),
-							{
-								Path:        []any{"address", "street"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
-								Value:       strVal("10 Downing St"),
-							},
-							{
-								Path:        []any{"address", "city"},
-								DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
-								Value:       strVal("London"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -718,6 +719,7 @@ func testDiscloseNestedClaims(t *testing.T) {
 		claim([]any{"address", "street"}, "10 Downing St"),
 		claim([]any{"address", "city"}, "London"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/house", expectedAttrs)
 }
 
 // testDiscloseCredentialWithArrayValues issues a StudentCardCredential that
@@ -848,6 +850,13 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Path ["courses", 1] resolves to a specific element ("Databases"), not the whole array.
+	expectedAttrs := []expectedAttr{
+		header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
+		{
+			Path:  []any{"courses", 1},
+			Value: strVal("Databases"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -856,13 +865,7 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/studentcard",
 						Name:         clientmodels.TranslatedString{"en": "Student Card Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
-							{
-								Path:  []any{"courses", 1},
-								Value: strVal("Databases"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -883,6 +886,7 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	requireVerifierReceivedClaims(t, result, "student-cred",
 		claim([]any{"courses"}, "[Algorithms Databases Networks]"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/studentcard", expectedAttrs)
 }
 
 // testDiscloseAllArrayElementsWithNullPath issues a StudentCardCredential with
@@ -924,6 +928,21 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
 	// Null path expands into individual elements with indexed paths.
+	expectedAttrs := []expectedAttr{
+		header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
+		{
+			Path:  []any{"courses", 0},
+			Value: strVal("Algorithms"),
+		},
+		{
+			Path:  []any{"courses", 1},
+			Value: strVal("Databases"),
+		},
+		{
+			Path:  []any{"courses", 2},
+			Value: strVal("Networks"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -932,21 +951,7 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/studentcard",
 						Name:         clientmodels.TranslatedString{"en": "Student Card Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
-							{
-								Path:  []any{"courses", 0},
-								Value: strVal("Algorithms"),
-							},
-							{
-								Path:  []any{"courses", 1},
-								Value: strVal("Databases"),
-							},
-							{
-								Path:  []any{"courses", 2},
-								Value: strVal("Networks"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -965,6 +970,7 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	requireVerifierReceivedClaims(t, result, "student-cred",
 		claim([]any{"courses"}, "[Algorithms Databases Networks]"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/studentcard", expectedAttrs)
 }
 
 // testNonSdClaimsShownInDisclosurePlan issues a MembershipCredential where
@@ -1398,6 +1404,36 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	expectedAttrs := []expectedAttr{
+		// Tree-walk order follows metadata declaration:
+		// schac_home_organization, given_name, family_name, email.
+		{
+			Path:        []any{"schac_home_organization"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Organization"},
+			Value:       strVal("university.nl"),
+		},
+		{
+			Path:        []any{"given_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given name"},
+			Value:       strVal("Jan"),
+		},
+		{
+			Path:        []any{"family_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family name"},
+			Value:       strVal("de Vries"),
+		},
+		{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "E-mail"},
+			Value:       strVal("jan.devries@university.nl"),
+		},
+		// eduperson_assurance has sd:"never" in the VCT: always disclosed, never selectively hidden.
+		{
+			Path:        []any{"eduperson_assurance"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Assurance"},
+			Value:       strVal("https://eduid.nl/assurance/low"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -1406,36 +1442,7 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/eduid",
 						Name:         clientmodels.TranslatedString{"en": "eduID"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							// Tree-walk order follows metadata declaration:
-							// schac_home_organization, given_name, family_name, email.
-							{
-								Path:        []any{"schac_home_organization"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Organization"},
-								Value:       strVal("university.nl"),
-							},
-							{
-								Path:        []any{"given_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Given name"},
-								Value:       strVal("Jan"),
-							},
-							{
-								Path:        []any{"family_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Family name"},
-								Value:       strVal("de Vries"),
-							},
-							{
-								Path:        []any{"email"},
-								DisplayName: &clientmodels.TranslatedString{"en": "E-mail"},
-								Value:       strVal("jan.devries@university.nl"),
-							},
-							// eduperson_assurance has sd:"never" in the VCT: always disclosed, never selectively hidden.
-							{
-								Path:        []any{"eduperson_assurance"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Assurance"},
-								Value:       strVal("https://eduid.nl/assurance/low"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -1458,6 +1465,7 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 		claim([]any{"schac_home_organization"}, "university.nl"),
 		claim([]any{"eduperson_assurance"}, "https://eduid.nl/assurance/low"), // non-SD, always shared
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/eduid", expectedAttrs)
 }
 
 // testClaimSetsPicksFirstSatisfiableSet issues an EmailCredential and uses a
@@ -2053,6 +2061,24 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	// The requireDisclosurePlan call below asserts exactly 3 attributes (owner_name,
 	// address/street, address/city), proving that the duplicate address/street was
 	// deduplicated to one.
+	expectedAttrs := []expectedAttr{
+		{
+			Path:        []any{"owner_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+			Value:       strVal("Duplicate Tester"),
+		},
+		header([]any{"address"}, clientmodels.TranslatedString{"en": "Address", "nl": "Adres"}),
+		{
+			Path:        []any{"address", "street"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
+			Value:       strVal("Kalverstraat 1"),
+		},
+		{
+			Path:        []any{"address", "city"},
+			DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+			Value:       strVal("Amsterdam"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -2061,24 +2087,7 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/house",
 						Name:         clientmodels.TranslatedString{"en": "House Possession Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							{
-								Path:        []any{"owner_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
-								Value:       strVal("Duplicate Tester"),
-							},
-							header([]any{"address"}, clientmodels.TranslatedString{"en": "Address", "nl": "Adres"}),
-							{
-								Path:        []any{"address", "street"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Street", "nl": "Straat"},
-								Value:       strVal("Kalverstraat 1"),
-							},
-							{
-								Path:        []any{"address", "city"},
-								DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
-								Value:       strVal("Amsterdam"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -2099,6 +2108,7 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 		claim([]any{"address", "street"}, "Kalverstraat 1"),
 		claim([]any{"address", "city"}, "Amsterdam"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/house", expectedAttrs)
 }
 
 // testDiscloseWithoutHolderBinding issues a credential, then creates a DCQL
@@ -2669,6 +2679,74 @@ func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
 	departments := clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}
 	courses := clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}
 
+	expectedAttrs := []expectedAttr{
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		{
+			Path:        []any{"university", "name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
+			Value:       strVal("TU Delft"),
+		},
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		// Faculty 0 (EEMCS).
+		{
+			Path:        []any{"university", "faculties", 0, "faculty_name"},
+			DisplayName: facName,
+			Value:       strVal("EEMCS"),
+		},
+		header([]any{"university", "faculties", 0, "departments"}, departments),
+		// Department 0 (Software Technology).
+		{
+			Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Software Technology"),
+		},
+		header([]any{"university", "faculties", 0, "departments", 0, "courses"}, courses),
+		{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 0},
+			Value: strVal("Compiler Construction"),
+		},
+		{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 1},
+			Value: strVal("Distributed Systems"),
+		},
+		{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 2},
+			Value: strVal("Intro to CS"),
+		},
+		// Department 1 (Data Science).
+		{
+			Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Data Science"),
+		},
+		header([]any{"university", "faculties", 0, "departments", 1, "courses"}, courses),
+		{
+			Path:  []any{"university", "faculties", 0, "departments", 1, "courses", 0},
+			Value: strVal("Machine Learning"),
+		},
+		// Faculty 1 (Architecture).
+		{
+			Path:        []any{"university", "faculties", 1, "faculty_name"},
+			DisplayName: facName,
+			Value:       strVal("Architecture"),
+		},
+		header([]any{"university", "faculties", 1, "departments"}, departments),
+		{
+			Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Urbanism"),
+		},
+		header([]any{"university", "faculties", 1, "departments", 0, "courses"}, courses),
+		{
+			Path:  []any{"university", "faculties", 1, "departments", 0, "courses", 0},
+			Value: strVal("City Planning"),
+		},
+		{
+			Path:        []any{"university", "founded"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
+			Value:       intVal(1842),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -2677,74 +2755,7 @@ func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
-							{
-								Path:        []any{"university", "name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
-								Value:       strVal("TU Delft"),
-							},
-							header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
-							// Faculty 0 (EEMCS).
-							{
-								Path:        []any{"university", "faculties", 0, "faculty_name"},
-								DisplayName: facName,
-								Value:       strVal("EEMCS"),
-							},
-							header([]any{"university", "faculties", 0, "departments"}, departments),
-							// Department 0 (Software Technology).
-							{
-								Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
-								DisplayName: deptName,
-								Value:       strVal("Software Technology"),
-							},
-							header([]any{"university", "faculties", 0, "departments", 0, "courses"}, courses),
-							{
-								Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 0},
-								Value: strVal("Compiler Construction"),
-							},
-							{
-								Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 1},
-								Value: strVal("Distributed Systems"),
-							},
-							{
-								Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 2},
-								Value: strVal("Intro to CS"),
-							},
-							// Department 1 (Data Science).
-							{
-								Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
-								DisplayName: deptName,
-								Value:       strVal("Data Science"),
-							},
-							header([]any{"university", "faculties", 0, "departments", 1, "courses"}, courses),
-							{
-								Path:  []any{"university", "faculties", 0, "departments", 1, "courses", 0},
-								Value: strVal("Machine Learning"),
-							},
-							// Faculty 1 (Architecture).
-							{
-								Path:        []any{"university", "faculties", 1, "faculty_name"},
-								DisplayName: facName,
-								Value:       strVal("Architecture"),
-							},
-							header([]any{"university", "faculties", 1, "departments"}, departments),
-							{
-								Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
-								DisplayName: deptName,
-								Value:       strVal("Urbanism"),
-							},
-							header([]any{"university", "faculties", 1, "departments", 0, "courses"}, courses),
-							{
-								Path:  []any{"university", "faculties", 1, "departments", 0, "courses", 0},
-								Value: strVal("City Planning"),
-							},
-							{
-								Path:        []any{"university", "founded"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
-								Value:       intVal(1842),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -2773,6 +2784,7 @@ func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
 		claim([]any{"university", "faculties", 1, "departments", 0, "courses", 0}, "City Planning"),
 		claim([]any{"university", "founded"}, "1842"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/organization", expectedAttrs)
 }
 
 // testDiscloseSpecificNestedArrayElement issues an OrganizationCredential and
@@ -2839,6 +2851,21 @@ func testDiscloseSpecificNestedArrayElement(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	expectedAttrs := []expectedAttr{
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		header([]any{"university", "faculties", 0, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
+		{
+			Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+			Value:       strVal("Data Science"),
+		},
+		{
+			Path:        []any{"university", "faculties", 1, "faculty_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
+			Value:       strVal("Architecture"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -2847,21 +2874,7 @@ func testDiscloseSpecificNestedArrayElement(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
-							header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
-							header([]any{"university", "faculties", 0, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
-							{
-								Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
-								Value:       strVal("Data Science"),
-							},
-							{
-								Path:        []any{"university", "faculties", 1, "faculty_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
-								Value:       strVal("Architecture"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -2880,6 +2893,7 @@ func testDiscloseSpecificNestedArrayElement(t *testing.T) {
 		claim([]any{"university", "faculties", 0, "departments", 1, "dept_name"}, "Data Science"),
 		claim([]any{"university", "faculties", 1, "faculty_name"}, "Architecture"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/organization", expectedAttrs)
 }
 
 // testDiscloseNestedArrayWithNullPath issues an OrganizationCredential and
@@ -2945,6 +2959,39 @@ func testDiscloseNestedArrayWithNullPath(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	expectedAttrs := []expectedAttr{
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		// Tree-walk order: faculty 0's full block (faculty_name
+		// + departments) before faculty 1's block.
+		{
+			Path:        []any{"university", "faculties", 0, "faculty_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
+			Value:       strVal("EEMCS"),
+		},
+		header([]any{"university", "faculties", 0, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
+		{
+			Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+			Value:       strVal("Software Technology"),
+		},
+		{
+			Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+			Value:       strVal("Data Science"),
+		},
+		{
+			Path:        []any{"university", "faculties", 1, "faculty_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
+			Value:       strVal("Architecture"),
+		},
+		header([]any{"university", "faculties", 1, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
+		{
+			Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+			Value:       strVal("Urbanism"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -2953,39 +3000,7 @@ func testDiscloseNestedArrayWithNullPath(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
-							header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
-							// Tree-walk order: faculty 0's full block (faculty_name
-							// + departments) before faculty 1's block.
-							{
-								Path:        []any{"university", "faculties", 0, "faculty_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
-								Value:       strVal("EEMCS"),
-							},
-							header([]any{"university", "faculties", 0, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
-							{
-								Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
-								Value:       strVal("Software Technology"),
-							},
-							{
-								Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
-								Value:       strVal("Data Science"),
-							},
-							{
-								Path:        []any{"university", "faculties", 1, "faculty_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
-								Value:       strVal("Architecture"),
-							},
-							header([]any{"university", "faculties", 1, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
-							{
-								Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
-								Value:       strVal("Urbanism"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -3007,6 +3022,7 @@ func testDiscloseNestedArrayWithNullPath(t *testing.T) {
 		claim([]any{"university", "faculties", 0, "departments", 1, "dept_name"}, "Data Science"),
 		claim([]any{"university", "faculties", 1, "departments", 0, "dept_name"}, "Urbanism"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/organization", expectedAttrs)
 }
 
 // testDiscloseSingleDeepLeafShowsAncestry requests one deeply-nested leaf and
@@ -3056,6 +3072,16 @@ func testDiscloseSingleDeepLeafShowsAncestry(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	expectedAttrs := []expectedAttr{
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		header([]any{"university", "faculties", 0, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
+		header([]any{"university", "faculties", 0, "departments", 0, "courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
+		{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 1},
+			Value: strVal("Distributed Systems"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -3064,16 +3090,7 @@ func testDiscloseSingleDeepLeafShowsAncestry(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
-							header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
-							header([]any{"university", "faculties", 0, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
-							header([]any{"university", "faculties", 0, "departments", 0, "courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
-							{
-								Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 1},
-								Value: strVal("Distributed Systems"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -3091,6 +3108,7 @@ func testDiscloseSingleDeepLeafShowsAncestry(t *testing.T) {
 	requireVerifierReceivedClaims(t, result, "org-cred",
 		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 1}, "Distributed Systems"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/organization", expectedAttrs)
 }
 
 // testDiscloseSiblingLeavesShareAncestry requests two leaves under the same
@@ -3141,6 +3159,21 @@ func testDiscloseSiblingLeavesShareAncestry(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	expectedAttrs := []expectedAttr{
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		header([]any{"university", "faculties", 0, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
+		{
+			Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
+			Value:       strVal("Software Technology"),
+		},
+		header([]any{"university", "faculties", 0, "departments", 0, "courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
+		{
+			Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 0},
+			Value: strVal("Compiler Construction"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -3149,21 +3182,7 @@ func testDiscloseSiblingLeavesShareAncestry(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
-							header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
-							header([]any{"university", "faculties", 0, "departments"}, clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}),
-							{
-								Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"},
-								Value:       strVal("Software Technology"),
-							},
-							header([]any{"university", "faculties", 0, "departments", 0, "courses"}, clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}),
-							{
-								Path:  []any{"university", "faculties", 0, "departments", 0, "courses", 0},
-								Value: strVal("Compiler Construction"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -3182,6 +3201,7 @@ func testDiscloseSiblingLeavesShareAncestry(t *testing.T) {
 		claim([]any{"university", "faculties", 0, "departments", 0, "dept_name"}, "Software Technology"),
 		claim([]any{"university", "faculties", 0, "departments", 0, "courses", 0}, "Compiler Construction"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/organization", expectedAttrs)
 }
 
 // testDiscloseLeafWithSingleWildcard requests a leaf via a single null wildcard
@@ -3235,6 +3255,20 @@ func testDiscloseLeafWithSingleWildcard(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	expectedAttrs := []expectedAttr{
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		{
+			Path:        []any{"university", "faculties", 0, "faculty_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
+			Value:       strVal("EEMCS"),
+		},
+		{
+			Path:        []any{"university", "faculties", 1, "faculty_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
+			Value:       strVal("Architecture"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -3243,20 +3277,7 @@ func testDiscloseLeafWithSingleWildcard(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
-							header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
-							{
-								Path:        []any{"university", "faculties", 0, "faculty_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
-								Value:       strVal("EEMCS"),
-							},
-							{
-								Path:        []any{"university", "faculties", 1, "faculty_name"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"},
-								Value:       strVal("Architecture"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -3275,6 +3296,7 @@ func testDiscloseLeafWithSingleWildcard(t *testing.T) {
 		claim([]any{"university", "faculties", 0, "faculty_name"}, "EEMCS"),
 		claim([]any{"university", "faculties", 1, "faculty_name"}, "Architecture"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/organization", expectedAttrs)
 }
 
 // testDiscloseLeafWithDoubleWildcard requests a leaf via a double null wildcard
@@ -3332,6 +3354,30 @@ func testDiscloseLeafWithDoubleWildcard(t *testing.T) {
 	deptName := &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"}
 	departments := clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}
 
+	expectedAttrs := []expectedAttr{
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		// Per-faculty departments arrays each get their own
+		// "Departments" header to give each leaf block its
+		// own concrete-path context.
+		header([]any{"university", "faculties", 0, "departments"}, departments),
+		{
+			Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Software Technology"),
+		},
+		{
+			Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Data Science"),
+		},
+		header([]any{"university", "faculties", 1, "departments"}, departments),
+		{
+			Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
+			DisplayName: deptName,
+			Value:       strVal("Urbanism"),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -3340,30 +3386,7 @@ func testDiscloseLeafWithDoubleWildcard(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
-							header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
-							// Per-faculty departments arrays each get their own
-							// "Departments" header to give each leaf block its
-							// own concrete-path context.
-							header([]any{"university", "faculties", 0, "departments"}, departments),
-							{
-								Path:        []any{"university", "faculties", 0, "departments", 0, "dept_name"},
-								DisplayName: deptName,
-								Value:       strVal("Software Technology"),
-							},
-							{
-								Path:        []any{"university", "faculties", 0, "departments", 1, "dept_name"},
-								DisplayName: deptName,
-								Value:       strVal("Data Science"),
-							},
-							header([]any{"university", "faculties", 1, "departments"}, departments),
-							{
-								Path:        []any{"university", "faculties", 1, "departments", 0, "dept_name"},
-								DisplayName: deptName,
-								Value:       strVal("Urbanism"),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -3383,6 +3406,7 @@ func testDiscloseLeafWithDoubleWildcard(t *testing.T) {
 		claim([]any{"university", "faculties", 0, "departments", 1, "dept_name"}, "Data Science"),
 		claim([]any{"university", "faculties", 1, "departments", 0, "dept_name"}, "Urbanism"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/organization", expectedAttrs)
 }
 
 // testDiscloseShallowLeafShowsSingleHeader requests a leaf with exactly one
@@ -3422,6 +3446,14 @@ func testDiscloseShallowLeafShowsSingleHeader(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
+	expectedAttrs := []expectedAttr{
+		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		{
+			Path:        []any{"university", "founded"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
+			Value:       intVal(1842),
+		},
+	}
 	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
 		Choices: []expectedPickOneChoice{
 			{
@@ -3430,14 +3462,7 @@ func testDiscloseShallowLeafShowsSingleHeader(t *testing.T) {
 						CredentialId: "https://localhost:8443/vct/organization",
 						Name:         clientmodels.TranslatedString{"en": "Organization Credential (SD-JWT)"},
 						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
-						Attributes: []expectedAttr{
-							header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
-							{
-								Path:        []any{"university", "founded"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
-								Value:       intVal(1842),
-							},
-						},
+						Attributes:   expectedAttrs,
 					},
 				},
 			},
@@ -3455,6 +3480,7 @@ func testDiscloseShallowLeafShowsSingleHeader(t *testing.T) {
 	requireVerifierReceivedClaims(t, result, "org-cred",
 		claim([]any{"university", "founded"}, "1842"),
 	)
+	requireNewestDisclosureLogAttrs(t, c, "https://localhost:8443/vct/organization", expectedAttrs)
 }
 
 // ---------------------------------------------------------------------------

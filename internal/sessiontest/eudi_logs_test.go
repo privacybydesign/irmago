@@ -559,8 +559,10 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 		},
 	)
 
-	// Verify the house credential log has exactly owner_name and address.city.
-	// address.street and address.country were NOT requested and must be absent.
+	// Verify the house credential log has exactly owner_name and address.city,
+	// with the [address] section header for the nested compound (matching the
+	// disclosure-plan tree-walk rendering). address.street and address.country
+	// were NOT requested and must be absent.
 	require.NotNil(t, houseCredLog, "should have a log for HouseCredential")
 	requireAttrsInOrder(t, houseCredLog.Attributes,
 		expectedAttr{
@@ -568,6 +570,7 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 			DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
 			Value:       strVal("Selective Owner"),
 		},
+		header([]any{"address"}, clientmodels.TranslatedString{"en": "Address", "nl": "Adres"}),
 		expectedAttr{
 			Path:        []any{"address", "city"},
 			DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
