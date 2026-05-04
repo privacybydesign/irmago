@@ -12,6 +12,6 @@
       { "path": ["email"], "sd": "allowed" },
       { "path": ["domain"], "sd": "allowed" }
     ],
-    "issuer": "{{ here }}"
+    "issuer": "https://localhost:8443/test-issuer"
   }
 }
