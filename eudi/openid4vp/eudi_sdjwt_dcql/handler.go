@@ -235,34 +235,67 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	attributes := make([]clientmodels.Attribute, 0)
 	seenPaths := make(map[string]struct{})
 	requestedKeys := make(map[string]struct{})
+
+	// Gather all (claim, concrete path) pairs across all claims, then sort
+	// in tree-walk order so the disclosure plan renders the requested leaves
+	// as a depth-first traversal of the credential's value tree (matching
+	// FlattenClaimValue / GetCredentials). Without this, leaves from
+	// different DCQL claims interleave by claim order rather than by tree
+	// position, which loses contextual grouping.
+	type claimPathPair struct {
+		claim dcql.Claim
+		path  []any
+	}
+	var pairs []claimPathPair
 	for _, claim := range claims {
 		pathKey := clientmodels.ClaimPathKey(claim.Path)
 		if _, duplicate := seenPaths[pathKey]; duplicate {
 			continue
 		}
 		seenPaths[pathKey] = struct{}{}
-
-		// Expand null wildcards in the path into concrete indexed paths.
-		concretePaths := expandNullPaths(claim.Path, &payload)
-
-		// Mark the top-level key as requested so the non-SD claims loop
-		// does not re-add parent claims that were already expanded.
-		if len(claim.Path) > 0 {
-			if topKey, ok := claim.Path[0].(string); ok {
-				requestedKeys[clientmodels.ClaimPathKey([]any{topKey})] = struct{}{}
-			}
+		for _, cp := range expandNullPaths(claim.Path, &payload) {
+			pairs = append(pairs, claimPathPair{claim: claim, path: cp})
 		}
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		return pathLess(pairs[i].path, pairs[j].path, metadataOrder)
+	})
 
+	for _, p := range pairs {
 		prevLen := len(attributes)
-		for _, claimPath := range concretePaths {
-			val, _ := payload.GetClaimValue(claimPath)
-			displayName := claimDisplayName(batch, claimPath)
-			attributes = flattenForDisclosure(attributes, requestedKeys, batch, claimPath, val, displayName, metadataOrder)
+
+		// Emit headers for compound-named ancestors so the user sees the
+		// hierarchical context for nested leaf disclosures. Dedup keys are
+		// concrete so each array-element subtree carries its own block.
+		for i := 1; i < len(p.path); i++ {
+			ancestor := p.path[:i]
+			if isArrayIndex(ancestor[len(ancestor)-1]) {
+				continue
+			}
+			key := clientmodels.ClaimPathKey(ancestor)
+			if _, seen := requestedKeys[key]; seen {
+				continue
+			}
+			requestedKeys[key] = struct{}{}
+			d := claimDisplayName(batch, ancestor)
+			if len(d) == 0 {
+				continue
+			}
+			dn := d
+			attributes = append(attributes, clientmodels.Attribute{
+				ClaimPath:   append([]any{}, ancestor...),
+				DisplayName: &dn,
+			})
 		}
 
-		// When the DCQL claim specifies a value constraint, set RequestedValue on the
-		// newly added leaf attributes so the UI can show what the verifier asked for.
-		if len(claim.Values) > 0 {
+		val, _ := payload.GetClaimValue(p.path)
+		displayName := claimDisplayName(batch, p.path)
+		attributes = flattenForDisclosure(attributes, requestedKeys, batch, p.path, val, displayName, metadataOrder)
+
+		// When the DCQL claim specifies a value constraint, set RequestedValue
+		// on the newly added leaf attributes so the UI can show what the
+		// verifier asked for.
+		if len(p.claim.Values) > 0 {
 			for i := prevLen; i < len(attributes); i++ {
 				if attributes[i].Value != nil {
 					attributes[i].RequestedValue = attributes[i].Value
@@ -561,13 +594,15 @@ func flattenForDisclosure(
 	switch v := value.(type) {
 	case []any:
 		pk := clientmodels.ClaimPathKey(path)
-		requestedKeys[pk] = struct{}{}
-		if d := claimDisplayName(batch, path); len(d) > 0 {
-			dn := d
-			attrs = append(attrs, clientmodels.Attribute{
-				ClaimPath:   path,
-				DisplayName: &dn,
-			})
+		if _, seen := requestedKeys[pk]; !seen {
+			requestedKeys[pk] = struct{}{}
+			if d := claimDisplayName(batch, path); len(d) > 0 {
+				dn := d
+				attrs = append(attrs, clientmodels.Attribute{
+					ClaimPath:   path,
+					DisplayName: &dn,
+				})
+			}
 		}
 		for i, elem := range v {
 			elemPath := append(append([]any{}, path...), i)
@@ -579,13 +614,15 @@ func flattenForDisclosure(
 		}
 	case map[string]any:
 		pk := clientmodels.ClaimPathKey(path)
-		requestedKeys[pk] = struct{}{}
-		if d := claimDisplayName(batch, path); len(d) > 0 {
-			dn := d
-			attrs = append(attrs, clientmodels.Attribute{
-				ClaimPath:   path,
-				DisplayName: &dn,
-			})
+		if _, seen := requestedKeys[pk]; !seen {
+			requestedKeys[pk] = struct{}{}
+			if d := claimDisplayName(batch, path); len(d) > 0 {
+				dn := d
+				attrs = append(attrs, clientmodels.Attribute{
+					ClaimPath:   path,
+					DisplayName: &dn,
+				})
+			}
 		}
 		keys := sortObjectKeysByMetadata(v, path, metadataOrder)
 		for _, key := range keys {
@@ -726,6 +763,61 @@ func isArrayIndex(component any) bool {
 		return true
 	}
 	return false
+}
+
+// arrayIndexValue returns the integer value of an array-index path component.
+func arrayIndexValue(component any) int {
+	switch v := component.(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	}
+	return 0
+}
+
+// pathLess compares two concrete claim paths in tree-walk order: at each level
+// array indices are compared numerically; string keys are compared by their
+// metadata declaration index (with alphabetical fallback). A shorter path
+// orders before a longer one when they share the full common prefix. This
+// makes parseBatchAttributes emit attributes in the same order as a
+// depth-first walk of the credential value tree, matching FlattenClaimValue.
+func pathLess(a, b []any, metadataOrder map[string]int) bool {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for k := 0; k < n; k++ {
+		aIsIdx := isArrayIndex(a[k])
+		bIsIdx := isArrayIndex(b[k])
+		switch {
+		case aIsIdx && bIsIdx:
+			ai := arrayIndexValue(a[k])
+			bi := arrayIndexValue(b[k])
+			if ai != bi {
+				return ai < bi
+			}
+		case !aIsIdx && !bIsIdx:
+			ak, _ := a[k].(string)
+			bk, _ := b[k].(string)
+			if ak == bk {
+				continue
+			}
+			parent := a[:k]
+			ai := metadataOrderForKey(parent, ak, metadataOrder)
+			bi := metadataOrderForKey(parent, bk, metadataOrder)
+			if ai != bi {
+				return ai < bi
+			}
+			return ak < bk
+		default:
+			// Mixed types at the same level shouldn't occur for valid paths
+			// against a single credential. Order strings before indices for
+			// determinism.
+			return !aIsIdx
+		}
+	}
+	return len(a) < len(b)
 }
 
 // batchInstanceCountRemaining returns nil for batch-of-1 credentials (infinitely
