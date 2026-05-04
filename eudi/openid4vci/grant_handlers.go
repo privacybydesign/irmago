@@ -224,7 +224,7 @@ func (h *AuthorizationCodeFlowHandler) pushAuthorizationRequest(parEndpoint stri
 		if errResponse.ErrorUri != nil {
 			errUri = " More info: " + *errResponse.ErrorUri
 		}
-		return nil, fmt.Errorf("Pushed Authorization Request returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
+		return nil, fmt.Errorf("pushed authorization request returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
 	}
 
 	var parResponse oauth2.PushedAuthorizationResponse
@@ -390,7 +390,7 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 		if errResponse.ErrorUri != nil {
 			errUri = " More info: " + *errResponse.ErrorUri
 		}
-		return nil, fmt.Errorf("Token Response returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
+		return nil, fmt.Errorf("token response returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
 	}
 
 	var tokenResponse oauth2.TokenResponse

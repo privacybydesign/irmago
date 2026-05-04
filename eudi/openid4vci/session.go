@@ -140,7 +140,6 @@ func (s *session) perform() {
 	}
 
 	s.handler.Success("openid4vci session completed", offeredCredentials)
-	return
 }
 
 // fetchedCredential holds the result of fetching and verifying credentials
@@ -235,15 +234,10 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerName := metadata.ConvertDisplayToTranslatedString(issuerDisplays)
 
 		var image *clientmodels.Image
-		var logoFilename string
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
 		for _, display := range config.CredentialMetadata.Display {
 			if display.Logo != nil {
-				logoFilename = credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
-				imageData, err := credentialLogoManager.GetLogo(logoFilename)
-				if err == nil && imageData != nil {
-					image = &clientmodels.Image{Base64: *imageData}
-				}
+				image = eudi.LoadLogoImage(credentialLogoManager, display.Logo.Uri)
 				break
 			}
 		}

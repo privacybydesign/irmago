@@ -1,104 +1,83 @@
 package filesystem
 
 import (
-	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
-
-	"github.com/privacybydesign/irmago/internal/common"
 )
 
 const crlsDirName = "crls"
 
+// crlExtension is appended to the on-disk hex filename. It's not part of the
+// HMAC input — it lives on disk only so the directory can be globbed by
+// extension if ever needed externally.
+const crlExtension = ".crl"
+
+// CertificateRevocationListManager stores CRLs keyed by their distribution
+// point URL. On-disk filenames are HMAC-SHA256 hex of the distribution point
+// (under an AES-derived sub-key) suffixed with .crl.
 type CertificateRevocationListManager interface {
-	CrlExists(filename string) (bool, error)
-	Save(crl *x509.RevocationList, fileName string) error
-	ReadFromFileName(filename string) (*x509.RevocationList, error)
-	RemoveByFileName(filename string) error
-	GetAllFileNames() ([]string, error)
+	Save(crl *x509.RevocationList, distPoint string) error
+	Read(distPoint string) (*x509.RevocationList, error)
+	Exists(distPoint string) (bool, error)
+	Remove(distPoint string) error
+
+	// LoadAll iterates every CRL on disk, parses each, and returns the parsed
+	// list. When onError is non-nil, per-file failures (read, decrypt, parse)
+	// are surfaced to the callback and iteration continues; when onError is
+	// nil, the first such failure aborts and is returned as the function's
+	// error.
+	LoadAll(onError func(err error)) ([]*x509.RevocationList, error)
+
 	RemoveAll() error
 }
 
 type certificateRevocationListManager struct {
-	fileManager
+	scope *scopedFS
 }
 
 func newCertificateRevocationListManager(basePath string, internalStorage *fsStorage) CertificateRevocationListManager {
-	path := filepath.Join(basePath, crlsDirName)
-
-	err := common.EnsureDirectoryExists(path)
-	if err != nil {
-		panic(err)
-	}
-
 	return &certificateRevocationListManager{
-		fileManager: fileManager{
-			basePath:        path,
-			internalStorage: internalStorage,
-		},
+		scope: internalStorage.Scope(filepath.Join(basePath, crlsDirName)),
 	}
 }
 
-func (s *certificateRevocationListManager) CrlExists(filename string) (bool, error) {
-	crlFilePath := filepath.Join(s.basePath, filename)
-	return s.internalStorage.fileExists(crlFilePath)
-}
-
-func (s *certificateRevocationListManager) Save(crl *x509.RevocationList, fileName string) error {
+func (s *certificateRevocationListManager) Save(crl *x509.RevocationList, distPoint string) error {
 	if crl == nil {
 		return fmt.Errorf("invalid CRL: crl cannot be nil")
 	}
-
-	if !strings.Contains(fileName, ".crl") {
-		return fmt.Errorf("invalid CRL: fileName must have .crl extension")
-	}
-
-	// Determine filename (hash cert subject + hash dist point) + filepath
-	filePath := filepath.Join(s.basePath, fileName)
-
-	return s.internalStorage.writeFile(filePath, crl.Raw)
+	return s.scope.Write(distPoint, crlExtension, crl.Raw)
 }
 
-func (s *certificateRevocationListManager) ReadFromFileName(filename string) (*x509.RevocationList, error) {
-	fullPath := filepath.Join(s.basePath, filename)
-	return s.read(fullPath)
-}
-
-func (s *certificateRevocationListManager) read(filePath string) (*x509.RevocationList, error) {
-	crlBytes, err := s.internalStorage.readFile(filePath)
+func (s *certificateRevocationListManager) Read(distPoint string) (*x509.RevocationList, error) {
+	bytes, err := s.scope.Read(distPoint, crlExtension)
 	if err != nil {
 		return nil, err
 	}
-
-	crl, err := x509.ParseRevocationList(crlBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return crl, nil
+	return x509.ParseRevocationList(bytes)
 }
 
-func (s *certificateRevocationListManager) GetAllFileNames() ([]string, error) {
-	filePaths, err := filepath.Glob(filepath.Join(s.basePath, "*.crl"))
-	if err != nil {
-		return nil, err
-	}
-
-	fileNames := make([]string, len(filePaths))
-	for i, filePath := range filePaths {
-		fileNames[i] = filepath.Base(filePath)
-	}
-	return fileNames, nil
+func (s *certificateRevocationListManager) Exists(distPoint string) (bool, error) {
+	return s.scope.Exists(distPoint, crlExtension)
 }
 
-func GetCrlFileNameForCertDistributionPoint(distPoint string) string {
-	return fmt.Sprintf("%x.crl", sha256.Sum256([]byte(distPoint)))
+func (s *certificateRevocationListManager) Remove(distPoint string) error {
+	return s.scope.Delete(distPoint, crlExtension)
 }
 
-func (s *certificateRevocationListManager) RemoveByFileName(filename string) error {
-	filePath := filepath.Join(s.basePath, filename)
-	return os.Remove(filePath)
+func (s *certificateRevocationListManager) LoadAll(onError func(err error)) ([]*x509.RevocationList, error) {
+	var crls []*x509.RevocationList
+	err := s.scope.Walk(func(data []byte) error {
+		crl, err := x509.ParseRevocationList(data)
+		if err != nil {
+			return fmt.Errorf("parse crl: %w", err)
+		}
+		crls = append(crls, crl)
+		return nil
+	}, onError)
+	return crls, err
+}
+
+func (s *certificateRevocationListManager) RemoveAll() error {
+	return s.scope.RemoveAll()
 }

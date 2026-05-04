@@ -7,7 +7,6 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/internal/common"
-	"github.com/privacybydesign/irmago/internal/mocks"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -27,7 +26,7 @@ func TestIntegrationConfig(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiAppDataPath)
+	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
 	require.NoError(t, err)
 
 	// Act
@@ -59,7 +58,7 @@ func testNewConfigurationSuccessfulInitialization(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiAppDataPath)
+	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
 	require.NoError(t, err)
 
 	// Act
@@ -94,7 +93,7 @@ func testNewConfigurationReadsPinnedTrustAnchors(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, &mocks.MockEncryptionMiddleware{}, ":memory:", eudiAppDataPath)
+	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
 	require.NoError(t, err)
 
 	// Act

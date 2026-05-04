@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
@@ -140,8 +141,11 @@ func (c *Configuration) addStagingTrustAnchors() error {
 	return nil
 }
 
-func (c *Configuration) ResolveVerifierLogo(filename string) (*string, error) {
-	return c.Verifiers.storageContainer.LogoManager().GetLogo(filename)
+// ResolveVerifierLogo returns the cached logo for the given verifier key
+// (typically the verifier's certificate serial number) as a base64-encoded
+// clientmodels.Image, or nil if no logo is cached.
+func (c *Configuration) ResolveVerifierLogo(key string) *clientmodels.Image {
+	return LoadLogoImage(c.Verifiers.storageContainer.LogoManager(), key)
 }
 
 func (c *Configuration) UpdateCertificateRevocationLists() error {

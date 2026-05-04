@@ -1,7 +1,6 @@
 package services
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -62,15 +61,15 @@ func (s *eudiLogService) addSessionLog(logType clientmodels.LogType, protocol cl
 	if err != nil {
 		return err
 	}
+	saveLogoFromBase64(s.verifierLogoManager, requestor.Id, requestor.Image)
 	entry := &models.EudiLogEntry{
-		ID:                    datatypes.NewUUIDv4(),
-		Type:                  string(logType),
-		Protocol:              string(protocol),
-		CreatedAt:             time.Now(),
-		RequestorId:           requestor.Id,
-		RequestorName:         requestorName,
-		RequestorLogoFilename: saveLogoFromBase64(s.verifierLogoManager, requestor.Id, requestor.Image),
-		Credentials:           creds,
+		ID:            datatypes.NewUUIDv4(),
+		Type:          string(logType),
+		Protocol:      string(protocol),
+		CreatedAt:     time.Now(),
+		RequestorId:   requestor.Id,
+		RequestorName: requestorName,
+		Credentials:   creds,
 	}
 	return s.store.AddLog(entry)
 }
@@ -134,6 +133,8 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 		if c.ExpiryDate != 0 {
 			expiryDate = datatypes.NullTime{V: time.Unix(c.ExpiryDate, 0), Valid: true}
 		}
+		saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image)
+		saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image)
 		result[i] = models.EudiLogCredential{
 			ID:                  datatypes.NewUUIDv4(),
 			CredentialId:        c.CredentialId,
@@ -147,8 +148,6 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			Revoked:             c.Revoked,
 			RevocationSupported: c.RevocationSupported,
 			IssueURL:            issueURLJSON,
-			LogoFilename:        saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image),
-			IssuerLogoFilename:  saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image),
 		}
 	}
 	return result, nil
@@ -184,13 +183,7 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.Lo
 			eudi.Logger.Warnf("failed to unmarshal requestor name for log %s: %v", e.ID, err)
 		}
 	}
-	var requestorImage *clientmodels.Image
-	if e.RequestorLogoFilename != "" {
-		imageData, err := s.verifierLogoManager.GetLogo(e.RequestorLogoFilename)
-		if err == nil && imageData != nil {
-			requestorImage = &clientmodels.Image{Base64: *imageData}
-		}
-	}
+	requestorImage := eudi.LoadLogoImage(s.verifierLogoManager, e.RequestorId)
 	requestor := &clientmodels.TrustedParty{
 		Id:    e.RequestorId,
 		Name:  requestorName,
@@ -252,18 +245,8 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		if formats == nil {
 			formats = []clientmodels.CredentialFormat{}
 		}
-		var credImage *clientmodels.Image
-		if c.LogoFilename != "" && credLogoManager != nil {
-			if imageData, err := credLogoManager.GetLogo(c.LogoFilename); err == nil && imageData != nil {
-				credImage = &clientmodels.Image{Base64: *imageData}
-			}
-		}
-		var issuerImage *clientmodels.Image
-		if c.IssuerLogoFilename != "" && issuerLogoManager != nil {
-			if imageData, err := issuerLogoManager.GetLogo(c.IssuerLogoFilename); err == nil && imageData != nil {
-				issuerImage = &clientmodels.Image{Base64: *imageData}
-			}
-		}
+		credImage := eudi.LoadLogoImage(credLogoManager, c.CredentialId)
+		issuerImage := eudi.LoadLogoImage(issuerLogoManager, c.IssuerId)
 		var issueURL *clientmodels.TranslatedString
 		if c.IssueURL != nil {
 			issueURL = &clientmodels.TranslatedString{}
@@ -294,19 +277,17 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 }
 
 // saveLogoFromBase64 persists a base64-encoded image to the given logo manager
-// under a deterministic filename derived from the provided key (SHA256).
-// Returns the filename on success, or "" if no image is available.
-func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clientmodels.Image) string {
-	if image == nil || image.Base64 == "" || key == "" {
-		return ""
+// under the provided logical key. The manager hashes the key internally; no
+// filename is returned because the read path resolves the same key on demand.
+func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clientmodels.Image) {
+	if image == nil || image.Base64 == "" || key == "" || manager == nil {
+		return
 	}
 	rawBytes, err := base64.StdEncoding.DecodeString(image.Base64)
 	if err != nil {
-		return ""
+		return
 	}
-	filename := fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
-	if _, err := manager.SaveLogo(filename, rawBytes); err != nil {
-		return ""
+	if err := manager.Save(key, rawBytes); err != nil {
+		eudi.Logger.Warnf("failed to cache logo for key %q: %v", key, err)
 	}
-	return filename
 }

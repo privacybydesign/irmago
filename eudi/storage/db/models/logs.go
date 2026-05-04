@@ -8,6 +8,9 @@ import (
 
 // EudiLogEntry is a single activity log entry for EUDI protocol sessions
 // (OpenID4VCI issuance, OpenID4VP disclosure, or credential removal).
+//
+// The verifier logo, when available, is stored in the verifier logo manager
+// keyed by RequestorId. The read path resolves it via Exists+Get on demand.
 type EudiLogEntry struct {
 	ID        datatypes.UUID `gorm:"type:uuid;primaryKey"`
 	Type      string         // "issuance", "disclosure", "removal"
@@ -15,15 +18,17 @@ type EudiLogEntry struct {
 	CreatedAt time.Time      `gorm:"index"`
 
 	// Requestor/verifier/issuer info (JSON-encoded TranslatedString for name).
-	RequestorId           string
-	RequestorName         datatypes.JSON `gorm:"type:json"`
-	RequestorLogoFilename string         // Logo filename managed by the verifier logo manager. Empty when no logo is available.
+	RequestorId   string
+	RequestorName datatypes.JSON `gorm:"type:json"`
 
 	// Logged credentials.
 	Credentials []EudiLogCredential `gorm:"foreignKey:EudiLogEntryID;constraint:OnDelete:CASCADE"`
 }
 
 // EudiLogCredential is a credential entry within an activity log.
+//
+// Credential and issuer logos, when available, are stored in the credential
+// and issuer logo managers respectively, keyed by CredentialId / IssuerId.
 type EudiLogCredential struct {
 	ID             datatypes.UUID `gorm:"type:uuid;primaryKey"`
 	EudiLogEntryID datatypes.UUID `gorm:"index"`
@@ -49,12 +54,4 @@ type EudiLogCredential struct {
 	Revoked             bool
 	RevocationSupported bool
 	IssueURL            datatypes.JSON `gorm:"type:json"` // JSON-encoded *TranslatedString, nil when not set.
-
-	// Filename (without extension) of the credential logo stored by the
-	// credential logo manager. Empty when no logo is available.
-	LogoFilename string
-
-	// Filename (without extension) of the issuer logo stored by the
-	// issuer logo manager. Empty when no logo is available.
-	IssuerLogoFilename string
 }

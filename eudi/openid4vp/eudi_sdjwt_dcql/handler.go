@@ -748,13 +748,9 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch) *cli
 		if display.LogoURI == "" {
 			continue
 		}
-		filename := logoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI)
-		imageData, err := logoManager.GetLogo(filename)
-		if err != nil {
-			eudi.Logger.Warnf("failed to get credential logo from %q: %v", display.LogoURI, err)
-			continue
+		if img := eudi.LoadLogoImage(logoManager, display.LogoURI); img != nil {
+			return img
 		}
-		return &clientmodels.Image{Base64: *imageData}
 	}
 	return nil
 }
@@ -785,13 +781,9 @@ func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientm
 		if !d.LogoURI.Valid || d.LogoURI.V == "" {
 			continue
 		}
-		filename := logoManager.GetLogoFilenameWithoutExtensionFromUrl(d.LogoURI.V)
-		imageData, err := logoManager.GetLogo(filename)
-		if err != nil {
-			eudi.Logger.Warnf("failed to get issuer logo from %q: %v", d.LogoURI.V, err)
-			continue
+		if img := eudi.LoadLogoImage(logoManager, d.LogoURI.V); img != nil {
+			return img
 		}
-		return &clientmodels.Image{Base64: *imageData}
 	}
 	return nil
 }

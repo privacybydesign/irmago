@@ -280,8 +280,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 				eudi.Logger.Warnf("failed to download issuer logo from %q: %v", display.Logo.Uri, err)
 				continue
 			}
-			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
-			_, err = issuerLogoManager.SaveLogo(filename, logoData)
+			err = issuerLogoManager.Save(display.Logo.Uri, logoData)
 
 			if err != nil {
 				eudi.Logger.Warnf("failed to cache issuer logo from %q: %v", display.Logo.Uri, err)
@@ -308,8 +307,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 							eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
 							continue
 						}
-						filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
-						_, err = credentialLogoManager.SaveLogo(filename, logoData)
+						err = credentialLogoManager.Save(display.Logo.Uri, logoData)
 						if err != nil {
 							eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
 						}
@@ -390,16 +388,7 @@ func (client *Client) convertToCredentialInfoList(
 			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
 			for _, display := range config.CredentialMetadata.Display {
 				if display.Logo != nil {
-					filename := credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.Logo.Uri)
-					imageData, err := credentialLogoManager.GetLogo(filename)
-					if err != nil {
-						eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
-					}
-
-					image = &clientmodels.Image{
-						Base64: *imageData,
-					}
-
+					image = eudi.LoadLogoImage(credentialLogoManager, display.Logo.Uri)
 					// TODO: for now, we pick the first logo in a display we can find, but this needs to be based on the locale being used in the app
 					break
 				}

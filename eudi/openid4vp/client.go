@@ -133,7 +133,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 
 		// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
 		if endEntityCert != nil {
-			_, err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().SaveLogo(
+			err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
 				endEntityCert.SerialNumber.String(),
 				requestorSchemeData.Organization.Logo.Data,
 			)

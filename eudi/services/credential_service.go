@@ -172,42 +172,11 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 		// TODO: since we don't know which display is actually used by the client, we are currently just trying to get the logos for the first display. We should implement a more robust solution for this in the future, potentially by storing a separate logo for each display/language in the filesystem and retrieving the correct one based on the client's language preferences.
 		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI.Valid {
-			display := batch.IssuerDisplay[0]
-
-			eudi.Logger.Debugf("Attempting to retrieve logo for issuer %s from filesystem storage by uri %s", batch.ID, display.LogoURI.V)
-			filename := issuerLogoManager.GetLogoFilenameWithoutExtensionFromUrl(display.LogoURI.V)
-
-			if exists, err := issuerLogoManager.LogoExists(filename); err == nil && exists {
-				logoData, err := issuerLogoManager.GetLogo(filename)
-				if err != nil {
-					eudi.Logger.Debugf("Error retrieving logo for issuer %s from filesystem storage: %v", batch.ID, err)
-				} else {
-					issuerImage = &clientmodels.Image{
-						Base64: *logoData,
-					}
-				}
-			} else {
-				eudi.Logger.Debugf("Couldn't find image")
-			}
+			issuerImage = eudi.LoadLogoImage(issuerLogoManager, batch.IssuerDisplay[0].LogoURI.V)
 		}
 
-		var credentialLogoFilename string
 		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
-			eudi.Logger.Debugf("Attempting to retrieve logo for credential %s from filesystem storage by uri %s", batch.ID, batch.CredentialMetadata.Display[0].LogoURI)
-			credentialLogoFilename = credentialLogoManager.GetLogoFilenameWithoutExtensionFromUrl(batch.CredentialMetadata.Display[0].LogoURI)
-
-			if exists, err := credentialLogoManager.LogoExists(credentialLogoFilename); err == nil && exists {
-				logoData, err := credentialLogoManager.GetLogo(credentialLogoFilename)
-				if err != nil {
-					eudi.Logger.Debugf("Error retrieving logo for credential %s from filesystem storage: %v", batch.ID, err)
-				} else {
-					credentialImage = &clientmodels.Image{
-						Base64: *logoData,
-					}
-				}
-			} else {
-				eudi.Logger.Debugf("Couldn't find image")
-			}
+			credentialImage = eudi.LoadLogoImage(credentialLogoManager, batch.CredentialMetadata.Display[0].LogoURI)
 		}
 
 		clientModels[i] = &clientmodels.Credential{

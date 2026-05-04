@@ -1,13 +1,23 @@
 package filesystem
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
+	"golang.org/x/crypto/hkdf"
 )
+
+// fsFilenameKeyHkdfInfo is the HKDF info string used to derive the filename-MAC
+// key from the AES storage key. Bumping the version suffix produces an entirely
+// new keyspace without touching the AES key.
+const fsFilenameKeyHkdfInfo = "irmago-fs-filename-v1"
 
 type fileManager struct {
 	basePath        string
@@ -40,32 +50,46 @@ type FileSystemContainer struct {
 	certificateRevocationListManager CertificateRevocationListManager
 }
 
-func NewFileSystemStorage(encryptionMiddleware encryption.EncryptionMiddleware, basePath string) FileSystemStorage {
-	err := common.EnsureDirectoryExists(basePath)
-	if err != nil {
+// NewFileSystemStorage constructs the EUDI filesystem layer. It derives both
+// the AES-GCM encryption middleware and the filename-MAC key from the provided
+// AES key, so all on-disk filenames are HMAC-based and unrecoverable without
+// the key.
+func NewFileSystemStorage(aesKey [32]byte, basePath string) FileSystemStorage {
+	if err := common.EnsureDirectoryExists(basePath); err != nil {
 		panic(err)
 	}
 
-	storageMiddleware := NewStorageMiddleware(encryptionMiddleware)
+	middleware := encryption.NewAESEncryptionMiddleware(aesKey)
+	fsFilenameKey := deriveFSFilenameKey(aesKey)
+
+	storage := newFsStorage(middleware, fsFilenameKey)
 
 	return &fileSystemStorage{
-		credentialsContainer: *newFileSystemContainer(storageMiddleware, filepath.Join(basePath, "credentials")),
-		issuersContainer:     *newFileSystemContainer(storageMiddleware, filepath.Join(basePath, "issuers")),
-		verifiersContainer:   *newFileSystemContainer(storageMiddleware, filepath.Join(basePath, "verifiers")),
+		credentialsContainer: *newFileSystemContainer(storage, filepath.Join(basePath, "credentials")),
+		issuersContainer:     *newFileSystemContainer(storage, filepath.Join(basePath, "issuers")),
+		verifiersContainer:   *newFileSystemContainer(storage, filepath.Join(basePath, "verifiers")),
 	}
 }
 
+func deriveFSFilenameKey(aesKey [32]byte) [32]byte {
+	r := hkdf.New(sha256.New, aesKey[:], nil, []byte(fsFilenameKeyHkdfInfo))
+	var key [32]byte
+	if _, err := io.ReadFull(r, key[:]); err != nil {
+		panic(fmt.Sprintf("hkdf expand failed: %v", err))
+	}
+	return key
+}
+
 // newFileSystemContainer creates a new instance of FileSystemContainer.
-func newFileSystemContainer(storageMiddleware *fsStorage, basePath string) *FileSystemContainer {
-	err := common.EnsureDirectoryExists(basePath)
-	if err != nil {
+func newFileSystemContainer(storage *fsStorage, basePath string) *FileSystemContainer {
+	if err := common.EnsureDirectoryExists(basePath); err != nil {
 		panic(err)
 	}
 
 	return &FileSystemContainer{
-		logoManager:                      newLogoManager(basePath, storageMiddleware),
-		certificateManager:               newCertificateManager(basePath, storageMiddleware),
-		certificateRevocationListManager: newCertificateRevocationListManager(basePath, storageMiddleware),
+		logoManager:                      newLogoManager(basePath, storage),
+		certificateManager:               newCertificateManager(basePath, storage),
+		certificateRevocationListManager: newCertificateRevocationListManager(basePath, storage),
 	}
 }
 
@@ -128,12 +152,26 @@ func (s FileSystemContainer) LogoManager() LogoManager {
 
 type fsStorage struct {
 	encryptionMiddleware encryption.EncryptionMiddleware
+	fsFilenameKey        [32]byte
 }
 
-func NewStorageMiddleware(encryptionMiddleware encryption.EncryptionMiddleware) *fsStorage {
+func newFsStorage(middleware encryption.EncryptionMiddleware, fsFilenameKey [32]byte) *fsStorage {
 	return &fsStorage{
-		encryptionMiddleware: encryptionMiddleware,
+		encryptionMiddleware: middleware,
+		fsFilenameKey:        fsFilenameKey,
 	}
+}
+
+// Scope returns a scoped filesystem handle rooted at the given absolute
+// directory. The directory is created if it does not exist. The handle
+// exposes write/read/exists/delete/walk operations that take a logical name;
+// the on-disk filename is HMAC-SHA256(fsFilenameKey, name) hex-encoded, so no
+// plaintext key ever lands on disk.
+func (s *fsStorage) Scope(fullPath string) *scopedFS {
+	if err := common.EnsureDirectoryExists(fullPath); err != nil {
+		panic(err)
+	}
+	return &scopedFS{parent: s, fullPath: fullPath}
 }
 
 func (s *fsStorage) writeFile(filePath string, data []byte) error {
@@ -148,9 +186,7 @@ func (s *fsStorage) writeFile(filePath string, data []byte) error {
 	}
 	defer out.Close()
 
-	// Write the body to file
-	_, err = out.Write(encryptedData)
-	if err != nil {
+	if _, err := out.Write(encryptedData); err != nil {
 		return fmt.Errorf("error saving file content: %v", err)
 	}
 
@@ -175,4 +211,75 @@ func (s *fsStorage) fileExists(filename string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// scopedFS is a filesystem handle bound to a fixed directory. All names passed
+// to its methods are logical keys (URLs, distribution points, IDs); the on-disk
+// filename is derived via HMAC and never exposed to callers.
+type scopedFS struct {
+	parent   *fsStorage
+	fullPath string
+}
+
+func (s *scopedFS) hashName(name string) string {
+	mac := hmac.New(sha256.New, s.parent.fsFilenameKey[:])
+	mac.Write([]byte(name))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (s *scopedFS) absPath(name, ext string) string {
+	return filepath.Join(s.fullPath, s.hashName(name)+ext)
+}
+
+func (s *scopedFS) Write(name, ext string, data []byte) error {
+	return s.parent.writeFile(s.absPath(name, ext), data)
+}
+
+func (s *scopedFS) Read(name, ext string) ([]byte, error) {
+	return s.parent.readFile(s.absPath(name, ext))
+}
+
+func (s *scopedFS) Exists(name, ext string) (bool, error) {
+	return s.parent.fileExists(s.absPath(name, ext))
+}
+
+func (s *scopedFS) Delete(name, ext string) error {
+	return os.Remove(s.absPath(name, ext))
+}
+
+func (s *scopedFS) RemoveAll() error {
+	return removeDirectoryContents(s.fullPath)
+}
+
+// Walk reads every regular file in the scope, decrypts it, and calls fn with
+// the plaintext bytes. Per-file failures (read, decrypt, or fn returning
+// non-nil) are passed to onError when it is non-nil and iteration continues;
+// when onError is nil, the first such failure aborts the walk.
+func (s *scopedFS) Walk(fn func(data []byte) error, onError func(err error)) error {
+	entries, err := os.ReadDir(s.fullPath)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(s.fullPath, entry.Name())
+		data, err := s.parent.readFile(path)
+		if err != nil {
+			if onError == nil {
+				return err
+			}
+			onError(err)
+			continue
+		}
+		if err := fn(data); err != nil {
+			if onError == nil {
+				return err
+			}
+			onError(err)
+			continue
+		}
+	}
+	return nil
 }

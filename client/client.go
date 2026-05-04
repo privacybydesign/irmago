@@ -79,12 +79,13 @@ func New(
 
 	eudi.Logger = irma.Logger
 
-	// Create the encryption middleware, used for all storage components, so that all data is encrypted at rest
+	// Create the encryption middleware, used by the IRMA classic clientstorage so all data is encrypted at rest.
+	// The EUDI storage layer derives its own AES middleware (and a separate filename-MAC sub-key) directly from the aesKey.
 	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
 
 	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
 	dbPath := filepath.Join(eudiAppDataPath, storage.DbFilename)
-	eudiStorage, err := storage.NewStorage(aesKey, encryptionMiddleware, dbPath, eudiAppDataPath)
+	eudiStorage, err := storage.NewStorage(aesKey, dbPath, eudiAppDataPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
 	}

@@ -7,7 +7,6 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage"
-	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/stretchr/testify/require"
 )
 
@@ -234,9 +233,7 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
-
-	eudiStorage, err := storage.NewStorage(aesKey, encryptionMiddleware, ":memory:", tempDir)
+	eudiStorage, err := storage.NewStorage(aesKey, ":memory:", tempDir)
 	require.NoError(t, err)
 
 	session := &session{
