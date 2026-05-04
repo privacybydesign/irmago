@@ -3,6 +3,7 @@
 package eudi_sdjwt_dcql
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -30,15 +32,26 @@ type SdJwtVcDcqlHandler struct {
 	storage         storage.Storage
 	credentialStore db.CredentialStore
 	keyBinder       sdjwtvc.KeyBinder
+	vctFetcher      typemetadata.VctFetcher
+	issuerFetcher   typemetadata.IssuerFetcher
 }
 
-// NewSdJwtVcDcqlHandler creates a new handler.
-func NewSdJwtVcDcqlHandler(eudiStorage storage.Storage) *SdJwtVcDcqlHandler {
+// NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
+// used to describe credentials the wallet has never seen (the verifier requests
+// a VCT for which there is no stored batch). Pass nil to disable that path; the
+// handler will then return empty obtainable descriptors as before.
+func NewSdJwtVcDcqlHandler(
+	eudiStorage storage.Storage,
+	vctFetcher typemetadata.VctFetcher,
+	issuerFetcher typemetadata.IssuerFetcher,
+) *SdJwtVcDcqlHandler {
 	keyService := services.NewHolderBindingKeyService(eudiStorage.Db())
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
 		keyBinder:       sdjwtvc.NewDefaultKeyBinder(keyService),
+		vctFetcher:      vctFetcher,
+		issuerFetcher:   issuerFetcher,
 	}
 }
 
@@ -115,7 +128,172 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		return nil, fmt.Errorf("all credential instances for the requested type are exhausted")
 	}
 
+	// When the wallet has no batches at all matching the query's vct_values,
+	// emit one descriptor with an empty IssueURL so the user sees what is
+	// being requested instead of a stuck permission prompt. See the
+	// "missing credentials" plan.
+	if len(batches) == 0 && len(query.VctValues()) > 0 && h.vctFetcher != nil {
+		if descriptor := h.composeUnobtainableDescriptor(query); descriptor != nil {
+			result.ObtainableDescriptors = append(result.ObtainableDescriptors, descriptor)
+		}
+	}
+
 	return result, nil
+}
+
+// composeUnobtainableDescriptor builds a CredentialDescriptor for a credential
+// the wallet has never seen, by fetching the SD-JWT VC Type Metadata document
+// (and, if the type metadata exposes an issuer URL, the issuer's well-known
+// document). The returned descriptor's IssueURL is always nil — that is the
+// wire-level signal to the frontend that the session cannot be completed.
+//
+// Walks query.VctValues in order; first VCT whose type-metadata fetch succeeds
+// wins. If every VCT fetch fails, returns a URL-only descriptor for the first
+// VCT (so the user still sees what was requested).
+func (h *SdJwtVcDcqlHandler) composeUnobtainableDescriptor(query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
+	vctValues := query.VctValues()
+	if len(vctValues) == 0 {
+		return nil
+	}
+
+	ctx := context.Background()
+
+	for _, vct := range vctValues {
+		vctMeta, err := h.vctFetcher.Fetch(ctx, vct)
+		if err != nil {
+			eudi.Logger.Warnf("failed to fetch VCT type metadata from %q: %v", vct, err)
+			continue
+		}
+		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query)
+	}
+
+	// All VCT fetches failed: emit a URL-only descriptor for the first VCT so
+	// the user still sees what was asked for.
+	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query)
+}
+
+func (h *SdJwtVcDcqlHandler) fetchIssuerMetadata(ctx context.Context, issuerURL string) *typemetadata.IssuerMetadata {
+	if issuerURL == "" || h.issuerFetcher == nil {
+		return nil
+	}
+	im, err := h.issuerFetcher.Fetch(ctx, issuerURL)
+	if err != nil {
+		eudi.Logger.Warnf("failed to fetch issuer metadata from %q: %v", issuerURL, err)
+		// Issuer fetch failure is tolerated — we still know the issuer URL.
+		return &typemetadata.IssuerMetadata{Id: issuerURL}
+	}
+	return im
+}
+
+// buildUnobtainableDescriptor assembles the final CredentialDescriptor from
+// (optionally absent) VCT and issuer metadata. CredentialId is the VCT URL.
+// IssueURL is always nil. Attributes are derived from the DCQL claim paths,
+// with display names from the type-metadata when available.
+func buildUnobtainableDescriptor(
+	vctURL string,
+	vctMeta *typemetadata.VctTypeMetadata,
+	issuerMeta *typemetadata.IssuerMetadata,
+	query dcql.CredentialQuery,
+) *clientmodels.CredentialDescriptor {
+	desc := &clientmodels.CredentialDescriptor{
+		CredentialId: vctURL,
+		Name:         vctName(vctMeta),
+		Issuer:       issuerTrustedParty(issuerMeta),
+		Attributes:   queryAttributes(query, vctMeta),
+	}
+	return desc
+}
+
+// vctName extracts a TranslatedString credential name from the VCT type
+// metadata's display entries (or the top-level name as fallback). Returns an
+// empty TranslatedString when no name is available.
+func vctName(vctMeta *typemetadata.VctTypeMetadata) clientmodels.TranslatedString {
+	name := clientmodels.TranslatedString{}
+	if vctMeta == nil {
+		return name
+	}
+	for _, d := range vctMeta.Display {
+		if d.Name == "" {
+			continue
+		}
+		lang := d.Lang
+		if lang == "" {
+			lang = clientmodels.DefaultFallbackLanguage
+		}
+		name[lang] = d.Name
+	}
+	if len(name) == 0 && vctMeta.Name != "" {
+		name[clientmodels.DefaultFallbackLanguage] = vctMeta.Name
+	}
+	return name
+}
+
+// issuerTrustedParty builds a TrustedParty from issuer metadata. Empty fields
+// when the metadata is nil. Logo is intentionally not fetched (the unobtainable
+// path stays inside the user's permission-prompt budget); frontend can resolve
+// the logo URL itself if it wants.
+func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata) clientmodels.TrustedParty {
+	if issuerMeta == nil {
+		return clientmodels.TrustedParty{}
+	}
+	return clientmodels.TrustedParty{
+		Id:   issuerMeta.Id,
+		Name: issuerMeta.Name,
+	}
+}
+
+// queryAttributes maps each top-level DCQL claim path to a placeholder
+// Attribute (no Value), enriched with a display name from the VCT type
+// metadata when one is available. Used so the user sees which claims the
+// verifier was asking for, even though no credential is held.
+func queryAttributes(query dcql.CredentialQuery, vctMeta *typemetadata.VctTypeMetadata) []clientmodels.Attribute {
+	if len(query.Claims) == 0 {
+		return nil
+	}
+	attrs := make([]clientmodels.Attribute, 0, len(query.Claims))
+	for _, claim := range query.Claims {
+		if len(claim.Path) == 0 {
+			continue
+		}
+		display := claimDisplayFromVct(vctMeta, claim.Path)
+		var dn *clientmodels.TranslatedString
+		if len(display) > 0 {
+			dn = &display
+		}
+		attrs = append(attrs, clientmodels.Attribute{
+			ClaimPath:   append([]any{}, claim.Path...),
+			DisplayName: dn,
+		})
+	}
+	return attrs
+}
+
+// claimDisplayFromVct returns the localized display name for a claim path from
+// the VCT type metadata, or an empty TranslatedString when none is available.
+func claimDisplayFromVct(vctMeta *typemetadata.VctTypeMetadata, path []any) clientmodels.TranslatedString {
+	if vctMeta == nil {
+		return nil
+	}
+	for _, c := range vctMeta.Claims {
+		if !claimPathMatchesMetadataPath(path, c.Path) {
+			continue
+		}
+		ts := clientmodels.TranslatedString{}
+		for _, d := range c.Display {
+			if d.Name == "" {
+				continue
+			}
+			lang := d.Lang
+			if lang == "" {
+				lang = clientmodels.DefaultFallbackLanguage
+			}
+			ts[lang] = d.Name
+		}
+		if len(ts) > 0 {
+			return ts
+		}
+	}
+	return nil
 }
 
 // findBatches returns credential batches matching the query, with metadata
@@ -175,6 +353,14 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 		selected, err := sdjwtvc.CreatePresentation(rawSdJwt, sel.ClaimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
+		}
+
+		// Strict authorization: refuse to send a presentation that would
+		// reveal more than the user approved. SD-JWT disclosures are
+		// atomic, so coarse issuer-side bundling can otherwise cause
+		// silent over-sharing.
+		if err := sdjwtvc.ValidateAuthorization(selected, sel.ClaimPaths); err != nil {
+			return nil, fmt.Errorf("disclosure refused for credential %q: %w", batch.VerifiableCredentialType, err)
 		}
 
 		presentation := string(selected)

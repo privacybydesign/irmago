@@ -1,10 +1,14 @@
 package eudi_sdjwt_dcql
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -564,4 +568,251 @@ func TestFindCandidates_ExpiryDateSetCorrectly(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1)
 	assert.Equal(t, expiryTime.Unix(), result.OwnedCandidates[0].ExpiryDate,
 		"ExpiryDate should match ExpiresAt, not IssuedAt")
+}
+
+// ========================================================================
+// composeUnobtainableDescriptor — VCT/issuer fetch failure cascade
+// ========================================================================
+
+// stubVctFetcher returns canned VctTypeMetadata or errors keyed by VCT URL.
+type stubVctFetcher struct {
+	docs map[string]*typemetadata.VctTypeMetadata
+	errs map[string]error
+}
+
+func (s *stubVctFetcher) Fetch(_ context.Context, vctURL string) (*typemetadata.VctTypeMetadata, error) {
+	if err, ok := s.errs[vctURL]; ok {
+		return nil, err
+	}
+	if doc, ok := s.docs[vctURL]; ok {
+		return doc, nil
+	}
+	return nil, errors.New("not found")
+}
+
+// stubIssuerFetcher returns canned IssuerMetadata or errors keyed by issuer URL.
+type stubIssuerFetcher struct {
+	docs map[string]*typemetadata.IssuerMetadata
+	errs map[string]error
+}
+
+func (s *stubIssuerFetcher) Fetch(_ context.Context, issuerURL string) (*typemetadata.IssuerMetadata, error) {
+	if err, ok := s.errs[issuerURL]; ok {
+		return nil, err
+	}
+	if doc, ok := s.docs[issuerURL]; ok {
+		return doc, nil
+	}
+	return nil, errors.New("not found")
+}
+
+func newHandlerWithFetchers(vct typemetadata.VctFetcher, issuer typemetadata.IssuerFetcher) *SdJwtVcDcqlHandler {
+	return &SdJwtVcDcqlHandler{vctFetcher: vct, issuerFetcher: issuer}
+}
+
+func TestComposeUnobtainableDescriptor_VctFetchFails_UrlOnlyFallback(t *testing.T) {
+	vctFetcher := &stubVctFetcher{errs: map[string]error{
+		"https://example.com/vct/missing": errors.New("404"),
+	}}
+	h := newHandlerWithFetchers(vctFetcher, nil)
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/missing"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	desc := h.composeUnobtainableDescriptor(query)
+	require.NotNil(t, desc)
+	assert.Equal(t, "https://example.com/vct/missing", desc.CredentialId)
+	assert.Empty(t, desc.Name, "no Name when VCT fetch fails")
+	assert.Empty(t, desc.Issuer.Id, "no Issuer when VCT fetch fails")
+	assert.Nil(t, desc.IssueURL, "IssueURL signals unobtainable")
+	require.Len(t, desc.Attributes, 1)
+	assert.Equal(t, []any{"email"}, desc.Attributes[0].ClaimPath)
+}
+
+func TestComposeUnobtainableDescriptor_VctOk_NoIssuerField(t *testing.T) {
+	vctFetcher := &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
+		"https://example.com/vct/email": {
+			Name:    "Email Credential",
+			Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+			Claims: []typemetadata.ClaimMetadata{
+				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Lang: "en", Name: "Email"}}},
+			},
+		},
+	}}
+	h := newHandlerWithFetchers(vctFetcher, nil)
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/email"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	desc := h.composeUnobtainableDescriptor(query)
+	require.NotNil(t, desc)
+	assert.Equal(t, "https://example.com/vct/email", desc.CredentialId)
+	assert.Equal(t, "Email Credential", desc.Name["en"])
+	assert.Empty(t, desc.Issuer.Id, "no issuer URL means no TrustedParty")
+	assert.Nil(t, desc.IssueURL)
+	require.Len(t, desc.Attributes, 1)
+	assert.Equal(t, "Email", (*desc.Attributes[0].DisplayName)["en"], "claim display from VCT metadata")
+}
+
+func TestComposeUnobtainableDescriptor_VctOk_IssuerFetchFails(t *testing.T) {
+	vctFetcher := &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
+		"https://example.com/vct/email": {
+			Name:      "Email Credential",
+			IssuerURL: "https://issuer.example.com",
+		},
+	}}
+	issuerFetcher := &stubIssuerFetcher{errs: map[string]error{
+		"https://issuer.example.com": errors.New("500"),
+	}}
+	h := newHandlerWithFetchers(vctFetcher, issuerFetcher)
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/email"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	desc := h.composeUnobtainableDescriptor(query)
+	require.NotNil(t, desc)
+	assert.Equal(t, "https://issuer.example.com", desc.Issuer.Id, "Issuer.Id from VCT even when issuer fetch fails")
+	assert.Empty(t, desc.Issuer.Name, "no localized issuer Name when issuer fetch fails")
+	assert.Nil(t, desc.IssueURL)
+}
+
+func TestComposeUnobtainableDescriptor_VctAndIssuerOk(t *testing.T) {
+	vctFetcher := &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
+		"https://example.com/vct/email": {
+			Name:      "Email Credential",
+			Display:   []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+			IssuerURL: "https://issuer.example.com",
+			Claims: []typemetadata.ClaimMetadata{
+				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Lang: "en", Name: "Email"}}},
+			},
+		},
+	}}
+	issuerFetcher := &stubIssuerFetcher{docs: map[string]*typemetadata.IssuerMetadata{
+		"https://issuer.example.com": {
+			Id:   "https://issuer.example.com",
+			Name: clientmodels.TranslatedString{"en": "Example Issuer"},
+		},
+	}}
+	h := newHandlerWithFetchers(vctFetcher, issuerFetcher)
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/email"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	desc := h.composeUnobtainableDescriptor(query)
+	require.NotNil(t, desc)
+	assert.Equal(t, "Email Credential", desc.Name["en"])
+	assert.Equal(t, "https://issuer.example.com", desc.Issuer.Id)
+	assert.Equal(t, "Example Issuer", desc.Issuer.Name["en"])
+	assert.Nil(t, desc.IssueURL)
+}
+
+func TestComposeUnobtainableDescriptor_MultiVct_FirstFailsSecondSucceeds(t *testing.T) {
+	vctFetcher := &stubVctFetcher{
+		errs: map[string]error{
+			"https://example.com/vct/bad": errors.New("404"),
+		},
+		docs: map[string]*typemetadata.VctTypeMetadata{
+			"https://example.com/vct/good": {
+				Name:    "Good Credential",
+				Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Good Credential"}},
+			},
+		},
+	}
+	h := newHandlerWithFetchers(vctFetcher, nil)
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/bad", "https://example.com/vct/good"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	desc := h.composeUnobtainableDescriptor(query)
+	require.NotNil(t, desc)
+	assert.Equal(t, "https://example.com/vct/good", desc.CredentialId, "should pick the first VCT whose fetch succeeded")
+	assert.Equal(t, "Good Credential", desc.Name["en"])
+}
+
+func TestComposeUnobtainableDescriptor_MultiVct_AllFail_UrlOnlyForFirst(t *testing.T) {
+	vctFetcher := &stubVctFetcher{errs: map[string]error{
+		"https://example.com/vct/bad1": errors.New("404"),
+		"https://example.com/vct/bad2": errors.New("500"),
+	}}
+	h := newHandlerWithFetchers(vctFetcher, nil)
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/bad1", "https://example.com/vct/bad2"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	desc := h.composeUnobtainableDescriptor(query)
+	require.NotNil(t, desc)
+	assert.Equal(t, "https://example.com/vct/bad1", desc.CredentialId, "URL-only fallback uses the first VCT")
+	assert.Empty(t, desc.Name)
+	assert.Empty(t, desc.Issuer.Id)
+}
+
+func TestComposeUnobtainableDescriptor_NoVctValues_ReturnsNil(t *testing.T) {
+	h := newHandlerWithFetchers(&stubVctFetcher{}, nil)
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {},
+		"claims": [{"path": ["email"]}]
+	}`)
+	desc := h.composeUnobtainableDescriptor(query)
+	assert.Nil(t, desc, "without vct_values there is no missing credential to describe")
+}
+
+func TestFindCandidates_NoBatches_AppendsUnobtainableDescriptor(t *testing.T) {
+	h, _ := newTestHandler(t)
+	h.vctFetcher = &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
+		"https://example.com/vct/email": {
+			Name:    "Email Credential",
+			Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+		},
+	}}
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/email"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	assert.Empty(t, result.OwnedCandidates)
+	require.Len(t, result.ObtainableDescriptors, 1)
+	assert.Equal(t, "https://example.com/vct/email", result.ObtainableDescriptors[0].CredentialId)
+	assert.Nil(t, result.ObtainableDescriptors[0].IssueURL, "IssueURL is the unobtainable signal")
+}
+
+func TestFindCandidates_NoBatches_NilFetcher_NoDescriptor(t *testing.T) {
+	h, _ := newTestHandler(t)
+	// h.vctFetcher intentionally left nil
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/email"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	assert.Empty(t, result.OwnedCandidates)
+	assert.Empty(t, result.ObtainableDescriptors, "no fetcher means no descriptor (preserves old behaviour)")
 }
