@@ -239,10 +239,10 @@ func ParseIssuerMetadata(data []byte, issuerURL string) (*IssuerMetadata, error)
 // --- raw JSON shapes ---
 
 type rawVctDocument struct {
-	Name    string             `json:"name"`
-	Display []rawVctDisplay    `json:"display"`
-	Claims  []rawVctClaim      `json:"claims"`
-	Issuer  string             `json:"issuer"`
+	Name    string          `json:"name"`
+	Display []rawVctDisplay `json:"display"`
+	Claims  []rawVctClaim   `json:"claims"`
+	Issuer  string          `json:"issuer"`
 }
 
 type rawVctDisplay struct {
@@ -252,7 +252,7 @@ type rawVctDisplay struct {
 }
 
 type rawVctClaim struct {
-	Path    []any            `json:"path"`
+	Path    []any             `json:"path"`
 	Display []rawClaimDisplay `json:"display"`
 }
 
