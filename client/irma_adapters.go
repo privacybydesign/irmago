@@ -104,6 +104,7 @@ func (a *irmaSessionAdapter) RequestIssuancePermission(
 	s.State.OfferedCredentials = offeredCredentials
 	s.State.Status = clientmodels.Status_RequestPermission
 	s.permissionHandler = callback
+	s.irmaDiscloseRequest = request.Disclose
 	s.State.Protocol = clientmodels.Protocol_Irma
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.Type = clientmodels.Type_Issuance
@@ -123,6 +124,7 @@ func (a *irmaSessionAdapter) RequestVerificationPermission(
 	s.State.Status = clientmodels.Status_RequestPermission
 	s.State.Type = clientmodels.Type_Disclosure
 	s.permissionHandler = callback
+	s.irmaDiscloseRequest = request.Disclose
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.OfferedCredentials = nil
 
@@ -156,6 +158,7 @@ func (a *irmaSessionAdapter) RequestSignaturePermission(
 	s.State.Type = clientmodels.Type_Signature
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.permissionHandler = callback
+	s.irmaDiscloseRequest = request.Disclose
 	s.State.OfferedCredentials = nil
 
 	creds, err := s.client.GetCredentials()

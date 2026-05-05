@@ -337,7 +337,46 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 		attributes = append(attributes, attr)
 	}
 
-	return attributes
+	// Display in schema order (DisplayIndex if all attributes have one, else
+	// XML position) regardless of the verifier's claim order. Frontends expect
+	// stable ordering for rendering.
+	return sortAttributesBySchema(attributes, credType)
+}
+
+// sortAttributesBySchema returns attrs reordered to follow credType's display
+// order. Mirrors the helper of the same name in client/session_handler.go;
+// duplicated here because that package can't be imported (it depends on this
+// one). Attributes whose first claim-path element doesn't resolve to a known
+// schema attribute are kept after the known ones in their original order.
+func sortAttributesBySchema(attrs []clientmodels.Attribute, credType *irma.CredentialType) []clientmodels.Attribute {
+	if credType == nil || len(attrs) <= 1 {
+		return attrs
+	}
+	sortedTypes := SortedAttributeTypes(credType.AttributeTypes)
+	position := make(map[string]int, len(sortedTypes))
+	for i, at := range sortedTypes {
+		position[at.ID] = i
+	}
+	unknown := len(sortedTypes)
+	posOf := func(a clientmodels.Attribute) int {
+		if len(a.ClaimPath) == 0 {
+			return unknown
+		}
+		name, ok := a.ClaimPath[0].(string)
+		if !ok {
+			return unknown
+		}
+		if p, ok := position[name]; ok {
+			return p
+		}
+		return unknown
+	}
+	out := make([]clientmodels.Attribute, len(attrs))
+	copy(out, attrs)
+	slices.SortStableFunc(out, func(a, b clientmodels.Attribute) int {
+		return posOf(a) - posOf(b)
+	})
+	return out
 }
 
 // buildCredentialDescriptor creates a CredentialDescriptor for an obtainable credential type,
@@ -407,6 +446,9 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 
 		attributes = append(attributes, attr)
 	}
+
+	// Display in schema order rather than the verifier's claim order.
+	attributes = sortAttributesBySchema(attributes, credType)
 
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: credTypeId.String(),
