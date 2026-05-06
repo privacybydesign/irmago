@@ -19,7 +19,9 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("grants permission and exchanges token", testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken)
 	t.Run("denies permission after grant", testOpenId4VciPreAuthFlowDeniesPermission)
 	t.Run("with tx_code grants permission and exchanges token", testOpenId4VciPreAuthFlowWithTxCode)
-	t.Run("with wrong tx_code fails", testOpenId4VciPreAuthFlowWithWrongTxCode)
+	t.Run("wrong tx_code can be retried", testOpenId4VciPreAuthFlowWrongTxCodeRetry)
+	t.Run("tx_code retries are exhausted after max attempts", testOpenId4VciPreAuthFlowTxCodeRetriesExhausted)
+	t.Run("user can cancel mid-tx_code-retry", testOpenId4VciPreAuthFlowCancelMidTxCodeRetry)
 	t.Run("can be dismissed", testOpenId4VciPreAuthFlowCanBeDismissed)
 	t.Run("issues credential with nested claims", testOpenId4VciPreAuthFlowNestedClaims)
 	t.Run("issues multiple credential types", testOpenId4VciPreAuthFlowMultipleCredentialTypes)
@@ -218,7 +220,93 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 	)
 }
 
-func testOpenId4VciPreAuthFlowWithWrongTxCode(t *testing.T) {
+func testOpenId4VciPreAuthFlowWrongTxCodeRetry(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createPreAuthOfferWithTxCode(t)
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	require.Nil(t, session.RemainingTxCodeAttempts, "no retry indicator on initial prompt")
+
+	wrongCode := "000000"
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
+			Proceed:         true,
+			TransactionCode: &wrongCode,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	require.NotNil(t, session.RemainingTxCodeAttempts, "retry indicator present after wrong code")
+	require.Equal(t, 2, *session.RemainingTxCodeAttempts)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
+			Proceed:         true,
+			TransactionCode: &offer.TxCode,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+
+	grantPermission(t, c, session.Id)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+}
+
+func testOpenId4VciPreAuthFlowTxCodeRetriesExhausted(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createPreAuthOfferWithTxCode(t)
+
+	startOpenID4VCISession(t, c, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	require.Nil(t, session.RemainingTxCodeAttempts)
+
+	wrongCode := "000000"
+	expectedRemaining := []int{2, 1}
+	for i := 0; i < 2; i++ {
+		userInteraction(t, c, clientmodels.SessionUserInteraction{
+			SessionId: session.Id,
+			Type:      clientmodels.UI_PreAuthorizedCode,
+			Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
+				Proceed:         true,
+				TransactionCode: &wrongCode,
+			},
+		})
+		session = awaitSessionState(t, sessionHandler)
+		requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+		require.NotNil(t, session.RemainingTxCodeAttempts)
+		require.Equal(t, expectedRemaining[i], *session.RemainingTxCodeAttempts)
+	}
+
+	// Third (final) wrong attempt: session should now go to error.
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload: clientmodels.SessionPreAuthorizedCodeInteractionPayload{
+			Proceed:         true,
+			TransactionCode: &wrongCode,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
+}
+
+func testOpenId4VciPreAuthFlowCancelMidTxCodeRetry(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -239,7 +327,18 @@ func testOpenId4VciPreAuthFlowWithWrongTxCode(t *testing.T) {
 	})
 
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	require.NotNil(t, session.RemainingTxCodeAttempts)
+
+	// User cancels at the retry prompt.
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: false},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
 }
 
 func testOpenId4VciPreAuthFlowCanBeDismissed(t *testing.T) {

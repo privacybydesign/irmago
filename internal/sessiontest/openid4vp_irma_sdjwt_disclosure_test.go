@@ -243,12 +243,12 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							},
-							{
 								Path:        []any{"level"},
 								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							},
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 						},
 					},
@@ -331,13 +331,13 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 					CredentialId: "irma-demo.RU.studentCard",
 					Attributes: []expectedAttr{
 						{
-							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							Path:           []any{"level"},
+							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
-							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							Path:           []any{"university"},
+							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -398,16 +398,16 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
-								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-								Value:       strVal("University of the Arts"),
-							},
-							{
 								Path:        []any{"level"},
 								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
 								Value:       strVal("high"),
+							},
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								Value:       strVal("University of the Arts"),
 							},
 						},
 					},
@@ -428,12 +428,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							},
-							{
 								Path:        []any{"level"},
 								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							},
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 						},
 					},
@@ -659,14 +659,14 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 						CredentialId: "irma-demo.RU.studentCard",
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								RequestedValue: strVal("University of the Arts"),
-							},
-							{
 								Path:           []any{"level"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								RequestedValue: strVal("University of the Arts"),
 							},
 						},
 					},
@@ -741,16 +741,16 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 					IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 					Attributes: []expectedAttr{
 						{
-							Path:        []any{"university"},
-							DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-							Value:       strVal("University of the Arts"),
-						},
-						{
 							Path:        []any{"level"},
 							DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
 							Value:       strVal("high"),
+						},
+						{
+							Path:        []any{"university"},
+							DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+							Value:       strVal("University of the Arts"),
 						},
 					},
 				}},
@@ -760,13 +760,13 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							},
+							{
 								Path:           []any{"university"},
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 								RequestedValue: strVal("University of the Arts"),
-							},
-							{
-								Path:        []any{"level"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							},
 						},
 					},
@@ -854,13 +854,13 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 					CredentialId: "irma-demo.RU.studentCard",
 					Attributes: []expectedAttr{
 						{
-							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							Path:           []any{"level"},
+							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
-							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							Path:           []any{"university"},
+							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -921,16 +921,16 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
-								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-								Value:       strVal("University of the Arts"),
-							},
-							{
 								Path:        []any{"level"},
 								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
 								Value:       strVal("high"),
+							},
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								Value:       strVal("University of the Arts"),
 							},
 						},
 					},
@@ -951,12 +951,12 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							},
-							{
 								Path:        []any{"level"},
 								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							},
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 						},
 					},
@@ -1067,13 +1067,13 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 						CredentialId: "irma-demo.RU.studentCard",
 						Attributes: []expectedAttr{
 							{
-								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Path:           []any{"level"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
-								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
@@ -1102,16 +1102,16 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
 						Attributes: []expectedAttr{
 							{
-								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
-								Value:       strVal("University of the Arts"),
-							},
-							{
 								Path:        []any{"level"},
 								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
 								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
 								Value:       strVal("high"),
+							},
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								Value:       strVal("University of the Arts"),
 							},
 						},
 					},
@@ -1122,12 +1122,12 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
 						Attributes: []expectedAttr{
 							{
-								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-							},
-							{
 								Path:        []any{"level"},
 								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							},
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 							},
 						},
 					},
@@ -1207,7 +1207,10 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	pick := plan.DisclosureChoicesOverview[0]
 	require.Len(t, pick.OwnedOptions, 3, "should have 3 owned credential instances")
 
-	expectedOrder := []string{pk("university"), pk("studentCardNumber"), pk("studentID"), pk("level")}
+	// studentCard's schema sets DisplayIndex (level=0, studentID=1,
+	// studentCardNumber=2, university=3) which inverts the XML order, and
+	// sortAttributesBySchema honours DisplayIndex when every attribute has one.
+	expectedOrder := []string{pk("level"), pk("studentID"), pk("studentCardNumber"), pk("university")}
 
 	for i, option := range pick.OwnedOptions {
 		require.Equal(t, "irma-demo.RU.studentCard", option.CredentialId)

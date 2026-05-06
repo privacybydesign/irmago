@@ -2,12 +2,16 @@ package storage
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 const DbFilename = "yivi.db"
@@ -41,7 +45,16 @@ func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, er
 
 	passphrase := string(aesKey[:])
 	dsn := sqlcipher.DSN(dbPath, passphrase)
-	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
+	dbLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+		},
+	)
+	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{Logger: dbLogger})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

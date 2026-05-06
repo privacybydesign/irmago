@@ -32,6 +32,11 @@ type session struct {
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
+	// IRMA disclosure/signature request we're currently asking the user to satisfy.
+	// Held so choicesToAnswer can re-sort the user's selected AttributePaths back into
+	// the order the request asked for (the IRMA proof verifier matches j-th disclosed
+	// against j-th requested by position).
+	irmaDiscloseRequest irma.AttributeConDisCon
 }
 
 func (s *session) dispatchState() {
@@ -333,6 +338,18 @@ func createDisclosureChoicesOverview(
 				}
 			}
 		}
+		// Reorder each credential's attributes to match the credential type's
+		// declared display order (DisplayIndex if all attributes have one,
+		// otherwise schema-position Index). The wire order from the verifier's
+		// request can be arbitrary; frontends rely on Attributes being in
+		// schema order for consistent rendering.
+		for _, f := range filteredByHash {
+			credType, ok := irmaConfig.CredentialTypes[irma.NewCredentialTypeIdentifier(f.CredentialId)]
+			if !ok {
+				continue
+			}
+			f.Attributes = sortAttributesBySchema(f.Attributes, credType)
+		}
 		// Collect OwnedOptions in the order candidates were encountered.
 		for _, hash := range ownedOrder {
 			choice.OwnedOptions = append(choice.OwnedOptions, filteredByHash[hash])
@@ -341,6 +358,45 @@ func createDisclosureChoicesOverview(
 	}
 
 	return result, nil
+}
+
+// sortAttributesBySchema returns attrs reordered to follow credType's declared
+// display order. Precedence matches sortedAttributeTypes: DisplayIndex first
+// when every type has one, else XML-position Index. Attributes whose first
+// claim-path element doesn't resolve to a schema attribute are kept after the
+// known ones in their original order.
+func sortAttributesBySchema(
+	attrs []clientmodels.Attribute,
+	credType *irma.CredentialType,
+) []clientmodels.Attribute {
+	if credType == nil || len(attrs) <= 1 {
+		return attrs
+	}
+	sortedTypes := sortedAttributeTypes(credType.AttributeTypes)
+	position := make(map[string]int, len(sortedTypes))
+	for i, at := range sortedTypes {
+		position[at.ID] = i
+	}
+	unknown := len(sortedTypes)
+	posOf := func(a clientmodels.Attribute) int {
+		if len(a.ClaimPath) == 0 {
+			return unknown
+		}
+		name, ok := a.ClaimPath[0].(string)
+		if !ok {
+			return unknown
+		}
+		if p, ok := position[name]; ok {
+			return p
+		}
+		return unknown
+	}
+	out := make([]clientmodels.Attribute, len(attrs))
+	copy(out, attrs)
+	slices.SortStableFunc(out, func(a, b clientmodels.Attribute) int {
+		return posOf(a) - posOf(b)
+	})
+	return out
 }
 
 // returns the list of issued credential ids compared to the steps,
@@ -528,12 +584,12 @@ func (s *session) setPseudoRandomOpenIdState() {
 
 // =====================================================================================
 
-func choicesToAnswer(choices []clientmodels.DisclosureDisconSelection) (*irma.DisclosureChoice, error) {
+func choicesToAnswer(choices []clientmodels.DisclosureDisconSelection, request irma.AttributeConDisCon) (*irma.DisclosureChoice, error) {
 	result := &irma.DisclosureChoice{
 		Attributes: [][]*irma.AttributeIdentifier{},
 	}
 
-	for _, choice := range choices {
+	for choiceIdx, choice := range choices {
 		attrs := []*irma.AttributeIdentifier{}
 		for _, cred := range choice.Credentials {
 			for _, attr := range cred.AttributePaths {
@@ -546,10 +602,62 @@ func choicesToAnswer(choices []clientmodels.DisclosureDisconSelection) (*irma.Di
 				})
 			}
 		}
+		// The IRMA proof verifier matches the j-th disclosed attribute
+		// against the j-th requested attribute by position
+		// (irma.AttributeCon.Satisfy in irma/requests.go). Frontends are
+		// allowed to send AttributePaths in any order — usually display order,
+		// which createDisclosureChoicesOverview now sets to schema order.
+		// Re-sort each choice's attrs back to whichever request con they
+		// satisfy so the proof verifies.
+		if choiceIdx < len(request) {
+			attrs = sortAttrsToMatchRequestCon(attrs, request[choiceIdx])
+		}
 		result.Attributes = append(result.Attributes, attrs)
 	}
 
 	return result, nil
+}
+
+// sortAttrsToMatchRequestCon reorders attrs so that, for some con in discon
+// they fully satisfy, position matches that con's. If no con matches (the
+// frontend selected something unsatisfiable, or the discon is empty), attrs
+// is returned unchanged — the verifier will reject it, which is the right
+// failure mode.
+func sortAttrsToMatchRequestCon(attrs []*irma.AttributeIdentifier, discon irma.AttributeDisCon) []*irma.AttributeIdentifier {
+	if len(attrs) == 0 || len(discon) == 0 {
+		return attrs
+	}
+	for _, con := range discon {
+		if len(con) != len(attrs) {
+			continue
+		}
+		// Try to map each request entry to a disclosed attr (by Type).
+		used := make([]bool, len(attrs))
+		ordered := make([]*irma.AttributeIdentifier, 0, len(attrs))
+		matched := true
+		for _, ar := range con {
+			found := -1
+			for i, a := range attrs {
+				if used[i] {
+					continue
+				}
+				if a.Type == ar.Type {
+					found = i
+					break
+				}
+			}
+			if found < 0 {
+				matched = false
+				break
+			}
+			used[found] = true
+			ordered = append(ordered, attrs[found])
+		}
+		if matched {
+			return ordered
+		}
+	}
+	return attrs
 }
 
 // =====================================================================================
@@ -571,7 +679,7 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 			session.oid4vciPermissionHandler(payload.Granted)
 		} else {
 			// IRMA flow
-			choices, err := choicesToAnswer(payload.DisclosureChoices)
+			choices, err := choicesToAnswer(payload.DisclosureChoices, session.irmaDiscloseRequest)
 			if err != nil {
 				return err
 			}

@@ -3,6 +3,8 @@ package openid4vci
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -129,4 +131,77 @@ func TestPushAuthorizationRequest_SuccessWithInvalidJSON(t *testing.T) {
 // Helper to check if substring is in string
 func contains(s, substr string) bool {
 	return bytes.Contains([]byte(s), []byte(substr))
+}
+
+func TestShouldRetryTxCode(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		txCodeRequired bool
+		want           bool
+	}{
+		{
+			name:           "invalid_grant with tx_code required → retry",
+			err:            &oauth2.TokenError{StatusCode: 400, ErrorCode: "invalid_grant"},
+			txCodeRequired: true,
+			want:           true,
+		},
+		{
+			name:           "invalid_request with tx_code required → retry",
+			err:            &oauth2.TokenError{StatusCode: 400, ErrorCode: "invalid_request"},
+			txCodeRequired: true,
+			want:           true,
+		},
+		{
+			name:           "invalid_grant without tx_code required → no retry",
+			err:            &oauth2.TokenError{StatusCode: 400, ErrorCode: "invalid_grant"},
+			txCodeRequired: false,
+			want:           false,
+		},
+		{
+			name:           "invalid_request without tx_code required → no retry",
+			err:            &oauth2.TokenError{StatusCode: 400, ErrorCode: "invalid_request"},
+			txCodeRequired: false,
+			want:           false,
+		},
+		{
+			name:           "invalid_client → no retry",
+			err:            &oauth2.TokenError{StatusCode: 401, ErrorCode: "invalid_client"},
+			txCodeRequired: true,
+			want:           false,
+		},
+		{
+			name:           "server_error → no retry",
+			err:            &oauth2.TokenError{StatusCode: 500, ErrorCode: "server_error"},
+			txCodeRequired: true,
+			want:           false,
+		},
+		{
+			name:           "unsupported_grant_type → no retry",
+			err:            &oauth2.TokenError{StatusCode: 400, ErrorCode: "unsupported_grant_type"},
+			txCodeRequired: true,
+			want:           false,
+		},
+		{
+			name:           "non-TokenError (network error) → no retry",
+			err:            errors.New("connection refused"),
+			txCodeRequired: true,
+			want:           false,
+		},
+		{
+			name:           "wrapped TokenError still triggers retry",
+			err:            fmt.Errorf("token request failed: %w", &oauth2.TokenError{StatusCode: 400, ErrorCode: "invalid_grant"}),
+			txCodeRequired: true,
+			want:           true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldRetryTxCode(tc.err, tc.txCodeRequired)
+			if got != tc.want {
+				t.Errorf("shouldRetryTxCode(%v, %v) = %v, want %v", tc.err, tc.txCodeRequired, got, tc.want)
+			}
+		})
+	}
 }

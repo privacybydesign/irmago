@@ -3,6 +3,7 @@ package openid4vci
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,11 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 )
+
+// maxTxCodeAttempts is the total number of times the user may submit a tx_code
+// before the session fails. The Authorization Server is the security boundary
+// for tx_code lockout; this client-side limit is a UX guardrail.
+const maxTxCodeAttempts = 3
 
 const YiviAppRedirectUri = "yivi-app://auth-callback"
 const YiviClientId = "yivi-wallet"
@@ -284,13 +290,9 @@ type PreAuthorizedCodeFlowHandler struct {
 
 // HandleGrant TODO: accept raw input, not session?
 func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenResponse, error) {
-	pendingAuthTokenPermissionRequestChannel := make(chan *preAuthPermissionResponse, 1)
-	defer func() {
-		pendingAuthTokenPermissionRequestChannel = nil
-	}()
-
 	var transactionCodeParameters *clientmodels.PreAuthorizedCodeTransactionCodeParameters = nil
-	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {
+	txCodeRequired := s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil
+	if txCodeRequired {
 		txCode := s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode
 
 		txCodeInputMode := "numeric" // Default input mode is 'numeric' if it's not specified in the grant
@@ -305,29 +307,69 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		}
 	}
 
-	request := &clientmodels.PreAuthorizedCodeFlowPermissionRequest{
-		Credentials:               s.credentials,
-		TransactionCodeParameters: transactionCodeParameters,
+	for attempt := 0; attempt < maxTxCodeAttempts; attempt++ {
+		// Fresh channel per attempt: if a stale callback fires after we've moved on
+		// (race during cancel/dismiss), it lands on a channel we no longer read
+		// rather than corrupting the next iteration's response.
+		ch := make(chan *preAuthPermissionResponse, 1)
+
+		request := &clientmodels.PreAuthorizedCodeFlowPermissionRequest{
+			Credentials:               s.credentials,
+			TransactionCodeParameters: transactionCodeParameters,
+		}
+		if attempt > 0 {
+			remaining := maxTxCodeAttempts - attempt
+			request.RemainingAttempts = &remaining
+		}
+
+		s.handler.RequestPreAuthorizedCodeFlowPermission(
+			request,
+			s.requestorInfo,
+			TokenPermissionHandler(func(proceed bool, transactionCode *string) {
+				ch <- &preAuthPermissionResponse{
+					permissionGranted: proceed,
+					transactionCode:   transactionCode,
+				}
+			}),
+		)
+
+		permission := <-ch
+		if !permission.permissionGranted {
+			return &authTokenResponse{permissionGranted: false}, nil
+		}
+
+		response, err := h.doTokenRequest(s, permission.transactionCode)
+		if err == nil {
+			return response, nil
+		}
+
+		if !shouldRetryTxCode(err, txCodeRequired) {
+			return nil, err
+		}
+		// On the final attempt, surface the error instead of looping again.
+		if attempt+1 >= maxTxCodeAttempts {
+			return nil, err
+		}
 	}
-	s.handler.RequestPreAuthorizedCodeFlowPermission(
-		request,
-		s.requestorInfo,
-		TokenPermissionHandler(func(proceed bool, transactionCode *string) {
-			pendingAuthTokenPermissionRequestChannel <- &preAuthPermissionResponse{
-				permissionGranted: proceed,
-				transactionCode:   transactionCode,
-			}
-		}),
-	)
+	// Unreachable: the loop always returns.
+	return nil, fmt.Errorf("transaction code retry loop exited unexpectedly")
+}
 
-	// Wait for the token handler to be called
-	permission := <-pendingAuthTokenPermissionRequestChannel
-
-	if !permission.permissionGranted {
-		return &authTokenResponse{permissionGranted: false}, nil
+// shouldRetryTxCode reports whether a token-request error indicates a wrong
+// transaction code, in which case the user can be re-prompted. OpenID4VCI §6.3
+// permits the AS to respond with either invalid_grant or invalid_request for a
+// wrong tx_code; both also cover other invalid-grant conditions (e.g. expired
+// pre-authorized code), which we accept as a known false-positive — the AS will
+// reject the next attempt either way.
+func shouldRetryTxCode(err error, txCodeRequired bool) bool {
+	if !txCodeRequired {
+		return false
 	}
-
-	return h.doTokenRequest(s, permission.transactionCode)
+	var tokErr *oauth2.TokenError
+	if !errors.As(err, &tokErr) {
+		return false
+	}
+	return tokErr.ErrorCode == "invalid_grant" || tokErr.ErrorCode == "invalid_request"
 }
 
 func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCode *string) (AccessTokenResponse, error) {
@@ -382,15 +424,12 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode Token Response error: %v", err)
 		}
-		errDescription := ""
-		if errResponse.ErrorDescription != nil {
-			errDescription = *errResponse.ErrorDescription + " - "
+		return nil, &oauth2.TokenError{
+			StatusCode:       response.StatusCode,
+			ErrorCode:        errResponse.Error,
+			ErrorDescription: errResponse.ErrorDescription,
+			ErrorUri:         errResponse.ErrorUri,
 		}
-		errUri := ""
-		if errResponse.ErrorUri != nil {
-			errUri = " More info: " + *errResponse.ErrorUri
-		}
-		return nil, fmt.Errorf("token response returned status code %d, %s%s.%s", response.StatusCode, errResponse.Error, errDescription, errUri)
 	}
 
 	var tokenResponse oauth2.TokenResponse

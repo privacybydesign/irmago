@@ -57,6 +57,28 @@ type ErrorResponse struct {
 	ErrorUri         *string `json:"error_uri,omitempty"`
 }
 
+// TokenError is a structured error returned by the Token Endpoint per RFC 6749 §5.2.
+// It implements the error interface so callers can introspect the OAuth2 error code
+// (e.g. "invalid_grant") via errors.As without parsing strings.
+type TokenError struct {
+	StatusCode       int
+	ErrorCode        string
+	ErrorDescription *string
+	ErrorUri         *string
+}
+
+func (e *TokenError) Error() string {
+	desc := ""
+	if e.ErrorDescription != nil {
+		desc = *e.ErrorDescription + " - "
+	}
+	uri := ""
+	if e.ErrorUri != nil {
+		uri = " More info: " + *e.ErrorUri
+	}
+	return fmt.Sprintf("token response returned status code %d, %s%s.%s", e.StatusCode, e.ErrorCode, desc, uri)
+}
+
 type PushedAuthorizationResponse struct {
 	// RFC 9126 fields
 	RequestUri string `json:"request_uri"`

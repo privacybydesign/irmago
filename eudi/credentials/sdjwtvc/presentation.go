@@ -25,14 +25,56 @@ type indexedDisclosure struct {
 // The returned SD-JWT VC has the same issuer-signed JWT but only the selected
 // disclosures appended.
 func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) {
-	issuerSignedJwt, allDisclosures, err := splitSdJwtVc(fullSdJwt)
-	if err != nil {
-		return "", fmt.Errorf("failed to split SD-JWT VC: %v", err)
-	}
-
-	payload, err := decodeJwtPayloadFromJwt(issuerSignedJwt)
+	issuerSignedJwt, payload, byHash, err := decodeAndIndex(fullSdJwt)
 	if err != nil {
 		return "", err
+	}
+
+	selectedSet, selected := collectSelectedDisclosures(payload, byHash, claimPaths)
+
+	// SD-JWT spec Section 4.2.6: validate that every selected disclosure is
+	// reachable from the top-level payload through other selected disclosures.
+	// This ensures the verifier can locate all included disclosures.
+	if err := validateDisclosureDependencies(payload, selectedSet, byHash); err != nil {
+		return "", err
+	}
+
+	return CreateSdJwtVc(issuerSignedJwt, selected), nil
+}
+
+// PostDisclosureView returns the JSON value a verifier would see if a
+// presentation were built for the given claim paths. The returned map has the
+// same shape as the JWT payload with the selected disclosures applied: bundled
+// fields from a single disclosure value appear inline, hidden _sd entries are
+// dropped, and hidden array-element digests stay as nil placeholders so array
+// indices remain stable. Standard JWT/SD-JWT meta keys (_sd, _sd_alg) are
+// stripped from objects in the returned view.
+//
+// Use this to drive UI/log flattening: the disclosure plan and disclosure log
+// should reflect what the verifier actually receives, not just the requested
+// paths. When the issuer chose a coarse SD granularity (multiple fields
+// bundled into one disclosure value), those bundled fields show up here so
+// the user sees them up front.
+func PostDisclosureView(fullSdJwt SdJwtVc, claimPaths [][]any) (map[string]any, error) {
+	_, payload, byHash, err := decodeAndIndex(fullSdJwt)
+	if err != nil {
+		return nil, err
+	}
+	selectedSet, _ := collectSelectedDisclosures(payload, byHash, claimPaths)
+	view, _ := applyDisclosures(payload, selectedSet, byHash).(map[string]any)
+	return view, nil
+}
+
+// decodeAndIndex splits and decodes an SD-JWT VC and indexes its disclosures
+// by hash, ready for path-walking and disclosure-application logic.
+func decodeAndIndex(fullSdJwt SdJwtVc) (IssuerSignedJwt, map[string]any, map[string]indexedDisclosure, error) {
+	issuerSignedJwt, allDisclosures, err := splitSdJwtVc(fullSdJwt)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to split SD-JWT VC: %v", err)
+	}
+	payload, err := decodeJwtPayloadFromJwt(issuerSignedJwt)
+	if err != nil {
+		return "", nil, nil, err
 	}
 
 	// SD-JWT spec Section 4.1.1: default to sha-256 if _sd_alg is absent.
@@ -45,16 +87,26 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 	for _, enc := range allDisclosures {
 		hash, err := CreateUrlEncodedHash(iana.HashingAlgorithm(hashAlg), string(enc))
 		if err != nil {
-			return "", fmt.Errorf("failed to hash disclosure: %v", err)
+			return "", nil, nil, fmt.Errorf("failed to hash disclosure: %v", err)
 		}
 		dec, err := DecodeDisclosure(enc)
 		if err != nil {
-			return "", fmt.Errorf("failed to decode disclosure: %v", err)
+			return "", nil, nil, fmt.Errorf("failed to decode disclosure: %v", err)
 		}
 		byHash[hash] = indexedDisclosure{encoded: enc, decoded: dec}
 	}
+	return issuerSignedJwt, payload, byHash, nil
+}
 
-	// For each claim path, walk the payload _sd structure and collect needed disclosures.
+// collectSelectedDisclosures walks each claim path through the SD-JWT payload
+// and returns the set of disclosures that must be included to expose those
+// leaves to a verifier. The slice is in walk order; the set is for fast
+// dedup/lookup.
+func collectSelectedDisclosures(
+	payload map[string]any,
+	byHash map[string]indexedDisclosure,
+	claimPaths [][]any,
+) (map[string]struct{}, []EncodedDisclosure) {
 	selectedSet := make(map[string]struct{})
 	var selected []EncodedDisclosure
 
@@ -126,14 +178,70 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 		}
 	}
 
-	// SD-JWT spec Section 4.2.6: validate that every selected disclosure is
-	// reachable from the top-level payload through other selected disclosures.
-	// This ensures the verifier can locate all included disclosures.
-	if err := validateDisclosureDependencies(payload, selectedSet, byHash); err != nil {
-		return "", err
-	}
+	return selectedSet, selected
+}
 
-	return CreateSdJwtVc(issuerSignedJwt, selected), nil
+// applyDisclosures returns the JSON value a verifier would see after the
+// selected disclosures are applied to the payload. _sd arrays are replaced by
+// their disclosed children, _sd_alg is dropped, and unselected array-element
+// digests stay as nil placeholders so array indices remain stable.
+func applyDisclosures(value any, selected map[string]struct{}, byHash map[string]indexedDisclosure) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, child := range v {
+			switch k {
+			case Key_Sd:
+				hashes, ok := child.([]any)
+				if !ok {
+					continue
+				}
+				for _, h := range hashes {
+					hashStr, ok := h.(string)
+					if !ok {
+						continue
+					}
+					if _, sel := selected[hashStr]; !sel {
+						continue
+					}
+					entry, ok := byHash[hashStr]
+					if !ok {
+						continue
+					}
+					out[entry.decoded.Key] = applyDisclosures(entry.decoded.Value, selected, byHash)
+				}
+			case Key_SdAlg:
+				// metadata only, never user data
+			default:
+				out[k] = applyDisclosures(child, selected, byHash)
+			}
+		}
+		return out
+	case []any:
+		// Preserve length and indices: hidden array-element digests stay as
+		// nil placeholders so callers can compare authorized leaf paths
+		// against the verifier-side view without index-shift surprises.
+		out := make([]any, len(v))
+		for i, elem := range v {
+			if obj, ok := elem.(map[string]any); ok {
+				if digest, ok := obj["..."].(string); ok {
+					if _, sel := selected[digest]; !sel {
+						continue
+					}
+					entry, ok := byHash[digest]
+					if !ok {
+						continue
+					}
+					out[i] = applyDisclosures(entry.decoded.Value, selected, byHash)
+					continue
+				}
+			}
+			out[i] = applyDisclosures(elem, selected, byHash)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // validateDisclosureDependencies checks that every selected disclosure hash is

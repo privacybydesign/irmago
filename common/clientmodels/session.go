@@ -69,6 +69,9 @@ type SessionState struct {
 
 	// OID4VCI - Pre-Authorized Code Flow parameters
 	TransactionCodeParameters *PreAuthorizedCodeTransactionCodeParameters `json:"transaction_code_parameters,omitempty"`
+	// Remaining transaction-code attempts. Nil on the initial prompt; populated
+	// (e.g. 2, then 1) after each rejected attempt so the UI can show "try again".
+	RemainingTxCodeAttempts *int `json:"remaining_tx_code_attempts,omitempty"`
 }
 
 // RemoteError is a server-side error returned by a remote party.
@@ -92,6 +95,9 @@ type PreAuthorizedCodeTransactionCodeParameters struct {
 type PreAuthorizedCodeFlowPermissionRequest struct {
 	Credentials               []*CredentialDescriptor
 	TransactionCodeParameters *PreAuthorizedCodeTransactionCodeParameters
+	// RemainingAttempts is set when the user is being re-prompted after a wrong
+	// transaction code. Nil on the initial prompt.
+	RemainingAttempts *int
 }
 
 // AuthorizationCodeFlowRequest is a request to proceed with an authorization code issuance flow.

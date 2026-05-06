@@ -137,6 +137,9 @@ func createCredentialDescriptor(
 		}
 	}
 
+	// Display in schema order rather than the verifier's request order.
+	attributes = sortAttributesBySchema(attributes, info)
+
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
 		Name:         clientmodels.TranslatedString(info.Name),

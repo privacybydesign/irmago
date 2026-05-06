@@ -364,6 +364,35 @@ func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ..
 	}
 }
 
+// requireNewestDisclosureLogAttrs loads the newest logs and asserts that the
+// most recent disclosure log entry's credential (matched by credentialId)
+// has attributes equal to expected — same shape as requireAttrsInOrder. Used
+// to verify that the persisted disclosure log mirrors the disclosure-plan UI.
+func requireNewestDisclosureLogAttrs(t testingT, c *client.Client, credentialId string, expected []expectedAttr) {
+	t.Helper()
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	var matched *clientmodels.LogCredential
+	for i := range logs {
+		if logs[i].Type != clientmodels.LogType_Disclosure || logs[i].DisclosureLog == nil {
+			continue
+		}
+		for j := range logs[i].DisclosureLog.Credentials {
+			cred := &logs[i].DisclosureLog.Credentials[j]
+			if cred.CredentialId == credentialId {
+				matched = cred
+				break
+			}
+		}
+		if matched != nil {
+			break
+		}
+	}
+	require.NotNil(t, matched, "expected disclosure log entry for credential %q", credentialId)
+	requireAttrsInOrder(t, matched.Attributes, expected...)
+}
+
 // findAttr finds the first attribute with the given claim path in the slice.
 func findAttr(attrs []clientmodels.Attribute, path ...any) *clientmodels.Attribute {
 	key := clientmodels.ClaimPathKey(path)

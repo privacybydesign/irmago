@@ -3,6 +3,7 @@
 package eudi_sdjwt_dcql
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -30,15 +32,26 @@ type SdJwtVcDcqlHandler struct {
 	storage         storage.Storage
 	credentialStore db.CredentialStore
 	keyBinder       sdjwtvc.KeyBinder
+	vctFetcher      typemetadata.VctFetcher
+	issuerFetcher   typemetadata.IssuerFetcher
 }
 
-// NewSdJwtVcDcqlHandler creates a new handler.
-func NewSdJwtVcDcqlHandler(eudiStorage storage.Storage) *SdJwtVcDcqlHandler {
+// NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
+// used to describe credentials the wallet has never seen (the verifier requests
+// a VCT for which there is no stored batch). Pass nil to disable that path; the
+// handler will then return empty obtainable descriptors as before.
+func NewSdJwtVcDcqlHandler(
+	eudiStorage storage.Storage,
+	vctFetcher typemetadata.VctFetcher,
+	issuerFetcher typemetadata.IssuerFetcher,
+) *SdJwtVcDcqlHandler {
 	keyService := services.NewHolderBindingKeyService(eudiStorage.Db())
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
 		keyBinder:       sdjwtvc.NewDefaultKeyBinder(keyService),
+		vctFetcher:      vctFetcher,
+		issuerFetcher:   issuerFetcher,
 	}
 }
 
@@ -83,8 +96,8 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
-		nonSdClaims := getNonSdClaimNames(batch, h.credentialStore)
-		attributes, err := parseBatchAttributes(batch, query, nonSdClaims)
+		rawSdJwt, _ := loadRawSdJwt(batch, h.credentialStore)
+		attributes, err := parseBatchAttributes(batch, query, rawSdJwt)
 		if err != nil {
 			continue
 		}
@@ -115,7 +128,172 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		return nil, fmt.Errorf("all credential instances for the requested type are exhausted")
 	}
 
+	// When the wallet has no batches at all matching the query's vct_values,
+	// emit one descriptor with an empty IssueURL so the user sees what is
+	// being requested instead of a stuck permission prompt. See the
+	// "missing credentials" plan.
+	if len(batches) == 0 && len(query.VctValues()) > 0 && h.vctFetcher != nil {
+		if descriptor := h.composeUnobtainableDescriptor(query); descriptor != nil {
+			result.ObtainableDescriptors = append(result.ObtainableDescriptors, descriptor)
+		}
+	}
+
 	return result, nil
+}
+
+// composeUnobtainableDescriptor builds a CredentialDescriptor for a credential
+// the wallet has never seen, by fetching the SD-JWT VC Type Metadata document
+// (and, if the type metadata exposes an issuer URL, the issuer's well-known
+// document). The returned descriptor's IssueURL is always nil — that is the
+// wire-level signal to the frontend that the session cannot be completed.
+//
+// Walks query.VctValues in order; first VCT whose type-metadata fetch succeeds
+// wins. If every VCT fetch fails, returns a URL-only descriptor for the first
+// VCT (so the user still sees what was requested).
+func (h *SdJwtVcDcqlHandler) composeUnobtainableDescriptor(query dcql.CredentialQuery) *clientmodels.CredentialDescriptor {
+	vctValues := query.VctValues()
+	if len(vctValues) == 0 {
+		return nil
+	}
+
+	ctx := context.Background()
+
+	for _, vct := range vctValues {
+		vctMeta, err := h.vctFetcher.Fetch(ctx, vct)
+		if err != nil {
+			eudi.Logger.Warnf("failed to fetch VCT type metadata from %q: %v", vct, err)
+			continue
+		}
+		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query)
+	}
+
+	// All VCT fetches failed: emit a URL-only descriptor for the first VCT so
+	// the user still sees what was asked for.
+	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query)
+}
+
+func (h *SdJwtVcDcqlHandler) fetchIssuerMetadata(ctx context.Context, issuerURL string) *typemetadata.IssuerMetadata {
+	if issuerURL == "" || h.issuerFetcher == nil {
+		return nil
+	}
+	im, err := h.issuerFetcher.Fetch(ctx, issuerURL)
+	if err != nil {
+		eudi.Logger.Warnf("failed to fetch issuer metadata from %q: %v", issuerURL, err)
+		// Issuer fetch failure is tolerated — we still know the issuer URL.
+		return &typemetadata.IssuerMetadata{Id: issuerURL}
+	}
+	return im
+}
+
+// buildUnobtainableDescriptor assembles the final CredentialDescriptor from
+// (optionally absent) VCT and issuer metadata. CredentialId is the VCT URL.
+// IssueURL is always nil. Attributes are derived from the DCQL claim paths,
+// with display names from the type-metadata when available.
+func buildUnobtainableDescriptor(
+	vctURL string,
+	vctMeta *typemetadata.VctTypeMetadata,
+	issuerMeta *typemetadata.IssuerMetadata,
+	query dcql.CredentialQuery,
+) *clientmodels.CredentialDescriptor {
+	desc := &clientmodels.CredentialDescriptor{
+		CredentialId: vctURL,
+		Name:         vctName(vctMeta),
+		Issuer:       issuerTrustedParty(issuerMeta),
+		Attributes:   queryAttributes(query, vctMeta),
+	}
+	return desc
+}
+
+// vctName extracts a TranslatedString credential name from the VCT type
+// metadata's display entries (or the top-level name as fallback). Returns an
+// empty TranslatedString when no name is available.
+func vctName(vctMeta *typemetadata.VctTypeMetadata) clientmodels.TranslatedString {
+	name := clientmodels.TranslatedString{}
+	if vctMeta == nil {
+		return name
+	}
+	for _, d := range vctMeta.Display {
+		if d.Name == "" {
+			continue
+		}
+		lang := d.Lang
+		if lang == "" {
+			lang = clientmodels.DefaultFallbackLanguage
+		}
+		name[lang] = d.Name
+	}
+	if len(name) == 0 && vctMeta.Name != "" {
+		name[clientmodels.DefaultFallbackLanguage] = vctMeta.Name
+	}
+	return name
+}
+
+// issuerTrustedParty builds a TrustedParty from issuer metadata. Empty fields
+// when the metadata is nil. Logo is intentionally not fetched (the unobtainable
+// path stays inside the user's permission-prompt budget); frontend can resolve
+// the logo URL itself if it wants.
+func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata) clientmodels.TrustedParty {
+	if issuerMeta == nil {
+		return clientmodels.TrustedParty{}
+	}
+	return clientmodels.TrustedParty{
+		Id:   issuerMeta.Id,
+		Name: issuerMeta.Name,
+	}
+}
+
+// queryAttributes maps each top-level DCQL claim path to a placeholder
+// Attribute (no Value), enriched with a display name from the VCT type
+// metadata when one is available. Used so the user sees which claims the
+// verifier was asking for, even though no credential is held.
+func queryAttributes(query dcql.CredentialQuery, vctMeta *typemetadata.VctTypeMetadata) []clientmodels.Attribute {
+	if len(query.Claims) == 0 {
+		return nil
+	}
+	attrs := make([]clientmodels.Attribute, 0, len(query.Claims))
+	for _, claim := range query.Claims {
+		if len(claim.Path) == 0 {
+			continue
+		}
+		display := claimDisplayFromVct(vctMeta, claim.Path)
+		var dn *clientmodels.TranslatedString
+		if len(display) > 0 {
+			dn = &display
+		}
+		attrs = append(attrs, clientmodels.Attribute{
+			ClaimPath:   append([]any{}, claim.Path...),
+			DisplayName: dn,
+		})
+	}
+	return attrs
+}
+
+// claimDisplayFromVct returns the localized display name for a claim path from
+// the VCT type metadata, or an empty TranslatedString when none is available.
+func claimDisplayFromVct(vctMeta *typemetadata.VctTypeMetadata, path []any) clientmodels.TranslatedString {
+	if vctMeta == nil {
+		return nil
+	}
+	for _, c := range vctMeta.Claims {
+		if !claimPathMatchesMetadataPath(path, c.Path) {
+			continue
+		}
+		ts := clientmodels.TranslatedString{}
+		for _, d := range c.Display {
+			if d.Name == "" {
+				continue
+			}
+			lang := d.Lang
+			if lang == "" {
+				lang = clientmodels.DefaultFallbackLanguage
+			}
+			ts[lang] = d.Name
+		}
+		if len(ts) > 0 {
+			return ts
+		}
+	}
+	return nil
 }
 
 // findBatches returns credential batches matching the query, with metadata
@@ -205,101 +383,327 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 	return result, nil
 }
 
-// parseBatchAttributes parses the stored ProcessedSdJwtPayload and matches
-// claims against the DCQL query. Returns nil if the credential doesn't match.
-// Non-SD claims (always shared when presenting) are included in the result so
-// the user sees everything they will be sharing.
+// parseBatchAttributes builds the disclosure-plan attribute list for a batch
+// by previewing what the verifier would actually receive if the user grants
+// permission for the DCQL-requested claims. SD-JWT disclosures are atomic: a
+// disclosure's value is whatever the issuer signed into it, so a request for
+// a single deep leaf may pull in sibling fields the issuer bundled into the
+// same disclosure. The plan must show those bundled fields up front,
+// otherwise the user would consent to a release that's wider than what they
+// see in the UI.
 //
-// When claim_sets is present, each set is tried in order and the first fully
-// satisfiable set determines which claims are included. Without claim_sets,
-// all claims must match.
-func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, nonSdClaims []string) ([]clientmodels.Attribute, error) {
-	var payload sdjwtvc.ProcessedSdJwtPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload); err != nil {
+// Returns nil if the credential doesn't satisfy the query's value
+// constraints. When claim_sets is present, each set is tried in order and the
+// first fully satisfiable set determines which claims are included.
+func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, rawSdJwt sdjwtvc.SdJwtVc) ([]clientmodels.Attribute, error) {
+	var resolved sdjwtvc.ProcessedSdJwtPayload
+	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
 		return nil, err
 	}
 
-	claims := selectClaims(query, &payload)
+	claims := selectClaims(query, &resolved)
 	if claims == nil {
-		// nil means the credential doesn't satisfy the query's value constraints.
 		return nil, nil
 	}
 
-	// Use a non-nil slice so that non-SD claims can still be appended even when
-	// no SD claims are requested (claims is empty but non-nil).
 	// OpenID4VP Section 6.3: wallets should ignore duplicate claim queries.
-	// Dedup by the full serialized path so that different paths with the same
-	// leaf name (e.g., ["address","street"] vs ["billing","street"]) are not
-	// confused.
+	// Dedup by the full serialized path. Track which expanded paths carry a
+	// value constraint so we can stamp RequestedValue on their leaf attributes.
+	requestedPaths, constrainedKeys := expandClaimsToConcretePaths(claims, &resolved)
+
+	// Compute the verifier-side view of the SD-JWT for these paths. Hidden
+	// _sd entries are stripped, hidden array-element digests stay nil, and any
+	// extra fields bundled into the same disclosure value as a requested
+	// path appear inline — exactly what the verifier ends up with.
+	//
+	// When the raw SD-JWT isn't available (or doesn't parse), fall back to
+	// flattening the resolved payload at the requested paths. That keeps the
+	// pre-existing behavior for unit tests that work with synthetic batches,
+	// at the cost of not previewing bundled siblings in those tests.
+	leafPaths := computeDisclosurePreviewLeaves(rawSdJwt, requestedPaths, &resolved, batch.VerifiableCredentialType)
+	pairs := buildPairsFromLeaves(leafPaths, constrainedKeys)
+
 	metadataOrder := buildMetadataOrder(batch)
 	attributes := make([]clientmodels.Attribute, 0)
-	seenPaths := make(map[string]struct{})
 	requestedKeys := make(map[string]struct{})
-	for _, claim := range claims {
-		pathKey := clientmodels.ClaimPathKey(claim.Path)
-		if _, duplicate := seenPaths[pathKey]; duplicate {
+	attributes = flattenPathsForDisplay(attributes, requestedKeys, batch, &resolved, pairs, metadataOrder)
+
+	return attributes, nil
+}
+
+// computeDisclosurePreviewLeaves returns the leaf paths that should appear in
+// the disclosure plan. Production path: simulate the verifier-side view from
+// the raw SD-JWT and walk every visible leaf, so the user sees any sibling
+// fields bundled into the same disclosure as a requested leaf. Fallback path
+// (raw SD-JWT empty or unparseable, e.g. in unit tests with synthetic
+// batches): walk the resolved payload at each requested path. The fallback
+// loses the bundled-sibling preview but preserves the old behavior when the
+// SD-JWT structure isn't accessible.
+func computeDisclosurePreviewLeaves(
+	rawSdJwt sdjwtvc.SdJwtVc,
+	requestedPaths [][]any,
+	resolved *sdjwtvc.ProcessedSdJwtPayload,
+	credentialType string,
+) [][]any {
+	if len(rawSdJwt) > 0 {
+		view, err := sdjwtvc.PostDisclosureView(rawSdJwt, requestedPaths)
+		if err == nil {
+			return collectViewLeafPaths(view)
+		}
+		eudi.Logger.Warnf(
+			"failed to compute post-disclosure view for %q (falling back to requested-path flattening): %v",
+			credentialType, err,
+		)
+	}
+	return collectResolvedLeavesAtPaths(resolved, requestedPaths)
+}
+
+// collectResolvedLeavesAtPaths walks the resolved payload at each requested
+// path. Scalar values become single leaves; compound values are walked
+// recursively. Used as the fallback when the verifier-side view isn't
+// available — it reproduces the pre-refactor behavior for unit tests that
+// don't carry a parseable raw SD-JWT.
+func collectResolvedLeavesAtPaths(resolved *sdjwtvc.ProcessedSdJwtPayload, paths [][]any) [][]any {
+	var leaves [][]any
+	seen := make(map[string]struct{})
+	for _, p := range paths {
+		val, err := resolved.GetClaimValue(p)
+		if err != nil {
 			continue
 		}
-		seenPaths[pathKey] = struct{}{}
-
-		// Expand null wildcards in the path into concrete indexed paths.
-		concretePaths := expandNullPaths(claim.Path, &payload)
-
-		// Mark the top-level key as requested so the non-SD claims loop
-		// does not re-add parent claims that were already expanded.
-		if len(claim.Path) > 0 {
-			if topKey, ok := claim.Path[0].(string); ok {
-				requestedKeys[clientmodels.ClaimPathKey([]any{topKey})] = struct{}{}
+		walkLeafPaths(val, append([]any{}, p...), func(leaf []any) {
+			key := clientmodels.ClaimPathKey(leaf)
+			if _, dup := seen[key]; dup {
+				return
 			}
-		}
+			seen[key] = struct{}{}
+			leaves = append(leaves, leaf)
+		})
+	}
+	return leaves
+}
 
-		prevLen := len(attributes)
-		for _, claimPath := range concretePaths {
-			val, _ := payload.GetClaimValue(claimPath)
-			displayName := claimDisplayName(batch, claimPath)
-			attributes = flattenForDisclosure(attributes, requestedKeys, batch, claimPath, val, displayName, metadataOrder)
+// expandClaimsToConcretePaths walks each DCQL claim, expands null wildcards
+// into concrete array indices using the resolved payload, and then expands
+// any compound endpoint into all its descendant leaf paths. The latter step
+// matters because an SD-JWT presentation needs every nested disclosure
+// included — a request for ["university"] alone would only release the
+// university SD entry, which (when the issuer made each sub-field its own
+// SD) is empty to the verifier. Walking to leaves means each per-leaf SD
+// disclosure also gets selected by collectSelectedDisclosures.
+//
+// Returns the concrete leaf paths and the set of paths (by ClaimPathKey)
+// that carry a value constraint. The constrained set includes both the
+// original DCQL path and any leaves expanded under it, so RequestedValue
+// stamping works for value-constrained scalars.
+func expandClaimsToConcretePaths(claims []dcql.Claim, payload *sdjwtvc.ProcessedSdJwtPayload) ([][]any, map[string]struct{}) {
+	seenPaths := make(map[string]struct{})
+	constrained := make(map[string]struct{})
+	var paths [][]any
+	for _, claim := range claims {
+		key := clientmodels.ClaimPathKey(claim.Path)
+		if _, dup := seenPaths[key]; dup {
+			continue
 		}
-
-		// When the DCQL claim specifies a value constraint, set RequestedValue on the
-		// newly added leaf attributes so the UI can show what the verifier asked for.
-		if len(claim.Values) > 0 {
-			for i := prevLen; i < len(attributes); i++ {
-				if attributes[i].Value != nil {
-					attributes[i].RequestedValue = attributes[i].Value
+		seenPaths[key] = struct{}{}
+		hasConstraint := len(claim.Values) > 0
+		for _, cp := range expandNullPaths(claim.Path, payload) {
+			leaves := descendantLeafPaths(payload, cp)
+			for _, leaf := range leaves {
+				paths = append(paths, leaf)
+				if hasConstraint {
+					constrained[clientmodels.ClaimPathKey(leaf)] = struct{}{}
 				}
 			}
 		}
 	}
+	return paths, constrained
+}
 
-	// Include non-SD claims: these are always visible in the JWT payload and
-	// will be shared regardless of which disclosures the user selects.
-	for _, name := range nonSdClaims {
-		if _, alreadyIncluded := requestedKeys[clientmodels.ClaimPathKey([]any{name})]; alreadyIncluded {
+// descendantLeafPaths returns every scalar leaf path reachable from `path` in
+// the resolved payload. If the value at `path` is itself a scalar, returns
+// [path]. If it's a compound (object/array), recurses to the leaves.
+func descendantLeafPaths(payload *sdjwtvc.ProcessedSdJwtPayload, path []any) [][]any {
+	val, err := payload.GetClaimValue(path)
+	if err != nil {
+		// Path doesn't resolve in the resolved payload — fall back to the
+		// path itself so the caller can still attempt to walk it.
+		return [][]any{path}
+	}
+	var leaves [][]any
+	walkLeafPaths(val, append([]any{}, path...), func(p []any) {
+		leaves = append(leaves, p)
+	})
+	if len(leaves) == 0 {
+		// e.g., path resolves to an empty object/array — return the path
+		// itself so the caller still emits something for it.
+		return [][]any{path}
+	}
+	return leaves
+}
+
+// collectViewLeafPaths walks a verifier-side view and returns the path of
+// every visible scalar leaf. Standard JWT/SD-JWT meta keys at the top level
+// (iss, iat, exp, vct, cnf, …) are skipped entirely — including their
+// subtrees — because they are not user data. Nil placeholders (representing
+// hidden array-element digests) are skipped.
+func collectViewLeafPaths(view map[string]any) [][]any {
+	var leaves [][]any
+	for k, child := range view {
+		if _, std := sdjwtvc.StandardClaims[k]; std {
 			continue
 		}
-		val, err := payload.GetClaimValue([]any{name})
-		if err != nil {
+		walkLeafPaths(child, []any{k}, func(path []any) {
+			leaves = append(leaves, path)
+		})
+	}
+	return leaves
+}
+
+// walkLeafPaths visits every scalar leaf in value, calling visit with the
+// full path. nil values represent verifier-hidden positions and are skipped.
+func walkLeafPaths(value any, prefix []any, visit func([]any)) {
+	switch v := value.(type) {
+	case map[string]any:
+		for k, child := range v {
+			next := append(append([]any{}, prefix...), k)
+			walkLeafPaths(child, next, visit)
+		}
+	case []any:
+		for i, child := range v {
+			next := append(append([]any{}, prefix...), i)
+			walkLeafPaths(child, next, visit)
+		}
+	default:
+		if v == nil || len(prefix) == 0 {
+			return
+		}
+		visit(append([]any{}, prefix...))
+	}
+}
+
+// buildPairsFromLeaves turns concrete leaf paths into pathToFlatten entries,
+// stamping hasConstraint when the leaf path had a DCQL value constraint.
+// Duplicate paths are dropped.
+func buildPairsFromLeaves(leafPaths [][]any, constrainedKeys map[string]struct{}) []pathToFlatten {
+	seen := make(map[string]struct{}, len(leafPaths))
+	pairs := make([]pathToFlatten, 0, len(leafPaths))
+	for _, p := range leafPaths {
+		key := clientmodels.ClaimPathKey(p)
+		if _, dup := seen[key]; dup {
 			continue
 		}
-		dn := claimDisplayName(batch, []any{name})
-		if len(dn) == 0 {
-			dn = clientmodels.TranslatedString{"en": name}
+		seen[key] = struct{}{}
+		_, hasConstraint := constrainedKeys[key]
+		pairs = append(pairs, pathToFlatten{
+			path:          p,
+			hasConstraint: hasConstraint,
+		})
+	}
+	return pairs
+}
+
+// loadRawSdJwt fetches the raw issuer-signed SD-JWT bytes for a batch via the
+// credential store. Used by parseBatchAttributes to compute the post-disclosure
+// view and by other helpers that need to inspect the JWT structure.
+func loadRawSdJwt(batch *models.CredentialBatch, credStore db.CredentialStore) (sdjwtvc.SdJwtVc, error) {
+	instance, err := credStore.GetUnusedInstance(batch.ID)
+	if err != nil {
+		return "", fmt.Errorf("failed to load credential instance for batch %s: %w", batch.ID, err)
+	}
+	return sdjwtvc.SdJwtVc(instance.RawCredential), nil
+}
+
+// pathToFlatten describes one concrete claim path that should be emitted into
+// the disclosure-plan / log attribute list, along with its rendering context.
+type pathToFlatten struct {
+	path []any
+	// hasConstraint marks this path's leaf attributes for RequestedValue
+	// (used by the UI when the verifier specified a value constraint).
+	hasConstraint bool
+	// fallbackDisplay is used when the credential metadata has no display
+	// name for this path. Set for non-SD claims so they always render with
+	// at least a section header.
+	fallbackDisplay clientmodels.TranslatedString
+}
+
+// flattenPathsForDisplay emits attributes for a list of concrete claim paths,
+// in tree-walk order. Each path produces (1) any compound-named ancestor
+// headers not yet emitted, deduped by concrete path key; (2) the path's
+// flattened value via flattenForDisclosure. Compound non-SD values without a
+// metadata display name get a synthetic header from fallbackDisplay so they
+// still render as a section in the UI. RequestedValue is stamped on leaf
+// attributes added during a path's processing when hasConstraint is set.
+func flattenPathsForDisplay(
+	attrs []clientmodels.Attribute,
+	requestedKeys map[string]struct{},
+	batch *models.CredentialBatch,
+	payload *sdjwtvc.ProcessedSdJwtPayload,
+	pairs []pathToFlatten,
+	metadataOrder map[string]int,
+) []clientmodels.Attribute {
+	sort.SliceStable(pairs, func(i, j int) bool {
+		return pathLess(pairs[i].path, pairs[j].path, metadataOrder)
+	})
+
+	for _, p := range pairs {
+		prevLen := len(attrs)
+
+		// Emit headers for compound-named ancestors. Dedup keys are concrete
+		// so each array-element subtree carries its own block.
+		for i := 1; i < len(p.path); i++ {
+			ancestor := p.path[:i]
+			if isArrayIndex(ancestor[len(ancestor)-1]) {
+				continue
+			}
+			key := clientmodels.ClaimPathKey(ancestor)
+			if _, seen := requestedKeys[key]; seen {
+				continue
+			}
+			requestedKeys[key] = struct{}{}
+			d := claimDisplayName(batch, ancestor)
+			if len(d) == 0 {
+				continue
+			}
+			dn := d
+			attrs = append(attrs, clientmodels.Attribute{
+				ClaimPath:   append([]any{}, ancestor...),
+				DisplayName: &dn,
+			})
 		}
-		// For compound non-SD values (arrays/objects), emit a section header
-		// when flattenForDisclosure won't add one itself (no metadata match).
-		switch val.(type) {
-		case []any, map[string]any:
-			if d := claimDisplayName(batch, []any{name}); len(d) == 0 {
-				attributes = append(attributes, clientmodels.Attribute{
-					ClaimPath:   []any{name},
-					DisplayName: &dn,
-				})
+
+		val, _ := payload.GetClaimValue(p.path)
+		displayName := claimDisplayName(batch, p.path)
+		if len(displayName) == 0 && len(p.fallbackDisplay) > 0 {
+			displayName = p.fallbackDisplay
+		}
+
+		// Synthetic header for compound paths whose metadata lacks a display
+		// entry (currently only non-SD top-level compounds hit this branch).
+		if len(p.fallbackDisplay) > 0 {
+			switch val.(type) {
+			case []any, map[string]any:
+				if d := claimDisplayName(batch, p.path); len(d) == 0 {
+					fb := p.fallbackDisplay
+					attrs = append(attrs, clientmodels.Attribute{
+						ClaimPath:   append([]any{}, p.path...),
+						DisplayName: &fb,
+					})
+				}
 			}
 		}
-		attributes = flattenForDisclosure(attributes, requestedKeys, batch, []any{name}, val, dn, metadataOrder)
-	}
 
-	return attributes, nil
+		attrs = flattenForDisclosure(attrs, requestedKeys, batch, p.path, val, displayName, metadataOrder)
+
+		if p.hasConstraint {
+			for i := prevLen; i < len(attrs); i++ {
+				if attrs[i].Value != nil {
+					attrs[i].RequestedValue = attrs[i].Value
+				}
+			}
+		}
+	}
+	return attrs
 }
 
 // selectClaims determines which claims to use for matching. When claim_sets is
@@ -442,72 +846,33 @@ func toFloat64(v any) (float64, bool) {
 	}
 }
 
-// getNonSdClaimNames returns the names of claims in the issuer JWT payload that
-// are NOT selectively disclosable (i.e., always shared). These are claims present
-// directly in the payload, not behind _sd hashes.
-func getNonSdClaimNames(batch *models.CredentialBatch, credStore db.CredentialStore) []string {
-	instance, err := credStore.GetUnusedInstance(batch.ID)
-	if err != nil {
-		return nil
-	}
-
-	rawJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
-	jwtPayload, err := sdjwtvc.DecodeJwtPayload(rawJwt)
-	if err != nil {
-		return nil
-	}
-
-	var names []string
-	for key := range jwtPayload {
-		if _, isStandard := sdjwtvc.StandardClaims[key]; isStandard {
-			continue
-		}
-		// If the key is directly in the payload (not a nested _sd reference),
-		// it's a non-SD claim.
-		names = append(names, key)
-	}
-	// Sort by metadata position for deterministic ordering. Claims not in
-	// the metadata are placed at the end, sorted alphabetically.
-	metadataOrder := buildMetadataOrder(batch)
-	const noOrder = 1<<31 - 1
-	sort.Slice(names, func(i, j int) bool {
-		oi, okI := metadataOrder[clientmodels.ClaimPathKey([]any{names[i]})]
-		oj, okJ := metadataOrder[clientmodels.ClaimPathKey([]any{names[j]})]
-		if !okI {
-			oi = noOrder
-		}
-		if !okJ {
-			oj = noOrder
-		}
-		if oi != oj {
-			return oi < oj
-		}
-		return names[i] < names[j]
-	})
-	return names
-}
-
 func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
-	var attrs []clientmodels.Attribute
-	var payload sdjwtvc.ProcessedSdJwtPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &payload); err != nil {
+	attrs := make([]clientmodels.Attribute, 0)
+
+	var resolved sdjwtvc.ProcessedSdJwtPayload
+	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
 		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.VerifiableCredentialType, err)
 	}
 
-	for _, path := range claimPaths {
-		if len(path) == 0 {
-			continue
-		}
-		dn := claimDisplayName(batch, path)
-		attr := clientmodels.Attribute{
-			ClaimPath:   path,
-			DisplayName: &dn,
-		}
-		if val, err := payload.GetClaimValue(path); err == nil {
-			attr.Value = clientmodels.NewAttributeValue(val)
-		}
-		attrs = append(attrs, attr)
+	// Compute the verifier-side view for the user's authorized paths so the
+	// log records exactly what was transmitted, including any sibling
+	// fields the issuer bundled into the same disclosure value as a
+	// requested leaf.
+	rawSdJwt, err := loadRawSdJwt(batch, h.credentialStore)
+	if err != nil {
+		eudi.Logger.Warnf("failed to load raw SD-JWT for log credential %q: %v", batch.VerifiableCredentialType, err)
 	}
+	view, err := sdjwtvc.PostDisclosureView(rawSdJwt, claimPaths)
+	if err != nil {
+		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.VerifiableCredentialType, err)
+	}
+
+	leafPaths := collectViewLeafPaths(view)
+	pairs := buildPairsFromLeaves(leafPaths, nil)
+
+	metadataOrder := buildMetadataOrder(batch)
+	requestedKeys := make(map[string]struct{})
+	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder)
 
 	return clientmodels.LogCredential{
 		CredentialId: batch.VerifiableCredentialType,
@@ -561,13 +926,15 @@ func flattenForDisclosure(
 	switch v := value.(type) {
 	case []any:
 		pk := clientmodels.ClaimPathKey(path)
-		requestedKeys[pk] = struct{}{}
-		if d := claimDisplayName(batch, path); len(d) > 0 {
-			dn := d
-			attrs = append(attrs, clientmodels.Attribute{
-				ClaimPath:   path,
-				DisplayName: &dn,
-			})
+		if _, seen := requestedKeys[pk]; !seen {
+			requestedKeys[pk] = struct{}{}
+			if d := claimDisplayName(batch, path); len(d) > 0 {
+				dn := d
+				attrs = append(attrs, clientmodels.Attribute{
+					ClaimPath:   path,
+					DisplayName: &dn,
+				})
+			}
 		}
 		for i, elem := range v {
 			elemPath := append(append([]any{}, path...), i)
@@ -579,13 +946,15 @@ func flattenForDisclosure(
 		}
 	case map[string]any:
 		pk := clientmodels.ClaimPathKey(path)
-		requestedKeys[pk] = struct{}{}
-		if d := claimDisplayName(batch, path); len(d) > 0 {
-			dn := d
-			attrs = append(attrs, clientmodels.Attribute{
-				ClaimPath:   path,
-				DisplayName: &dn,
-			})
+		if _, seen := requestedKeys[pk]; !seen {
+			requestedKeys[pk] = struct{}{}
+			if d := claimDisplayName(batch, path); len(d) > 0 {
+				dn := d
+				attrs = append(attrs, clientmodels.Attribute{
+					ClaimPath:   path,
+					DisplayName: &dn,
+				})
+			}
 		}
 		keys := sortObjectKeysByMetadata(v, path, metadataOrder)
 		for _, key := range keys {
@@ -726,6 +1095,61 @@ func isArrayIndex(component any) bool {
 		return true
 	}
 	return false
+}
+
+// arrayIndexValue returns the integer value of an array-index path component.
+func arrayIndexValue(component any) int {
+	switch v := component.(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	}
+	return 0
+}
+
+// pathLess compares two concrete claim paths in tree-walk order: at each level
+// array indices are compared numerically; string keys are compared by their
+// metadata declaration index (with alphabetical fallback). A shorter path
+// orders before a longer one when they share the full common prefix. This
+// makes parseBatchAttributes emit attributes in the same order as a
+// depth-first walk of the credential value tree, matching FlattenClaimValue.
+func pathLess(a, b []any, metadataOrder map[string]int) bool {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for k := 0; k < n; k++ {
+		aIsIdx := isArrayIndex(a[k])
+		bIsIdx := isArrayIndex(b[k])
+		switch {
+		case aIsIdx && bIsIdx:
+			ai := arrayIndexValue(a[k])
+			bi := arrayIndexValue(b[k])
+			if ai != bi {
+				return ai < bi
+			}
+		case !aIsIdx && !bIsIdx:
+			ak, _ := a[k].(string)
+			bk, _ := b[k].(string)
+			if ak == bk {
+				continue
+			}
+			parent := a[:k]
+			ai := metadataOrderForKey(parent, ak, metadataOrder)
+			bi := metadataOrderForKey(parent, bk, metadataOrder)
+			if ai != bi {
+				return ai < bi
+			}
+			return ak < bk
+		default:
+			// Mixed types at the same level shouldn't occur for valid paths
+			// against a single credential. Order strings before indices for
+			// determinism.
+			return !aIsIdx
+		}
+	}
+	return len(a) < len(b)
 }
 
 // batchInstanceCountRemaining returns nil for batch-of-1 credentials (infinitely

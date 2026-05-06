@@ -11,6 +11,6 @@
     "claims": [
       { "path": ["phone_number"], "sd": "allowed" }
     ],
-    "issuer": "{{ here }}"
+    "issuer": "https://localhost:8443/test-issuer"
   }
 }
