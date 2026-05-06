@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"reflect"
 	"slices"
@@ -171,10 +172,17 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 	sdjwtvc SdJwtVcKb,
 	keyBindingProcessor keyBindingProcessor,
 ) (*VerifiedSdJwtVc, error) {
+
+	// TODO: move splitting outside of the SD-JWT functionality, as the content may also be a regular JWT
+
 	issuerSignedJwt, disclosures, rawSdJwtVc, rawKbJwt, err := splitSdJwtVcKb(sdjwtvc)
 	if err != nil {
 		return nil, err
 	}
+
+	log.Printf("Issuer signed JWT: %s", issuerSignedJwt)
+	log.Printf("Disclosures: %s", disclosures)
+	log.Printf("Raw SD-JWT VC: %s", rawSdJwtVc)
 
 	issuerSignedJwtPayload, requestorInfo, decodedDisclosures, processedSdJwtPayload, err := v.parseAndVerifyIssuerSignedJwt(issuerSignedJwt, disclosures)
 	if err != nil {
@@ -220,6 +228,8 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+
+	// TODO: split JWT vs SD-JWT logic
 
 	var vct string
 	err = token.Get(Key_VerifiableCredentialType, &vct)
@@ -804,7 +814,7 @@ func decodeJwtWithoutCheckingSignature(jwtString string) (header map[string]any,
 	var claimsResult jwtOld.MapClaims
 	token, _, err := parser.ParseUnverified(jwtString, &claimsResult)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse JWT: %v", err)
+		return nil, nil, fmt.Errorf("failed to parse unverified JWT: %v", err)
 	}
 	return token.Header, claimsResult, err
 }

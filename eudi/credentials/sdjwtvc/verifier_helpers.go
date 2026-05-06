@@ -19,7 +19,7 @@ type SdJwtKeyProvider struct {
 // This is the only way to validate the 'typ' header against multiple possible values.
 func (p *SdJwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
 	// Validate 'typ' header first
-	if typ, ok := sig.ProtectedHeaders().Type(); !ok || !slices.Contains([]string{SdJwtVcTyp, SdJwtVcTyp_Legacy}, typ) {
+	if typ, ok := sig.ProtectedHeaders().Type(); !ok || !slices.Contains([]string{JwtTyp, SdJwtVcTyp, SdJwtVcTyp_Legacy}, typ) {
 		return fmt.Errorf("invalid 'typ' header: %v", typ)
 	}
 
@@ -52,33 +52,41 @@ func (p *SdJwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig 
 // The EncodedDisclosure list could be empty if there are no disclosures.
 // The KbJwt may be nil if there's no key binding jwt.
 // This function will do no verification whatsoever.
-func splitSdJwtVcKb(sdJwtVcKb SdJwtVcKb) (issuerSignedJwt IssuerSignedJwt, encodedDisclosures []EncodedDisclosure, rawSdJwtVc SdJwtVc, rawKbJwt *KeyBindingJwt, err error) {
+func splitSdJwtVcKb(sdJwtVcKb SdJwtVcKb) (IssuerSignedJwt, []EncodedDisclosure, SdJwtVc, *KeyBindingJwt, error) {
 	if sdJwtVcKb == "" {
 		return "", []EncodedDisclosure{}, "", nil, fmt.Errorf("sdJwtVcKb is an empty string")
 	}
 
-	// if it doesn't end with a ~, there must be a kbjwt
-	hasKbJwt := !strings.HasSuffix(string(sdJwtVcKb), "~")
-	if !hasKbJwt {
-		// Delegate to the non-kbjwt version
-		rawSdJwtVc = SdJwtVc(sdJwtVcKb)
-		issuerSignedJwt, encodedDisclosures, err = splitSdJwtVc(rawSdJwtVc)
-		return
+	rawSdJwtKb := string(sdJwtVcKb)
+
+	if !strings.Contains(rawSdJwtKb, "~") {
+		// No ~ character at all, so the entire string is the issuer signed JWT and there are no disclosures or kbjwt
+		return IssuerSignedJwt(sdJwtVcKb), []EncodedDisclosure{}, SdJwtVc(sdJwtVcKb), nil, nil
 	}
 
-	// Key-Binding JWT present; get SD-JWT VC slice separate from the Key-Binding JWT
-	lastTildeChar := strings.LastIndex(string(sdJwtVcKb), "~")
+	// if the credential ends with a ~, there is no kbjwt
+	hasKbJwt := !strings.HasSuffix(rawSdJwtKb, "~")
+	if hasKbJwt {
+		// Key-Binding JWT present; get SD-JWT VC slice separate from the Key-Binding JWT
+		lastTildeChar := strings.LastIndex(rawSdJwtKb, "~")
 
-	rawSdJwtVc = SdJwtVc(sdJwtVcKb[:lastTildeChar+1])
-	issuerSignedJwt, encodedDisclosures, err = splitSdJwtVc(rawSdJwtVc)
+		rawSdJwtVc := SdJwtVc(sdJwtVcKb[:lastTildeChar+1])
+		issuerSignedJwt, encodedDisclosures, err := splitSdJwtVc(rawSdJwtVc)
 
-	// Only return a kbjwt if we could successfully split the sdjwtvc (otherwise the SD-JWT VC part is invalid and the KB-JWT is also invalid anyway)
-	if err == nil {
-		tmpKbJwt := KeyBindingJwt(sdJwtVcKb[lastTildeChar+1:])
-		rawKbJwt = &tmpKbJwt
+		// Only return a kbjwt if we could successfully split the sdjwtvc (otherwise the SD-JWT VC part is invalid and the KB-JWT is also invalid anyway)
+		kbJwt := (*KeyBindingJwt)(nil)
+		if err == nil {
+			tmpKbJwt := KeyBindingJwt(sdJwtVcKb[lastTildeChar+1:])
+			kbJwt = &tmpKbJwt
+		}
+
+		return issuerSignedJwt, encodedDisclosures, rawSdJwtVc, kbJwt, err
 	}
 
-	return
+	// SD-JWT (with or without disclosures, seperated by a ~)
+	rawSdJwtVc := SdJwtVc(sdJwtVcKb)
+	issuerSignedJwt, encodedDisclosures, err := splitSdJwtVc(rawSdJwtVc)
+	return issuerSignedJwt, encodedDisclosures, rawSdJwtVc, nil, err
 }
 
 func splitSdJwtVc(sdJwtVc SdJwtVc) (IssuerSignedJwt, []EncodedDisclosure, error) {

@@ -223,6 +223,7 @@ const (
 	Key_Ellipsis                          string = "..."
 	Key_Federation                        string = "fed"
 
+	JwtTyp            string = "JWT"
 	SdJwtVcTyp        string = "dc+sd-jwt"
 	SdJwtVcTyp_Legacy string = "vc+sd-jwt"
 	KbJwtTyp          string = "kb+jwt"

@@ -175,7 +175,9 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 // because it makes no sense to validate configurations up front, which will not be requested either way.
 func (v *CredentialConfigurationValidator) ValidateSupportedFeatures(c *metadata.CredentialConfiguration) error {
 	// We only support SD-JWT VC, for now
-	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc && c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
+	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+		c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy &&
+		c.Format != metadata.CredentialFormatIdentifier_W3CVC {
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 
@@ -230,6 +232,11 @@ func (v *SdJwtVcFormatVerifier) Verify(credentialConfiguration *metadata.Credent
 
 // Verify returns nil for now, as we don't support W3C Verifiable Credentials, so just return nil and accept any metadata that we get
 func (v *W3CVCFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
+	if credentialConfiguration.CredentialDefinition == nil {
+		return fmt.Errorf("missing 'credential_definition' field for W3C VC credential format")
+	} else if len(credentialConfiguration.CredentialDefinition.Type) == 0 {
+		return fmt.Errorf("'credential_definition.type' field for W3C VC credential format is empty")
+	}
 	return nil
 }
 
