@@ -27,7 +27,7 @@ import (
 	"github.com/privacybydesign/irmago/internal/disable_sigpipe"
 )
 
-const responseDeadline = 10 * time.Second
+const responseDeadline = 20 * time.Second
 
 // HTTPTransport sends and receives JSON messages to a HTTP server.
 type HTTPTransport struct {
