@@ -20,7 +20,7 @@ import (
 // for tx_code lockout; this client-side limit is a UX guardrail.
 const maxTxCodeAttempts = 3
 
-const YiviAppRedirectUri = "yivi-app://auth-callback"
+const YiviAppRedirectUri = "https://open.yivi.app/-/auth-callback"
 const YiviClientId = "yivi-wallet"
 
 type GrantHandler interface {
