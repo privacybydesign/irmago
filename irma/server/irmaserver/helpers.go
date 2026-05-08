@@ -27,6 +27,7 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
+	"github.com/privacybydesign/irmago/internal/parallel"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/sirupsen/logrus"
@@ -852,7 +853,7 @@ func (session *sessionData) generateSdJwts(
 
 	// We create the SD-JWTs and assign them to SdJwtVcKb type, as the holder doesn't know if issuers will send Key Binding JWTs (which they shouldn't)
 	// Calculate the total amount of SD-JWTs to issue, so we can preallocate the slice
-	sdJwts := make([]sdjwtvc.SdJwtVcKb, numSdJwtsRequested)
+	sdJwts := make([]sdjwtvc.SdJwtVcKb, 0, numSdJwtsRequested)
 
 	issuanceTime := eudi_jwt.NewSystemClock().Now().Unix()
 
@@ -871,11 +872,14 @@ func (session *sessionData) generateSdJwts(
 		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
 		validUntil := time.Time(*cred.Validity).Unix()
 
-		for range cred.SdJwtBatchSize {
-			holderKeyClaim, err := sdjwtvc.HolderKeyClaim(kbPubKeys[index])
+		// Generate the SD-JWTs for this credential in parallel
+		credSdJwts, err := parallel.ExecRange(cred.SdJwtBatchSize, func(i uint) (sdjwtvc.SdJwtVcKb, error) {
+			// Select the holder key from the offset for this credential (== index) plus the index for this SD-JWT (== i)
+			holderKeyClaim, err := sdjwtvc.HolderKeyClaim(kbPubKeys[index+i])
 			if err != nil {
-				return nil, err
+				return sdjwtvc.SdJwtVcKb(""), err
 			}
+
 			claims := []*sdjwtvc.ClaimElement{
 				sdjwtvc.Claim(sdjwtvc.Key_SdAlg, iana.SHA256),
 				sdjwtvc.Claim(sdjwtvc.Key_Issuer, sdJwtIssuer.IssuerUrl),
@@ -892,15 +896,21 @@ func (session *sessionData) generateSdJwts(
 
 			sdJwt, err := sdjwtvc.NewSdJwtBuilder().
 				WithPayload(claims...).
-				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).Build(creator)
+				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).
+				Build(creator)
 
 			if err != nil {
-				return nil, errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
+				return sdjwtvc.SdJwtVcKb(""), errors.Errorf("failed to create SD-JWT for credential %s: %v", cred.CredentialTypeID, err)
 			}
 
-			sdJwts[index] = sdjwtvc.SdJwtVcKb(sdJwt)
-			index++
+			return sdjwtvc.SdJwtVcKb(sdJwt), nil
+		})
+		if err != nil {
+			return nil, err
 		}
+
+		sdJwts = append(sdJwts, credSdJwts...)
+		index += cred.SdJwtBatchSize
 	}
 
 	return sdJwts, nil
