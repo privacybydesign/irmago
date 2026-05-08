@@ -18,7 +18,15 @@ func (a *irmaSessionAdapter) StatusUpdate(action irma.Action, status irma.Client
 
 func (a *irmaSessionAdapter) ClientReturnURLSet(clientReturnURL string) {
 	a.session.State.ClientReturnUrl = clientReturnURL
-	a.session.dispatchState()
+	// Don't dispatch yet if Status hasn't been populated. ClientReturnURLSet is
+	// the first irmaclient.Handler callback for sessions whose request carries
+	// a clientReturnUrl, and at that point State only has Id set — Status,
+	// Type, and Requestor are still zero values. Frontends that decode
+	// SessionState as JSON would reject the empty Status enum value. The URL
+	// is preserved on State and rides along on the next dispatch.
+	if a.session.State.Status != "" {
+		a.session.dispatchState()
+	}
 }
 
 func (a *irmaSessionAdapter) PairingRequired(pairingCode string) {

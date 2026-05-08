@@ -93,6 +93,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"client return url is not dispatched before status is populated",
+		testClientReturnUrlNotDispatchedBeforeStatusPopulated,
+	)
+
+	runSessionTest(t,
 		"disclosure attribute order follows schema",
 		testDisclosureAttributeOrderFollowsSchema,
 	)
@@ -1993,6 +1998,41 @@ func testDisclosureClientReturnUrl(
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, "https://yivi.app", session.ClientReturnUrl)
+}
+
+// testClientReturnUrlNotDispatchedBeforeStatusPopulated guards against a
+// regression where ClientReturnURLSet would dispatch the SessionState before
+// any other field had been populated, producing a state with Status == ""
+// (the Go zero value). Frontends that JSON-decode SessionState as a typed
+// enum reject the empty value and crash. The fix is in irmaSessionAdapter:
+// if Status is still empty, store the URL on State and let the next
+// dispatch (RequestPermission/RequestPin/etc.) carry it.
+//
+// The first state we receive must therefore have a populated Status and
+// the URL set.
+func testClientReturnUrlNotDispatchedBeforeStatusPopulated(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	const returnURL = "tel:+31612345678"
+
+	request := irma.NewDisclosureRequest()
+	request.Disclose = studentCardDisclosure()
+	request.ClientReturnURL = returnURL
+
+	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	first := awaitSessionState(t, sessionHandler)
+
+	require.NotEmpty(t, first.Status,
+		"first dispatched SessionState must not have an empty Status; "+
+			"ClientReturnURLSet should defer dispatch until Status is set")
+	require.Equal(t, clientmodels.Status_RequestPermission, first.Status)
+	require.Equal(t, clientmodels.Type_Disclosure, first.Type)
+	require.Equal(t, returnURL, first.ClientReturnUrl)
+	require.NotNil(t, first.Requestor.Name,
+		"requestor info must be populated by the time the URL is delivered")
 }
 
 // Mirrors irmamobile's `attribute-order` integration test
