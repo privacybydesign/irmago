@@ -447,7 +447,7 @@ func createRemovalLog(
 	}
 
 	return &irmaclient.LogEntry{
-		Time: irma.Timestamp(time.Now()),
+		Time: irmaclient.LogTime(time.Now()),
 		Type: irmaclient.ActionRemoval,
 		Removed: map[irma.CredentialTypeIdentifier][]irma.TranslatedString{
 			credentialType: attrs,

@@ -18,6 +18,30 @@ type CredentialLog struct {
 	Attributes     map[string]string
 }
 
+// LogTime is the timestamp type used for LogEntry.Time. It marshals at
+// nanosecond precision so log pagination by time does not collapse entries
+// that fall within the same second. UnmarshalJSON also accepts the legacy
+// integer-seconds encoding written by older client versions.
+type LogTime time.Time
+
+func (t LogTime) MarshalJSON() ([]byte, error) {
+	return time.Time(t).MarshalJSON()
+}
+
+func (t *LogTime) UnmarshalJSON(b []byte) error {
+	var tt time.Time
+	if err := tt.UnmarshalJSON(b); err == nil {
+		*t = LogTime(tt)
+		return nil
+	}
+	var secs int64
+	if err := json.Unmarshal(b, &secs); err != nil {
+		return err
+	}
+	*t = LogTime(time.Unix(secs, 0))
+	return nil
+}
+
 // ===========================================================================
 
 type LogsStorage interface {
@@ -37,7 +61,7 @@ type LogEntry struct {
 	// General info
 	ID   uint64
 	Type irma.Action
-	Time irma.Timestamp // Time at which the session was completed
+	Time LogTime // Time at which the session was completed
 
 	// Credential removal
 	Removed        map[irma.CredentialTypeIdentifier][]irma.TranslatedString
@@ -153,7 +177,7 @@ func (entry *LogEntry) GetSignedMessage() (abs *irma.SignedMessage, err error) {
 func (session *session) createLogEntry(response any) (*LogEntry, error) {
 	entry := &LogEntry{
 		Type:       session.Action,
-		Time:       irma.Timestamp(time.Now()),
+		Time:       LogTime(time.Now()),
 		ServerName: session.RequestorInfo,
 		Version:    session.Version,
 		request:    session.request,
