@@ -5,14 +5,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- Support for issuing SD-JWT VC credentials over the OpenID4VCI protocol to the new `client` package
+  - Supports the Pre-Authorized Code flow, including an optional `tx_code` (with retry on incorrect entry)
+  - Supports the Authorization Code flow, including Pushed Authorization Requests (PAR), in-app browser based authorization, and PKCE
+  - Supports DID-based holder binding: keys are bound to the credential at issuance, stored securely on the client, and removed together with the credential
+  - Supports `authorization_details` in Authorization and Token requests
+  - Supports encrypted credential request bodies
+  - Issuers are verified via `did:web` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
+- Support for disclosing SD-JWT VC credentials with nested selectively-disclosable claims and array claims over the OpenID4VP 1.0 protocol
+  - DCQL support extended with `claim_sets`, the `multiple` flag, predefined claim values (also for non-string values), and `require_cryptographic_holder_binding`
+  - Adds the `did` verifier identifier prefix in addition to the existing `x509_san_dns`
+  - Stricter validation of presentation nonces and verifier metadata
+- New top-level Go package `client`, offering a unified `Client` that wraps the existing `irmaclient` (renamed to `IrmaClient`) together with an `OpenID4VCIClient` and an `OpenID4VPClient`
+  - New schemaless session implementation that no longer relies on `IrmaConfiguration` for OpenID4VCI/VP credential types
+  - New `common/clientmodels` package containing the serializable types shared between client integrations (sessions, logs, interactions)
+  - API to delete individual credentials, and the ability to mark batches of size 1 as infinitely reusable
+- Encrypted-at-rest EUDI storage using SQLCipher for sensitive data such as holder binding keys, key metadata, and SD-JWT VC credentials
+  - File names of stored images and logos (credential, issuer, requestor) are hashed and salted with an AES-derived key
+- New EUDI session log system covering both OpenID4VCI issuance and OpenID4VP disclosure sessions
+  - Logs include credential metadata, issuer/credential/requestor logos, revocation status and dates
+  - Logs are indexed by creation date and merged with `irmaclient` logs in chronological order using a two-pointer merge
+  - `DeleteAll` now also clears the EUDI storage and database contents
+- `yivi` top-level command line tool that wraps the existing `irma` command (container image published as `ghcr.io/privacybydesign/yivi`); the existing `irma` command remains available as `yivi irma ...`
+- Disclosure UI improvements: support for attribute group headers, credential images shown during disclosure, and a more reliable selection of the requestor's display name
+
 ### Changed
-- Introduces `yivi` command, which encapsulates the current `irma` command.
+- Requests using `irma.HTTPTransport` have a doubled response timeout (20 seconds) to accommodate for slow and/or foreign connections
+- `Attribute` no longer carries an `Id`; it now carries a `ClaimPath` (`[]any`) to address nested claims. The `Array` and `Object` value variants are removed from `AttributeValue`, and `TranslatedString` is no longer an `AttributeValue` variant
+- Public structs across the client packages now use snake_case JSON tags
+- `SessionState.Error` is now a serializable error type; `PinBlockedTimeSeconds` and `RemainingPinAttempts` are now optional; sessions can be dismissed from any state
+- Revocation attributes are filtered out of the user-facing attribute list; the wrongly-issued credential view only contains the relevant attribute and only the most recent wrongly-issued credential is shown
+- The repository layout has been reorganised: CLI sources moved under `yivi/cli/...`, the `irma/cmd` package now lives at `yivi/cli/irmacli`, and EUDI components live under the new `eudi/...` tree
 
 ### Fix
-- Bug that keyshare regisration failed when users email domain had no MX records.
+- Bug that keyshare registration failed when users email domain had no MX records.
 
-### Changed
-- Requests using irma.HTTPTransport have a doubled response timeout (20 seconds) to accommodate for slow and/or foreign connections
+### Internal
+- New `eudi/...` tree with packages for OpenID4VCI, OpenID4VP, DCQL, SD-JWT VC presentation/verification, DID resolution (`did:web`, `did:jwk`), JWT key providers, OAuth2/PKCE, and storage (SQLCipher + filesystem)
+- Test infrastructure for OpenID4VCI: local issuance server, mock authorization server, and a Veramo-compatible OpenID4VP verifier; integration tests for both the Pre-Authorized and Authorization Code flows
+- Significant expansion of the integration test suite (chained sessions, signature sessions, pairing code, optional credentials, multiple-credential issuance, schemaless disclosure, complex SD-JWT VC scenarios)
+- Docker Compose now runs integration tests with TLS; CGO is enabled via env var to support SQLCipher
+- SQLCipher build instructions for macOS, Debian/Ubuntu, Fedora/RHEL and Windows added to the README; CI installs the SQLCipher library. Pre-compiled release binaries are still built with `CGO_ENABLED=0` and do not include SQLCipher
 
 ## [0.19.2] - 2026-02-26
 ### Fix
