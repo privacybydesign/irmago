@@ -219,6 +219,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	if err != nil {
 		return nil, fmt.Errorf("failed to get credential issuer metadata from: %v", err)
 	}
+	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
 		// Retry on a different (non-compliant) well-known URL for Credential Issuer metadata
@@ -228,13 +229,6 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 			return nil, fmt.Errorf("failed to get credential issuer metadata: server returned status code %d", response.StatusCode)
 		}
 	}
-
-	defer func() {
-		err = response.Body.Close()
-		if err != nil {
-			eudi.Logger.Warnf("failed to close credential issuer metadata response body: %v", err)
-		}
-	}()
 
 	// TODO: handle charset in Content-Type header ?
 	if !strings.HasPrefix(response.Header.Get("Content-Type"), "application/json") {

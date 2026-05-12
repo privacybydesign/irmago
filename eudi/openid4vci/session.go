@@ -44,9 +44,9 @@ type openid4vciSessionIssuerSettings struct {
 	authorizationServer         string
 	authorizationServerMetadata *oauth2.AuthorizationServerMetadata
 
-	useCredentialRequestEncryption bool
-	credentialRequestEncryptionAlg *jwa.ContentEncryptionAlgorithm
-	credentialRequestEncryptionKey *jwk.Key
+	useCredentialRequestEncryption        bool
+	credentialRequestContentEncryptionAlg *jwa.ContentEncryptionAlgorithm
+	credentialRequestEncryptionKey        *jwk.Key
 }
 
 // sessionCredentialRequestPreferences contains wallet-based preferences related to the credential that will be requested
@@ -398,29 +398,27 @@ func (s *session) configureIssuerSettings() error {
 			// Determine which encryption algorithm to use
 			for _, algName := range requestEncryption.EncValuesSupported {
 				if alg, ok := jwa.LookupContentEncryptionAlgorithm(algName); ok {
-					s.issuerSettings.credentialRequestEncryptionAlg = &alg
+					s.issuerSettings.credentialRequestContentEncryptionAlg = &alg
 					break
 				}
 			}
-			if s.issuerSettings.credentialRequestEncryptionAlg == nil {
+			if s.issuerSettings.credentialRequestContentEncryptionAlg == nil {
 				return fmt.Errorf("no supported encryption algorithm found for credential request encryption")
 			}
 
 			// Get a key from the JWKS to use for encryption
 			for i := 0; i < requestEncryption.Jwks.Len(); i++ {
 				if key, found := requestEncryption.Jwks.Key(i); found {
-					keyAlg, keyAlgPresent := key.Algorithm()
 					keyUsage, keyUsagePresent := key.KeyUsage()
 
-					if keyAlgPresent && keyAlg.String() == s.issuerSettings.credentialRequestEncryptionAlg.String() && keyUsagePresent && keyUsage == "enc" {
+					if keyUsagePresent && keyUsage == "enc" {
 						s.issuerSettings.credentialRequestEncryptionKey = &key
+						break
 					}
-				} else {
-					break
 				}
 			}
 			if s.issuerSettings.credentialRequestEncryptionKey == nil {
-				return fmt.Errorf("no suitable key found in credential request encryption for algorithm %s", s.issuerSettings.credentialRequestEncryptionAlg.String())
+				return fmt.Errorf("no suitable key found in jwks for credential request encryption")
 			}
 		}
 	}
@@ -570,8 +568,6 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		requestBody = jsonRequest
 	}
 
-	eudi.Logger.Infof("Sending credential request: %s = %s", contentType, string(requestBody))
-
 	req, err := http.NewRequest("POST", s.credentialIssuerMetadata.CredentialEndpoint, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, err
@@ -581,15 +577,10 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	req.Header.Set("Content-Type", contentType)
 
 	resp, err := s.httpClient.Do(req)
-	defer func() {
-		err = resp.Body.Close()
-		if err != nil {
-			eudi.Logger.Warnf("failed to close credential request response body: %v", err)
-		}
-	}()
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	deferredResponse := false
 	if resp.StatusCode == http.StatusAccepted {
@@ -681,15 +672,11 @@ func (s *session) requestNonce() (string, error) {
 	}
 
 	resp, err := s.httpClient.Do(req)
-	defer func() {
-		err = resp.Body.Close()
-		if err != nil {
-			eudi.Logger.Warnf("failed to close nonce response body: %v", err)
-		}
-	}()
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
+
 	if !(resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK) {
 		return "", fmt.Errorf("nonce request failed: %s", resp.Status)
 	}

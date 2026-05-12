@@ -11,7 +11,6 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
-	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -113,7 +112,6 @@ type KeyBinder interface {
 	// These pub keys should be passed in when calling `CreateKeyBindingJwt()`.
 	CreateKeyPairs(num uint) ([]jwk.Key, error)
 	// Creates a batch of key pairs and returns the proofs using the provided ProofBuilder.
-	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) ([]string, error)
 	// Takes in the hash over the issuer signed JWT and the selected disclosures
 	CreateKeyBindingJwt(hash string, holderPubKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error)
 	// Takes in a list of pub keys for which it should delete the corresponding private keys
@@ -168,10 +166,6 @@ func (c *DefaultKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	}
 
 	return result, nil
-}
-
-func (c *DefaultKeyBinder) CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) ([]string, error) {
-	return nil, fmt.Errorf("func is not implemented on purpose")
 }
 
 func (c *DefaultKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (KeyBindingJwt, error) {
@@ -239,7 +233,6 @@ func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (iana.HashingAlgorith
 	}
 
 	confirm, err := utils.ExtractOptionalWith(claims, Key_Confirmationkey, parseConfirmField)
-
 	if err != nil {
 		return "", nil, err
 	}
@@ -256,6 +249,11 @@ func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (iana.HashingAlgorith
 // Supports both direct JWK (`cnf.jwk`) and DID-based key references (`cnf.kid`).
 // For `did:jwk:` DIDs, the public key is embedded in the DID string itself.
 func resolveHolderKey(cnf *CnfField) (jwk.Key, error) {
+	// cnf field is mandatory when creating a KB-JWT
+	if cnf == nil {
+		return nil, fmt.Errorf("cnf field is required but missing from JWT claims")
+	}
+
 	if cnf.Jwk != nil {
 		keyJson, err := json.Marshal(cnf.Jwk)
 		if err != nil {

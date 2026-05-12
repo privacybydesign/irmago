@@ -708,12 +708,28 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, err
 	}
 
+	// TODO: support kid-based key binding confirmation by resolving the did:jwk from the kid and using the resolved key to verify the KB-JWT signature?
 	if issuerSignedJwtPayload.Confirm == nil || issuerSignedJwtPayload.Confirm.Jwk == nil {
 		return nil, errors.New("issuer signed jwt is missing holder key (cnf) required to verify kbjwt signature")
 	}
 
+	var sigAlg jwa.SignatureAlgorithm
+	if alg, ok := header["alg"]; ok {
+		if algStr, ok := alg.(string); ok {
+			s, found := jwa.LookupSignatureAlgorithm(algStr)
+			if !found {
+				return nil, fmt.Errorf("unsupported signing algorithm in kbjwt header: %s", algStr)
+			}
+			sigAlg = s
+		} else {
+			return nil, fmt.Errorf("unsupported signing algorithm in kbjwt header: %s", alg)
+		}
+	} else {
+		return nil, fmt.Errorf("key binding jwt header is expected to have 'alg' of 'ES256', but has %s (header: %v)", header["alg"], header)
+	}
+
 	holderKey := issuerSignedJwtPayload.Confirm.Jwk
-	payloadJson, err := v.verificationContext.JwtVerifier.Verify(string(kbjwt), *holderKey)
+	payloadJson, err := v.verificationContext.JwtVerifier.Verify(string(kbjwt), *holderKey, sigAlg)
 
 	if err != nil {
 		return nil, fmt.Errorf("invalid kbjwt signature: %v (holder key: %v)", err, holderKey)
@@ -805,7 +821,7 @@ func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (
 // ========================================================================
 
 type JwtVerifier interface {
-	Verify(jwt string, key any) (payload []byte, err error)
+	Verify(jwt string, key any, sigAlg jwa.SignatureAlgorithm) (payload []byte, err error)
 }
 
 type JwxJwtVerifier struct{}
@@ -814,6 +830,6 @@ func NewJwxJwtVerifier() *JwxJwtVerifier {
 	return &JwxJwtVerifier{}
 }
 
-func (v *JwxJwtVerifier) Verify(jwt string, keyAny any) (payload []byte, err error) {
-	return jws.Verify([]byte(jwt), jws.WithKey(jwa.ES256(), keyAny))
+func (v *JwxJwtVerifier) Verify(jwtString string, keyAny any, sigAlg jwa.SignatureAlgorithm) (payload []byte, err error) {
+	return jws.Verify([]byte(jwtString), jws.WithKey(sigAlg, keyAny))
 }

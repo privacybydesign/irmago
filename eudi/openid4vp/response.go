@@ -90,13 +90,12 @@ func encryptJwe(payload map[string]any, keys jwk.Set, encSupported []string) (st
 			continue
 		}
 
-		kid, ok := key.KeyID()
-		if !ok {
+		h := jwe.NewHeaders()
+
+		if kid, ok := key.KeyID(); !ok {
 			errors = append(errors, fmt.Errorf("missing key id"))
 			continue
-		}
-		h := jwe.NewHeaders()
-		if kid != "" {
+		} else if kid != "" {
 			h.Set(jwe.KeyIDKey, kid)
 		}
 

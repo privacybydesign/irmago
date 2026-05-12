@@ -1,12 +1,25 @@
 package openid4vci
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwe"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/utils"
+	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
 
@@ -149,61 +162,48 @@ func Test_openid4vciSession_requestCredential_errorResponses(t *testing.T) {
 	}
 }
 
-// TODO: bring back this test and make it work correctly
-/*
-func Test_openid4vciSession_requestCredential_succesResponses(t *testing.T) {
-	var nonce = "test-nonce"
+func Test_openid4vciSession_obtainCredential_successResponses(t *testing.T) {
+	// Build a real SD-JWT VC using the same test key + cert chain used in client_test.go
+	chain := testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(chain)
+	require.NoError(t, err)
 
-	// Initialize test environment
+	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	holderJwkKey, err := jwk.Import(holderKey)
+	require.NoError(t, err)
+
+	testCredential, err := createTestSdJwtVcWithHolderKey(
+		"test.credential.type",
+		"https://test-issuer.example.com",
+		map[string]string{"name": "Test User"},
+		certChain,
+		holderJwkKey,
+	)
+	require.NoError(t, err)
+
 	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authToken := r.Header.Get("Authorization")
-
-		switch authToken {
-		case "Bearer valid_token::unencrypted":
-			// Simulate successful credential response (unencrypted)
-			w.WriteHeader(http.StatusOK)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{
-				"credentials": [
-					{"credential": "cred1"},
-					{"credential": "cred2"}
-				]
-				}`))
-		}
+		w.Header().Set("Content-Type", "application/json")
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: string(testCredential)}},
+		})
+		w.Write(resp)
 	})
 
-	s, mockStorageClient, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
+	sess, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
 	defer ts.Close()
 
-	tests := []struct {
-		name                string
-		s                   *session
-		accessToken         string
-		expectedErr         string
-		expectedCredentials []sdjwtvc.SdJwtVcKb
-	}{
-		{
-			name:                "test successful credential request - unencrypted - no keybinding",
-			s:                   s,
-			accessToken:         "valid_token::unencrypted",
-			expectedCredentials: []sdjwtvc.SdJwtVcKb{"cred1", "cred2"},
-		},
-	}
+	sess.holderVerifier = sdjwtvc.NewHolderVerificationProcessor(
+		sdjwtvc.CreateDefaultVerificationContext(chain),
+	)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.s.requestCredential("credential-config-1", &nonce, tt.accessToken)
-
-			if err != nil {
-				t.Errorf("Expected no error, got %v", err)
-			} else {
-				// Validate that credentials were stored
-				require.ElementsMatch(t, tt.expectedCredentials, mockStorageClient.Sdjwts)
-			}
-		})
-	}
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Equal(t, "credential-config-1", fetched.credentialConfigurationId)
+	require.Len(t, fetched.verifiedSdJwtVcs, 1)
+	require.False(t, fetched.requireCryptographicKeyBinding)
 }
-*/
 
 type CredentialRequestTestOptions uint
 
@@ -258,4 +258,167 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	}
 
 	return session, ts
+}
+
+func Test_openid4vciSession_configureIssuerSettings_credentialRequestEncryption(t *testing.T) {
+	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	encKey, err := jwk.Import(ecPrivateKey)
+	require.NoError(t, err)
+	require.NoError(t, encKey.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
+	require.NoError(t, encKey.Set(jwk.KeyUsageKey, "enc"))
+
+	// Same key but without "enc" usage, to test the "no suitable key" error path
+	keyWithoutUsage, err := jwk.Import(ecPrivateKey)
+	require.NoError(t, err)
+	require.NoError(t, keyWithoutUsage.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
+
+	encJwks := jwk.NewSet()
+	require.NoError(t, encJwks.AddKey(encKey))
+
+	noUsageJwks := jwk.NewSet()
+	require.NoError(t, noUsageJwks.AddKey(keyWithoutUsage))
+
+	tests := []struct {
+		name            string
+		encryption      *metadata.CredentialRequestEncryption
+		expectErr       string
+		expectEncrypted bool
+	}{
+		{
+			name:            "no encryption config",
+			encryption:      nil,
+			expectEncrypted: false,
+		},
+		{
+			name: "encryption not required",
+			encryption: &metadata.CredentialRequestEncryption{
+				Jwks:               encJwks,
+				EncValuesSupported: []string{"A128GCM"},
+				EncryptionRequired: false,
+			},
+			expectEncrypted: false,
+		},
+		{
+			name: "encryption required with valid config",
+			encryption: &metadata.CredentialRequestEncryption{
+				Jwks:               encJwks,
+				EncValuesSupported: []string{"A128GCM"},
+				EncryptionRequired: true,
+			},
+			expectEncrypted: true,
+		},
+		{
+			name: "encryption required but no supported content encryption algorithm",
+			encryption: &metadata.CredentialRequestEncryption{
+				Jwks:               encJwks,
+				EncValuesSupported: []string{"UNSUPPORTED_ALG_XYZ"},
+				EncryptionRequired: true,
+			},
+			expectErr: "no supported encryption algorithm found for credential request encryption",
+		},
+		{
+			name: "encryption required but no key with enc usage in JWKS",
+			encryption: &metadata.CredentialRequestEncryption{
+				Jwks:               noUsageJwks,
+				EncValuesSupported: []string{"A128GCM"},
+				EncryptionRequired: true,
+			},
+			expectErr: "no suitable key found in jwks for credential request encryption",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// configureIssuerSettings fetches AS metadata over HTTP; serve a minimal response
+			asServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{}`))
+			}))
+			defer asServer.Close()
+
+			s := &session{
+				credentialOffer: &CredentialOffer{
+					CredentialIssuer: asServer.URL,
+					Grants: &Grants{
+						PreAuthorizedCodeGrant: &PreAuthorizedCodeGrant{
+							PreAuthorizedCode: "test-code",
+						},
+					},
+				},
+				credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{
+					CredentialRequestEncryption: tt.encryption,
+				},
+				issuerSettings: openid4vciSessionIssuerSettings{},
+			}
+
+			err := s.configureIssuerSettings()
+
+			if tt.expectErr != "" {
+				require.ErrorContains(t, err, tt.expectErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expectEncrypted, s.issuerSettings.useCredentialRequestEncryption)
+			if tt.expectEncrypted {
+				require.NotNil(t, s.issuerSettings.credentialRequestEncryptionKey)
+				require.NotNil(t, s.issuerSettings.credentialRequestContentEncryptionAlg)
+				require.Equal(t, jwa.A128GCM(), *s.issuerSettings.credentialRequestContentEncryptionAlg)
+			}
+		})
+	}
+}
+
+func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T) {
+	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	jwkPrivKey, err := jwk.Import(ecPrivateKey)
+	require.NoError(t, err)
+	require.NoError(t, jwkPrivKey.Set(jwk.AlgorithmKey, jwa.ECDH_ES()))
+	require.NoError(t, jwkPrivKey.Set(jwk.KeyUsageKey, "enc"))
+
+	pubKey, err := jwkPrivKey.PublicKey()
+	require.NoError(t, err)
+
+	var receivedContentType string
+	var receivedBody []byte
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedContentType = r.Header.Get("Content-Type")
+		receivedBody, _ = io.ReadAll(r.Body)
+		// Return 400 so obtainCredential returns an error without needing a valid credential response
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "test_error", "error_description": "intentional test error"}`))
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
+	defer ts.Close()
+
+	sess.issuerSettings.useCredentialRequestEncryption = true
+	sess.issuerSettings.credentialRequestEncryptionKey = &pubKey
+
+	_, err = sess.obtainCredential("credential-config-1", nil, "test-token")
+	// The 400 from the server causes this error — encryption itself must not have failed
+	require.ErrorContains(t, err, "credential request failed with error")
+
+	// The request must be sent as an encrypted JWT
+	require.Equal(t, "application/jwt", receivedContentType)
+
+	// JWE compact serialization has exactly 5 dot-separated parts
+	parts := strings.Split(strings.TrimSpace(string(receivedBody)), ".")
+	require.Len(t, parts, 5, "expected JWE compact serialization (5 dot-separated parts)")
+
+	// Decrypt and verify the payload contains the correct credential configuration ID
+	decrypted, err := jwe.Decrypt(receivedBody, jwe.WithKey(jwa.ECDH_ES(), jwkPrivKey))
+	require.NoError(t, err)
+
+	token, err := jwt.Parse(decrypted, jwt.WithVerify(false))
+	require.NoError(t, err)
+
+	var configId string
+	require.NoError(t, token.Get("credential_configuration_id", &configId), "expected credential_configuration_id claim in decrypted JWT")
+	require.Equal(t, "credential-config-1", configId)
 }

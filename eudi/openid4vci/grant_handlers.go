@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
 )
 
@@ -142,9 +141,6 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	}
 
 	pendingAuthCodeRequestChannel := make(chan *codeResponse, 1)
-	defer func() {
-		pendingAuthCodeRequestChannel = nil
-	}()
 
 	s.handler.RequestAuthorizationCodeFlowPermission(
 		request,
@@ -267,8 +263,6 @@ func (h *AuthorizationCodeFlowHandler) doTokenRequest(
 	if authDetails != nil {
 		payload.Add("authorization_details", *authDetails)
 	}
-
-	eudi.Logger.Infof("Sending token request: %s", payload.Encode())
 
 	req, err := http.NewRequest(http.MethodPost, tokenEndpoint, bytes.NewBufferString(payload.Encode()))
 	if err != nil {

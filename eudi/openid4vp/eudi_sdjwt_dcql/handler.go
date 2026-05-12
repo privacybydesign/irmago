@@ -156,7 +156,8 @@ func (h *SdJwtVcDcqlHandler) composeUnobtainableDescriptor(query dcql.Credential
 		return nil
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
 
 	for _, vct := range vctValues {
 		vctMeta, err := h.vctFetcher.Fetch(ctx, vct)
