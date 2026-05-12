@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fix
 - Bug that keyshare regisration failed when users email domain had no MX records.
 
+### Changed
+- Requests using irma.HTTPTransport have a doubled response timeout (20 seconds) to accommodate for slow and/or foreign connections
+
 ## [0.19.2] - 2026-02-26
 ### Fix
 - Bug that caused HTTP request body to not be sent upon retransmission
