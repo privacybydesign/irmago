@@ -516,7 +516,7 @@ func createDisclosurePlan(
 		// the current disclosure flow is not satisfyable without issuance
 		if len(issuanceSteps) != 0 {
 			return &clientmodels.DisclosurePlan{
-				IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+				IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 					IssuedCredentialIds: map[string]struct{}{},
 					Steps:               issuanceSteps,
 				},
@@ -524,7 +524,7 @@ func createDisclosurePlan(
 		}
 	} else {
 		// update the existing issuance plan if it exists
-		lastIssuancePlan := oldDisclosurePlan.IssueDuringDislosure
+		lastIssuancePlan := oldDisclosurePlan.IssueDuringDisclosure
 		if lastIssuancePlan != nil {
 			var previousWrongHash string
 			if lastIssuancePlan.WrongCredentialIssued != nil {
@@ -533,7 +533,7 @@ func createDisclosurePlan(
 			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(
 				lastIssuancePlan.Steps, credentials, preExistingCredentialHashes, previousWrongHash,
 			)
-			newPlan.IssueDuringDislosure = &clientmodels.IssueDuringDislosure{
+			newPlan.IssueDuringDisclosure = &clientmodels.IssueDuringDisclosure{
 				Steps:                 lastIssuancePlan.Steps,
 				IssuedCredentialIds:   issued,
 				WrongCredentialIssued: lastWrongCredential,

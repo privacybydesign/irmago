@@ -527,7 +527,7 @@ func testOptionalCredential(t *testing.T) {
 				// feature surfaces a single unobtainable descriptor (empty
 				// IssueURL). Since the pickOne is optional, it stays in
 				// DisclosureChoicesOverview rather than being promoted to
-				// IssueDuringDislosure.Steps — the user can simply skip it.
+				// IssueDuringDisclosure.Steps — the user can simply skip it.
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "https://localhost:8443/vct/phone",
@@ -2611,7 +2611,7 @@ func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
 // testVeramoVerifierRequestingMissingCredentialSurfacesIt asserts the
 // "missing credentials" UX: when a verifier asks for a VCT the wallet has
 // never seen, the disclosure plan promotes a single CredentialDescriptor
-// (with an empty IssueURL) into IssueDuringDislosure.Steps so the frontend
+// (with an empty IssueURL) into IssueDuringDisclosure.Steps so the frontend
 // can tell the user *what* is being requested instead of stalling on a
 // blank permission prompt. DisclosureChoicesOverview is hidden until the
 // step resolves — which it never can, so the user's only path forward is
@@ -2650,11 +2650,11 @@ func testVeramoVerifierRequestingMissingCredentialSurfacesIt(t *testing.T) {
 	// needed — including the "issuance" of an unobtainable credential.
 	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview,
 		"choices should be nil because there is one unsatisfiable issuance step")
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDislosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options[0]
+	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId)
 	require.Nil(t, option.IssueURL, "empty IssueURL is the wire-level signal that the credential is unobtainable")
 	require.NotEmpty(t, option.Name, "Name populated from the VCT type metadata document")
@@ -2694,11 +2694,11 @@ func testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
 	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDislosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options[0]
+	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
 	require.Equal(t, "https://localhost:8443/vct/does-not-exist-anywhere", option.CredentialId)
 	require.Nil(t, option.IssueURL)
 	require.Empty(t, option.Name, "no Name when VCT type-metadata fetch failed")
@@ -2742,11 +2742,11 @@ func testVeramoVerifierMultiVctFirstMissingSecondMatched(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
 	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDislosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options[0]
+	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId,
 		"second VCT (whose fetch succeeded) wins")
 	require.Nil(t, option.IssueURL)
@@ -4219,7 +4219,7 @@ type expectedDisclosurePlan struct {
 	Choices []expectedPickOneChoice
 }
 
-// expectedIssuanceStep describes one step in IssueDuringDislosure.Steps.
+// expectedIssuanceStep describes one step in IssueDuringDisclosure.Steps.
 type expectedIssuanceStep struct {
 	Options []expectedCredentialDescriptor
 }
@@ -4257,11 +4257,11 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 
 	// --- Issuance steps ---
 	if expected.IssuanceSteps != nil {
-		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
-		require.Len(t, plan.IssueDuringDislosure.Steps, len(expected.IssuanceSteps),
+		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
+		require.Len(t, plan.IssueDuringDisclosure.Steps, len(expected.IssuanceSteps),
 			"issuance step count mismatch")
 		for i, expStep := range expected.IssuanceSteps {
-			actualStep := plan.IssueDuringDislosure.Steps[i]
+			actualStep := plan.IssueDuringDisclosure.Steps[i]
 			require.Len(t, actualStep.Options, len(expStep.Options),
 				"issuance step %d option count mismatch", i)
 			for j, expOpt := range expStep.Options {
@@ -4274,22 +4274,22 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 
 	// --- Issued credential ids ---
 	if expected.IssuedCredentialIds != nil {
-		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
-		require.Equal(t, expected.IssuedCredentialIds, plan.IssueDuringDislosure.IssuedCredentialIds,
+		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
+		require.Equal(t, expected.IssuedCredentialIds, plan.IssueDuringDisclosure.IssuedCredentialIds,
 			"issued credential ids mismatch")
 	}
 
 	// --- Wrong credential issued ---
 	if expected.WrongCredentialIssuedNil {
-		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
-		require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued,
+		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
+		require.Nil(t, plan.IssueDuringDisclosure.WrongCredentialIssued,
 			"wrong credential issued should be nil")
 	}
 	if expected.WrongCredentialIssued != nil {
-		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
-		require.NotNil(t, plan.IssueDuringDislosure.WrongCredentialIssued,
+		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
+		require.NotNil(t, plan.IssueDuringDisclosure.WrongCredentialIssued,
 			"wrong credential issued should not be nil")
-		wrong := plan.IssueDuringDislosure.WrongCredentialIssued
+		wrong := plan.IssueDuringDisclosure.WrongCredentialIssued
 		if expected.WrongCredentialIssued.CredentialId != "" {
 			require.Equal(t, expected.WrongCredentialIssued.CredentialId, wrong.CredentialId,
 				"wrong credential id mismatch")

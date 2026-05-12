@@ -382,7 +382,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("issuance steps", func(t *testing.T) {
 		dn := clientmodels.TranslatedString{"en": "Email"}
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				Steps: []clientmodels.IssuanceStep{
 					{Options: []*clientmodels.CredentialDescriptor{
 						{
@@ -422,7 +422,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 
 	t.Run("issued credential ids", func(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				IssuedCredentialIds: map[string]struct{}{"test.email": {}},
 			},
 		}
@@ -434,7 +434,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 
 	t.Run("wrong credential issued nil", func(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				WrongCredentialIssued: nil,
 			},
 		}
@@ -447,7 +447,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("wrong credential issued", func(t *testing.T) {
 		dn := clientmodels.TranslatedString{"en": "University"}
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				WrongCredentialIssued: &clientmodels.Credential{
 					CredentialId: "test.studentCard",
 					Attributes: []clientmodels.Attribute{
@@ -620,7 +620,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	t.Run("full plan with issuance and choices", func(t *testing.T) {
 		dn := clientmodels.TranslatedString{"en": "Email"}
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				Steps: []clientmodels.IssuanceStep{
 					{Options: []*clientmodels.CredentialDescriptor{
 						{CredentialId: "test.email"},
@@ -997,7 +997,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "issuance step count mismatch", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				Steps: []clientmodels.IssuanceStep{{}, {}},
 			},
 		}
@@ -1009,7 +1009,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "issued credential ids mismatch", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				IssuedCredentialIds: map[string]struct{}{"test.email": {}},
 			},
 		}
@@ -1021,7 +1021,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "wrong credential expected nil but is non-nil", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				WrongCredentialIssued: &clientmodels.Credential{CredentialId: "test.email"},
 			},
 		}
@@ -1033,7 +1033,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 
 	shouldFail(t, "wrong credential expected non-nil but is nil", func(t testingT) {
 		plan := &clientmodels.DisclosurePlan{
-			IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				WrongCredentialIssued: nil,
 			},
 		}

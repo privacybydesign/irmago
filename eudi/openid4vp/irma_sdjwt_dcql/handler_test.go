@@ -93,7 +93,7 @@ func testUnsatisfiableSingleCredential(t *testing.T) {
 	}`)
 
 	requireUnsatisfiable(t, plan, 1)
-	assert.Equal(t, "test.test.email", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
+	assert.Equal(t, "test.test.email", plan.IssueDuringDisclosure.Steps[0].Options[0].CredentialId)
 }
 
 func testSatisfiableMultipleCredentialsSingleOptionEach(t *testing.T) {
@@ -146,7 +146,7 @@ func testUnsatisfiableMultipleCredentialsOneAvailable(t *testing.T) {
 	}`)
 
 	requireUnsatisfiable(t, plan, 1)
-	assert.Equal(t, "test.test.email", plan.IssueDuringDislosure.Steps[0].Options[0].CredentialId)
+	assert.Equal(t, "test.test.email", plan.IssueDuringDisclosure.Steps[0].Options[0].CredentialId)
 }
 
 func testUnsatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {
@@ -604,7 +604,7 @@ func buildPlan(t *testing.T, h *dcql.DcqlHandler, rawQuery string) *clientmodels
 
 func requireSatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, expected ...expectPickOne) {
 	t.Helper()
-	assert.Nil(t, plan.IssueDuringDislosure)
+	assert.Nil(t, plan.IssueDuringDisclosure)
 	require.Len(t, plan.DisclosureChoicesOverview, len(expected))
 	for i, exp := range expected {
 		po := plan.DisclosureChoicesOverview[i]
@@ -617,10 +617,10 @@ func requireSatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, expecte
 func requireUnsatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, stepOptionCounts ...int) {
 	t.Helper()
 	assert.Nil(t, plan.DisclosureChoicesOverview)
-	require.NotNil(t, plan.IssueDuringDislosure)
-	require.Len(t, plan.IssueDuringDislosure.Steps, len(stepOptionCounts))
+	require.NotNil(t, plan.IssueDuringDisclosure)
+	require.Len(t, plan.IssueDuringDisclosure.Steps, len(stepOptionCounts))
 	for i, count := range stepOptionCounts {
-		assert.Len(t, plan.IssueDuringDislosure.Steps[i].Options, count, "step[%d].Options", i)
+		assert.Len(t, plan.IssueDuringDisclosure.Steps[i].Options, count, "step[%d].Options", i)
 	}
 }
 

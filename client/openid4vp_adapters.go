@@ -52,7 +52,7 @@ func (a *openid4vpSessionAdapter) RequestVerificationPermission(
 		a.session.State.Requestor = *requestor
 	}
 	// Detect WrongCredentialIssued if issuance-during-disclosure is active
-	if disclosurePlan.IssueDuringDislosure != nil {
+	if disclosurePlan.IssueDuringDisclosure != nil {
 		detectWrongCredentialIssued(a.session, disclosurePlan)
 	}
 
@@ -87,7 +87,7 @@ func disclosureChoicesToOpenID4VPSelections(choices []clientmodels.DisclosureDis
 // detectWrongCredentialIssued checks if any newly issued credential matches a required
 // type but has wrong attribute values. Uses the client's full credential list.
 func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) {
-	if plan.IssueDuringDislosure == nil {
+	if plan.IssueDuringDisclosure == nil {
 		return
 	}
 
@@ -99,11 +99,11 @@ func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) 
 	s.snapshotPreExistingCredentials(allCreds)
 
 	var previousWrongHash string
-	if plan.IssueDuringDislosure.WrongCredentialIssued != nil {
-		previousWrongHash = plan.IssueDuringDislosure.WrongCredentialIssued.Hash
+	if plan.IssueDuringDisclosure.WrongCredentialIssued != nil {
+		previousWrongHash = plan.IssueDuringDisclosure.WrongCredentialIssued.Hash
 	}
 
-	for _, step := range plan.IssueDuringDislosure.Steps {
+	for _, step := range plan.IssueDuringDisclosure.Steps {
 		stepSatisfied := false
 		var wrongForStep *clientmodels.Credential
 
@@ -130,7 +130,7 @@ func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) 
 
 		// Only report wrong credential if the step is not satisfied by a correct one
 		if !stepSatisfied && wrongForStep != nil {
-			plan.IssueDuringDislosure.WrongCredentialIssued = wrongForStep
+			plan.IssueDuringDisclosure.WrongCredentialIssued = wrongForStep
 			return
 		}
 	}
