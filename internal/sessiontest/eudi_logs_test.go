@@ -14,8 +14,8 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("openid4vci pre-auth issuance creates log", testOpenID4VCIPreAuthFlowCreatesIssuanceLog)
 	t.Run("openid4vci auth-code issuance creates log", testOpenID4VCIAuthCodeFlowCreatesIssuanceLog)
 	t.Run("openid4vci denied permission creates no log", testOpenID4VCIDeniedPermissionCreatesNoLog)
-	t.Run("oid4vp disclosure creates log", testOpenId4VpDisclosureCreatesLog)
-	t.Run("oid4vp disclosure log has issuer name and credential image", testOpenId4VpDisclosureLogHasIssuerNameAndImage)
+	t.Run("openid4vp disclosure creates log", testOpenID4VPDisclosureCreatesLog)
+	t.Run("openid4vp disclosure log has issuer name and credential image", testOpenID4VPDisclosureLogHasIssuerNameAndImage)
 	t.Run("eudi credential removal creates log", testEudiCredentialRemovalCreatesLog)
 	t.Run("eudi credential removal log has attributes", testEudiCredentialRemovalLogHasAttributes)
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
@@ -126,7 +126,7 @@ func testOpenID4VCIDeniedPermissionCreatesNoLog(t *testing.T) {
 	require.Len(t, logs, 0, "denied OID4VCI session should not produce a log")
 }
 
-func testOpenId4VpDisclosureCreatesLog(t *testing.T) {
+func testOpenID4VPDisclosureCreatesLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -170,11 +170,11 @@ func testOpenId4VpDisclosureCreatesLog(t *testing.T) {
 		"disclosure log credential should include the sd-jwt format")
 }
 
-// testOpenId4VpDisclosureLogHasIssuerNameAndImage verifies that credentials in
+// testOpenID4VPDisclosureLogHasIssuerNameAndImage verifies that credentials in
 // OpenID4VP disclosure logs contain the issuer display name and credential image.
 // Currently these fields are NOT populated by the EUDI SD-JWT disclosure handler,
 // so this test documents the shortcoming.
-func testOpenId4VpDisclosureLogHasIssuerNameAndImage(t *testing.T) {
+func testOpenID4VPDisclosureLogHasIssuerNameAndImage(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 

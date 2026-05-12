@@ -28,8 +28,8 @@ const (
 	batch2AdminToken = "test-admin-token"
 )
 
-func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
-	t.Run("issue via openid4vci and disclose via openid4vp", testIssueViaOpenID4VCIAndDiscloseViaOid4Vp)
+func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
+	t.Run("issue via openid4vci and disclose via openid4vp", testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP)
 	t.Run("disclose single credential with multiple attributes", testDiscloseCredentialWithMultipleAttributes)
 	t.Run("choice between two credential types", testChoiceBetweenTwoCredentialTypes)
 	t.Run("multiple required credentials", testMultipleRequiredCredentials)
@@ -71,7 +71,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("veramo verifier multi-vct first missing second matched", testVeramoVerifierMultiVctFirstMissingSecondMatched)
 }
 
-func testIssueViaOpenID4VCIAndDiscloseViaOid4Vp(t *testing.T) {
+func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 	// Step 1: Issue an SD-JWT credential via the veramo-agent OID4VCI flow.
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
