@@ -522,13 +522,13 @@ func getAuthorizationCode(t *testing.T, authorizationRequestURL string) string {
 // Issuer admin helpers
 // ---------------------------------------------------------------------------
 
-type oid4vciOfferResponse struct {
+type openid4vciOfferResponse struct {
 	URI    string `json:"uri"`
 	ID     string `json:"id"`
 	TxCode string `json:"txCode"`
 }
 
-func createPreAuthOffer(t *testing.T) oid4vciOfferResponse {
+func createPreAuthOffer(t *testing.T) openid4vciOfferResponse {
 	t.Helper()
 	return postOffer(t, preAuthIssuerURL, preAuthAdminToken, `{
 		"credentials": ["TestCredentialSdJwt"],
@@ -545,7 +545,7 @@ func createPreAuthOffer(t *testing.T) oid4vciOfferResponse {
 	}`)
 }
 
-func createPreAuthOfferWithTxCode(t *testing.T) oid4vciOfferResponse {
+func createPreAuthOfferWithTxCode(t *testing.T) openid4vciOfferResponse {
 	t.Helper()
 	return postOffer(t, preAuthIssuerURL, preAuthAdminToken, `{
 		"credentials": ["TestCredentialSdJwt"],
@@ -566,7 +566,7 @@ func createPreAuthOfferWithTxCode(t *testing.T) oid4vciOfferResponse {
 	}`)
 }
 
-func createAuthCodeOffer(t *testing.T) oid4vciOfferResponse {
+func createAuthCodeOffer(t *testing.T) openid4vciOfferResponse {
 	t.Helper()
 	return postOffer(t, authcodeIssuerURL, authcodeAdminToken, `{
 		"credentials": ["TestCredentialSdJwt"],
@@ -583,7 +583,7 @@ func createAuthCodeOffer(t *testing.T) oid4vciOfferResponse {
 	}`)
 }
 
-func postOffer(t *testing.T, issuerURL, adminToken, body string) oid4vciOfferResponse {
+func postOffer(t *testing.T, issuerURL, adminToken, body string) openid4vciOfferResponse {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, issuerURL+"/api/create-offer", strings.NewReader(body))
 	require.NoError(t, err)
@@ -595,7 +595,7 @@ func postOffer(t *testing.T, issuerURL, adminToken, body string) oid4vciOfferRes
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode, "create-offer should succeed")
 
-	var result oid4vciOfferResponse
+	var result openid4vciOfferResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
 	require.NotEmpty(t, result.ID)
 	require.NotEmpty(t, result.URI)

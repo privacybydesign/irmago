@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testSessionHandlerForOpenId4VpWithIrmaSdJwts(t *testing.T) {
+func testSessionHandlerForOpenID4VPWithIrmaSdJwts(t *testing.T) {
 	runEudiSessionTest(t,
 		"single credential",
 		testOpenID4VP_YiviScheme_SingleCredential,

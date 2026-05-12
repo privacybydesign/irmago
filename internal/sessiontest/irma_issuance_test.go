@@ -154,9 +154,9 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 
 	require.Len(t, session.OfferedCredentials, 1)
 	plan := session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
-	require.Empty(t, plan.IssueDuringDislosure.IssuedCredentialIds)
+	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDisclosure.Steps[0].Options, 2)
+	require.Empty(t, plan.IssueDuringDisclosure.IssuedCredentialIds)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// issue MijnOverheid
@@ -168,11 +168,11 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 
 	require.Len(t, session.OfferedCredentials, 1)
 	plan = session.DisclosurePlan
-	require.Len(t, plan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, plan.IssueDuringDislosure.Steps[0].Options, 2)
+	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, plan.IssueDuringDisclosure.Steps[0].Options, 2)
 	require.Equal(t,
 		map[string]struct{}{"irma-demo.MijnOverheid.fullName": {}},
-		plan.IssueDuringDislosure.IssuedCredentialIds,
+		plan.IssueDuringDisclosure.IssuedCredentialIds,
 	)
 
 	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0]

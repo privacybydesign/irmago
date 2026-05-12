@@ -17,18 +17,18 @@ import (
 )
 
 type session struct {
-	State                      *clientmodels.SessionState
-	handler                    clientmodels.SessionHandler
-	permissionHandler          irmaclient.PermissionHandler
-	pinHandler                 irmaclient.PinHandler
-	client                     *Client
-	dismisser                  irmaclient.SessionDismisser
-	chained                    bool
-	authCodeHandler            openid4vci.AuthCodeHandler
-	preAuthorizedCodeHandler   openid4vci.TokenPermissionHandler
-	oid4vciPermissionHandler   openid4vci.PermissionHandler
-	openid4vpPermissionHandler openid4vp.PermissionHandler
-	openid4vpHashToQueryId     map[string]string // credential hash → DCQL query ID
+	State                       *clientmodels.SessionState
+	handler                     clientmodels.SessionHandler
+	permissionHandler           irmaclient.PermissionHandler
+	pinHandler                  irmaclient.PinHandler
+	client                      *Client
+	dismisser                   irmaclient.SessionDismisser
+	chained                     bool
+	authCodeHandler             openid4vci.AuthCodeHandler
+	preAuthorizedCodeHandler    openid4vci.TokenPermissionHandler
+	openid4vciPermissionHandler openid4vci.PermissionHandler
+	openid4vpPermissionHandler  openid4vp.PermissionHandler
+	openid4vpHashToQueryId      map[string]string // credential hash → DCQL query ID
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
@@ -516,7 +516,7 @@ func createDisclosurePlan(
 		// the current disclosure flow is not satisfyable without issuance
 		if len(issuanceSteps) != 0 {
 			return &clientmodels.DisclosurePlan{
-				IssueDuringDislosure: &clientmodels.IssueDuringDislosure{
+				IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 					IssuedCredentialIds: map[string]struct{}{},
 					Steps:               issuanceSteps,
 				},
@@ -524,7 +524,7 @@ func createDisclosurePlan(
 		}
 	} else {
 		// update the existing issuance plan if it exists
-		lastIssuancePlan := oldDisclosurePlan.IssueDuringDislosure
+		lastIssuancePlan := oldDisclosurePlan.IssueDuringDisclosure
 		if lastIssuancePlan != nil {
 			var previousWrongHash string
 			if lastIssuancePlan.WrongCredentialIssued != nil {
@@ -533,7 +533,7 @@ func createDisclosurePlan(
 			issued, lastWrongCredential, satisfied := getIssuedSinceOriginalPlan(
 				lastIssuancePlan.Steps, credentials, preExistingCredentialHashes, previousWrongHash,
 			)
-			newPlan.IssueDuringDislosure = &clientmodels.IssueDuringDislosure{
+			newPlan.IssueDuringDisclosure = &clientmodels.IssueDuringDisclosure{
 				Steps:                 lastIssuancePlan.Steps,
 				IssuedCredentialIds:   issued,
 				WrongCredentialIssued: lastWrongCredential,
@@ -579,7 +579,7 @@ func (s *session) setPseudoRandomOpenIdState() {
 
 	stateBytes := append(s.State.StateSalt, []byte(strconv.Itoa(s.State.Id))...)
 
-	s.State.Oid4VciState = fmt.Sprintf("%x", sha256.Sum256(stateBytes))
+	s.State.OpenID4VCIState = fmt.Sprintf("%x", sha256.Sum256(stateBytes))
 }
 
 // =====================================================================================
@@ -674,9 +674,9 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 			// OpenID4VP flow: convert UI selections to DisclosureSelections
 			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpHashToQueryId)
 			session.openid4vpPermissionHandler(payload.Granted, selections)
-		} else if session.oid4vciPermissionHandler != nil {
+		} else if session.openid4vciPermissionHandler != nil {
 			// OpenID4VCI flow: no disclosure choices needed
-			session.oid4vciPermissionHandler(payload.Granted)
+			session.openid4vciPermissionHandler(payload.Granted)
 		} else {
 			// IRMA flow
 			choices, err := choicesToAnswer(payload.DisclosureChoices, session.irmaDiscloseRequest)

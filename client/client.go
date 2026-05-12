@@ -160,7 +160,7 @@ func New(
 	scheduler.Start()
 
 	// Fow now, create a new SD-JWT verification context, which skips the VCT check against the requestor info
-	sdJwtVcVerificationContextOpenId4Vci := sdjwtvc.SdJwtVcVerificationContext{
+	sdJwtVcVerificationContextOpenID4VCI := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
@@ -171,7 +171,7 @@ func New(
 	openid4vciClient, err := openid4vci.NewClient(
 		&http.Client{},
 		eudiConf,
-		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenId4Vci),
+		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
 	)
 
 	if err != nil {

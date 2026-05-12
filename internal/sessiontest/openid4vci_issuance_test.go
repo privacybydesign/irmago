@@ -15,26 +15,26 @@ import (
 // ========================================================================
 
 func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
-	t.Run("reaches permission request", testOpenId4VciPreAuthFlowReachesPermission)
-	t.Run("grants permission and exchanges token", testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken)
-	t.Run("denies permission after grant", testOpenId4VciPreAuthFlowDeniesPermission)
-	t.Run("with tx_code grants permission and exchanges token", testOpenId4VciPreAuthFlowWithTxCode)
-	t.Run("wrong tx_code can be retried", testOpenId4VciPreAuthFlowWrongTxCodeRetry)
-	t.Run("tx_code retries are exhausted after max attempts", testOpenId4VciPreAuthFlowTxCodeRetriesExhausted)
-	t.Run("user can cancel mid-tx_code-retry", testOpenId4VciPreAuthFlowCancelMidTxCodeRetry)
-	t.Run("can be dismissed", testOpenId4VciPreAuthFlowCanBeDismissed)
-	t.Run("issues credential with nested claims", testOpenId4VciPreAuthFlowNestedClaims)
-	t.Run("issues multiple credential types", testOpenId4VciPreAuthFlowMultipleCredentialTypes)
-	t.Run("issues credential with array claims", testOpenId4VciPreAuthFlowArrayClaims)
-	t.Run("issues credential with mixed sd and non-sd claims", testOpenId4VciPreAuthFlowMixedSdNonSd)
-	t.Run("issues eduid credential with boolean claims", testOpenId4VciPreAuthFlowEduIdCredential)
-	t.Run("issues deeply nested credential", testOpenId4VciPreAuthFlowDeeplyNestedCredential)
-	t.Run("issued credential can be deleted", testOpenId4VciPreAuthFlowCredentialDeletion)
-	t.Run("batch size 1 has nil remaining count", testOpenId4VciPreAuthFlowBatchSize1)
-	t.Run("batch size 2 has remaining count", testOpenId4VciPreAuthFlowBatchSize2)
+	t.Run("reaches permission request", testOpenID4VCIPreAuthFlowReachesPermission)
+	t.Run("grants permission and exchanges token", testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken)
+	t.Run("denies permission after grant", testOpenID4VCIPreAuthFlowDeniesPermission)
+	t.Run("with tx_code grants permission and exchanges token", testOpenID4VCIPreAuthFlowWithTxCode)
+	t.Run("wrong tx_code can be retried", testOpenID4VCIPreAuthFlowWrongTxCodeRetry)
+	t.Run("tx_code retries are exhausted after max attempts", testOpenID4VCIPreAuthFlowTxCodeRetriesExhausted)
+	t.Run("user can cancel mid-tx_code-retry", testOpenID4VCIPreAuthFlowCancelMidTxCodeRetry)
+	t.Run("can be dismissed", testOpenID4VCIPreAuthFlowCanBeDismissed)
+	t.Run("issues credential with nested claims", testOpenID4VCIPreAuthFlowNestedClaims)
+	t.Run("issues multiple credential types", testOpenID4VCIPreAuthFlowMultipleCredentialTypes)
+	t.Run("issues credential with array claims", testOpenID4VCIPreAuthFlowArrayClaims)
+	t.Run("issues credential with mixed sd and non-sd claims", testOpenID4VCIPreAuthFlowMixedSdNonSd)
+	t.Run("issues eduid credential with boolean claims", testOpenID4VCIPreAuthFlowEduIdCredential)
+	t.Run("issues deeply nested credential", testOpenID4VCIPreAuthFlowDeeplyNestedCredential)
+	t.Run("issued credential can be deleted", testOpenID4VCIPreAuthFlowCredentialDeletion)
+	t.Run("batch size 1 has nil remaining count", testOpenID4VCIPreAuthFlowBatchSize1)
+	t.Run("batch size 2 has remaining count", testOpenID4VCIPreAuthFlowBatchSize2)
 }
 
-func testOpenId4VciPreAuthFlowReachesPermission(t *testing.T) {
+func testOpenID4VCIPreAuthFlowReachesPermission(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -47,7 +47,7 @@ func testOpenId4VciPreAuthFlowReachesPermission(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 }
 
-func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
+func testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -130,7 +130,7 @@ func testOpenId4VciPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	)
 }
 
-func testOpenId4VciPreAuthFlowDeniesPermission(t *testing.T) {
+func testOpenID4VCIPreAuthFlowDeniesPermission(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -156,7 +156,7 @@ func testOpenId4VciPreAuthFlowDeniesPermission(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
 }
 
-func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
+func testOpenID4VCIPreAuthFlowWithTxCode(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -220,7 +220,7 @@ func testOpenId4VciPreAuthFlowWithTxCode(t *testing.T) {
 	)
 }
 
-func testOpenId4VciPreAuthFlowWrongTxCodeRetry(t *testing.T) {
+func testOpenID4VCIPreAuthFlowWrongTxCodeRetry(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -264,7 +264,7 @@ func testOpenId4VciPreAuthFlowWrongTxCodeRetry(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 }
 
-func testOpenId4VciPreAuthFlowTxCodeRetriesExhausted(t *testing.T) {
+func testOpenID4VCIPreAuthFlowTxCodeRetriesExhausted(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -306,7 +306,7 @@ func testOpenId4VciPreAuthFlowTxCodeRetriesExhausted(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
 }
 
-func testOpenId4VciPreAuthFlowCancelMidTxCodeRetry(t *testing.T) {
+func testOpenID4VCIPreAuthFlowCancelMidTxCodeRetry(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -341,7 +341,7 @@ func testOpenId4VciPreAuthFlowCancelMidTxCodeRetry(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
 }
 
-func testOpenId4VciPreAuthFlowCanBeDismissed(t *testing.T) {
+func testOpenID4VCIPreAuthFlowCanBeDismissed(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -360,12 +360,12 @@ func testOpenId4VciPreAuthFlowCanBeDismissed(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
 }
 
-func testOpenId4VciPreAuthFlowNestedClaims(t *testing.T) {
+func testOpenID4VCIPreAuthFlowNestedClaims(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
 	// Issue a HouseCredential with nested address claims.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Alice",
 		"address": {
 			"street": "123 Main St",
@@ -409,25 +409,25 @@ func testOpenId4VciPreAuthFlowNestedClaims(t *testing.T) {
 	)
 }
 
-func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
+func testOpenID4VCIPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
 	// Issue an EmailCredential.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "nested-test@example.com",
 		"domain": "example.com"
 	}`)
 
 	// Issue a StudentCardCredential.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S12345"
 	}`)
 
 	// Issue a HouseCredential with nested claims.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Bob",
 		"address": {
 			"street": "456 Oak Ave",
@@ -512,11 +512,11 @@ func testOpenId4VciPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	)
 }
 
-func testOpenId4VciPreAuthFlowArrayClaims(t *testing.T) {
+func testOpenID4VCIPreAuthFlowArrayClaims(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S99999",
@@ -565,11 +565,11 @@ func testOpenId4VciPreAuthFlowArrayClaims(t *testing.T) {
 	)
 }
 
-func testOpenId4VciPreAuthFlowMixedSdNonSd(t *testing.T) {
+func testOpenID4VCIPreAuthFlowMixedSdNonSd(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Alice",
 		"member_since": "2020-01-15",
 		"membership_type": "gold"
@@ -602,11 +602,11 @@ func testOpenId4VciPreAuthFlowMixedSdNonSd(t *testing.T) {
 	)
 }
 
-func testOpenId4VciPreAuthFlowEduIdCredential(t *testing.T) {
+func testOpenID4VCIPreAuthFlowEduIdCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
 		"schac_home_organization": "university.nl",
 		"name": "Jan de Vries",
 		"given_name": "Jan",
@@ -711,7 +711,7 @@ func testOpenId4VciPreAuthFlowEduIdCredential(t *testing.T) {
 	)
 }
 
-// testOpenId4VciPreAuthFlowDeeplyNestedCredential issues a credential with
+// testOpenID4VCIPreAuthFlowDeeplyNestedCredential issues a credential with
 // deeply nested structure: an object containing an array of objects, each
 // containing an array of objects, each containing an array. This mirrors the
 // structure in buildDeeplyNestedSdJwt from the SD-JWT presentation tests.
@@ -737,7 +737,7 @@ func testOpenId4VciPreAuthFlowEduIdCredential(t *testing.T) {
 //	          dept_name: "Urbanism"
 //	          courses: ["City Planning"]
 //	  founded: 1842
-func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
+func testOpenID4VCIPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -998,11 +998,11 @@ func testOpenId4VciPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 	)
 }
 
-// testOpenId4VciPreAuthFlowCredentialDeletion verifies that an EUDI SD-JWT credential
+// testOpenID4VCIPreAuthFlowCredentialDeletion verifies that an EUDI SD-JWT credential
 // issued via OID4VCI can be deleted. The credential only exists in the EUDI GORM storage
 // (not in the IRMA BBolt storage), so its hash won't be found in getIrmaCredentialInfoList().
 // This specifically guards against an index-out-of-range panic when the hash lookup returns -1.
-func testOpenId4VciPreAuthFlowCredentialDeletion(t *testing.T) {
+func testOpenID4VCIPreAuthFlowCredentialDeletion(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -1047,7 +1047,7 @@ func testOpenId4VciPreAuthFlowCredentialDeletion(t *testing.T) {
 	}
 }
 
-func testOpenId4VciPreAuthFlowBatchSize1(t *testing.T) {
+func testOpenID4VCIPreAuthFlowBatchSize1(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -1081,7 +1081,7 @@ func testOpenId4VciPreAuthFlowBatchSize1(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 }
 
-func testOpenId4VciPreAuthFlowBatchSize2(t *testing.T) {
+func testOpenID4VCIPreAuthFlowBatchSize2(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -1133,14 +1133,14 @@ func testOpenId4VciPreAuthFlowBatchSize2(t *testing.T) {
 // ========================================================================
 
 func testSessionHandlerForOpenID4VCIAuthCode(t *testing.T) {
-	t.Run("reaches auth request", testOpenId4VciAuthCodeFlowReachesAuthRequest)
-	t.Run("grants permission and exchanges token", testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken)
-	t.Run("denies permission after grant", testOpenId4VciAuthCodeFlowDeniesPermission)
-	t.Run("can be dismissed", testOpenId4VciAuthCodeFlowCanBeDismissed)
-	t.Run("issues credential with nested claims", testOpenId4VciAuthCodeFlowNestedClaims)
+	t.Run("reaches auth request", testOpenID4VCIAuthCodeFlowReachesAuthRequest)
+	t.Run("grants permission and exchanges token", testOpenID4VCIAuthCodeFlowGrantsPermissionAndExchangesToken)
+	t.Run("denies permission after grant", testOpenID4VCIAuthCodeFlowDeniesPermission)
+	t.Run("can be dismissed", testOpenID4VCIAuthCodeFlowCanBeDismissed)
+	t.Run("issues credential with nested claims", testOpenID4VCIAuthCodeFlowNestedClaims)
 }
 
-func testOpenId4VciAuthCodeFlowReachesAuthRequest(t *testing.T) {
+func testOpenID4VCIAuthCodeFlowReachesAuthRequest(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -1154,7 +1154,7 @@ func testOpenId4VciAuthCodeFlowReachesAuthRequest(t *testing.T) {
 	require.NotEmpty(t, session.AuthorizationRequestUrl)
 }
 
-func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
+func testOpenID4VCIAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -1235,7 +1235,7 @@ func testOpenId4VciAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	)
 }
 
-func testOpenId4VciAuthCodeFlowDeniesPermission(t *testing.T) {
+func testOpenID4VCIAuthCodeFlowDeniesPermission(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -1266,7 +1266,7 @@ func testOpenId4VciAuthCodeFlowDeniesPermission(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
 }
 
-func testOpenId4VciAuthCodeFlowCanBeDismissed(t *testing.T) {
+func testOpenID4VCIAuthCodeFlowCanBeDismissed(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -1285,12 +1285,12 @@ func testOpenId4VciAuthCodeFlowCanBeDismissed(t *testing.T) {
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
 }
 
-func testOpenId4VciAuthCodeFlowNestedClaims(t *testing.T) {
+func testOpenID4VCIAuthCodeFlowNestedClaims(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
 	// Issue a HouseCredential with nested address claims via authorization code flow.
-	issueCredentialViaOid4VciAuthCode(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCIAuthCode(t, c, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Charlie",
 		"address": {
 			"street": "789 Elm St",
@@ -1334,9 +1334,9 @@ func testOpenId4VciAuthCodeFlowNestedClaims(t *testing.T) {
 	)
 }
 
-// issueCredentialViaOid4VciAuthCode issues a single credential through the
+// issueCredentialViaOpenID4VCIAuthCode issues a single credential through the
 // veramo-agent OID4VCI authorization code flow.
-func issueCredentialViaOid4VciAuthCode(
+func issueCredentialViaOpenID4VCIAuthCode(
 	t *testing.T,
 	c *client.Client,
 	sessionHandler *MockSessionHandler,

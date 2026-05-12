@@ -64,7 +64,7 @@ type SessionState struct {
 
 	// OID4VCI - Authorization Code Flow parameters
 	StateSalt               []byte `json:"-"`
-	Oid4VciState            string `json:"oid4_vci_state,omitempty"`
+	OpenID4VCIState         string `json:"openid4vci_state,omitempty"`
 	AuthorizationRequestUrl string `json:"authorization_request_url,omitempty"`
 
 	// OID4VCI - Pre-Authorized Code Flow parameters
@@ -121,7 +121,7 @@ type SessionError struct {
 type DisclosurePlan struct {
 	// What to show during issuance during disclosure.
 	// If nil then no issuances are required before a valid choice can be made.
-	IssueDuringDislosure *IssueDuringDislosure `json:"issue_during_dislosure"`
+	IssueDuringDisclosure *IssueDuringDisclosure `json:"issue_during_disclosure"`
 	// What the user can pick for disclosure. This should never be nil.
 	DisclosureChoicesOverview []DisclosurePickOne `json:"disclosure_choices_overview"`
 }
@@ -143,8 +143,8 @@ type IssuanceStep struct {
 	Options []*CredentialDescriptor `json:"options"`
 }
 
-// IssueDuringDislosure describes issuance steps needed during a disclosure flow.
-type IssueDuringDislosure struct {
+// IssueDuringDisclosure describes issuance steps needed during a disclosure flow.
+type IssueDuringDisclosure struct {
 	// The steps to fulfill before we can continue the disclosure
 	Steps []IssuanceStep `json:"steps"`
 	// The set of credential ids that have been issued during this session

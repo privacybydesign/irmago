@@ -80,8 +80,8 @@ func buildPlanFromCredentialSets(
 }
 
 // finalizePlan handles the issuance-during-disclosure logic:
-// - On first call (previousPlan == nil): detects unsatisfied disjunctions and creates IssueDuringDislosure
-// - On refresh (previousPlan != nil): updates IssueDuringDislosure tracking with newly issued credentials
+// - On first call (previousPlan == nil): detects unsatisfied disjunctions and creates IssueDuringDisclosure
+// - On refresh (previousPlan != nil): updates IssueDuringDisclosure tracking with newly issued credentials
 func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.DisclosurePlan, preExistingHashes map[string]struct{}) *clientmodels.DisclosurePlan {
 	if previousPlan == nil {
 		// First time: check if issuance is needed
@@ -89,12 +89,12 @@ func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.
 	}
 
 	// Refresh: update existing issuance tracking
-	if previousPlan.IssueDuringDislosure == nil {
+	if previousPlan.IssueDuringDisclosure == nil {
 		return plan
 	}
 
 	// Track which credentials were issued since the original plan
-	prevSteps := previousPlan.IssueDuringDislosure.Steps
+	prevSteps := previousPlan.IssueDuringDisclosure.Steps
 	issuedIds := make(map[string]struct{})
 	allSatisfied := true
 
@@ -116,11 +116,11 @@ func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.
 	}
 
 	// Merge previously tracked issued IDs
-	for id := range previousPlan.IssueDuringDislosure.IssuedCredentialIds {
+	for id := range previousPlan.IssueDuringDisclosure.IssuedCredentialIds {
 		issuedIds[id] = struct{}{}
 	}
 
-	plan.IssueDuringDislosure = &clientmodels.IssueDuringDislosure{
+	plan.IssueDuringDisclosure = &clientmodels.IssueDuringDisclosure{
 		Steps:               prevSteps,
 		IssuedCredentialIds: issuedIds,
 	}
@@ -134,7 +134,7 @@ func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.
 }
 
 // addIssueDuringDisclosure checks if any required DisclosurePickOne has no owned options
-// and adds IssueDuringDislosure with issuance steps for unsatisfied disjunctions.
+// and adds IssueDuringDisclosure with issuance steps for unsatisfied disjunctions.
 func addIssueDuringDisclosure(plan *clientmodels.DisclosurePlan) *clientmodels.DisclosurePlan {
 	var issuanceSteps []clientmodels.IssuanceStep
 
@@ -147,7 +147,7 @@ func addIssueDuringDisclosure(plan *clientmodels.DisclosurePlan) *clientmodels.D
 	}
 
 	if len(issuanceSteps) > 0 {
-		plan.IssueDuringDislosure = &clientmodels.IssueDuringDislosure{
+		plan.IssueDuringDisclosure = &clientmodels.IssueDuringDisclosure{
 			Steps:               issuanceSteps,
 			IssuedCredentialIds: map[string]struct{}{},
 		}

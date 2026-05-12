@@ -28,8 +28,8 @@ const (
 	batch2AdminToken = "test-admin-token"
 )
 
-func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
-	t.Run("issue via openid4vci and disclose via openid4vp", testIssueViaOid4VciAndDiscloseViaOid4Vp)
+func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
+	t.Run("issue via openid4vci and disclose via openid4vp", testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP)
 	t.Run("disclose single credential with multiple attributes", testDiscloseCredentialWithMultipleAttributes)
 	t.Run("choice between two credential types", testChoiceBetweenTwoCredentialTypes)
 	t.Run("multiple required credentials", testMultipleRequiredCredentials)
@@ -71,7 +71,7 @@ func testSessionHandlerForOpenId4VpWithSdJwtVcs(t *testing.T) {
 	t.Run("veramo verifier multi-vct first missing second matched", testVeramoVerifierMultiVctFirstMissingSecondMatched)
 }
 
-func testIssueViaOid4VciAndDiscloseViaOid4Vp(t *testing.T) {
+func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 	// Step 1: Issue an SD-JWT credential via the veramo-agent OID4VCI flow.
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
@@ -165,7 +165,7 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	defer c.Close()
 
 	// Issue an EmailCredential via OID4VCI.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "alice@example.com",
 		"domain": "example.com"
 	}`)
@@ -245,13 +245,13 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 	defer c.Close()
 
 	// Issue EmailCredential.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "bob@example.com",
 		"domain": "example.com"
 	}`)
 
 	// Issue PhoneCredential.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
 		"phone_number": "+31612345678"
 	}`)
 
@@ -352,13 +352,13 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	defer c.Close()
 
 	// Issue EmailCredential.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "carol@example.com",
 		"domain": "example.com"
 	}`)
 
 	// Issue PhoneCredential.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
 		"phone_number": "+31687654321"
 	}`)
 
@@ -460,7 +460,7 @@ func testOptionalCredential(t *testing.T) {
 	defer c.Close()
 
 	// Issue only EmailCredential.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "dave@example.com",
 		"domain": "example.com"
 	}`)
@@ -527,7 +527,7 @@ func testOptionalCredential(t *testing.T) {
 				// feature surfaces a single unobtainable descriptor (empty
 				// IssueURL). Since the pickOne is optional, it stays in
 				// DisclosureChoicesOverview rather than being promoted to
-				// IssueDuringDislosure.Steps — the user can simply skip it.
+				// IssueDuringDisclosure.Steps — the user can simply skip it.
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "https://localhost:8443/vct/phone",
@@ -567,13 +567,13 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 	defer c.Close()
 
 	// Issue first EmailCredential with domain "example.com".
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "eve@example.com",
 		"domain": "example.com"
 	}`)
 
 	// Issue second EmailCredential with domain "other.org".
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "eve@other.org",
 		"domain": "other.org"
 	}`)
@@ -653,7 +653,7 @@ func testDiscloseNestedClaims(t *testing.T) {
 	defer c.Close()
 
 	// Issue a HouseCredential with nested address claims.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Frank",
 		"address": {
 			"street": "10 Downing St",
@@ -745,7 +745,7 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 	defer c.Close()
 
 	// Issue a StudentCardCredential with an array of courses.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S99999",
@@ -836,7 +836,7 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S88888",
@@ -928,7 +928,7 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S77777",
@@ -1016,7 +1016,7 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Grace",
 		"member_since": "2020-01-15",
 		"membership_type": "Gold"
@@ -1097,7 +1097,7 @@ func testNonSdArrayClaimsFlattenedInDisclosurePlan(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Grace",
 		"member_since": "2020-01-15",
 		"membership_type": "Gold",
@@ -1180,7 +1180,7 @@ func testNonSdSingleItemArrayFlattenedInDisclosurePlan(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Alice",
 		"member_since": "2023-06-01",
 		"membership_type": "Silver",
@@ -1251,20 +1251,20 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	defer c.Close()
 
 	// Issue four different credential types.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "multi@example.com",
 		"domain": "example.com"
 	}`)
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
 		"phone_number": "+31699999999"
 	}`)
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "Radboud University",
 		"level": "Master",
 		"student_id": "s1234567",
 		"courses": ["Algorithms", "Databases", "Security"]
 	}`)
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Multi Test",
 		"address": {
 			"street": "Toernooiveld 1",
@@ -1395,7 +1395,7 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
 		"schac_home_organization": "university.nl",
 		"name": "Jan de Vries",
 		"given_name": "Jan",
@@ -1511,7 +1511,7 @@ func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "claimsets@example.com",
 		"domain": "example.com"
 	}`)
@@ -1587,11 +1587,11 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "vct@example.com",
 		"domain": "example.com"
 	}`)
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
 		"phone_number": "+31611111111"
 	}`)
 
@@ -1669,7 +1669,7 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	defer c.Close()
 
 	// Issue credential with is_student=true.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
 		"schac_home_organization": "uni-a.nl",
 		"name": "Student User",
 		"given_name": "Student",
@@ -1688,7 +1688,7 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	}`)
 
 	// Issue credential with is_student=false.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
 		"schac_home_organization": "uni-b.nl",
 		"name": "Staff User",
 		"given_name": "Staff",
@@ -1788,11 +1788,11 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "alice@example.com",
 		"domain": "example.com"
 	}`)
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "bob@example.com",
 		"domain": "example.com"
 	}`)
@@ -1908,7 +1908,7 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Alice",
 		"member_since": "2020-01-01",
 		"membership_type": "gold"
@@ -1979,7 +1979,7 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "dup@example.com",
 		"domain": "example.com"
 	}`)
@@ -2060,7 +2060,7 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Duplicate Tester",
 		"address": {
 			"street": "Kalverstraat 1",
@@ -2155,7 +2155,7 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "nokb@example.com",
 		"domain": "example.com"
 	}`)
@@ -2242,7 +2242,7 @@ func testVerifierDisplayName(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "display@example.com",
 		"domain": "example.com"
 	}`)
@@ -2312,7 +2312,7 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 	}`
 
 	// Step 1: Issue a credential via OID4VCI (batch of 1, test-issuer default).
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "batch1@example.com",
 		"domain": "example.com"
 	}`)
@@ -2389,7 +2389,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	}`
 
 	// Step 1: Issue a credential via the batch2-issuer (batch of 2).
-	issueCredentialViaOid4VciFromIssuer(t, c, sessionHandler, batch2IssuerURL, batch2AdminToken,
+	issueCredentialViaOpenID4VCIFromIssuer(t, c, sessionHandler, batch2IssuerURL, batch2AdminToken,
 		"EmailCredentialSdJwt", `{"email": "batch2@example.com", "domain": "example.com"}`)
 
 	// Batch-of-2 should have a non-nil remaining count of 2.
@@ -2464,7 +2464,7 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 	defer c.Close()
 
 	// Issue a credential via the veramo OID4VCI issuer.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "eudi-test@example.com",
 		"domain": "example.com"
 	}`)
@@ -2611,7 +2611,7 @@ func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
 // testVeramoVerifierRequestingMissingCredentialSurfacesIt asserts the
 // "missing credentials" UX: when a verifier asks for a VCT the wallet has
 // never seen, the disclosure plan promotes a single CredentialDescriptor
-// (with an empty IssueURL) into IssueDuringDislosure.Steps so the frontend
+// (with an empty IssueURL) into IssueDuringDisclosure.Steps so the frontend
 // can tell the user *what* is being requested instead of stalling on a
 // blank permission prompt. DisclosureChoicesOverview is hidden until the
 // step resolves — which it never can, so the user's only path forward is
@@ -2650,11 +2650,11 @@ func testVeramoVerifierRequestingMissingCredentialSurfacesIt(t *testing.T) {
 	// needed — including the "issuance" of an unobtainable credential.
 	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview,
 		"choices should be nil because there is one unsatisfiable issuance step")
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDislosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options[0]
+	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId)
 	require.Nil(t, option.IssueURL, "empty IssueURL is the wire-level signal that the credential is unobtainable")
 	require.NotEmpty(t, option.Name, "Name populated from the VCT type metadata document")
@@ -2694,11 +2694,11 @@ func testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
 	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDislosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options[0]
+	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
 	require.Equal(t, "https://localhost:8443/vct/does-not-exist-anywhere", option.CredentialId)
 	require.Nil(t, option.IssueURL)
 	require.Empty(t, option.Name, "no Name when VCT type-metadata fetch failed")
@@ -2742,11 +2742,11 @@ func testVeramoVerifierMultiVctFirstMissingSecondMatched(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan)
 	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview)
-	require.NotNil(t, session.DisclosurePlan.IssueDuringDislosure)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps, 1)
-	require.Len(t, session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options, 1)
+	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDislosure.Steps[0].Options[0]
+	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId,
 		"second VCT (whose fetch succeeded) wins")
 	require.Nil(t, option.IssueURL)
@@ -2761,7 +2761,7 @@ func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -2936,7 +2936,7 @@ func testDiscloseSpecificNestedArrayElement(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3106,7 +3106,7 @@ func testDiscloseNestedArrayWithNullPath(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3264,7 +3264,7 @@ func testDiscloseSingleDeepLeafShowsAncestry(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3376,7 +3376,7 @@ func testDiscloseSiblingLeavesShareAncestry(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3484,7 +3484,7 @@ func testDiscloseLeafWithSingleWildcard(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3617,7 +3617,7 @@ func testDiscloseNullThenFixedIndexLogsOnlySelected(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3771,7 +3771,7 @@ func testDiscloseLeafWithDoubleWildcard(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3913,7 +3913,7 @@ func testDiscloseShallowLeafShowsSingleHeader(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [],
@@ -4219,7 +4219,7 @@ type expectedDisclosurePlan struct {
 	Choices []expectedPickOneChoice
 }
 
-// expectedIssuanceStep describes one step in IssueDuringDislosure.Steps.
+// expectedIssuanceStep describes one step in IssueDuringDisclosure.Steps.
 type expectedIssuanceStep struct {
 	Options []expectedCredentialDescriptor
 }
@@ -4257,11 +4257,11 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 
 	// --- Issuance steps ---
 	if expected.IssuanceSteps != nil {
-		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
-		require.Len(t, plan.IssueDuringDislosure.Steps, len(expected.IssuanceSteps),
+		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
+		require.Len(t, plan.IssueDuringDisclosure.Steps, len(expected.IssuanceSteps),
 			"issuance step count mismatch")
 		for i, expStep := range expected.IssuanceSteps {
-			actualStep := plan.IssueDuringDislosure.Steps[i]
+			actualStep := plan.IssueDuringDisclosure.Steps[i]
 			require.Len(t, actualStep.Options, len(expStep.Options),
 				"issuance step %d option count mismatch", i)
 			for j, expOpt := range expStep.Options {
@@ -4274,22 +4274,22 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 
 	// --- Issued credential ids ---
 	if expected.IssuedCredentialIds != nil {
-		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
-		require.Equal(t, expected.IssuedCredentialIds, plan.IssueDuringDislosure.IssuedCredentialIds,
+		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
+		require.Equal(t, expected.IssuedCredentialIds, plan.IssueDuringDisclosure.IssuedCredentialIds,
 			"issued credential ids mismatch")
 	}
 
 	// --- Wrong credential issued ---
 	if expected.WrongCredentialIssuedNil {
-		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
-		require.Nil(t, plan.IssueDuringDislosure.WrongCredentialIssued,
+		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
+		require.Nil(t, plan.IssueDuringDisclosure.WrongCredentialIssued,
 			"wrong credential issued should be nil")
 	}
 	if expected.WrongCredentialIssued != nil {
-		require.NotNil(t, plan.IssueDuringDislosure, "plan should have IssueDuringDislosure")
-		require.NotNil(t, plan.IssueDuringDislosure.WrongCredentialIssued,
+		require.NotNil(t, plan.IssueDuringDisclosure, "plan should have IssueDuringDisclosure")
+		require.NotNil(t, plan.IssueDuringDisclosure.WrongCredentialIssued,
 			"wrong credential issued should not be nil")
-		wrong := plan.IssueDuringDislosure.WrongCredentialIssued
+		wrong := plan.IssueDuringDisclosure.WrongCredentialIssued
 		if expected.WrongCredentialIssued.CredentialId != "" {
 			require.Equal(t, expected.WrongCredentialIssued.CredentialId, wrong.CredentialId,
 				"wrong credential id mismatch")
@@ -4422,11 +4422,11 @@ func expectedPlanSummary(exp expectedPlanCredential) string {
 // OID4VCI issuance helper
 // ---------------------------------------------------------------------------
 
-// issueCredentialViaOid4Vci issues a single credential through the veramo-agent
+// issueCredentialViaOpenID4VCI issues a single credential through the veramo-agent
 // OID4VCI pre-authorized code flow. The credentialType identifies the credential
 // configuration (e.g. "EmailCredentialSdJwt") and claimsJSON provides the claim
 // values as a JSON object.
-func issueCredentialViaOid4Vci(
+func issueCredentialViaOpenID4VCI(
 	t *testing.T,
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
@@ -4470,9 +4470,9 @@ func issueCredentialViaOid4Vci(
 	require.Equal(t, "CREDENTIAL_ISSUED", status)
 }
 
-// issueCredentialViaOid4VciFromIssuer is like issueCredentialViaOid4Vci but
+// issueCredentialViaOpenID4VCIFromIssuer is like issueCredentialViaOpenID4VCI but
 // allows specifying a custom issuer URL and admin token.
-func issueCredentialViaOid4VciFromIssuer(
+func issueCredentialViaOpenID4VCIFromIssuer(
 	t *testing.T,
 	c *client.Client,
 	sessionHandler *MockSessionHandler,

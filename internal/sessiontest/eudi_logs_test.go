@@ -11,11 +11,11 @@ import (
 )
 
 func testSessionHandlerForEudiLogs(t *testing.T) {
-	t.Run("oid4vci pre-auth issuance creates log", testOpenId4VciPreAuthFlowCreatesIssuanceLog)
-	t.Run("oid4vci auth-code issuance creates log", testOpenId4VciAuthCodeFlowCreatesIssuanceLog)
-	t.Run("oid4vci denied permission creates no log", testOpenId4VciDeniedPermissionCreatesNoLog)
-	t.Run("oid4vp disclosure creates log", testOpenId4VpDisclosureCreatesLog)
-	t.Run("oid4vp disclosure log has issuer name and credential image", testOpenId4VpDisclosureLogHasIssuerNameAndImage)
+	t.Run("openid4vci pre-auth issuance creates log", testOpenID4VCIPreAuthFlowCreatesIssuanceLog)
+	t.Run("openid4vci auth-code issuance creates log", testOpenID4VCIAuthCodeFlowCreatesIssuanceLog)
+	t.Run("openid4vci denied permission creates no log", testOpenID4VCIDeniedPermissionCreatesNoLog)
+	t.Run("openid4vp disclosure creates log", testOpenID4VPDisclosureCreatesLog)
+	t.Run("openid4vp disclosure log has issuer name and credential image", testOpenID4VPDisclosureLogHasIssuerNameAndImage)
 	t.Run("eudi credential removal creates log", testEudiCredentialRemovalCreatesLog)
 	t.Run("eudi credential removal log has attributes", testEudiCredentialRemovalLogHasAttributes)
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
@@ -26,11 +26,11 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("load logs before includes both irma and eudi logs", testLoadLogsBeforeIncludesBothSources)
 }
 
-func testOpenId4VciPreAuthFlowCreatesIssuanceLog(t *testing.T) {
+func testOpenID4VCIPreAuthFlowCreatesIssuanceLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "LogTest",
 		"family_name": "User",
 		"email": "logtest@example.com"
@@ -75,11 +75,11 @@ func testOpenId4VciPreAuthFlowCreatesIssuanceLog(t *testing.T) {
 	)
 }
 
-func testOpenId4VciAuthCodeFlowCreatesIssuanceLog(t *testing.T) {
+func testOpenID4VCIAuthCodeFlowCreatesIssuanceLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4VciAuthCode(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCIAuthCode(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "AuthLog",
 		"family_name": "User",
 		"email": "authlog@example.com"
@@ -97,7 +97,7 @@ func testOpenId4VciAuthCodeFlowCreatesIssuanceLog(t *testing.T) {
 	require.Equal(t, "Test Credential (SD-JWT, Auth Code)", log.IssuanceLog.Credentials[0].Name["en"])
 }
 
-func testOpenId4VciDeniedPermissionCreatesNoLog(t *testing.T) {
+func testOpenID4VCIDeniedPermissionCreatesNoLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
@@ -126,12 +126,12 @@ func testOpenId4VciDeniedPermissionCreatesNoLog(t *testing.T) {
 	require.Len(t, logs, 0, "denied OID4VCI session should not produce a log")
 }
 
-func testOpenId4VpDisclosureCreatesLog(t *testing.T) {
+func testOpenID4VPDisclosureCreatesLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
 	// Issue a credential first.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Disclose",
 		"family_name": "Test",
 		"email": "disclose@example.com"
@@ -170,16 +170,16 @@ func testOpenId4VpDisclosureCreatesLog(t *testing.T) {
 		"disclosure log credential should include the sd-jwt format")
 }
 
-// testOpenId4VpDisclosureLogHasIssuerNameAndImage verifies that credentials in
+// testOpenID4VPDisclosureLogHasIssuerNameAndImage verifies that credentials in
 // OpenID4VP disclosure logs contain the issuer display name and credential image.
 // Currently these fields are NOT populated by the EUDI SD-JWT disclosure handler,
 // so this test documents the shortcoming.
-func testOpenId4VpDisclosureLogHasIssuerNameAndImage(t *testing.T) {
+func testOpenID4VPDisclosureLogHasIssuerNameAndImage(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
 	// Issue a credential first.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "IssuerLog",
 		"family_name": "Test",
 		"email": "issuerlog@example.com"
@@ -233,7 +233,7 @@ func testEudiCredentialRemovalCreatesLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Remove",
 		"family_name": "Me",
 		"email": "remove@example.com"
@@ -268,7 +268,7 @@ func testEudiCredentialRemovalLogHasAttributes(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "AttrRemove",
 		"family_name": "Test",
 		"email": "attrremove@example.com"
@@ -388,7 +388,7 @@ func testDeeplyNestedIssuanceLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -408,7 +408,7 @@ func testDeeplyNestedRemovalLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
@@ -446,12 +446,12 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 	defer c.Close()
 
 	// Issue two credentials.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Selective",
 		"family_name": "Disclosure",
 		"email": "selective@example.com"
 	}`)
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Selective Owner",
 		"address": {
 			"street": "Secret Street 1",
@@ -594,7 +594,7 @@ func testDuplicateCredentialRemovalCreatesLog(t *testing.T) {
 	// Because the hash is now based solely on claim values, the second and third
 	// issuances are deduplicated — only one credential batch is stored.
 	for range 3 {
-		issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", claims)
+		issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", claims)
 	}
 
 	creds, err := c.GetCredentials()
@@ -690,7 +690,7 @@ func testIrmaAndEudiLogsMergedChronologically(t *testing.T) {
 
 	// 3. OID4VCI issuance → SQLCipher log.
 	sep()
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Combined",
 		"family_name": "Test",
 		"email": "combined@example.com"
@@ -796,7 +796,7 @@ func testLoadLogsBeforeIncludesBothSources(t *testing.T) {
 
 	// 3. OID4VCI issuance.
 	sep()
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Page",
 		"family_name": "Test",
 		"email": "page@example.com"

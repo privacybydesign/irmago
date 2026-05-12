@@ -416,7 +416,7 @@ func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
 	defer c.Close()
 
 	// Issue a credential so that the EUDI database and filesystem are populated.
-	issueCredentialViaOid4Vci(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Storage",
 		"family_name": "Cleanup",
 		"email": "cleanup@example.com"
