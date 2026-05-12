@@ -17,18 +17,18 @@ import (
 )
 
 type session struct {
-	State                      *clientmodels.SessionState
-	handler                    clientmodels.SessionHandler
-	permissionHandler          irmaclient.PermissionHandler
-	pinHandler                 irmaclient.PinHandler
-	client                     *Client
-	dismisser                  irmaclient.SessionDismisser
-	chained                    bool
-	authCodeHandler            openid4vci.AuthCodeHandler
-	preAuthorizedCodeHandler   openid4vci.TokenPermissionHandler
-	openid4vciPermissionHandler   openid4vci.PermissionHandler
-	openid4vpPermissionHandler openid4vp.PermissionHandler
-	openid4vpHashToQueryId     map[string]string // credential hash → DCQL query ID
+	State                       *clientmodels.SessionState
+	handler                     clientmodels.SessionHandler
+	permissionHandler           irmaclient.PermissionHandler
+	pinHandler                  irmaclient.PinHandler
+	client                      *Client
+	dismisser                   irmaclient.SessionDismisser
+	chained                     bool
+	authCodeHandler             openid4vci.AuthCodeHandler
+	preAuthorizedCodeHandler    openid4vci.TokenPermissionHandler
+	openid4vciPermissionHandler openid4vci.PermissionHandler
+	openid4vpPermissionHandler  openid4vp.PermissionHandler
+	openid4vpHashToQueryId      map[string]string // credential hash → DCQL query ID
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
