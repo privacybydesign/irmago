@@ -58,7 +58,7 @@ func (a *openid4vciSessionAdapter) RequestAuthorizationCodeFlowPermission(
 
 	// Add the state to the authorization parameters so it will be send to the authorization server and back to us, to verify the response belongs to this session
 	authParams := url.Values(request.AuthorizationParameters)
-	authParams.Add("state", a.session.State.Oid4VciState)
+	authParams.Add("state", a.session.State.OpenID4VCIState)
 
 	// Construct the URL that the client should open in the browser to start the authorization code flow
 	authRequestUrl, err := url.Parse(request.AuthorizationEndpoint)
@@ -91,7 +91,7 @@ func (a *openid4vciSessionAdapter) RequestPermission(
 ) {
 	a.session.State.OfferedCredentials = offeredCredentials
 	a.session.State.Status = clientmodels.Status_RequestPermission
-	a.session.oid4vciPermissionHandler = callback
+	a.session.openid4vciPermissionHandler = callback
 	a.session.dispatchState()
 }
 

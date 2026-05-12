@@ -67,7 +67,7 @@ func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *cli
 	if h.log {
 		issuanceRequestJson, err := json.MarshalIndent(request, "", "    ")
 		require.NoError(h.t, err)
-		fmt.Printf("OpenId4VciIssuanceRequest: %v\n", string(issuanceRequestJson))
+		fmt.Printf("OpenID4VCIIssuanceRequest: %v\n", string(issuanceRequestJson))
 	}
 
 	h.authCodeRequestChannel <- callback
@@ -79,7 +79,7 @@ func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(
 	callback TokenPermissionHandler,
 ) {
 	if h.log {
-		fmt.Printf("OpenId4VciPreAuthorizedCodeTokenRequest")
+		fmt.Printf("OpenID4VCIPreAuthorizedCodeTokenRequest")
 	}
 
 	h.tokenPermissionRequestChannel <- callback

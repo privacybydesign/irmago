@@ -64,7 +64,7 @@ type SessionState struct {
 
 	// OID4VCI - Authorization Code Flow parameters
 	StateSalt               []byte `json:"-"`
-	Oid4VciState            string `json:"oid4_vci_state,omitempty"`
+	OpenID4VCIState            string `json:"openid4vci_state,omitempty"`
 	AuthorizationRequestUrl string `json:"authorization_request_url,omitempty"`
 
 	// OID4VCI - Pre-Authorized Code Flow parameters

@@ -26,7 +26,7 @@ type session struct {
 	chained                    bool
 	authCodeHandler            openid4vci.AuthCodeHandler
 	preAuthorizedCodeHandler   openid4vci.TokenPermissionHandler
-	oid4vciPermissionHandler   openid4vci.PermissionHandler
+	openid4vciPermissionHandler   openid4vci.PermissionHandler
 	openid4vpPermissionHandler openid4vp.PermissionHandler
 	openid4vpHashToQueryId     map[string]string // credential hash → DCQL query ID
 	// Hashes of credentials that already existed when the disclosure plan was first created.
@@ -579,7 +579,7 @@ func (s *session) setPseudoRandomOpenIdState() {
 
 	stateBytes := append(s.State.StateSalt, []byte(strconv.Itoa(s.State.Id))...)
 
-	s.State.Oid4VciState = fmt.Sprintf("%x", sha256.Sum256(stateBytes))
+	s.State.OpenID4VCIState = fmt.Sprintf("%x", sha256.Sum256(stateBytes))
 }
 
 // =====================================================================================
@@ -674,9 +674,9 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 			// OpenID4VP flow: convert UI selections to DisclosureSelections
 			selections := disclosureChoicesToOpenID4VPSelections(payload.DisclosureChoices, session.openid4vpHashToQueryId)
 			session.openid4vpPermissionHandler(payload.Granted, selections)
-		} else if session.oid4vciPermissionHandler != nil {
+		} else if session.openid4vciPermissionHandler != nil {
 			// OpenID4VCI flow: no disclosure choices needed
-			session.oid4vciPermissionHandler(payload.Granted)
+			session.openid4vciPermissionHandler(payload.Granted)
 		} else {
 			// IRMA flow
 			choices, err := choicesToAnswer(payload.DisclosureChoices, session.irmaDiscloseRequest)
