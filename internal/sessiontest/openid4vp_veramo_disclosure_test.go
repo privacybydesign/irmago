@@ -34,6 +34,7 @@ func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
 	t.Run("choice between two credential types", testChoiceBetweenTwoCredentialTypes)
 	t.Run("multiple required credentials", testMultipleRequiredCredentials)
 	t.Run("optional credential", testOptionalCredential)
+	t.Run("empty optional disclosure", testEmptyOptionalDisclosure)
 	t.Run("credential with specific claim value", testCredentialWithSpecificClaimValue)
 	t.Run("disclose nested claims", testDiscloseNestedClaims)
 	t.Run("disclose credential with array values", testDiscloseCredentialWithArrayValues)
@@ -557,6 +558,76 @@ func testOptionalCredential(t *testing.T) {
 	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
 		"verifier session should have received or verified the response")
 	requireVerifierReceivedClaims(t, result, "email-cred", claim([]any{"email"}, "dave@example.com"))
+}
+
+// testEmptyOptionalDisclosure covers the case where the verifier requests only
+// optional credential_sets and the user owns the credential but declines to
+// share it. The wallet POSTs an empty VP, the verifier accepts it, and the
+// wallet records a disclosure log so the user can see which verifier they had
+// a session with.
+func testEmptyOptionalDisclosure(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "skip@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			],
+			"credential_sets": [
+				{ "options": [["email-cred"]], "required": false }
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	// Skip the single optional pickOne by passing an empty selection.
+	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status,
+		"verifier session should have received or verified the empty response")
+	if result.Result != nil {
+		require.Empty(t, result.Result.Credentials,
+			"verifier should have received no credentials")
+	}
+
+	// Simple log check: an OpenID4VP disclosure log exists for this session,
+	// even though no credentials were shared.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	var disclosureLog *clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			disclosureLog = &logs[i]
+			break
+		}
+	}
+	require.NotNil(t, disclosureLog, "should have a disclosure log even when no credentials were shared")
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, disclosureLog.DisclosureLog.Protocol)
+	require.Empty(t, disclosureLog.DisclosureLog.Credentials)
 }
 
 // testCredentialWithSpecificClaimValue issues two EmailCredentials with

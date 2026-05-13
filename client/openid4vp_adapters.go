@@ -27,12 +27,12 @@ func (a *openid4vpSessionAdapter) Cancelled() {
 func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []clientmodels.LogCredential) {
 	eudi.Logger.Infof("openid4vp session success: %s", result)
 
-	// Store the disclosure log in the EUDI SQLCipher database.
-	if len(credentialLogs) > 0 {
-		logService := services.NewEudiLogService(a.session.client.eudiStorage)
-		if err := logService.AddDisclosureLog(a.session.State.Requestor, credentialLogs); err != nil {
-			eudi.Logger.Errorf("failed to store openid4vp disclosure log: %v", err)
-		}
+	// Store the disclosure log in the EUDI SQLCipher database. We log even when
+	// no credentials were shared (all-optional sets skipped by the user) so the
+	// user can still see which verifier they had a session with.
+	logService := services.NewEudiLogService(a.session.client.eudiStorage)
+	if err := logService.AddDisclosureLog(a.session.State.Requestor, credentialLogs); err != nil {
+		eudi.Logger.Errorf("failed to store openid4vp disclosure log: %v", err)
 	}
 
 	a.session.State.Status = clientmodels.Status_Success

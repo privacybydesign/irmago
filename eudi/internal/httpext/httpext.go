@@ -225,7 +225,7 @@ func (p *wwwAuthParser) parseAuthParams() (map[string]string, error) {
 		if p.peek() != '=' {
 			return nil, fmt.Errorf("expected '=' after auth-param name %q at position %d", key, p.pos)
 		}
-		p.pos++ // consume '='
+		p.pos++     // consume '='
 		p.skipOWS() // BWS after '='
 
 		var value string

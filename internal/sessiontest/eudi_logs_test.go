@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
@@ -16,6 +17,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("openid4vci denied permission creates no log", testOpenID4VCIDeniedPermissionCreatesNoLog)
 	t.Run("openid4vp disclosure creates log", testOpenID4VPDisclosureCreatesLog)
 	t.Run("openid4vp disclosure log has issuer name and credential image", testOpenID4VPDisclosureLogHasIssuerNameAndImage)
+	t.Run("openid4vp empty optional disclosure creates log", testOpenID4VPEmptyDisclosureCreatesLog)
 	t.Run("eudi credential removal creates log", testEudiCredentialRemovalCreatesLog)
 	t.Run("eudi credential removal log has attributes", testEudiCredentialRemovalLogHasAttributes)
 	t.Run("deeply nested issuance log", testDeeplyNestedIssuanceLog)
@@ -227,6 +229,98 @@ func testOpenID4VPDisclosureLogHasIssuerNameAndImage(t *testing.T) {
 		"disclosure log credential should contain the issuer display name")
 	require.Equal(t, "Test Uitgever", disclosureCred.Issuer.Name["nl"],
 		"disclosure log credential should contain the issuer display name in all locales")
+}
+
+// testOpenID4VPEmptyDisclosureCreatesLog covers the case where the verifier
+// requests only optional credential_sets and the user skips them, resulting
+// in an empty VP token. The wallet should still record a disclosure log so
+// the user can see which verifier they had a session with.
+func testOpenID4VPEmptyDisclosureCreatesLog(t *testing.T) {
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				}
+			],
+			"credential_sets": [
+				{ "options": [["email-cred"]], "required": false }
+			]
+		}
+	}`
+
+	t.Run("user declines", func(t *testing.T) {
+		c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+		defer c.Close()
+
+		// Wallet owns the credential, but the user actively declines to share it.
+		issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+			"email": "decline@example.com",
+			"domain": "example.com"
+		}`)
+
+		veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+		startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+		session := awaitSessionState(t, sessionHandler)
+		requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+		grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{})
+
+		session = awaitSessionState(t, sessionHandler)
+		requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+		requireEmptyDisclosureLog(t, c)
+	})
+
+	t.Run("wallet has nothing", func(t *testing.T) {
+		c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+		defer c.Close()
+
+		veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+		startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+		session := awaitSessionState(t, sessionHandler)
+		requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+		grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{})
+
+		session = awaitSessionState(t, sessionHandler)
+		requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+		requireEmptyDisclosureLog(t, c)
+	})
+}
+
+// requireEmptyDisclosureLog asserts that the wallet has exactly one OpenID4VP
+// disclosure log with zero credentials and the test verifier as the requestor.
+func requireEmptyDisclosureLog(t *testing.T, c *client.Client) {
+	t.Helper()
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+
+	var disclosureLog *clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			require.Nil(t, disclosureLog, "expected exactly one disclosure log")
+			disclosureLog = &logs[i]
+		}
+	}
+	require.NotNil(t, disclosureLog, "should have a disclosure log even when no credentials were shared")
+	require.NotNil(t, disclosureLog.DisclosureLog)
+	require.Equal(t, clientmodels.Protocol_OpenID4VP, disclosureLog.DisclosureLog.Protocol)
+	require.Empty(t, disclosureLog.DisclosureLog.Credentials,
+		"disclosure log should contain no credentials when the user skipped all optional sets")
+	require.NotNil(t, disclosureLog.DisclosureLog.Verifier)
+	require.Equal(t, "test-verifier", disclosureLog.DisclosureLog.Verifier.Name["en"],
+		"disclosure log should identify which verifier the session was with")
 }
 
 func testEudiCredentialRemovalCreatesLog(t *testing.T) {
