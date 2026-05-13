@@ -308,8 +308,10 @@ func (session *openid4vpSession) perform() error {
 	if err != nil {
 		return err
 	}
+	defer response.Body.Close()
+
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("response status was not ok: %v", response)
+		return fmt.Errorf("response status was not ok, status code %d", response.StatusCode)
 	}
 
 	session.handler.Success("managed to complete openid4vp session", credLogs)
