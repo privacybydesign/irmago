@@ -69,7 +69,7 @@ func TestCertificateManager_InstallCertificate_CertChain(t *testing.T) {
 	storage, _ := newTestStorage(t)
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, testdata.CreateDistinguishedName("ROOT"), 1, testdata.PkiOption_None, nil)
 
-	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(rootCert, caCerts[0])))
+	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(caCerts[0], rootCert)))
 }
 
 func TestCertificateManager_InstallCertificate_InvalidPem(t *testing.T) {
@@ -103,6 +103,23 @@ func TestCertificateManager_GetRawCertificates_ReturnsAllInstalled(t *testing.T)
 
 	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(cert1)))
 	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(cert2)))
+
+	certs, err := storage.CertificateManager().GetRawCertificates()
+	require.NoError(t, err)
+	require.Len(t, certs, 2)
+}
+
+func TestCertificateManager_InstallCertificate_SharedRootDoesNotOverwrite(t *testing.T) {
+	// Two chains share the same root but have different CA leaves. The filename is
+	// derived from the leaf cert's signature, so both chains must be stored as
+	// separate files and neither overwrites the other.
+	storage, _ := newTestStorage(t)
+	rootKey, rootCert := testdata.CreateRootCertificate(t, testdata.CreateDistinguishedName("SHARED ROOT"), testdata.PkiOption_None)
+	_, caCert1, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA 1"), rootCert, rootKey, testdata.PkiOption_None, nil)
+	_, caCert2, _ := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA 2"), rootCert, rootKey, testdata.PkiOption_None, nil)
+
+	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(caCert1, rootCert)))
+	require.NoError(t, storage.CertificateManager().InstallCertificate(certsToPem(caCert2, rootCert)))
 
 	certs, err := storage.CertificateManager().GetRawCertificates()
 	require.NoError(t, err)
