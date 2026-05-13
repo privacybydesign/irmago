@@ -2,12 +2,9 @@ package eudi_jwt
 
 import (
 	"context"
-	"crypto/ecdh"
 	"crypto/ecdsa"
-	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -75,6 +72,22 @@ func newTestCertChain(t *testing.T, derBytes []byte) *cert.Chain {
 	err := chain.Add([]byte(base64.StdEncoding.EncodeToString(derBytes)))
 	require.NoError(t, err)
 	return chain
+}
+
+// newTestJWSMessageSigned creates a JWS message signed with the given private key and algorithm.
+func newTestJWSMessageSigned(t *testing.T, issuer string, privKey any, alg jwa.SignatureAlgorithm) *jws.Message {
+	t.Helper()
+	builder := jwt.NewBuilder()
+	if issuer != "" {
+		builder = builder.Issuer(issuer)
+	}
+	tok, err := builder.Build()
+	require.NoError(t, err)
+	tokenBytes, err := jwt.Sign(tok, jwt.WithKey(alg, privKey))
+	require.NoError(t, err)
+	msg, err := jws.Parse(tokenBytes)
+	require.NoError(t, err)
+	return msg
 }
 
 // newTestJWSMessage creates a compact JWS message containing a JWT with the given issuer.
@@ -187,6 +200,32 @@ func Test_X509KeyProvider_FetchKeys_UsesJWSAlgHeaderWhenPresent(t *testing.T) {
 	require.NotNil(t, sink.key)
 }
 
+func Test_X509KeyProvider_FetchKeys_AlgFromJWSHeaderNotKeyType(t *testing.T) {
+	// Regression: alg must come from the JWS protected header, not be inferred from the cert's key type.
+	// A P384 key signed under ES384 must yield ES384 in the sink (not a default like ES256).
+	privKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	require.NoError(t, err)
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, template, privKey.Public(), privKey)
+	require.NoError(t, err)
+
+	p := NewX509KeyProvider(newTestCertChain(t, derBytes))
+	sink := &testKeySink{}
+
+	msg := newTestJWSMessageSigned(t, "test", privKey, jwa.ES384())
+	sig := msg.Signatures()[0]
+
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
+
+	require.NoError(t, err)
+	require.Equal(t, jwa.ES384(), sink.alg)
+}
+
 func Test_X509KeyProvider_FetchKeys_ECDSACert_GetCertMatchesParsedCert(t *testing.T) {
 	derBytes, privKey, parsed := newTestECDSACert(t)
 	p := NewX509KeyProvider(newTestCertChain(t, derBytes))
@@ -203,93 +242,6 @@ func Test_X509KeyProvider_FetchKeys_ECDSACert_GetCertMatchesParsedCert(t *testin
 
 	require.Equal(t, parsed.SerialNumber, p.GetCert().SerialNumber)
 	require.Equal(t, parsed.Subject, p.GetCert().Subject)
-}
-
-// ─── algorithmFromJWK ────────────────────────────────────────────────────────
-
-func Test_algorithmFromJWK_ECKey_P256_ReturnsES256(t *testing.T) {
-	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-	k, err := jwk.Import(privKey.Public())
-	require.NoError(t, err)
-
-	alg, err := algorithmFromJWK(k)
-	require.NoError(t, err)
-	require.Equal(t, jwa.ES256(), alg)
-}
-
-func Test_algorithmFromJWK_ECKey_P384_ReturnsES384(t *testing.T) {
-	privKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	require.NoError(t, err)
-	k, err := jwk.Import(privKey.Public())
-	require.NoError(t, err)
-
-	alg, err := algorithmFromJWK(k)
-	require.NoError(t, err)
-	require.Equal(t, jwa.ES384(), alg)
-}
-
-func Test_algorithmFromJWK_ECKey_P521_ReturnsES512(t *testing.T) {
-	privKey, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
-	require.NoError(t, err)
-	k, err := jwk.Import(privKey.Public())
-	require.NoError(t, err)
-
-	alg, err := algorithmFromJWK(k)
-	require.NoError(t, err)
-	require.Equal(t, jwa.ES512(), alg)
-}
-
-func Test_algorithmFromJWK_ECKey_WithExplicitAlg_UsesExplicitAlg(t *testing.T) {
-	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-	k, err := jwk.Import(privKey.Public())
-	require.NoError(t, err)
-	require.NoError(t, k.Set("alg", jwa.ES384()))
-
-	alg, err := algorithmFromJWK(k)
-	require.NoError(t, err)
-	require.Equal(t, jwa.ES384(), alg)
-}
-
-func Test_algorithmFromJWK_OKPKey_Ed25519_ReturnsEdDSA(t *testing.T) {
-	_, edPub, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-	k, err := jwk.Import(edPub)
-	require.NoError(t, err)
-
-	alg, err := algorithmFromJWK(k)
-	require.NoError(t, err)
-	require.Equal(t, jwa.EdDSA(), alg)
-}
-
-func Test_algorithmFromJWK_OKPKey_X25519_UnsupportedCurve_ReturnsError(t *testing.T) {
-	x25519Key, err := ecdh.X25519().GenerateKey(rand.Reader)
-	require.NoError(t, err)
-	k, err := jwk.Import(x25519Key.Public())
-	require.NoError(t, err)
-
-	_, err = algorithmFromJWK(k)
-	require.ErrorContains(t, err, "unsupported OKP curve")
-}
-
-func Test_algorithmFromJWK_RSAKey_ReturnsRS256(t *testing.T) {
-	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-	k, err := jwk.Import(rsaKey.Public())
-	require.NoError(t, err)
-
-	alg, err := algorithmFromJWK(k)
-	require.NoError(t, err)
-	require.Equal(t, jwa.RS256(), alg)
-}
-
-func Test_algorithmFromJWK_SymmetricKey_UnsupportedType_ReturnsError(t *testing.T) {
-	k, err := jwk.ParseKey([]byte(`{"kty":"oct","k":"c2VjcmV0LWtleQ"}`))
-	require.NoError(t, err)
-
-	_, err = algorithmFromJWK(k)
-	require.ErrorContains(t, err, "unsupported key type")
 }
 
 // ─── KidKeyProvider ──────────────────────────────────────────────────────────
@@ -395,6 +347,7 @@ func Test_KidKeyProvider_FetchKeys_ValidPublicKey_FeedsKeyAndAlgorithmToSink(t *
 	defer server.Close()
 
 	msg := newTestJWSMessage(t, issuerDID)
+	sig := msg.Signatures()[0]
 	p := &KidKeyProvider{
 		kidHeader:     kidHeader,
 		allowInsecure: true,
@@ -402,9 +355,107 @@ func Test_KidKeyProvider_FetchKeys_ValidPublicKey_FeedsKeyAndAlgorithmToSink(t *
 	}
 
 	sink := &testKeySink{}
-	err = p.FetchKeys(context.Background(), sink, nil, msg)
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
 
 	require.NoError(t, err)
+	require.Equal(t, jwa.ES256(), sink.alg)
+	require.NotNil(t, sink.key)
+}
+
+func Test_KidKeyProvider_FetchKeys_NilSignature_ReturnsError(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+	fullKID := issuerDID + kidHeader
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubJWK, err := jwk.Import(privKey.Public())
+	require.NoError(t, err)
+
+	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	p := &KidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	err = p.FetchKeys(context.Background(), &testKeySink{}, nil, msg)
+	require.ErrorContains(t, err, "missing JWS signature")
+}
+
+func Test_KidKeyProvider_FetchKeys_MissingAlgHeader_ReturnsError(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+	fullKID := issuerDID + kidHeader
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubJWK, err := jwk.Import(privKey.Public())
+	require.NoError(t, err)
+
+	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	sig := jws.NewSignature()
+	sig.SetProtectedHeaders(jws.NewHeaders()) // headers present but no alg field
+	p := &KidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	err = p.FetchKeys(context.Background(), &testKeySink{}, sig, msg)
+	require.ErrorContains(t, err, "missing alg header in JWS signature")
+}
+
+func Test_KidKeyProvider_FetchKeys_AlgFromJWSHeaderNotJWK(t *testing.T) {
+	// Regression: alg must come from the JWS protected header, not from the "alg" field in the DID
+	// document's JWK. Before the fix, algorithmFromJWK read the JWK's alg field (ES384 here) and
+	// passed it to the sink instead of the header's alg (ES256).
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+	fullKID := issuerDID + kidHeader
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubJWK, err := jwk.Import(privKey.Public())
+	require.NoError(t, err)
+	// Deliberately set a different alg on the JWK than what the JWT is actually signed with.
+	require.NoError(t, pubJWK.Set("alg", jwa.ES384()))
+
+	docBytes := newTestDIDDocument(t, issuerDID, fullKID, pubJWK)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	// JWT is signed with ES256; the JWS header carries alg=ES256.
+	msg := newTestJWSMessageSigned(t, issuerDID, privKey, jwa.ES256())
+	sig := msg.Signatures()[0]
+	p := &KidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	sink := &testKeySink{}
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
+
+	require.NoError(t, err)
+	// Sink must receive the alg from the JWS header (ES256), not from the JWK field (ES384).
 	require.Equal(t, jwa.ES256(), sink.alg)
 	require.NotNil(t, sink.key)
 }
