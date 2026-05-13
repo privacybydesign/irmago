@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -54,35 +53,17 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 	// Store the cert in the provider for future use and validation
 	p.cert = cert
 
-	sigAlg, err := mapX509ToJWA(cert.SignatureAlgorithm)
-	if err != nil {
-		return err
+	// Use the algorithm declared in the JWS protected header — it describes how the JWT was signed
+	if sig == nil {
+		return fmt.Errorf("missing JWS signature")
 	}
-	sink.Key(sigAlg, cert.PublicKey)
+	alg, ok := sig.ProtectedHeaders().Algorithm()
+	if !ok {
+		return fmt.Errorf("missing alg header in JWS signature")
+	}
+	sink.Key(alg, cert.PublicKey)
 
 	return nil
-}
-
-// mapX509ToJWA maps a x509.SignatureAlgorithm to a JWA.SignatureAlgorithm
-func mapX509ToJWA(alg x509.SignatureAlgorithm) (jwa.SignatureAlgorithm, error) {
-	switch alg {
-	case x509.SHA256WithRSA:
-		return jwa.RS256(), nil
-	case x509.SHA384WithRSA:
-		return jwa.RS384(), nil
-	case x509.SHA512WithRSA:
-		return jwa.RS512(), nil
-	case x509.ECDSAWithSHA256:
-		return jwa.ES256(), nil
-	case x509.ECDSAWithSHA384:
-		return jwa.ES384(), nil
-	case x509.ECDSAWithSHA512:
-		return jwa.ES512(), nil
-	case x509.PureEd25519:
-		return jwa.EdDSA(), nil
-	default:
-		return jwa.SignatureAlgorithm{}, errors.New("unsupported or unknown x509 signature algorithm")
-	}
 }
 
 type KidKeyProvider struct {
