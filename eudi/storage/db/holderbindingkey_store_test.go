@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -265,6 +266,69 @@ func TestDeleteKey_CascadesMetadata(t *testing.T) {
 	// Verify that re-inserting with the same thumbprint succeeds (unique index freed)
 	key2 := newECDSAKey()
 	require.NoError(t, store.StoreKey(key2))
+}
+
+func TestDeleteKeys(t *testing.T) {
+	store := newTestStore(t)
+
+	key1 := newECDSAKey()
+	key2 := newRSAKey()
+	require.NoError(t, store.StoreKey(key1))
+	require.NoError(t, store.StoreKey(key2))
+
+	require.NoError(t, store.DeleteKeys([]datatypes.UUID{key1.ID, key2.ID}))
+
+	_, err := store.GetByID(key1.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+	_, err = store.GetByID(key2.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDeleteKeys_NonExistentKeyIsIgnored(t *testing.T) {
+	store := newTestStore(t)
+
+	key := newECDSAKey()
+	require.NoError(t, store.StoreKey(key))
+
+	nonExistent := datatypes.NewUUIDv4()
+	require.NoError(t, store.DeleteKeys([]datatypes.UUID{key.ID, nonExistent}))
+
+	_, err := store.GetByID(key.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDeleteKeys_EmptySlice(t *testing.T) {
+	store := newTestStore(t)
+
+	require.NoError(t, store.DeleteKeys([]datatypes.UUID{}))
+}
+
+func TestDeleteKeys_RollsBackOnError(t *testing.T) {
+	store := newTestStore(t)
+
+	key1 := newECDSAKey()
+	key2 := newRSAKey()
+	require.NoError(t, store.StoreKey(key1))
+	require.NoError(t, store.StoreKey(key2))
+
+	// Inject a DB error on the second delete to simulate a mid-transaction failure.
+	s := store.(*holderBindingKeyStore)
+	deleteCount := 0
+	s.db.Callback().Delete().Before("gorm:delete").Register("test:fail_on_second", func(db *gorm.DB) {
+		deleteCount++
+		if deleteCount == 2 {
+			db.AddError(errors.New("injected error"))
+		}
+	})
+
+	err := store.DeleteKeys([]datatypes.UUID{key1.ID, key2.ID})
+	require.Error(t, err)
+
+	// Both keys must still exist — the first delete must have been rolled back.
+	_, err = store.GetByID(key1.ID)
+	require.NoError(t, err)
+	_, err = store.GetByID(key2.ID)
+	require.NoError(t, err)
 }
 
 func TestDeleteAll(t *testing.T) {

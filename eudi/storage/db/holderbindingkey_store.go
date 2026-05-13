@@ -119,7 +119,7 @@ func (r *holderBindingKeyStore) DeleteKey(id datatypes.UUID) error {
 func (r *holderBindingKeyStore) DeleteKeys(ids []datatypes.UUID) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		for _, id := range ids {
-			res := r.db.Delete(&models.HolderBindingKey{}, "id = ?", id)
+			res := tx.Delete(&models.HolderBindingKey{}, "id = ?", id)
 
 			if res.Error != nil {
 				return res.Error
