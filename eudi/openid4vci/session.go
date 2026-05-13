@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/internal/httpext"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
@@ -586,26 +587,36 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	if resp.StatusCode == http.StatusAccepted {
 		return nil, fmt.Errorf("wallet does not accept deferred credential responses for now")
 	} else if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		authHeader := resp.Header.Get("WWW-Authenticate")
-		authHeader = strings.TrimPrefix(authHeader, "Bearer ")
+		challengeHeader := resp.Header.Get("WWW-Authenticate")
+
+		challenges, err := httpext.ParseWWWAuthenticate(challengeHeader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse WWW-Authenticate header: %v", err)
+		}
+
+		// We'll assume only one challenge is present, and that it contains the error details as parameters. In practice, there should only be one challenge, since multiple challenges are typically used to indicate support for multiple authentication schemes, which is not the case here since the request already included an access token.
+		if len(challenges) == 0 {
+			return nil, fmt.Errorf("credential request unauthorized")
+		}
+
+		challenge := challenges[0]
 
 		var errMsg, errDesc, errUri, scope string
-		parts := strings.SplitSeq(authHeader, ",")
-		for part := range parts {
-			part = strings.TrimSpace(part)
-			if strings.HasPrefix(part, "error=") {
-				errMsg = strings.Trim(part[len("error="):], `"`)
-			} else if strings.HasPrefix(part, "error_description=") {
-				errDesc = strings.Trim(part[len("error_description="):], `"`)
-			} else if strings.HasPrefix(part, "scope=") {
-				scope = strings.Trim(part[len("scope="):], `"`)
-			} else if strings.HasPrefix(part, "error_uri=") {
-				errUri = strings.Trim(part[len("error_uri="):], `"`)
+		for key, value := range challenge.Params {
+			switch strings.ToLower(key) {
+			case "error":
+				errMsg = value
+			case "error_description":
+				errDesc = value
+			case "scope":
+				scope = value
+			case "error_uri":
+				errUri = value
 			}
 		}
 
 		if errMsg != "" {
-			errLog := fmt.Sprintf("credential request failed with error %s", errMsg)
+			errLog := fmt.Sprintf("credential request failed with error %q", errMsg)
 			if errDesc != "" {
 				errLog += fmt.Sprintf(": %s", errDesc)
 			}
@@ -624,7 +635,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		if err != nil {
 			return nil, fmt.Errorf("could not decode credential error response: %v", err)
 		}
-		return nil, fmt.Errorf("credential request failed with error %s: %s", errorResponse.Error, errorResponse.ErrorDescription)
+		return nil, fmt.Errorf("credential request failed with error %q: %s", errorResponse.Error, errorResponse.ErrorDescription)
 	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("credential request failed: %s", resp.Status)
 	}

@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_openid4vciSession_requestCredential_checksFail(t *testing.T) {
+func Test_openid4vciSession_obtainCredential_checksFail(t *testing.T) {
 	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 
 	tests := []struct {
@@ -62,7 +62,7 @@ func Test_openid4vciSession_requestCredential_checksFail(t *testing.T) {
 	}
 }
 
-func Test_openid4vciSession_requestCredential_errorResponses(t *testing.T) {
+func Test_openid4vciSession_obtainCredential_errorResponses(t *testing.T) {
 	var nonce = "test-nonce"
 
 	// Initialize test http server
@@ -130,21 +130,21 @@ func Test_openid4vciSession_requestCredential_errorResponses(t *testing.T) {
 			s:           s,
 			accessToken: "unauthorized_token::with_error",
 			nonce:       &nonce,
-			expectedErr: "credential request failed with error invalid_token: The access token expired",
+			expectedErr: "credential request failed with error \"invalid_token\": The access token expired",
 		},
 		{
 			name:        "test forbidden token (missing scope), with error in header",
 			s:           s,
 			accessToken: "forbidden_token::missing_scope_with_error",
 			nonce:       &nonce,
-			expectedErr: "credential request failed with error insufficient_scope: The request requires higher privileges (required scope: yivi.read)",
+			expectedErr: "credential request failed with error \"insufficient_scope\": The request requires higher privileges (required scope: yivi.read)",
 		},
 		{
 			name:        "test bad request (invalid request)",
 			s:           s,
 			accessToken: "invalid_request",
 			nonce:       &nonce,
-			expectedErr: "credential request failed with error invalid_request: The request is invalid (missing field XYZ)",
+			expectedErr: "credential request failed with error \"invalid_request\": The request is invalid (missing field XYZ)",
 		},
 		// TODO:
 		// add test for failed response; nonce needs refresh;  also on higher level (requestCredentials, where nonce is retrieved)

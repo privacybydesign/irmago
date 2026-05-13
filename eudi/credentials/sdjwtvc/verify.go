@@ -769,7 +769,10 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 	now := v.verificationContext.Clock.Now()
 	maxSkewNow := now.Unix() + ClockSkewInSeconds
 
-	if payload.IssuedAt >= maxSkewNow {
+	if payload.IssuedAt == 0 {
+		return nil, fmt.Errorf("kbjwt is missing iat field, which is required to prevent replay attacks")
+	}
+	if payload.IssuedAt > maxSkewNow {
 		return nil, fmt.Errorf("kbjwt iat value (%v) was after current time (%v)", payload.IssuedAt, now)
 	}
 
