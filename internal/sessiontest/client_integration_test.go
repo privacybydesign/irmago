@@ -54,6 +54,56 @@ func TestEudiClient(t *testing.T) {
 	t.Run("idemix and sdjwtvc show up as single credential info", testIdemixAndSdJwtShowUpAsSeparateCredentialInfos)
 	t.Run("deleting combined credential deletes both formats", testDeletingCombinedCredentialDeletesBothFormats)
 	t.Run("optional empty attributes excluded from GetCredentials", testOptionalEmptyAttributesExcludedFromGetCredentials)
+	t.Run("irma disclose keyshare attribute", testIrmaDiscloseKeyshareAttribute)
+}
+
+func testIrmaDiscloseKeyshareAttribute(t *testing.T) {
+	irmaServer := StartIrmaServer(t, nil)
+	defer irmaServer.Stop()
+	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+	defer keyshareServer.Stop()
+
+	c, sessionHandler := createClient(t)
+	defer c.Close()
+
+	req := irma.NewDisclosureRequest()
+	req.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.mijnirma.email"),
+			},
+		},
+	}
+	sessionJson, token := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, req)
+
+	c.NewSession(sessionJson)
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+
+	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	var wantEmail string
+	for _, attr := range emailCred.Attributes {
+		if len(attr.ClaimPath) == 1 && attr.ClaimPath[0] == "email" && attr.Value != nil && attr.Value.String != nil {
+			wantEmail = *attr.Value.String
+			break
+		}
+	}
+	require.NotEmpty(t, wantEmail)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
+
+	session = awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
+
+	result, err := irmaServer.irma.GetSessionResult(token)
+	require.NoError(t, err)
+	require.Equal(t, irma.ProofStatusValid, result.ProofStatus)
+	require.Len(t, result.Disclosed, 1)
+	require.Len(t, result.Disclosed[0], 1)
+	disclosed := result.Disclosed[0][0]
+	require.Equal(t, irma.NewAttributeTypeIdentifier("test.test.mijnirma.email"), disclosed.Identifier)
+	require.NotNil(t, disclosed.RawValue)
+	require.Equal(t, wantEmail, *disclosed.RawValue)
 }
 
 func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {

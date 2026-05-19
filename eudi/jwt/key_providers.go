@@ -130,4 +130,3 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 
 	return fmt.Errorf("failed to find matching verification method for kid: %s", fullKid)
 }
-

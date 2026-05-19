@@ -83,7 +83,7 @@ func (a *irmaSessionAdapter) RequestIssuancePermission(
 		return
 	}
 
-	credentials, err := s.client.GetCredentials()
+	credentials, err := s.client.getCredentialsIncludingKeyshare()
 	if err != nil {
 		s.error(err)
 		return
@@ -136,7 +136,7 @@ func (a *irmaSessionAdapter) RequestVerificationPermission(
 	s.State.Requestor = requestorInfoToTrustedParty(requestorInfo)
 	s.State.OfferedCredentials = nil
 
-	creds, err := s.client.GetCredentials()
+	creds, err := s.client.getCredentialsIncludingKeyshare()
 	if err != nil {
 		s.error(err)
 		return
@@ -169,7 +169,7 @@ func (a *irmaSessionAdapter) RequestSignaturePermission(
 	s.irmaDiscloseRequest = request.Disclose
 	s.State.OfferedCredentials = nil
 
-	creds, err := s.client.GetCredentials()
+	creds, err := s.client.getCredentialsIncludingKeyshare()
 	if err != nil {
 		s.error(err)
 		return

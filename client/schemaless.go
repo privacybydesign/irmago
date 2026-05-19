@@ -290,6 +290,26 @@ func (client *Client) GetCredentials() ([]*clientmodels.Credential, error) {
 	return append(irmaCreds, oidCreds...), nil
 }
 
+// getCredentialsIncludingKeyshare returns the same credentials as GetCredentials
+// but without filtering out keyshare credentials, so they can be considered for
+// disclosure during session permission flows.
+func (client *Client) getCredentialsIncludingKeyshare() ([]*clientmodels.Credential, error) {
+	creds := client.getIrmaCredentialInfoList()
+
+	irmaCreds, err := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert IRMA credentials to schemaless format: %v", err)
+	}
+
+	credentialService := services.NewCredentialService(client.eudiStorage)
+	oidCreds, err := credentialService.GetCredentialMetadataList()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
+	}
+
+	return append(irmaCreds, oidCreds...), nil
+}
+
 // filterOutKeyshareCredentials removes credentials that are used for keyshare server enrollment.
 func filterOutKeyshareCredentials(conf *irma.Configuration, creds irma.CredentialInfoList) irma.CredentialInfoList {
 	keyshareCredTypes := make(map[irma.CredentialTypeIdentifier]struct{})
