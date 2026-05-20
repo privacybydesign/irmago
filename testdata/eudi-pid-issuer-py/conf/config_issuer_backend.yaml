@@ -1,0 +1,81 @@
+# Minimal config for the EUDI Python PID issuer backend used in irmago integration tests.
+# Adapted from app/config_issuer_backend_example.yaml in
+# https://github.com/eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py
+# (pinned to v0.9.4).
+#
+# Notes:
+# - All URLs are reachable via the existing nginx tls_proxy on https://localhost:8443/eudi-pid-issuer-py.
+# - The "FC" (form-based) country variant is used so the pre-auth flow does
+#   not depend on an external eIDAS provider.
+# - Only PID-SD-JWT is enabled; mdoc variants are not configured.
+
+service_url: "https://localhost:8443/eudi-pid-issuer-py"
+
+wallet_tester_url: "https://localhost:8443/eudi-pid-issuer-py"
+
+revocation:
+  take_url: "https://localhost:8443/eudi-pid-issuer-py/token_status_list/take"
+  set_url: "https://localhost:8443/eudi-pid-issuer-py/token_status_list/set"
+  api_key: "test-revocation-key"
+  enabled: false
+
+frontend:
+  default: "default"
+  frontends_config:
+    "default":
+      url: "https://localhost:8443/eudi-pid-issuer-py"
+      metadata_signing_key_path: "/etc/eudiw/pid-issuer-dev/cert/metadata_signing.key"
+      metadata_access_certificate_path: "/etc/eudiw/pid-issuer-dev/cert/metadata_signing.pem"
+      metadata_signing_key_password: null
+
+authorization_server:
+  base_url: "https://localhost:8443/eudi-pid-issuer-py/oidc"
+  internal_url: "http://eudi-pid-issuer-py-as.localhost:5000"
+  user_verify_endpoint: "https://localhost:8443/eudi-pid-issuer-py/oidc/verify/user"
+
+# Not used by these tests but the config schema requires the key to be present.
+dynamic_presentation_url: "https://localhost:8443/eudi-pid-issuer-py/ui/presentations"
+
+trust_validator:
+  url: "https://localhost:8443/eudi-pid-issuer-py/trust"
+  enabled: false
+
+# Use standard OID4VCI scheme so irmago recognises offers.
+oid4vp_scheme: "haip-vp://"
+credential_offer_scheme: "openid-credential-offer://"
+
+logging:
+  backend_path: "/tmp/log_dev/logs.log"
+  log_level: "DEBUG"
+
+expiry:
+  revocation_code: 60
+  form: 60
+  session: 60
+
+keys:
+  nonce_path: "/etc/eudiw/pid-issuer-dev/privKey/nonce_rsa2048.pem"
+  credential_request_path: "/etc/eudiw/pid-issuer-dev/privKey/credential_request.pem"
+
+trusted_CAs_path: "/etc/eudiw/pid-issuer-dev/trusted-cas/"
+
+credential_auth_methods:
+  PID_login: []
+  country_selection:
+    - eu.europa.ec.eudi.pid_vc_sd_jwt
+
+countries:
+  FC:
+    name: "FormEU"
+    # Validity (days) added to date_of_issuance to produce date_of_expiry.
+    # Pinned here rather than relying on the upstream default so a future
+    # image bump cannot silently break the integration test.
+    validity: 90
+    keys:
+      _default:
+        private_key_path: "/etc/eudiw/pid-issuer-dev/privKey/issuer.key"
+        private_key_password: null
+        certificate_path: "/etc/eudiw/pid-issuer-dev/cert/issuer.der"
+    un_distinguishing_sign: "FC"
+    supported_credential_ids:
+      - "eu.europa.ec.eudi.pid_vc_sd_jwt"

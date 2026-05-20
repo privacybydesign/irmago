@@ -6,8 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -21,9 +21,29 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
-func isURL(s string) bool {
-	u, err := url.Parse(s)
-	return err == nil && u.Scheme != "" && u.Host != ""
+// isIrmaStyleVct reports whether vct looks like an IRMA scheme credential
+// identifier ("scheme.issuer.credential"): exactly three non-empty segments
+// separated by dots, none of which contain ':' or '/' (so URN/URL forms are
+// excluded even if they happen to have three dot-separated parts).
+func isIrmaStyleVct(vct string) bool {
+	parts := strings.Split(vct, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" || strings.ContainsAny(p, ":/") {
+			return false
+		}
+	}
+	return true
+}
+
+// isHttpVct reports whether vct is an absolute http(s) URL that the type
+// metadata fetcher can safely GET. Used to skip URN / scheme-less vcts
+// (e.g. "urn:eudi:pid:1") without invoking http.Get, which would otherwise
+// emit a per-disclosure "unsupported protocol scheme" warning.
+func isHttpVct(vct string) bool {
+	return strings.HasPrefix(vct, "https://") || strings.HasPrefix(vct, "http://")
 }
 
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
@@ -57,18 +77,25 @@ func NewSdJwtVcDcqlHandler(
 
 var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
 
-// CanHandleCredentialQuery returns true when the format is dc+sd-jwt or vc+sd-jwt
-// and at least one vct_value is a valid URL (indicating an EUDI credential type).
+// CanHandleCredentialQuery returns true for any sd-jwt query whose vct_values
+// are not 3-component IRMA scheme identifiers (those are handled by
+// irma_sdjwt_dcql against the BBolt store). URL and URN vcts — and any other
+// non-IRMA-shaped identifier — route here. Queries without vct_values are
+// also handled here so the EUDI store still gets searched.
+//
+// The discrimination is purely structural — there is no semantic check that
+// the URL/URN is reachable, that the URN sits in any recognised namespace,
+// or that the EUDI store actually holds the requested type. See
+// isIrmaStyleVct for the boundary conditions of the shape check.
 func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
 	if query.Format != "dc+sd-jwt" && query.Format != "vc+sd-jwt" {
 		return false
 	}
-	// Without vct_values, accept all sd-jwt queries (verifier didn't specify type).
 	if len(query.VctValues()) == 0 {
 		return true
 	}
 	for _, vct := range query.VctValues() {
-		if isURL(vct) {
+		if !isIrmaStyleVct(vct) {
 			return true
 		}
 	}
@@ -160,6 +187,14 @@ func (h *SdJwtVcDcqlHandler) composeUnobtainableDescriptor(query dcql.Credential
 	defer cancel()
 
 	for _, vct := range vctValues {
+		// The fetcher delegates to http.Get, which fails with "unsupported
+		// protocol scheme" for URN / non-http vct values and would emit a
+		// noisy warning on every disclosure attempt. Skip those quietly —
+		// the URL-only fallback below still emits a descriptor so the user
+		// sees what was requested.
+		if !isHttpVct(vct) {
+			continue
+		}
 		vctMeta, err := h.vctFetcher.Fetch(ctx, vct)
 		if err != nil {
 			eudi.Logger.Warnf("failed to fetch VCT type metadata from %q: %v", vct, err)

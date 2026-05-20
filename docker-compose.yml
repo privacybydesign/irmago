@@ -29,7 +29,9 @@ services:
       - ./irma/server/keyshare/cleanup.sql:/cleanup.sql
     # We have to wait until the database is up and running.
     # Database might already be running, so we need to do a cleanup first.
-    command: /bin/sh -c "sleep 5 && psql -f cleanup.sql && psql -f schema.sql"
+    # Wait for postgres to be ready before running the schema scripts; a fixed
+    # sleep is flaky on cold CI runners.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -f cleanup.sql && psql -f schema.sql"
   mysql:
     image: mysql:8
     environment:
@@ -152,7 +154,10 @@ services:
       - irma-net
     depends_on:
       - veramo_openid4vci_postgres
-    command: /bin/sh -c "sleep 3 && psql -c 'CREATE SCHEMA IF NOT EXISTS agent'"
+    # Wait until the postgres server is actually accepting connections before
+    # issuing the CREATE SCHEMA. A naive `sleep 3` is too short on cold CI
+    # runners and causes flaky init failures.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -c 'CREATE SCHEMA IF NOT EXISTS agent'"
 
   veramo_openid4vci_mock_authorization_server:
     build:
@@ -199,12 +204,81 @@ services:
         aliases:
           - veramo-openid4vci.localhost
 
-  # TLS reverse proxy for the veramo issuer and verifier services
+  # EUDI Python PID issuer authorization server (companion to eudi_pid_issuer_py).
+  # Issues pre-authorized codes via POST /preauth_generate (used internally by the
+  # backend's /credentialOfferReq2 endpoint).
+  eudi_pid_issuer_py_as:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-issuer-oidc-py:0.9.4
+    volumes:
+      - ./testdata/eudi-pid-issuer-py/as-conf/authorization_config.json:/etc/issuer_config/authorization_config.json:ro
+      - ./testdata/eudi-pid-issuer-py/as-conf/openid-configuration.json:/app/openid-configuration.json:ro
+    networks:
+      irma-net:
+        aliases:
+          - eudi-pid-issuer-py-as.localhost
+    # The python:3.13-slim base has no wget/curl, so probe via urllib.
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/.well-known/openid-configuration').close()\""
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # EUDI Python PID issuer backend (eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py).
+  # Issues PID credentials (vct: urn:eudi:pid:1) — a non-URL vct, in contrast to
+  # the veramo issuer which only emits URL-form vcts.
+  eudi_pid_issuer_py:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py:0.9.4
+    depends_on:
+      eudi_pid_issuer_py_as:
+        condition: service_healthy
+    extra_hosts:
+      - "localhost:host-gateway"
+    volumes:
+      - ./testdata/eudi-pid-issuer-py/conf/config_issuer_backend.yaml:/etc/issuer_config/config_issuer_backend.yaml:ro
+      - ./testdata/eudi-pid-issuer-py/certs/issuer.key:/etc/eudiw/pid-issuer-dev/privKey/issuer.key:ro
+      - ./testdata/eudi-pid-issuer-py/certs/issuer.der:/etc/eudiw/pid-issuer-dev/cert/issuer.der:ro
+      - ./testdata/eudi-pid-issuer-py/certs/metadata_signing.key:/etc/eudiw/pid-issuer-dev/cert/metadata_signing.key:ro
+      - ./testdata/eudi-pid-issuer-py/certs/metadata_signing.pem:/etc/eudiw/pid-issuer-dev/cert/metadata_signing.pem:ro
+      - ./testdata/eudi-pid-issuer-py/certs/nonce_rsa2048.pem:/etc/eudiw/pid-issuer-dev/privKey/nonce_rsa2048.pem:ro
+      - ./testdata/eudi-pid-issuer-py/certs/credential_request.pem:/etc/eudiw/pid-issuer-dev/privKey/credential_request.pem:ro
+      - ./testdata/eudi-pid-issuer-py/trusted-cas:/etc/eudiw/pid-issuer-dev/trusted-cas:ro
+      - ./testdata/configurations/certs/localhost.crt:/etc/issuer_config/tls_proxy_ca.pem:ro
+    environment:
+      ISSUER_CONFIG_PATH: /etc/issuer_config/config_issuer_backend.yaml
+      FLASK_APP: "app:create_app"
+      # Trust the self-signed cert the tls_proxy uses, so the backend can call
+      # back to itself over https when generating credentials.
+      REQUESTS_CA_BUNDLE: /etc/issuer_config/tls_proxy_ca.pem
+      SSL_CERT_FILE: /etc/issuer_config/tls_proxy_ca.pem
+    networks:
+      irma-net:
+        aliases:
+          - eudi-pid-issuer-py.localhost
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/.well-known/openid-credential-issuer').close()\""
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # TLS reverse proxy for the veramo issuer/verifier services and the EUDI Python issuer.
   tls_proxy:
     image: nginx:alpine
     depends_on:
-      - veramo_openid4vci
-      - veramo_openid4vp
+      veramo_openid4vci:
+        condition: service_started
+      veramo_openid4vp:
+        condition: service_started
+      # Wait for the Python issuer to be fully responsive before exposing it.
+      # Without service_healthy, nginx (and any test downstream of tls_proxy)
+      # can start before the issuer is accepting requests on cold runners.
+      eudi_pid_issuer_py:
+        condition: service_healthy
     volumes:
       - ./testdata/configurations/certs/nginx-tls-proxy.conf:/etc/nginx/nginx.conf:ro
       - ./testdata/configurations/certs/localhost.crt:/etc/nginx/certs/localhost.crt:ro
@@ -243,7 +317,10 @@ services:
       - irma-net
     depends_on:
       - veramo_openid4vp_postgres
-    command: /bin/sh -c "sleep 3 && psql -c 'CREATE SCHEMA IF NOT EXISTS verifier'"
+    # Wait until the postgres server is actually accepting connections before
+    # issuing the CREATE SCHEMA. A naive `sleep 3` is too short on cold CI
+    # runners and causes flaky init failures.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -c 'CREATE SCHEMA IF NOT EXISTS verifier'"
 
   veramo_openid4vp:
     build:
