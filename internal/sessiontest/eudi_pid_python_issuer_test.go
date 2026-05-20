@@ -30,6 +30,12 @@ import (
 // The default veramo-agent (used by the other openid4vci_*_test.go tests)
 // always derives `vct` from `baseUrl + path`, so it cannot emit non-URL vcts.
 // These tests cover the same end-to-end shape against an issuer that can.
+//
+// Disclosure is exercised against the EUDI Kotlin verifier only. The
+// veramo-verifier (eduwallet/veramo-verifier v1.6.0) resolves the SD-JWT
+// signing key via did:web/did:jwk/did:key or `kid`/`jwk` headers; it has no
+// x5c support and therefore cannot verify the Python issuer's X.509-signed
+// SD-JWTs. That limitation is orthogonal to the non-URL vct path under test.
 // ============================================================================
 
 const (
@@ -45,7 +51,6 @@ const (
 // PID issuer service being up.
 func testSessionHandlerForEudiPidPythonIssuer(t *testing.T) {
 	t.Run("issues PID with non-URL vct", testEudiPidPythonIssuerIssuesPidWithNonUrlVct)
-	t.Run("discloses PID subset to veramo verifier", testEudiPidPythonIssuerDisclosesToVeramoVerifier)
 	t.Run("discloses PID subset to EUDI Kotlin verifier", testEudiPidPythonIssuerDisclosesToEudiKotlinVerifier)
 }
 
@@ -103,63 +108,6 @@ func testEudiPidPythonIssuerIssuesPidWithNonUrlVct(t *testing.T) {
 		expectedAttr{Path: []any{"trust_anchor"}, DisplayName: &clientmodels.TranslatedString{"en": "Trust Anchor"}, Value: strVal("")},
 		expectedAttr{Path: []any{"issuing_country"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuing Country"}, Value: strVal("FC")},
 		expectedAttr{Path: []any{"issuing_jurisdiction"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuing Jurisdiction"}, Value: strVal("")},
-	)
-}
-
-func testEudiPidPythonIssuerDisclosesToVeramoVerifier(t *testing.T) {
-	// The EUDI Python issuer signs SD-JWTs using an X.509 chain (x5c header).
-	// The veramo-verifier (eduwallet/veramo-verifier v1.6.0) resolves the SD-JWT
-	// signing key only via did:web/did:jwk/did:key or `kid`/`jwk` headers — it
-	// has no x5c support. As a result the verifier returns INVALID_SDJWT with
-	// "could not determine signing key of SD-JWT". This is independent of the
-	// non-URL vct path under test. The Kotlin verifier subtest covers the
-	// disclosure side end-to-end.
-	t.Skip("veramo-verifier v1.6.0 does not support x5c-signed SD-JWTs; see comment")
-
-	c, sessionHandler := createPidIssuerTestClient(t)
-	defer c.Close()
-
-	issuePidViaPythonIssuer(t, c, sessionHandler, samplePidUserData())
-
-	dcqlQuery := fmt.Sprintf(`{
-		"dcql": {
-			"credentials": [
-				{
-					"id": "pid",
-					"format": "dc+sd-jwt",
-					"meta": {
-						"vct_values": [%q]
-					},
-					"claims": [
-						{ "path": ["given_name"] },
-						{ "path": ["family_name"] }
-					]
-				}
-			]
-		}
-	}`, eudiPidIssuerPyVct)
-
-	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
-
-	disclosureSession := awaitSessionState(t, sessionHandler)
-	if disclosureSession.Status == clientmodels.Status_Error && disclosureSession.Error != nil {
-		t.Fatalf("disclosure errored: %+v", disclosureSession.Error)
-	}
-	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
-
-	chosen := disclosureSession.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	grantPermission(t, c, disclosureSession.Id, makeDisclosureChoice(chosen))
-
-	disclosureSession = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
-
-	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
-	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
-
-	requireVerifierReceivedClaims(t, result, "pid",
-		claim([]any{"given_name"}, "Jane"),
-		claim([]any{"family_name"}, "Doe"),
 	)
 }
 
