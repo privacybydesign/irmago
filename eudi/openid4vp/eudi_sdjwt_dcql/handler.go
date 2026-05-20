@@ -1275,14 +1275,26 @@ func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmode
 			var path []any
 			if err := json.Unmarshal(claim.Path, &path); err == nil {
 				if claimPathMatchesMetadataPath(claimPath, path) {
-					ts := clientmodels.TranslatedString{}
-					for _, d := range claim.Display {
-						locale := "en"
-						if d.Locale.Valid {
-							locale = d.Locale.V
+					var ts clientmodels.TranslatedString
+					if len(claim.Display) == 0 {
+						// No display metadata for this claim — fall back to the raw claim name.
+						if len(path) > 0 {
+							last := path[len(path)-1]
+							if s, ok := last.(string); ok {
+								ts = clientmodels.NewTranslatedString(&s)
+							}
 						}
-						ts[locale] = d.Name
+					} else {
+						ts = clientmodels.TranslatedString{}
+						for _, d := range claim.Display {
+							locale := "en"
+							if d.Locale.Valid {
+								locale = d.Locale.V
+							}
+							ts[locale] = d.Name
+						}
 					}
+
 					if len(ts) > 0 {
 						return ts
 					}
