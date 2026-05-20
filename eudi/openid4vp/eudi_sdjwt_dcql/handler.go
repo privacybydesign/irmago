@@ -6,8 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -21,9 +21,21 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
-func isURL(s string) bool {
-	u, err := url.Parse(s)
-	return err == nil && u.Scheme != "" && u.Host != ""
+// isIrmaStyleVct reports whether vct looks like an IRMA scheme credential
+// identifier ("scheme.issuer.credential"): exactly three non-empty segments
+// separated by dots, none of which contain ':' or '/' (so URN/URL forms are
+// excluded even if they happen to have three dot-separated parts).
+func isIrmaStyleVct(vct string) bool {
+	parts := strings.Split(vct, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" || strings.ContainsAny(p, ":/") {
+			return false
+		}
+	}
+	return true
 }
 
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
@@ -57,18 +69,20 @@ func NewSdJwtVcDcqlHandler(
 
 var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
 
-// CanHandleCredentialQuery returns true when the format is dc+sd-jwt or vc+sd-jwt
-// and at least one vct_value is a valid URL (indicating an EUDI credential type).
+// CanHandleCredentialQuery returns true for any sd-jwt query whose vct_values
+// are not 3-component IRMA scheme identifiers (those are handled by
+// irma_sdjwt_dcql against the BBolt store). URL and URN vcts — and any other
+// non-IRMA-shaped identifier — route here. Queries without vct_values are
+// also handled here so the EUDI store still gets searched.
 func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
 	if query.Format != "dc+sd-jwt" && query.Format != "vc+sd-jwt" {
 		return false
 	}
-	// Without vct_values, accept all sd-jwt queries (verifier didn't specify type).
 	if len(query.VctValues()) == 0 {
 		return true
 	}
 	for _, vct := range query.VctValues() {
-		if isURL(vct) {
+		if !isIrmaStyleVct(vct) {
 			return true
 		}
 	}

@@ -10,6 +10,7 @@ func TestSessionHandler(t *testing.T) {
 	t.Run("openid4vp/sdjwtvc", testSessionHandlerForOpenID4VPWithSdJwtVcs)
 	t.Run("openid4vci/sdjwtvc/pre-authorized", testSessionHandlerForOpenID4VCIPreAuth)
 	t.Run("openid4vci/sdjwtvc/auth-code", testSessionHandlerForOpenID4VCIAuthCode)
+	t.Run("openid4vci/sdjwtvc/eudi-pid-python", testSessionHandlerForEudiPidPythonIssuer)
 	t.Run("irma/disclosure", testSessionHandlerForIrmaDisclosures)
 	t.Run("irma/issuance", testSessionHandlerForIrmaIssuance)
 	t.Run("irma/signature", testSessionHandlerForIrmaSignature)

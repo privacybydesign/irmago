@@ -31,6 +31,14 @@
 					"familyname",
 					"prefix"
 				]
+			},
+			{
+				"credential": "urn:eudi:pid:1",
+				"attributes": [
+					"given_name",
+					"family_name",
+					"birthdate"
+				]
 			}
 		],
 		"purpose": {
