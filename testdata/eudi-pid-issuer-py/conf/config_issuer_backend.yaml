@@ -67,6 +67,10 @@ credential_auth_methods:
 countries:
   FC:
     name: "FormEU"
+    # Validity (days) added to date_of_issuance to produce date_of_expiry.
+    # Pinned here rather than relying on the upstream default so a future
+    # image bump cannot silently break the integration test.
+    validity: 90
     keys:
       _default:
         private_key_path: "/etc/eudiw/pid-issuer-dev/privKey/issuer.key"

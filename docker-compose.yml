@@ -212,12 +212,19 @@ services:
     volumes:
       - ./testdata/eudi-pid-issuer-py/as-conf/authorization_config.json:/etc/issuer_config/authorization_config.json:ro
       - ./testdata/eudi-pid-issuer-py/as-conf/openid-configuration.json:/app/openid-configuration.json:ro
-      - ./testdata/eudi-pid-issuer-py/certs/as_internal.pem:/etc/issuer_config/as_internal.pem:ro
-      - ./testdata/eudi-pid-issuer-py/certs/as_internal.key:/etc/issuer_config/as_internal.key:ro
     networks:
       irma-net:
         aliases:
           - eudi-pid-issuer-py-as.localhost
+    # The python:3.13-slim base has no wget/curl, so probe via urllib.
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/.well-known/openid-configuration').close()\""
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
 
   # EUDI Python PID issuer backend (eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py).
   # Issues PID credentials (vct: urn:eudi:pid:1) — a non-URL vct, in contrast to
@@ -225,7 +232,8 @@ services:
   eudi_pid_issuer_py:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py:0.9.4
     depends_on:
-      - eudi_pid_issuer_py_as
+      eudi_pid_issuer_py_as:
+        condition: service_healthy
     extra_hosts:
       - "localhost:host-gateway"
     volumes:
@@ -249,14 +257,28 @@ services:
       irma-net:
         aliases:
           - eudi-pid-issuer-py.localhost
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/.well-known/openid-credential-issuer').close()\""
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
 
   # TLS reverse proxy for the veramo issuer/verifier services and the EUDI Python issuer.
   tls_proxy:
     image: nginx:alpine
     depends_on:
-      - veramo_openid4vci
-      - veramo_openid4vp
-      - eudi_pid_issuer_py
+      veramo_openid4vci:
+        condition: service_started
+      veramo_openid4vp:
+        condition: service_started
+      # Wait for the Python issuer to be fully responsive before exposing it.
+      # Without service_healthy, nginx (and any test downstream of tls_proxy)
+      # can start before the issuer is accepting requests on cold runners.
+      eudi_pid_issuer_py:
+        condition: service_healthy
     volumes:
       - ./testdata/configurations/certs/nginx-tls-proxy.conf:/etc/nginx/nginx.conf:ro
       - ./testdata/configurations/certs/localhost.crt:/etc/nginx/certs/localhost.crt:ro

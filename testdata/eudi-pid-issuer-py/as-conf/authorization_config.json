@@ -188,8 +188,8 @@
     }
   },
   "webserver": {
-    "server_cert": "/etc/issuer_config/as_internal.pem",
-    "server_key": "/etc/issuer_config/as_internal.key",
+    "server_cert": null,
+    "server_key": null,
     "ca_bundle": null,
     "verify_user": false,
     "port": 5000,

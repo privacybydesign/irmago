@@ -19,6 +19,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Clean up intermediate files even on error so a partial failure does not
+# leave stray *.csr / ca.srl artefacts in the testdata directory.
+trap 'rm -f -- *.csr ca.srl' EXIT
+
 DAYS=3650
 SAN_ISSUER="DNS:eudi-pid-issuer-py.localhost,DNS:localhost,DNS:tls-proxy.localhost"
 SAN_VERIFIER="DNS:eudi-kotlin-verifier.localhost,DNS:localhost,DNS:tls-proxy.localhost"
@@ -50,14 +54,11 @@ openssl x509 -req -in verifier.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
   -extfile <(printf "subjectAltName=%s\nkeyUsage=digitalSignature\nextendedKeyUsage=clientAuth\n" "$SAN_VERIFIER")
 rm -f verifier.csr ca.srl
 
-# Internal TLS cert/key for the AS's bundled webserver (server_cert/server_key
-# in idpy-oidc). Not externally exposed — requests reach the AS via the nginx
-# tls_proxy upstream over plain HTTP, but the AS startup code requires the
-# files to be present.
-openssl req -x509 -newkey rsa:2048 -nodes -days "$DAYS" \
-  -keyout as_internal.key -out as_internal.pem \
-  -subj "/CN=eudi-as-internal" \
-  -addext "subjectAltName=DNS:localhost"
+# Note: no internal TLS cert/key for the AS — upstream server.py (idpy-oidc
+# 0.9.4) has the ssl_context wiring commented out, so the AS always serves
+# plain HTTP on :5000 regardless of webserver.server_cert/server_key. Setting
+# those config keys to null makes create_context return None and skip the
+# file load entirely. nginx reaches the AS over http:// upstream.
 
 # RSA private key for the issuer's nonce-signing endpoint (config: keys.nonce_path).
 openssl genrsa -out nonce_rsa2048.pem 2048

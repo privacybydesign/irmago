@@ -75,10 +75,17 @@ func testEudiPidPythonIssuerIssuesPidWithNonUrlVct(t *testing.T) {
 	require.Equal(t, eudiPidIssuerPyVct, cred.CredentialId,
 		"stored credential id must be the non-URL vct")
 
-	// The Python issuer fills `date_of_issuance` with the current date and
-	// `date_of_expiry` with +`countries.<x>.validity` days (90 in our config).
-	today := time.Now().UTC().Format("2006-01-02")
-	expiry := time.Now().UTC().Add(90 * 24 * time.Hour).Format("2006-01-02")
+	// The Python issuer fills date_of_issuance with its own clock and
+	// date_of_expiry with date_of_issuance + countries.FC.validity (90 days
+	// per config_issuer_backend.yaml). Computing `today` from the test's
+	// wallclock would race against UTC midnight when the test and issuer
+	// clocks disagree on the calendar date, so we read what the issuer
+	// actually emitted and check the relationship (expiry = issuance + 90d)
+	// plus a sanity bound that issuance is within one day of the test's
+	// wallclock. The literal string values then get plugged into the strict
+	// requireAttrsInOrder assertion below.
+	const pidValidityDays = 90
+	today, expiry := extractAndCheckPidDateClaims(t, cred.Attributes, pidValidityDays)
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{Path: []any{"family_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Family Name(s)"}, Value: strVal("Doe")},
@@ -284,6 +291,12 @@ func createPidOfferViaPythonIssuer(t *testing.T, data pidUserData) pidOfferRespo
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&offerJSON))
 
 	txCode := extractTxCodeValue(t, offerJSON)
+	// The Python issuer ships a non-standard `tx_code.value` field in the
+	// offer response (see app/preauthorization.py upstream). Assert it's
+	// present so a future upstream schema change fails loudly here instead
+	// of as a generic "session error" downstream.
+	require.NotEmpty(t, txCode,
+		"Python issuer offer must embed grants.<pre-authorized_code>.tx_code.value (non-standard upstream extension)")
 	offerBytes, err := json.Marshal(offerJSON)
 	require.NoError(t, err)
 
@@ -319,4 +332,44 @@ func readEudiPidIssuerPyCA(t *testing.T) []byte {
 	caPEM, err := os.ReadFile(caPath)
 	require.NoError(t, err)
 	return caPEM
+}
+
+// extractAndCheckPidDateClaims reads date_of_issuance / date_of_expiry from
+// the credential's attributes, validates they parse as YYYY-MM-DD, that
+// issuance is within ±24h of the test's wallclock, and that expiry equals
+// issuance + validityDays. Returns the literal string values so the caller
+// can plug them straight into requireAttrsInOrder. Decoupling the assertion
+// from time.Now() avoids a UTC-midnight race between test and issuer clocks.
+func extractAndCheckPidDateClaims(t *testing.T, attrs []clientmodels.Attribute, validityDays int) (issuance, expiry string) {
+	t.Helper()
+
+	attrByPath := func(path ...any) string {
+		key := clientmodels.ClaimPathKey(path)
+		for _, a := range attrs {
+			if clientmodels.ClaimPathKey(a.ClaimPath) == key {
+				if a.Value == nil || a.Value.String == nil {
+					t.Fatalf("attribute %s has no string value", key)
+				}
+				return *a.Value.String
+			}
+		}
+		t.Fatalf("attribute %s not found in credential", key)
+		return ""
+	}
+
+	issuance = attrByPath("date_of_issuance")
+	expiry = attrByPath("date_of_expiry")
+
+	const layout = "2006-01-02"
+	issuanceT, err := time.Parse(layout, issuance)
+	require.NoErrorf(t, err, "date_of_issuance %q is not a valid YYYY-MM-DD date", issuance)
+	_, err = time.Parse(layout, expiry)
+	require.NoErrorf(t, err, "date_of_expiry %q is not a valid YYYY-MM-DD date", expiry)
+
+	require.WithinDuration(t, time.Now().UTC(), issuanceT, 24*time.Hour,
+		"date_of_issuance %q is not within ±24h of test wallclock", issuance)
+	require.Equal(t, issuanceT.AddDate(0, 0, validityDays).Format(layout), expiry,
+		"date_of_expiry must equal date_of_issuance + %d days (issuer config validity)", validityDays)
+
+	return issuance, expiry
 }

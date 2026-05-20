@@ -38,6 +38,14 @@ func isIrmaStyleVct(vct string) bool {
 	return true
 }
 
+// isHttpVct reports whether vct is an absolute http(s) URL that the type
+// metadata fetcher can safely GET. Used to skip URN / scheme-less vcts
+// (e.g. "urn:eudi:pid:1") without invoking http.Get, which would otherwise
+// emit a per-disclosure "unsupported protocol scheme" warning.
+func isHttpVct(vct string) bool {
+	return strings.HasPrefix(vct, "https://") || strings.HasPrefix(vct, "http://")
+}
+
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
 // credentials stored in the eudi storage (SQLite).
 type SdJwtVcDcqlHandler struct {
@@ -74,6 +82,11 @@ var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
 // irma_sdjwt_dcql against the BBolt store). URL and URN vcts — and any other
 // non-IRMA-shaped identifier — route here. Queries without vct_values are
 // also handled here so the EUDI store still gets searched.
+//
+// The discrimination is purely structural — there is no semantic check that
+// the URL/URN is reachable, that the URN sits in any recognised namespace,
+// or that the EUDI store actually holds the requested type. See
+// isIrmaStyleVct for the boundary conditions of the shape check.
 func (h *SdJwtVcDcqlHandler) CanHandleCredentialQuery(query dcql.CredentialQuery) bool {
 	if query.Format != "dc+sd-jwt" && query.Format != "vc+sd-jwt" {
 		return false
@@ -174,6 +187,14 @@ func (h *SdJwtVcDcqlHandler) composeUnobtainableDescriptor(query dcql.Credential
 	defer cancel()
 
 	for _, vct := range vctValues {
+		// The fetcher delegates to http.Get, which fails with "unsupported
+		// protocol scheme" for URN / non-http vct values and would emit a
+		// noisy warning on every disclosure attempt. Skip those quietly —
+		// the URL-only fallback below still emits a descriptor so the user
+		// sees what was requested.
+		if !isHttpVct(vct) {
+			continue
+		}
 		vctMeta, err := h.vctFetcher.Fetch(ctx, vct)
 		if err != nil {
 			eudi.Logger.Warnf("failed to fetch VCT type metadata from %q: %v", vct, err)
