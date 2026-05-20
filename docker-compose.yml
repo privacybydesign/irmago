@@ -29,7 +29,9 @@ services:
       - ./irma/server/keyshare/cleanup.sql:/cleanup.sql
     # We have to wait until the database is up and running.
     # Database might already be running, so we need to do a cleanup first.
-    command: /bin/sh -c "sleep 5 && psql -f cleanup.sql && psql -f schema.sql"
+    # Wait for postgres to be ready before running the schema scripts; a fixed
+    # sleep is flaky on cold CI runners.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -f cleanup.sql && psql -f schema.sql"
   mysql:
     image: mysql:8
     environment:
@@ -152,7 +154,10 @@ services:
       - irma-net
     depends_on:
       - veramo_openid4vci_postgres
-    command: /bin/sh -c "sleep 3 && psql -c 'CREATE SCHEMA IF NOT EXISTS agent'"
+    # Wait until the postgres server is actually accepting connections before
+    # issuing the CREATE SCHEMA. A naive `sleep 3` is too short on cold CI
+    # runners and causes flaky init failures.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -c 'CREATE SCHEMA IF NOT EXISTS agent'"
 
   veramo_openid4vci_mock_authorization_server:
     build:
@@ -290,7 +295,10 @@ services:
       - irma-net
     depends_on:
       - veramo_openid4vp_postgres
-    command: /bin/sh -c "sleep 3 && psql -c 'CREATE SCHEMA IF NOT EXISTS verifier'"
+    # Wait until the postgres server is actually accepting connections before
+    # issuing the CREATE SCHEMA. A naive `sleep 3` is too short on cold CI
+    # runners and causes flaky init failures.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -c 'CREATE SCHEMA IF NOT EXISTS verifier'"
 
   veramo_openid4vp:
     build:
