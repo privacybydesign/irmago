@@ -1208,8 +1208,11 @@ func createClientWithCustomIssuerTrustChain(
 	issuerRoot *x509.Certificate,
 	issuerCert *x509.Certificate,
 ) (*client.Client, *MockSessionHandler) {
-	issuerChainBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerRoot.Raw})
-	issuerChainBytes = append(issuerChainBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerCert.Raw})...)
+	// Chains are stored leaf-to-root on disk (the filename is derived from
+	// chain[0] = the leaf), and TrustModel.addTrustAnchors parses them in
+	// that order. Emit the issuer cert first, then the root.
+	issuerChainBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerCert.Raw})
+	issuerChainBytes = append(issuerChainBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuerRoot.Raw})...)
 
 	return createClientWithIssuerChain(t, issuerChainBytes)
 }
