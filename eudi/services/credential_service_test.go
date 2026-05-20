@@ -118,6 +118,7 @@ func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 	batch := newStorageBatch()
+	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"family_name":"Smith","sub":"user123"}`)
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -127,6 +128,99 @@ func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result[0].Attributes, 1)
 	assert.Equal(t, "Family Name", (*result[0].Attributes[0].DisplayName)["en"])
+}
+
+func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
+	batch := newStorageBatch()
+	batch.ProcessedSdJwtPayload = datatypes.JSON(`{
+		"family_name": "Smith",
+		"given_name": "Alice",
+		"address": {"city": "Amsterdam", "extra": ""},
+		"iss": "https://issuer.example.com",
+		"iat": 1,
+		"sub": "u1"
+	}`)
+	batch.CredentialMetadata.Claims = []models.CredentialClaim{
+		{
+			Path: datatypes.JSON(`["family_name"]`),
+			Display: []models.ClaimDisplay{
+				{Name: "Family Name", Locale: datatypes.NullString{V: "en", Valid: true}},
+			},
+		},
+		{
+			Path: datatypes.JSON(`["address"]`),
+			Display: []models.ClaimDisplay{
+				{Name: "Address", Locale: datatypes.NullString{V: "en", Valid: true}},
+			},
+		},
+	}
+	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
+
+	result, err := svc.GetCredentialMetadataList()
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	attrs := result[0].Attributes
+
+	byPath := map[string]clientmodels.Attribute{}
+	for _, a := range attrs {
+		byPath[clientmodels.ClaimPathKey(a.ClaimPath)] = a
+	}
+
+	// Standard claims are filtered out.
+	for _, key := range []string{"iss", "iat", "sub"} {
+		_, present := byPath[clientmodels.ClaimPathKey([]any{key})]
+		assert.False(t, present, "standard claim %q should not appear", key)
+	}
+
+	// family_name: present in payload + metadata → displayed with metadata name.
+	familyName, ok := byPath[clientmodels.ClaimPathKey([]any{"family_name"})]
+	require.True(t, ok, "family_name should appear")
+	require.NotNil(t, familyName.DisplayName)
+	assert.Equal(t, "Family Name", (*familyName.DisplayName)["en"])
+	require.NotNil(t, familyName.Value)
+	require.NotNil(t, familyName.Value.String)
+	assert.Equal(t, "Smith", *familyName.Value.String)
+
+	// given_name: in payload, not in metadata → DisplayName nil.
+	givenName, ok := byPath[clientmodels.ClaimPathKey([]any{"given_name"})]
+	require.True(t, ok, "given_name should appear despite not being in metadata")
+	assert.Nil(t, givenName.DisplayName, "given_name has no metadata display → nil")
+
+	// address: in metadata as section, payload has object → section header emitted.
+	address, ok := byPath[clientmodels.ClaimPathKey([]any{"address"})]
+	require.True(t, ok, "address section header should appear")
+	require.NotNil(t, address.DisplayName)
+	assert.Equal(t, "Address", (*address.DisplayName)["en"])
+	assert.Nil(t, address.Value, "section header has no value")
+
+	// address.city: child of named section but child not named in metadata → no parent inheritance.
+	city, ok := byPath[clientmodels.ClaimPathKey([]any{"address", "city"})]
+	require.True(t, ok, "address.city should appear")
+	assert.Nil(t, city.DisplayName, "no parent display inheritance")
+	require.NotNil(t, city.Value)
+	require.NotNil(t, city.Value.String)
+	assert.Equal(t, "Amsterdam", *city.Value.String)
+
+	// address.extra: empty-string value in payload → kept, DisplayName nil.
+	extra, ok := byPath[clientmodels.ClaimPathKey([]any{"address", "extra"})]
+	require.True(t, ok, "empty-string values should be kept")
+	assert.Nil(t, extra.DisplayName)
+	require.NotNil(t, extra.Value)
+	require.NotNil(t, extra.Value.String)
+	assert.Equal(t, "", *extra.Value.String)
+
+	// Top-level ordering: family_name (metadata idx 0), then address (metadata idx 1) + its children,
+	// then given_name (payload-only, alphabetical after metadata-listed).
+	topPaths := []string{}
+	for _, a := range attrs {
+		if len(a.ClaimPath) == 1 {
+			topPaths = append(topPaths, fmt.Sprintf("%v", a.ClaimPath[0]))
+		}
+	}
+	assert.Equal(t, []string{"family_name", "address", "given_name"}, topPaths)
 }
 
 func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {

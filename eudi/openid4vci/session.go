@@ -275,65 +275,24 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 	return result
 }
 
-// buildAttributesWithValues builds an ordered attribute list from credential
-// metadata claims, resolving actual values from the processed SD-JWT payload.
+// buildAttributesWithValues builds an attribute list directly from the credential
+// payload. The claim metadata is consulted only for display-name translations and
+// for ordering: claims declared in metadata appear in declared order, payload-only
+// claims are appended alphabetically. Claims without a metadata display entry
+// produce attributes with DisplayName: nil.
 func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwtvc.ProcessedSdJwtPayload) []clientmodels.Attribute {
-	allPaths := make([][]any, len(claims))
-	for i, c := range claims {
-		allPaths[i] = c.Path
-	}
-
 	displayLookup := map[string]clientmodels.TranslatedString{}
 	metadataOrder := map[string]int{}
 	for i, c := range claims {
-		d := claimDisplayToTranslatedString(c.Display)
 		key := clientmodels.ClaimPathKey(c.Path)
-		displayLookup[key] = d
 		metadataOrder[key] = i
-	}
-
-	var attrs []clientmodels.Attribute
-	for i, c := range claims {
-		path := allPaths[i]
-		if containsNil(path) {
-			continue
-		}
-
-		var display clientmodels.TranslatedString
 		if len(c.Display) == 0 {
-			if len(c.Path) > 0 {
-				lastSegment := fmt.Sprintf("%v", c.Path[len(c.Path)-1])
-				display = clientmodels.NewTranslatedString(&lastSegment)
-			} else {
-				// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
-				n := fmt.Sprintf("claim %d", i+1)
-				display = clientmodels.NewTranslatedString(&n)
-			}
-		} else {
-			display = claimDisplayToTranslatedString(c.Display)
-		}
-
-		if isParentOfConcreteClaim(path, allPaths) {
-			if len(display) > 0 {
-				d := display
-				attrs = append(attrs, clientmodels.Attribute{ClaimPath: path, DisplayName: &d})
-			}
 			continue
 		}
-
-		if payload == nil {
-			d := display
-			attrs = append(attrs, clientmodels.Attribute{ClaimPath: path, DisplayName: &d})
-			continue
-		}
-
-		value, err := payload.GetClaimValue(path)
-		if err != nil {
-			value = ""
-		}
-		attrs = services.FlattenClaimValue(attrs, path, value, display, displayLookup, metadataOrder)
+		displayLookup[key] = claimDisplayToTranslatedString(c.Display)
 	}
-	return attrs
+
+	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
 }
 
 func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.TranslatedString {
@@ -346,34 +305,6 @@ func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.Tr
 		result[locale] = d.Name
 	}
 	return result
-}
-
-func containsNil(path []any) bool {
-	for _, p := range path {
-		if p == nil {
-			return true
-		}
-	}
-	return false
-}
-
-func isParentOfConcreteClaim(path []any, allPaths [][]any) bool {
-	for _, other := range allPaths {
-		if len(other) <= len(path) || containsNil(other) {
-			continue
-		}
-		match := true
-		for i := range path {
-			if fmt.Sprintf("%v", path[i]) != fmt.Sprintf("%v", other[i]) {
-				match = false
-				break
-			}
-		}
-		if match {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *session) configureIssuerSettings() error {

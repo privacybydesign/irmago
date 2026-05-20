@@ -30,6 +30,7 @@ const (
 
 func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
 	t.Run("issue via openid4vci and disclose via openid4vp", testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP)
+	t.Run("payload-only claim surfaces in all UI flows", testPayloadOnlyClaimAcrossLifecycle)
 	t.Run("disclose single credential with multiple attributes", testDiscloseCredentialWithMultipleAttributes)
 	t.Run("choice between two credential types", testChoiceBetweenTwoCredentialTypes)
 	t.Run("multiple required credentials", testMultipleRequiredCredentials)
@@ -156,6 +157,188 @@ func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 	requireVerifierReceivedClaims(t, result, "test-credential",
 		claim([]any{"given_name"}, "Test"),
 		claim([]any{"email"}, "test@example.com"),
+	)
+}
+
+// testPayloadOnlyClaimAcrossLifecycle exercises the payload-driven attribute system
+// across every UI surface that consumes it: the issuance preview
+// (SessionState.OfferedCredentials), the stored credential list (GetCredentials),
+// the issuance log, the disclosure plan (DisclosureChoicesOverview), and the
+// disclosure log. The credential is issued with an "extra_note" field that the
+// issuer metadata does NOT declare; it must appear at every surface with
+// DisplayName: nil and sorted after the metadata-declared claims.
+//
+// If the test issuer drops unknown payload fields, the early assertions fail with
+// "attribute count mismatch" — that signals the issuer config needs to widen its
+// credentialDataSupplierInput pass-through.
+func testPayloadOnlyClaimAcrossLifecycle(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Inline the issuance so we can intercept session.OfferedCredentials between
+	// the permission request and the grant — the helper would have moved past it.
+	offerBody := `{
+		"credentials": ["StudentCardCredentialSdJwt"],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": {
+			"university": "TU Delft",
+			"level": "MSc",
+			"student_id": "S77777",
+			"extra_note": "payload-only"
+		}
+	}`
+	offer := postOffer(t, preAuthIssuerURL, preAuthAdminToken, offerBody)
+	startOpenID4VCISession(t, c, offer.URI)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	expectedAttrs := []expectedAttr{
+		{
+			Path:        []any{"university"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			Value:       strVal("TU Delft"),
+		},
+		{
+			Path:        []any{"level"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Level", "nl": "Niveau"},
+			Value:       strVal("MSc"),
+		},
+		{
+			Path:        []any{"student_id"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"},
+			Value:       strVal("S77777"),
+		},
+		{
+			Path:  []any{"extra_note"},
+			Value: strVal("payload-only"),
+			// DisplayName nil: not declared in metadata.
+		},
+	}
+
+	// Surface A: issuance preview (SessionState.OfferedCredentials.Attributes).
+	requireAttrsInOrder(t, session.OfferedCredentials[0].Attributes, expectedAttrs...)
+
+	grantPermission(t, c, session.Id)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	// Surface "GetCredentials": stored credential.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	stored := findCredentialByName(t, creds, "en", "Student Card Credential (SD-JWT)")
+	require.NotNil(t, stored, "issued StudentCardCredential should appear in GetCredentials")
+	requireAttrsInOrder(t, stored.Attributes, expectedAttrs...)
+
+	// Surface C-issuance: issuance log.
+	logs, err := c.LoadNewestLogs(10)
+	require.NoError(t, err)
+	var issuanceLog *clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Issuance {
+			issuanceLog = &logs[i]
+			break
+		}
+	}
+	require.NotNil(t, issuanceLog, "issuance log should be recorded")
+	require.NotNil(t, issuanceLog.IssuanceLog)
+	require.Len(t, issuanceLog.IssuanceLog.Credentials, 1)
+	requireAttrsInOrder(t, issuanceLog.IssuanceLog.Credentials[0].Attributes, expectedAttrs...)
+
+	// Surface B: disclosure plan. Ask the verifier for university + extra_note so
+	// the disclosure walks both a metadata-declared and a payload-only path.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "student-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/studentcard"]
+					},
+					"claims": [
+						{ "path": ["university"] },
+						{ "path": ["extra_note"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/studentcard",
+						Name:         clientmodels.TranslatedString{"en": "Student Card Credential (SD-JWT)"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"university"},
+								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Value:       strVal("TU Delft"),
+							},
+							{
+								Path:  []any{"extra_note"},
+								Value: strVal("payload-only"),
+								// DisplayName nil: not declared in metadata.
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, session.Id, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// Surface C-disclosure: disclosure log records the same payload-only field.
+	logs, err = c.LoadNewestLogs(10)
+	require.NoError(t, err)
+	var disclosureLog *clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			disclosureLog = &logs[i]
+			break
+		}
+	}
+	require.NotNil(t, disclosureLog, "disclosure log should be recorded")
+	require.NotNil(t, disclosureLog.DisclosureLog)
+	require.Len(t, disclosureLog.DisclosureLog.Credentials, 1)
+	requireAttrsInOrder(t, disclosureLog.DisclosureLog.Credentials[0].Attributes,
+		expectedAttr{
+			Path:        []any{"university"},
+			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			Value:       strVal("TU Delft"),
+		},
+		expectedAttr{
+			Path:  []any{"extra_note"},
+			Value: strVal("payload-only"),
+		},
 	)
 }
 

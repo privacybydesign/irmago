@@ -455,7 +455,8 @@ func testOpenID4VCIPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 		},
 	)
 
-	// Verify StudentCardCredential attributes.
+	// Verify StudentCardCredential attributes. The metadata declares `courses` but
+	// the issuer didn't populate it; the payload-driven build drops absent claims.
 	studentCred := findCredentialByName(t, creds, "en", "Student Card Credential (SD-JWT)")
 	require.NotNil(t, studentCred, "StudentCardCredential should appear in GetCredentials")
 	requireAttrsInOrder(t, studentCred.Attributes,
@@ -473,11 +474,6 @@ func testOpenID4VCIPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 			Path:        []any{"student_id"},
 			DisplayName: &clientmodels.TranslatedString{"en": "Student ID", "nl": "Studentnummer"},
 			Value:       strVal("S12345"),
-		},
-		expectedAttr{
-			Path:        []any{"courses"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"},
-			Value:       strVal(""), // not issued, falls back to empty
 		},
 	)
 

@@ -432,68 +432,21 @@ func (client *Client) convertToCredentialInfoList(
 }
 
 func convertClaimsToAttributes(claims []metadata.ClaimsDescription) []clientmodels.Attribute {
-	// Collect all claim paths upfront to detect parent claims.
-	allPaths := make([][]any, len(claims))
-	for i, claim := range claims {
-		allPaths[i] = claim.Path
-	}
-
 	var attrs []clientmodels.Attribute
-	for i, claim := range claims {
-		claimPath := allPaths[i]
-
-		displayName := clientmodels.TranslatedString{}
+	for _, claim := range claims {
+		var displayName *clientmodels.TranslatedString
 		if len(claim.Display) > 0 {
 			displays := metadata.ToTranslateableList(claim.Display)
-			displayName = metadata.ConvertDisplayToTranslatedString(displays)
-		} else {
-			// Fall back to the last segment of the claim path as display name, if no display entries are provided for the claim in the metadata
-			if len(claimPath) > 0 {
-				lastSegment := fmt.Sprintf("%v", claimPath[len(claimPath)-1])
-				displayName = clientmodels.NewTranslatedString(&lastSegment)
-			} else {
-				// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
-				n := fmt.Sprintf("claim %d", i+1)
-				displayName = clientmodels.NewTranslatedString(&n)
-			}
+			dn := metadata.ConvertDisplayToTranslatedString(displays)
+			displayName = &dn
 		}
 
-		// Parent claims become section headers (DisplayName set, Value nil).
-		if isParentClaim(claimPath, allPaths) {
-			dn := displayName
-			attrs = append(attrs, clientmodels.Attribute{
-				ClaimPath:   claimPath,
-				DisplayName: &dn,
-			})
-			continue
-		}
-
-		dn := displayName
 		attrs = append(attrs, clientmodels.Attribute{
-			ClaimPath:   claimPath,
-			DisplayName: &dn,
+			ClaimPath:   claim.Path,
+			DisplayName: displayName,
 		})
 	}
 	return attrs
-}
-
-// isParentClaim returns true if path is a strict prefix of any other path in allPaths.
-func isParentClaim(path []any, allPaths [][]any) bool {
-	for _, other := range allPaths {
-		if len(other) > len(path) {
-			match := true
-			for i := range path {
-				if fmt.Sprintf("%v", path[i]) != fmt.Sprintf("%v", other[i]) {
-					match = false
-					break
-				}
-			}
-			if match {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata) *clientmodels.TrustedParty {

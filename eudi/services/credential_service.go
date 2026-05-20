@@ -71,8 +71,9 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			issuerDisplays[locale] = d.Name
 		}
 
-		attrs := []clientmodels.Attribute{}
 		credentialDisplays := clientmodels.TranslatedString{}
+		claimDisplayLookup := map[string]clientmodels.TranslatedString{}
+		metadataOrder := map[string]int{}
 
 		if batch.CredentialMetadata != nil {
 			for _, d := range batch.CredentialMetadata.Display {
@@ -83,105 +84,29 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				credentialDisplays[locale] = d.Name
 			}
 
-			// Build a display lookup from all metadata claims, keyed by serialized path.
-			// This allows child paths created during flattening to inherit display names
-			// from more specific metadata entries when available.
-			claimDisplayLookup := map[string]clientmodels.TranslatedString{}
-			for _, claim := range batch.CredentialMetadata.Claims {
+			for i, claim := range batch.CredentialMetadata.Claims {
 				var path []any
 				if err := json.Unmarshal(claim.Path, &path); err != nil {
 					continue
 				}
-
-				var display clientmodels.TranslatedString
-				if len(claim.Display) == 0 {
-					if len(path) > 0 {
-						lastSegment := fmt.Sprintf("%v", path[len(path)-1])
-						display = clientmodels.NewTranslatedString(&lastSegment)
-					} else {
-						// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
-						n := fmt.Sprintf("claim %d", i+1)
-						display = clientmodels.NewTranslatedString(&n)
-					}
-				} else {
-					display = clientmodels.TranslatedString{}
-					for _, d := range claim.Display {
-						locale := clientmodels.DefaultFallbackLanguage
-						if d.Locale.Valid {
-							locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
-						}
-						display[locale] = d.Name
-					}
-				}
-
 				key := clientmodels.ClaimPathKey(path)
+				metadataOrder[key] = i
+				if len(claim.Display) == 0 {
+					continue
+				}
+				display := clientmodels.TranslatedString{}
+				for _, d := range claim.Display {
+					locale := clientmodels.DefaultFallbackLanguage
+					if d.Locale.Valid {
+						locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+					}
+					display[locale] = d.Name
+				}
 				claimDisplayLookup[key] = display
 			}
-
-			metadataOrder := buildMetadataOrder(batch.CredentialMetadata.Claims)
-
-			// Parse all claim paths upfront to detect parent claims.
-			claimPaths := make([][]any, len(batch.CredentialMetadata.Claims))
-			for i, claim := range batch.CredentialMetadata.Claims {
-				if err := json.Unmarshal(claim.Path, &claimPaths[i]); err != nil {
-					eudi.Logger.Warnf("failed to unmarshal claim path for credential %s: %v", batch.VerifiableCredentialType, err)
-				}
-			}
-
-			for i, claim := range batch.CredentialMetadata.Claims {
-				claimPath := claimPaths[i]
-
-				var attrDisplay clientmodels.TranslatedString
-				if len(claim.Display) == 0 {
-					if len(claimPath) > 0 {
-						lastSegment := fmt.Sprintf("%v", claimPath[len(claimPath)-1])
-						attrDisplay = clientmodels.NewTranslatedString(&lastSegment)
-					} else {
-						// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
-						n := fmt.Sprintf("claim %d", i+1)
-						attrDisplay = clientmodels.NewTranslatedString(&n)
-					}
-				} else {
-					attrDisplay = clientmodels.TranslatedString{}
-					for _, d := range claim.Display {
-						locale := clientmodels.DefaultFallbackLanguage
-						if d.Locale.Valid {
-							locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
-						}
-						attrDisplay[locale] = d.Name
-					}
-				}
-
-				// Skip wildcard paths (containing null). These are display name
-				// templates used by lookupDisplayName during flattening, not
-				// concrete claims to resolve.
-				if containsNil(claimPath) {
-					continue
-				}
-
-				// If this claim is a parent of another concrete (non-wildcard)
-				// metadata claim, emit only a section header. The concrete children
-				// will be handled by their own entries.
-				// If all children are wildcards, we must flatten the value ourselves.
-				if isParentOfConcreteClaim(claimPath, claimPaths) {
-					if len(attrDisplay) > 0 {
-						attrs = append(attrs, clientmodels.Attribute{
-							ClaimPath:   claimPath,
-							DisplayName: &attrDisplay,
-						})
-					}
-					continue
-				}
-
-				claimValue, err := processedSdJwtPayload.GetClaimValue(claimPath)
-				if err != nil {
-					eudi.Logger.Debugf("unrecognized claim at path %v; falling back to empty string for claim with path %v: %v", claim.Path, claimPath, err)
-					claimValue = ""
-				}
-
-				attrs = FlattenClaimValue(attrs, claimPath, claimValue, attrDisplay, claimDisplayLookup, metadataOrder)
-			}
 		}
+
+		attrs := buildAttributesFromPayload(processedSdJwtPayload, claimDisplayLookup, metadataOrder)
 
 		exp := int64(0)
 		if batch.ExpiresAt.Valid {
@@ -470,40 +395,52 @@ func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]dat
 	return datatypes.UUID{}, fmt.Errorf("no matching holder binding key found for cnf claim")
 }
 
-// isParentOfConcreteClaim returns true if path is a strict prefix of any other
-// concrete (non-wildcard) path in allPaths.
-func isParentOfConcreteClaim(path []any, allPaths [][]any) bool {
-	for _, other := range allPaths {
-		if containsNil(other) {
+// BuildAttributesFromPayload walks the credential payload top-down and emits an
+// Attribute for every claim it finds. Standard JWT/SD-JWT claims are filtered
+// out at the top level. The lookup map (built from issuer metadata) supplies
+// display names; claims without a metadata entry produce attributes with
+// DisplayName: nil. Top-level keys are ordered by metadata position, then
+// alphabetically for keys absent from the metadata.
+func BuildAttributesFromPayload(
+	payload *sdjwtvc.ProcessedSdJwtPayload,
+	lookup map[string]clientmodels.TranslatedString,
+	metadataOrder map[string]int,
+) []clientmodels.Attribute {
+	attrs := []clientmodels.Attribute{}
+	if payload == nil {
+		return attrs
+	}
+	topLevel := make(map[string]any, len(*payload))
+	for k, v := range *payload {
+		if _, isStd := sdjwtvc.StandardClaims[k]; isStd {
 			continue
 		}
-		if len(other) > len(path) {
-			match := true
-			for i := range path {
-				if fmt.Sprintf("%v", path[i]) != fmt.Sprintf("%v", other[i]) {
-					match = false
-					break
-				}
-			}
-			if match {
-				return true
-			}
-		}
+		topLevel[k] = v
 	}
-	return false
+	for _, key := range sortObjectKeys(topLevel, []any{}, metadataOrder) {
+		attrs = FlattenClaimValue(attrs, []any{key}, topLevel[key], lookup, metadataOrder)
+	}
+	return attrs
+}
+
+func buildAttributesFromPayload(
+	payload *sdjwtvc.ProcessedSdJwtPayload,
+	lookup map[string]clientmodels.TranslatedString,
+	metadataOrder map[string]int,
+) []clientmodels.Attribute {
+	return BuildAttributesFromPayload(payload, lookup, metadataOrder)
 }
 
 // FlattenClaimValue recursively flattens arrays and objects into individual scalar
 // attributes. Each leaf value gets its own Attribute with the full path from root.
 // A section header (Value == nil) is emitted only when the path has an explicit
-// display name in the metadata lookup — inherited display names don't trigger headers.
-// Object keys are ordered by their position in the metadata (via metadataOrder),
-// falling back to alphabetical for keys not in the metadata.
+// display name in the metadata lookup. Object keys are ordered by their position
+// in the metadata (via metadataOrder), falling back to alphabetical for keys not
+// in the metadata.
 func FlattenClaimValue(
 	attrs []clientmodels.Attribute,
 	path []any,
 	value any,
-	display clientmodels.TranslatedString,
 	lookup map[string]clientmodels.TranslatedString,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
@@ -518,8 +455,7 @@ func FlattenClaimValue(
 		}
 		for i, elem := range v {
 			childPath := append(append([]any{}, path...), i)
-			childDisplay := childDisplayName(lookup, childPath, display)
-			attrs = FlattenClaimValue(attrs, childPath, elem, childDisplay, lookup, metadataOrder)
+			attrs = FlattenClaimValue(attrs, childPath, elem, lookup, metadataOrder)
 		}
 	case map[string]any:
 		if d, ok := lookupDisplayName(lookup, path); ok {
@@ -532,14 +468,13 @@ func FlattenClaimValue(
 		keys := sortObjectKeys(v, path, metadataOrder)
 		for _, key := range keys {
 			childPath := append(append([]any{}, path...), key)
-			childDisplay := childDisplayName(lookup, childPath, display)
-			attrs = FlattenClaimValue(attrs, childPath, v[key], childDisplay, lookup, metadataOrder)
+			attrs = FlattenClaimValue(attrs, childPath, v[key], lookup, metadataOrder)
 		}
 	default:
 		var dn *clientmodels.TranslatedString
-		if len(path) == 0 || !isArrayIndex(path[len(path)-1]) {
-			d := display
-			dn = &d
+		if d, ok := lookupDisplayName(lookup, path); ok {
+			dnCopy := d
+			dn = &dnCopy
 		}
 		attrs = append(attrs, clientmodels.Attribute{
 			ClaimPath:   path,
@@ -595,30 +530,6 @@ func metadataOrderForKey(parentPath []any, key string, metadataOrder map[string]
 	return 1<<31 - 1
 }
 
-// buildMetadataOrder creates a map from serialized claim path to position index
-// for ordering object keys by their metadata position.
-func buildMetadataOrder(claims []models.CredentialClaim) map[string]int {
-	order := make(map[string]int, len(claims))
-	for i, claim := range claims {
-		var path []any
-		if err := json.Unmarshal(claim.Path, &path); err != nil {
-			continue
-		}
-		order[clientmodels.ClaimPathKey(path)] = i
-	}
-	return order
-}
-
-// containsNil returns true if the path contains a nil component (null wildcard).
-func containsNil(path []any) bool {
-	for _, c := range path {
-		if c == nil {
-			return true
-		}
-	}
-	return false
-}
-
 // isArrayIndex returns true if the path component is a numeric array index.
 func isArrayIndex(component any) bool {
 	switch component.(type) {
@@ -626,17 +537,6 @@ func isArrayIndex(component any) bool {
 		return true
 	}
 	return false
-}
-
-// childDisplayName looks up display names for a child path created during flattening.
-// It first checks whether the metadata contains a claim entry for the exact child path.
-// If not, it tries a wildcard match (replacing integer indices with nil).
-// If that also fails, it falls back to the parent's display names.
-func childDisplayName(lookup map[string]clientmodels.TranslatedString, childPath []any, parentDisplay clientmodels.TranslatedString) clientmodels.TranslatedString {
-	if d, ok := lookupDisplayName(lookup, childPath); ok {
-		return d
-	}
-	return parentDisplay
 }
 
 // lookupDisplayName checks the lookup map for the given path, first by exact match,

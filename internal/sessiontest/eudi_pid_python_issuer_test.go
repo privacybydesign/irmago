@@ -87,34 +87,18 @@ func testEudiPidPythonIssuerIssuesPidWithNonUrlVct(t *testing.T) {
 	const pidValidityDays = 90
 	today, expiry := extractAndCheckPidDateClaims(t, cred.Attributes, pidValidityDays)
 
+	// The Python issuer's metadata declares many optional PID claims that it does
+	// not actually emit (address.*, place_of_birth, nationalities, document_number,
+	// etc.). Payload-driven build drops absent claims, so only the seven claims the
+	// issuer actually populates remain. Order matches the metadata claim ordering.
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{Path: []any{"family_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Family Name(s)"}, Value: strVal("Doe")},
 		expectedAttr{Path: []any{"given_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Given Name(s)"}, Value: strVal("Jane")},
 		expectedAttr{Path: []any{"birthdate"}, DisplayName: &clientmodels.TranslatedString{"en": "Birth Date"}, Value: strVal("1990-05-19")},
-		expectedAttr{Path: []any{"place_of_birth"}, DisplayName: &clientmodels.TranslatedString{"en": "Birth Place"}, Value: strVal("")},
-		expectedAttr{Path: []any{"nationalities"}, DisplayName: &clientmodels.TranslatedString{"en": "Nationalities"}, Value: strVal("")},
-		header([]any{"address"}, clientmodels.TranslatedString{"en": "Address"}),
-		expectedAttr{Path: []any{"address", "street_address"}, DisplayName: &clientmodels.TranslatedString{"en": "Street"}, Value: strVal("")},
-		expectedAttr{Path: []any{"address", "locality"}, DisplayName: &clientmodels.TranslatedString{"en": "Locality"}, Value: strVal("")},
-		expectedAttr{Path: []any{"address", "region"}, DisplayName: &clientmodels.TranslatedString{"en": "Region"}, Value: strVal("")},
-		expectedAttr{Path: []any{"address", "postal_code"}, DisplayName: &clientmodels.TranslatedString{"en": "Postal Code"}, Value: strVal("")},
-		expectedAttr{Path: []any{"address", "country"}, DisplayName: &clientmodels.TranslatedString{"en": "Country"}, Value: strVal("")},
-		expectedAttr{Path: []any{"address", "formatted"}, DisplayName: &clientmodels.TranslatedString{"en": "Full Address"}, Value: strVal("")},
-		expectedAttr{Path: []any{"address", "house_number"}, DisplayName: &clientmodels.TranslatedString{"en": "House Number"}, Value: strVal("")},
-		expectedAttr{Path: []any{"personal_administrative_number"}, DisplayName: &clientmodels.TranslatedString{"en": "Personal Administrative Number"}, Value: strVal("")},
-		expectedAttr{Path: []any{"picture"}, DisplayName: &clientmodels.TranslatedString{"en": "Portrait Image"}, Value: strVal("")},
-		expectedAttr{Path: []any{"birth_family_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Birth Family Name(s)"}, Value: strVal("")},
-		expectedAttr{Path: []any{"birth_given_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Birth Given Name(s)"}, Value: strVal("")},
-		expectedAttr{Path: []any{"sex"}, DisplayName: &clientmodels.TranslatedString{"en": "Sex"}, Value: strVal("")},
-		expectedAttr{Path: []any{"email_address"}, DisplayName: &clientmodels.TranslatedString{"en": "Email Address"}, Value: strVal("")},
-		expectedAttr{Path: []any{"mobile_phone_number"}, DisplayName: &clientmodels.TranslatedString{"en": "Mobile Phone Number"}, Value: strVal("")},
 		expectedAttr{Path: []any{"date_of_issuance"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuance Date"}, Value: strVal(today)},
 		expectedAttr{Path: []any{"date_of_expiry"}, DisplayName: &clientmodels.TranslatedString{"en": "Expiry Date"}, Value: strVal(expiry)},
 		expectedAttr{Path: []any{"issuing_authority"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuance Authority"}, Value: strVal("Test PID issuer")},
-		expectedAttr{Path: []any{"document_number"}, DisplayName: &clientmodels.TranslatedString{"en": "Document Number"}, Value: strVal("")},
-		expectedAttr{Path: []any{"trust_anchor"}, DisplayName: &clientmodels.TranslatedString{"en": "Trust Anchor"}, Value: strVal("")},
 		expectedAttr{Path: []any{"issuing_country"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuing Country"}, Value: strVal("FC")},
-		expectedAttr{Path: []any{"issuing_jurisdiction"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuing Jurisdiction"}, Value: strVal("")},
 	)
 }
 

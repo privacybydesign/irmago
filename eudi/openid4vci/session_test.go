@@ -422,3 +422,82 @@ func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T)
 	require.NoError(t, token.Get("credential_configuration_id", &configId), "expected credential_configuration_id claim in decrypted JWT")
 	require.Equal(t, "credential-config-1", configId)
 }
+
+func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
+	en := "en"
+	claims := []metadata.ClaimsDescription{
+		{
+			Path:    metadata.ClaimsPathPointer{"family_name"},
+			Display: []metadata.Display{{Name: "Family Name", Locale: &en}},
+		},
+		{
+			Path:    metadata.ClaimsPathPointer{"address"},
+			Display: []metadata.Display{{Name: "Address", Locale: &en}},
+		},
+	}
+	payload := sdjwtvc.ProcessedSdJwtPayload{
+		"family_name": "Smith",
+		"given_name":  "Alice",
+		"address":     map[string]any{"city": "Amsterdam", "extra": ""},
+		"iss":         "https://issuer.example.com",
+		"iat":         float64(1),
+		"sub":         "u1",
+	}
+
+	attrs := buildAttributesWithValues(claims, payload)
+
+	byPath := map[string]int{}
+	for i, a := range attrs {
+		var parts []string
+		for _, p := range a.ClaimPath {
+			parts = append(parts, toStr(p))
+		}
+		byPath[strings.Join(parts, ".")] = i
+	}
+
+	// Standard claims are filtered out.
+	for _, key := range []string{"iss", "iat", "sub"} {
+		_, present := byPath[key]
+		require.False(t, present, "standard claim %q should not appear", key)
+	}
+
+	// family_name leaf has the metadata display.
+	idx, ok := byPath["family_name"]
+	require.True(t, ok, "family_name should appear")
+	require.NotNil(t, attrs[idx].DisplayName)
+	require.Equal(t, "Family Name", (*attrs[idx].DisplayName)["en"])
+
+	// given_name is in payload but not metadata → DisplayName nil.
+	idx, ok = byPath["given_name"]
+	require.True(t, ok, "given_name should appear despite not being in metadata")
+	require.Nil(t, attrs[idx].DisplayName)
+
+	// address section header.
+	idx, ok = byPath["address"]
+	require.True(t, ok, "address section header should appear")
+	require.NotNil(t, attrs[idx].DisplayName)
+	require.Equal(t, "Address", (*attrs[idx].DisplayName)["en"])
+	require.Nil(t, attrs[idx].Value)
+
+	// address.city: no metadata → no inherited display.
+	idx, ok = byPath["address.city"]
+	require.True(t, ok)
+	require.Nil(t, attrs[idx].DisplayName)
+	require.NotNil(t, attrs[idx].Value)
+	require.NotNil(t, attrs[idx].Value.String)
+	require.Equal(t, "Amsterdam", *attrs[idx].Value.String)
+
+	// address.extra: empty-string value kept.
+	idx, ok = byPath["address.extra"]
+	require.True(t, ok, "empty-string values should be kept")
+	require.NotNil(t, attrs[idx].Value)
+	require.NotNil(t, attrs[idx].Value.String)
+	require.Equal(t, "", *attrs[idx].Value.String)
+}
+
+func toStr(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}

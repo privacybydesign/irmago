@@ -657,10 +657,6 @@ type pathToFlatten struct {
 	// hasConstraint marks this path's leaf attributes for RequestedValue
 	// (used by the UI when the verifier specified a value constraint).
 	hasConstraint bool
-	// fallbackDisplay is used when the credential metadata has no display
-	// name for this path. Set for non-SD claims so they always render with
-	// at least a section header.
-	fallbackDisplay clientmodels.TranslatedString
 }
 
 // flattenPathsForDisplay emits attributes for a list of concrete claim paths,
@@ -709,27 +705,7 @@ func flattenPathsForDisplay(
 		}
 
 		val, _ := payload.GetClaimValue(p.path)
-		displayName := claimDisplayName(batch, p.path)
-		if len(displayName) == 0 && len(p.fallbackDisplay) > 0 {
-			displayName = p.fallbackDisplay
-		}
-
-		// Synthetic header for compound paths whose metadata lacks a display
-		// entry (currently only non-SD top-level compounds hit this branch).
-		if len(p.fallbackDisplay) > 0 {
-			switch val.(type) {
-			case []any, map[string]any:
-				if d := claimDisplayName(batch, p.path); len(d) == 0 {
-					fb := p.fallbackDisplay
-					attrs = append(attrs, clientmodels.Attribute{
-						ClaimPath:   append([]any{}, p.path...),
-						DisplayName: &fb,
-					})
-				}
-			}
-		}
-
-		attrs = flattenForDisclosure(attrs, requestedKeys, batch, p.path, val, displayName, metadataOrder)
+		attrs = flattenForDisclosure(attrs, requestedKeys, batch, p.path, val, metadataOrder)
 
 		if p.hasConstraint {
 			for i := prevLen; i < len(attrs); i++ {
@@ -946,17 +922,17 @@ func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
 
 // flattenForDisclosure recursively flattens arrays and objects into scalar
 // attributes, emitting a section header (Value == nil) before each compound
-// value that has a display name. Compound paths are added to requestedKeys
-// so the non-SD claim loop does not re-add them.
-// Object keys are sorted by their position in the credential metadata,
-// falling back to alphabetical for keys not in the metadata.
+// value that has a display name in the credential metadata. Compound paths are
+// added to requestedKeys so the non-SD claim loop does not re-add them.
+// Display names come strictly from claimDisplayName; absence means DisplayName: nil.
+// Object keys are sorted by their position in the credential metadata, falling
+// back to alphabetical for keys not in the metadata.
 func flattenForDisclosure(
 	attrs []clientmodels.Attribute,
 	requestedKeys map[string]struct{},
 	batch *models.CredentialBatch,
 	path []any,
 	value any,
-	display clientmodels.TranslatedString,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
 	switch v := value.(type) {
@@ -974,11 +950,7 @@ func flattenForDisclosure(
 		}
 		for i, elem := range v {
 			elemPath := append(append([]any{}, path...), i)
-			elemDisplay := claimDisplayName(batch, elemPath)
-			if len(elemDisplay) == 0 {
-				elemDisplay = display
-			}
-			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, elem, elemDisplay, metadataOrder)
+			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, elem, metadataOrder)
 		}
 	case map[string]any:
 		pk := clientmodels.ClaimPathKey(path)
@@ -995,19 +967,15 @@ func flattenForDisclosure(
 		keys := sortObjectKeysByMetadata(v, path, metadataOrder)
 		for _, key := range keys {
 			elemPath := append(append([]any{}, path...), key)
-			elemDisplay := claimDisplayName(batch, elemPath)
-			if len(elemDisplay) == 0 {
-				elemDisplay = display
-			}
-			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, v[key], elemDisplay, metadataOrder)
+			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, v[key], metadataOrder)
 		}
 	default:
 		pk := clientmodels.ClaimPathKey(path)
 		requestedKeys[pk] = struct{}{}
 		var dn *clientmodels.TranslatedString
-		if len(path) == 0 || !isArrayIndex(path[len(path)-1]) {
-			d := display
-			dn = &d
+		if d := claimDisplayName(batch, path); len(d) > 0 {
+			dnCopy := d
+			dn = &dnCopy
 		}
 		attrs = append(attrs, clientmodels.Attribute{
 			ClaimPath:   path,
@@ -1267,39 +1235,34 @@ func credentialDisplayName(batch *models.CredentialBatch) clientmodels.Translate
 	return clientmodels.TranslatedString{"en": batch.VerifiableCredentialType}
 }
 
-// claimDisplayName looks up the display name for a claim from the stored credential metadata.
-// Falls back to the raw claim name if no display metadata is available.
+// claimDisplayName looks up the display name for a claim from the stored credential
+// metadata. Returns an empty TranslatedString when no metadata display entry exists
+// for the path — callers treat that as "no display name".
 func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmodels.TranslatedString {
-	if batch.CredentialMetadata != nil {
-		for _, claim := range batch.CredentialMetadata.Claims {
-			var path []any
-			if err := json.Unmarshal(claim.Path, &path); err == nil {
-				if claimPathMatchesMetadataPath(claimPath, path) {
-					var ts clientmodels.TranslatedString
-					if len(claim.Display) == 0 {
-						// No display metadata for this claim — fall back to the raw claim name.
-						if len(path) > 0 {
-							last := path[len(path)-1]
-							if s, ok := last.(string); ok {
-								ts = clientmodels.NewTranslatedString(&s)
-							}
-						}
-					} else {
-						ts = clientmodels.TranslatedString{}
-						for _, d := range claim.Display {
-							locale := "en"
-							if d.Locale.Valid {
-								locale = d.Locale.V
-							}
-							ts[locale] = d.Name
-						}
-					}
-
-					if len(ts) > 0 {
-						return ts
-					}
-				}
+	if batch.CredentialMetadata == nil {
+		return clientmodels.TranslatedString{}
+	}
+	for _, claim := range batch.CredentialMetadata.Claims {
+		if len(claim.Display) == 0 {
+			continue
+		}
+		var path []any
+		if err := json.Unmarshal(claim.Path, &path); err != nil {
+			continue
+		}
+		if !claimPathMatchesMetadataPath(claimPath, path) {
+			continue
+		}
+		ts := clientmodels.TranslatedString{}
+		for _, d := range claim.Display {
+			locale := "en"
+			if d.Locale.Valid {
+				locale = d.Locale.V
 			}
+			ts[locale] = d.Name
+		}
+		if len(ts) > 0 {
+			return ts
 		}
 	}
 	return clientmodels.TranslatedString{}
