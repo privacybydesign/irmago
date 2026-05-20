@@ -82,8 +82,8 @@ func testReloadReadsSingleChainRootWithSingleSubCaAndCrlsSuccessfully(t *testing
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 
-	// Write to disk
-	installCertChain(t, tm, rootCert, caCerts[0])
+	// Write to disk (leaf-to-root order; see installCertChain)
+	installCertChain(t, tm, caCerts[0], rootCert)
 	require.NoError(t, tm.storageContainer.CertificateRevocationListManager().Save(caCrls[0], yiviCrlDistPoint))
 
 	// Read the trust model
@@ -102,9 +102,9 @@ func testReloadReadsMultipleChainsRootWithMultipleSubCAsAndCrlsSuccessfully(t *t
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 2, testdata.PkiOption_None, &yiviCrlDistPoint)
 
-	// Write to disk
-	installCertChain(t, tm, rootCert, caCerts[0])
-	installCertChain(t, tm, rootCert, caCerts[1])
+	// Write to disk (leaf-to-root order; see installCertChain)
+	installCertChain(t, tm, caCerts[0], rootCert)
+	installCertChain(t, tm, caCerts[1], rootCert)
 	require.NoError(t, tm.storageContainer.CertificateRevocationListManager().Save(caCrls[0], yiviCrlDistPoint))
 
 	// Read the trust model
@@ -126,8 +126,8 @@ func testReloadReadsMultipleChainsRootWithMultiLevelSubCaAndCrlsSuccessfully(t *
 	_, rootCert, caKeys, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 	_, subCaCert, subCaCrl := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("SUB-CA CERT"), caCerts[0], caKeys[0], testdata.PkiOption_None, &yiviSubCrlDistPoint)
 
-	// Write to disk
-	installCertChain(t, tm, rootCert, caCerts[0], subCaCert)
+	// Write to disk (leaf-to-root order; see installCertChain)
+	installCertChain(t, tm, subCaCert, caCerts[0], rootCert)
 	mgr := tm.storageContainer.CertificateRevocationListManager()
 	require.NoError(t, mgr.Save(caCrls[0], yiviCrlDistPoint))
 	require.NoError(t, mgr.Save(subCaCrl, yiviSubCrlDistPoint))
@@ -150,9 +150,9 @@ func testReloadReadsMultipleChainsValidRootWithValidAndRevokedSubCaShouldOnlyAdd
 	rootKey, rootCert, _, caCerts, caCrls := testdata.CreateTestPkiHierarchy(t, rootDN1, 1, testdata.PkiOption_RevokedIntermediates, &yiviCrlDistPoint)
 	_, caCert2, caCrl2 := testdata.CreateCaCertificate(t, testdata.CreateDistinguishedName("CA CERT 2"), rootCert, rootKey, testdata.PkiOption_None, &yivi2CrlDistPoint)
 
-	// Write to disk
-	installCertChain(t, tm, rootCert, caCerts[0])
-	installCertChain(t, tm, rootCert, caCert2)
+	// Write to disk (leaf-to-root order; see installCertChain)
+	installCertChain(t, tm, caCerts[0], rootCert)
+	installCertChain(t, tm, caCert2, rootCert)
 	mgr := tm.storageContainer.CertificateRevocationListManager()
 	require.NoError(t, mgr.Save(caCrls[0], yiviCrlDistPoint))
 	require.NoError(t, mgr.Save(caCrl2, yivi2CrlDistPoint))
@@ -175,9 +175,9 @@ func testReloadReadsMultipleChainsValidRootAndExpiredRootWithSubCasShouldAddBoth
 	rootDN2 := testdata.CreateDistinguishedName("ROOT CERT 2")
 	_, rootCert2, _, caCerts2, _ := testdata.CreateTestPkiHierarchy(t, rootDN2, 1, testdata.PkiOption_ExpiredRoot, &yiviCrlDistPoint)
 
-	// Write to disk
-	installCertChain(t, tm, rootCert, caCerts[0])
-	installCertChain(t, tm, rootCert2, caCerts2[0])
+	// Write to disk (leaf-to-root order; see installCertChain)
+	installCertChain(t, tm, caCerts[0], rootCert)
+	installCertChain(t, tm, caCerts2[0], rootCert2)
 
 	// Read the trust model
 	err := tm.Reload()
@@ -195,8 +195,8 @@ func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testin
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_ExpiredIntermediate, &yiviCrlDistPoint)
 
-	// Write to disk
-	installCertChain(t, tm, rootCert, caCerts[0])
+	// Write to disk (leaf-to-root order; see installCertChain)
+	installCertChain(t, tm, caCerts[0], rootCert)
 
 	// Read the trust model
 	err := tm.Reload()
@@ -213,12 +213,15 @@ func testReloadReadsChainValidRootAndExpiredSubCaShouldOnlyAddRootCert(t *testin
 func testReloadReadsInvalidChainRootAndCAInReversedOrderNotAddAnyCertificates(t *testing.T) {
 	tm, _ := setupTrustModelWithStoragePath(t)
 
-	// Create a root cert and a CA cert, but write them in reversed order
+	// Create a root cert and a CA cert, but write them in reversed order.
+	// The on-disk convention is leaf-to-root, so writing root-to-leaf here
+	// makes the chain unparseable: addTrustAnchors will treat the leaf as
+	// the root and reject it (not self-signed).
 	rootDN := testdata.CreateDistinguishedName("ROOT CERT 1")
 	_, rootCert, _, caCerts, _ := testdata.CreateTestPkiHierarchy(t, rootDN, 1, testdata.PkiOption_None, &yiviCrlDistPoint)
 
-	// Write to disk in reversed order
-	installCertChain(t, tm, caCerts[0], rootCert)
+	// Write to disk in reversed (root-to-leaf) order.
+	installCertChain(t, tm, rootCert, caCerts[0])
 
 	// Read the trust model
 	err := tm.Reload()
@@ -525,10 +528,14 @@ func testDownloadVerifyAndCacheCrlThrowsErrorOnInvalidCRLSignature(t *testing.T)
 	require.ErrorContains(t, err, "CRL signature is invalid")
 }
 
-// installCertChain encodes the given certs as a single PEM block and installs
-// them through the trust model's certificate manager, so the data lands at the
-// hashed filename and is encrypted at rest. Replaces ad-hoc plaintext disk
-// writes in tests now that the FS layer always encrypts.
+// installCertChain encodes the given certs as a single PEM block (in the order
+// given) and installs them through the trust model's certificate manager, so
+// the data lands at the hashed filename and is encrypted at rest. Replaces
+// ad-hoc plaintext disk writes in tests now that the FS layer always encrypts.
+//
+// InstallCertificate derives the filename from the signature of the first
+// certificate in the chain (leaf), so callers must pass certs in
+// leaf-to-root order — otherwise chains sharing the same root would collide.
 func installCertChain(t *testing.T, tm *TrustModel, certs ...*x509.Certificate) {
 	t.Helper()
 	var pemBytes []byte

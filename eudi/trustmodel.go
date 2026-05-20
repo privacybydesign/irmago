@@ -193,9 +193,14 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			return err
 		}
 
-		// Add the root cert to the root pool
+		// Add the root cert to the root pool. Chains on disk are stored in
+		// leaf-to-root order (matching the convention enforced by
+		// certificateManager.InstallCertificate, where the filename is
+		// derived from chain[0] — the leaf). The root is therefore the
+		// last element, and the intermediates follow in root→leaf order.
 		if len(chain) >= 1 {
-			rootCert := chain[0]
+			rootCert := chain[len(chain)-1]
+			intermediateChain := chain[:len(chain)-1]
 
 			// For now, we only accept the root certs that are self-signed (no system CA certs)
 			// Verify if the root is self-signed, otherwise this is not a valid root cert
@@ -228,10 +233,15 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 			// Valid root cert, add to the trusted root pool
 			tm.trustedRootCertificates.AddCert(rootCert)
 
-			// Add the intermediate certs to the intermediate pool
-			if len(chain) >= 2 {
+			// Add the intermediate certs to the intermediate pool. The chain
+			// on disk is leaf-to-root, so to walk outward from the root we
+			// iterate intermediateChain in reverse (last → first).
+			if len(intermediateChain) > 0 {
 				parentCert := rootCert
-				intermediateCerts := chain[1:]
+				intermediateCerts := make([]*x509.Certificate, len(intermediateChain))
+				for i, c := range intermediateChain {
+					intermediateCerts[len(intermediateChain)-1-i] = c
+				}
 				validationOptions := tm.getIntermediateCertificateVerificationOptions()
 
 				for _, caCert := range intermediateCerts {

@@ -256,6 +256,7 @@ services:
       - ./testdata/configurations/certs/nginx-tls-proxy.conf:/etc/nginx/nginx.conf:ro
       - ./testdata/configurations/certs/localhost.crt:/etc/nginx/certs/localhost.crt:ro
       - ./testdata/configurations/certs/localhost.key:/etc/nginx/certs/localhost.key:ro
+      - ./testdata/openid4vci-issuer/logos:/logos:ro
     networks:
       irma-net:
         aliases:
