@@ -190,10 +190,27 @@ func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 		}
 		out.Display = append(out.Display, entry)
 	}
-	for _, c := range raw.Claims {
+	for i, c := range raw.Claims {
 		cm := ClaimMetadata{Path: c.Path}
-		for _, d := range c.Display {
-			cm.Display = append(cm.Display, ClaimDisplayEntry(d))
+
+		if len(c.Display) == 0 {
+			// Fall back to the last segment of the claim path as display name, if no display entries are provided for the claim in the metadata
+			if len(c.Path) > 0 {
+				lastSegment := fmt.Sprintf("%v", c.Path[len(c.Path)-1])
+				cm.Display = []ClaimDisplayEntry{
+					{Lang: clientmodels.DefaultFallbackLanguage, Name: lastSegment},
+				}
+			} else {
+				// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
+				n := fmt.Sprintf("claim %d", i+1)
+				cm.Display = []ClaimDisplayEntry{
+					{Lang: clientmodels.DefaultFallbackLanguage, Name: n},
+				}
+			}
+		} else {
+			for _, d := range c.Display {
+				cm.Display = append(cm.Display, ClaimDisplayEntry(d))
+			}
 		}
 		out.Claims = append(out.Claims, cm)
 	}

@@ -77,11 +77,16 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	// TODO: split this func into doCodeRequest + doTokenRequest
 
 	// Generate the code_challenge from the code_verifier, using a method supported by the AS (if any)
-	pkce := &pkceParameters{}
+	var pkce *pkceParameters
 	challengeProvider := s.issuerSettings.authorizationServerMetadata.GetCodeChallengeProvider()
 	if challengeProvider != nil {
-		pkce.CodeVerifier = oauth2.GenerateDefaultSizeVerifier()
-		pkce.CodeChallenge = challengeProvider.GenerateCodeChallenge(pkce.CodeVerifier)
+		codeVerifier := oauth2.GenerateDefaultSizeVerifier()
+		codeChallenge := challengeProvider.GenerateCodeChallenge(codeVerifier)
+
+		pkce = &pkceParameters{
+			CodeVerifier:  codeVerifier,
+			CodeChallenge: codeChallenge,
+		}
 	}
 
 	// ClientIds for testing:  how do we differentiate between them?
@@ -96,7 +101,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	authRequest := buildAuthorizationRequestValues(
 		YiviAppRedirectUri,
 		&clientId,
-		&pkce.CodeChallenge,
+		pkce,
 		s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
 	)
 
@@ -169,7 +174,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 func buildAuthorizationRequestValues(
 	redirectUri string,
 	clientId *string,
-	pkce *oauth2.CodeChallenge,
+	pkce *pkceParameters,
 	issuerState *string,
 ) url.Values {
 	q := url.Values{}
@@ -181,8 +186,8 @@ func buildAuthorizationRequestValues(
 	}
 
 	if pkce != nil {
-		q.Add("code_challenge", pkce.GetCodeChallenge())
-		q.Add("code_challenge_method", pkce.GetCodeChallengeMethod())
+		q.Add("code_challenge", pkce.CodeChallenge.GetCodeChallenge())
+		q.Add("code_challenge_method", pkce.CodeChallenge.GetCodeChallengeMethod())
 	}
 	if issuerState != nil {
 		q.Add("issuer_state", *issuerState)
@@ -254,14 +259,6 @@ func (h *AuthorizationCodeFlowHandler) doTokenRequest(
 
 	if pkce != nil {
 		payload.Add("code_verifier", pkce.CodeVerifier)
-	}
-
-	if len(scopes) > 0 {
-		payload.Add("scope", strings.Join(scopes, " "))
-	}
-
-	if authDetails != nil {
-		payload.Add("authorization_details", *authDetails)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, tokenEndpoint, bytes.NewBufferString(payload.Encode()))
@@ -379,15 +376,6 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCod
 			return nil, fmt.Errorf("transaction code is required by issuer, but was not provided")
 		}
 		values.Add("tx_code", *transactionCode)
-	}
-
-	// Add `authorization_details` if the AS supports the feature and the Credential Issuer offers multiple credentials in the Credential Offer
-	authDetails, err := s.extractAuthorizationDetailsJson()
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract authorization details from credential offer: %v", err)
-	}
-	if authDetails != nil {
-		values.Add("authorization_details", *authDetails)
 	}
 
 	// Initiate request

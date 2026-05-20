@@ -55,7 +55,18 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 		}
 		return v.didValidator.ParseAndVerifyAuthorizationRequest(requestJwt)
 
+	case strings.HasPrefix(clientId, "redirect_uri:") ||
+		strings.HasPrefix(clientId, "openid_federation:") ||
+		strings.HasPrefix(clientId, "verifier_attestation:") ||
+		strings.HasPrefix(clientId, "x509_hash:") ||
+		strings.HasPrefix(clientId, "origin:"):
+		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
+
 	default:
+		// Fallback to pre-registered client_id validation for backward compatibility
+		// if v.clientRegistry != nil && v.clientRegistry.IsRegistered(clientId) {
+		// 	return nil, nil, nil, fmt.Errorf("pre-registered client_id %q is not supported", clientId)
+		// }
 		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 	}
 }

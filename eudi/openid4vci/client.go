@@ -1,6 +1,7 @@
 package openid4vci
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -280,6 +281,8 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 				eudi.Logger.Warnf("failed to cache issuer logo from %q: %v", display.Logo.Uri, err)
 			}
 
+			break
+
 			// TODO: how to handle this error ? Proceed without logo ?
 			// if err != nil {
 			// 	// handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
@@ -306,6 +309,8 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 							eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
 						}
 
+						break
+
 						// TODO: how to handle this error ? Proceed without logo ?
 						// if err != nil {
 						// 	// handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
@@ -321,6 +326,30 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 }
 
 func (client *Client) downloadRemoteImage(remoteImage metadata.RemoteImage) ([]byte, string, error) {
+	// data URIs (e.g. "data:image/png;base64,...") carry the image inline — no HTTP request needed.
+	if strings.HasPrefix(remoteImage.Uri, "data:") {
+		// Expected format: data:<mediatype>[;base64],<data>
+		rest := remoteImage.Uri[len("data:"):]
+		commaIdx := strings.IndexByte(rest, ',')
+		if commaIdx < 0 {
+			return nil, "", fmt.Errorf("invalid data URI: missing comma in %q", remoteImage.Uri)
+		}
+		meta := rest[:commaIdx]
+		payload := rest[commaIdx+1:]
+		var imageBytes []byte
+		if strings.HasSuffix(meta, ";base64") {
+			decoded, err := base64.StdEncoding.DecodeString(payload)
+			if err != nil {
+				return nil, "", fmt.Errorf("invalid data URI: base64 decode failed: %v", err)
+			}
+			imageBytes = decoded
+		} else {
+			imageBytes = []byte(payload)
+		}
+		mediaType := strings.TrimSuffix(meta, ";base64")
+		return imageBytes, mediaType, nil
+	}
+
 	response, err := client.httpClient.Get(remoteImage.Uri)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download image %s: %v", remoteImage.Uri, err)
@@ -417,6 +446,16 @@ func convertClaimsToAttributes(claims []metadata.ClaimsDescription) []clientmode
 		if len(claim.Display) > 0 {
 			displays := metadata.ToTranslateableList(claim.Display)
 			displayName = metadata.ConvertDisplayToTranslatedString(displays)
+		} else {
+			// Fall back to the last segment of the claim path as display name, if no display entries are provided for the claim in the metadata
+			if len(claimPath) > 0 {
+				lastSegment := fmt.Sprintf("%v", claimPath[len(claimPath)-1])
+				displayName = clientmodels.NewTranslatedString(&lastSegment)
+			} else {
+				// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
+				n := fmt.Sprintf("claim %d", i+1)
+				displayName = clientmodels.NewTranslatedString(&n)
+			}
 		}
 
 		// Parent claims become section headers (DisplayName set, Value nil).

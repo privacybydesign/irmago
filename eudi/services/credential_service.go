@@ -92,14 +92,28 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				if err := json.Unmarshal(claim.Path, &path); err != nil {
 					continue
 				}
-				display := clientmodels.TranslatedString{}
-				for _, d := range claim.Display {
-					locale := clientmodels.DefaultFallbackLanguage
-					if d.Locale.Valid {
-						locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+
+				var display clientmodels.TranslatedString
+				if len(claim.Display) == 0 {
+					if len(path) > 0 {
+						lastSegment := fmt.Sprintf("%v", path[len(path)-1])
+						display = clientmodels.NewTranslatedString(&lastSegment)
+					} else {
+						// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
+						n := fmt.Sprintf("claim %d", i+1)
+						display = clientmodels.NewTranslatedString(&n)
 					}
-					display[locale] = d.Name
+				} else {
+					display = clientmodels.TranslatedString{}
+					for _, d := range claim.Display {
+						locale := clientmodels.DefaultFallbackLanguage
+						if d.Locale.Valid {
+							locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+						}
+						display[locale] = d.Name
+					}
 				}
+
 				key := clientmodels.ClaimPathKey(path)
 				claimDisplayLookup[key] = display
 			}
@@ -115,16 +129,28 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			}
 
 			for i, claim := range batch.CredentialMetadata.Claims {
-				attrDisplay := clientmodels.TranslatedString{}
-				for _, d := range claim.Display {
-					locale := clientmodels.DefaultFallbackLanguage
-					if d.Locale.Valid {
-						locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
-					}
-					attrDisplay[locale] = d.Name
-				}
-
 				claimPath := claimPaths[i]
+
+				var attrDisplay clientmodels.TranslatedString
+				if len(claim.Display) == 0 {
+					if len(claimPath) > 0 {
+						lastSegment := fmt.Sprintf("%v", claimPath[len(claimPath)-1])
+						attrDisplay = clientmodels.NewTranslatedString(&lastSegment)
+					} else {
+						// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
+						n := fmt.Sprintf("claim %d", i+1)
+						attrDisplay = clientmodels.NewTranslatedString(&n)
+					}
+				} else {
+					attrDisplay = clientmodels.TranslatedString{}
+					for _, d := range claim.Display {
+						locale := clientmodels.DefaultFallbackLanguage
+						if d.Locale.Valid {
+							locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+						}
+						attrDisplay[locale] = d.Name
+					}
+				}
 
 				// Skip wildcard paths (containing null). These are display name
 				// templates used by lookupDisplayName during flattening, not
@@ -139,10 +165,9 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				// If all children are wildcards, we must flatten the value ourselves.
 				if isParentOfConcreteClaim(claimPath, claimPaths) {
 					if len(attrDisplay) > 0 {
-						d := attrDisplay
 						attrs = append(attrs, clientmodels.Attribute{
 							ClaimPath:   claimPath,
-							DisplayName: &d,
+							DisplayName: &attrDisplay,
 						})
 					}
 					continue

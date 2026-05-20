@@ -362,6 +362,73 @@ func Test_KidKeyProvider_FetchKeys_ValidPublicKey_FeedsKeyAndAlgorithmToSink(t *
 	require.NotNil(t, sink.key)
 }
 
+// Test that when kidHeader does NOT start with '#', it is used as-is (no concatenation with iss).
+func Test_KidKeyProvider_FetchKeys_FullKidHeader_UsedAsIs(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	// Full absolute DID URL — should be used as-is, not prepended with issuerDID.
+	const kidHeader = "did:web:example.com#key-1"
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubJWK, err := jwk.Import(privKey.Public())
+	require.NoError(t, err)
+
+	// DID document uses the full KID, not issuerDID + "#key-1"
+	docBytes := newTestDIDDocument(t, issuerDID, kidHeader, pubJWK)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	sig := msg.Signatures()[0]
+	p := &KidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	sink := &testKeySink{}
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
+
+	require.NoError(t, err)
+	require.Equal(t, jwa.ES256(), sink.alg)
+	require.NotNil(t, sink.key)
+}
+
+// Test that when kidHeader does NOT start with '#' but the DID document only has the fragment-prefixed
+// key, resolution fails — confirming no concatenation happened.
+func Test_KidKeyProvider_FetchKeys_FullKidHeader_DoesNotConcatenateWithIss(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "did:web:example.com#key-1"
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubJWK, err := jwk.Import(privKey.Public())
+	require.NoError(t, err)
+
+	// DID document only has the concatenated form — should NOT match when kidHeader is already absolute.
+	docBytes := newTestDIDDocument(t, issuerDID, issuerDID+issuerDID+"#key-1", pubJWK)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	p := &KidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	err = p.FetchKeys(context.Background(), &testKeySink{}, nil, msg)
+	require.ErrorContains(t, err, "failed to find matching verification method")
+}
+
 func Test_KidKeyProvider_FetchKeys_NilSignature_ReturnsError(t *testing.T) {
 	const issuerDID = "did:web:example.com"
 	const kidHeader = "#key-1"

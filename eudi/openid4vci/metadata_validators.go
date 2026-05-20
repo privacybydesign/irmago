@@ -179,11 +179,6 @@ func (v *CredentialConfigurationValidator) ValidateSupportedFeatures(c *metadata
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 
-	// We only support authorization requests for credential requests using the `scope` parameter, for now
-	if c.Scope == nil || *c.Scope == "" {
-		return fmt.Errorf("missing 'scope' parameter")
-	}
-
 	// Validate at least one credential signing algorithms is supported (which should be string values for SD-JWTs)
 	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
 		str, ok := v.(string)
@@ -422,14 +417,14 @@ func getSupportedSignatureAlgorithms(input []string) []string {
 }
 
 func DisplaysToTranslateableList[T metadata.Display | metadata.CredentialDisplay | metadata.CredentialIssuerDisplay](displays []T) []metadata.Translateable {
-	result := make([]metadata.Translateable, len(displays))
-	for i, d := range displays {
+	result := make([]metadata.Translateable, 0, len(displays))
+	for _, d := range displays {
 		if x, ok := any(d).(metadata.Display); ok {
-			result[i] = &x
+			result = append(result, &x)
 		} else if x, ok := any(d).(metadata.CredentialDisplay); ok {
-			result[i] = &x
+			result = append(result, &x)
 		} else if x, ok := any(d).(metadata.CredentialIssuerDisplay); ok {
-			result[i] = &x
+			result = append(result, &x)
 		}
 	}
 	return result

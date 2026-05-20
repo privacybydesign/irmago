@@ -299,7 +299,19 @@ func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjw
 			continue
 		}
 
-		display := claimDisplayToTranslatedString(c.Display)
+		var display clientmodels.TranslatedString
+		if len(c.Display) == 0 {
+			if len(c.Path) > 0 {
+				lastSegment := fmt.Sprintf("%v", c.Path[len(c.Path)-1])
+				display = clientmodels.NewTranslatedString(&lastSegment)
+			} else {
+				// Claim paths should never be empty, but lets have a fallback display name in this case as well, to avoid issues in the UI when displaying the claim without a display name
+				n := fmt.Sprintf("claim %d", i+1)
+				display = clientmodels.NewTranslatedString(&n)
+			}
+		} else {
+			display = claimDisplayToTranslatedString(c.Display)
+		}
 
 		if isParentOfConcreteClaim(path, allPaths) {
 			if len(display) > 0 {
@@ -503,8 +515,12 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 
 		proofType := credentialConfig.ProofTypesSupported[metadata.ProofTypeIdentifier_JWT]
 
+		// Determine the signing algorithm to use for the proofs, based on the supported algorithms in the credential metadata. We'll just pick the first supported algorithm that we also support, since we expect most issuers to only support one algorithm per proof type, and if they support multiple, it doesn't give us any indication of which one to prefer.
 		var alg jwa.SignatureAlgorithm
 		for _, algName := range proofType.ProofSigningAlgValuesSupported {
+			if algName == "ES256K" {
+				continue
+			}
 			foundAlg, ok := jwa.LookupSignatureAlgorithm(algName)
 			if ok {
 				alg = foundAlg
@@ -703,7 +719,8 @@ func (s *session) requestNonce() (string, error) {
 
 // extractScopesFromCredentialOffer finds the scopes in the issuer metadata, for the requested credential configurations from the credential offer.
 func (s *session) extractScopesFromCredentialOffer() []string {
-	var scopes []string
+	// Start with the scopes which are supported by the AS in general, and then add any additional scopes that are needed for the specific credential configurations in the offer, which might not be included in the AS metadata as supported scopes, but are still needed to be included in the authorization request for the AS to issue the credentials.
+	scopes := slices.Clone(s.issuerSettings.authorizationServerMetadata.ScopesSupported)
 	for _, configId := range s.credentialOffer.CredentialConfigurationIds {
 		config := s.credentialIssuerMetadata.CredentialConfigurationsSupported[configId]
 		if config.Scope != nil && !slices.Contains(scopes, *config.Scope) {
@@ -715,20 +732,20 @@ func (s *session) extractScopesFromCredentialOffer() []string {
 
 // extractAuthorizationDetailsJson extracts the authorization details from the credential offer and issuer metadata, and returns it as a JSON string to be included in the authorization request, if needed. If no authorization details are needed, it returns nil.
 func (s *session) extractAuthorizationDetailsJson() (*string, error) {
-	if len(s.issuerSettings.authorizationServerMetadata.AuthorizationDetailsTypesSupported) == 0 || len(s.credentialOffer.CredentialConfigurationIds) == 1 {
-		return nil, nil
-	}
-
-	authDetails := make([]oauth2.AuthorizationDetailsRequestRecord, len(s.credentialOffer.CredentialConfigurationIds))
-	for i, credential := range s.credentialOffer.CredentialConfigurationIds {
-		authDetails[i] = oauth2.AuthorizationDetailsRequestRecord{
+	authDetails := make([]oauth2.AuthorizationDetailsRequestRecord, 0, len(s.credentialOffer.CredentialConfigurationIds))
+	for _, credential := range s.credentialOffer.CredentialConfigurationIds {
+		authDetail := oauth2.AuthorizationDetailsRequestRecord{
 			Type:                      "openid_credential",
 			CredentialConfigurationId: credential,
 		}
 
 		if len(s.credentialIssuerMetadata.AuthorizationServers) > 0 {
-			authDetails[i].Locations[0] = s.credentialIssuerMetadata.CredentialIssuer
+			authDetail.Locations = []string{
+				s.credentialOffer.CredentialIssuer,
+			}
 		}
+
+		authDetails = append(authDetails, authDetail)
 	}
 	authDetailsJsonBytes, err := json.Marshal(authDetails)
 	if err != nil {

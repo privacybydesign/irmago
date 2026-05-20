@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/cert"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -92,7 +93,10 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 		return fmt.Errorf("cannot create did:web key identifier: failed to obtain 'iss' claim from JWT payload")
 	}
 
-	fullKid := fmt.Sprintf("%s%s", issClaim, p.kidHeader)
+	fullKid := p.kidHeader
+	if strings.HasPrefix(p.kidHeader, "#") {
+		fullKid = issClaim + p.kidHeader
+	}
 
 	documentResolver := didweb.DocumentResolver{
 		HTTPClient:    p.httpClient,
