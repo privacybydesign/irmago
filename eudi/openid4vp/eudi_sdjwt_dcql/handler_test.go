@@ -816,3 +816,25 @@ func TestFindCandidates_NoBatches_NilFetcher_NoDescriptor(t *testing.T) {
 	assert.Empty(t, result.OwnedCandidates)
 	assert.Empty(t, result.ObtainableDescriptors, "no fetcher means no descriptor (preserves old behaviour)")
 }
+
+func TestIsIrmaStyleVct(t *testing.T) {
+	cases := []struct {
+		vct  string
+		want bool
+	}{
+		{"test.test.email", true},               // 3 non-empty dot segments — IRMA shape
+		{"pbdf.sidn-pbdf.irma", true},           // hyphens are fine inside segments
+		{"test.test", false},                    // only 2 segments
+		{"test.test.email.extra", false},        // 4 segments
+		{"test..email", false},                  // empty middle segment
+		{".test.email", false},                  // empty leading segment
+		{"test.test.", false},                   // empty trailing segment
+		{"urn:eudi:pid:1", false},               // URN — colons rule out IRMA shape
+		{"https://issuer.example.com/foo", false}, // URL with slashes and colons
+		{"a.b:c.d", false},                      // a colon anywhere disqualifies
+		{"", false},                             // empty string
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, isIrmaStyleVct(c.vct), "vct=%q", c.vct)
+	}
+}
