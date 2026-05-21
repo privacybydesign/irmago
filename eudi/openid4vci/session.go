@@ -275,7 +275,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 				Name:  issuerName,
 				Image: issuerImage,
 			},
-			Image: image,
+			Image:                 image,
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
 				clientmodels.Format_SdJwtVc: batchSize,
