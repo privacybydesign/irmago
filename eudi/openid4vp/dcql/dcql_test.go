@@ -31,7 +31,8 @@ func TestBuildPlanFromCredentialQueries(t *testing.T) {
 		pickOne := plan.DisclosureChoicesOverview[0]
 		assert.False(t, pickOne.Optional)
 		assert.Len(t, pickOne.OwnedOptions, 1)
-		assert.Equal(t, "abc123", pickOne.OwnedOptions[0].Hash)
+		require.Len(t, pickOne.OwnedOptions[0].Credentials, 1)
+		assert.Equal(t, "abc123", pickOne.OwnedOptions[0].Credentials[0].Hash)
 		assert.Len(t, pickOne.ObtainableOptions, 1)
 	})
 

@@ -117,22 +117,22 @@ func createCredentialDescriptor(
 	for _, at := range attrs {
 		for _, a := range info.AttributeTypes {
 			if a.GetAttributeTypeIdentifier() == at.Type {
-				requestedValue := &clientmodels.AttributeValue{
-					Type: clientmodels.AttributeType_String,
+				dn := clientmodels.TranslatedString(a.Name)
+				attr := clientmodels.Attribute{
+					ClaimPath:   []any{a.ID},
+					DisplayName: &dn,
 				}
 				if at.Value != nil {
 					s := at.Value["en"]
 					if s == "" {
 						s = at.Value[""]
 					}
-					requestedValue.String = &s
+					attr.RequestedValue = &clientmodels.AttributeValue{
+						Type:   clientmodels.AttributeType_String,
+						String: &s,
+					}
 				}
-				dn := clientmodels.TranslatedString(a.Name)
-				attributes = append(attributes, clientmodels.Attribute{
-					ClaimPath:      []any{a.ID},
-					DisplayName:    &dn,
-					RequestedValue: requestedValue,
-				})
+				attributes = append(attributes, attr)
 			}
 		}
 	}

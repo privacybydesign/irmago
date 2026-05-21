@@ -241,35 +241,48 @@ func createIssuanceSteps(
 	return result, nil
 }
 
+// createDisclosureChoicesOverview turns the IRMA-layer candidate sets into a
+// frontend-facing DisclosurePickOne per discon. Each inner con (a single
+// satisfying combination of attributes) produces exactly one DisclosureBundle
+// in OwnedOptions, holding the SelectableCredentialInstances — with only that
+// con's attrs on each — that together satisfy the con. A con that cannot be
+// fully satisfied with owned credentials does NOT emit a bundle; its missing
+// credential types feed ObtainableOptions instead (deduplicated by credential
+// id across the discon).
 func createDisclosureChoicesOverview(
 	irmaConfig *irma.Configuration,
 	credentials []*clientmodels.Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
 ) ([]clientmodels.DisclosurePickOne, error) {
 	result := []clientmodels.DisclosurePickOne{}
-	// for each discon we create a disclosure pick one
+
 	for _, discon := range candidates {
 		choice := clientmodels.DisclosurePickOne{}
 
-		choiceTemplates := map[string]*clientmodels.CredentialDescriptor{}        // key: credentialId
-		filteredByHash := map[string]*clientmodels.SelectableCredentialInstance{} // key: credentialHash
-		ownedOrder := []string{}                                                  // preserves insertion order of hashes
+		// Obtainable templates dedupe by credentialId across the whole discon.
+		choiceTemplates := map[string]*clientmodels.CredentialDescriptor{}
 
 		for _, con := range discon {
-			// if at least one of the cons inside of a discon is empty
-			// then the discon is satisfiable by picking no credentials at all
-			// therefore the choice is optional
+			// An empty inner con means the discon is satisfiable by disclosing nothing.
 			if len(con) == 0 {
 				choice.Optional = true
+				continue
 			}
+
+			// Per-con bundle build. Track instances by hash so attrs from the
+			// same credential within one con get merged onto one instance.
+			perCon := map[string]*clientmodels.SelectableCredentialInstance{}
+			perConOrder := []string{}
+			fullyOwned := true
+
 			for _, attr := range con {
 				hash := attr.AttributeIdentifier.CredentialHash
 
 				if hash == "" {
+					fullyOwned = false
 					t := attr.CredentialIdentifier().Type
 					id := t.String()
 
-					// Ensure template exists once per type in this choice
 					if _, ok := choiceTemplates[id]; !ok {
 						descriptor, err := getCredentialDescriptor(irmaConfig, t)
 						if err != nil {
@@ -279,81 +292,84 @@ func createDisclosureChoicesOverview(
 						choice.ObtainableOptions = append(choice.ObtainableOptions, descriptor)
 					}
 
-					// Populate RequestedValue for the requested attribute
 					attrName := attr.AttributeIdentifier.Type.Name()
 					for i := range choiceTemplates[id].Attributes {
 						if clientmodels.ClaimPathKey(choiceTemplates[id].Attributes[i].ClaimPath) == clientmodels.ClaimPathKey([]any{attrName}) {
-							requestedValue := &clientmodels.AttributeValue{
-								Type: clientmodels.AttributeType_String,
-							}
 							if attr.Value != nil {
+								requestedValue := &clientmodels.AttributeValue{
+									Type: clientmodels.AttributeType_String,
+								}
 								if v, ok := attr.Value["en"]; ok {
 									requestedValue.String = &v
 								} else if v, ok := attr.Value[""]; ok {
 									requestedValue.String = &v
 								}
+								choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
 							}
-							choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
 							break
 						}
 					}
-				} else {
-					// Present attribute => owned credential instance (but we filter attributes)
-					orig := findCredential(credentials, hash)
-					if orig == nil {
-						return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
-					}
-
-					// Get or create filtered instance for this credential hash
-					f, ok := filteredByHash[hash]
-					if !ok {
-						cp := *orig
-						f = &cp
-						f.Attributes = []clientmodels.Attribute{}
-						filteredByHash[hash] = f
-						ownedOrder = append(ownedOrder, hash)
-					}
-
-					// TODO: make this more independent and compatible with more complex claim paths
-					attrID := attr.AttributeIdentifier
-					val, ok := lookupAttrValue(orig, attrID)
-					if !ok {
-						return nil, fmt.Errorf("credential %s does not contain attribute %v", hash, attrID)
-					}
-
-					// Populate RequestedValue when the verifier specified a required value.
-					if attr.Value != nil {
-						requestedValue := &clientmodels.AttributeValue{
-							Type: clientmodels.AttributeType_String,
-						}
-						if v, ok := attr.Value["en"]; ok {
-							requestedValue.String = &v
-						} else if v, ok := attr.Value[""]; ok {
-							requestedValue.String = &v
-						}
-						val.RequestedValue = requestedValue
-					}
-
-					f.Attributes = append(f.Attributes, val)
+					continue
 				}
+
+				orig := findCredential(credentials, hash)
+				if orig == nil {
+					return nil, fmt.Errorf("failed to find credential for hash: %v", hash)
+				}
+
+				f, ok := perCon[hash]
+				if !ok {
+					cp := *orig
+					f = &cp
+					f.Attributes = []clientmodels.Attribute{}
+					perCon[hash] = f
+					perConOrder = append(perConOrder, hash)
+				}
+
+				attrID := attr.AttributeIdentifier
+				val, ok := lookupAttrValue(orig, attrID)
+				if !ok {
+					return nil, fmt.Errorf("credential %s does not contain attribute %v", hash, attrID)
+				}
+
+				if attr.Value != nil {
+					requestedValue := &clientmodels.AttributeValue{
+						Type: clientmodels.AttributeType_String,
+					}
+					if v, ok := attr.Value["en"]; ok {
+						requestedValue.String = &v
+					} else if v, ok := attr.Value[""]; ok {
+						requestedValue.String = &v
+					}
+					val.RequestedValue = requestedValue
+				}
+
+				f.Attributes = append(f.Attributes, val)
 			}
-		}
-		// Reorder each credential's attributes to match the credential type's
-		// declared display order (DisplayIndex if all attributes have one,
-		// otherwise schema-position Index). The wire order from the verifier's
-		// request can be arbitrary; frontends rely on Attributes being in
-		// schema order for consistent rendering.
-		for _, f := range filteredByHash {
-			credType, ok := irmaConfig.CredentialTypes[irma.NewCredentialTypeIdentifier(f.CredentialId)]
-			if !ok {
+
+			if !fullyOwned || len(perConOrder) == 0 {
 				continue
 			}
-			f.Attributes = sortAttributesBySchema(f.Attributes, credType)
+
+			// Reorder each credential's attrs to match the credential type's
+			// declared display order. The wire order from the verifier's
+			// request can be arbitrary; frontends rely on Attributes being in
+			// schema order for consistent rendering.
+			for _, f := range perCon {
+				credType, ok := irmaConfig.CredentialTypes[irma.NewCredentialTypeIdentifier(f.CredentialId)]
+				if !ok {
+					continue
+				}
+				f.Attributes = sortAttributesBySchema(f.Attributes, credType)
+			}
+
+			bundle := &clientmodels.DisclosureBundle{}
+			for _, hash := range perConOrder {
+				bundle.Credentials = append(bundle.Credentials, perCon[hash])
+			}
+			choice.OwnedOptions = append(choice.OwnedOptions, bundle)
 		}
-		// Collect OwnedOptions in the order candidates were encountered.
-		for _, hash := range ownedOrder {
-			choice.OwnedOptions = append(choice.OwnedOptions, filteredByHash[hash])
-		}
+
 		result = append(result, choice)
 	}
 
@@ -471,7 +487,7 @@ func filterCredentialToMismatchedAttributes(cred *clientmodels.Credential, reque
 		requestedByID[clientmodels.ClaimPathKey(requestedAttrs[i].ClaimPath)] = &requestedAttrs[i]
 	}
 
-	var filtered []clientmodels.Attribute
+	filtered := []clientmodels.Attribute{}
 	for _, attr := range cred.Attributes {
 		req, ok := requestedByID[clientmodels.ClaimPathKey(attr.ClaimPath)]
 		if !ok || req.RequestedValue == nil || !req.RequestedValue.HasValue() {

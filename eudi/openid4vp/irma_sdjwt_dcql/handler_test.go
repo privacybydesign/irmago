@@ -56,8 +56,10 @@ func testSatisfiableSingleCredentialSingleOption(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	assert.Equal(t, "test.test.email", plan.DisclosureChoicesOverview[0].OwnedOptions[0].CredentialId)
-	assert.Equal(t, []any{"email"}, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes[0].ClaimPath)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
+	cred := plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
+	assert.Equal(t, "test.test.email", cred.CredentialId)
+	assert.Equal(t, []any{"email"}, cred.Attributes[0].ClaimPath)
 }
 
 func testSatisfiableSingleCredentialMultipleInstances(t *testing.T) {
@@ -189,7 +191,8 @@ func testSatisfiableMultipleAttributes(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	assert.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes, 2)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
+	assert.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0].Attributes, 2)
 }
 
 func testUnsatisfiablePartialAttributes(t *testing.T) {
@@ -394,7 +397,8 @@ func testSatisfiablePredefinedValue(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	assert.NotNil(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Attributes[0].RequestedValue)
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
+	assert.NotNil(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0].Attributes[0].RequestedValue)
 }
 
 func testUnsatisfiablePredefinedValue(t *testing.T) {
@@ -473,7 +477,9 @@ func testClaimSetsOneOptionSatisfiable(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	bundle := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 1)
+	owned := bundle.Credentials[0]
 	assert.Equal(t, infoGmail.Hash, owned.Hash)
 	require.Len(t, owned.Attributes, 1)
 	assert.Equal(t, []any{"domain"}, owned.Attributes[0].ClaimPath)
@@ -498,7 +504,9 @@ func testClaimSetsBothSatisfiablePicksFirst(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 1, obtainable: 1})
-	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	bundle := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 1)
+	owned := bundle.Credentials[0]
 	assert.Equal(t, infoGmail.Hash, owned.Hash)
 	require.Len(t, owned.Attributes, 1)
 	assert.Equal(t, []any{"email"}, owned.Attributes[0].ClaimPath) // first claim_set wins
@@ -625,17 +633,21 @@ func requireUnsatisfiable(t *testing.T, plan *clientmodels.DisclosurePlan, stepO
 }
 
 func ownedHashes(po clientmodels.DisclosurePickOne) []string {
-	hashes := make([]string, len(po.OwnedOptions))
-	for i, o := range po.OwnedOptions {
-		hashes[i] = o.Hash
+	hashes := make([]string, 0, len(po.OwnedOptions))
+	for _, b := range po.OwnedOptions {
+		for _, o := range b.Credentials {
+			hashes = append(hashes, o.Hash)
+		}
 	}
 	return hashes
 }
 
 func ownedByHash(po clientmodels.DisclosurePickOne) map[string]*clientmodels.SelectableCredentialInstance {
 	m := make(map[string]*clientmodels.SelectableCredentialInstance)
-	for _, o := range po.OwnedOptions {
-		m[o.Hash] = o
+	for _, b := range po.OwnedOptions {
+		for _, o := range b.Credentials {
+			m[o.Hash] = o
+		}
 	}
 	return m
 }

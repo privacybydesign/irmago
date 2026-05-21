@@ -511,6 +511,8 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 
 	// Pick the first option (whichever it is) and disclose.
 	chosen := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, chosen.Credentials, 1)
+	chosenCred := chosen.Credentials[0]
 	grantPermission(t, c, session.Id, makeDisclosureChoice(chosen))
 
 	session = awaitSessionState(t, sessionHandler)
@@ -521,7 +523,7 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 		"verifier session should have received or verified the response")
 
 	// Verify the verifier received attributes for the chosen credential.
-	if chosen.CredentialId == "https://localhost:8443/vct/email" {
+	if chosenCred.CredentialId == "https://localhost:8443/vct/email" {
 		requireVerifierReceivedClaims(t, result, "email-cred", claim([]any{"email"}, "bob@example.com"))
 	} else {
 		requireVerifierReceivedClaims(t, result, "phone-cred", claim([]any{"phone_number"}, "+31612345678"))
@@ -2112,18 +2114,20 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	pickOne := plan.DisclosureChoicesOverview[0]
 	require.True(t, pickOne.Multiple, "multiple flag should be true in the disclosure plan")
 
-	// Select BOTH credentials (this is the key difference from single-select).
+	// Select BOTH bundles (this is the key difference from single-select).
 	var selectedCreds []clientmodels.SelectedCredential
-	for _, opt := range pickOne.OwnedOptions {
-		attrIds := make([][]any, len(opt.Attributes))
-		for i, attr := range opt.Attributes {
-			attrIds[i] = attr.ClaimPath
+	for _, bundle := range pickOne.OwnedOptions {
+		for _, opt := range bundle.Credentials {
+			attrIds := make([][]any, len(opt.Attributes))
+			for i, attr := range opt.Attributes {
+				attrIds[i] = attr.ClaimPath
+			}
+			selectedCreds = append(selectedCreds, clientmodels.SelectedCredential{
+				CredentialId:   opt.CredentialId,
+				CredentialHash: opt.Hash,
+				AttributePaths: attrIds,
+			})
 		}
-		selectedCreds = append(selectedCreds, clientmodels.SelectedCredential{
-			CredentialId:   opt.CredentialId,
-			CredentialHash: opt.Hash,
-			AttributePaths: attrIds,
-		})
 	}
 
 	grantPermission(t, c, session.Id, clientmodels.DisclosureDisconSelection{
@@ -2582,10 +2586,11 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.Nil(t, cred.BatchInstanceCountRemaining,
+	bundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 1)
+	require.Nil(t, bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-1 credential should have nil remaining in disclosure plan")
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(bundle))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status, "first disclosure should succeed")
@@ -2607,10 +2612,11 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status,
 		"batch-of-1 credential should still be available for a second disclosure")
 
-	cred = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.Nil(t, cred.BatchInstanceCountRemaining,
+	bundle = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 1)
+	require.Nil(t, bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-1 credential should still have nil remaining after first disclosure")
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(bundle))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status,
@@ -2656,12 +2662,13 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.NotNil(t, cred.BatchInstanceCountRemaining,
+	bundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 1)
+	require.NotNil(t, bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-2 credential should have non-nil remaining in disclosure plan")
-	require.Equal(t, uint(2), *cred.BatchInstanceCountRemaining,
+	require.Equal(t, uint(2), *bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-2 credential should have 2 remaining before first disclosure")
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(bundle))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status, "first disclosure should succeed")
@@ -2682,12 +2689,13 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	cred = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.NotNil(t, cred.BatchInstanceCountRemaining,
+	bundle = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 1)
+	require.NotNil(t, bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-2 credential should have non-nil remaining after first disclosure")
-	require.Equal(t, uint(1), *cred.BatchInstanceCountRemaining,
+	require.Equal(t, uint(1), *bundle.Credentials[0].BatchInstanceCountRemaining,
 		"batch-of-2 credential should have 1 remaining before second disclosure")
-	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(bundle))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status, "second disclosure should succeed")
@@ -4568,13 +4576,23 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 			"choice %d Optional mismatch", i)
 
 		// --- Owned options ---
-		require.Len(t, pickOne.OwnedOptions, len(expChoice.Owned),
-			"choice %d owned option count mismatch", i)
+		// Flatten all bundle credentials and check against the flat expected
+		// list. Most disclosure shapes produce single-credential bundles, so
+		// total credential count == len(OwnedOptions). Multi-credential bundles
+		// (e.g. one con requiring multiple singletons) bump the credential
+		// count beyond the bundle count; the flat assertion still works.
+		var flatOwned []*clientmodels.SelectableCredentialInstance
+		for _, bundle := range pickOne.OwnedOptions {
+			flatOwned = append(flatOwned, bundle.Credentials...)
+		}
+		require.Len(t, flatOwned, len(expChoice.Owned),
+			"choice %d total owned credential count mismatch (across %d bundle(s))",
+			i, len(pickOne.OwnedOptions))
 
 		for j, expOwned := range expChoice.Owned {
-			// Find a matching credential in OwnedOptions.
+			// Find a matching credential anywhere in any bundle.
 			var matched *clientmodels.SelectableCredentialInstance
-			for _, cred := range pickOne.OwnedOptions {
+			for _, cred := range flatOwned {
 				if credMatchesExpected(cred, expOwned) {
 					matched = cred
 					break

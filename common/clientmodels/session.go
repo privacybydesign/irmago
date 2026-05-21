@@ -126,16 +126,29 @@ type DisclosurePlan struct {
 	DisclosureChoicesOverview []DisclosurePickOne `json:"disclosure_choices_overview"`
 }
 
-// DisclosurePickOne is a disjunction where the user needs to pick one or more credentials.
+// DisclosurePickOne is a disjunction where the user needs to pick one or more bundles.
 type DisclosurePickOne struct {
 	// If true, the user can skip this because it isn't required
 	Optional bool `json:"optional"`
-	// If true, the user can select multiple credentials (OpenID4VP "multiple" flag)
+	// If true, the user can select multiple bundles (OpenID4VP "multiple" flag)
 	Multiple bool `json:"multiple"`
-	// The user can pick one (or more, if Multiple) of these without having to issue
-	OwnedOptions []*SelectableCredentialInstance `json:"owned_options"`
+	// The user can pick one (or more, if Multiple) of these without having to issue.
+	// Each bundle satisfies exactly one inner con of the discon; selecting a bundle
+	// means disclosing every credential inside it together.
+	OwnedOptions []*DisclosureBundle `json:"owned_options"`
 	// The user can issue one of these and then use it
 	ObtainableOptions []*CredentialDescriptor `json:"obtainable_options"`
+}
+
+// DisclosureBundle is a set of owned credential instances that together satisfy
+// one inner con of a discon. For most disclosure requests this contains exactly
+// one credential. Cons that require multiple singletons (or one non-singleton
+// plus singletons) produce bundles with multiple credentials.
+type DisclosureBundle struct {
+	// The credentials the user discloses together when this bundle is picked.
+	// Each credential's Attributes list holds only the attrs from THIS con that
+	// come from THIS instance — never a cross-con union.
+	Credentials []*SelectableCredentialInstance `json:"credentials"`
 }
 
 // IssuanceStep is one step in the issuance wizard during disclosure flow.

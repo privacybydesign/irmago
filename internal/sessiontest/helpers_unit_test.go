@@ -480,8 +480,8 @@ func testRequireDisclosurePlan(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
-					OwnedOptions: []*clientmodels.SelectableCredentialInstance{
-						{
+					OwnedOptions: singleCredBundles(
+						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "test.email",
 							Name:         clientmodels.TranslatedString{"en": "Email Cred"},
 							Attributes: []clientmodels.Attribute{
@@ -492,7 +492,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 								},
 							},
 						},
-					},
+					),
 				},
 			},
 		}
@@ -573,22 +573,22 @@ func testRequireDisclosurePlan(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
-					OwnedOptions: []*clientmodels.SelectableCredentialInstance{
-						{
+					OwnedOptions: singleCredBundles(
+						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "sc",
 							Name:         clientmodels.TranslatedString{"en": "Student Card"},
 							Attributes: []clientmodels.Attribute{
 								{ClaimPath: []any{"university"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Amsterdam")}},
 							},
 						},
-						{
+						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "sc",
 							Name:         clientmodels.TranslatedString{"en": "Student Card"},
 							Attributes: []clientmodels.Attribute{
 								{ClaimPath: []any{"university"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Delft")}},
 							},
 						},
-					},
+					),
 				},
 			},
 		}
@@ -630,14 +630,14 @@ func testRequireDisclosurePlan(t *testing.T) {
 			},
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
-					OwnedOptions: []*clientmodels.SelectableCredentialInstance{
-						{
+					OwnedOptions: singleCredBundles(
+						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "test.email",
 							Attributes: []clientmodels.Attribute{
 								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("x@y.com")}},
 							},
 						},
-					},
+					),
 					ObtainableOptions: []*clientmodels.CredentialDescriptor{
 						{CredentialId: "test.email"},
 					},
@@ -923,14 +923,14 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
-					OwnedOptions: []*clientmodels.SelectableCredentialInstance{
-						{
+					OwnedOptions: singleCredBundles(
+						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "test.email",
 							Attributes: []clientmodels.Attribute{
 								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")}},
 							},
 						},
-					},
+					),
 				},
 			},
 		}
@@ -951,14 +951,14 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
-					OwnedOptions: []*clientmodels.SelectableCredentialInstance{
-						{
+					OwnedOptions: singleCredBundles(
+						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "test.email",
 							Attributes: []clientmodels.Attribute{
 								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")}},
 							},
 						},
-					},
+					),
 				},
 			},
 		}
