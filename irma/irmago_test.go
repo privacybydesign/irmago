@@ -1513,6 +1513,8 @@ func TestSchemeLanguageValidation(t *testing.T) {
 		"Credential type test.test.email misses nl translation in <IssueURL> tag",
 		"Credential type test.test.mijnirma misses en translation in <IssueURL> tag",
 		"Credential type test.test.mijnirma misses nl translation in <IssueURL> tag",
+		"Credential type test.test.personalData misses en translation in <IssueURL> tag",
+		"Credential type test.test.personalData misses nl translation in <IssueURL> tag",
 	}, conf.Warnings)
 
 	// Validate some individual translated strings

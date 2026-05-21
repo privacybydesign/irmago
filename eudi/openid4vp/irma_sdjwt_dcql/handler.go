@@ -562,6 +562,8 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 	switch s {
 	case "portraitPhoto":
 		return clientmodels.AttributeType_Base64Image
+	case "yesno":
+		return clientmodels.AttributeType_Bool
 	default:
 		return clientmodels.AttributeType_String
 	}
@@ -578,6 +580,18 @@ func buildAttributeValue(displayHint string, rawValue *string) *clientmodels.Att
 	switch attrType {
 	case clientmodels.AttributeType_Base64Image:
 		val.Base64Image = rawValue
+	case clientmodels.AttributeType_Bool:
+		switch strings.ToLower(*rawValue) {
+		case "yes":
+			t := true
+			val.Bool = &t
+		case "no":
+			f := false
+			val.Bool = &f
+		default:
+			val.Type = clientmodels.AttributeType_String
+			val.String = rawValue
+		}
 	default:
 		val.String = rawValue
 	}

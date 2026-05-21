@@ -334,6 +334,8 @@ func displayHintToAttributeType(s string) clientmodels.AttributeType {
 	switch s {
 	case "portraitPhoto":
 		result = clientmodels.AttributeType_Base64Image
+	case "yesno":
+		result = clientmodels.AttributeType_Bool
 	}
 	return result
 }
@@ -346,19 +348,26 @@ func buildAttributeValue(displayHint string, rawValue *irma.TranslatedString) *c
 	if rawValue == nil {
 		return val
 	}
+	s := (*rawValue)["en"]
+	if s == "" {
+		s = (*rawValue)[""]
+	}
 	switch attrType {
 	case clientmodels.AttributeType_Base64Image:
-		// For base64 images, use the untranslated value
-		s := (*rawValue)["en"]
-		if s == "" {
-			s = (*rawValue)[""]
-		}
 		val.Base64Image = &s
-	default:
-		s := (*rawValue)["en"]
-		if s == "" {
-			s = (*rawValue)[""]
+	case clientmodels.AttributeType_Bool:
+		switch strings.ToLower(s) {
+		case "yes":
+			t := true
+			val.Bool = &t
+		case "no":
+			f := false
+			val.Bool = &f
+		default:
+			val.Type = clientmodels.AttributeType_String
+			val.String = &s
 		}
+	default:
 		val.String = &s
 	}
 	return val

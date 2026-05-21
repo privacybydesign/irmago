@@ -1,0 +1,68 @@
+<IssueSpecification version="4">
+	<Name>
+		<en>Demo Personal Data</en>
+		<nl>Demo Persoonsgegevens</nl>
+	</Name>
+	<SchemeManager>test</SchemeManager>
+	<IssuerID>test</IssuerID>
+	<CredentialID>personalData</CredentialID>
+	<Description>
+		<en>Personal data including age limits and nationality</en>
+		<nl>Persoonsgegevens inclusief leeftijdsgrenzen en nationaliteit</nl>
+	</Description>
+	<IssueURL><en></en><nl></nl></IssueURL>
+	<ShouldBeSingleton>false</ShouldBeSingleton>
+
+	<Attributes>
+		<Attribute id="firstName">
+			<Name>
+				<en>First name</en>
+				<nl>Voornaam</nl>
+			</Name>
+			<Description>
+				<en>Your first name</en>
+				<nl>Uw voornaam</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="familyName">
+			<Name>
+				<en>Family name</en>
+				<nl>Achternaam</nl>
+			</Name>
+			<Description>
+				<en>Your family name</en>
+				<nl>Uw achternaam</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over_18" displayHint="yesno">
+			<Name>
+				<en>Over 18</en>
+				<nl>Ouder dan 18</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 18 years old</en>
+				<nl>Of u ouder dan 18 jaar bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="over_21" displayHint="yesno">
+			<Name>
+				<en>Over 21</en>
+				<nl>Ouder dan 21</nl>
+			</Name>
+			<Description>
+				<en>Whether you are over 21 years old</en>
+				<nl>Of u ouder dan 21 jaar bent</nl>
+			</Description>
+		</Attribute>
+		<Attribute id="nationalityNL" displayHint="yesno">
+			<Name>
+				<en>Dutch nationality</en>
+				<nl>Nederlandse nationaliteit</nl>
+			</Name>
+			<Description>
+				<en>Whether you have Dutch nationality</en>
+				<nl>Of u Nederlandse nationaliteit heeft</nl>
+			</Description>
+		</Attribute>
+	</Attributes>
+</IssueSpecification>
