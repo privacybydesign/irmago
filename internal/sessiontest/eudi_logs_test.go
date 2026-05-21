@@ -333,6 +333,17 @@ func testEudiCredentialRemovalCreatesLog(t *testing.T) {
 		"email": "remove@example.com"
 	}`)
 
+	// The issuance log must carry the issuer logo so the activity-log UI can
+	// render it. The test issuer's metadata declares an inline PNG logo; if
+	// buildOfferedCredentials drops it, the log entry has no logo.
+	issuanceLogs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, issuanceLogs, 1)
+	issuanceCred := issuanceLogs[0].IssuanceLog.Credentials[0]
+	require.NotNil(t, issuanceCred.Issuer.Image, "issuance log should carry the issuer logo")
+	require.NotEmpty(t, issuanceCred.Issuer.Image.Base64)
+	issuerLogo := issuanceCred.Issuer.Image.Base64
+
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
 
@@ -344,18 +355,29 @@ func testEudiCredentialRemovalCreatesLog(t *testing.T) {
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
 
-	// Find the removal log.
-	var removalLog *clientmodels.LogInfo
+	// Find the removal log and verify the older issuance log is still present.
+	var removalLog, issuanceLogAfter *clientmodels.LogInfo
 	for i := range logs {
-		if logs[i].Type == clientmodels.LogType_CredentialRemoval {
+		switch logs[i].Type {
+		case clientmodels.LogType_CredentialRemoval:
 			removalLog = &logs[i]
-			break
+		case clientmodels.LogType_Issuance:
+			issuanceLogAfter = &logs[i]
 		}
 	}
 	require.NotNil(t, removalLog, "should have a removal log")
 	require.NotNil(t, removalLog.RemovalLog)
 	require.Len(t, removalLog.RemovalLog.Credentials, 1)
 	require.Equal(t, "Test Credential (SD-JWT)", removalLog.RemovalLog.Credentials[0].Name["en"])
+	require.NotNil(t, removalLog.RemovalLog.Credentials[0].Issuer.Image,
+		"removal log should carry the issuer logo")
+	require.Equal(t, issuerLogo, removalLog.RemovalLog.Credentials[0].Issuer.Image.Base64)
+
+	// Deleting the credential must not damage the older issuance log entry.
+	require.NotNil(t, issuanceLogAfter, "older issuance log should still be present after removal")
+	require.NotNil(t, issuanceLogAfter.IssuanceLog.Credentials[0].Issuer.Image,
+		"issuance log should still carry the issuer logo after the credential is removed")
+	require.Equal(t, issuerLogo, issuanceLogAfter.IssuanceLog.Credentials[0].Issuer.Image.Base64)
 }
 
 func testEudiCredentialRemovalLogHasAttributes(t *testing.T) {

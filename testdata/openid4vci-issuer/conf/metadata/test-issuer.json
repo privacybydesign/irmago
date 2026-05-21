@@ -5,7 +5,10 @@
   "display": [
     {
       "name": "Test Issuer",
-      "locale": "en"
+      "locale": "en",
+      "logo": {
+        "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+      }
     },
     {
       "name": "Test Uitgever",
