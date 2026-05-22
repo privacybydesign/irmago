@@ -23,6 +23,21 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"issuance step emits multi-cred bundle",
+		testIssuanceStepEmitsMultiCredBundle,
+	)
+
+	runSessionTest(t,
+		"multi-cred bundle issuance flow end-to-end",
+		testMultiCredBundleIssuanceFlow,
+	)
+
+	runSessionTest(t,
+		"multiple issuance bundle options",
+		testMultipleIssuanceBundleOptions,
+	)
+
+	runSessionTest(t,
 		"optional attributes from same credential credential not present",
 		testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent,
 	)

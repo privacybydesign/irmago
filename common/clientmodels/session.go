@@ -152,8 +152,19 @@ type DisclosureBundle struct {
 }
 
 // IssuanceStep is one step in the issuance wizard during disclosure flow.
+// Each option is a bundle of credentials that together satisfy one inner con
+// of the unsatisfied discon. The user picks one bundle and must issue every
+// credential in it.
 type IssuanceStep struct {
-	Options []*CredentialDescriptor `json:"options"`
+	Options []*IssuanceBundle `json:"options"`
+}
+
+// IssuanceBundle is a set of credential descriptors that together satisfy one
+// inner con of an issuance-during-disclosure discon. For most requests this
+// contains exactly one descriptor; cons spanning multiple credential types
+// produce bundles with multiple descriptors.
+type IssuanceBundle struct {
+	Credentials []*CredentialDescriptor `json:"credentials"`
 }
 
 // IssueDuringDisclosure describes issuance steps needed during a disclosure flow.

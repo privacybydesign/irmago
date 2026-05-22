@@ -95,7 +95,7 @@ func testUnsatisfiableSingleCredential(t *testing.T) {
 	}`)
 
 	requireUnsatisfiable(t, plan, 1)
-	assert.Equal(t, "test.test.email", plan.IssueDuringDisclosure.Steps[0].Options[0].CredentialId)
+	assert.Equal(t, "test.test.email", plan.IssueDuringDisclosure.Steps[0].Options[0].Credentials[0].CredentialId)
 }
 
 func testSatisfiableMultipleCredentialsSingleOptionEach(t *testing.T) {
@@ -148,7 +148,7 @@ func testUnsatisfiableMultipleCredentialsOneAvailable(t *testing.T) {
 	}`)
 
 	requireUnsatisfiable(t, plan, 1)
-	assert.Equal(t, "test.test.email", plan.IssueDuringDisclosure.Steps[0].Options[0].CredentialId)
+	assert.Equal(t, "test.test.email", plan.IssueDuringDisclosure.Steps[0].Options[0].Credentials[0].CredentialId)
 }
 
 func testUnsatisfiableMultipleCredentialsNoneAvailable(t *testing.T) {

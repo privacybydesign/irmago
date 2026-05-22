@@ -2916,7 +2916,9 @@ func testVeramoVerifierRequestingMissingCredentialSurfacesIt(t *testing.T) {
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	bundle := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	require.Len(t, bundle.Credentials, 1, "DCQL maps each query to a single-credential bundle")
+	option := bundle.Credentials[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId)
 	require.Nil(t, option.IssueURL, "empty IssueURL is the wire-level signal that the credential is unobtainable")
 	require.NotEmpty(t, option.Name, "Name populated from the VCT type metadata document")
@@ -2960,7 +2962,9 @@ func testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback(t *testing.T) {
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	bundle := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	require.Len(t, bundle.Credentials, 1, "DCQL maps each query to a single-credential bundle")
+	option := bundle.Credentials[0]
 	require.Equal(t, "https://localhost:8443/vct/does-not-exist-anywhere", option.CredentialId)
 	require.Nil(t, option.IssueURL)
 	require.Empty(t, option.Name, "no Name when VCT type-metadata fetch failed")
@@ -3008,7 +3012,9 @@ func testVeramoVerifierMultiVctFirstMissingSecondMatched(t *testing.T) {
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
 	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
 
-	option := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	bundle := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	require.Len(t, bundle.Credentials, 1, "DCQL maps each query to a single-credential bundle")
+	option := bundle.Credentials[0]
 	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId,
 		"second VCT (whose fetch succeeded) wins")
 	require.Nil(t, option.IssueURL)
@@ -4527,8 +4533,10 @@ func requireDisclosurePlan(t testingT, plan *clientmodels.DisclosurePlan, expect
 			require.Len(t, actualStep.Options, len(expStep.Options),
 				"issuance step %d option count mismatch", i)
 			for j, expOpt := range expStep.Options {
-				actualOpt := actualStep.Options[j]
-				requireCredentialDescriptor(t, actualOpt, expOpt,
+				actualBundle := actualStep.Options[j]
+				require.Len(t, actualBundle.Credentials, 1,
+					"issuance step %d option %d expected single-credential bundle", i, j)
+				requireCredentialDescriptor(t, actualBundle.Credentials[0], expOpt,
 					fmt.Sprintf("issuance step %d option %d", i, j))
 			}
 		}

@@ -225,13 +225,13 @@ func createIssuanceSteps(
 
 	for _, i := range unsatisfiedDisjunctionIndices {
 		discon := candidates[i]
-		options := []*clientmodels.CredentialDescriptor{}
+		options := []*clientmodels.IssuanceBundle{}
 		for _, con := range discon {
-			descriptor, err := createCredentialDescriptor(irmaConfig, con)
+			bundle, err := createIssuanceBundle(irmaConfig, con)
 			if err != nil {
 				return nil, err
 			}
-			options = append(options, descriptor)
+			options = append(options, bundle)
 		}
 		result = append(result, clientmodels.IssuanceStep{
 			Options: options,
@@ -295,17 +295,17 @@ func createDisclosureChoicesOverview(
 					attrName := attr.AttributeIdentifier.Type.Name()
 					for i := range choiceTemplates[id].Attributes {
 						if clientmodels.ClaimPathKey(choiceTemplates[id].Attributes[i].ClaimPath) == clientmodels.ClaimPathKey([]any{attrName}) {
+							requestedValue := &clientmodels.AttributeValue{
+								Type: clientmodels.AttributeType_String,
+							}
 							if attr.Value != nil {
-								requestedValue := &clientmodels.AttributeValue{
-									Type: clientmodels.AttributeType_String,
-								}
 								if v, ok := attr.Value["en"]; ok {
 									requestedValue.String = &v
 								} else if v, ok := attr.Value[""]; ok {
 									requestedValue.String = &v
 								}
-								choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
 							}
+							choiceTemplates[id].Attributes[i].RequestedValue = requestedValue
 							break
 						}
 					}
@@ -433,37 +433,48 @@ func getIssuedSinceOriginalPlan(
 
 	for _, step := range steps {
 		stepSatisfied := false
-		for _, option := range step.Options {
-			hasSatisfyingMatch := false
-			for _, c := range allCredentials {
-				if c.CredentialId != option.CredentialId {
-					continue
+		for _, bundle := range step.Options {
+			bundleSatisfied := true
+			for _, desc := range bundle.Credentials {
+				descSatisfied := false
+				for _, c := range allCredentials {
+					if c.CredentialId != desc.CredentialId {
+						continue
+					}
+					// now check if it satisfies the values specified in the previous issuance step
+					attsStatisfied, _ := SatisfiesRequestedAttributes(c.Attributes, desc.Attributes)
+					if attsStatisfied {
+						descSatisfied = true
+						break
+					}
+					// Skip credentials that existed before the disclosure session started;
+					// only credentials issued during this session should be reported as wrong.
+					if _, preExisting := preExistingHashes[c.Hash]; preExisting {
+						continue
+					}
+					// A credential with the right type exists but has wrong attribute values.
+					// Keep the most recently issued one so the frontend can show it.
+					// When issuance dates are equal, prefer a credential that differs from the
+					// previously reported wrong credential, as it is more likely to be newly issued.
+					if lastWrongCredential == nil || c.IssuanceDate > lastWrongCredential.IssuanceDate {
+						lastWrongCredential = filterCredentialToMismatchedAttributes(c, desc.Attributes)
+					} else if c.IssuanceDate == lastWrongCredential.IssuanceDate &&
+						lastWrongCredential.Hash == previousWrongHash && c.Hash != previousWrongHash {
+						lastWrongCredential = filterCredentialToMismatchedAttributes(c, desc.Attributes)
+					}
 				}
-				// now check if it satisfies the values specified in the previous issuance step
-				attsStatisfied, _ := SatisfiesRequestedAttributes(c.Attributes, option.Attributes)
-				if attsStatisfied {
-					hasSatisfyingMatch = true
-					break
-				}
-				// Skip credentials that existed before the disclosure session started;
-				// only credentials issued during this session should be reported as wrong.
-				if _, preExisting := preExistingHashes[c.Hash]; preExisting {
-					continue
-				}
-				// A credential with the right type exists but has wrong attribute values.
-				// Keep the most recently issued one so the frontend can show it.
-				// When issuance dates are equal, prefer a credential that differs from the
-				// previously reported wrong credential, as it is more likely to be newly issued.
-				if lastWrongCredential == nil || c.IssuanceDate > lastWrongCredential.IssuanceDate {
-					lastWrongCredential = filterCredentialToMismatchedAttributes(c, option.Attributes)
-				} else if c.IssuanceDate == lastWrongCredential.IssuanceDate &&
-					lastWrongCredential.Hash == previousWrongHash && c.Hash != previousWrongHash {
-					lastWrongCredential = filterCredentialToMismatchedAttributes(c, option.Attributes)
+				if !descSatisfied {
+					bundleSatisfied = false
+					// Keep scanning so we still surface wrong-cred state for the
+					// remaining descriptors in this bundle.
 				}
 			}
-			if hasSatisfyingMatch {
-				issued[option.CredentialId] = struct{}{}
+			if bundleSatisfied {
+				for _, desc := range bundle.Credentials {
+					issued[desc.CredentialId] = struct{}{}
+				}
 				stepSatisfied = true
+				break
 			}
 		}
 		if stepSatisfied {

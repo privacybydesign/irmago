@@ -384,18 +384,20 @@ func testRequireDisclosurePlan(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
 			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				Steps: []clientmodels.IssuanceStep{
-					{Options: []*clientmodels.CredentialDescriptor{
-						{
-							CredentialId: "test.email",
-							Name:         clientmodels.TranslatedString{"en": "Email Cred"},
-							Attributes: []clientmodels.Attribute{
-								{
-									ClaimPath:      []any{"email"},
-									DisplayName:    &dn,
-									RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+					{Options: []*clientmodels.IssuanceBundle{
+						{Credentials: []*clientmodels.CredentialDescriptor{
+							{
+								CredentialId: "test.email",
+								Name:         clientmodels.TranslatedString{"en": "Email Cred"},
+								Attributes: []clientmodels.Attribute{
+									{
+										ClaimPath:      []any{"email"},
+										DisplayName:    &dn,
+										RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+									},
 								},
 							},
-						},
+						}},
 					}},
 				},
 			},
@@ -622,8 +624,10 @@ func testRequireDisclosurePlan(t *testing.T) {
 		plan := &clientmodels.DisclosurePlan{
 			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				Steps: []clientmodels.IssuanceStep{
-					{Options: []*clientmodels.CredentialDescriptor{
-						{CredentialId: "test.email"},
+					{Options: []*clientmodels.IssuanceBundle{
+						{Credentials: []*clientmodels.CredentialDescriptor{
+							{CredentialId: "test.email"},
+						}},
 					}},
 				},
 				IssuedCredentialIds: map[string]struct{}{"test.email": {}},
