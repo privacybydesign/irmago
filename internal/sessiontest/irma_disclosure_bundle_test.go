@@ -2,7 +2,6 @@ package sessiontest
 
 import (
 	"testing"
-	"time"
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -10,26 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
-
-// awaitDisclosureSessionUpdate drains state events until it sees one for the
-// given disclosure session id. Useful after a parallel issuance: the channel
-// receives both the issuance session's Success event and the disclosure
-// session's re-evaluation event, in non-deterministic order.
-func awaitDisclosureSessionUpdate(
-	t *testing.T,
-	sessionHandler *MockSessionHandler,
-	disclosureSessionId int,
-) clientmodels.SessionState {
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		state := awaitWithTimeout(t, sessionHandler.SessionChan, time.Until(deadline)+time.Second)
-		if state.Id == disclosureSessionId {
-			return state
-		}
-	}
-	t.Fatalf("no state event for disclosure session %d within timeout", disclosureSessionId)
-	return clientmodels.SessionState{}
-}
 
 // testMultiSingletonInnerConProducesBundle issues two singleton credentials
 // (MijnOverheid.singleton and stemmen.stempas) and discloses against a single

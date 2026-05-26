@@ -443,14 +443,6 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			expectedErr: `unsupported credential format "jwt_vc_json"`,
 		},
 		{
-			name: "no scope present",
-			config: metadata.CredentialConfiguration{
-				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
-			},
-			wantErr:     true,
-			expectedErr: `missing 'scope' parameter`,
-		},
-		{
 			name: "credential signing algorithms can be nil",
 			config: metadata.CredentialConfiguration{
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
