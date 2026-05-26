@@ -115,11 +115,13 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 1)
 	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions, 1)
 
-	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	bundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 1)
+	owned := bundle.Credentials[0]
 	require.Equal(t, "test.test.personalData", owned.CredentialId)
 	requireAttrsInOrder(t, owned.Attributes, expectedAttrs...)
 
-	grantPermission(t, c, session.Id, makeDisclosureChoice(owned))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(bundle))
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 

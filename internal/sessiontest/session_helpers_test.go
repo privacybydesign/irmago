@@ -435,25 +435,41 @@ func requireIrmaServerResult(t *testing.T, irmaServer *IrmaServer, token irma.Re
 	}
 }
 
-// makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
-// attributes of the given credential instance.
-func makeDisclosureChoice(option *clientmodels.SelectableCredentialInstance) clientmodels.DisclosureDisconSelection {
-	var paths [][]any
-	for _, attr := range option.Attributes {
-		if attr.Value == nil {
-			continue // skip section headers
+// singleCredBundles wraps each credential as a single-credential bundle.
+// Use for test fixtures whose discons are single-cred-per-con (the common
+// case) — that's most existing fixtures.
+func singleCredBundles(creds ...*clientmodels.SelectableCredentialInstance) []*clientmodels.DisclosureBundle {
+	if len(creds) == 0 {
+		return nil
+	}
+	out := make([]*clientmodels.DisclosureBundle, len(creds))
+	for i, c := range creds {
+		out[i] = &clientmodels.DisclosureBundle{
+			Credentials: []*clientmodels.SelectableCredentialInstance{c},
 		}
-		paths = append(paths, attr.ClaimPath)
 	}
-	return clientmodels.DisclosureDisconSelection{
-		Credentials: []clientmodels.SelectedCredential{
-			{
-				CredentialId:   option.CredentialId,
-				CredentialHash: option.Hash,
-				AttributePaths: paths,
-			},
-		},
+	return out
+}
+
+// makeDisclosureChoice creates a DisclosureDisconSelection that discloses all
+// attributes of every credential in the given bundle.
+func makeDisclosureChoice(bundle *clientmodels.DisclosureBundle) clientmodels.DisclosureDisconSelection {
+	creds := make([]clientmodels.SelectedCredential, 0, len(bundle.Credentials))
+	for _, option := range bundle.Credentials {
+		var paths [][]any
+		for _, attr := range option.Attributes {
+			if attr.Value == nil {
+				continue // skip section headers
+			}
+			paths = append(paths, attr.ClaimPath)
+		}
+		creds = append(creds, clientmodels.SelectedCredential{
+			CredentialId:   option.CredentialId,
+			CredentialHash: option.Hash,
+			AttributePaths: paths,
+		})
 	}
+	return clientmodels.DisclosureDisconSelection{Credentials: creds}
 }
 
 const (

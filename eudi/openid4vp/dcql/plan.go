@@ -25,7 +25,7 @@ func buildPlanFromCredentialQueries(
 		pickOnes = append(pickOnes, clientmodels.DisclosurePickOne{
 			Optional:          false,
 			Multiple:          query.Multiple,
-			OwnedOptions:      result.OwnedCandidates,
+			OwnedOptions:      wrapAsBundles(result.OwnedCandidates),
 			ObtainableOptions: result.ObtainableDescriptors,
 		})
 	}
@@ -33,6 +33,22 @@ func buildPlanFromCredentialQueries(
 	return finalizePlan(&clientmodels.DisclosurePlan{
 		DisclosureChoicesOverview: pickOnes,
 	}, previousPlan, preExistingHashes), nil
+}
+
+// wrapAsBundles wraps each DCQL candidate as a single-credential
+// DisclosureBundle. DCQL queries map one-to-one to credential types, so each
+// candidate always satisfies its query on its own.
+func wrapAsBundles(candidates []*clientmodels.SelectableCredentialInstance) []*clientmodels.DisclosureBundle {
+	if len(candidates) == 0 {
+		return nil
+	}
+	bundles := make([]*clientmodels.DisclosureBundle, len(candidates))
+	for i, c := range candidates {
+		bundles[i] = &clientmodels.DisclosureBundle{
+			Credentials: []*clientmodels.SelectableCredentialInstance{c},
+		}
+	}
+	return bundles
 }
 
 // buildPlanFromCredentialSets builds a DisclosurePlan when credential_sets are present.
@@ -69,7 +85,7 @@ func buildPlanFromCredentialSets(
 
 		pickOnes = append(pickOnes, clientmodels.DisclosurePickOne{
 			Optional:          optional,
-			OwnedOptions:      allOwned,
+			OwnedOptions:      wrapAsBundles(allOwned),
 			ObtainableOptions: allObtainable,
 		})
 	}
@@ -100,14 +116,32 @@ func finalizePlan(plan *clientmodels.DisclosurePlan, previousPlan *clientmodels.
 
 	for _, step := range prevSteps {
 		stepSatisfied := false
-		for _, option := range step.Options {
-			for _, pickOne := range plan.DisclosureChoicesOverview {
-				for _, owned := range pickOne.OwnedOptions {
-					if owned.CredentialId == option.CredentialId {
-						issuedIds[owned.CredentialId] = struct{}{}
-						stepSatisfied = true
+		for _, bundle := range step.Options {
+			bundleSatisfied := true
+			for _, desc := range bundle.Credentials {
+				descSatisfied := false
+			search:
+				for _, pickOne := range plan.DisclosureChoicesOverview {
+					for _, ownedBundle := range pickOne.OwnedOptions {
+						for _, owned := range ownedBundle.Credentials {
+							if owned.CredentialId == desc.CredentialId {
+								descSatisfied = true
+								break search
+							}
+						}
 					}
 				}
+				if !descSatisfied {
+					bundleSatisfied = false
+					break
+				}
+			}
+			if bundleSatisfied {
+				for _, desc := range bundle.Credentials {
+					issuedIds[desc.CredentialId] = struct{}{}
+				}
+				stepSatisfied = true
+				break
 			}
 		}
 		if !stepSatisfied {
@@ -140,8 +174,16 @@ func addIssueDuringDisclosure(plan *clientmodels.DisclosurePlan) *clientmodels.D
 
 	for _, pickOne := range plan.DisclosureChoicesOverview {
 		if len(pickOne.OwnedOptions) == 0 && len(pickOne.ObtainableOptions) > 0 && !pickOne.Optional {
+			// DCQL queries map one-to-one to credentials, so each obtainable
+			// option becomes a single-credential bundle.
+			options := make([]*clientmodels.IssuanceBundle, 0, len(pickOne.ObtainableOptions))
+			for _, obt := range pickOne.ObtainableOptions {
+				options = append(options, &clientmodels.IssuanceBundle{
+					Credentials: []*clientmodels.CredentialDescriptor{obt},
+				})
+			}
 			issuanceSteps = append(issuanceSteps, clientmodels.IssuanceStep{
-				Options: pickOne.ObtainableOptions,
+				Options: options,
 			})
 		}
 	}

@@ -336,7 +336,8 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	require.NotNil(t, plan.DisclosureChoicesOverview)
 	require.Len(t, plan.DisclosureChoicesOverview, 1)
 	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
+	owned := plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
 	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
 	requireAttrsInOrder(t, owned.Attributes, expectedAttr{
 		Path:        []any{"election"},
@@ -362,7 +363,8 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	require.NotNil(t, plan.DisclosureChoicesOverview)
 	require.Len(t, plan.DisclosureChoicesOverview, 1)
 	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 1)
-	owned = plan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials, 1)
+	owned = plan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
 	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
 	require.Len(t, owned.Attributes, 1)
 	_, votingnumberFound := attributeMap(owned.Attributes)[pk("votingnumber")]
@@ -560,17 +562,19 @@ func testRevocationAttributesExcludedFromCredentials(
 	// and should not include the revocation attribute
 	disclosurePlan := session.DisclosurePlan
 	require.NotNil(t, disclosurePlan.DisclosureChoicesOverview)
-	choice := disclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
-	require.Equal(t, "irma-demo.MijnOverheid.root", choice.CredentialId)
-	require.True(t, choice.Revoked, "owned option should show credential as revoked during disclosure permission")
-	requireAttrsInOrder(t, choice.Attributes, expectedAttr{
+	bundle := disclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 1)
+	cred := bundle.Credentials[0]
+	require.Equal(t, "irma-demo.MijnOverheid.root", cred.CredentialId)
+	require.True(t, cred.Revoked, "owned option should show credential as revoked during disclosure permission")
+	requireAttrsInOrder(t, cred.Attributes, expectedAttr{
 		Path:        []any{"BSN"},
 		DisplayName: &clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
 		Value:       strVal("299792458"),
 	})
 
 	// Grant permission — the client will attempt to construct a proof and discover the revocation
-	grantPermission(t, c, 2, makeDisclosureChoice(choice))
+	grantPermission(t, c, 2, makeDisclosureChoice(bundle))
 
 	// The session should fail because the credential is revoked
 	session = awaitSessionState(t, sessionHandler)

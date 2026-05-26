@@ -97,7 +97,59 @@ func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer
 	}
 }
 
-// creates a credential descriptor containing only the attributes specified
+// createIssuanceBundle builds an IssuanceBundle from one inner con. Attrs from
+// the con are grouped by credential type — each unique credential type yields
+// one CredentialDescriptor in the bundle. Credential types the user already
+// has in the wallet (i.e., every attr's CredentialHash is non-empty) are
+// filtered out: the bundle represents the credentials the user must still
+// issue to satisfy this option. A partially-owned con therefore yields a
+// bundle holding only the missing credentials.
+func createIssuanceBundle(
+	irmaConfig *irma.Configuration,
+	attrs []*irmaclient.DisclosureCandidate,
+) (*clientmodels.IssuanceBundle, error) {
+	// Group attrs by credential type identifier, preserving first-seen order.
+	byType := map[string][]*irmaclient.DisclosureCandidate{}
+	order := []string{}
+	for _, a := range attrs {
+		id := a.Type.CredentialTypeIdentifier().String()
+		if _, exists := byType[id]; !exists {
+			order = append(order, id)
+		}
+		byType[id] = append(byType[id], a)
+	}
+
+	descriptors := []*clientmodels.CredentialDescriptor{}
+	for _, id := range order {
+		attrsForType := byType[id]
+
+		// Skip credential types whose attrs all reference an existing wallet
+		// credential (non-empty CredentialHash). The user already has these;
+		// they don't need to be re-issued.
+		needsIssuance := false
+		for _, a := range attrsForType {
+			if a.CredentialHash == "" {
+				needsIssuance = true
+				break
+			}
+		}
+		if !needsIssuance {
+			continue
+		}
+
+		desc, err := createCredentialDescriptor(irmaConfig, attrsForType)
+		if err != nil {
+			return nil, err
+		}
+		descriptors = append(descriptors, desc)
+	}
+
+	return &clientmodels.IssuanceBundle{Credentials: descriptors}, nil
+}
+
+// createCredentialDescriptor builds a descriptor for the first credential type
+// in attrs. All attrs must belong to that credential type — group inputs by
+// type beforehand (see createIssuanceBundle).
 func createCredentialDescriptor(
 	irmaConfig *irma.Configuration,
 	attrs []*irmaclient.DisclosureCandidate,
@@ -413,6 +465,14 @@ func checkAttributeList(issues *[]string, path string, given, requested []client
 }
 
 func checkValueSatisfies(issues *[]string, path string, given clientmodels.AttributeValue, req clientmodels.AttributeValue) {
+	// Skip all checks when the requester didn't specify a value. RequestedValue
+	// with only Type set is a type *hint* (often filled from the schema) — not
+	// a constraint. Only enforce when an actual value is specified.
+	if req.String == nil && req.Int == nil && req.Bool == nil &&
+		req.ImagePath == nil && req.Base64Image == nil {
+		return
+	}
+
 	// Enforce type when requested type is set.
 	if req.Type != "" && given.Type != req.Type {
 		*issues = append(*issues, fmt.Sprintf("type mismatch at %s: have %q want %q", path, given.Type, req.Type))

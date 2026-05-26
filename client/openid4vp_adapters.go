@@ -107,23 +107,25 @@ func detectWrongCredentialIssued(s *session, plan *clientmodels.DisclosurePlan) 
 		stepSatisfied := false
 		var wrongForStep *clientmodels.Credential
 
-		for _, option := range step.Options {
-			for _, cred := range allCreds {
-				if cred.CredentialId != option.CredentialId {
-					continue
-				}
-				_, preExisting := s.preExistingCredentialHashes[cred.Hash]
-				if preExisting {
-					continue
-				}
-				// This credential is new and matches the type. Check if values match.
-				wrong := checkWrongCredential(cred, option)
-				if wrong != nil {
-					if cred.Hash != previousWrongHash {
-						wrongForStep = wrong
+		for _, bundle := range step.Options {
+			for _, desc := range bundle.Credentials {
+				for _, cred := range allCreds {
+					if cred.CredentialId != desc.CredentialId {
+						continue
 					}
-				} else {
-					stepSatisfied = true
+					_, preExisting := s.preExistingCredentialHashes[cred.Hash]
+					if preExisting {
+						continue
+					}
+					// This credential is new and matches the type. Check if values match.
+					wrong := checkWrongCredential(cred, desc)
+					if wrong != nil {
+						if cred.Hash != previousWrongHash {
+							wrongForStep = wrong
+						}
+					} else {
+						stepSatisfied = true
+					}
 				}
 			}
 		}

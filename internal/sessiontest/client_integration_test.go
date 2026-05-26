@@ -80,7 +80,9 @@ func testIrmaDiscloseKeyshareAttribute(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	emailCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	emailBundle := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	require.Len(t, emailBundle.Credentials, 1)
+	emailCred := emailBundle.Credentials[0]
 	var wantEmail string
 	for _, attr := range emailCred.Attributes {
 		if len(attr.ClaimPath) == 1 && attr.ClaimPath[0] == "email" && attr.Value != nil && attr.Value.String != nil {
@@ -90,7 +92,7 @@ func testIrmaDiscloseKeyshareAttribute(t *testing.T) {
 	}
 	require.NotEmpty(t, wantEmail)
 
-	grantPermission(t, c, session.Id, makeDisclosureChoice(emailCred))
+	grantPermission(t, c, session.Id, makeDisclosureChoice(emailBundle))
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, session.Status)
@@ -315,11 +317,15 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, c *client.Client,
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
-	// Both fullName.familyname and singleton.BSN belong to one discon, so they
-	// appear as two OwnedOptions within a single DisclosurePickOne.
+	// Both fullName.familyname and singleton.BSN belong to one discon. Under
+	// the bundle model the single inner con yields one OwnedOption (bundle)
+	// holding both credential instances together.
 	overview := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.Len(t, overview.OwnedOptions, 1)
+	bundle := overview.OwnedOptions[0]
+	require.Len(t, bundle.Credentials, 2)
 	var fullNameCred, singletonCred *clientmodels.SelectableCredentialInstance
-	for _, opt := range overview.OwnedOptions {
+	for _, opt := range bundle.Credentials {
 		switch opt.CredentialId {
 		case "irma-demo.MijnOverheid.fullName":
 			fullNameCred = opt

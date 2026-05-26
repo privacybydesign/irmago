@@ -1212,7 +1212,9 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	// sortAttributesBySchema honours DisplayIndex when every attribute has one.
 	expectedOrder := []string{pk("level"), pk("studentID"), pk("studentCardNumber"), pk("university")}
 
-	for i, option := range pick.OwnedOptions {
+	for i, bundle := range pick.OwnedOptions {
+		require.Len(t, bundle.Credentials, 1, "bundle %d should hold a single credential", i)
+		option := bundle.Credentials[0]
 		require.Equal(t, "irma-demo.RU.studentCard", option.CredentialId)
 		require.Len(t, option.Attributes, 4, "option %d should have 4 attributes", i)
 
@@ -1226,7 +1228,8 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 
 	// Verify that each issued credential is present (order of owned options may differ from issuance order)
 	foundUniversities := map[string]bool{}
-	for _, option := range pick.OwnedOptions {
+	for _, bundle := range pick.OwnedOptions {
+		option := bundle.Credentials[0]
 		uni := findAttr(option.Attributes, "university")
 		require.NotNil(t, uni, "option should have university attribute")
 		require.NotNil(t, uni.Value)
@@ -1239,10 +1242,11 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 	}
 
 	// Disclose the Amsterdam credential specifically and verify the result with hardcoded values.
-	var chosen *clientmodels.SelectableCredentialInstance
-	for _, opt := range pick.OwnedOptions {
+	var chosen *clientmodels.DisclosureBundle
+	for _, bundle := range pick.OwnedOptions {
+		opt := bundle.Credentials[0]
 		if uni := findAttr(opt.Attributes, "university"); uni != nil && *uni.Value.String == "University of Amsterdam" {
-			chosen = opt
+			chosen = bundle
 			break
 		}
 	}

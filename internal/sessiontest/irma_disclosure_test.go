@@ -18,6 +18,26 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
+		"multi-singleton inner con produces single bundle",
+		testMultiSingletonInnerConProducesBundle,
+	)
+
+	runSessionTest(t,
+		"issuance step emits multi-cred bundle",
+		testIssuanceStepEmitsMultiCredBundle,
+	)
+
+	runSessionTest(t,
+		"multi-cred bundle issuance flow end-to-end",
+		testMultiCredBundleIssuanceFlow,
+	)
+
+	runSessionTest(t,
+		"multiple issuance bundle options",
+		testMultipleIssuanceBundleOptions,
+	)
+
+	runSessionTest(t,
 		"optional attributes from same credential credential not present",
 		testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent,
 	)
@@ -428,9 +448,11 @@ func testDisclosureTrustedPartyLogoPaths(
 	// Disclosure plan credential issuers should have logos
 	require.NotNil(t, session.DisclosurePlan)
 	for _, choice := range session.DisclosurePlan.DisclosureChoicesOverview {
-		for _, opt := range choice.OwnedOptions {
-			require.NotNil(t, opt.Issuer.Image, "issuer Image for %s should not be nil", opt.CredentialId)
-			require.NotEmpty(t, opt.Issuer.Image.Base64, "issuer Image for %s should have base64 data", opt.CredentialId)
+		for _, bundle := range choice.OwnedOptions {
+			for _, opt := range bundle.Credentials {
+				require.NotNil(t, opt.Issuer.Image, "issuer Image for %s should not be nil", opt.CredentialId)
+				require.NotEmpty(t, opt.Issuer.Image.Base64, "issuer Image for %s should have base64 data", opt.CredentialId)
+			}
 		}
 		for _, opt := range choice.ObtainableOptions {
 			require.NotNil(t, opt.Issuer.Image, "issuer Image for %s should not be nil", opt.CredentialId)
@@ -1375,8 +1397,8 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 
 	studentCard := plan.DisclosureChoicesOverview[0].OwnedOptions[slices.IndexFunc(
 		plan.DisclosureChoicesOverview[0].OwnedOptions,
-		func(c *clientmodels.SelectableCredentialInstance) bool {
-			return c.CredentialId == "irma-demo.RU.studentCard"
+		func(b *clientmodels.DisclosureBundle) bool {
+			return len(b.Credentials) > 0 && b.Credentials[0].CredentialId == "irma-demo.RU.studentCard"
 		},
 	)]
 
@@ -1463,7 +1485,9 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 
 	emailOption := plan.DisclosureChoicesOverview[0].OwnedOptions[slices.IndexFunc(
 		plan.DisclosureChoicesOverview[0].OwnedOptions,
-		func(c *clientmodels.SelectableCredentialInstance) bool { return c.CredentialId == "test.test.email" },
+		func(b *clientmodels.DisclosureBundle) bool {
+			return len(b.Credentials) > 0 && b.Credentials[0].CredentialId == "test.test.email"
+		},
 	)]
 
 	grantPermission(t, c, session.Id, makeDisclosureChoice(emailOption))
