@@ -190,6 +190,13 @@ func testMultiCredBundleIssuanceFlow(
 	require.Equal(t, disclosureSessionId, session.Id)
 	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure,
 		"single bundle member issued → bundle still incomplete → issuance still required")
+	require.Equal(t,
+		map[string]struct{}{
+			"irma-demo.MijnOverheid.singleton": {},
+		},
+		session.DisclosurePlan.IssueDuringDisclosure.IssuedCredentialIds,
+		"partial progress should be surfaced: singleton satisfies its descriptor, stempas does not",
+	)
 	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview,
 		"choices should not surface until the bundle is fully satisfied")
 	_ = awaitSessionState(t, sessionHandler) // finished issuance session

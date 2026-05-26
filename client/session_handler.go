@@ -445,6 +445,14 @@ func getIssuedSinceOriginalPlan(
 					attsStatisfied, _ := SatisfiesRequestedAttributes(c.Attributes, desc.Attributes)
 					if attsStatisfied {
 						descSatisfied = true
+						// Surface per-descriptor satisfaction eagerly (independent of
+						// whether the whole bundle is satisfied). The frontend uses
+						// this to render per-card progress within a multi-credential
+						// bundle. Both session-issued and pre-existing satisfying
+						// credentials count — from the user's perspective both end
+						// up as "this credential is part of the disclosure and is
+						// already in your wallet."
+						issued[desc.CredentialId] = struct{}{}
 						break
 					}
 					// Skip credentials that existed before the disclosure session started;
@@ -470,9 +478,6 @@ func getIssuedSinceOriginalPlan(
 				}
 			}
 			if bundleSatisfied {
-				for _, desc := range bundle.Credentials {
-					issued[desc.CredentialId] = struct{}{}
-				}
 				stepSatisfied = true
 				break
 			}

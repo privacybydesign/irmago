@@ -99,8 +99,11 @@ func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer
 
 // createIssuanceBundle builds an IssuanceBundle from one inner con. Attrs from
 // the con are grouped by credential type — each unique credential type yields
-// one CredentialDescriptor in the bundle. The user must issue every descriptor
-// in the bundle to satisfy this option.
+// one CredentialDescriptor in the bundle. Credential types the user already
+// has in the wallet (i.e., every attr's CredentialHash is non-empty) are
+// filtered out: the bundle represents the credentials the user must still
+// issue to satisfy this option. A partially-owned con therefore yields a
+// bundle holding only the missing credentials.
 func createIssuanceBundle(
 	irmaConfig *irma.Configuration,
 	attrs []*irmaclient.DisclosureCandidate,
@@ -118,7 +121,23 @@ func createIssuanceBundle(
 
 	descriptors := []*clientmodels.CredentialDescriptor{}
 	for _, id := range order {
-		desc, err := createCredentialDescriptor(irmaConfig, byType[id])
+		attrsForType := byType[id]
+
+		// Skip credential types whose attrs all reference an existing wallet
+		// credential (non-empty CredentialHash). The user already has these;
+		// they don't need to be re-issued.
+		needsIssuance := false
+		for _, a := range attrsForType {
+			if a.CredentialHash == "" {
+				needsIssuance = true
+				break
+			}
+		}
+		if !needsIssuance {
+			continue
+		}
+
+		desc, err := createCredentialDescriptor(irmaConfig, attrsForType)
 		if err != nil {
 			return nil, err
 		}
