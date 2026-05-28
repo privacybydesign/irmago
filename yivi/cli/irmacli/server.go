@@ -164,9 +164,10 @@ func setFlags(cmd *cobra.Command, production bool) error {
 	flags.String("client-tls-privkey-file", "", "path to TLS private key for IRMA app server")
 	flags.Bool("no-tls", false, "disable TLS")
 
-	headers["email"] = "Email address (see README for more info)"
-	flags.StringP("email", "e", "", "Email address of server admin, for incidental notifications such as breaking API changes")
-	flags.Bool("no-email", !production, "Opt out of providing an email address with --email")
+	flags.StringP("email", "e", "", "deprecated, ignored")
+	flags.Bool("no-email", false, "deprecated, ignored")
+	_ = flags.MarkDeprecated("email", "the irma-server no longer uses this value; you may remove --email from your invocation")
+	_ = flags.MarkDeprecated("no-email", "the irma-server no longer requires --email, so --no-email is no longer needed")
 
 	headers["verbose"] = "Other options"
 	flags.CountP("verbose", "v", "verbose (repeatable)")
@@ -184,9 +185,8 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 
 	readConfig(cmd, "irmaserver", "irma server", []string{".", "/etc/irmaserver/", "$HOME/.irmaserver"},
 		map[string]interface{}{
-			"no_auth":  false,
-			"no_email": false,
-			"url":      "",
+			"no_auth": false,
+			"url":     "",
 		},
 	)
 
@@ -224,15 +224,6 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 		ClientTlsCertificateFile: viper.GetString("client_tls_cert_file"),
 		ClientTlsPrivateKey:      viper.GetString("client_tls_privkey"),
 		ClientTlsPrivateKeyFile:  viper.GetString("client_tls_privkey_file"),
-	}
-
-	if conf.Production {
-		if !viper.GetBool("no_email") && conf.Email == "" {
-			return nil, errors.New("In production mode it is required to specify either an email address with the --email flag, or explicitly opting out with --no-email. See help or README for more info.")
-		}
-		if viper.GetBool("no_email") && conf.Email != "" {
-			return nil, errors.New("--no-email cannot be combined with --email")
-		}
 	}
 
 	// no error handling for this one, as it can be left empty

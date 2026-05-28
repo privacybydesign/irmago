@@ -41,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fix
 - Bug that keyshare registration failed when users email domain had no MX records.
 
+### Deprecated
+- `irma server` flags `--email` / `-e` and `--no-email`, and the `email` config key, are no longer used. They are still accepted for backwards compatibility but will emit a deprecation warning when set.
+
+### Removed
+- Outbound POST of admin email and version to `privacybydesign.foundation/serverinfo/` on `irma server` startup (endpoint no longer exists)
+- Production-mode requirement that `irma server` operators specify `--email` or `--no-email`; the admin email value is no longer used for anything
+
 ### Internal
 - New `eudi/...` tree with packages for OpenID4VCI, OpenID4VP, DCQL, SD-JWT VC presentation/verification, DID resolution (`did:web`, `did:jwk`), JWT key providers, OAuth2/PKCE, and storage (SQLCipher + filesystem)
 - Test infrastructure for OpenID4VCI: local issuance server, mock authorization server, and a Veramo-compatible OpenID4VP verifier; integration tests for both the Pre-Authorized and Authorization Code flows
