@@ -18,12 +18,12 @@ type openid4vciSessionAdapter struct {
 func (a *openid4vciSessionAdapter) Failure(err *clientmodels.SessionError) {
 	a.session.State.Status = clientmodels.Status_Error
 	a.session.State.Error = err
-	a.session.dispatchState()
+	a.session.finish()
 }
 
 func (a *openid4vciSessionAdapter) Cancelled() {
 	a.session.State.Status = clientmodels.Status_Dismissed
-	a.session.dispatchState()
+	a.session.finish()
 }
 
 func (a *openid4vciSessionAdapter) Success(result string, issuedCredentials []*clientmodels.Credential) {
@@ -46,7 +46,7 @@ func (a *openid4vciSessionAdapter) Success(result string, issuedCredentials []*c
 	}
 
 	a.session.State.Status = clientmodels.Status_Success
-	a.session.dispatchState()
+	a.session.finish()
 }
 
 func (a *openid4vciSessionAdapter) RequestAuthorizationCodeFlowPermission(

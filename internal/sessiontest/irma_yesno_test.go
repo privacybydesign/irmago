@@ -68,7 +68,7 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 	}
 
 	// 1. Issuance session: OfferedCredentials must show yesno attrs as Bool.
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, issueRequest))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, issueRequest))
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 
@@ -107,7 +107,7 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 		},
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
+	c.NewSession(2, startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 

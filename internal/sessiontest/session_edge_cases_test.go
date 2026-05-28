@@ -70,7 +70,7 @@ func testKeyshareBlocked(
 	// specifically use the test.test.email since it requires a keyshare session
 	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest())
 
-	c.NewSession(sessionJson)
+	c.NewSession(1, sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
@@ -124,7 +124,7 @@ func testKeyshareEnrollmentMissing(
 
 	// specifically use test.test.email because it requires a keyshare server session (irma-demo doesn't)
 	sessionJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest())
-	c.NewSession(sessionJson)
+	c.NewSession(1, sessionJson)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, session.Id, 1)
@@ -142,7 +142,7 @@ func testContinueOnSecondDevice(
 ) {
 	request := createEmailIssuanceRequest()
 	sesionJson := startCrossDeviceIrmaSessionAtServer(t, irmaServer, request)
-	c.NewSession(sesionJson)
+	c.NewSession(1, sesionJson)
 	session := awaitSessionState(t, sessionHandler)
 	require.True(t, session.ContinueOnSecondDevice)
 }
@@ -166,7 +166,7 @@ func testSessionWithPairingCode(
 	frontendOptions.PairingMethod = "pin"
 	irmaServer.irma.SetFrontendOptions(requestorToken, &frontendOptions)
 
-	c.NewSession(string(sessionJson))
+	c.NewSession(1, string(sessionJson))
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_ShowPairingCode)
@@ -198,7 +198,7 @@ func testSessionErrorsArePropagated(
 	require.NoError(t, err)
 
 	// use the session request (meant for irma server) directly on client: should cause error
-	c.NewSession(string(sessionJson))
+	c.NewSession(1, string(sessionJson))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -217,7 +217,7 @@ func testUserCanDismissSession(
 	request := irma.NewDisclosureRequest()
 	request.Disclose = studentCardOrMijnOverheidDisclosure()
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -240,7 +240,7 @@ func testUserCanDismissSessionDuringPinEntry(
 	c.DeleteKeyshareTokens()
 
 	// Start an issuance session that requires keyshare (test scheme)
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 
@@ -283,7 +283,7 @@ func testUserCanDismissOpenID4VPSession(
 		]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 1, sessionHandler, dcql)
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -321,7 +321,7 @@ func testChainedSession(
 	sessionJson, err := json.MarshalIndent(qr, "", "   ")
 	require.NoError(t, err)
 
-	c.NewSession(string(sessionJson))
+	c.NewSession(1, string(sessionJson))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -345,7 +345,7 @@ func testChainedSession(
 	sessionJson, err = json.MarshalIndent(sesPkg.SessionPtr, "", "   ")
 	require.NoError(t, err)
 
-	c.NewSession(string(sessionJson))
+	c.NewSession(2, string(sessionJson))
 	session = awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 2, session.Id)

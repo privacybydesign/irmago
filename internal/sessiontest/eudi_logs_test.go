@@ -32,7 +32,7 @@ func testOpenID4VCIPreAuthFlowCreatesIssuanceLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "LogTest",
 		"family_name": "User",
 		"email": "logtest@example.com"
@@ -81,7 +81,7 @@ func testOpenID4VCIAuthCodeFlowCreatesIssuanceLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCIAuthCode(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCIAuthCode(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "AuthLog",
 		"family_name": "User",
 		"email": "authlog@example.com"
@@ -105,7 +105,7 @@ func testOpenID4VCIDeniedPermissionCreatesNoLog(t *testing.T) {
 
 	offer := createPreAuthOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -133,7 +133,7 @@ func testOpenID4VPDisclosureCreatesLog(t *testing.T) {
 	defer c.Close()
 
 	// Issue a credential first.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Disclose",
 		"family_name": "Test",
 		"email": "disclose@example.com"
@@ -141,7 +141,7 @@ func testOpenID4VPDisclosureCreatesLog(t *testing.T) {
 
 	// Disclose it via OpenID4VP.
 	veramoSession := createVeramoVerifierDcqlSession(t)
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -181,7 +181,7 @@ func testOpenID4VPDisclosureLogHasIssuerNameAndImage(t *testing.T) {
 	defer c.Close()
 
 	// Issue a credential first.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "IssuerLog",
 		"family_name": "Test",
 		"email": "issuerlog@example.com"
@@ -197,7 +197,7 @@ func testOpenID4VPDisclosureLogHasIssuerNameAndImage(t *testing.T) {
 
 	// Disclose it via OpenID4VP.
 	veramoSession := createVeramoVerifierDcqlSession(t)
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -261,13 +261,13 @@ func testOpenID4VPEmptyDisclosureCreatesLog(t *testing.T) {
 		defer c.Close()
 
 		// Wallet owns the credential, but the user actively declines to share it.
-		issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+		issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 			"email": "decline@example.com",
 			"domain": "example.com"
 		}`)
 
 		veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-		startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+		startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 		session := awaitSessionState(t, sessionHandler)
 		requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -285,7 +285,7 @@ func testOpenID4VPEmptyDisclosureCreatesLog(t *testing.T) {
 		defer c.Close()
 
 		veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-		startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+		startOpenID4VPDisclosureSession(t, c, 1, veramoSession.RequestUri)
 
 		session := awaitSessionState(t, sessionHandler)
 		requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -327,7 +327,7 @@ func testEudiCredentialRemovalCreatesLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Remove",
 		"family_name": "Me",
 		"email": "remove@example.com"
@@ -384,7 +384,7 @@ func testEudiCredentialRemovalLogHasAttributes(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "AttrRemove",
 		"family_name": "Test",
 		"email": "attrremove@example.com"
@@ -504,7 +504,7 @@ func testDeeplyNestedIssuanceLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -524,7 +524,7 @@ func testDeeplyNestedRemovalLog(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", organizationClaimsJSON)
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
@@ -562,12 +562,12 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 	defer c.Close()
 
 	// Issue two credentials.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Selective",
 		"family_name": "Disclosure",
 		"email": "selective@example.com"
 	}`)
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Selective Owner",
 		"address": {
 			"street": "Secret Street 1",
@@ -609,7 +609,7 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 	}`
 
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -709,8 +709,8 @@ func testDuplicateCredentialRemovalCreatesLog(t *testing.T) {
 	// Issue the same credential type three times with identical attribute values.
 	// Because the hash is now based solely on claim values, the second and third
 	// issuances are deduplicated — only one credential batch is stored.
-	for range 3 {
-		issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", claims)
+	for i := range 3 {
+		issueCredentialViaOpenID4VCI(t, c, i+1, sessionHandler, "TestCredentialSdJwt", claims)
 	}
 
 	creds, err := c.GetCredentials()
@@ -801,12 +801,12 @@ func testIrmaAndEudiLogsMergedChronologically(t *testing.T) {
 
 	// 2. IRMA issuance of test.test.email with SD-JWT → bbolt log.
 	sep()
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	awaitSessionState(t, sessionHandler) // success
 
 	// 3. OID4VCI issuance → SQLCipher log.
 	sep()
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Combined",
 		"family_name": "Test",
 		"email": "combined@example.com"
@@ -814,12 +814,12 @@ func testIrmaAndEudiLogsMergedChronologically(t *testing.T) {
 
 	// 4. IRMA disclosure of test.test.email → bbolt log.
 	sep()
-	performIrmaDisclosureSession(t, c, sessionHandler, irmaServer)
+	performIrmaDisclosureSession(t, c, 3, sessionHandler, irmaServer)
 
 	// 5. OID4VP disclosure of TestCredentialSdJwt → SQLCipher log.
 	sep()
 	veramoSession := createVeramoVerifierDcqlSession(t)
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 4, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -907,12 +907,12 @@ func testLoadLogsBeforeIncludesBothSources(t *testing.T) {
 
 	// 2. IRMA issuance.
 	sep()
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	awaitSessionState(t, sessionHandler)
 
 	// 3. OID4VCI issuance.
 	sep()
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Page",
 		"family_name": "Test",
 		"email": "page@example.com"
@@ -920,7 +920,7 @@ func testLoadLogsBeforeIncludesBothSources(t *testing.T) {
 
 	// 4. IRMA disclosure.
 	sep()
-	performIrmaDisclosureSession(t, c, sessionHandler, irmaServer)
+	performIrmaDisclosureSession(t, c, 3, sessionHandler, irmaServer)
 
 	// First page: 2 newest logs.
 	firstPage, err := c.LoadNewestLogs(2)

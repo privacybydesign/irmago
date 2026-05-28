@@ -22,7 +22,7 @@ func testMultiSingletonInnerConProducesBundle(
 	sessionHandler *MockSessionHandler,
 ) {
 	// Issue MijnOverheid.singleton with BSN.
-	issue(t, irmaServer, c, sessionHandler, irma.NewIssuanceRequest([]*irma.CredentialRequest{
+	issue(t, irmaServer, c, sessionHandler, 1, irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton"),
 			Attributes:       map[string]string{"BSN": "1234"},
@@ -31,7 +31,7 @@ func testMultiSingletonInnerConProducesBundle(
 	_ = awaitSessionState(t, sessionHandler)
 
 	// Issue stemmen.stempas with election.
-	issue(t, irmaServer, c, sessionHandler, irma.NewIssuanceRequest([]*irma.CredentialRequest{
+	issue(t, irmaServer, c, sessionHandler, 2, irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas"),
 			Attributes:       map[string]string{"election": "plantsoen"},
@@ -49,7 +49,7 @@ func testMultiSingletonInnerConProducesBundle(
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(3, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -105,7 +105,7 @@ func testIssuanceStepEmitsMultiCredBundle(
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -149,7 +149,7 @@ func testMultiCredBundleIssuanceFlow(
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure,
@@ -159,7 +159,7 @@ func testMultiCredBundleIssuanceFlow(
 
 	// Issue the first credential of the bundle. The bundle is still not
 	// satisfied — stempas for the inner con isn't owned yet.
-	issue(t, irmaServer, c, sessionHandler, irma.NewIssuanceRequest([]*irma.CredentialRequest{
+	issue(t, irmaServer, c, sessionHandler, 2, irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.MijnOverheid.singleton"),
 			Attributes:       map[string]string{"BSN": "1234"},
@@ -181,7 +181,7 @@ func testMultiCredBundleIssuanceFlow(
 	_ = awaitSessionState(t, sessionHandler) // finished issuance session
 
 	// Issue the second credential of the bundle.
-	issue(t, irmaServer, c, sessionHandler, irma.NewIssuanceRequest([]*irma.CredentialRequest{
+	issue(t, irmaServer, c, sessionHandler, 3, irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.stemmen.stempas"),
 			Attributes:       map[string]string{"election": "plantsoen"},
@@ -245,7 +245,7 @@ func testMultipleIssuanceBundleOptions(
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 

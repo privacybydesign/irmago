@@ -87,7 +87,7 @@ func testIrmaIssuanceRequestorInfoCorrect(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -100,7 +100,7 @@ func testIssuanceTrustedPartyLogoPaths(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -123,7 +123,7 @@ func testIssuancePermissionNotGranted_SessionDismissed(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, createEmailIssuanceRequest()))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -147,7 +147,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	request.Disclose = studentCardOrMijnOverheidDisclosure()
 
 	sessionJson, issuanceToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
-	c.NewSession(sessionJson)
+	c.NewSession(1, sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
@@ -160,7 +160,7 @@ func testIssuanceSessionWithUnsatisfiedDisclosure(
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
 	// issue MijnOverheid
-	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 2, createMijnOverheidIssuanceRequest())
 
 	session = awaitSessionState(t, sessionHandler)
 	// updated the first session with new disclosure options
@@ -204,6 +204,7 @@ func testSingleCredentialIssuance(t *testing.T, irmaServer *IrmaServer, c *clien
 		c,
 		sessionHandler,
 		irmaServer,
+		1,
 		createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"),
 	)
 }
@@ -235,7 +236,7 @@ func testMultipleCredentialsIssuance(
 		},
 	})
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -257,7 +258,7 @@ func testIssuanceClientReturnUrl(
 	request := createEmailIssuanceRequest()
 	request.ClientReturnURL = "https://yivi.app"
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, 1, session.Id)
 	require.Equal(t, "https://yivi.app", session.ClientReturnUrl)
@@ -277,7 +278,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 		},
 	}})
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, issueRequest))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, issueRequest))
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 
@@ -327,7 +328,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
+	c.NewSession(2, startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest))
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -354,7 +355,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest2))
+	c.NewSession(3, startSameDeviceIrmaSessionAtServer(t, irmaServer, disclosureRequest2))
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -378,7 +379,7 @@ func testTrustedPartyLogoPathsInLogs(
 	sessionHandler *MockSessionHandler,
 ) {
 	// Issue a credential
-	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, createStudentCardIssuanceRequest())
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
@@ -392,7 +393,7 @@ func testTrustedPartyLogoPathsInLogs(
 		},
 	}
 	sessionJson, disclosureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
-	c.NewSession(sessionJson)
+	c.NewSession(2, sessionJson)
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -455,7 +456,7 @@ func testAttributesOrderedByDisplayIndex(
 	// So the expected display order is: level, studentID, studentCardNumber, university
 
 	// Issue the credential
-	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, createStudentCardIssuanceRequest())
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
@@ -495,7 +496,7 @@ func testAttributesOrderedByDisplayIndex(
 	requireAttrsInOrder(t, studentCard.Attributes, studentCardExpectedAttrs...)
 
 	// Check OfferedCredentials during issuance also respects displayIndex
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createStudentCardIssuanceRequest()))
+	c.NewSession(2, startSameDeviceIrmaSessionAtServer(t, irmaServer, createStudentCardIssuanceRequest()))
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 
@@ -519,7 +520,7 @@ func testRevocationAttributesExcludedFromCredentials(
 			"BSN": "299792458",
 		},
 	}})
-	issue(t, irmaServer, c, sessionHandler, issueRequest)
+	issue(t, irmaServer, c, sessionHandler, 1, issueRequest)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
@@ -553,7 +554,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	disclosureRequest.Revocation = irma.NonRevocationParameters{
 		revocationTestCred: {},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, revServer, disclosureRequest))
+	c.NewSession(2, startSameDeviceIrmaSessionAtServer(t, revServer, disclosureRequest))
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, 2, session.Id)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)

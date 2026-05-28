@@ -68,7 +68,7 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 ) {
-	testSession := startOpenID4VPSessionWithAuthRequest(t, c, sessionHandler, createEmailAuthRequestRequest())
+	testSession := startOpenID4VPSessionWithAuthRequest(t, c, 1, sessionHandler, createEmailAuthRequestRequest())
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
@@ -86,7 +86,7 @@ func testOpenID4VP_YiviScheme_SingleCredential(
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 2, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	// get updated openid4vp session state
 	session = awaitSessionState(t, sessionHandler)
@@ -174,7 +174,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 		"credential_sets": [ { "options": [["email"], ["sc"]] } ]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 1, sessionHandler, dcql)
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
@@ -193,7 +193,7 @@ func testOpenID4VP_YiviScheme_ChoiceBetweenTwoCredentials(
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 2, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	// get updated openid4vp session state
 	session = awaitSessionState(t, sessionHandler)
@@ -307,7 +307,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 		]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 1, sessionHandler, dcql)
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
@@ -364,7 +364,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+	issue(t, irmaServer, c, sessionHandler, 2, createStudentCardIssuanceRequestWithSdJwt())
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, session.Id, 1)
 	require.Equal(t, session.Status, clientmodels.Status_RequestPermission)
@@ -380,7 +380,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices(
 	require.Equal(t, session.Id, 2)
 	require.Equal(t, session.Status, clientmodels.Status_Success)
 
-	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequestWithSdJwt())
+	issue(t, irmaServer, c, sessionHandler, 3, createMijnOverheidIssuanceRequestWithSdJwt())
 	session = awaitSessionState(t, sessionHandler)
 
 	// expect disclosure session to be updated
@@ -530,7 +530,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 		]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 1, sessionHandler, dcql)
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -548,7 +548,7 @@ func testOpenID4VP_YiviScheme_OptionalCredential(
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+	issue(t, irmaServer, c, sessionHandler, 2, createStudentCardIssuanceRequestWithSdJwt())
 
 	// updated disclosure session
 	session = awaitSessionState(t, sessionHandler)
@@ -645,7 +645,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 		]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 1, sessionHandler, dcql)
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -688,7 +688,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 			SdJwtBatchSize: 10,
 		},
 	})
-	issue(t, irmaServer, c, sessionHandler, wrongUniversityRequest)
+	issue(t, irmaServer, c, sessionHandler, 2, wrongUniversityRequest)
 
 	// disclosure session updated, but the credential does not satisfy the predefined value
 	session = awaitSessionState(t, sessionHandler)
@@ -722,7 +722,7 @@ func testOpenID4VP_YiviScheme_PredefinedClaimValues(
 	requireSessionState(t, session, 2, clientmodels.Type_Issuance, clientmodels.Status_Success)
 
 	// issue a credential with the correct university value
-	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+	issue(t, irmaServer, c, sessionHandler, 3, createStudentCardIssuanceRequestWithSdJwt())
 
 	// disclosure session updated with the satisfying credential
 	session = awaitSessionState(t, sessionHandler)
@@ -830,7 +830,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 		]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 1, sessionHandler, dcql)
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
@@ -887,7 +887,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+	issue(t, irmaServer, c, sessionHandler, 2, createStudentCardIssuanceRequestWithSdJwt())
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, session.Id, 1)
 	require.Equal(t, session.Status, clientmodels.Status_RequestPermission)
@@ -903,7 +903,7 @@ func testOpenID4VP_YiviScheme_ComplexChoices_NoClaimIds(
 	require.Equal(t, session.Id, 2)
 	require.Equal(t, session.Status, clientmodels.Status_Success)
 
-	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequestWithSdJwt())
+	issue(t, irmaServer, c, sessionHandler, 3, createMijnOverheidIssuanceRequestWithSdJwt())
 	session = awaitSessionState(t, sessionHandler)
 
 	// expect disclosure session to be updated
@@ -1052,7 +1052,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 		]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 1, sessionHandler, dcql)
 	session := testSession.ClientSession
 	requireSessionState(t, session, 1, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 	require.Equal(t, clientmodels.Protocol_OpenID4VP, session.Protocol)
@@ -1084,7 +1084,7 @@ func testOpenID4VP_YiviScheme_ClaimSets(
 		IssuedCredentialIds: map[string]struct{}{},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, createStudentCardIssuanceRequestWithSdJwt())
+	issue(t, irmaServer, c, sessionHandler, 2, createStudentCardIssuanceRequestWithSdJwt())
 
 	// disclosure session updated
 	session = awaitSessionState(t, sessionHandler)
@@ -1167,7 +1167,7 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 		{"university": "Leiden University", "studentCardNumber": "33333", "studentID": "CCC", "level": "phd"},
 	}
 
-	for _, attrs := range studentCards {
+	for i, attrs := range studentCards {
 		req := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 			{
 				CredentialTypeID: irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"),
@@ -1175,7 +1175,7 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 				SdJwtBatchSize:   10,
 			},
 		})
-		issue(t, irmaServer, c, sessionHandler, req)
+		issue(t, irmaServer, c, sessionHandler, i+1, req)
 		session := awaitSessionState(t, sessionHandler)
 		require.Equal(t, clientmodels.Status_Success, session.Status)
 	}
@@ -1196,7 +1196,7 @@ func testOpenID4VP_YiviScheme_MultipleInstances_AttributeOrdering(
 		]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 4, sessionHandler, dcql)
 	session := testSession.ClientSession
 	requireSessionState(t, session, 4, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
@@ -1287,7 +1287,7 @@ func testOpenID4VP_YiviScheme_UnknownCredentialError(
 		]
 	}`
 
-	testSession := startOpenID4VPSession(t, c, sessionHandler, dcql)
+	testSession := startOpenID4VPSession(t, c, 1, sessionHandler, dcql)
 	session := testSession.ClientSession
 
 	require.Equal(t, 1, session.Id)
@@ -1306,17 +1306,19 @@ type openID4VPTestSession struct {
 func startOpenID4VPSession(
 	t *testing.T,
 	c *client.Client,
+	sessionId int,
 	sessionHandler *MockSessionHandler,
 	dcql string,
 ) openID4VPTestSession {
 	t.Helper()
-	return startOpenID4VPSessionWithAuthRequest(t, c, sessionHandler, createAuthRequestRequestWithDcql(dcql))
+	return startOpenID4VPSessionWithAuthRequest(t, c, sessionId, sessionHandler, createAuthRequestRequestWithDcql(dcql))
 }
 
 // startOpenID4VPSessionWithAuthRequest starts an OpenID4VP session with an auth request JSON string and returns the initial session state
 func startOpenID4VPSessionWithAuthRequest(
 	t *testing.T,
 	c *client.Client,
+	sessionId int,
 	sessionHandler *MockSessionHandler,
 	authRequestJson string,
 ) openID4VPTestSession {
@@ -1333,7 +1335,7 @@ func startOpenID4VPSessionWithAuthRequest(
 	sessionJson, err := json.Marshal(sessionRequest)
 	require.NoError(t, err)
 
-	c.NewSession(string(sessionJson))
+	c.NewSession(sessionId, string(sessionJson))
 	return openID4VPTestSession{
 		ClientSession:   awaitSessionState(t, sessionHandler),
 		VerifierSession: verifierSession,

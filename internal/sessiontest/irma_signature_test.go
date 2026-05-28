@@ -31,7 +31,7 @@ func testIrmaSignatureRequestorInfoCorrect(
 	request := irma.NewSignatureRequest("Hello world")
 	request.Disclose = studentCardDisclosure()
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, request))
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, 1, session.Id)
@@ -52,7 +52,7 @@ func testSignatureRequest(
 	}
 
 	sessionJson, signatureToken := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, request)
-	c.NewSession(sessionJson)
+	c.NewSession(1, sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Signature, clientmodels.Status_RequestPermission)
 	require.Equal(t, "Hello, World!", session.MessageToSign)
@@ -62,7 +62,7 @@ func testSignatureRequest(
 	require.Len(t, plan.IssueDuringDisclosure.Steps, 1)
 	require.Nil(t, plan.DisclosureChoicesOverview)
 
-	issue(t, irmaServer, c, sessionHandler, createEmailIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 2, createEmailIssuanceRequest())
 
 	// update disclosure candidates of signature session
 	session = awaitSessionState(t, sessionHandler)

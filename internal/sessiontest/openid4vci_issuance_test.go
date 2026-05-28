@@ -40,7 +40,7 @@ func testOpenID4VCIPreAuthFlowReachesPermission(t *testing.T) {
 
 	offer := createPreAuthOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, clientmodels.Protocol_OpenID4VCI, session.Protocol)
@@ -53,7 +53,7 @@ func testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 
 	offer := createPreAuthOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -136,7 +136,7 @@ func testOpenID4VCIPreAuthFlowDeniesPermission(t *testing.T) {
 
 	offer := createPreAuthOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -162,7 +162,7 @@ func testOpenID4VCIPreAuthFlowWithTxCode(t *testing.T) {
 
 	offer := createPreAuthOfferWithTxCode(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -226,7 +226,7 @@ func testOpenID4VCIPreAuthFlowWrongTxCodeRetry(t *testing.T) {
 
 	offer := createPreAuthOfferWithTxCode(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 	require.Nil(t, session.RemainingTxCodeAttempts, "no retry indicator on initial prompt")
@@ -270,7 +270,7 @@ func testOpenID4VCIPreAuthFlowTxCodeRetriesExhausted(t *testing.T) {
 
 	offer := createPreAuthOfferWithTxCode(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 	require.Nil(t, session.RemainingTxCodeAttempts)
@@ -312,7 +312,7 @@ func testOpenID4VCIPreAuthFlowCancelMidTxCodeRetry(t *testing.T) {
 
 	offer := createPreAuthOfferWithTxCode(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -347,7 +347,7 @@ func testOpenID4VCIPreAuthFlowCanBeDismissed(t *testing.T) {
 
 	offer := createPreAuthOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -365,7 +365,7 @@ func testOpenID4VCIPreAuthFlowNestedClaims(t *testing.T) {
 	defer c.Close()
 
 	// Issue a HouseCredential with nested address claims.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Alice",
 		"address": {
 			"street": "123 Main St",
@@ -414,20 +414,20 @@ func testOpenID4VCIPreAuthFlowMultipleCredentialTypes(t *testing.T) {
 	defer c.Close()
 
 	// Issue an EmailCredential.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "nested-test@example.com",
 		"domain": "example.com"
 	}`)
 
 	// Issue a StudentCardCredential.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S12345"
 	}`)
 
 	// Issue a HouseCredential with nested claims.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 3, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Bob",
 		"address": {
 			"street": "456 Oak Ave",
@@ -512,7 +512,7 @@ func testOpenID4VCIPreAuthFlowArrayClaims(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S99999",
@@ -565,7 +565,7 @@ func testOpenID4VCIPreAuthFlowMixedSdNonSd(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Alice",
 		"member_since": "2020-01-15",
 		"membership_type": "gold"
@@ -602,7 +602,7 @@ func testOpenID4VCIPreAuthFlowEduIdCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EduIdCredentialSdJwt", `{
 		"schac_home_organization": "university.nl",
 		"name": "Jan de Vries",
 		"given_name": "Jan",
@@ -776,7 +776,7 @@ func testOpenID4VCIPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 		}
 	}`))
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -962,7 +962,7 @@ func testOpenID4VCIPreAuthFlowDeeplyNestedCredential(t *testing.T) {
 		}
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	disclosureSession := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, disclosureSession, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1004,7 +1004,7 @@ func testOpenID4VCIPreAuthFlowCredentialDeletion(t *testing.T) {
 
 	offer := createPreAuthOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -1049,7 +1049,7 @@ func testOpenID4VCIPreAuthFlowBatchSize1(t *testing.T) {
 
 	offer := createPreAuthOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -1094,7 +1094,7 @@ func testOpenID4VCIPreAuthFlowBatchSize2(t *testing.T) {
 		}
 	}`)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
@@ -1142,7 +1142,7 @@ func testOpenID4VCIAuthCodeFlowReachesAuthRequest(t *testing.T) {
 
 	offer := createAuthCodeOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, clientmodels.Protocol_OpenID4VCI, session.Protocol)
@@ -1156,7 +1156,7 @@ func testOpenID4VCIAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 
 	offer := createAuthCodeOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
 
@@ -1237,7 +1237,7 @@ func testOpenID4VCIAuthCodeFlowDeniesPermission(t *testing.T) {
 
 	offer := createAuthCodeOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
 
@@ -1268,7 +1268,7 @@ func testOpenID4VCIAuthCodeFlowCanBeDismissed(t *testing.T) {
 
 	offer := createAuthCodeOffer(t)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
 
@@ -1286,7 +1286,7 @@ func testOpenID4VCIAuthCodeFlowNestedClaims(t *testing.T) {
 	defer c.Close()
 
 	// Issue a HouseCredential with nested address claims via authorization code flow.
-	issueCredentialViaOpenID4VCIAuthCode(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCIAuthCode(t, c, 1, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Charlie",
 		"address": {
 			"street": "789 Elm St",
@@ -1335,6 +1335,7 @@ func testOpenID4VCIAuthCodeFlowNestedClaims(t *testing.T) {
 func issueCredentialViaOpenID4VCIAuthCode(
 	t *testing.T,
 	c *client.Client,
+	sessionId int,
 	sessionHandler *MockSessionHandler,
 	credentialType string,
 	claimsJSON string,
@@ -1352,7 +1353,7 @@ func issueCredentialViaOpenID4VCIAuthCode(
 	}`, credentialType, claimsJSON)
 
 	offer := postOffer(t, authcodeIssuerURL, authcodeAdminToken, offerBody)
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, sessionId, offer.URI)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)

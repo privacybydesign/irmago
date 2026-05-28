@@ -196,7 +196,6 @@ func New(
 		scheduler:        scheduler,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
-			NextId:         0,
 			SessionHandler: sessionHandler,
 		},
 	}

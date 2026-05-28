@@ -45,19 +45,20 @@ func schemalessPerformIrmaIssuanceSession(
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
 	irmaServer *IrmaServer,
+	sessionId int,
 	request *irma.IssuanceRequest,
 ) {
 	// delete keyshare session token so the pin is required
 	c.DeleteKeyshareTokens()
 	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, request)
 
-	c.NewSession(sessionRequestJson)
+	c.NewSession(sessionId, sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
 
 	require.Equal(t, session.Protocol, clientmodels.Protocol_Irma)
 	require.Equal(t, session.Status, clientmodels.Status_RequestPermission)
 	require.Equal(t, session.Type, clientmodels.Type_Issuance)
-	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Id, sessionId)
 	require.Len(t, session.OfferedCredentials, 1)
 
 	// give issuance permission
@@ -73,7 +74,7 @@ func schemalessPerformIrmaIssuanceSession(
 	require.Equal(t, session.Protocol, clientmodels.Protocol_Irma)
 	require.Equal(t, session.Status, clientmodels.Status_RequestPin)
 	require.Equal(t, session.Type, clientmodels.Type_Issuance)
-	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Id, sessionId)
 
 	// give pin
 	userInteraction(t, c, clientmodels.SessionUserInteraction{
@@ -89,7 +90,7 @@ func schemalessPerformIrmaIssuanceSession(
 	require.Equal(t, session.Protocol, clientmodels.Protocol_Irma)
 	require.Equal(t, session.Status, clientmodels.Status_Success)
 	require.Equal(t, session.Type, clientmodels.Type_Issuance)
-	require.Equal(t, session.Id, 1)
+	require.Equal(t, session.Id, sessionId)
 }
 
 func awaitWithTimeout[T any](t *testing.T, channel chan T, timeout time.Duration) T {
@@ -142,10 +143,11 @@ func issue(
 	irmaServer *IrmaServer,
 	c *client.Client,
 	sessionHandler *MockSessionHandler,
+	sessionId int,
 	req *irma.IssuanceRequest,
 ) {
 	issRequest := startSameDeviceIrmaSessionAtServer(t, irmaServer, req)
-	c.NewSession(issRequest)
+	c.NewSession(sessionId, issRequest)
 	session := awaitWithTimeout(t, sessionHandler.SessionChan, 10*time.Second)
 	require.Equal(t, session.Status, clientmodels.Status_RequestPermission)
 
@@ -502,14 +504,14 @@ func init() {
 	}
 }
 
-func startOpenID4VCISession(t *testing.T, c *client.Client, credOfferURL string) {
+func startOpenID4VCISession(t *testing.T, c *client.Client, sessionId int, credOfferURL string) {
 	t.Helper()
 	sessionReq, err := json.Marshal(client.SessionRequestData{
 		Qr:       irma.Qr{URL: credOfferURL},
 		Protocol: clientmodels.Protocol_OpenID4VCI,
 	})
 	require.NoError(t, err)
-	c.NewSession(string(sessionReq))
+	c.NewSession(sessionId, string(sessionReq))
 }
 
 // getAuthorizationCode simulates the wallet visiting the authorization URL and

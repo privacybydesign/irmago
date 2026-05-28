@@ -62,7 +62,7 @@ func testEudiPidPythonIssuerIssuesPidWithNonUrlVct(t *testing.T) {
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
 
-	issuePidViaPythonIssuer(t, c, sessionHandler, samplePidUserData())
+	issuePidViaPythonIssuer(t, c, 1, sessionHandler, samplePidUserData())
 
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
@@ -106,7 +106,7 @@ func testEudiPidPythonIssuerDisclosesToEudiKotlinVerifier(t *testing.T) {
 	c, sessionHandler := createPidIssuerTestClient(t)
 	defer c.Close()
 
-	issuePidViaPythonIssuer(t, c, sessionHandler, samplePidUserData())
+	issuePidViaPythonIssuer(t, c, 1, sessionHandler, samplePidUserData())
 
 	startReq := fmt.Sprintf(`{
 		"type": "vp_token",
@@ -131,7 +131,7 @@ func testEudiPidPythonIssuerDisclosesToEudiKotlinVerifier(t *testing.T) {
 	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(eudiPidIssuerPyOpenID4VPVerifierHost, startReq)
 	require.NoError(t, err)
 
-	startOpenID4VPDisclosureSession(t, c, verifierSession.SessionLink)
+	startOpenID4VPDisclosureSession(t, c, 2, verifierSession.SessionLink)
 
 	disclosureSession := awaitSessionState(t, sessionHandler)
 	if disclosureSession.Status == clientmodels.Status_Error && disclosureSession.Error != nil {
@@ -187,6 +187,7 @@ func samplePidUserData() pidUserData {
 func issuePidViaPythonIssuer(
 	t *testing.T,
 	c *client.Client,
+	sessionId int,
 	sessionHandler *MockSessionHandler,
 	data pidUserData,
 ) {
@@ -194,9 +195,9 @@ func issuePidViaPythonIssuer(
 
 	offer := createPidOfferViaPythonIssuer(t, data)
 
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, sessionId, offer.URI)
 	session := awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
 
 	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
@@ -208,14 +209,14 @@ func issuePidViaPythonIssuer(
 	})
 
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 	require.Len(t, session.OfferedCredentials, 1)
 	require.Equal(t, eudiPidIssuerPyDisplayNameEN, session.OfferedCredentials[0].Name["en"])
 
 	grantPermission(t, c, session.Id)
 
 	session = awaitSessionState(t, sessionHandler)
-	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_Success)
 }
 
 // pidOfferResponse is what createPidOfferViaPythonIssuer returns to callers.
