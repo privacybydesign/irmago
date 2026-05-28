@@ -79,7 +79,7 @@ func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 	defer c.Close()
 
 	offer := createPreAuthOffer(t)
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
@@ -112,7 +112,7 @@ func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
-	c.NewSession(string(sessionReq))
+	c.NewSession(2, string(sessionReq))
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -192,7 +192,7 @@ func testPayloadOnlyClaimAcrossLifecycle(t *testing.T) {
 		}
 	}`
 	offer := postOffer(t, preAuthIssuerURL, preAuthAdminToken, offerBody)
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, 1, offer.URI)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
@@ -279,7 +279,7 @@ func testPayloadOnlyClaimAcrossLifecycle(t *testing.T) {
 		}
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -349,7 +349,7 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	defer c.Close()
 
 	// Issue an EmailCredential via OID4VCI.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "alice@example.com",
 		"domain": "example.com"
 	}`)
@@ -375,7 +375,7 @@ func testDiscloseCredentialWithMultipleAttributes(t *testing.T) {
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
 	// Start OpenID4VP disclosure session.
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -429,13 +429,13 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 	defer c.Close()
 
 	// Issue EmailCredential.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "bob@example.com",
 		"domain": "example.com"
 	}`)
 
 	// Issue PhoneCredential.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "PhoneCredentialSdJwt", `{
 		"phone_number": "+31612345678"
 	}`)
 
@@ -471,7 +471,7 @@ func testChoiceBetweenTwoCredentialTypes(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -538,13 +538,13 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	defer c.Close()
 
 	// Issue EmailCredential.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "carol@example.com",
 		"domain": "example.com"
 	}`)
 
 	// Issue PhoneCredential.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "PhoneCredentialSdJwt", `{
 		"phone_number": "+31687654321"
 	}`)
 
@@ -577,7 +577,7 @@ func testMultipleRequiredCredentials(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -646,7 +646,7 @@ func testOptionalCredential(t *testing.T) {
 	defer c.Close()
 
 	// Issue only EmailCredential.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "dave@example.com",
 		"domain": "example.com"
 	}`)
@@ -684,7 +684,7 @@ func testOptionalCredential(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -754,7 +754,7 @@ func testEmptyOptionalDisclosure(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "skip@example.com",
 		"domain": "example.com"
 	}`)
@@ -780,7 +780,7 @@ func testEmptyOptionalDisclosure(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -823,13 +823,13 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 	defer c.Close()
 
 	// Issue first EmailCredential with domain "example.com".
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "eve@example.com",
 		"domain": "example.com"
 	}`)
 
 	// Issue second EmailCredential with domain "other.org".
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "eve@other.org",
 		"domain": "other.org"
 	}`)
@@ -854,7 +854,7 @@ func testCredentialWithSpecificClaimValue(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -909,7 +909,7 @@ func testDiscloseNestedClaims(t *testing.T) {
 	defer c.Close()
 
 	// Issue a HouseCredential with nested address claims.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Frank",
 		"address": {
 			"street": "10 Downing St",
@@ -939,7 +939,7 @@ func testDiscloseNestedClaims(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1001,7 +1001,7 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 	defer c.Close()
 
 	// Issue a StudentCardCredential with an array of courses.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S99999",
@@ -1028,7 +1028,7 @@ func testDiscloseCredentialWithArrayValues(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1092,7 +1092,7 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S88888",
@@ -1118,7 +1118,7 @@ func testDiscloseSpecificArrayElement(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1184,7 +1184,7 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "TU Delft",
 		"level": "MSc",
 		"student_id": "S77777",
@@ -1210,7 +1210,7 @@ func testDiscloseAllArrayElementsWithNullPath(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1272,7 +1272,7 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Grace",
 		"member_since": "2020-01-15",
 		"membership_type": "Gold"
@@ -1297,7 +1297,7 @@ func testNonSdClaimsShownInDisclosurePlan(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1353,7 +1353,7 @@ func testNonSdArrayClaimsFlattenedInDisclosurePlan(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Grace",
 		"member_since": "2020-01-15",
 		"membership_type": "Gold",
@@ -1380,7 +1380,7 @@ func testNonSdArrayClaimsFlattenedInDisclosurePlan(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1436,7 +1436,7 @@ func testNonSdSingleItemArrayFlattenedInDisclosurePlan(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Alice",
 		"member_since": "2023-06-01",
 		"membership_type": "Silver",
@@ -1461,7 +1461,7 @@ func testNonSdSingleItemArrayFlattenedInDisclosurePlan(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1507,20 +1507,20 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	defer c.Close()
 
 	// Issue four different credential types.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "multi@example.com",
 		"domain": "example.com"
 	}`)
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "PhoneCredentialSdJwt", `{
 		"phone_number": "+31699999999"
 	}`)
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "StudentCardCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 3, sessionHandler, "StudentCardCredentialSdJwt", `{
 		"university": "Radboud University",
 		"level": "Master",
 		"student_id": "s1234567",
 		"courses": ["Algorithms", "Databases", "Security"]
 	}`)
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 4, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Multi Test",
 		"address": {
 			"street": "Toernooiveld 1",
@@ -1560,7 +1560,7 @@ func testIssueManyCredentialsAndDiscloseSubset(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 5, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 5, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1651,7 +1651,7 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EduIdCredentialSdJwt", `{
 		"schac_home_organization": "university.nl",
 		"name": "Jan de Vries",
 		"given_name": "Jan",
@@ -1690,7 +1690,7 @@ func testIssueAndDiscloseEduIdCredential(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1767,7 +1767,7 @@ func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "claimsets@example.com",
 		"domain": "example.com"
 	}`)
@@ -1793,7 +1793,7 @@ func testClaimSetsPicksFirstSatisfiableSet(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1843,11 +1843,11 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "vct@example.com",
 		"domain": "example.com"
 	}`)
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "PhoneCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "PhoneCredentialSdJwt", `{
 		"phone_number": "+31611111111"
 	}`)
 
@@ -1875,7 +1875,7 @@ func testMultipleVctValuesMatchesAcrossTypes(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -1925,7 +1925,7 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	defer c.Close()
 
 	// Issue credential with is_student=true.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EduIdCredentialSdJwt", `{
 		"schac_home_organization": "uni-a.nl",
 		"name": "Student User",
 		"given_name": "Student",
@@ -1944,7 +1944,7 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	}`)
 
 	// Issue credential with is_student=false.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EduIdCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "EduIdCredentialSdJwt", `{
 		"schac_home_organization": "uni-b.nl",
 		"name": "Staff User",
 		"given_name": "Staff",
@@ -1982,7 +1982,7 @@ func testBooleanClaimValueConstraint(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -2044,11 +2044,11 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "alice@example.com",
 		"domain": "example.com"
 	}`)
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "bob@example.com",
 		"domain": "example.com"
 	}`)
@@ -2072,7 +2072,7 @@ func testMultipleCredentialsForSameQuery(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -2166,7 +2166,7 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "MembershipCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "MembershipCredentialSdJwt", `{
 		"member_name": "Alice",
 		"member_since": "2020-01-01",
 		"membership_type": "gold"
@@ -2188,7 +2188,7 @@ func testNoClaimsRequestedSharesOnlyNonSdClaims(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -2237,7 +2237,7 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "dup@example.com",
 		"domain": "example.com"
 	}`)
@@ -2262,7 +2262,7 @@ func testDuplicateClaimsIgnored(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -2318,7 +2318,7 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "HouseCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "HouseCredentialSdJwt", `{
 		"owner_name": "Duplicate Tester",
 		"address": {
 			"street": "Kalverstraat 1",
@@ -2348,7 +2348,7 @@ func testDuplicateNestedClaimsIgnored(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -2413,7 +2413,7 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "nokb@example.com",
 		"domain": "example.com"
 	}`)
@@ -2437,7 +2437,7 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -2500,7 +2500,7 @@ func testVerifierDisplayName(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "display@example.com",
 		"domain": "example.com"
 	}`)
@@ -2523,7 +2523,7 @@ func testVerifierDisplayName(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -2570,7 +2570,7 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 	}`
 
 	// Step 1: Issue a credential via OID4VCI (batch of 1, test-issuer default).
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "batch1@example.com",
 		"domain": "example.com"
 	}`)
@@ -2581,7 +2581,7 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 
 	// Step 2: First disclosure — should succeed.
 	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession1.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession1.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -2606,7 +2606,7 @@ func testBatchOfOneCredentialRemainsUsableAfterDisclosure(t *testing.T) {
 
 	// Step 3: Second disclosure — must also succeed (single instance stays reusable).
 	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession2.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession2.RequestUri)
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status,
@@ -2649,7 +2649,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	}`
 
 	// Step 1: Issue a credential via the batch2-issuer (batch of 2).
-	issueCredentialViaOpenID4VCIFromIssuer(t, c, sessionHandler, batch2IssuerURL, batch2AdminToken,
+	issueCredentialViaOpenID4VCIFromIssuer(t, c, 1, sessionHandler, batch2IssuerURL, batch2AdminToken,
 		"EmailCredentialSdJwt", `{"email": "batch2@example.com", "domain": "example.com"}`)
 
 	// Batch-of-2 should have a non-nil remaining count of 2.
@@ -2657,7 +2657,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 
 	// Step 2: First disclosure — uses first instance.
 	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession1.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession1.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -2684,7 +2684,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 
 	// Step 3: Second disclosure — uses last instance.
 	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession2.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession2.RequestUri)
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -2712,7 +2712,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	// because the credential type is known but unusable, which is a hard failure rather
 	// than a "missing credential" scenario where issuance could help.
 	veramoSession3 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
-	startOpenID4VPDisclosureSession(t, c, veramoSession3.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 4, veramoSession3.RequestUri)
 
 	session = awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Error, session.Status,
@@ -2726,7 +2726,7 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 	defer c.Close()
 
 	// Issue a credential via the veramo OID4VCI issuer.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "EmailCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
 		"email": "eudi-test@example.com",
 		"domain": "example.com"
 	}`)
@@ -2756,7 +2756,7 @@ func testEudiVerifierRequestingVeramoCredentialFails(t *testing.T) {
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
-	c.NewSession(string(sessionReq))
+	c.NewSession(2, string(sessionReq))
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Error, session.Status,
@@ -2782,7 +2782,7 @@ func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
 	defer c.Close()
 
 	// Issue an IRMA email credential via the IRMA server.
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	awaitSessionState(t, sessionHandler)
 
 	// Create a DCQL session at the veramo verifier requesting the IRMA credential type.
@@ -2804,7 +2804,7 @@ func testVeramoVerifierRequestingIrmaCredentialFails(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 
@@ -2902,7 +2902,7 @@ func testVeramoVerifierRequestingMissingCredentialSurfacesIt(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 1, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -2952,7 +2952,7 @@ func testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 1, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -3002,7 +3002,7 @@ func testVeramoVerifierMultiVctFirstMissingSecondMatched(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 1, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
@@ -3029,7 +3029,7 @@ func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3079,7 +3079,7 @@ func testDiscloseDeeplyNestedOrganizationCredential(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -3204,7 +3204,7 @@ func testDiscloseSpecificNestedArrayElement(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3256,7 +3256,7 @@ func testDiscloseSpecificNestedArrayElement(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -3374,7 +3374,7 @@ func testDiscloseNestedArrayWithNullPath(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3425,7 +3425,7 @@ func testDiscloseNestedArrayWithNullPath(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -3532,7 +3532,7 @@ func testDiscloseSingleDeepLeafShowsAncestry(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3568,7 +3568,7 @@ func testDiscloseSingleDeepLeafShowsAncestry(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -3644,7 +3644,7 @@ func testDiscloseSiblingLeavesShareAncestry(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3681,7 +3681,7 @@ func testDiscloseSiblingLeavesShareAncestry(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -3752,7 +3752,7 @@ func testDiscloseLeafWithSingleWildcard(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3791,7 +3791,7 @@ func testDiscloseLeafWithSingleWildcard(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -3885,7 +3885,7 @@ func testDiscloseNullThenFixedIndexLogsOnlySelected(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -3933,7 +3933,7 @@ func testDiscloseNullThenFixedIndexLogsOnlySelected(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -4039,7 +4039,7 @@ func testDiscloseLeafWithDoubleWildcard(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [
@@ -4079,7 +4079,7 @@ func testDiscloseLeafWithDoubleWildcard(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -4181,7 +4181,7 @@ func testDiscloseShallowLeafShowsSingleHeader(t *testing.T) {
 	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
 	defer c.Close()
 
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "OrganizationCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "OrganizationCredentialSdJwt", `{
 		"university": {
 			"name": "TU Delft",
 			"faculties": [],
@@ -4207,7 +4207,7 @@ func testDiscloseShallowLeafShowsSingleHeader(t *testing.T) {
 	}`
 	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
 
-	startOpenID4VPDisclosureSession(t, c, veramoSession.RequestUri)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
@@ -4709,6 +4709,7 @@ func expectedPlanSummary(exp expectedPlanCredential) string {
 func issueCredentialViaOpenID4VCI(
 	t *testing.T,
 	c *client.Client,
+	sessionId int,
 	sessionHandler *MockSessionHandler,
 	credentialType string,
 	claimsJSON string,
@@ -4726,7 +4727,7 @@ func issueCredentialViaOpenID4VCI(
 	}`, credentialType, claimsJSON)
 
 	offer := postOffer(t, preAuthIssuerURL, preAuthAdminToken, offerBody)
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, sessionId, offer.URI)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
@@ -4755,6 +4756,7 @@ func issueCredentialViaOpenID4VCI(
 func issueCredentialViaOpenID4VCIFromIssuer(
 	t *testing.T,
 	c *client.Client,
+	sessionId int,
 	sessionHandler *MockSessionHandler,
 	issuerURL string,
 	adminToken string,
@@ -4774,7 +4776,7 @@ func issueCredentialViaOpenID4VCIFromIssuer(
 	}`, credentialType, claimsJSON)
 
 	offer := postOffer(t, issuerURL, adminToken, offerBody)
-	startOpenID4VCISession(t, c, offer.URI)
+	startOpenID4VCISession(t, c, sessionId, offer.URI)
 
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
@@ -4833,7 +4835,7 @@ func uintPtr(v uint) *uint { return &v }
 
 // startOpenID4VPDisclosureSession starts an OpenID4VP disclosure session in the
 // client using the given verifier request URI.
-func startOpenID4VPDisclosureSession(t *testing.T, c *client.Client, requestUri string) {
+func startOpenID4VPDisclosureSession(t *testing.T, c *client.Client, sessionId int, requestUri string) {
 	t.Helper()
 
 	sessionReq, err := json.Marshal(client.SessionRequestData{
@@ -4841,5 +4843,5 @@ func startOpenID4VPDisclosureSession(t *testing.T, c *client.Client, requestUri 
 		Protocol: clientmodels.Protocol_OpenID4VP,
 	})
 	require.NoError(t, err)
-	c.NewSession(string(sessionReq))
+	c.NewSession(sessionId, string(sessionReq))
 }

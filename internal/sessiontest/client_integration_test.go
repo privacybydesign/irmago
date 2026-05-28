@@ -76,7 +76,7 @@ func testIrmaDiscloseKeyshareAttribute(t *testing.T) {
 	}
 	sessionJson, token := startSameDeviceIrmaSessionAtServerWithToken(t, irmaServer, req)
 
-	c.NewSession(sessionJson)
+	c.NewSession(1, sessionJson)
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -118,7 +118,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
 
@@ -130,7 +130,7 @@ func testDoubleSdJwtIssuanceReplacesInstances(t *testing.T) {
 	require.NotNil(t, emailCred)
 	require.Equal(t, 10, int(*emailCred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)]))
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 2, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
 
@@ -148,7 +148,7 @@ func testCredentialInstanceCount(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	c, sessionHandler := createClient(t)
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
 
@@ -164,7 +164,7 @@ func testCredentialInstanceCount(t *testing.T) {
 	require.Equal(t, numInstances, *emailCred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc)])
 
 	for i := range numInstances {
-		discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+		discloseOverOpenID4VP(t, c, int(i)+2, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
 
 		creds, err = c.GetCredentials()
 		require.NoError(t, err)
@@ -291,7 +291,7 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, c *client.Client,
 		},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, regularIssuanceRequest)
+	issue(t, irmaServer, c, sessionHandler, 1, regularIssuanceRequest)
 
 	awaitSessionState(t, sessionHandler)
 
@@ -313,7 +313,7 @@ func performCombinedIssuanceAndDisclosureSession(t *testing.T, c *client.Client,
 	}
 
 	sessionRequestJson := startSameDeviceIrmaSessionAtServer(t, irmaServer, combinedIssuanceRequest)
-	c.NewSession(sessionRequestJson)
+	c.NewSession(2, sessionRequestJson)
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -358,7 +358,7 @@ func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	performCompletelyOptionalDisclosure(t, c, sessionHandler, irmaServer)
+	performCompletelyOptionalDisclosure(t, c, 1, sessionHandler, irmaServer)
 
 	logs, err := c.LoadNewestLogs(10)
 	require.NoError(t, err)
@@ -371,7 +371,7 @@ func testLogsForCompletelyOptionalDisclosure(t *testing.T) {
 	require.Equal(t, latestLog.DisclosureLog.Verifier.Id, "test-requestors.test-requestor")
 }
 
-func performCompletelyOptionalDisclosure(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
+func performCompletelyOptionalDisclosure(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	req := irma.NewDisclosureRequest()
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -381,7 +381,7 @@ func performCompletelyOptionalDisclosure(t *testing.T, c *client.Client, session
 			irma.AttributeCon{},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -403,7 +403,7 @@ func testRemoveStorageWithOnlyIdemixCredentials(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIdemixOnlyIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, createIdemixOnlyIssuanceRequest())
 
 	awaitSessionState(t, sessionHandler)
 
@@ -472,7 +472,7 @@ func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
 	defer c.Close()
 
 	// Issue a credential so that the EUDI database and filesystem are populated.
-	issueCredentialViaOpenID4VCI(t, c, sessionHandler, "TestCredentialSdJwt", `{
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
 		"given_name": "Storage",
 		"family_name": "Cleanup",
 		"email": "cleanup@example.com"
@@ -557,7 +557,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 		c, sessionHandler := createClient(t)
 
-		issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
+		issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
 
 		awaitSessionState(t, sessionHandler)
 
@@ -632,7 +632,7 @@ func testIdemixAndSdJwtCombinedRemovalLog(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIdemixOnlyIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, createIdemixOnlyIssuanceRequest())
 
 	awaitSessionState(t, sessionHandler)
 
@@ -719,7 +719,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	time.Sleep(4 * time.Second)
 
 	// Execute first issuance
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	awaitSessionState(t, sessionHandler)
 
 	creds, err := c.GetCredentials()
@@ -751,7 +751,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 
 	// Execute second issuance, which should now fail
 	// TODO: how to check that it failed?
-	failIssueSdJwtAndIdemixToClient(t, c, sessionHandler, irmaServer)
+	failIssueSdJwtAndIdemixToClient(t, c, 2, sessionHandler, irmaServer)
 
 	creds, err = c.GetCredentials()
 	require.NoError(t, err)
@@ -793,10 +793,10 @@ func testIrmaDisclosureSessionLogs(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIdemixOnlyIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, createIdemixOnlyIssuanceRequest())
 
 	awaitSessionState(t, sessionHandler)
-	performIrmaDisclosureSession(t, c, sessionHandler, irmaServer)
+	performIrmaDisclosureSession(t, c, 2, sessionHandler, irmaServer)
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -816,10 +816,10 @@ func testIrmaSignatureSessionLogs(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIdemixOnlyIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, createIdemixOnlyIssuanceRequest())
 
 	awaitSessionState(t, sessionHandler)
-	performIrmaSignatureSession(t, c, sessionHandler, irmaServer)
+	performIrmaSignatureSession(t, c, 2, sessionHandler, irmaServer)
 
 	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
@@ -887,7 +887,7 @@ func testEudiSessionLogs(t *testing.T) {
 	// only keyshare enrollment log should be there
 	require.Len(t, logs, 1)
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
 
@@ -901,7 +901,7 @@ func testEudiSessionLogs(t *testing.T) {
 	// keyshare attribute (no sdjwt included)
 	requireRegularIrmaIssuanceLog(t, logs[1])
 
-	discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
+	discloseOverOpenID4VP(t, c, 2, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
 	logs, err = c.LoadNewestLogs(100)
 	require.NoError(t, err)
 
@@ -975,7 +975,7 @@ func testDeletingCombinedCredentialDeletesBothFormats(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
 
@@ -1004,7 +1004,7 @@ func testIdemixAndSdJwtShowUpAsSeparateCredentialInfos(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
 
@@ -1028,7 +1028,7 @@ func testIdemixAndSdJwtCombinedIssuance(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
 }
@@ -1044,14 +1044,14 @@ func testDiscloseOverOpenID4VP(t *testing.T) {
 	c, sessionHandler := createClient(t)
 	defer c.Close()
 
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 
 	awaitSessionState(t, sessionHandler)
-	discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
-	discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
+	discloseOverOpenID4VP(t, c, 2, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+	discloseOverOpenID4VP(t, c, 3, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
 }
 
-func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, openid4vpHost string) {
+func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, openid4vpHost string) {
 	verifierSession, err := irmaclient.StartTestSessionAtEudiVerifier(openid4vpHost, createEmailAuthRequestRequest())
 	require.NoError(t, err)
 	sessionReq := client.SessionRequestData{
@@ -1064,7 +1064,7 @@ func discloseOverOpenID4VP(t *testing.T, c *client.Client, sessionHandler *MockS
 	sessionJson, err := json.Marshal(sessionReq)
 	require.NoError(t, err)
 
-	c.NewSession(string(sessionJson))
+	c.NewSession(sessionId, string(sessionJson))
 	sessionState := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, sessionState.Status)
 
@@ -1086,8 +1086,8 @@ func createIdemixOnlyIssuanceRequest() *irma.IssuanceRequest {
 	})
 }
 
-func failIssueSdJwtAndIdemixToClient(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
+func failIssueSdJwtAndIdemixToClient(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
+	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -1097,7 +1097,7 @@ func failIssueSdJwtAndIdemixToClient(t *testing.T, c *client.Client, sessionHand
 	require.Equal(t, clientmodels.Status_Error, session.Status)
 }
 
-func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
+func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	req := irma.NewDisclosureRequest()
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -1106,7 +1106,7 @@ func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionHandler
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -1117,7 +1117,7 @@ func performIrmaDisclosureSession(t *testing.T, c *client.Client, sessionHandler
 	require.Equal(t, clientmodels.Status_Success, session.Status)
 }
 
-func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
+func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	req := irma.NewSignatureRequest("Hello, World!")
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -1127,7 +1127,7 @@ func performIrmaSignatureSession(t *testing.T, c *client.Client, sessionHandler 
 		},
 	}
 
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -1407,9 +1407,9 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, reqWithoutPrefix)
+	issue(t, irmaServer, c, sessionHandler, 1, reqWithoutPrefix)
 	awaitSessionState(t, sessionHandler)
-	issue(t, irmaServer, c, sessionHandler, reqWithPrefix)
+	issue(t, irmaServer, c, sessionHandler, 2, reqWithPrefix)
 	awaitSessionState(t, sessionHandler)
 
 	creds, err := c.GetCredentials()
@@ -1488,7 +1488,7 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 		},
 	})
 
-	issue(t, irmaServer, c, sessionHandler, reqEmptyNonOptional)
+	issue(t, irmaServer, c, sessionHandler, 3, reqEmptyNonOptional)
 	awaitSessionState(t, sessionHandler)
 
 	creds, err = c.GetCredentials()

@@ -124,11 +124,11 @@ func TestClientStorageRegression(t *testing.T) {
 
 			// --- Phase 2: Test all session types with loaded client ---
 			// Non-keyshare IRMA disclosure
-			performDisclosureSessionForAttribute(t, c, sessionHandler, irmaServer, "irma-demo.MijnOverheid.fullName.familyname")
+			performDisclosureSessionForAttribute(t, c, 1, sessionHandler, irmaServer, "irma-demo.MijnOverheid.fullName.familyname")
 			// Keyshare-protected IRMA disclosure (distributed scheme, requires PIN)
-			performKeyshareDisclosureSession(t, c, sessionHandler, irmaServer, "test.test.email.email")
+			performKeyshareDisclosureSession(t, c, 2, sessionHandler, irmaServer, "test.test.email.email")
 			// OpenID4VP disclosure
-			discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+			discloseOverOpenID4VP(t, c, 3, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
 		})
 	}
 }
@@ -193,7 +193,7 @@ func loadSignerFromFixture(t *testing.T, fixtureDir string) irmaclient.Signer {
 }
 
 // performDisclosureSessionForAttribute performs an IRMA disclosure of a non-keyshare attribute.
-func performDisclosureSessionForAttribute(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer, attribute string) {
+func performDisclosureSessionForAttribute(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer, attribute string) {
 	req := irma.NewDisclosureRequest()
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -202,7 +202,7 @@ func performDisclosureSessionForAttribute(t *testing.T, c *client.Client, sessio
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 
@@ -215,7 +215,7 @@ func performDisclosureSessionForAttribute(t *testing.T, c *client.Client, sessio
 
 // performKeyshareDisclosureSession performs an IRMA disclosure of a keyshare-protected attribute.
 // The reloaded client doesn't have the keyshare auth token cached, so a PIN is requested.
-func performKeyshareDisclosureSession(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer, attribute string) {
+func performKeyshareDisclosureSession(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer, attribute string) {
 	req := irma.NewDisclosureRequest()
 	req.Disclose = irma.AttributeConDisCon{
 		irma.AttributeDisCon{
@@ -224,7 +224,7 @@ func performKeyshareDisclosureSession(t *testing.T, c *client.Client, sessionHan
 			},
 		},
 	}
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 

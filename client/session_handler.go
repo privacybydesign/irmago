@@ -90,31 +90,34 @@ func newSessionError(err *irma.SessionError) *clientmodels.SessionError {
 
 type sessionManager struct {
 	Sessions       map[int]*session
-	NextId         int
 	SessionHandler clientmodels.SessionHandler
 	Client         *Client
 }
 
 func (m *sessionManager) Clear() {
 	m.Sessions = map[int]*session{}
-	m.NextId = 0
 }
 
 func (m *sessionManager) DeleteSession(id int) {
 	delete(m.Sessions, id)
 }
 
-func (m *sessionManager) NewSession() *session {
-	// TODO: use locking here to update the session ID
-	m.NextId += 1
+// NewSession registers a session with the given caller-supplied id. The id is
+// allocated by the Dart client so that the mobile UI can route state events to
+// the right screen without waiting for Go to respond. Panics if the id is
+// already in use; this only happens in dev with hot-reload.
+func (m *sessionManager) NewSession(id int) *session {
+	if _, exists := m.Sessions[id]; exists {
+		panic(fmt.Sprintf("client: session id %d already in use", id))
+	}
 	s := &session{
 		State: &clientmodels.SessionState{
-			Id: m.NextId,
+			Id: id,
 		},
 		handler: m.SessionHandler,
 		client:  m.Client,
 	}
-	m.Sessions[m.NextId] = s
+	m.Sessions[id] = s
 	return s
 }
 
@@ -739,8 +742,11 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 	return nil
 }
 
-func (client *Client) NewSession(sessionrequest string) {
-	session := client.sessionManager.NewSession()
+// NewSession starts a new session, using a caller-supplied id so that the
+// mobile UI can mount its session screen synchronously without waiting for
+// the first state event.
+func (client *Client) NewSession(id int, sessionrequest string) {
+	session := client.sessionManager.NewSession(id)
 	state := session.State
 
 	var sessionReq SessionRequestData

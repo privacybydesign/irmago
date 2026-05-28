@@ -39,8 +39,8 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	c, handler, sessionHandler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, eudiAppDataPath, signer)
 	keyshareEnrollClient(t, c, handler)
 
-	issueWithPinToClient(t, c, sessionHandler, irmaServer)
-	discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+	issueWithPinToClient(t, c, 1, sessionHandler, irmaServer)
+	discloseOverOpenID4VP(t, c, 2, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
 
 	logs, err := c.LoadNewestLogs(1)
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func test_iOSLogoPathBugEudiLogs(t *testing.T) {
 	// since IRMA logs (bbolt/JSON) only have second precision while EUDI logs
 	// (SQLCipher) have sub-second precision.
 	time.Sleep(time.Second)
-	issueWithPinToClient(t, newClient, newClientSessionHandler, irmaServer)
+	issueWithPinToClient(t, newClient, 3, newClientSessionHandler, irmaServer)
 
 	// 4 logs: new issuance, disclosure, old issuance, keyshare enrollment
 	logs, err = newClient.LoadNewestLogs(10)
@@ -112,7 +112,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	c, handler, sessionHandler := createClientWithStorageAndSigner(t, storagePath, irmaConfigurationPath, eudiAppDataPath, signer)
 	keyshareEnrollClient(t, c, handler)
 
-	issueWithPinToClient(t, c, sessionHandler, irmaServer)
+	issueWithPinToClient(t, c, 1, sessionHandler, irmaServer)
 
 	logs, err := c.LoadNewestLogs(1)
 	require.NoError(t, err)
@@ -141,7 +141,7 @@ func test_iOSLogoPathBug(t *testing.T) {
 	newClient, _, newClientSessionHandler := createClientWithStorageAndSigner(t, newStoragePath, irmaConfigurationPath, newEudiAppDataPath, signer)
 
 	// make sure it can still do sessions
-	issueWithPinToClient(t, newClient, newClientSessionHandler, irmaServer)
+	issueWithPinToClient(t, newClient, 2, newClientSessionHandler, irmaServer)
 
 	logs, err = newClient.LoadNewestLogs(2)
 	require.NoError(t, err)
@@ -163,9 +163,9 @@ func test_iOSLogoPathBug(t *testing.T) {
 
 // issueWithPinToClient issues a test.test.email credential via IRMA,
 // handling the full session flow including pin entry.
-func issueWithPinToClient(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
+func issueWithPinToClient(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	t.Helper()
-	c.NewSession(startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
+	c.NewSession(sessionId, startSameDeviceIrmaSessionAtServer(t, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")))
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
 

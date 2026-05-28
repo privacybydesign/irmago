@@ -48,15 +48,15 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	c, storagePath, sessionHandler := createClientWithStoragePath(t)
 
 	// 1. Issue idemix-only credential (MijnOverheid.fullName)
-	issue(t, irmaServer, c, sessionHandler, createMijnOverheidIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
 	awaitSessionState(t, sessionHandler)
 
 	// 2. Issue combined idemix + sd-jwt credential (test.test.email)
-	issue(t, irmaServer, c, sessionHandler, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 2, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
 	awaitSessionState(t, sessionHandler)
 
 	// 3. Issue singleton credential
-	issue(t, irmaServer, c, sessionHandler, &irma.IssuanceRequest{
+	issue(t, irmaServer, c, sessionHandler, 3, &irma.IssuanceRequest{
 		DisclosureRequest: irma.DisclosureRequest{
 			BaseRequest: irma.BaseRequest{LDContext: irma.LDContextIssuanceRequest},
 		},
@@ -80,14 +80,14 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	}
 
 	// 4. Perform IRMA disclosure session
-	performIrmaDisclosureSession(t, c, sessionHandler, irmaServer)
+	performIrmaDisclosureSession(t, c, 4, sessionHandler, irmaServer)
 
 	// 5. Perform IRMA signature session
-	performIrmaSignatureSession(t, c, sessionHandler, irmaServer)
+	performIrmaSignatureSession(t, c, 5, sessionHandler, irmaServer)
 
 	// 6. Perform OpenID4VP disclosure sessions (direct_post and direct_post.jwt)
-	discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
-	discloseOverOpenID4VP(t, c, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
+	discloseOverOpenID4VP(t, c, 6, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+	discloseOverOpenID4VP(t, c, 7, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
 
 	// Log final state
 	logs, err := c.LoadNewestLogs(100)
