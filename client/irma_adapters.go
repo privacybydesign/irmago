@@ -37,12 +37,12 @@ func (a *irmaSessionAdapter) PairingRequired(pairingCode string) {
 
 func (a *irmaSessionAdapter) Success(result string) {
 	a.session.State.Status = clientmodels.Status_Success
-	a.session.dispatchState()
+	a.session.finish()
 }
 
 func (a *irmaSessionAdapter) Cancelled() {
 	a.session.State.Status = clientmodels.Status_Dismissed
-	a.session.dispatchState()
+	a.session.finish()
 }
 
 func (a *irmaSessionAdapter) Failure(err *irma.SessionError) {

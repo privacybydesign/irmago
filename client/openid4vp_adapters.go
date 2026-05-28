@@ -16,12 +16,12 @@ type openid4vpSessionAdapter struct {
 func (a *openid4vpSessionAdapter) Failure(err *clientmodels.SessionError) {
 	a.session.State.Status = clientmodels.Status_Error
 	a.session.State.Error = err
-	a.session.dispatchState()
+	a.session.finish()
 }
 
 func (a *openid4vpSessionAdapter) Cancelled() {
 	a.session.State.Status = clientmodels.Status_Dismissed
-	a.session.dispatchState()
+	a.session.finish()
 }
 
 func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []clientmodels.LogCredential) {
@@ -36,7 +36,7 @@ func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []client
 	}
 
 	a.session.State.Status = clientmodels.Status_Success
-	a.session.dispatchState()
+	a.session.finish()
 }
 
 func (a *openid4vpSessionAdapter) RequestVerificationPermission(

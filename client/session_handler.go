@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
@@ -64,7 +65,15 @@ func (s *session) error(err error) {
 	} else {
 		s.State.Error = newSessionError(&irma.SessionError{Err: err, ErrorType: irma.ErrorApi, Info: err.Error()})
 	}
+	s.finish()
+}
+
+// finish dispatches the session's final state and evicts the session from the
+// manager, so the Sessions map does not grow unboundedly across the app's
+// lifetime. Safe to call more than once: a second eviction is a no-op.
+func (s *session) finish() {
 	s.dispatchState()
+	s.client.sessionManager.DeleteSession(s.State.Id)
 }
 
 func newSessionError(err *irma.SessionError) *clientmodels.SessionError {
@@ -89,26 +98,48 @@ func newSessionError(err *irma.SessionError) *clientmodels.SessionError {
 }
 
 type sessionManager struct {
+	mu             sync.Mutex
 	Sessions       map[int]*session
 	SessionHandler clientmodels.SessionHandler
 	Client         *Client
 }
 
 func (m *sessionManager) Clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.Sessions = map[int]*session{}
 }
 
 func (m *sessionManager) DeleteSession(id int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.Sessions, id)
 }
 
-// NewSession registers a session with the given caller-supplied id. The id is
-// allocated by the Dart client so that the mobile UI can route state events to
-// the right screen without waiting for Go to respond. Panics if the id is
-// already in use; this only happens in dev with hot-reload.
+func (m *sessionManager) GetSession(id int) (*session, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.Sessions[id]
+	return s, ok
+}
+
+// NewSession registers a session under the caller-supplied id. The id is
+// allocated by the Dart client so the mobile UI can route state events to the
+// right screen without waiting for Go to respond. If the id is already in use
+// — which happens on Flutter hot-reload, where the Dart isolate's counter
+// resets while the Go-side Sessions map still holds prior ids — the existing
+// entry is evicted and replaced; its handlers reference the now-dead Dart
+// isolate, so dropping it is the correct behavior. Panics on id == 0, which
+// the old auto-incrementer never produced and which downstream code may treat
+// as a sentinel.
 func (m *sessionManager) NewSession(id int) *session {
+	if id == 0 {
+		panic("client: session id must be non-zero")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if _, exists := m.Sessions[id]; exists {
-		panic(fmt.Sprintf("client: session id %d already in use", id))
+		irma.Logger.Warnf("client: session id %d already in use; evicting stale entry", id)
 	}
 	s := &session{
 		State: &clientmodels.SessionState{
@@ -698,7 +729,7 @@ func sortAttrsToMatchRequestCon(attrs []*irma.AttributeIdentifier, discon irma.A
 // =====================================================================================
 
 func (client *Client) HandleUserInteraction(userInteraction clientmodels.SessionUserInteraction) error {
-	session, ok := client.sessionManager.Sessions[userInteraction.SessionId]
+	session, ok := client.sessionManager.GetSession(userInteraction.SessionId)
 	if !ok {
 		return fmt.Errorf("no session with id %v", userInteraction.SessionId)
 	}
@@ -727,9 +758,11 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 		session.dismisser.Dismiss()
 		// Ensure the session is always marked as dismissed, regardless of protocol.
 		// Some protocol implementations (e.g. OpenID4VP) don't call Cancelled() from Dismiss().
+		// When Cancelled() did fire, Status is already Dismissed and the session has
+		// already been finished/evicted; skip to avoid a stale re-dispatch.
 		if session.State.Status != clientmodels.Status_Dismissed {
 			session.State.Status = clientmodels.Status_Dismissed
-			session.dispatchState()
+			session.finish()
 		}
 	case clientmodels.UI_PreAuthorizedCode:
 		payload := userInteraction.Payload.(clientmodels.SessionPreAuthorizedCodeInteractionPayload)
@@ -754,7 +787,6 @@ func (client *Client) NewSession(id int, sessionrequest string) {
 	if err != nil {
 		irma.Logger.Errorf("failed to parse session request: %v\n", err)
 		session.error(err)
-		client.sessionManager.DeleteSession(session.State.Id)
 		return
 	}
 
