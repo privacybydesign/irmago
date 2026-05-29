@@ -20,7 +20,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
-	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -50,10 +49,6 @@ type Configuration struct {
 	// In this case, the server would communicate with IRMA apps over plain HTTP. You must otherwise
 	// ensure (using eg a reverse proxy with TLS enabled) that the attributes are protected in transit.
 	DisableTLS bool `json:"disable_tls" mapstructure:"disable_tls"`
-	// (Optional) email address of server admin, for incidental notifications such as breaking API changes
-	// See https://github.com/privacybydesign/irmago/tree/master/server#specifying-an-email-address
-	// for more information
-	Email string `json:"email" mapstructure:"email"`
 	// Enable server sent events for status updates (experimental; tends to hang when a reverse proxy is used)
 	EnableSSE bool `json:"enable_sse" mapstructure:"enable_sse"`
 	// StoreType in which session data will be stored.
@@ -187,7 +182,6 @@ func (conf *Configuration) Check() error {
 		conf.verifyIrmaConf,
 		conf.verifyPrivateKeys,
 		conf.verifyURL,
-		conf.verifyEmail,
 		conf.verifyRevocation,
 		conf.verifyJwtPrivateKey,
 		conf.verifyStaticSessions,
@@ -432,32 +426,6 @@ func (conf *Configuration) verifyURL() error {
 	} else {
 		conf.Logger.Warn("No url parameter specified in configuration; unless an url is elsewhere prepended in the QR, the IRMA client will not be able to connect")
 	}
-	return nil
-}
-
-type serverInfo struct {
-	Email   string `json:"email"`
-	Version string `json:"version"`
-}
-
-func (conf *Configuration) verifyEmail() error {
-	if conf.Email == "" {
-		return nil
-	}
-	if !strings.Contains(conf.Email, "@") || strings.Contains(conf.Email, "\n") {
-		return errors.New("Invalid email address specified")
-	}
-	t := irma.NewHTTPTransport("https://privacybydesign.foundation/", true)
-	t.SetHeader("User-Agent", "irmaserver")
-	data := &serverInfo{Email: conf.Email, Version: irmago.Version}
-
-	go func() {
-		err := t.Post("serverinfo/", nil, data)
-		if err != nil {
-			conf.Logger.Trace("Failed to send email and version number:", err)
-		}
-	}()
-
 	return nil
 }
 

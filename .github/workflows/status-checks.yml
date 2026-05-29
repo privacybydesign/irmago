@@ -103,6 +103,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # The sessiontest package hard-codes listeners on 127.0.0.1:48680-48699.
+      # Those ports sit inside Linux's default ephemeral source-port range
+      # (32768-60999), so an earlier subtest's outgoing connection can land a
+      # TIME_WAIT socket on one of them and cause a later ListenAndServe to
+      # fail with EADDRINUSE. The test service uses network_mode: host, so
+      # setting this on the runner applies to the container.
+      - name: Reserve test port range from ephemeral allocation
+        run: sudo sysctl -w net.ipv4.ip_local_port_range="48700 60999"
       - name: Run all unit tests
         run: docker compose run test -v ./...
 
