@@ -108,16 +108,8 @@ services:
       CGO_ENABLED: "1"
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
-    # NET_ADMIN is needed so the entrypoint can move the ephemeral port range
-    # above 48700 on the host. The sessiontest package hard-codes listeners on
-    # 127.0.0.1:48680-48699, which sit inside Linux's default ephemeral source-
-    # port range (32768-60999); without this, an earlier subtest's outgoing
-    # connection can land a TIME_WAIT socket on one of those ports and a
-    # later ListenAndServe fails with EADDRINUSE.
-    cap_add:
-      - NET_ADMIN
     working_dir: /irmago
-    entrypoint: ["sh", "-c", "echo '48700 60999' > /proc/sys/net/ipv4/ip_local_port_range && cp /irmago/testdata/configurations/certs/localhost.crt /usr/local/share/ca-certificates/ && update-ca-certificates && exec go test -p 1 \"$@\"", "--"]
+    entrypoint: ["sh", "-c", "cp /irmago/testdata/configurations/certs/localhost.crt /usr/local/share/ca-certificates/ && update-ca-certificates && exec go test -p 1 \"$@\"", "--"]
     command: ./...
 
   # Service to run the 'irma' command line tool
