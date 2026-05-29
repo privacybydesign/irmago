@@ -199,11 +199,26 @@ func checkErrorInternal(t *testing.T, err error) {
 	require.Equal(t, string(server.ErrorInternal.Type), serr.RemoteError.ErrorName)
 }
 
+// freeTCPPort returns a TCP port that is currently free on 127.0.0.1.
+// The kernel-assigned port (range 0) avoids hard-coded ports inside the Linux
+// ephemeral range, which can otherwise collide with the source port of an
+// outgoing connection from an earlier subtest. There is a small TOCTOU window
+// between Close and the caller binding the port, but it is far less flaky than
+// fixing the ports up-front.
+func freeTCPPort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := l.Addr().(*net.TCPAddr).Port
+	require.NoError(t, l.Close())
+	return port
+}
+
 func TestRedisRedundancy(t *testing.T) {
 	mr, cert := startRedis(t, true)
 	defer mr.Close()
 
-	ports := []int{48690, 48691, 48692}
+	ports := []int{freeTCPPort(t), freeTCPPort(t), freeTCPPort(t)}
 	servers := make([]*requestorserver.Server, len(ports))
 
 	for i, port := range ports {
