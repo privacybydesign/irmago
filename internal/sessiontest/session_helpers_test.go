@@ -507,8 +507,9 @@ func init() {
 func startOpenID4VCISession(t *testing.T, c *client.Client, sessionId int, credOfferURL string) {
 	t.Helper()
 	sessionReq, err := json.Marshal(client.SessionRequestData{
-		Qr:       irma.Qr{URL: credOfferURL},
-		Protocol: clientmodels.Protocol_OpenID4VCI,
+		Qr:                    irma.Qr{URL: credOfferURL},
+		Protocol:              clientmodels.Protocol_OpenID4VCI,
+		OpenID4VCIRedirectUri: "https://open.yivi.app/-/auth-callback",
 	})
 	require.NoError(t, err)
 	c.NewSession(sessionId, string(sessionReq))
