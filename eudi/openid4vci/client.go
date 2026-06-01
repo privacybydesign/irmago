@@ -53,12 +53,18 @@ func (client *Client) AllowInsecureHttpForTesting() {
 	client.holderVerifier.SetAllowInsecureDidWeb(true)
 }
 
-func (client *Client) NewSession(credentialOfferEndpointUrl string, handler Handler) SessionDismisser {
-	client.handleSessionAsync(credentialOfferEndpointUrl, handler)
+// NewSession starts an OpenID4VCI issuance session. `redirectUri` is the OAuth
+// `redirect_uri` value the wallet will send to the issuer's authorization
+// server in both the authorize request (auth-code flow) and the token request
+// (both auth-code and pre-authorized-code flows). The mobile wallet derives it
+// from the host of the inbound universal link that started the session, so
+// staging-host offers result in staging-host callbacks.
+func (client *Client) NewSession(credentialOfferEndpointUrl string, redirectUri string, handler Handler) SessionDismisser {
+	client.handleSessionAsync(credentialOfferEndpointUrl, redirectUri, handler)
 	return client
 }
 
-func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, handler Handler) {
+func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redirectUri string, handler Handler) {
 	go func() {
 		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
 		if err != nil {
@@ -81,7 +87,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, hand
 		}
 
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
-		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, handler)
+		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, redirectUri, handler)
 
 		if err != nil {
 			handleFailure(handler, "failed to handle credential offer: %v", err)
@@ -92,6 +98,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, hand
 func (client *Client) handleCredentialOffer(
 	credentialOffer *CredentialOffer,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
+	redirectUri string,
 	handler Handler,
 ) error {
 	requestorInfo := convertToTrustedParty(credentialIssuerMetadata)
@@ -109,6 +116,7 @@ func (client *Client) handleCredentialOffer(
 		httpClient:               client.httpClient,
 		holderVerifier:           client.holderVerifier,
 		storage:                  client.Configuration.Storage,
+		redirectUri:              redirectUri,
 		// logsStorage:              client.logsStorage,
 	}
 	defer func() {

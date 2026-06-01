@@ -36,6 +36,11 @@ type session struct {
 	storage                  storage.Storage
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
 
+	// OAuth `redirect_uri` for this session. Copied from the owning Client at
+	// session construction; used in both auth-code authorize/token requests
+	// and pre-authorized-code token requests.
+	redirectUri string
+
 	issuerSettings openid4vciSessionIssuerSettings
 }
 

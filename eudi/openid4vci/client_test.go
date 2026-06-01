@@ -89,7 +89,7 @@ func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl stri
 	storage, client := createOpenID4VCiClientForTesting(t)
 
 	handler := newMockSessionHandler(t)
-	client.NewSession(credentialOfferEndpointUrl, handler)
+	client.NewSession(credentialOfferEndpointUrl, "https://open.yivi.app/-/auth-callback", handler)
 
 	authCodeRequestHandler := handler.AwaitAuthCodeRequest()
 
