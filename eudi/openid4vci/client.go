@@ -117,7 +117,6 @@ func (client *Client) handleCredentialOffer(
 		holderVerifier:           client.holderVerifier,
 		storage:                  client.Configuration.Storage,
 		redirectUri:              redirectUri,
-		// logsStorage:              client.logsStorage,
 	}
 	defer func() {
 		client.currentSession = nil
