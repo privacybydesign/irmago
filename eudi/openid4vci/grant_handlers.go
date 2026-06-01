@@ -368,7 +368,6 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCod
 
 	values.Add("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
 	values.Add("pre-authorized_code", s.credentialOffer.Grants.PreAuthorizedCodeGrant.PreAuthorizedCode)
-	values.Add("redirect_uri", s.redirectUri)
 
 	// If a tx_code is required, it should be asked from the user via the TokenPermissionHandler callback
 	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {
