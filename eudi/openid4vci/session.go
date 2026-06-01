@@ -36,6 +36,8 @@ type session struct {
 	storage                  storage.Storage
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
 
+	redirectUri string
+
 	issuerSettings openid4vciSessionIssuerSettings
 }
 

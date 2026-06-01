@@ -19,7 +19,6 @@ import (
 // for tx_code lockout; this client-side limit is a UX guardrail.
 const maxTxCodeAttempts = 3
 
-const YiviAppRedirectUri = "https://open.yivi.app/-/auth-callback"
 const YiviClientId = "yivi-wallet"
 
 type GrantHandler interface {
@@ -99,7 +98,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	// Build the authorization request parameters
 	// The 'state' parameter will be added by the openid4vciSessionAdapter, so it can correlate the authorization response to the session when receiving the callback
 	authRequest := buildAuthorizationRequestValues(
-		YiviAppRedirectUri,
+		s.redirectUri,
 		&clientId,
 		pkce,
 		s.credentialOffer.Grants.AuthorizationCodeGrant.IssuerState,
@@ -168,7 +167,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 
 	// Exchange of code for token and return token response
 	return h.doTokenRequest(s.issuerSettings.authorizationServerMetadata.TokenEndpoint,
-		*userInteraction.code, pkce, scopes, authDetails)
+		*userInteraction.code, pkce, scopes, authDetails, s.redirectUri)
 }
 
 func buildAuthorizationRequestValues(
@@ -249,13 +248,14 @@ func (h *AuthorizationCodeFlowHandler) doTokenRequest(
 	pkce *pkceParameters,
 	scopes []string,
 	authDetails *string,
+	redirectUri string,
 ) (AccessTokenResponse, error) {
 	payload := url.Values{}
 
 	payload.Add("grant_type", "authorization_code")
 	payload.Add("code", code)
 	payload.Add("client_id", YiviClientId)
-	payload.Add("redirect_uri", YiviAppRedirectUri)
+	payload.Add("redirect_uri", redirectUri)
 
 	if pkce != nil {
 		payload.Add("code_verifier", pkce.CodeVerifier)
@@ -368,7 +368,6 @@ func (h *PreAuthorizedCodeFlowHandler) doTokenRequest(s *session, transactionCod
 
 	values.Add("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
 	values.Add("pre-authorized_code", s.credentialOffer.Grants.PreAuthorizedCodeGrant.PreAuthorizedCode)
-	values.Add("redirect_uri", YiviAppRedirectUri)
 
 	// If a tx_code is required, it should be asked from the user via the TokenPermissionHandler callback
 	if s.credentialOffer.Grants.PreAuthorizedCodeGrant.TxCode != nil {

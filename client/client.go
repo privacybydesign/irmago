@@ -215,6 +215,11 @@ type SessionRequestData struct {
 	irma.Qr
 	Protocol               clientmodels.Protocol `json:"protocol,omitempty"`
 	ContinueOnSecondDevice bool                  `json:"continue_on_second_device"`
+	// OpenID4VCIRedirectUri is the OAuth `redirect_uri` to use for this
+	// OpenID4VCI session. The wallet derives it from the host of the inbound
+	// universal link (production vs staging). Required when Protocol is
+	// OpenID4VCI; ignored otherwise.
+	OpenID4VCIRedirectUri string `json:"openid4vci_redirect_uri,omitempty"`
 }
 
 func (client *Client) DeleteKeyshareTokens() {
