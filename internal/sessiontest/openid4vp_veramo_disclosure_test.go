@@ -71,6 +71,7 @@ func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
 	t.Run("veramo verifier requesting missing credential surfaces it", testVeramoVerifierRequestingMissingCredentialSurfacesIt)
 	t.Run("veramo verifier requesting unknown vct uses url-only fallback", testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback)
 	t.Run("veramo verifier multi-vct first missing second matched", testVeramoVerifierMultiVctFirstMissingSecondMatched)
+	t.Run("veramo verifier requesting unsupported claim on owned credential surfaces it", testVeramoVerifierRequestingUnsupportedClaimOnOwnedCredentialSurfacesIt)
 }
 
 func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
@@ -3019,6 +3020,75 @@ func testVeramoVerifierMultiVctFirstMissingSecondMatched(t *testing.T) {
 		"second VCT (whose fetch succeeded) wins")
 	require.Nil(t, option.IssueURL)
 	require.NotEmpty(t, option.Name)
+}
+
+// testVeramoVerifierRequestingUnsupportedClaimOnOwnedCredentialSurfacesIt is the
+// sibling of testVeramoVerifierRequestingMissingCredentialSurfacesIt for the
+// case where the wallet *owns* a credential of the requested VCT but the
+// verifier asks for a claim path the VCT schema does not have. The expected UX
+// is the same "missing credentials" promotion -- IssueDuringDisclosure surfaces
+// a single CredentialDescriptor with empty IssueURL -- and the attribute for
+// the unsupported claim has no DisplayName, because claimDisplayFromVct cannot
+// find a matching row in the VCT type metadata.
+func testVeramoVerifierRequestingUnsupportedClaimOnOwnedCredentialSurfacesIt(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Wallet owns an EmailCredential -- VCT only defines "email" and "domain".
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "alice@example.com",
+		"domain": "example.com"
+	}`)
+
+	// Verifier asks for "taxpayer_id" -- not in the email VCT schema.
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-cred",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["taxpayer_id"] }
+					]
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
+	require.NotNil(t, session.DisclosurePlan)
+
+	// Same shape as testVeramoVerifierRequestingMissingCredentialSurfacesIt:
+	// the choice is hidden because the only path forward is an unsatisfiable
+	// issuance step.
+	require.Nil(t, session.DisclosurePlan.DisclosureChoicesOverview,
+		"choices should be nil because there is one unsatisfiable issuance step")
+	require.NotNil(t, session.DisclosurePlan.IssueDuringDisclosure)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps, 1)
+	require.Len(t, session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options, 1)
+
+	bundle := session.DisclosurePlan.IssueDuringDisclosure.Steps[0].Options[0]
+	require.Len(t, bundle.Credentials, 1, "DCQL maps each query to a single-credential bundle")
+	option := bundle.Credentials[0]
+	require.Equal(t, "https://localhost:8443/vct/email", option.CredentialId)
+	require.Nil(t, option.IssueURL, "empty IssueURL is the wire-level signal that the credential is unobtainable")
+	require.NotEmpty(t, option.Name, "Name populated from the VCT type metadata document")
+	require.NotEmpty(t, option.Issuer.Id, "Issuer.Id populated via the VCT's issuer field + well-known fetch")
+
+	// The unique nuance vs. the empty-wallet variant: the requested claim is
+	// present in the descriptor but with no DisplayName, because the VCT type
+	// metadata has no row matching this path.
+	require.Len(t, option.Attributes, 1)
+	require.Equal(t, []any{"taxpayer_id"}, option.Attributes[0].ClaimPath)
+	require.Nil(t, option.Attributes[0].DisplayName,
+		"DisplayName nil when the requested claim isn't in the VCT type metadata")
 }
 
 // testDiscloseDeeplyNestedOrganizationCredential issues an OrganizationCredential

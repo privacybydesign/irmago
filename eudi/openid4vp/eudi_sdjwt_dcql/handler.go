@@ -155,11 +155,12 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		return nil, fmt.Errorf("all credential instances for the requested type are exhausted")
 	}
 
-	// When the wallet has no batches at all matching the query's vct_values,
+	// When no usable owned candidates were emitted -- either the wallet has
+	// no batches at all OR every batch was filtered out by claim matching --
 	// emit one descriptor with an empty IssueURL so the user sees what is
 	// being requested instead of a stuck permission prompt. See the
 	// "missing credentials" plan.
-	if len(batches) == 0 && len(query.VctValues()) > 0 && h.vctFetcher != nil {
+	if len(result.OwnedCandidates) == 0 && len(query.VctValues()) > 0 && h.vctFetcher != nil {
 		if descriptor := h.composeUnobtainableDescriptor(query); descriptor != nil {
 			result.ObtainableDescriptors = append(result.ObtainableDescriptors, descriptor)
 		}
