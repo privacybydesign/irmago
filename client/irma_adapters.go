@@ -332,12 +332,9 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 				Formats:      formats,
 				Image:        clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 				Name:         clientmodels.TranslatedString(credTypeInfo.Name),
-				Issuer: clientmodels.TrustedParty{
-					Id:   issuer.Identifier().String(),
-					Name: clientmodels.TranslatedString(issuer.Name),
-				},
-				Attributes: attributes,
-				IssueURL:   convertOptionalTranslatedString(credTypeInfo.IssueURL),
+				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
+				Attributes:   attributes,
+				IssueURL:     convertOptionalTranslatedString(credTypeInfo.IssueURL),
 			})
 		}
 		return clientmodels.LogInfo{

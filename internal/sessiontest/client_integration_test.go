@@ -583,6 +583,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "irma-demo.MijnOverheid.fullName", credential.CredentialId)
 		require.Equal(t, "Demo Name", credential.Name["en"])
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
+		require.True(t, credential.Issuer.Verified, "issuer should be verified")
 
 		requireAttrsInOrder(t, credential.Attributes,
 			expectedAttr{
@@ -771,6 +772,7 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -837,6 +839,7 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -858,6 +861,7 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -920,6 +924,7 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -953,6 +958,7 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name["en"])
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
