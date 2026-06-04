@@ -107,6 +107,9 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 
 	for _, vm := range doc.VerificationMethod {
 		if vm.ID == fullKid {
+			if vm.PublicKeyJwk == nil {
+				return fmt.Errorf("verification method %s has no publicKeyJwk", vm.ID)
+			}
 			// Verify the key is a public key, or throw an error if it contains private key material (which should not be used in a did:web document, but we want to be sure)
 			isPrivateKey, err := jwk.IsPrivateKey(*vm.PublicKeyJwk)
 			if err != nil {

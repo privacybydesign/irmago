@@ -587,6 +587,38 @@ func Test_KidKeyProvider_FetchKeys_DidJwk_NoMatchingVerificationMethod_ReturnsEr
 	require.ErrorContains(t, err, "failed to find matching verification method")
 }
 
+func Test_KidKeyProvider_FetchKeys_VerificationMethodWithoutPublicKeyJwk_ReturnsError(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+	fullKID := issuerDID + kidHeader
+
+	// DID document with a matching verification method that has no publicKeyJwk.
+	doc := did.Document{
+		ID: issuerDID,
+		VerificationMethod: []did.VerificationMethod{
+			{ID: fullKID, Type: "JsonWebKey2020", Controller: issuerDID},
+		},
+	}
+	docBytes, err := json.Marshal(doc)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	p := &KidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	err = p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg)
+	require.ErrorContains(t, err, "has no publicKeyJwk")
+}
+
 func Test_KidKeyProvider_FetchKeys_DidJwk_MalformedEncoding_ReturnsError(t *testing.T) {
 	msg := newTestJWSMessage(t, "did:jwk:not-valid-base64!!!")
 	p := NewKidKeyProvider("#0", false)
