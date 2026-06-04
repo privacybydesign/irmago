@@ -52,6 +52,113 @@ func TestResolveCredentialMetadataFromVct_ReplacesOnSuccess(t *testing.T) {
 	require.Len(t, got.Claims, 1)
 }
 
+// TestResolveCredentialMetadataFromVct_VctWinsOverCredentialMetadata_SphereonShape
+// asserts that when the issuer ships both an OID4VCI credential_metadata block
+// and a fetchable SD-JWT VC type-metadata document, the wallet displays the VCT
+// values — including current-spec "locale"+"label" claim displays and a logo
+// nested under rendering.simple.logo. Each VCT value is deliberately distinct
+// from its credential_metadata counterpart so the test fails if the wrong path
+// wins.
+func TestResolveCredentialMetadataFromVct_VctWinsOverCredentialMetadata_SphereonShape(t *testing.T) {
+	srv := newVctTestServer(t, map[string]string{
+		"/vct/Test": `{
+			"name": "Test Credential",
+			"display": [
+				{
+					"locale": "en-US",
+					"name": "Test Credential (from VCT)",
+					"rendering": {
+						"simple": {
+							"logo": { "uri": "https://example.com/vct-logo.png", "alt_text": "VCT Logo" },
+							"background_color": "#1a56db",
+							"text_color": "#ffffff"
+						}
+					}
+				}
+			],
+			"claims": [
+				{
+					"path": ["given_name"],
+					"display": [
+						{ "locale": "en-US", "label": "Given Name (from VCT)" },
+						{ "locale": "nl-NL", "label": "Voornaam (from VCT)" }
+					]
+				},
+				{
+					"path": ["email"],
+					"display": [
+						{ "locale": "en-US", "label": "Email (from VCT)" }
+					]
+				}
+			]
+		}`,
+	})
+	defer srv.Close()
+
+	enLocale := "en"
+	client := &Client{httpClient: srv.Client(), allowInsecureHttp: true}
+	resolver := typemetadata.NewResolver(srv.Client())
+	issuerMeta := singleConfigMetadata("Test", metadata.CredentialConfiguration{
+		Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+		VerifiableCredentialType: srv.URL + "/vct/Test",
+		CredentialMetadata: &metadata.CredentialMetadata{
+			// credential_metadata uses sentinel names so we can detect if the
+			// wallet wrongly preferred it over the VCT.
+			Display: metadata.CredentialDisplays{
+				{Display: metadata.Display{Name: "Test Credential (from credential_metadata)", Locale: &enLocale}},
+			},
+			Claims: []metadata.ClaimsDescription{
+				{
+					Path: metadata.ClaimsPathPointer{"given_name"},
+					Display: []metadata.Display{
+						{Name: "Given Name (from credential_metadata)", Locale: &enLocale},
+					},
+				},
+				{
+					Path: metadata.ClaimsPathPointer{"email"},
+					Display: []metadata.Display{
+						{Name: "Email (from credential_metadata)", Locale: &enLocale},
+					},
+				},
+			},
+		},
+	})
+	offer := &CredentialOffer{CredentialConfigurationIds: []string{"Test"}}
+
+	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, resolver)
+
+	got := issuerMeta.CredentialConfigurationsSupported["Test"].CredentialMetadata
+	require.NotNil(t, got)
+
+	// Credential-level display: VCT name + VCT logo (nested in rendering.simple).
+	require.Len(t, got.Display, 1)
+	require.Equal(t, "Test Credential (from VCT)", got.Display[0].Name,
+		"VCT credential-display name must win over credential_metadata's name")
+	require.NotNil(t, got.Display[0].Display.Locale)
+	require.Equal(t, "en-US", *got.Display[0].Display.Locale)
+	require.Equal(t, "#1a56db", got.Display[0].BackgroundColor)
+	require.Equal(t, "#ffffff", got.Display[0].TextColor)
+	require.NotNil(t, got.Display[0].Logo, "rendering.simple.logo must surface as CredentialDisplay.Logo")
+	require.Equal(t, "https://example.com/vct-logo.png", got.Display[0].Logo.Uri)
+	require.Equal(t, "VCT Logo", got.Display[0].Logo.AltText)
+
+	// Claim displays: VCT labels (current-spec field) win over credential_metadata's names.
+	require.Len(t, got.Claims, 2)
+
+	require.Equal(t, metadata.ClaimsPathPointer{"given_name"}, got.Claims[0].Path)
+	require.Len(t, got.Claims[0].Display, 2, "both VCT locales must come through")
+	require.Equal(t, "Given Name (from VCT)", got.Claims[0].Display[0].Name)
+	require.NotNil(t, got.Claims[0].Display[0].Locale)
+	require.Equal(t, "en-US", *got.Claims[0].Display[0].Locale)
+	require.Equal(t, "Voornaam (from VCT)", got.Claims[0].Display[1].Name)
+	require.NotNil(t, got.Claims[0].Display[1].Locale)
+	require.Equal(t, "nl-NL", *got.Claims[0].Display[1].Locale)
+
+	require.Equal(t, metadata.ClaimsPathPointer{"email"}, got.Claims[1].Path)
+	require.Len(t, got.Claims[1].Display, 1)
+	require.Equal(t, "Email (from VCT)", got.Claims[1].Display[0].Name)
+}
+
 func TestResolveCredentialMetadataFromVct_FetchFailureLeavesCredentialMetadata(t *testing.T) {
 	srv := newVctTestServer(t, map[string]string{}) // empty: every URL 404s
 	defer srv.Close()

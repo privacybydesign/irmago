@@ -772,6 +772,52 @@
         }
       ]
     },
+    "VctMetadataTestCredentialSdJwt": {
+      "format": "dc+sd-jwt",
+      "scope": "VctMetadataTestCredentialSdJwt",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_definition": {
+        "type": ["VerifiableCredential", "VctMetadataTestCredential"],
+        "credentialSubject": {
+          "given_name": {
+            "display": [
+              { "name": "Given Name (from credential_metadata)", "locale": "en" },
+              { "name": "Voornaam (uit credential_metadata)", "locale": "nl" }
+            ]
+          },
+          "family_name": {
+            "display": [
+              { "name": "Family Name (from credential_metadata)", "locale": "en" },
+              { "name": "Achternaam (uit credential_metadata)", "locale": "nl" }
+            ]
+          },
+          "email": {
+            "display": [
+              { "name": "Email (from credential_metadata)", "locale": "en" },
+              { "name": "E-mailadres (uit credential_metadata)", "locale": "nl" }
+            ]
+          }
+        }
+      },
+      "display": [
+        {
+          "name": "VCT Metadata Test (from credential_metadata)",
+          "locale": "en"
+        }
+      ]
+    },
     "OrganizationCredentialSdJwt": {
       "format": "dc+sd-jwt",
       "scope": "OrganizationCredentialSdJwt",

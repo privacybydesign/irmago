@@ -1,0 +1,39 @@
+{
+  "path": "/vct/vctmetadatatest",
+  "credentials": ["VctMetadataTestCredentialSdJwt"],
+  "document": {
+    "name": "VCT Metadata Test (from VCT)",
+    "description": "VCT type-metadata used by the integration test that verifies the wallet prefers SD-JWT VC type metadata over OID4VCI credential_metadata.",
+    "display": [
+      { "locale": "en", "name": "VCT Metadata Test (from VCT)" },
+      { "locale": "nl", "name": "VCT Metadata Test (uit VCT)" }
+    ],
+    "claims": [
+      {
+        "path": ["given_name"],
+        "display": [
+          { "locale": "en", "label": "Given Name (from VCT)" },
+          { "locale": "nl", "label": "Voornaam (uit VCT)" }
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": ["family_name"],
+        "display": [
+          { "locale": "en", "label": "Family Name (from VCT)" },
+          { "locale": "nl", "label": "Achternaam (uit VCT)" }
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": ["email"],
+        "display": [
+          { "locale": "en", "label": "Email (from VCT)" },
+          { "locale": "nl", "label": "E-mailadres (uit VCT)" }
+        ],
+        "sd": "allowed"
+      }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

@@ -23,6 +23,7 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("tx_code retries are exhausted after max attempts", testOpenID4VCIPreAuthFlowTxCodeRetriesExhausted)
 	t.Run("user can cancel mid-tx_code-retry", testOpenID4VCIPreAuthFlowCancelMidTxCodeRetry)
 	t.Run("can be dismissed", testOpenID4VCIPreAuthFlowCanBeDismissed)
+	t.Run("prefers VCT type metadata over issuer credential_metadata", testOpenID4VCIPreAuthFlowPrefersVctMetadataOverCredentialMetadata)
 	t.Run("issues credential with nested claims", testOpenID4VCIPreAuthFlowNestedClaims)
 	t.Run("issues multiple credential types", testOpenID4VCIPreAuthFlowMultipleCredentialTypes)
 	t.Run("issues credential with array claims", testOpenID4VCIPreAuthFlowArrayClaims)
@@ -358,6 +359,65 @@ func testOpenID4VCIPreAuthFlowCanBeDismissed(t *testing.T) {
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
+}
+
+// testOpenID4VCIPreAuthFlowPrefersVctMetadataOverCredentialMetadata pins that
+// when the issuer advertises a SD-JWT VC type-metadata URL via the credential's
+// `vct` field, the wallet fetches that document and uses its credential and
+// claim display values in preference to the OID4VCI `credential_metadata`
+// block in the issuer's well-known document.
+//
+// The fixture uses sentinel suffixes — "(from credential_metadata)" vs
+// "(from VCT)" — on every display string so a test failure tells you exactly
+// which path won. The VCT document also uses the current SD-JWT VC draft's
+// "label" field for claim displays (the spec field name; OID4VCI metadata
+// uses "name"), exercising the spec-conformant path.
+func testOpenID4VCIPreAuthFlowPrefersVctMetadataOverCredentialMetadata(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createVctMetadataPreAuthOffer(t)
+
+	startOpenID4VCISession(t, c, 1, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	if session.Status == clientmodels.Status_Error {
+		t.Fatalf("session ended in error: %+v", session.Error)
+	}
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "VCT Metadata Test (from VCT)", offered.Name["en"],
+		"VCT type metadata's credential display name must win over the issuer's credential_metadata")
+	require.Equal(t, "VCT Metadata Test (uit VCT)", offered.Name["nl"],
+		"non-English VCT locale must also reach the wallet")
+
+	requireAttrsInOrder(t, offered.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name (from VCT)", "nl": "Voornaam (uit VCT)"},
+			Value:       strVal("Test"),
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family Name (from VCT)", "nl": "Achternaam (uit VCT)"},
+			Value:       strVal("User"),
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email (from VCT)", "nl": "E-mailadres (uit VCT)"},
+			Value:       strVal("test@example.com"),
+		},
+	)
 }
 
 func testOpenID4VCIPreAuthFlowNestedClaims(t *testing.T) {

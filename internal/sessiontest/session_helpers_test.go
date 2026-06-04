@@ -564,6 +564,28 @@ func createPreAuthOffer(t *testing.T) openid4vciOfferResponse {
 	}`)
 }
 
+// createVctMetadataPreAuthOffer creates an offer for VctMetadataTestCredentialSdJwt,
+// a credential whose issuer config advertises a fetchable `vct` URL pointing to
+// a SD-JWT VC type-metadata document with display strings that differ from the
+// OID4VCI credential_metadata block. Used to verify the wallet's preference for
+// type-metadata over credential_metadata.
+func createVctMetadataPreAuthOffer(t *testing.T) openid4vciOfferResponse {
+	t.Helper()
+	return postOffer(t, preAuthIssuerURL, preAuthAdminToken, `{
+		"credentials": ["VctMetadataTestCredentialSdJwt"],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": {
+			"given_name": "Test",
+			"family_name": "User",
+			"email": "test@example.com"
+		}
+	}`)
+}
+
 func createPreAuthOfferWithTxCode(t *testing.T) openid4vciOfferResponse {
 	t.Helper()
 	return postOffer(t, preAuthIssuerURL, preAuthAdminToken, `{
