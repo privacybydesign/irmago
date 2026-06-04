@@ -117,7 +117,7 @@ func (client *Client) handleCredentialOffer(
 	redirectUri string,
 	handler Handler,
 ) error {
-	requestorInfo := convertToTrustedParty(credentialIssuerMetadata)
+	requestorInfo := client.convertToTrustedParty(credentialIssuerMetadata)
 	creds, err := client.convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo.Name)
 	if err != nil {
 		return fmt.Errorf("failed to convert credential info list: %v", err)
@@ -442,13 +442,24 @@ func convertClaimsToAttributes(claims []metadata.ClaimsDescription) []clientmode
 	return attrs
 }
 
-func convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata) *clientmodels.TrustedParty {
+func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata) *clientmodels.TrustedParty {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 	// TODO: we need to know which language to use, in order to get the correct logo
 	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
+	var issuerImage *clientmodels.Image
+	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
+	for _, display := range credentialIssuerMetadata.Display {
+		if display.Logo != nil {
+			issuerImage = eudi.LoadLogoImage(issuerLogoManager, display.Logo.Uri)
+			break
+		}
+	}
+
 	return &clientmodels.TrustedParty{
+		Id:       credentialIssuerMetadata.CredentialIssuer,
 		Name:     metadata.ConvertDisplayToTranslatedString(displays),
+		Image:    issuerImage,
 		Verified: false,
 	}
 }
