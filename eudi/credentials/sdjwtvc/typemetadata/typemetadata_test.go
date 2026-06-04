@@ -13,17 +13,20 @@ import (
 func TestParseVctTypeMetadata_FullDocument(t *testing.T) {
 	doc := []byte(`{
 		"name": "Email Credential",
+		"issuer": "https://issuer.example.com",
 		"display": [
 			{ "lang": "en", "name": "Email Credential", "logo": { "uri": "https://example.com/logo.png" } },
 			{ "lang": "nl", "name": "E-mail credential" }
 		],
 		"claims": [
-			{ "path": ["email"], "display": [
-				{ "lang": "en", "label": "Email" },
-				{ "lang": "nl", "label": "E-mailadres" }
-			]}
-		],
-		"issuer": "https://issuer.example.com"
+			{
+				"path": ["email"],
+				"display": [
+					{ "lang": "en", "label": "Email" },
+					{ "lang": "nl", "label": "E-mailadres" }
+				]
+			}
+		]
 	}`)
 
 	parsed, err := ParseVctTypeMetadata(doc)
@@ -56,10 +59,13 @@ func TestParseVctTypeMetadata_LocaleAndLabelAliases(t *testing.T) {
 			{ "locale": "ja-JP", "name": "テストクレデンシャル" }
 		],
 		"claims": [
-			{ "path": ["given_name"], "display": [
-				{ "locale": "en-US", "label": "Given Name" },
-				{ "locale": "ja-JP", "label": "名" }
-			]}
+			{
+				"path": ["given_name"],
+				"display": [
+					{ "locale": "en-US", "label": "Given Name" },
+					{ "locale": "ja-JP", "label": "名" }
+				]
+			}
 		]
 	}`)
 
@@ -89,9 +95,12 @@ func TestParseVctTypeMetadata_CurrentSpecFieldsPreferredOverLegacy(t *testing.T)
 			{ "lang": "en", "locale": "de", "name": "Cred" }
 		],
 		"claims": [
-			{ "path": ["x"], "display": [
-				{ "lang": "en", "locale": "de", "label": "Spec label", "name": "Legacy name" }
-			]}
+			{
+				"path": ["x"],
+				"display": [
+					{ "lang": "en", "locale": "de", "label": "Spec label", "name": "Legacy name" }
+				]
+			}
 		]
 	}`)
 
@@ -124,7 +133,9 @@ func TestParseVctTypeMetadata_RenderingSimpleLogo(t *testing.T) {
 				"name": "Test",
 				"logo": { "uri": "https://example.com/top.png" },
 				"rendering": {
-					"simple": { "logo": { "uri": "https://example.com/nested-too.png" } }
+					"simple": {
+						"logo": { "uri": "https://example.com/nested-too.png" }
+					}
 				}
 			}
 		]
@@ -152,21 +163,57 @@ func TestParseVctTypeMetadata_SphereonStyleDocument(t *testing.T) {
 		"name": "Test Credential",
 		"description": "A test SD-JWT verifiable credential",
 		"display": [
-			{ "locale": "en-US", "name": "Test Credential", "description": "A simple test credential",
-			  "rendering": { "simple": { "logo": { "uri": "https://example.com/logo.png", "alt_text": "Logo" }, "background_color": "#1a56db", "text_color": "#ffffff" } } },
-			{ "locale": "nl-NL", "name": "Testcredential", "description": "Een testcredential",
-			  "rendering": { "simple": { "background_color": "#1a56db", "text_color": "#ffffff" } } },
-			{ "locale": "ja-JP", "name": "テストクレデンシャル", "description": "テスト",
-			  "rendering": { "simple": { "background_color": "#1a56db", "text_color": "#ffffff" } } }
+			{
+				"locale": "en-US",
+				"name": "Test Credential",
+				"description": "A simple test credential",
+				"rendering": {
+					"simple": {
+						"logo": { "uri": "https://example.com/logo.png", "alt_text": "Logo" },
+						"background_color": "#1a56db",
+						"text_color": "#ffffff"
+					}
+				}
+			},
+			{
+				"locale": "nl-NL",
+				"name": "Testcredential",
+				"description": "Een testcredential",
+				"rendering": {
+					"simple": {
+						"background_color": "#1a56db",
+						"text_color": "#ffffff"
+					}
+				}
+			},
+			{
+				"locale": "ja-JP",
+				"name": "テストクレデンシャル",
+				"description": "テスト",
+				"rendering": {
+					"simple": {
+						"background_color": "#1a56db",
+						"text_color": "#ffffff"
+					}
+				}
+			}
 		],
 		"claims": [
-			{ "path": ["given_name"], "display": [
-				{ "locale": "en-US", "label": "Given Name", "description": "First name of the holder" },
-				{ "locale": "nl-NL", "label": "Voornaam", "description": "Voornaam van de houder" }
-			], "sd": "always" },
-			{ "path": ["family_name"], "display": [
-				{ "locale": "en-US", "label": "Family Name" }
-			], "sd": "always" }
+			{
+				"path": ["given_name"],
+				"sd": "always",
+				"display": [
+					{ "locale": "en-US", "label": "Given Name", "description": "First name of the holder" },
+					{ "locale": "nl-NL", "label": "Voornaam", "description": "Voornaam van de houder" }
+				]
+			},
+			{
+				"path": ["family_name"],
+				"sd": "always",
+				"display": [
+					{ "locale": "en-US", "label": "Family Name" }
+				]
+			}
 		]
 	}`)
 
