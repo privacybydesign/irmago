@@ -772,6 +772,30 @@
         }
       ]
     },
+    "PostIssuanceVctTestCredentialSdJwt": {
+      "format": "dc+sd-jwt",
+      "scope": "PostIssuanceVctTestCredentialSdJwt",
+      "extends": "TestCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "display": [
+        {
+          "name": "Post-Issuance VCT Test (from credential_metadata)",
+          "locale": "en"
+        }
+      ]
+    },
     "VctMetadataTestCredentialSdJwt": {
       "format": "dc+sd-jwt",
       "scope": "VctMetadataTestCredentialSdJwt",

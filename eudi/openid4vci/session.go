@@ -2,6 +2,7 @@ package openid4vci
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -41,6 +42,10 @@ type session struct {
 	// metadata documents so the post-issuance integrity check (verifyVctIntegrity)
 	// can hash them against vct#integrity claims on issued JWTs.
 	vctResolver *typemetadata.Resolver
+
+	// allowInsecureHttp mirrors the client setting so post-issuance VCT
+	// resolution can fall back to http:// URLs in test/dev mode.
+	allowInsecureHttp bool
 
 	redirectUri string
 
@@ -117,6 +122,15 @@ func (s *session) perform() {
 		})
 		return
 	}
+
+	// Resolve SD-JWT VC type metadata using each verified JWT's actual `vct`
+	// claim. Catches issuers whose well-known document advertises a non-URL
+	// `vct` (e.g. veramo's "unknown" placeholder) but whose issued credentials
+	// still carry a fetchable VCT URL. Must run before verifyVctIntegrity so
+	// the integrity check has a cached document to hash against, and before
+	// buildOfferedCredentials so the user-facing display reflects the
+	// VCT-derived view.
+	s.enrichMetadataFromFetchedVct(context.Background(), fetched)
 
 	// Verify vct#integrity claims (post-issuance trust hardening) before
 	// showing the credential to the user. A failed integrity check is treated
@@ -212,6 +226,62 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 		result = append(result, fc)
 	}
 	return result, nil
+}
+
+// enrichMetadataFromFetchedVct resolves SD-JWT VC type metadata using the vct
+// claim of each verified SD-JWT and replaces config.CredentialMetadata with
+// the resulting view. The JWT's vct claim is authoritative (it is what was
+// signed into the credential), so we always trust it as the type-metadata
+// source even when the issuer's well-known document carries a non-URL
+// placeholder (e.g. veramo's "unknown"). Per-URL resolution is cached by the
+// resolver, so configurations already resolved at offer time are a no-op
+// here.
+//
+// Logos introduced by the type metadata (top-level display.logo or
+// rendering.simple.logo) are downloaded inline so LoadLogoImage in
+// buildOfferedCredentials finds them. Failures fall back silently to the
+// existing credential_metadata.
+func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*fetchedCredential) {
+	if s.vctResolver == nil {
+		return
+	}
+	logoManager := s.storage.FileSystem().Credentials().LogoManager()
+	for _, fc := range fetched {
+		if len(fc.verifiedSdJwtVcs) == 0 {
+			continue
+		}
+		vctURL := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType
+		if !vctLooksFetchable(vctURL, s.allowInsecureHttp) {
+			continue
+		}
+		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId]
+		if !ok {
+			continue
+		}
+		resolved, err := s.vctResolver.Resolve(ctx, vctURL, s.allowInsecureHttp)
+		if err != nil {
+			eudi.Logger.Infof("post-issuance vct resolution failed for %q (config=%q): %v; falling back to credential_metadata", vctURL, fc.credentialConfigurationId, err)
+			continue
+		}
+		mapped := mapVctToCredentialMetadata(resolved)
+		config.CredentialMetadata = mergeCredentialMetadata(config.CredentialMetadata, &mapped)
+		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
+
+		for _, display := range mapped.Display {
+			if display.Logo == nil {
+				continue
+			}
+			logoData, _, err := downloadRemoteImage(s.httpClient, *display.Logo)
+			if err != nil {
+				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
+				continue
+			}
+			if err := logoManager.Save(display.Logo.Uri, logoData); err != nil {
+				eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
+			}
+			break
+		}
+	}
 }
 
 // vctIntegrityClaim is the JWT claim name carrying the integrity hash of the

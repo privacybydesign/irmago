@@ -2654,7 +2654,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 		"EmailCredentialSdJwt", `{"email": "batch2@example.com", "domain": "example.com"}`)
 
 	// Batch-of-2 should have a non-nil remaining count of 2.
-	requireBatchRemaining(t, c, "Email Credential (SD-JWT, Batch 2)", uintPtr(2))
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", uintPtr(2))
 
 	// Step 2: First disclosure — uses first instance.
 	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
@@ -2681,7 +2681,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	)
 
 	// After first disclosure, remaining should be 1.
-	requireBatchRemaining(t, c, "Email Credential (SD-JWT, Batch 2)", uintPtr(1))
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", uintPtr(1))
 
 	// Step 3: Second disclosure — uses last instance.
 	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)

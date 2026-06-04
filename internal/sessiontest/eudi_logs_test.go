@@ -96,7 +96,7 @@ func testOpenID4VCIAuthCodeFlowCreatesIssuanceLog(t *testing.T) {
 	require.NotNil(t, log.IssuanceLog)
 	require.Equal(t, clientmodels.Protocol_OpenID4VCI, log.IssuanceLog.Protocol)
 	require.Len(t, log.IssuanceLog.Credentials, 1)
-	require.Equal(t, "Test Credential (SD-JWT, Auth Code)", log.IssuanceLog.Credentials[0].Name["en"])
+	require.Equal(t, "Test Credential (SD-JWT)", log.IssuanceLog.Credentials[0].Name["en"])
 }
 
 func testOpenID4VCIDeniedPermissionCreatesNoLog(t *testing.T) {
