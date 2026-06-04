@@ -636,9 +636,9 @@ func TestComposeUnobtainableDescriptor_VctOk_NoIssuerField(t *testing.T) {
 	vctFetcher := &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
 		"https://example.com/vct/email": {
 			Name:    "Email Credential",
-			Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+			Display: []typemetadata.DisplayEntry{{Locale: "en", Name: "Email Credential"}},
 			Claims: []typemetadata.ClaimMetadata{
-				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Lang: "en", Name: "Email"}}},
+				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Locale: "en", Name: "Email"}}},
 			},
 		},
 	}}
@@ -689,10 +689,10 @@ func TestComposeUnobtainableDescriptor_VctAndIssuerOk(t *testing.T) {
 	vctFetcher := &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
 		"https://example.com/vct/email": {
 			Name:      "Email Credential",
-			Display:   []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+			Display:   []typemetadata.DisplayEntry{{Locale: "en", Name: "Email Credential"}},
 			IssuerURL: "https://issuer.example.com",
 			Claims: []typemetadata.ClaimMetadata{
-				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Lang: "en", Name: "Email"}}},
+				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Locale: "en", Name: "Email"}}},
 			},
 		},
 	}}
@@ -726,7 +726,7 @@ func TestComposeUnobtainableDescriptor_MultiVct_FirstFailsSecondSucceeds(t *test
 		docs: map[string]*typemetadata.VctTypeMetadata{
 			"https://example.com/vct/good": {
 				Name:    "Good Credential",
-				Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Good Credential"}},
+				Display: []typemetadata.DisplayEntry{{Locale: "en", Name: "Good Credential"}},
 			},
 		},
 	}
@@ -781,7 +781,7 @@ func TestFindCandidates_NoBatches_AppendsUnobtainableDescriptor(t *testing.T) {
 	h.vctFetcher = &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
 		"https://example.com/vct/email": {
 			Name:    "Email Credential",
-			Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+			Display: []typemetadata.DisplayEntry{{Locale: "en", Name: "Email Credential"}},
 		},
 	}}
 

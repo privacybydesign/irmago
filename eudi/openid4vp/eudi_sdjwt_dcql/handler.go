@@ -253,11 +253,11 @@ func vctName(vctMeta *typemetadata.VctTypeMetadata) clientmodels.TranslatedStrin
 		if d.Name == "" {
 			continue
 		}
-		lang := d.Lang
-		if lang == "" {
-			lang = clientmodels.DefaultFallbackLanguage
+		locale := d.Locale
+		if locale == "" {
+			locale = clientmodels.DefaultFallbackLanguage
 		}
-		name[lang] = d.Name
+		name[locale] = d.Name
 	}
 	if len(name) == 0 && vctMeta.Name != "" {
 		name[clientmodels.DefaultFallbackLanguage] = vctMeta.Name
@@ -320,11 +320,11 @@ func claimDisplayFromVct(vctMeta *typemetadata.VctTypeMetadata, path []any) clie
 			if d.Name == "" {
 				continue
 			}
-			lang := d.Lang
-			if lang == "" {
-				lang = clientmodels.DefaultFallbackLanguage
+			locale := d.Locale
+			if locale == "" {
+				locale = clientmodels.DefaultFallbackLanguage
 			}
-			ts[lang] = d.Name
+			ts[locale] = d.Name
 		}
 		if len(ts) > 0 {
 			return ts

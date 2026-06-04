@@ -40,9 +40,10 @@ type VctTypeMetadata struct {
 }
 
 // DisplayEntry is one localized display entry from the type-metadata document.
-// The SD-JWT VC spec uses "lang", not "locale".
+// Current SD-JWT VC drafts (draft-16 onward) use "locale"; earlier drafts used
+// "lang". The parser accepts both, preferring "locale".
 type DisplayEntry struct {
-	Lang            string
+	Locale          string
 	Name            string
 	Description     string
 	Logo            *RemoteImage
@@ -58,8 +59,8 @@ type ClaimMetadata struct {
 
 // ClaimDisplayEntry is one localized display entry for a single claim.
 type ClaimDisplayEntry struct {
-	Lang string
-	Name string
+	Locale string
+	Name   string
 }
 
 // RemoteImage is a logo reference in a display entry.
@@ -196,7 +197,7 @@ func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 	}
 	for _, d := range raw.Display {
 		entry := DisplayEntry{
-			Lang:        d.Lang,
+			Locale:      firstNonEmpty(d.Locale, d.Lang),
 			Name:        d.Name,
 			Description: d.Description,
 		}
@@ -206,17 +207,39 @@ func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 		if d.Rendering != nil && d.Rendering.Simple != nil {
 			entry.BackgroundColor = d.Rendering.Simple.BackgroundColor
 			entry.TextColor = d.Rendering.Simple.TextColor
+			// Current SD-JWT VC drafts place the logo under
+			// rendering.simple.logo. Used only as a fallback so a top-level
+			// "logo" (older draft / OID4VCI-style) still wins when present.
+			if entry.Logo == nil && d.Rendering.Simple.Logo != nil {
+				entry.Logo = &RemoteImage{
+					URI:     d.Rendering.Simple.Logo.URI,
+					AltText: d.Rendering.Simple.Logo.AltText,
+				}
+			}
 		}
 		out.Display = append(out.Display, entry)
 	}
 	for _, c := range raw.Claims {
 		cm := ClaimMetadata{Path: c.Path}
 		for _, d := range c.Display {
-			cm.Display = append(cm.Display, ClaimDisplayEntry(d))
+			cm.Display = append(cm.Display, ClaimDisplayEntry{
+				Locale: firstNonEmpty(d.Locale, d.Lang),
+				// Spec uses "label"; tolerate "name" as a legacy alias.
+				Name: firstNonEmpty(d.Label, d.Name),
+			})
 		}
 		out.Claims = append(out.Claims, cm)
 	}
 	return out, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ParseIssuerMetadata decodes the OpenID4VCI issuer metadata document and
@@ -268,6 +291,7 @@ type rawVctDocument struct {
 
 type rawVctDisplay struct {
 	Lang        string        `json:"lang"`
+	Locale      string        `json:"locale"`
 	Name        string        `json:"name"`
 	Description string        `json:"description,omitempty"`
 	Logo        *rawRemoteImg `json:"logo,omitempty"`
@@ -279,8 +303,9 @@ type rawRendering struct {
 }
 
 type rawRenderingSimple struct {
-	BackgroundColor string `json:"background_color,omitempty"`
-	TextColor       string `json:"text_color,omitempty"`
+	BackgroundColor string        `json:"background_color,omitempty"`
+	TextColor       string        `json:"text_color,omitempty"`
+	Logo            *rawRemoteImg `json:"logo,omitempty"`
 }
 
 type rawVctClaim struct {
@@ -289,8 +314,10 @@ type rawVctClaim struct {
 }
 
 type rawClaimDisplay struct {
-	Lang string `json:"lang"`
-	Name string `json:"name"`
+	Lang   string `json:"lang"`
+	Locale string `json:"locale"`
+	Label  string `json:"label"`
+	Name   string `json:"name"`
 }
 
 type rawRemoteImg struct {

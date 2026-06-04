@@ -19,8 +19,8 @@ func TestParseVctTypeMetadata_FullDocument(t *testing.T) {
 		],
 		"claims": [
 			{ "path": ["email"], "display": [
-				{ "lang": "en", "name": "Email" },
-				{ "lang": "nl", "name": "E-mailadres" }
+				{ "lang": "en", "label": "Email" },
+				{ "lang": "nl", "label": "E-mailadres" }
 			]}
 		],
 		"issuer": "https://issuer.example.com"
@@ -32,7 +32,7 @@ func TestParseVctTypeMetadata_FullDocument(t *testing.T) {
 	require.Equal(t, "Email Credential", parsed.Name)
 	require.Equal(t, "https://issuer.example.com", parsed.IssuerURL)
 	require.Len(t, parsed.Display, 2)
-	require.Equal(t, "en", parsed.Display[0].Lang)
+	require.Equal(t, "en", parsed.Display[0].Locale)
 	require.Equal(t, "Email Credential", parsed.Display[0].Name)
 	require.NotNil(t, parsed.Display[0].Logo)
 	require.Equal(t, "https://example.com/logo.png", parsed.Display[0].Logo.URI)
@@ -40,7 +40,155 @@ func TestParseVctTypeMetadata_FullDocument(t *testing.T) {
 	require.Len(t, parsed.Claims, 1)
 	require.Equal(t, []any{"email"}, parsed.Claims[0].Path)
 	require.Len(t, parsed.Claims[0].Display, 2)
+	require.Equal(t, "en", parsed.Claims[0].Display[0].Locale)
 	require.Equal(t, "Email", parsed.Claims[0].Display[0].Name)
+}
+
+// TestParseVctTypeMetadata_LocaleAndLabelAliases pins parsing of the current
+// SD-JWT VC draft (≥ draft-16) shape: "locale" rather than "lang", and "label"
+// rather than "name" for claim display. Without this, the wallet ends up
+// showing the last-locale credential name (e.g. ja-JP wins everywhere) and
+// empty claim display names.
+func TestParseVctTypeMetadata_LocaleAndLabelAliases(t *testing.T) {
+	doc := []byte(`{
+		"display": [
+			{ "locale": "en-US", "name": "Test Credential" },
+			{ "locale": "ja-JP", "name": "テストクレデンシャル" }
+		],
+		"claims": [
+			{ "path": ["given_name"], "display": [
+				{ "locale": "en-US", "label": "Given Name" },
+				{ "locale": "ja-JP", "label": "名" }
+			]}
+		]
+	}`)
+
+	parsed, err := ParseVctTypeMetadata(doc)
+	require.NoError(t, err)
+	require.Len(t, parsed.Display, 2)
+	require.Equal(t, "en-US", parsed.Display[0].Locale)
+	require.Equal(t, "Test Credential", parsed.Display[0].Name)
+	require.Equal(t, "ja-JP", parsed.Display[1].Locale)
+	require.Equal(t, "テストクレデンシャル", parsed.Display[1].Name)
+
+	require.Len(t, parsed.Claims, 1)
+	require.Len(t, parsed.Claims[0].Display, 2)
+	require.Equal(t, "en-US", parsed.Claims[0].Display[0].Locale)
+	require.Equal(t, "Given Name", parsed.Claims[0].Display[0].Name)
+	require.Equal(t, "ja-JP", parsed.Claims[0].Display[1].Locale)
+	require.Equal(t, "名", parsed.Claims[0].Display[1].Name)
+}
+
+// TestParseVctTypeMetadata_CurrentSpecFieldsPreferredOverLegacy asserts that
+// when a document carries both the current-spec field ("locale", "label") and
+// the legacy alias ("lang", "name") — e.g. for transitional compatibility —
+// the current-spec field wins.
+func TestParseVctTypeMetadata_CurrentSpecFieldsPreferredOverLegacy(t *testing.T) {
+	doc := []byte(`{
+		"display": [
+			{ "lang": "en", "locale": "de", "name": "Cred" }
+		],
+		"claims": [
+			{ "path": ["x"], "display": [
+				{ "lang": "en", "locale": "de", "label": "Spec label", "name": "Legacy name" }
+			]}
+		]
+	}`)
+
+	parsed, err := ParseVctTypeMetadata(doc)
+	require.NoError(t, err)
+	require.Equal(t, "de", parsed.Display[0].Locale)
+	require.Equal(t, "de", parsed.Claims[0].Display[0].Locale)
+	require.Equal(t, "Spec label", parsed.Claims[0].Display[0].Name)
+}
+
+// TestParseVctTypeMetadata_RenderingSimpleLogo ensures the wallet picks up the
+// logo when it lives under rendering.simple.logo (the only place Sphereon puts
+// it). Top-level "logo" still takes precedence when both are present.
+func TestParseVctTypeMetadata_RenderingSimpleLogo(t *testing.T) {
+	doc := []byte(`{
+		"display": [
+			{
+				"locale": "en-US",
+				"name": "Test Credential",
+				"rendering": {
+					"simple": {
+						"logo": { "uri": "https://example.com/nested.png", "alt_text": "Nested" },
+						"background_color": "#1a56db",
+						"text_color": "#ffffff"
+					}
+				}
+			},
+			{
+				"locale": "nl-NL",
+				"name": "Test",
+				"logo": { "uri": "https://example.com/top.png" },
+				"rendering": {
+					"simple": { "logo": { "uri": "https://example.com/nested-too.png" } }
+				}
+			}
+		]
+	}`)
+
+	parsed, err := ParseVctTypeMetadata(doc)
+	require.NoError(t, err)
+	require.Len(t, parsed.Display, 2)
+	require.NotNil(t, parsed.Display[0].Logo)
+	require.Equal(t, "https://example.com/nested.png", parsed.Display[0].Logo.URI)
+	require.Equal(t, "Nested", parsed.Display[0].Logo.AltText)
+	require.Equal(t, "#1a56db", parsed.Display[0].BackgroundColor)
+	require.NotNil(t, parsed.Display[1].Logo)
+	require.Equal(t, "https://example.com/top.png", parsed.Display[1].Logo.URI, "top-level logo wins over rendering.simple.logo")
+}
+
+// TestParseVctTypeMetadata_SphereonStyleDocument is a regression test for the
+// bridge-event output where the wallet rendered "テストクレデンシャル" (the
+// last locale's credential name) under every language and empty strings for
+// every claim display label. Documents in this exact shape are produced by
+// https://sphereon-oid4vc.ngrok.dev/oid4vci/vct/TestCredential.
+func TestParseVctTypeMetadata_SphereonStyleDocument(t *testing.T) {
+	doc := []byte(`{
+		"vct": "https://example.com/vct/Test",
+		"name": "Test Credential",
+		"description": "A test SD-JWT verifiable credential",
+		"display": [
+			{ "locale": "en-US", "name": "Test Credential", "description": "A simple test credential",
+			  "rendering": { "simple": { "logo": { "uri": "https://example.com/logo.png", "alt_text": "Logo" }, "background_color": "#1a56db", "text_color": "#ffffff" } } },
+			{ "locale": "nl-NL", "name": "Testcredential", "description": "Een testcredential",
+			  "rendering": { "simple": { "background_color": "#1a56db", "text_color": "#ffffff" } } },
+			{ "locale": "ja-JP", "name": "テストクレデンシャル", "description": "テスト",
+			  "rendering": { "simple": { "background_color": "#1a56db", "text_color": "#ffffff" } } }
+		],
+		"claims": [
+			{ "path": ["given_name"], "display": [
+				{ "locale": "en-US", "label": "Given Name", "description": "First name of the holder" },
+				{ "locale": "nl-NL", "label": "Voornaam", "description": "Voornaam van de houder" }
+			], "sd": "always" },
+			{ "path": ["family_name"], "display": [
+				{ "locale": "en-US", "label": "Family Name" }
+			], "sd": "always" }
+		]
+	}`)
+
+	parsed, err := ParseVctTypeMetadata(doc)
+	require.NoError(t, err)
+
+	require.Equal(t, "Test Credential", parsed.Name)
+	require.Len(t, parsed.Display, 3)
+	require.Equal(t, "en-US", parsed.Display[0].Locale)
+	require.Equal(t, "Test Credential", parsed.Display[0].Name)
+	require.NotNil(t, parsed.Display[0].Logo)
+	require.Equal(t, "https://example.com/logo.png", parsed.Display[0].Logo.URI)
+	require.Equal(t, "ja-JP", parsed.Display[2].Locale)
+	require.Equal(t, "テストクレデンシャル", parsed.Display[2].Name)
+
+	require.Len(t, parsed.Claims, 2)
+	require.Equal(t, []any{"given_name"}, parsed.Claims[0].Path)
+	require.Len(t, parsed.Claims[0].Display, 2)
+	require.Equal(t, "en-US", parsed.Claims[0].Display[0].Locale)
+	require.Equal(t, "Given Name", parsed.Claims[0].Display[0].Name)
+	require.Equal(t, "Voornaam", parsed.Claims[0].Display[1].Name)
+	require.Equal(t, "Family Name", parsed.Claims[1].Display[0].Name)
 }
 
 func TestParseVctTypeMetadata_NoIssuerField(t *testing.T) {

@@ -119,7 +119,7 @@ func TestMapVctToCredentialMetadata_ProjectsAllSupportedFields(t *testing.T) {
 	vct := &typemetadata.VctTypeMetadata{
 		Display: []typemetadata.DisplayEntry{
 			{
-				Lang:            "en-US",
+				Locale:          "en-US",
 				Name:            "Email",
 				Description:     "An email credential",
 				Logo:            &typemetadata.RemoteImage{URI: "https://x/logo.png", AltText: "logo"},
@@ -131,7 +131,7 @@ func TestMapVctToCredentialMetadata_ProjectsAllSupportedFields(t *testing.T) {
 			{
 				Path: []any{"email"},
 				Display: []typemetadata.ClaimDisplayEntry{
-					{Lang: "en", Name: "Email"},
+					{Locale: "en", Name: "Email"},
 				},
 			},
 		},

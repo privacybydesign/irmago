@@ -554,8 +554,8 @@ func mapVctToCredentialMetadata(vct *typemetadata.VctTypeMetadata) metadata.Cred
 			BackgroundColor: d.BackgroundColor,
 			TextColor:       d.TextColor,
 		}
-		if d.Lang != "" {
-			locale := d.Lang
+		if d.Locale != "" {
+			locale := d.Locale
 			entry.Display.Locale = &locale
 		}
 		if d.Logo != nil {
@@ -569,8 +569,8 @@ func mapVctToCredentialMetadata(vct *typemetadata.VctTypeMetadata) metadata.Cred
 		}
 		for _, cd := range c.Display {
 			d := metadata.Display{Name: cd.Name}
-			if cd.Lang != "" {
-				locale := cd.Lang
+			if cd.Locale != "" {
+				locale := cd.Locale
 				d.Locale = &locale
 			}
 			entry.Display = append(entry.Display, d)
