@@ -64,6 +64,43 @@ func TestParseVctTypeMetadata_InvalidJSON(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestParseVctTypeMetadata_RichDisplayFields(t *testing.T) {
+	doc := []byte(`{
+		"name": "PID",
+		"display": [
+			{
+				"lang": "en-US",
+				"name": "Person ID",
+				"description": "Government-issued personal identifier",
+				"rendering": {
+					"simple": {
+						"background_color": "#0033A0",
+						"text_color": "#FFFFFF"
+					}
+				}
+			}
+		]
+	}`)
+	parsed, err := ParseVctTypeMetadata(doc)
+	require.NoError(t, err)
+	require.Len(t, parsed.Display, 1)
+	require.Equal(t, "Government-issued personal identifier", parsed.Display[0].Description)
+	require.Equal(t, "#0033A0", parsed.Display[0].BackgroundColor)
+	require.Equal(t, "#FFFFFF", parsed.Display[0].TextColor)
+}
+
+func TestParseVctTypeMetadata_ExtendsFields(t *testing.T) {
+	doc := []byte(`{
+		"name": "Refined PID",
+		"extends": "https://issuer.example.com/types/parent",
+		"extends#integrity": "sha256-abc123"
+	}`)
+	parsed, err := ParseVctTypeMetadata(doc)
+	require.NoError(t, err)
+	require.Equal(t, "https://issuer.example.com/types/parent", parsed.Extends)
+	require.Equal(t, "sha256-abc123", parsed.ExtendsIntegrity)
+}
+
 func TestParseIssuerMetadata_FullDocument(t *testing.T) {
 	doc := []byte(`{
 		"credential_issuer": "https://issuer.example.com",

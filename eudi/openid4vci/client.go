@@ -1,6 +1,7 @@
 package openid4vci
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 )
 
@@ -86,8 +88,16 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 			return
 		}
 
+		// SD-JWT VC type metadata is the spec-preferred source for credential
+		// display/claims (OID4VCI v1.0 § 12.2.4: format-specific mechanisms are
+		// "always preferred" over credential_metadata). Resolve it now so the
+		// session and the credential descriptor list both see the enriched view.
+		// The resolver instance is reused post-issuance to verify vct#integrity.
+		resolver := typemetadata.NewResolver(client.httpClient)
+		client.resolveCredentialMetadataFromVct(context.Background(), credentialOffer, credentialIssuerMetadata, resolver)
+
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
-		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, redirectUri, handler)
+		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, resolver, redirectUri, handler)
 
 		if err != nil {
 			handleFailure(handler, "failed to handle credential offer: %v", err)
@@ -98,6 +108,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 func (client *Client) handleCredentialOffer(
 	credentialOffer *CredentialOffer,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
+	vctResolver *typemetadata.Resolver,
 	redirectUri string,
 	handler Handler,
 ) error {
@@ -116,6 +127,7 @@ func (client *Client) handleCredentialOffer(
 		httpClient:               client.httpClient,
 		holderVerifier:           client.holderVerifier,
 		storage:                  client.Configuration.Storage,
+		vctResolver:              vctResolver,
 		redirectUri:              redirectUri,
 	}
 	defer func() {
@@ -472,4 +484,98 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	handler.Failure(&clientmodels.SessionError{
 		WrappedError: fmt.Sprintf(message, fmtArgs...),
 	})
+}
+
+// resolveCredentialMetadataFromVct fetches SD-JWT VC type metadata for each
+// offered credential configuration whose vct value is an absolute HTTPS URL
+// (or HTTP when allowInsecureHttp is set). On success, the config's
+// CredentialMetadata is replaced wholesale by the resolved type-metadata view
+// — making the type metadata the preferred source per OID4VCI v1.0 § 12.2.4.
+// On any failure (URL not fetchable, network error, parse error, extends
+// cycle, extends-integrity mismatch, depth overflow), the existing
+// CredentialMetadata is left as-is so consumers fall back to the issuer
+// metadata's credential_metadata.
+func (client *Client) resolveCredentialMetadataFromVct(
+	ctx context.Context,
+	offer *CredentialOffer,
+	issuerMetadata *metadata.CredentialIssuerMetadata,
+	resolver *typemetadata.Resolver,
+) {
+	for _, configID := range offer.CredentialConfigurationIds {
+		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
+		if !ok {
+			continue
+		}
+		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+			config.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
+			continue
+		}
+		// vct can legally be a non-URL string identifier; if so, there's
+		// nothing to fetch — silently leave CredentialMetadata alone.
+		if !vctLooksFetchable(config.VerifiableCredentialType, client.allowInsecureHttp) {
+			continue
+		}
+
+		resolved, err := resolver.Resolve(ctx, config.VerifiableCredentialType, client.allowInsecureHttp)
+		if err != nil {
+			eudi.Logger.Infof("vct type metadata resolution failed for %q (vct=%q): %v; falling back to credential_metadata", configID, config.VerifiableCredentialType, err)
+			continue
+		}
+
+		mapped := mapVctToCredentialMetadata(resolved)
+		config.CredentialMetadata = &mapped
+		issuerMetadata.CredentialConfigurationsSupported[configID] = config
+	}
+}
+
+// vctLooksFetchable returns true if vct uses a scheme this wallet will attempt
+// to fetch. Avoids spurious Resolve() error logs for non-URL vct identifiers.
+func vctLooksFetchable(vct string, allowInsecureHttp bool) bool {
+	if strings.HasPrefix(vct, "https://") {
+		return true
+	}
+	if allowInsecureHttp && strings.HasPrefix(vct, "http://") {
+		return true
+	}
+	return false
+}
+
+// mapVctToCredentialMetadata projects a resolved SD-JWT VC type-metadata
+// document onto the OpenID4VCI credential_metadata shape consumed elsewhere
+// in this package. The mapping is lossy: SD-JWT VC-specific features without
+// a credential_metadata analogue (SVG templates, JSON schemas, asset-level
+// integrity) are dropped.
+func mapVctToCredentialMetadata(vct *typemetadata.VctTypeMetadata) metadata.CredentialMetadata {
+	out := metadata.CredentialMetadata{}
+	for _, d := range vct.Display {
+		entry := metadata.CredentialDisplay{
+			Display:         metadata.Display{Name: d.Name},
+			Description:     d.Description,
+			BackgroundColor: d.BackgroundColor,
+			TextColor:       d.TextColor,
+		}
+		if d.Lang != "" {
+			locale := d.Lang
+			entry.Display.Locale = &locale
+		}
+		if d.Logo != nil {
+			entry.Logo = &metadata.RemoteImage{Uri: d.Logo.URI, AltText: d.Logo.AltText}
+		}
+		out.Display = append(out.Display, entry)
+	}
+	for _, c := range vct.Claims {
+		entry := metadata.ClaimsDescription{
+			Path: metadata.ClaimsPathPointer(c.Path),
+		}
+		for _, cd := range c.Display {
+			d := metadata.Display{Name: cd.Name}
+			if cd.Lang != "" {
+				locale := cd.Lang
+				d.Locale = &locale
+			}
+			entry.Display = append(entry.Display, d)
+		}
+		out.Claims = append(out.Claims, entry)
+	}
+	return out
 }

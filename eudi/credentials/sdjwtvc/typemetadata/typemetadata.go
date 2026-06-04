@@ -31,14 +31,23 @@ type VctTypeMetadata struct {
 	// IssuerURL is the optional "issuer" hint — the URL where the issuer's
 	// well-known document can be fetched.
 	IssuerURL string
+	// Extends is the URL of a parent type-metadata document whose contents
+	// this document refines, per SD-JWT VC § 6.1.
+	Extends string
+	// ExtendsIntegrity is the integrity hash for the parent document, used to
+	// verify the document referenced by Extends. Format: "<algo>-<base64>".
+	ExtendsIntegrity string
 }
 
 // DisplayEntry is one localized display entry from the type-metadata document.
 // The SD-JWT VC spec uses "lang", not "locale".
 type DisplayEntry struct {
-	Lang string
-	Name string
-	Logo *RemoteImage
+	Lang            string
+	Name            string
+	Description     string
+	Logo            *RemoteImage
+	BackgroundColor string
+	TextColor       string
 }
 
 // ClaimMetadata is one claim metadata entry from the type-metadata document.
@@ -180,13 +189,23 @@ func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 	}
 
 	out := &VctTypeMetadata{
-		Name:      raw.Name,
-		IssuerURL: raw.Issuer,
+		Name:             raw.Name,
+		IssuerURL:        raw.Issuer,
+		Extends:          raw.Extends,
+		ExtendsIntegrity: raw.ExtendsIntegrity,
 	}
 	for _, d := range raw.Display {
-		entry := DisplayEntry{Lang: d.Lang, Name: d.Name}
+		entry := DisplayEntry{
+			Lang:        d.Lang,
+			Name:        d.Name,
+			Description: d.Description,
+		}
 		if d.Logo != nil {
 			entry.Logo = &RemoteImage{URI: d.Logo.URI, AltText: d.Logo.AltText}
+		}
+		if d.Rendering != nil && d.Rendering.Simple != nil {
+			entry.BackgroundColor = d.Rendering.Simple.BackgroundColor
+			entry.TextColor = d.Rendering.Simple.TextColor
 		}
 		out.Display = append(out.Display, entry)
 	}
@@ -239,16 +258,29 @@ func ParseIssuerMetadata(data []byte, issuerURL string) (*IssuerMetadata, error)
 // --- raw JSON shapes ---
 
 type rawVctDocument struct {
-	Name    string          `json:"name"`
-	Display []rawVctDisplay `json:"display"`
-	Claims  []rawVctClaim   `json:"claims"`
-	Issuer  string          `json:"issuer"`
+	Name             string          `json:"name"`
+	Display          []rawVctDisplay `json:"display"`
+	Claims           []rawVctClaim   `json:"claims"`
+	Issuer           string          `json:"issuer"`
+	Extends          string          `json:"extends,omitempty"`
+	ExtendsIntegrity string          `json:"extends#integrity,omitempty"`
 }
 
 type rawVctDisplay struct {
-	Lang string        `json:"lang"`
-	Name string        `json:"name"`
-	Logo *rawRemoteImg `json:"logo,omitempty"`
+	Lang        string        `json:"lang"`
+	Name        string        `json:"name"`
+	Description string        `json:"description,omitempty"`
+	Logo        *rawRemoteImg `json:"logo,omitempty"`
+	Rendering   *rawRendering `json:"rendering,omitempty"`
+}
+
+type rawRendering struct {
+	Simple *rawRenderingSimple `json:"simple,omitempty"`
+}
+
+type rawRenderingSimple struct {
+	BackgroundColor string `json:"background_color,omitempty"`
+	TextColor       string `json:"text_color,omitempty"`
 }
 
 type rawVctClaim struct {

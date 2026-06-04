@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/internal/httpext"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -35,6 +36,11 @@ type session struct {
 	handler                  Handler
 	storage                  storage.Storage
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
+
+	// vctResolver provides cached raw bytes of fetched SD-JWT VC type
+	// metadata documents so the post-issuance integrity check (verifyVctIntegrity)
+	// can hash them against vct#integrity claims on issued JWTs.
+	vctResolver *typemetadata.Resolver
 
 	redirectUri string
 
@@ -107,6 +113,21 @@ func (s *session) perform() {
 	if err != nil {
 		eudi.Logger.Infof("error obtaining credentials: %v", err)
 		s.handler.Failure(&clientmodels.SessionError{
+			WrappedError: err.Error(),
+		})
+		return
+	}
+
+	// Verify vct#integrity claims (post-issuance trust hardening) before
+	// showing the credential to the user. A failed integrity check is treated
+	// as an active deception signal and rejects the credential outright; see
+	// verifyVctIntegrity for the absence/algorithm/mismatch policy.
+	if err := s.verifyVctIntegrity(fetched); err != nil {
+		for _, fc := range fetched {
+			fc.cleanupKeys()
+		}
+		s.handler.Failure(&clientmodels.SessionError{
+			ErrorType:    "integrity_failed",
 			WrappedError: err.Error(),
 		})
 		return
@@ -191,6 +212,61 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 		result = append(result, fc)
 	}
 	return result, nil
+}
+
+// vctIntegrityClaim is the JWT claim name carrying the integrity hash of the
+// SD-JWT VC type metadata document referenced by the credential's vct field.
+const vctIntegrityClaim = "vct#integrity"
+
+// verifyVctIntegrity checks each fetched credential's vct#integrity claim
+// against the raw bytes of the type-metadata document fetched (and cached)
+// pre-issuance. Policy (per Q6a-C):
+//   - claim absent on the JWT → skip (baseline HTTPS trust)
+//   - claim present, no cached document → reject (the issuer asserted
+//     integrity but we have nothing to verify against)
+//   - claim present with unrecognized algorithm prefix → reject
+//   - claim present with hash mismatch → reject
+//   - claim present with matching hash → accept
+//
+// Verification is across all batches of all fetched credentials; any single
+// failing batch fails the whole session.
+func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
+	if s.vctResolver == nil {
+		// Defensive: if resolution wasn't wired (shouldn't happen in
+		// production), skip — the existing HTTPS-trust baseline still
+		// covers credential_metadata.
+		return nil
+	}
+	for _, fc := range fetched {
+		for _, vc := range fc.verifiedSdJwtVcs {
+			integrity, ok := lookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
+			if !ok {
+				continue
+			}
+			rawBytes, ok := s.vctResolver.RawDocument(vc.IssuerSignedJwtPayload.VerifiableCredentialType)
+			if !ok {
+				return fmt.Errorf("vct#integrity present on credential %q but no type metadata was fetched for vct %q", fc.credentialConfigurationId, vc.IssuerSignedJwtPayload.VerifiableCredentialType)
+			}
+			if err := typemetadata.VerifyIntegrity(rawBytes, integrity); err != nil {
+				return fmt.Errorf("vct#integrity verification failed for credential %q: %w", fc.credentialConfigurationId, err)
+			}
+		}
+	}
+	return nil
+}
+
+// lookupVctIntegrityClaim returns the vct#integrity claim string if present
+// and a non-empty string. Non-string values are reported as absent.
+func lookupVctIntegrityClaim(payload sdjwtvc.ProcessedSdJwtPayload) (string, bool) {
+	raw, ok := payload[vctIntegrityClaim]
+	if !ok {
+		return "", false
+	}
+	str, ok := raw.(string)
+	if !ok || str == "" {
+		return "", false
+	}
+	return str, true
 }
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
