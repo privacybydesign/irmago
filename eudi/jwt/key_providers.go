@@ -12,6 +12,8 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/eudi/did"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
 )
 
@@ -80,17 +82,17 @@ func NewKidKeyProvider(kidHeader string, allowInsecure bool) *KidKeyProvider {
 }
 
 func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
-	// For now, we expect the did:web method to be used to reference to the public key, but in the future we might want to support other did methods as well
-
-	// Parse the JWT payload, without verifying the signature, to obtain the iss claim value (which is expected to be a did:web URL referencing the public key), in combination with the kid header value
+	// Parse the JWT payload, without verifying the signature, to obtain the iss claim value
+	// (which is expected to be a did:web or did:jwk DID referencing the public key) in
+	// combination with the kid header value.
 	jwtPayload, err := jwt.ParseInsecure(msg.Payload())
 	if err != nil {
-		return fmt.Errorf("cannot create did:web key identifier: failed to parse JWT payload: %v", err)
+		return fmt.Errorf("cannot resolve key identifier: failed to parse JWT payload: %v", err)
 	}
 
 	issClaim, ok := jwtPayload.Issuer()
 	if !ok {
-		return fmt.Errorf("cannot create did:web key identifier: failed to obtain 'iss' claim from JWT payload")
+		return fmt.Errorf("cannot resolve key identifier: failed to obtain 'iss' claim from JWT payload")
 	}
 
 	fullKid := p.kidHeader
@@ -98,17 +100,16 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 		fullKid = issClaim + p.kidHeader
 	}
 
-	documentResolver := didweb.DocumentResolver{
-		HTTPClient:    p.httpClient,
-		AllowInsecure: p.allowInsecure,
-	}
-	doc, err := documentResolver.Resolve(issClaim)
+	doc, err := p.resolveDidDocument(issClaim)
 	if err != nil {
 		return fmt.Errorf("failed to resolve did document for kid: %v", err)
 	}
 
 	for _, vm := range doc.VerificationMethod {
 		if vm.ID == fullKid {
+			if vm.PublicKeyJwk == nil {
+				return fmt.Errorf("verification method %s has no publicKeyJwk", vm.ID)
+			}
 			// Verify the key is a public key, or throw an error if it contains private key material (which should not be used in a did:web document, but we want to be sure)
 			isPrivateKey, err := jwk.IsPrivateKey(*vm.PublicKeyJwk)
 			if err != nil {
@@ -133,4 +134,27 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 	}
 
 	return fmt.Errorf("failed to find matching verification method for kid: %s", fullKid)
+}
+
+// resolveDidDocument resolves the DID document for the issuer DID, dispatching on the DID method.
+// Supports did:web (fetched over HTTPS) and did:jwk (synthesized from the embedded JWK).
+func (p *KidKeyProvider) resolveDidDocument(issClaim string) (*did.Document, error) {
+	switch {
+	case strings.HasPrefix(issClaim, didjwk.Prefix):
+		key, err := didjwk.Resolve(issClaim)
+		if err != nil {
+			return nil, err
+		}
+		return (&didjwk.DocumentBuilder{}).FromJwk(key)
+
+	case strings.HasPrefix(issClaim, didweb.Prefix):
+		resolver := didweb.DocumentResolver{
+			HTTPClient:    p.httpClient,
+			AllowInsecure: p.allowInsecure,
+		}
+		return resolver.Resolve(issClaim)
+
+	default:
+		return nil, fmt.Errorf("unsupported DID method for kid resolution: %s", issClaim)
+	}
 }

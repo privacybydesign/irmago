@@ -21,6 +21,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/did"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -525,4 +526,111 @@ func Test_KidKeyProvider_FetchKeys_AlgFromJWSHeaderNotJWK(t *testing.T) {
 	// Sink must receive the alg from the JWS header (ES256), not from the JWK field (ES384).
 	require.Equal(t, jwa.ES256(), sink.alg)
 	require.NotNil(t, sink.key)
+}
+
+// ─── KidKeyProvider: did:jwk ─────────────────────────────────────────────────
+
+// newTestDidJwk derives a did:jwk DID from the public part of the given key.
+func newTestDidJwk(t *testing.T, privKey *ecdsa.PrivateKey) string {
+	t.Helper()
+	pubJWK, err := jwk.Import(privKey.Public())
+	require.NoError(t, err)
+	doc, err := (&didjwk.DocumentBuilder{}).FromJwk(pubJWK)
+	require.NoError(t, err)
+	return doc.ID
+}
+
+func Test_KidKeyProvider_FetchKeys_DidJwk_ValidPublicKey_FeedsKeyAndAlgorithmToSink(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	didJwk := newTestDidJwk(t, privKey)
+	msg := newTestJWSMessageSigned(t, didJwk, privKey, jwa.ES256())
+	sig := msg.Signatures()[0]
+
+	p := NewKidKeyProvider("#0", false)
+	sink := &testKeySink{}
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
+
+	require.NoError(t, err)
+	require.Equal(t, jwa.ES256(), sink.alg)
+	require.NotNil(t, sink.key)
+}
+
+func Test_KidKeyProvider_FetchKeys_DidJwk_FullKidHeader_UsedAsIs(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	didJwk := newTestDidJwk(t, privKey)
+	msg := newTestJWSMessageSigned(t, didJwk, privKey, jwa.ES256())
+	sig := msg.Signatures()[0]
+
+	p := NewKidKeyProvider(didJwk+"#0", false)
+	sink := &testKeySink{}
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
+
+	require.NoError(t, err)
+	require.Equal(t, jwa.ES256(), sink.alg)
+	require.NotNil(t, sink.key)
+}
+
+func Test_KidKeyProvider_FetchKeys_DidJwk_NoMatchingVerificationMethod_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	didJwk := newTestDidJwk(t, privKey)
+	msg := newTestJWSMessageSigned(t, didJwk, privKey, jwa.ES256())
+
+	// did:jwk DID documents only contain a verification method with id "#0".
+	p := NewKidKeyProvider("#1", false)
+	err = p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg)
+	require.ErrorContains(t, err, "failed to find matching verification method")
+}
+
+func Test_KidKeyProvider_FetchKeys_VerificationMethodWithoutPublicKeyJwk_ReturnsError(t *testing.T) {
+	const issuerDID = "did:web:example.com"
+	const kidHeader = "#key-1"
+	fullKID := issuerDID + kidHeader
+
+	// DID document with a matching verification method that has no publicKeyJwk.
+	doc := did.Document{
+		ID: issuerDID,
+		VerificationMethod: []did.VerificationMethod{
+			{ID: fullKID, Type: "JsonWebKey2020", Controller: issuerDID},
+		},
+	}
+	docBytes, err := json.Marshal(doc)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(docBytes)
+	}))
+	defer server.Close()
+
+	msg := newTestJWSMessage(t, issuerDID)
+	p := &KidKeyProvider{
+		kidHeader:     kidHeader,
+		allowInsecure: true,
+		httpClient:    &http.Client{Transport: &testRedirectTransport{targetAddr: server.Listener.Addr().String()}},
+	}
+
+	err = p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg)
+	require.ErrorContains(t, err, "has no publicKeyJwk")
+}
+
+func Test_KidKeyProvider_FetchKeys_DidJwk_MalformedEncoding_ReturnsError(t *testing.T) {
+	msg := newTestJWSMessage(t, "did:jwk:not-valid-base64!!!")
+	p := NewKidKeyProvider("#0", false)
+
+	err := p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg)
+	require.ErrorContains(t, err, "failed to resolve did document for kid")
+}
+
+func Test_KidKeyProvider_FetchKeys_UnsupportedDidMethod_ReturnsError(t *testing.T) {
+	msg := newTestJWSMessage(t, "did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH")
+	p := NewKidKeyProvider("#0", false)
+
+	err := p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg)
+	require.ErrorContains(t, err, "unsupported DID method")
 }
