@@ -11,6 +11,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi/did"
 )
 
+const Prefix = "did:web:"
+
 // DocumentResolver resolves did:web DIDs to DID Documents by fetching them over HTTPS.
 // See: https://w3c-ccg.github.io/did-method-web/
 type DocumentResolver struct {
@@ -79,12 +81,11 @@ func (r *DocumentResolver) fetchDocument(docURL string) (*did.Document, error) {
 //  5. If there is an explicit path, append "/did.json".
 //  6. Prepend "https://".
 func didWebToURL(didWeb string) (string, error) {
-	const prefix = "did:web:"
-	if !strings.HasPrefix(didWeb, prefix) {
-		return "", fmt.Errorf("did:web: invalid DID, expected prefix %q: %s", prefix, didWeb)
+	if !strings.HasPrefix(didWeb, Prefix) {
+		return "", fmt.Errorf("did:web: invalid DID, expected prefix %q: %s", Prefix, didWeb)
 	}
 
-	methodSpecificID := strings.TrimPrefix(didWeb, prefix)
+	methodSpecificID := strings.TrimPrefix(didWeb, Prefix)
 	if methodSpecificID == "" {
 		return "", fmt.Errorf("did:web: empty method-specific identifier")
 	}

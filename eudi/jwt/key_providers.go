@@ -144,7 +144,7 @@ func (p *KidKeyProvider) resolveDidDocument(issClaim string) (*did.Document, err
 		}
 		return (&didjwk.DocumentBuilder{}).FromJwk(key)
 
-	case strings.HasPrefix(issClaim, "did:web:"):
+	case strings.HasPrefix(issClaim, didweb.Prefix):
 		resolver := didweb.DocumentResolver{
 			HTTPClient:    p.httpClient,
 			AllowInsecure: p.allowInsecure,
