@@ -96,6 +96,11 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 		resolver := typemetadata.NewResolver(client.httpClient)
 		client.resolveCredentialMetadataFromVct(context.Background(), credentialOffer, credentialIssuerMetadata, resolver)
 
+		// Download credential logos now that CredentialMetadata is final — the
+		// VCT enrichment above can introduce logos (e.g. via
+		// rendering.simple.logo) that weren't present in the issuer document.
+		client.downloadCredentialLogos(credentialOffer, credentialIssuerMetadata)
+
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
 		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, resolver, redirectUri, handler)
 
@@ -310,37 +315,6 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 		}
 	}
 
-	// Also download the logos for the offered credentials, if present in the metadata
-	credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
-	for _, offeredConfiguration := range credentialOffer.CredentialConfigurationIds {
-		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[offeredConfiguration]; ok {
-			if config.CredentialMetadata != nil {
-				for _, display := range config.CredentialMetadata.Display {
-					if display.Logo != nil {
-						// TODO: check if logo is already in cache first
-						logoData, _, err := client.downloadRemoteImage(*display.Logo)
-						if err != nil {
-							eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
-							continue
-						}
-						err = credentialLogoManager.Save(display.Logo.Uri, logoData)
-						if err != nil {
-							eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
-						}
-
-						break
-
-						// TODO: how to handle this error ? Proceed without logo ?
-						// if err != nil {
-						// 	// handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
-						// 	// return
-						// }
-					}
-				}
-			}
-		}
-	}
-
 	return &credentialIssuerMetadata, nil
 }
 
@@ -525,6 +499,38 @@ func (client *Client) resolveCredentialMetadataFromVct(
 		mapped := mapVctToCredentialMetadata(resolved)
 		config.CredentialMetadata = &mapped
 		issuerMetadata.CredentialConfigurationsSupported[configID] = config
+	}
+}
+
+// downloadCredentialLogos caches the first available logo for each offered
+// credential configuration into the credential logo store. Called after
+// resolveCredentialMetadataFromVct so VCT-derived logos (e.g. from
+// rendering.simple.logo) are picked up too.
+func (client *Client) downloadCredentialLogos(
+	offer *CredentialOffer,
+	issuerMetadata *metadata.CredentialIssuerMetadata,
+) {
+	credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
+	for _, configID := range offer.CredentialConfigurationIds {
+		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
+		if !ok || config.CredentialMetadata == nil {
+			continue
+		}
+		for _, display := range config.CredentialMetadata.Display {
+			if display.Logo == nil {
+				continue
+			}
+			// TODO: check if logo is already in cache first
+			logoData, _, err := client.downloadRemoteImage(*display.Logo)
+			if err != nil {
+				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
+				continue
+			}
+			if err := credentialLogoManager.Save(display.Logo.Uri, logoData); err != nil {
+				eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
+			}
+			break
+		}
 	}
 }
 
