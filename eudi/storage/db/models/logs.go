@@ -40,9 +40,10 @@ type EudiLogCredential struct {
 	Formats datatypes.JSON `gorm:"type:json"`
 
 	// JSON-encoded TranslatedString for display name and issuer name.
-	Name       datatypes.JSON `gorm:"type:json"`
-	IssuerName datatypes.JSON `gorm:"type:json"`
-	IssuerId   string
+	Name           datatypes.JSON `gorm:"type:json"`
+	IssuerName     datatypes.JSON `gorm:"type:json"`
+	IssuerId       string
+	IssuerVerified bool
 
 	// JSON-encoded []clientmodels.Attribute — full attribute list with paths,
 	// display names, and values. Stored as a blob since logs are write-once.
