@@ -40,12 +40,9 @@ type VctTypeMetadata struct {
 }
 
 // DisplayEntry is one localized display entry from the type-metadata document.
-// Current SD-JWT VC drafts (draft-13 onward) use "locale"; earlier drafts used
-// "lang". The rename landed in oauth-wg/oauth-sd-jwt-vc PR #353 (issue #223),
-// merged 2025-10-02 — choosing "locale" to align with OpenID Connect tradition.
-// The parser accepts both, preferring "locale", because real-world issuers
-// (e.g. Sphereon's hosted OID4VCI test issuer) and pinned VCT documents in
-// our own integration tests still emit "lang".
+// Current SD-JWT VC drafts (draft-13 onward) use "locale"; earlier drafts used "lang".
+// The parser accepts both, preferring "locale", because it's the newer standard.
+// DIIP v5 references SD-JWT VC draft 8, which predates the rename, so conformant DIIP v5 issuers will emit "lang".
 type DisplayEntry struct {
 	Locale          string
 	Name            string
