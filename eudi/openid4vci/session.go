@@ -264,7 +264,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 			continue
 		}
 		mapped := mapVctToCredentialMetadata(resolved)
-		config.CredentialMetadata = mergeCredentialMetadata(config.CredentialMetadata, &mapped)
+		config.CredentialMetadata = &mapped
 		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
 
 		for _, display := range mapped.Display {
