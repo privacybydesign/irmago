@@ -1648,3 +1648,47 @@ func TestInstallSchemeUnstableRemote(t *testing.T) {
 	err = conf.ParseFolder()
 	require.NoError(t, err)
 }
+
+// TestEmptyConSatisfyDoesNotSwallowDisclosure reproduces irmamobile issue #360:
+// a discon shaped like [[], [<optional attr>]] caused the optional attribute the
+// user actually disclosed to be silently dropped from the verification result,
+// because AttributeCon.Satisfy reported the empty conjunction as satisfied without
+// looking at the disclosed-attribute indices provided for that disjunction.
+func TestEmptyConSatisfyDoesNotSwallowDisclosure(t *testing.T) {
+	t.Run("empty con with no indices is satisfied", func(t *testing.T) {
+		var c AttributeCon
+		satisfied, attrs, err := c.Satisfy(nil, nil, nil, nil)
+		require.NoError(t, err)
+		require.True(t, satisfied)
+		require.Empty(t, attrs)
+	})
+
+	t.Run("empty con must NOT be satisfied when something was disclosed for it", func(t *testing.T) {
+		// Non-empty indices means the user disclosed an attribute for this disjunction,
+		// so the empty con cannot have been the chosen option. If Satisfy reports the
+		// empty con as satisfied here, AttributeDisCon.Satisfy short-circuits on it
+		// and drops the disclosed value.
+		var c AttributeCon
+		indices := []*DisclosedAttributeIndex{{CredentialIndex: 0, AttributeIndex: 4}}
+		satisfied, _, err := c.Satisfy(nil, indices, nil, nil)
+		require.NoError(t, err)
+		require.False(t, satisfied,
+			"empty conjunction was reported satisfied even though indices indicate the user disclosed an attribute for this disjunction (issue #360)")
+	})
+
+	// Drives AttributeDisCon.Satisfy with the exact [[], [optional]] shape
+	// from issue #360: pre-fix, the empty con short-circuits the disjunction
+	// and the disclosed attribute is dropped from the returned attrs.
+	t.Run("discon [[], [optional]] returns the disclosed attribute", func(t *testing.T) {
+		conf, _, disclosure := parseDisclosure(t)
+		discon := AttributeDisCon{
+			AttributeCon{},
+			AttributeCon{NewAttributeRequest("irma-demo.RU.studentCard.studentID")},
+		}
+		satisfied, attrs, err := discon.Satisfy(disclosure.Proofs, disclosure.Indices[0], nil, conf)
+		require.NoError(t, err)
+		require.True(t, satisfied)
+		require.Len(t, attrs, 1, "disjunction satisfied by empty con instead of the [optional] con — disclosed attribute dropped (issue #360)")
+		require.Equal(t, "456", *attrs[0].RawValue)
+	})
+}

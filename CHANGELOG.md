@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fix
 - Bug that keyshare registration failed when users email domain had no MX records.
+- Bug where an empty `con` in a `condiscon` request caused all attribute disclosures to be swallowed, even when other `con`s were satisfied (irmamobile #360)
 
 ### Deprecated
 - `irma server` flags `--email` / `-e` and `--no-email`, and the `email` config key, are no longer used. They are still accepted for backwards compatibility but will emit a deprecation warning when set.
