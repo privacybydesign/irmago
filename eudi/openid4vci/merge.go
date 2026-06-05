@@ -213,4 +213,3 @@ func canonicalLocaleKeyFromPtr(locale *string) string {
 	}
 	return canonicalLocaleKey(*locale)
 }
-
