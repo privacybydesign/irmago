@@ -1675,4 +1675,20 @@ func TestEmptyConSatisfyDoesNotSwallowDisclosure(t *testing.T) {
 		require.False(t, satisfied,
 			"empty conjunction was reported satisfied even though indices indicate the user disclosed an attribute for this disjunction (issue #360)")
 	})
+
+	// Drives AttributeDisCon.Satisfy with the exact [[], [optional]] shape
+	// from issue #360: pre-fix, the empty con short-circuits the disjunction
+	// and the disclosed attribute is dropped from the returned attrs.
+	t.Run("discon [[], [optional]] returns the disclosed attribute", func(t *testing.T) {
+		conf, _, disclosure := parseDisclosure(t)
+		discon := AttributeDisCon{
+			AttributeCon{},
+			AttributeCon{NewAttributeRequest("irma-demo.RU.studentCard.studentID")},
+		}
+		satisfied, attrs, err := discon.Satisfy(disclosure.Proofs, disclosure.Indices[0], nil, conf)
+		require.NoError(t, err)
+		require.True(t, satisfied)
+		require.Len(t, attrs, 1, "disjunction satisfied by empty con instead of the [optional] con — disclosed attribute dropped (issue #360)")
+		require.Equal(t, "456", *attrs[0].RawValue)
+	})
 }
