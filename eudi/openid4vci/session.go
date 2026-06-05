@@ -509,7 +509,9 @@ func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.Tr
 	for _, d := range displays {
 		locale := clientmodels.DefaultFallbackLanguage
 		if d.Locale != nil {
-			locale, _ = metadata.TryGetBaseLanguageFromLocale(*d.Locale)
+			if base, ok := metadata.TryGetBaseLanguageFromLocale(*d.Locale); ok {
+				locale = base
+			}
 		}
 		result[locale] = d.Name
 	}

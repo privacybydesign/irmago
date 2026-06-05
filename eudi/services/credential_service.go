@@ -66,7 +66,9 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		for _, d := range batch.IssuerDisplay {
 			locale := clientmodels.DefaultFallbackLanguage
 			if d.Locale.Valid {
-				locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
+					locale = base
+				}
 			}
 			issuerDisplays[locale] = d.Name
 		}
@@ -79,7 +81,9 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			for _, d := range batch.CredentialMetadata.Display {
 				locale := clientmodels.DefaultFallbackLanguage
 				if d.Locale.Valid {
-					locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+					if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
+						locale = base
+					}
 				}
 				credentialDisplays[locale] = d.Name
 			}
@@ -98,7 +102,9 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				for _, d := range claim.Display {
 					locale := clientmodels.DefaultFallbackLanguage
 					if d.Locale.Valid {
-						locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+						if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
+							locale = base
+						}
 					}
 					display[locale] = d.Name
 				}

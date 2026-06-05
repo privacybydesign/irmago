@@ -1192,7 +1192,9 @@ func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) c
 	for _, d := range batch.IssuerDisplay {
 		locale := clientmodels.DefaultFallbackLanguage
 		if d.Locale.Valid {
-			locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+			if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
+				locale = base
+			}
 		}
 		name[locale] = d.Name
 	}
@@ -1226,7 +1228,9 @@ func credentialDisplayName(batch *models.CredentialBatch) clientmodels.Translate
 		for _, d := range batch.CredentialMetadata.Display {
 			locale := clientmodels.DefaultFallbackLanguage
 			if d.Locale.Valid {
-				locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
+					locale = base
+				}
 			}
 			ts[locale] = d.Name
 		}
@@ -1259,7 +1263,9 @@ func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmode
 		for _, d := range claim.Display {
 			locale := clientmodels.DefaultFallbackLanguage
 			if d.Locale.Valid {
-				locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
+				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
+					locale = base
+				}
 			}
 			ts[locale] = d.Name
 		}
