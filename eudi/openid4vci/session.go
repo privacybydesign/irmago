@@ -323,11 +323,11 @@ func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.Tr
 }
 
 func (s *session) configureIssuerSettings() error {
-	// Determine which grant-type to use (Authorization Code is preferred over Pre-Authorized Code)
-	if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
-		s.issuerSettings.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
-	} else if s.credentialOffer.Grants.PreAuthorizedCodeGrant != nil {
+	// Determine which grant-type to use (Pre-Authorized Code is preferred over Authorization Code).
+	if s.credentialOffer.Grants.PreAuthorizedCodeGrant != nil {
 		s.issuerSettings.grantType = s.credentialOffer.Grants.PreAuthorizedCodeGrant
+	} else if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
+		s.issuerSettings.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
 	} else {
 		return fmt.Errorf("no supported grant type found in credential offer")
 	}

@@ -371,6 +371,69 @@ func Test_openid4vciSession_configureIssuerSettings_credentialRequestEncryption(
 	}
 }
 
+func Test_openid4vciSession_configureIssuerSettings_grantSelection(t *testing.T) {
+	authGrant := &AuthorizationCodeGrant{}
+	preAuthGrant := &PreAuthorizedCodeGrant{PreAuthorizedCode: "pre-auth-code"}
+
+	tests := []struct {
+		name        string
+		grants      *Grants
+		expectGrant GrantType
+		expectErr   string
+	}{
+		{
+			name:        "both grants offered prefers pre-authorized code",
+			grants:      &Grants{AuthorizationCodeGrant: authGrant, PreAuthorizedCodeGrant: preAuthGrant},
+			expectGrant: GrantType_PreAuthorizedCode,
+		},
+		{
+			name:        "only authorization code uses authorization code",
+			grants:      &Grants{AuthorizationCodeGrant: authGrant},
+			expectGrant: GrantType_AuthorizationCode,
+		},
+		{
+			name:        "only pre-authorized code uses pre-authorized code",
+			grants:      &Grants{PreAuthorizedCodeGrant: preAuthGrant},
+			expectGrant: GrantType_PreAuthorizedCode,
+		},
+		{
+			name:      "no grants returns error",
+			grants:    &Grants{},
+			expectErr: "no supported grant type found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			asServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer asServer.Close()
+
+			s := &session{
+				credentialOffer: &CredentialOffer{
+					CredentialIssuer: asServer.URL,
+					Grants:           tt.grants,
+				},
+				credentialIssuerMetadata: &metadata.CredentialIssuerMetadata{},
+				issuerSettings:           openid4vciSessionIssuerSettings{},
+			}
+
+			err := s.configureIssuerSettings()
+
+			if tt.expectErr != "" {
+				require.ErrorContains(t, err, tt.expectErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, s.issuerSettings.grantType)
+			require.Equal(t, tt.expectGrant, s.issuerSettings.grantType.GetGrantType())
+		})
+	}
+}
+
 func Test_openid4vciSession_obtainCredential_sendsEncryptedRequest(t *testing.T) {
 	ecPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
