@@ -226,7 +226,6 @@ func TestResolveCredentialMetadataFromVct_NonSdJwtFormatSkipsResolution(t *testi
 	require.Same(t, original, issuerMeta.CredentialConfigurationsSupported["X"].CredentialMetadata)
 }
 
-
 // --- verifyVctIntegrity ---
 
 func TestVerifyVctIntegrity_AbsentClaimSkips(t *testing.T) {

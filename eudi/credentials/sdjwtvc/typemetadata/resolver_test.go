@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -205,12 +204,4 @@ func newDocServer(t *testing.T, docs map[string]string) *docServer {
 	})
 	ds.Server = httptest.NewServer(mux)
 	return ds
-}
-
-// Sanity: httptest.NewServer URLs use http://. The resolver tests above all
-// pass devMode=true to allow that.
-func init() {
-	if !strings.HasPrefix("http://localhost", "http") {
-		panic("test assumptions broken")
-	}
 }

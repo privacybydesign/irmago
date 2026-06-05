@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 )
 
 // DefaultMaxExtendsDepth caps the extends chain length to prevent runaway
@@ -28,6 +30,7 @@ const SupportedIntegrityAlgorithm = "sha256"
 type Resolver struct {
 	client   *http.Client
 	maxDepth int
+	mu       sync.Mutex
 	cache    map[string]cachedDoc
 }
 
@@ -75,6 +78,8 @@ func (r *Resolver) Resolve(ctx context.Context, vctURL string, devMode bool) (*V
 // fetched by this Resolver. The second return is false if the URL was not
 // fetched (or fetching failed).
 func (r *Resolver) RawDocument(vctURL string) ([]byte, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	cached, ok := r.cache[vctURL]
 	if !ok {
 		return nil, false
@@ -94,7 +99,7 @@ func (r *Resolver) collectChain(
 	visited map[string]struct{},
 	depth int,
 ) ([]*VctTypeMetadata, error) {
-	if depth > r.maxDepth {
+	if depth >= r.maxDepth {
 		return nil, fmt.Errorf("extends chain exceeded maximum depth %d", r.maxDepth)
 	}
 	if _, seen := visited[currentURL]; seen {
@@ -102,11 +107,13 @@ func (r *Resolver) collectChain(
 	}
 	visited[currentURL] = struct{}{}
 
-	if err := validateURLScheme(currentURL, devMode); err != nil {
+	if err := validateURL(currentURL, devMode); err != nil {
 		return nil, err
 	}
 
+	r.mu.Lock()
 	cached, ok := r.cache[currentURL]
+	r.mu.Unlock()
 	if !ok {
 		body, err := getJSON(ctx, r.client, currentURL)
 		if err != nil {
@@ -117,7 +124,9 @@ func (r *Resolver) collectChain(
 			return nil, fmt.Errorf("failed to parse %q: %w", currentURL, err)
 		}
 		cached = cachedDoc{rawBytes: body, parsed: parsed}
+		r.mu.Lock()
 		r.cache[currentURL] = cached
+		r.mu.Unlock()
 	}
 
 	if expectedIntegrity != "" {
@@ -160,25 +169,29 @@ func mergeChain(chain []*VctTypeMetadata) *VctTypeMetadata {
 	return out
 }
 
-// validateURLScheme accepts https:// always and http:// only when devMode is
-// true. Other schemes (data:, file:, did:, etc.) and non-absolute strings are
+// validateURL accepts https:// always and http:// only when devMode is true.
+// Other schemes (data:, file:, did:, etc.) and non-absolute strings are
 // rejected.
-func validateURLScheme(rawURL string, devMode bool) error {
-	scheme, _, ok := strings.Cut(rawURL, "://")
-	if !ok {
-		return fmt.Errorf("vct URL %q has no scheme", rawURL)
+func validateURL(rawURL string, devMode bool) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("vct URL %q is malformed: %w", rawURL, err)
 	}
-	switch scheme {
+	switch parsed.Scheme {
 	case "https":
-		return nil
 	case "http":
-		if devMode {
-			return nil
+		if !devMode {
+			return fmt.Errorf("vct URL %q uses http; only https is allowed outside developer mode", rawURL)
 		}
-		return fmt.Errorf("vct URL %q uses http; only https is allowed outside developer mode", rawURL)
+	case "":
+		return fmt.Errorf("vct URL %q has no scheme", rawURL)
 	default:
-		return fmt.Errorf("vct URL %q uses unsupported scheme %q", rawURL, scheme)
+		return fmt.Errorf("vct URL %q uses unsupported scheme %q", rawURL, parsed.Scheme)
 	}
+	if parsed.Host == "" {
+		return fmt.Errorf("vct URL %q has no host", rawURL)
+	}
+	return nil
 }
 
 // VerifyIntegrity hashes body and compares it to the provided integrity
@@ -196,17 +209,35 @@ func verifyIntegrity(body []byte, integrity string) error {
 	if algo != SupportedIntegrityAlgorithm {
 		return fmt.Errorf("unsupported integrity algorithm %q (only %q is supported)", algo, SupportedIntegrityAlgorithm)
 	}
-	expected, err := base64.StdEncoding.DecodeString(encoded)
+	expected, err := decodeIntegrityHash(encoded)
 	if err != nil {
-		// Some producers use URL-safe base64; accept either form.
-		expected, err = base64.URLEncoding.DecodeString(encoded)
-		if err != nil {
-			return fmt.Errorf("failed to base64-decode integrity hash: %w", err)
-		}
+		return fmt.Errorf("failed to base64-decode integrity hash: %w", err)
 	}
 	actual := sha256.Sum256(body)
 	if !bytes.Equal(expected, actual[:]) {
 		return fmt.Errorf("integrity hash mismatch")
 	}
 	return nil
+}
+
+// decodeIntegrityHash decodes a base64 hash string accepting both padded
+// and unpadded variants, in std and url-safe alphabets. SRI mandates
+// padded base64, but the OpenID4VCI / SD-JWT VC drafts are silent and
+// producers in the wild emit either form.
+func decodeIntegrityHash(encoded string) ([]byte, error) {
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.URLEncoding,
+		base64.RawStdEncoding,
+		base64.RawURLEncoding,
+	}
+	var lastErr error
+	for _, enc := range encodings {
+		decoded, err := enc.DecodeString(encoded)
+		if err == nil {
+			return decoded, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }

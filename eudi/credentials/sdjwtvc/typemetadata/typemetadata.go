@@ -94,6 +94,12 @@ type IssuerFetcher interface {
 
 const defaultRequestTimeout = 3 * time.Second
 
+// maxResponseBytes caps response bodies for metadata fetches. The extends
+// chain follows URLs supplied by the issuer (and transitively by any
+// document they reference), so an unbounded io.ReadAll would let a
+// malicious endpoint exhaust wallet memory.
+const maxResponseBytes = 1 << 20 // 1 MiB
+
 // NewDefaultVctFetcher returns a VctFetcher that GETs the VCT URL with a 3s
 // per-request timeout and no caching. Failures return an error; the caller is
 // expected to log + degrade.
@@ -179,7 +185,14 @@ func getJSON(ctx context.Context, client *http.Client, url string) ([]byte, erro
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("request to %s returned status %d", url, resp.StatusCode)
 	}
-	return io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response from %s: %w", url, err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("response from %s exceeds %d bytes", url, maxResponseBytes)
+	}
+	return body, nil
 }
 
 // ParseVctTypeMetadata decodes a SD-JWT VC Type Metadata document. Tolerant

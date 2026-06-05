@@ -139,7 +139,16 @@ func (s *session) perform() {
 	// the integrity check has a cached document to hash against, and before
 	// buildOfferedCredentials so the user-facing display reflects the
 	// VCT-derived view.
-	s.enrichMetadataFromFetchedVct(context.Background(), fetched)
+	if err := s.enrichMetadataFromFetchedVct(context.Background(), fetched); err != nil {
+		for _, fc := range fetched {
+			fc.cleanupKeys()
+		}
+		s.handler.Failure(&clientmodels.SessionError{
+			ErrorType:    "integrity_failed",
+			WrappedError: err.Error(),
+		})
+		return
+	}
 
 	// Verify vct#integrity claims (post-issuance trust hardening) before
 	// showing the credential to the user. A failed integrity check is treated
@@ -255,9 +264,9 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 // rendering.simple.logo) are downloaded inline so LoadLogoImage in
 // buildOfferedCredentials finds them. Failures fall back silently to the
 // existing credential_metadata.
-func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*fetchedCredential) {
+func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*fetchedCredential) error {
 	if s.vctResolver == nil {
-		return
+		return nil
 	}
 	logoManager := s.storage.FileSystem().Credentials().LogoManager()
 	for _, fc := range fetched {
@@ -265,6 +274,19 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 			continue
 		}
 		vctURL := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType
+		// Within a single credential configuration, every issued VC must
+		// declare the same vct. Heterogeneous vcts in one batch would mean
+		// we resolve only [0]'s metadata, then verifyVctIntegrity later
+		// fails for [1..n] with a confusing "no type metadata was fetched"
+		// — better to reject the whole session up front.
+		for i, vc := range fc.verifiedSdJwtVcs[1:] {
+			if vc.IssuerSignedJwtPayload.VerifiableCredentialType != vctURL {
+				return fmt.Errorf(
+					"credential %q batch is heterogeneous: vc[0].vct=%q vs vc[%d].vct=%q",
+					fc.credentialConfigurationId, vctURL, i+1, vc.IssuerSignedJwtPayload.VerifiableCredentialType,
+				)
+			}
+		}
 		if !vctLooksFetchable(vctURL, s.allowInsecureHttp) {
 			continue
 		}
@@ -296,6 +318,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 			break
 		}
 	}
+	return nil
 }
 
 // vctIntegrityClaim is the JWT claim name carrying the integrity hash of the
@@ -306,6 +329,8 @@ const vctIntegrityClaim = "vct#integrity"
 // against the raw bytes of the type-metadata document fetched (and cached)
 // pre-issuance. Policy (per Q6a-C):
 //   - claim absent on the JWT → skip (baseline HTTPS trust)
+//   - claim present but not a non-empty string → reject (issuer bug or
+//     downgrade attempt; the claim has a defined string shape)
 //   - claim present, no cached document → reject (the issuer asserted
 //     integrity but we have nothing to verify against)
 //   - claim present with unrecognized algorithm prefix → reject
@@ -323,8 +348,11 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 	}
 	for _, fc := range fetched {
 		for _, vc := range fc.verifiedSdJwtVcs {
-			integrity, ok := lookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
-			if !ok {
+			integrity, present, err := lookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
+			if err != nil {
+				return fmt.Errorf("vct#integrity on credential %q: %w", fc.credentialConfigurationId, err)
+			}
+			if !present {
 				continue
 			}
 			rawBytes, ok := s.vctResolver.RawDocument(vc.IssuerSignedJwtPayload.VerifiableCredentialType)
@@ -340,17 +368,23 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 }
 
 // lookupVctIntegrityClaim returns the vct#integrity claim string if present
-// and a non-empty string. Non-string values are reported as absent.
-func lookupVctIntegrityClaim(payload sdjwtvc.ProcessedSdJwtPayload) (string, bool) {
+// and a non-empty string. A claim present with a non-string (or empty) value
+// is an error: the JWT shape for vct#integrity is defined as a string, so a
+// non-string here is either an issuer bug or a downgrade attempt that
+// shouldn't silently bypass integrity verification.
+func lookupVctIntegrityClaim(payload sdjwtvc.ProcessedSdJwtPayload) (string, bool, error) {
 	raw, ok := payload[vctIntegrityClaim]
 	if !ok {
-		return "", false
+		return "", false, nil
 	}
 	str, ok := raw.(string)
-	if !ok || str == "" {
-		return "", false
+	if !ok {
+		return "", false, fmt.Errorf("claim %q has non-string value", vctIntegrityClaim)
 	}
-	return str, true
+	if str == "" {
+		return "", false, fmt.Errorf("claim %q is an empty string", vctIntegrityClaim)
+	}
+	return str, true, nil
 }
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {

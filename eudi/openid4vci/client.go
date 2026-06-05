@@ -580,4 +580,3 @@ func vctLooksFetchable(vct string, allowInsecureHttp bool) bool {
 	}
 	return false
 }
-
