@@ -1646,3 +1646,31 @@ func TestInstallSchemeUnstableRemote(t *testing.T) {
 	err = conf.ParseFolder()
 	require.NoError(t, err)
 }
+
+// TestEmptyConSatisfyDoesNotSwallowDisclosure reproduces irmamobile issue #360:
+// a discon shaped like [[], [<optional attr>]] causes the optional attribute the
+// user actually disclosed to be silently dropped from the verification result,
+// because AttributeCon.Satisfy reports the empty conjunction as satisfied without
+// looking at the disclosed-attribute indices provided for that disjunction.
+func TestEmptyConSatisfyDoesNotSwallowDisclosure(t *testing.T) {
+	t.Run("empty con with no indices is satisfied", func(t *testing.T) {
+		var c AttributeCon
+		satisfied, attrs, err := c.Satisfy(nil, nil, nil, nil)
+		require.NoError(t, err)
+		require.True(t, satisfied)
+		require.Empty(t, attrs)
+	})
+
+	t.Run("empty con must NOT be satisfied when something was disclosed for it", func(t *testing.T) {
+		// The user disclosed an attribute for this disjunction (indices is non-empty).
+		// The empty conjunction therefore cannot be the option the user picked, so
+		// AttributeCon.Satisfy must report it as unsatisfied; otherwise the enclosing
+		// AttributeDisCon.Satisfy short-circuits on the empty con and drops the value.
+		var c AttributeCon
+		indices := []*DisclosedAttributeIndex{{CredentialIndex: 0, AttributeIndex: 4}}
+		satisfied, _, err := c.Satisfy(nil, indices, nil, nil)
+		require.NoError(t, err)
+		require.False(t, satisfied,
+			"empty conjunction was reported satisfied even though indices indicate the user disclosed an attribute for this disjunction (issue #360)")
+	})
+}
