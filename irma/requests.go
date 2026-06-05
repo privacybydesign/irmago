@@ -452,6 +452,11 @@ func (c AttributeCon) Satisfy(proofs gabi.ProofList, indices []*DisclosedAttribu
 	}
 	attrs := make([]*DisclosedAttribute, 0, len(c))
 	if len(c) == 0 {
+		// Non-empty indices means the user disclosed for this disjunction; the
+		// empty con cannot be the chosen option (irmamobile #360).
+		if len(indices) > 0 {
+			return false, nil, nil
+		}
 		return true, attrs, nil
 	}
 
