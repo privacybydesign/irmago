@@ -290,6 +290,31 @@ func TestGetCredentialMetadataList_IssuerDisplayWithoutLocale_ResultsInDefaultLo
 	assert.Equal(t, "No Locale Issuer", result[0].Issuer.Name[clientmodels.DefaultFallbackLanguage])
 }
 
+// TestGetCredentialMetadataList_IssuerDisplayRegionalLocale_KeyedByBaseLanguage
+// pins the contract that the issuer name in the stored-credential view is
+// keyed the same way as during the issuance permission dialog, which
+// reduces locales to their BCP 47 base language via
+// metadata.ConvertDisplayToTranslatedString. Without this reduction, an
+// issuer that advertises its display under "en-US" appears as
+// Issuer.Name["en"] in the offered-credentials list (pre-storage) but as
+// Issuer.Name["en-US"] in GetCredentials() (post-storage) — so a wallet
+// UI that looks up by base language loses the issuer name after issuance.
+func TestGetCredentialMetadataList_IssuerDisplayRegionalLocale_KeyedByBaseLanguage(t *testing.T) {
+	batch := newStorageBatch()
+	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
+		{Name: "Example Issuer", Locale: datatypes.NullString{V: "en-US", Valid: true}},
+	}
+	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
+
+	result, err := svc.GetCredentialMetadataList()
+
+	require.NoError(t, err)
+	assert.Equal(t, "Example Issuer", result[0].Issuer.Name["en"],
+		"regional locales must collapse to the base language to match the in-memory issuance path")
+}
+
 func TestGetCredentialMetadataList_MultipleCredentials(t *testing.T) {
 	batch1 := newStorageBatch()
 	batch2 := newStorageBatch()

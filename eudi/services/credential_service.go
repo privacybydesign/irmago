@@ -66,7 +66,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		for _, d := range batch.IssuerDisplay {
 			locale := clientmodels.DefaultFallbackLanguage
 			if d.Locale.Valid {
-				locale = d.Locale.V
+				locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
 			}
 			issuerDisplays[locale] = d.Name
 		}

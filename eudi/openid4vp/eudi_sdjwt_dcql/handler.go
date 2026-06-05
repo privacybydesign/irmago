@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -1191,7 +1192,7 @@ func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) c
 	for _, d := range batch.IssuerDisplay {
 		locale := clientmodels.DefaultFallbackLanguage
 		if d.Locale.Valid {
-			locale = d.Locale.V
+			locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
 		}
 		name[locale] = d.Name
 	}
@@ -1223,9 +1224,9 @@ func credentialDisplayName(batch *models.CredentialBatch) clientmodels.Translate
 	if batch.CredentialMetadata != nil {
 		ts := clientmodels.TranslatedString{}
 		for _, d := range batch.CredentialMetadata.Display {
-			locale := "en"
+			locale := clientmodels.DefaultFallbackLanguage
 			if d.Locale.Valid {
-				locale = d.Locale.V
+				locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
 			}
 			ts[locale] = d.Name
 		}
@@ -1233,7 +1234,7 @@ func credentialDisplayName(batch *models.CredentialBatch) clientmodels.Translate
 			return ts
 		}
 	}
-	return clientmodels.TranslatedString{"en": batch.VerifiableCredentialType}
+	return clientmodels.TranslatedString{clientmodels.DefaultFallbackLanguage: batch.VerifiableCredentialType}
 }
 
 // claimDisplayName looks up the display name for a claim from the stored credential
@@ -1256,9 +1257,9 @@ func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmode
 		}
 		ts := clientmodels.TranslatedString{}
 		for _, d := range claim.Display {
-			locale := "en"
+			locale := clientmodels.DefaultFallbackLanguage
 			if d.Locale.Valid {
-				locale = d.Locale.V
+				locale, _ = metadata.TryGetBaseLanguageFromLocale(d.Locale.V)
 			}
 			ts[locale] = d.Name
 		}
