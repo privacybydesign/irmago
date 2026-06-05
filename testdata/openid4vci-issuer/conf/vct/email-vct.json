@@ -6,11 +6,26 @@
     "description": "VCT metadata for email SD-JWT credential",
     "language": "en",
     "display": [
-      { "lang": "en", "name": "Email Credential (SD-JWT)" }
+      { "locale": "en", "name": "Email Credential (SD-JWT)" },
+      { "locale": "nl", "name": "E-mail Credential (SD-JWT)" }
     ],
     "claims": [
-      { "path": ["email"], "sd": "allowed" },
-      { "path": ["domain"], "sd": "allowed" }
+      {
+        "path": ["email"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Email" },
+          { "locale": "nl", "label": "E-mailadres" }
+        ]
+      },
+      {
+        "path": ["domain"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Domain" },
+          { "locale": "nl", "label": "Domein" }
+        ]
+      }
     ],
     "issuer": "https://localhost:8443/test-issuer"
   }

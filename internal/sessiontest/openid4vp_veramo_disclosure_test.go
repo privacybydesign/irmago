@@ -721,7 +721,10 @@ func testOptionalCredential(t *testing.T) {
 						Name:         &clientmodels.TranslatedString{"en": "Phone Credential (SD-JWT)"},
 						IssuerName:   &clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
-							{Path: []any{"phone_number"}},
+							{
+								Path:        []any{"phone_number"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Phone Number", "nl": "Telefoonnummer"},
+							},
 						},
 					},
 				},

@@ -6,10 +6,17 @@
     "description": "VCT metadata for phone SD-JWT credential",
     "language": "en",
     "display": [
-      { "lang": "en", "name": "Phone Credential (SD-JWT)" }
+      { "locale": "en", "name": "Phone Credential (SD-JWT)" }
     ],
     "claims": [
-      { "path": ["phone_number"], "sd": "allowed" }
+      {
+        "path": ["phone_number"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Phone Number" },
+          { "locale": "nl", "label": "Telefoonnummer" }
+        ]
+      }
     ],
     "issuer": "https://localhost:8443/test-issuer"
   }
