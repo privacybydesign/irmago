@@ -5,32 +5,35 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: changelog-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   changelog:
     runs-on: ubuntu-latest
     steps:
       - name: Check for CHANGELOG.md update or skip-changelog label
         env:
-          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_REPO: ${{ github.event.pull_request.base.repo.full_name }}
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
 
-          if echo "$LABELS" | grep -q '"skip-changelog"'; then
+          if jq -e 'index("skip-changelog")' <<<"$LABELS" >/dev/null; then
             echo "skip-changelog label present; skipping check."
             exit 0
           fi
 
-          # Use the GitHub API so we don't have to fetch the full git history.
-          files=$(curl -sSL \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${PR_REPO}/pulls/${{ github.event.pull_request.number }}/files?per_page=100" \
-            | grep -o '"filename": *"[^"]*"' | cut -d'"' -f4)
-
-          if echo "$files" | grep -qx "CHANGELOG.md"; then
+          # gh api --paginate handles auth, pagination and non-2xx failures.
+          if gh api --paginate "repos/${PR_REPO}/pulls/${PR_NUMBER}/files" \
+              --jq '.[].filename' | grep -qx "CHANGELOG.md"; then
             echo "CHANGELOG.md was updated."
             exit 0
           fi
