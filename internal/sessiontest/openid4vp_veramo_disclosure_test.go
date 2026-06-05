@@ -4402,7 +4402,7 @@ func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, query
 	// always present and not user-controlled.
 	expectedSet := make(map[string]struct{}, len(expected))
 	for _, exp := range expected {
-		expectedSet[claimPathString(exp.Path)] = struct{}{}
+		expectedSet[clientmodels.ClaimPathKey(exp.Path)] = struct{}{}
 	}
 
 	var unexpected []string
@@ -4414,10 +4414,10 @@ func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, query
 				}
 			}
 		}
-		if _, ok := expectedSet[claimPathString(path)]; ok {
+		if _, ok := expectedSet[clientmodels.ClaimPathKey(path)]; ok {
 			return
 		}
-		unexpected = append(unexpected, claimPathString(path))
+		unexpected = append(unexpected, clientmodels.ClaimPathKey(path))
 	})
 
 	require.Empty(t, unexpected,
@@ -4443,13 +4443,6 @@ func walkClaimLeaves(value any, prefix []any, visit func([]any)) {
 	default:
 		visit(prefix)
 	}
-}
-
-// claimPathString turns a path into a deterministic string key for set
-// lookups. Mirrors clientmodels.ClaimPathKey but kept local to the test
-// helper so we don't widen its API surface.
-func claimPathString(path []any) string {
-	return fmt.Sprintf("%v", path)
 }
 
 // navigateClaims follows a claim path into a nested claims map.

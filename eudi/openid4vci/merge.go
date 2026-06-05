@@ -1,10 +1,9 @@
 package openid4vci
 
 import (
-	"math"
-	"strconv"
 	"strings"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"golang.org/x/text/language"
@@ -86,10 +85,10 @@ func mergeClaims(vct *typemetadata.VctTypeMetadata, vci *metadata.CredentialMeta
 	}
 	vciByKey := map[string]int{}
 	for i, c := range vciClaims {
-		key, ok := canonicalPathKey(c.Path)
-		if !ok {
+		if len(c.Path) == 0 {
 			continue
 		}
+		key := clientmodels.ClaimPathKey(c.Path)
 		if _, exists := vciByKey[key]; !exists {
 			vciByKey[key] = i
 		}
@@ -97,11 +96,11 @@ func mergeClaims(vct *typemetadata.VctTypeMetadata, vci *metadata.CredentialMeta
 
 	if vct != nil {
 		for _, c := range vct.Claims {
-			key, ok := canonicalPathKey(c.Path)
-			if !ok {
+			if len(c.Path) == 0 {
 				out = append(out, vctClaimToClaimsDescription(c, nil))
 				continue
 			}
+			key := clientmodels.ClaimPathKey(c.Path)
 			if _, already := emittedKeys[key]; already {
 				continue
 			}
@@ -115,11 +114,11 @@ func mergeClaims(vct *typemetadata.VctTypeMetadata, vci *metadata.CredentialMeta
 	}
 
 	for _, c := range vciClaims {
-		key, ok := canonicalPathKey(c.Path)
-		if !ok {
+		if len(c.Path) == 0 {
 			out = append(out, c)
 			continue
 		}
+		key := clientmodels.ClaimPathKey(c.Path)
 		if _, already := emittedKeys[key]; already {
 			continue
 		}
@@ -215,43 +214,3 @@ func canonicalLocaleKeyFromPtr(locale *string) string {
 	return canonicalLocaleKey(*locale)
 }
 
-// canonicalPathKey produces a deterministic string for a claim path
-// suitable for map lookup. Integer/float coercion makes a JSON-unmarshaled
-// float64(1) match an int(1). nil elements (SD-JWT wildcard markers)
-// match only other nil elements. String elements match by exact equality.
-// Returns ok=false for empty paths or paths containing elements of
-// unrecognised types; such claims are emitted verbatim from their source
-// without participating in cross-source merging.
-func canonicalPathKey(path []any) (string, bool) {
-	if len(path) == 0 {
-		return "", false
-	}
-	var sb strings.Builder
-	for _, elem := range path {
-		sb.WriteByte('|')
-		switch v := elem.(type) {
-		case nil:
-			sb.WriteString("null")
-		case string:
-			sb.WriteByte('s')
-			sb.WriteString(v)
-		case float64:
-			if !math.IsInf(v, 0) && !math.IsNaN(v) && v == math.Trunc(v) {
-				sb.WriteByte('i')
-				sb.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
-			} else {
-				sb.WriteByte('f')
-				sb.WriteString(strconv.FormatFloat(v, 'g', -1, 64))
-			}
-		case int:
-			sb.WriteByte('i')
-			sb.WriteString(strconv.Itoa(v))
-		case int64:
-			sb.WriteByte('i')
-			sb.WriteString(strconv.FormatInt(v, 10))
-		default:
-			return "", false
-		}
-	}
-	return sb.String(), true
-}
