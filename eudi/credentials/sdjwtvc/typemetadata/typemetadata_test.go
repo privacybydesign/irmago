@@ -259,6 +259,50 @@ func TestParseVctTypeMetadata_InvalidJSON(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestParseVctTypeMetadata_RejectsMissingLocaleOnCredentialDisplay enforces
+// the spec invariant that every display entry MUST carry a language tag.
+// Tolerating absence would let untagged entries collide silently in the
+// VCT/VCI merge.
+func TestParseVctTypeMetadata_RejectsMissingLocaleOnCredentialDisplay(t *testing.T) {
+	doc := []byte(`{
+		"name": "Email",
+		"display": [
+			{ "name": "Email" }
+		]
+	}`)
+	_, err := ParseVctTypeMetadata(doc)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "locale")
+}
+
+func TestParseVctTypeMetadata_RejectsEmptyLocaleOnCredentialDisplay(t *testing.T) {
+	doc := []byte(`{
+		"name": "Email",
+		"display": [
+			{ "lang": "", "locale": "", "name": "Email" }
+		]
+	}`)
+	_, err := ParseVctTypeMetadata(doc)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "locale")
+}
+
+func TestParseVctTypeMetadata_RejectsMissingLocaleOnClaimDisplay(t *testing.T) {
+	doc := []byte(`{
+		"name": "Email",
+		"display": [{ "lang": "en", "name": "Email" }],
+		"claims": [
+			{
+				"path": ["email"],
+				"display": [{ "label": "Email" }]
+			}
+		]
+	}`)
+	_, err := ParseVctTypeMetadata(doc)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "locale")
+}
+
 func TestParseVctTypeMetadata_RichDisplayFields(t *testing.T) {
 	doc := []byte(`{
 		"name": "PID",

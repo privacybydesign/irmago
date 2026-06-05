@@ -90,11 +90,14 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 
 		// SD-JWT VC type metadata is the spec-preferred source for credential
 		// display/claims (OID4VCI v1.0 § 12.2.4: format-specific mechanisms are
-		// "always preferred" over credential_metadata). Resolve it now so the
-		// session and the credential descriptor list both see the enriched view.
-		// The resolver instance is reused post-issuance to verify vct#integrity.
+		// "always preferred" over credential_metadata). Snapshot the VCI
+		// baseline before resolving so both the pre- and post-issuance merges
+		// can fall back per-locale onto the original credential_metadata
+		// instead of onto each other's outputs.
+		baseline := snapshotCredentialMetadata(credentialIssuerMetadata)
+
 		resolver := typemetadata.NewResolver(client.httpClient)
-		client.resolveCredentialMetadataFromVct(context.Background(), credentialOffer, credentialIssuerMetadata, resolver)
+		client.resolveCredentialMetadataFromVct(context.Background(), credentialOffer, credentialIssuerMetadata, baseline, resolver)
 
 		// Download credential logos now that CredentialMetadata is final — the
 		// VCT enrichment above can introduce logos (e.g. via
@@ -102,7 +105,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 		client.downloadCredentialLogos(credentialOffer, credentialIssuerMetadata)
 
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
-		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, resolver, redirectUri, handler)
+		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, handler)
 
 		if err != nil {
 			handleFailure(handler, "failed to handle credential offer: %v", err)
@@ -113,6 +116,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 func (client *Client) handleCredentialOffer(
 	credentialOffer *CredentialOffer,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
+	originalCredentialMetadata map[string]*metadata.CredentialMetadata,
 	vctResolver *typemetadata.Resolver,
 	redirectUri string,
 	handler Handler,
@@ -124,17 +128,18 @@ func (client *Client) handleCredentialOffer(
 	}
 
 	client.currentSession = &session{
-		credentialOffer:          credentialOffer,
-		credentialIssuerMetadata: credentialIssuerMetadata,
-		requestorInfo:            requestorInfo,
-		credentials:              creds,
-		handler:                  handler,
-		httpClient:               client.httpClient,
-		holderVerifier:           client.holderVerifier,
-		storage:                  client.Configuration.Storage,
-		vctResolver:              vctResolver,
-		allowInsecureHttp:        client.allowInsecureHttp,
-		redirectUri:              redirectUri,
+		credentialOffer:            credentialOffer,
+		credentialIssuerMetadata:   credentialIssuerMetadata,
+		requestorInfo:              requestorInfo,
+		credentials:                creds,
+		handler:                    handler,
+		httpClient:                 client.httpClient,
+		holderVerifier:             client.holderVerifier,
+		storage:                    client.Configuration.Storage,
+		vctResolver:                vctResolver,
+		allowInsecureHttp:          client.allowInsecureHttp,
+		originalCredentialMetadata: originalCredentialMetadata,
+		redirectUri:                redirectUri,
 	}
 	defer func() {
 		client.currentSession = nil
@@ -476,19 +481,33 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	})
 }
 
+// snapshotCredentialMetadata captures the VCI-advertised
+// credential_metadata pointer for each configuration so a later VCT
+// merge can recover the pre-merge baseline. The values are pointer
+// copies — VCT resolution replaces the live map entry's pointer with a
+// new CredentialMetadata, leaving the snapshotted pointer untouched.
+func snapshotCredentialMetadata(issuerMetadata *metadata.CredentialIssuerMetadata) map[string]*metadata.CredentialMetadata {
+	snapshot := make(map[string]*metadata.CredentialMetadata, len(issuerMetadata.CredentialConfigurationsSupported))
+	for configID, config := range issuerMetadata.CredentialConfigurationsSupported {
+		snapshot[configID] = config.CredentialMetadata
+	}
+	return snapshot
+}
+
 // resolveCredentialMetadataFromVct fetches SD-JWT VC type metadata for each
 // offered credential configuration whose vct value is an absolute HTTPS URL
 // (or HTTP when allowInsecureHttp is set). On success, the config's
-// CredentialMetadata is replaced wholesale by the resolved type-metadata view
-// — making the type metadata the preferred source per OID4VCI v1.0 § 12.2.4.
-// On any failure (URL not fetchable, network error, parse error, extends
-// cycle, extends-integrity mismatch, depth overflow), the existing
-// CredentialMetadata is left as-is so consumers fall back to the issuer
-// metadata's credential_metadata.
+// CredentialMetadata is replaced with Merge(resolved, baseline[configID]) —
+// VCT translations win per OID4VCI v1.0 § 12.2.4 while VCI fills the
+// locales VCT does not cover. On any failure (URL not fetchable, network
+// error, parse error, extends cycle, extends-integrity mismatch, depth
+// overflow), the existing CredentialMetadata is left as-is so consumers
+// fall back to the issuer metadata's credential_metadata.
 func (client *Client) resolveCredentialMetadataFromVct(
 	ctx context.Context,
 	offer *CredentialOffer,
 	issuerMetadata *metadata.CredentialIssuerMetadata,
+	baseline map[string]*metadata.CredentialMetadata,
 	resolver *typemetadata.Resolver,
 ) {
 	for _, configID := range offer.CredentialConfigurationIds {
@@ -512,8 +531,8 @@ func (client *Client) resolveCredentialMetadataFromVct(
 			continue
 		}
 
-		mapped := mapVctToCredentialMetadata(resolved)
-		config.CredentialMetadata = &mapped
+		merged := Merge(resolved, baseline[configID])
+		config.CredentialMetadata = &merged
 		issuerMetadata.CredentialConfigurationsSupported[configID] = config
 	}
 }
@@ -562,42 +581,3 @@ func vctLooksFetchable(vct string, allowInsecureHttp bool) bool {
 	return false
 }
 
-// mapVctToCredentialMetadata projects a resolved SD-JWT VC type-metadata
-// document onto the OpenID4VCI credential_metadata shape consumed elsewhere
-// in this package. The mapping is lossy: SD-JWT VC-specific features without
-// a credential_metadata analogue (SVG templates, JSON schemas, asset-level
-// integrity) are dropped.
-func mapVctToCredentialMetadata(vct *typemetadata.VctTypeMetadata) metadata.CredentialMetadata {
-	out := metadata.CredentialMetadata{}
-	for _, d := range vct.Display {
-		entry := metadata.CredentialDisplay{
-			Display:         metadata.Display{Name: d.Name},
-			Description:     d.Description,
-			BackgroundColor: d.BackgroundColor,
-			TextColor:       d.TextColor,
-		}
-		if d.Locale != "" {
-			locale := d.Locale
-			entry.Display.Locale = &locale
-		}
-		if d.Logo != nil {
-			entry.Logo = &metadata.RemoteImage{Uri: d.Logo.URI, AltText: d.Logo.AltText}
-		}
-		out.Display = append(out.Display, entry)
-	}
-	for _, c := range vct.Claims {
-		entry := metadata.ClaimsDescription{
-			Path: metadata.ClaimsPathPointer(c.Path),
-		}
-		for _, cd := range c.Display {
-			d := metadata.Display{Name: cd.Name}
-			if cd.Locale != "" {
-				locale := cd.Locale
-				d.Locale = &locale
-			}
-			entry.Display = append(entry.Display, d)
-		}
-		out.Claims = append(out.Claims, entry)
-	}
-	return out
-}

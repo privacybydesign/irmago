@@ -47,6 +47,15 @@ type session struct {
 	// resolution can fall back to http:// URLs in test/dev mode.
 	allowInsecureHttp bool
 
+	// originalCredentialMetadata snapshots the VCI-advertised
+	// credential_metadata for each offered credential configuration before
+	// any VCT-driven merge mutates the live issuer-metadata tree. Both the
+	// pre-issuance and post-issuance VCT merges read from this map, so the
+	// post-issuance pass always merges its (authoritative) VCT against the
+	// immutable VCI baseline rather than against the pre-issuance pass's
+	// output — that pass may have used a different (or stale) VCT.
+	originalCredentialMetadata map[string]*metadata.CredentialMetadata
+
 	redirectUri string
 
 	issuerSettings openid4vciSessionIssuerSettings
@@ -230,12 +239,17 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 
 // enrichMetadataFromFetchedVct resolves SD-JWT VC type metadata using the vct
 // claim of each verified SD-JWT and replaces config.CredentialMetadata with
-// the resulting view. The JWT's vct claim is authoritative (it is what was
-// signed into the credential), so we always trust it as the type-metadata
-// source even when the issuer's well-known document carries a non-URL
-// placeholder (e.g. veramo's "unknown"). Per-URL resolution is cached by the
-// resolver, so configurations already resolved at offer time are a no-op
-// here.
+// Merge(resolved, baseline). The JWT's vct claim is authoritative (it is
+// what was signed into the credential), so we always trust it as the
+// type-metadata source even when the issuer's well-known document carries
+// a non-URL placeholder (e.g. veramo's "unknown"). Per-URL resolution is
+// cached by the resolver, so configurations already resolved at offer time
+// are a no-op here.
+//
+// The baseline used for the merge is the VCI snapshot taken before any
+// pre-issuance merge mutated the issuer metadata. This keeps the post-
+// issuance merge from inheriting locales contributed by a stale pre-
+// issuance VCT — the post-issuance VCT may legitimately disagree with it.
 //
 // Logos introduced by the type metadata (top-level display.logo or
 // rendering.simple.logo) are downloaded inline so LoadLogoImage in
@@ -263,11 +277,11 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 			eudi.Logger.Infof("post-issuance vct resolution failed for %q (config=%q): %v; falling back to credential_metadata", vctURL, fc.credentialConfigurationId, err)
 			continue
 		}
-		mapped := mapVctToCredentialMetadata(resolved)
-		config.CredentialMetadata = &mapped
+		merged := Merge(resolved, s.originalCredentialMetadata[fc.credentialConfigurationId])
+		config.CredentialMetadata = &merged
 		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
 
-		for _, display := range mapped.Display {
+		for _, display := range merged.Display {
 			if display.Logo == nil {
 				continue
 			}

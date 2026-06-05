@@ -182,8 +182,12 @@ func getJSON(ctx context.Context, client *http.Client, url string) ([]byte, erro
 	return io.ReadAll(resp.Body)
 }
 
-// ParseVctTypeMetadata decodes a SD-JWT VC Type Metadata document. Tolerant to
-// missing/extra fields. Returns a non-nil result when the JSON parses.
+// ParseVctTypeMetadata decodes a SD-JWT VC Type Metadata document. Tolerant
+// to missing/extra fields with one exception: every display entry (at the
+// credential or claim level) MUST carry a non-empty locale (spec field
+// "locale", legacy alias "lang"). A document with any unlocalised display
+// entry is rejected wholesale so the merge with VCI credential_metadata can
+// assume every VCT display entry has a real locale to key on.
 func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 	var raw rawVctDocument
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -196,9 +200,13 @@ func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 		Extends:          raw.Extends,
 		ExtendsIntegrity: raw.ExtendsIntegrity,
 	}
-	for _, d := range raw.Display {
+	for i, d := range raw.Display {
+		locale := firstNonEmpty(d.Locale, d.Lang)
+		if locale == "" {
+			return nil, fmt.Errorf("display entry %d is missing required \"locale\" (or legacy \"lang\")", i)
+		}
 		entry := DisplayEntry{
-			Locale:      firstNonEmpty(d.Locale, d.Lang),
+			Locale:      locale,
 			Name:        d.Name,
 			Description: d.Description,
 		}
@@ -220,11 +228,15 @@ func ParseVctTypeMetadata(data []byte) (*VctTypeMetadata, error) {
 		}
 		out.Display = append(out.Display, entry)
 	}
-	for _, c := range raw.Claims {
+	for ci, c := range raw.Claims {
 		cm := ClaimMetadata{Path: c.Path}
-		for _, d := range c.Display {
+		for di, d := range c.Display {
+			locale := firstNonEmpty(d.Locale, d.Lang)
+			if locale == "" {
+				return nil, fmt.Errorf("claim %d display entry %d is missing required \"locale\" (or legacy \"lang\")", ci, di)
+			}
 			cm.Display = append(cm.Display, ClaimDisplayEntry{
-				Locale: firstNonEmpty(d.Locale, d.Lang),
+				Locale: locale,
 				// Spec uses "label"; tolerate "name" as a legacy alias.
 				Name: firstNonEmpty(d.Label, d.Name),
 			})

@@ -16,38 +16,40 @@ import (
 
 // --- resolveCredentialMetadataFromVct ---
 
-func TestResolveCredentialMetadataFromVct_ReplacesOnSuccess(t *testing.T) {
+func TestResolveCredentialMetadataFromVct_VctEntryWinsOnLocaleCollision(t *testing.T) {
 	srv := newVctTestServer(t, map[string]string{
 		"/vct/Email": `{
 			"name": "Email Credential",
 			"display": [
 				{ "lang": "en", "name": "Email", "description": "Email address" }
 			],
-			"claims": [{ "path": ["email"] }]
+			"claims": [{ "path": ["email"], "display": [{ "lang": "en", "label": "Email" }] }]
 		}`,
 	})
 	defer srv.Close()
 
+	enLocale := "en"
 	client := &Client{httpClient: srv.Client(), allowInsecureHttp: true}
 	resolver := typemetadata.NewResolver(srv.Client())
 	issuerMeta := singleConfigMetadata("Email", metadata.CredentialConfiguration{
 		Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
 		VerifiableCredentialType: srv.URL + "/vct/Email",
 		CredentialMetadata: &metadata.CredentialMetadata{
-			// Pre-existing OID4VCI credential_metadata that VCT should override.
 			Display: metadata.CredentialDisplays{
-				{Display: metadata.Display{Name: "FROM_CREDMETA"}},
+				// Same locale (en) as VCT — collision; VCT wins.
+				{Display: metadata.Display{Name: "FROM_CREDMETA", Locale: &enLocale}},
 			},
 		},
 	})
 	offer := &CredentialOffer{CredentialConfigurationIds: []string{"Email"}}
+	baseline := snapshotCredentialMetadata(issuerMeta)
 
-	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, resolver)
+	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, baseline, resolver)
 
 	got := issuerMeta.CredentialConfigurationsSupported["Email"].CredentialMetadata
 	require.NotNil(t, got)
-	require.Len(t, got.Display, 1)
-	require.Equal(t, "Email", got.Display[0].Name, "VCT type metadata should override credential_metadata wholesale")
+	require.Len(t, got.Display, 1, "colliding locales must collapse to the VCT entry")
+	require.Equal(t, "Email", got.Display[0].Name, "VCT must win on locale collision")
 	require.Equal(t, "Email address", got.Display[0].Description)
 	require.Len(t, got.Claims, 1)
 }
@@ -124,8 +126,9 @@ func TestResolveCredentialMetadataFromVct_VctWinsOverCredentialMetadata_Sphereon
 		},
 	})
 	offer := &CredentialOffer{CredentialConfigurationIds: []string{"Test"}}
+	baseline := snapshotCredentialMetadata(issuerMeta)
 
-	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, resolver)
+	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, baseline, resolver)
 
 	got := issuerMeta.CredentialConfigurationsSupported["Test"].CredentialMetadata
 	require.NotNil(t, got)
@@ -176,8 +179,9 @@ func TestResolveCredentialMetadataFromVct_FetchFailureLeavesCredentialMetadata(t
 		CredentialMetadata:       original,
 	})
 	offer := &CredentialOffer{CredentialConfigurationIds: []string{"Email"}}
+	baseline := snapshotCredentialMetadata(issuerMeta)
 
-	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, resolver)
+	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, baseline, resolver)
 
 	got := issuerMeta.CredentialConfigurationsSupported["Email"].CredentialMetadata
 	require.Same(t, original, got, "fetch failure must leave the original credential_metadata pointer untouched")
@@ -193,8 +197,9 @@ func TestResolveCredentialMetadataFromVct_NonURLVctSkipsResolution(t *testing.T)
 		CredentialMetadata:       original,
 	})
 	offer := &CredentialOffer{CredentialConfigurationIds: []string{"Foo"}}
+	baseline := snapshotCredentialMetadata(issuerMeta)
 
-	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, resolver)
+	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, baseline, resolver)
 
 	require.Same(t, original, issuerMeta.CredentialConfigurationsSupported["Foo"].CredentialMetadata)
 }
@@ -214,49 +219,13 @@ func TestResolveCredentialMetadataFromVct_NonSdJwtFormatSkipsResolution(t *testi
 		CredentialMetadata:       original,
 	})
 	offer := &CredentialOffer{CredentialConfigurationIds: []string{"X"}}
+	baseline := snapshotCredentialMetadata(issuerMeta)
 
-	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, resolver)
+	client.resolveCredentialMetadataFromVct(context.Background(), offer, issuerMeta, baseline, resolver)
 
 	require.Same(t, original, issuerMeta.CredentialConfigurationsSupported["X"].CredentialMetadata)
 }
 
-// --- mapVctToCredentialMetadata ---
-
-func TestMapVctToCredentialMetadata_ProjectsAllSupportedFields(t *testing.T) {
-	vct := &typemetadata.VctTypeMetadata{
-		Display: []typemetadata.DisplayEntry{
-			{
-				Locale:          "en-US",
-				Name:            "Email",
-				Description:     "An email credential",
-				Logo:            &typemetadata.RemoteImage{URI: "https://x/logo.png", AltText: "logo"},
-				BackgroundColor: "#FF0000",
-				TextColor:       "#FFFFFF",
-			},
-		},
-		Claims: []typemetadata.ClaimMetadata{
-			{
-				Path: []any{"email"},
-				Display: []typemetadata.ClaimDisplayEntry{
-					{Locale: "en", Name: "Email"},
-				},
-			},
-		},
-	}
-	out := mapVctToCredentialMetadata(vct)
-	require.Len(t, out.Display, 1)
-	require.Equal(t, "Email", out.Display[0].Name)
-	require.NotNil(t, out.Display[0].Display.Locale)
-	require.Equal(t, "en-US", *out.Display[0].Display.Locale)
-	require.Equal(t, "An email credential", out.Display[0].Description)
-	require.Equal(t, "#FF0000", out.Display[0].BackgroundColor)
-	require.Equal(t, "#FFFFFF", out.Display[0].TextColor)
-	require.NotNil(t, out.Display[0].Logo)
-	require.Equal(t, "https://x/logo.png", out.Display[0].Logo.Uri)
-	require.Len(t, out.Claims, 1)
-	require.Len(t, out.Claims[0].Display, 1)
-	require.Equal(t, "Email", out.Claims[0].Display[0].Name)
-}
 
 // --- verifyVctIntegrity ---
 
