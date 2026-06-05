@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
+	"hash"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,10 +18,15 @@ import (
 // fetching. The number is a safety stop; real chains are typically very short.
 const DefaultMaxExtendsDepth = 10
 
-// SupportedIntegrityAlgorithm is the only integrity hash algorithm currently
-// supported. The wallet rejects credentials whose vct#integrity (or chain
-// extends#integrity) declares any other algorithm — see verifyIntegrity.
-const SupportedIntegrityAlgorithm = "sha256"
+// integrityHashers lists the hash algorithms accepted in <algo>-<base64>
+// integrity strings (vct#integrity, extends#integrity). The set mirrors
+// W3C SRI's three required algorithms; weaker algorithms (md5, sha1) are
+// intentionally absent. SD-JWT VC § 5 defers algorithm choice to SRI.
+var integrityHashers = map[string]func() hash.Hash{
+	"sha256": sha256.New,
+	"sha384": sha512.New384,
+	"sha512": sha512.New,
+}
 
 // Resolver resolves an SD-JWT VC type-metadata document by following the
 // extends chain, caching both raw bytes (for post-issuance integrity
@@ -195,8 +202,9 @@ func validateURL(rawURL string, devMode bool) error {
 }
 
 // VerifyIntegrity hashes body and compares it to the provided integrity
-// string (format: "<algo>-<base64>"). Only sha256 is supported; any other
-// algorithm prefix returns an error so the caller can refuse the credential.
+// string (format: "<algo>-<base64>"). The supported algorithms are listed
+// in integrityHashers; any other prefix returns an error so the caller
+// can refuse the credential.
 func VerifyIntegrity(body []byte, integrity string) error {
 	return verifyIntegrity(body, integrity)
 }
@@ -206,15 +214,17 @@ func verifyIntegrity(body []byte, integrity string) error {
 	if !ok {
 		return fmt.Errorf("integrity %q is not in <algo>-<base64> form", integrity)
 	}
-	if algo != SupportedIntegrityAlgorithm {
-		return fmt.Errorf("unsupported integrity algorithm %q (only %q is supported)", algo, SupportedIntegrityAlgorithm)
+	newHash, ok := integrityHashers[algo]
+	if !ok {
+		return fmt.Errorf("unsupported integrity algorithm %q", algo)
 	}
 	expected, err := decodeIntegrityHash(encoded)
 	if err != nil {
 		return fmt.Errorf("failed to base64-decode integrity hash: %w", err)
 	}
-	actual := sha256.Sum256(body)
-	if !bytes.Equal(expected, actual[:]) {
+	h := newHash()
+	h.Write(body)
+	if !bytes.Equal(expected, h.Sum(nil)) {
 		return fmt.Errorf("integrity hash mismatch")
 	}
 	return nil

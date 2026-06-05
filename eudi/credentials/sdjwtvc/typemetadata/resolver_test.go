@@ -3,6 +3,7 @@ package typemetadata
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -165,12 +166,26 @@ func TestVerifyIntegrity_Match(t *testing.T) {
 	require.NoError(t, VerifyIntegrity(body, intg))
 }
 
+func TestVerifyIntegrity_Match_Sha384(t *testing.T) {
+	body := []byte(`{"x":1}`)
+	hash := sha512.Sum384(body)
+	intg := "sha384-" + base64.StdEncoding.EncodeToString(hash[:])
+	require.NoError(t, VerifyIntegrity(body, intg))
+}
+
+func TestVerifyIntegrity_Match_Sha512(t *testing.T) {
+	body := []byte(`{"x":1}`)
+	hash := sha512.Sum512(body)
+	intg := "sha512-" + base64.StdEncoding.EncodeToString(hash[:])
+	require.NoError(t, VerifyIntegrity(body, intg))
+}
+
 func TestVerifyIntegrity_Mismatch(t *testing.T) {
 	require.Error(t, VerifyIntegrity([]byte(`{"x":1}`), "sha256-aGVsbG8="))
 }
 
 func TestVerifyIntegrity_UnsupportedAlgorithm(t *testing.T) {
-	err := VerifyIntegrity([]byte(`{"x":1}`), "sha512-aGVsbG8=")
+	err := VerifyIntegrity([]byte(`{"x":1}`), "sha1-aGVsbG8=")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported")
 }

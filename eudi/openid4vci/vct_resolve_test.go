@@ -274,7 +274,7 @@ func TestVerifyVctIntegrity_RejectsOnUnsupportedAlgorithm(t *testing.T) {
 
 	fc := makeFetchedCredential("Email", "https://issuer/vct/Email", map[string]any{
 		"vct":           "https://issuer/vct/Email",
-		"vct#integrity": "sha512-aGVsbG8=",
+		"vct#integrity": "sha1-aGVsbG8=",
 	})
 	err := s.verifyVctIntegrity([]*fetchedCredential{fc})
 	require.Error(t, err)
