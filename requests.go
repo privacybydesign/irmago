@@ -19,14 +19,15 @@ import (
 )
 
 const (
-	LDContextDisclosureRequest      = "https://irma.app/ld/request/disclosure/v2"
-	LDContextSignatureRequest       = "https://irma.app/ld/request/signature/v2"
-	LDContextIssuanceRequest        = "https://irma.app/ld/request/issuance/v2"
-	LDContextRevocationRequest      = "https://irma.app/ld/request/revocation/v1"
-	LDContextFrontendOptionsRequest = "https://irma.app/ld/request/frontendoptions/v1"
-	LDContextClientSessionRequest   = "https://irma.app/ld/request/client/v1"
-	LDContextSessionOptions         = "https://irma.app/ld/options/v1"
-	DefaultJwtValidity              = 120
+	LDContextDisclosureRequest            = "https://irma.app/ld/request/disclosure/v2"
+	LDContextSignatureRequest             = "https://irma.app/ld/request/signature/v2"
+	LDContextIssuanceRequest              = "https://irma.app/ld/request/issuance/v2"
+	LDContextRevocationRequest            = "https://irma.app/ld/request/revocation/v1"
+	LDContextSignatureVerificationRequest = "https://irma.app/ld/request/signatureverification/v1"
+	LDContextFrontendOptionsRequest       = "https://irma.app/ld/request/frontendoptions/v1"
+	LDContextClientSessionRequest         = "https://irma.app/ld/request/client/v1"
+	LDContextSessionOptions               = "https://irma.app/ld/options/v1"
+	DefaultJwtValidity                    = 120
 )
 
 // BaseRequest contains information used by all IRMA session types, such the context and nonce,
@@ -292,6 +293,27 @@ type ClientSessionRequest struct {
 	ProtocolVersion *ProtocolVersion `json:"protocolVersion,omitempty"`
 	Options         *SessionOptions  `json:"options,omitempty"`
 	Request         SessionRequest   `json:"request,omitempty"`
+}
+
+// A SignatureVerificationRequest is a request to verify a SignedMessage.
+type SignatureVerificationRequest struct {
+	LDContext string        `json:"@context,omitempty"`
+	Signature SignedMessage `json:"signature"`
+
+	// Optionally, the SignedMessage can be verified against a SignatureRequest
+	Request *SignatureRequest `json:"request,omitempty"`
+}
+
+func (r *SignatureVerificationRequest) Validate() error {
+	if r.LDContext != LDContextSignatureVerificationRequest {
+		return errors.New("not a signature verification request")
+	}
+	if r.Request != nil {
+		if err := r.Request.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (choice *DisclosureChoice) Validate() error {

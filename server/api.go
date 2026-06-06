@@ -67,6 +67,12 @@ type LegacySessionResult struct {
 	Err         *irma.RemoteError          `json:"error,omitempty"`
 }
 
+type SignatureVerificationResult struct {
+	ProofStatus irma.ProofStatus             `json:"proofStatus,omitempty"`
+	Disclosed   [][]*irma.DisclosedAttribute `json:"disclosed,omitempty"`
+	Err         *irma.RemoteError            `json:"error,omitempty"`
+}
+
 const (
 	ComponentRevocation      = "revocation"
 	ComponentSession         = "session"
@@ -266,6 +272,24 @@ func wrapSessionRequest(request irma.SessionRequest) (irma.RequestorRequest, err
 		return &irma.IdentityProviderRequest{Request: r}, nil
 	default:
 		return nil, errors.New("Invalid session type")
+	}
+}
+
+func ParseSignatureVerificationRequest(request interface{}) (*irma.SignatureVerificationRequest, error) {
+	switch r := request.(type) {
+	case irma.SignatureVerificationRequest:
+		return &r, nil
+	case string:
+		return ParseSignatureVerificationRequest([]byte(r))
+	case []byte:
+		msg := irma.SignatureVerificationRequest{}
+		if err := irma.UnmarshalValidate(r, &msg); err != nil {
+			return nil, err
+		}
+
+		return &msg, nil
+	default:
+		return nil, errors.New("Invalid request type")
 	}
 }
 
