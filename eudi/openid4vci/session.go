@@ -321,10 +321,6 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 	return nil
 }
 
-// vctIntegrityClaim is the JWT claim name carrying the integrity hash of the
-// SD-JWT VC type metadata document referenced by the credential's vct field.
-const vctIntegrityClaim = "vct#integrity"
-
 // verifyVctIntegrity checks each fetched credential's vct#integrity claim
 // against the raw bytes of the type-metadata document fetched (and cached)
 // pre-issuance. Policy (per Q6a-C):
@@ -348,7 +344,7 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 	}
 	for _, fc := range fetched {
 		for _, vc := range fc.verifiedSdJwtVcs {
-			integrity, present, err := lookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
+			integrity, present, err := sdjwtvc.LookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
 			if err != nil {
 				return fmt.Errorf("vct#integrity on credential %q: %w", fc.credentialConfigurationId, err)
 			}
@@ -365,26 +361,6 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 		}
 	}
 	return nil
-}
-
-// lookupVctIntegrityClaim returns the vct#integrity claim string if present
-// and a non-empty string. A claim present with a non-string (or empty) value
-// is an error: the JWT shape for vct#integrity is defined as a string, so a
-// non-string here is either an issuer bug or a downgrade attempt that
-// shouldn't silently bypass integrity verification.
-func lookupVctIntegrityClaim(payload sdjwtvc.ProcessedSdJwtPayload) (string, bool, error) {
-	raw, ok := payload[vctIntegrityClaim]
-	if !ok {
-		return "", false, nil
-	}
-	str, ok := raw.(string)
-	if !ok {
-		return "", false, fmt.Errorf("claim %q has non-string value", vctIntegrityClaim)
-	}
-	if str == "" {
-		return "", false, fmt.Errorf("claim %q is an empty string", vctIntegrityClaim)
-	}
-	return str, true, nil
 }
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {

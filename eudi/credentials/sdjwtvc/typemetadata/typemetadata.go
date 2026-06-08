@@ -2,6 +2,15 @@
 // issuer metadata documents needed to describe a credential type whose issuer
 // the wallet has never seen. Used by the OpenID4VP disclosure flow when a
 // verifier requests a credential the wallet cannot produce.
+//
+// Spec coverage: this package intentionally targets no single draft of
+// draft-ietf-oauth-sd-jwt-vc. Real-world issuers in the EUDI ecosystem
+// emit a mix of versions (notably DIIP v5 issuers, which reference
+// draft 8 and still emit the legacy "lang" key on display entries),
+// so the parser and resolver accept both the current and legacy
+// shapes for fields whose names changed between drafts. Per-field
+// version notes are inlined where relevant (see e.g. DisplayEntry,
+// rendering.simple.logo handling, integrity hash algorithms).
 package typemetadata
 
 import (
