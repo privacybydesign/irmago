@@ -12,6 +12,7 @@ import (
 	_ "embed"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -385,6 +386,7 @@ type testSdJwtVcConfig struct {
 	sdAlg         *iana.HashingAlgorithm
 	vct           *string
 	disclosures   []DisclosureContent
+	status        *statuslist.StatusClaim
 
 	// stuff inside the issuer signed header
 	typHeader *string
@@ -393,6 +395,11 @@ type testSdJwtVcConfig struct {
 	// general signing stuff
 	holderPrivateKey *ecdsa.PrivateKey
 	issuerPrivateKey *ecdsa.PrivateKey
+}
+
+func (c *testSdJwtVcConfig) withStatusListReference(uri string, idx uint64) *testSdJwtVcConfig {
+	c.status = &statuslist.StatusClaim{StatusList: &statuslist.Reference{Index: idx, URI: uri}}
+	return c
 }
 
 type testSdJwtVcKbConfig struct {
@@ -477,6 +484,14 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 	}
 	if config.sdAlg != nil {
 		issuerPayload[Key_SdAlg] = *config.sdAlg
+	}
+	if config.status != nil && config.status.StatusList != nil {
+		issuerPayload[Key_Status] = map[string]any{
+			"status_list": map[string]any{
+				"idx": config.status.StatusList.Index,
+				"uri": config.status.StatusList.URI,
+			},
+		}
 	}
 
 	issuerHeader := map[string]any{}

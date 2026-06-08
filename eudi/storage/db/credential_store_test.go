@@ -211,6 +211,44 @@ func TestStoreBatch_UniqueHashConstraint(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestStoreBatch_PersistsStatusListColumns(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	uri := "https://issuer.example/sl/1"
+	idx := uint64(42)
+	checked := time.Now().UTC().Truncate(time.Second)
+	batch := newBatch("hash-status-cols")
+	batch.Instances[0].StatusListURI = &uri
+	batch.Instances[0].StatusListIdx = &idx
+	batch.Instances[0].LastKnownStatus = 1 // StatusValid
+	batch.Instances[0].LastStatusCheckAt = &checked
+
+	require.NoError(t, store.StoreBatch(batch))
+
+	got, err := store.GetUnusedInstance(batch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.StatusListURI)
+	require.Equal(t, uri, *got.StatusListURI)
+	require.NotNil(t, got.StatusListIdx)
+	require.Equal(t, idx, *got.StatusListIdx)
+	require.Equal(t, uint8(1), got.LastKnownStatus)
+	require.NotNil(t, got.LastStatusCheckAt)
+	require.WithinDuration(t, checked, got.LastStatusCheckAt.UTC(), time.Second)
+}
+
+func TestStoreBatch_StatusListColumnsDefaultToNil(t *testing.T) {
+	store := newTestCredentialStore(t)
+	batch := newBatch("hash-no-status")
+	require.NoError(t, store.StoreBatch(batch))
+
+	got, err := store.GetUnusedInstance(batch.ID)
+	require.NoError(t, err)
+	require.Nil(t, got.StatusListURI)
+	require.Nil(t, got.StatusListIdx)
+	require.Equal(t, uint8(0), got.LastKnownStatus)
+	require.Nil(t, got.LastStatusCheckAt)
+}
+
 func TestStoreBatch_MultipleInstances(t *testing.T) {
 	store := newTestCredentialStore(t)
 

@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
+- Support for the IETF OAuth Token Status List (draft-ietf-oauth-status-list-15) on SD-JWT VC credentials
+  - New `eudi/credentials/statuslist` package: fetches, verifies, and decodes Status List Tokens (`application/statuslist+jwt`) over HTTP, with singleflight dedup, body-size caps, and zlib decoding for all four bit-sizes (1, 2, 4, 8)
+  - Status List Token signatures are validated via the same `x5c`-or-`kid`+DID (did:web/did:jwk) dispatcher as the SD-JWT VC itself, refactored into the shared `eudi/jwt.JwtKeyProvider`. The token's `iss` is required to match the credential's `iss`
+  - Status checks run at every credential lifecycle site: holder-side at issuance and at disclosure (the wallet refuses to disclose a known-revoked instance), verifier-side after SD-JWT VC verification, and a background `StatusRefreshService` keeps stored credentials' `LastKnownStatus` up to date
+  - Persistent SQLCipher-backed cache (`status_list_cache` table) lets the wallet survive cold starts and brief offline periods within a list's TTL. TTL = `min(HTTP max-age, JWT ttl)` clamped to `[60s, 24h]`. Fail-closed on fetch/verify/decode errors past TTL
+  - The `Client` exposes a `RefreshStatuses(ctx)` method for UI-initiated refreshes
 - Support for issuing SD-JWT VC credentials over the OpenID4VCI protocol to the new `client` package
   - Supports the Pre-Authorized Code flow, including an optional `tx_code` (with retry on incorrect entry)
   - Supports the Authorization Code flow, including Pushed Authorization Requests (PAR), in-app browser based authorization, and PKCE

@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -273,10 +274,28 @@ func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJ
 
 func buildInstances(vcs []*sdjwtvc.VerifiedSdJwtVc) []models.IssuedCredentialInstance {
 	instances := make([]models.IssuedCredentialInstance, len(vcs))
+	now := time.Now()
 	for i, v := range vcs {
-		instances[i] = models.IssuedCredentialInstance{
+		inst := models.IssuedCredentialInstance{
 			RawCredential: []byte(v.GetRawSdJwtVc()),
 		}
+		// Persist the status_list reference so the H2 disclosure
+		// path and the H3 refresh sweep can run without re-parsing
+		// the SD-JWT VC. At issuance time the holder verifier has
+		// just confirmed the bit reads StatusValid (or the
+		// credential has no status reference), so seed
+		// LastKnownStatus accordingly.
+		if v.IssuerSignedJwtPayload.Status != nil && v.IssuerSignedJwtPayload.Status.StatusList != nil {
+			ref := v.IssuerSignedJwtPayload.Status.StatusList
+			uri := ref.URI
+			idx := ref.Index
+			t := now
+			inst.StatusListURI = &uri
+			inst.StatusListIdx = &idx
+			inst.LastKnownStatus = uint8(statuslist.StatusValid)
+			inst.LastStatusCheckAt = &t
+		}
+		instances[i] = inst
 	}
 	return instances
 }

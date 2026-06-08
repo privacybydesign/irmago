@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
@@ -46,6 +48,7 @@ type Client struct {
 	didValidator     *openid4vp.DidVerifierValidator
 	scheduler        gocron.Scheduler
 	sessionManager   sessionManager
+	statusRefresh    services.StatusRefreshService
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -130,12 +133,27 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
 
+	// Token Status List checker, shared by the holder-side verifier
+	// (H1, attached to sdJwtVcVerificationContext below), the
+	// OpenID4VP disclosure handler (H2, set via WithStatusChecker
+	// further down), and the H3 background refresh service.
+	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
+	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: &eudiConf.Issuers,
+		Clock:       eudi_jwt.NewSystemClock(),
+	}, statusListCache)
+
+	// Wire the checker into the EUDI DCQL handler so H2 runs before
+	// the wallet hands over a credential.
+	eudiSdJwtDcqlHandler.WithStatusChecker(statusChecker)
+
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: true,
+		StatusChecker: statusChecker,
 	}
 
 	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, handler, signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
@@ -165,6 +183,7 @@ func New(
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
+		StatusChecker: statusChecker,
 	}
 
 	// Initiate the OpenID4VCI client
@@ -194,6 +213,7 @@ func New(
 		keyBinder:        irmaKeyBinder,
 		didValidator:     didValidator,
 		scheduler:        scheduler,
+		statusRefresh:    services.NewStatusRefreshService(eudiStorage.Db(), statusChecker),
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -209,6 +229,18 @@ func (client *Client) Close() error {
 	client.irmaClient.Close()
 	client.eudiStorage.Close()
 	return client.storage.Close()
+}
+
+// RefreshStatuses re-fetches the Token Status List for every stored
+// SD-JWT VC instance and updates its LastKnownStatus column. Use
+// this on app resume or when the UI exposes an explicit refresh
+// action. Errors during the sweep are logged; the previous
+// LastKnownStatus persists for any URI that fails to refresh.
+//
+// See docs/plans/sd-jwt-status-lists.md (H3) for the behavior
+// envelope.
+func (client *Client) RefreshStatuses(ctx context.Context) error {
+	return client.statusRefresh.RefreshAll(ctx)
 }
 
 type SessionRequestData struct {

@@ -75,6 +75,7 @@ func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, er
 		&models.IssuedCredentialInstance{},
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},
+		&models.StatusListCacheEntry{},
 	)
 
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -55,6 +56,12 @@ type SdJwtVcDcqlHandler struct {
 	keyBinder       sdjwtvc.KeyBinder
 	vctFetcher      typemetadata.VctFetcher
 	issuerFetcher   typemetadata.IssuerFetcher
+
+	// statusChecker, when non-nil, enforces an IETF OAuth Token
+	// Status List check immediately before the wallet hands a
+	// credential instance over for presentation (the H2 site in
+	// docs/plans/sd-jwt-status-lists.md). Nil disables the check.
+	statusChecker *statuslist.Checker
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
@@ -74,6 +81,15 @@ func NewSdJwtVcDcqlHandler(
 		vctFetcher:      vctFetcher,
 		issuerFetcher:   issuerFetcher,
 	}
+}
+
+// WithStatusChecker installs a Token Status List checker. When set,
+// every disclosure path consults it for the selected instance and
+// refuses to disclose anything but StatusValid (see H2 in
+// docs/plans/sd-jwt-status-lists.md).
+func (h *SdJwtVcDcqlHandler) WithStatusChecker(c *statuslist.Checker) *SdJwtVcDcqlHandler {
+	h.statusChecker = c
+	return h
 }
 
 var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
@@ -384,6 +400,12 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
+		}
+
+		// H2: enforce Token Status List status before disclosure.
+		// docs/plans/sd-jwt-status-lists.md.
+		if err := h.checkInstanceStatus(instance, batch.IssuerURL); err != nil {
+			return nil, err
 		}
 
 		rawSdJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
@@ -1296,4 +1318,31 @@ func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
 		}
 	}
 	return true
+}
+
+// checkInstanceStatus runs the Token Status List check for an
+// instance the wallet is about to disclose (H2). Returns nil when
+// the check is disabled, the instance has no status reference, or
+// the list reads StatusValid; returns an error otherwise so the
+// caller refuses the disclosure (fail-closed).
+//
+// expectedIssuer is the credential's iss URL (== the batch's
+// IssuerURL), used to enforce the iss(StatusListToken) ==
+// iss(credential) binding.
+func (h *SdJwtVcDcqlHandler) checkInstanceStatus(instance *models.IssuedCredentialInstance, expectedIssuer string) error {
+	if h.statusChecker == nil {
+		return nil
+	}
+	if instance.StatusListURI == nil || instance.StatusListIdx == nil {
+		return nil
+	}
+	ref := statuslist.Reference{Index: *instance.StatusListIdx, URI: *instance.StatusListURI}
+	status, err := h.statusChecker.Check(context.Background(), ref, expectedIssuer)
+	if err != nil {
+		return fmt.Errorf("status list check failed for instance %s: %w", instance.ID, err)
+	}
+	if status != statuslist.StatusValid {
+		return fmt.Errorf("credential instance %s status is %s, not valid", instance.ID, status)
+	}
+	return nil
 }
