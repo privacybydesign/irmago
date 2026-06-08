@@ -6,13 +6,41 @@
     "description": "VCT metadata for student card SD-JWT credential",
     "language": "en",
     "display": [
-      { "lang": "en", "name": "Student Card Credential (SD-JWT)" }
+      { "locale": "en", "name": "Student Card Credential (SD-JWT)" }
     ],
     "claims": [
-      { "path": ["university"], "sd": "allowed" },
-      { "path": ["level"], "sd": "allowed" },
-      { "path": ["student_id"], "sd": "allowed" },
-      { "path": ["courses"], "sd": "allowed" }
+      {
+        "path": ["university"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "University" },
+          { "locale": "nl", "label": "Universiteit" }
+        ]
+      },
+      {
+        "path": ["level"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Level" },
+          { "locale": "nl", "label": "Niveau" }
+        ]
+      },
+      {
+        "path": ["student_id"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Student ID" },
+          { "locale": "nl", "label": "Studentnummer" }
+        ]
+      },
+      {
+        "path": ["courses"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Courses" },
+          { "locale": "nl", "label": "Vakken" }
+        ]
+      }
     ],
     "issuer": "{{ here }}"
   }

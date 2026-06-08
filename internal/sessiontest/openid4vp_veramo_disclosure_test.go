@@ -721,7 +721,10 @@ func testOptionalCredential(t *testing.T) {
 						Name:         &clientmodels.TranslatedString{"en": "Phone Credential (SD-JWT)"},
 						IssuerName:   &clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
 						Attributes: []expectedAttr{
-							{Path: []any{"phone_number"}},
+							{
+								Path:        []any{"phone_number"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Phone Number", "nl": "Telefoonnummer"},
+							},
 						},
 					},
 				},
@@ -2654,7 +2657,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 		"EmailCredentialSdJwt", `{"email": "batch2@example.com", "domain": "example.com"}`)
 
 	// Batch-of-2 should have a non-nil remaining count of 2.
-	requireBatchRemaining(t, c, "Email Credential (SD-JWT, Batch 2)", uintPtr(2))
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", uintPtr(2))
 
 	// Step 2: First disclosure — uses first instance.
 	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
@@ -2681,7 +2684,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	)
 
 	// After first disclosure, remaining should be 1.
-	requireBatchRemaining(t, c, "Email Credential (SD-JWT, Batch 2)", uintPtr(1))
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", uintPtr(1))
 
 	// Step 3: Second disclosure — uses last instance.
 	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
@@ -4399,7 +4402,7 @@ func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, query
 	// always present and not user-controlled.
 	expectedSet := make(map[string]struct{}, len(expected))
 	for _, exp := range expected {
-		expectedSet[claimPathString(exp.Path)] = struct{}{}
+		expectedSet[clientmodels.ClaimPathKey(exp.Path)] = struct{}{}
 	}
 
 	var unexpected []string
@@ -4411,10 +4414,10 @@ func requireVerifierReceivedClaims(t *testing.T, result veramoCheckResult, query
 				}
 			}
 		}
-		if _, ok := expectedSet[claimPathString(path)]; ok {
+		if _, ok := expectedSet[clientmodels.ClaimPathKey(path)]; ok {
 			return
 		}
-		unexpected = append(unexpected, claimPathString(path))
+		unexpected = append(unexpected, clientmodels.ClaimPathKey(path))
 	})
 
 	require.Empty(t, unexpected,
@@ -4440,13 +4443,6 @@ func walkClaimLeaves(value any, prefix []any, visit func([]any)) {
 	default:
 		visit(prefix)
 	}
-}
-
-// claimPathString turns a path into a deterministic string key for set
-// lookups. Mirrors clientmodels.ClaimPathKey but kept local to the test
-// helper so we don't widen its API surface.
-func claimPathString(path []any) string {
-	return fmt.Sprintf("%v", path)
 }
 
 // navigateClaims follows a claim path into a nested claims map.

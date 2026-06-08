@@ -156,6 +156,58 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1, "valid credential should appear as candidate")
 }
 
+// TestFindCandidates_RegionalLocale_KeyedByBaseLanguage pins the contract
+// that issuer name, credential name, and claim display name on OpenID4VP
+// disclosure candidates are keyed by BCP 47 base language — the same
+// reduction the issuance permission dialog applies via
+// metadata.ConvertDisplayToTranslatedString. Without this, an issuer
+// (or VCT) that advertises display under "en-US" shows correctly during
+// issuance but appears under "en-US" rather than "en" at disclosure
+// time, so a wallet UI looking up by base language loses the name.
+func TestFindCandidates_RegionalLocale_KeyedByBaseLanguage(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	batch := newTestBatch("hash-regional", "https://example.com/EmailCredential", map[string]any{
+		"email": "test@example.com",
+	})
+	batch.ExpiresAt = datatypes.NullTime{V: time.Now().Add(24 * time.Hour), Valid: true}
+	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
+		{Name: "Example Issuer", Locale: datatypes.NullString{V: "en-US", Valid: true}},
+	}
+	batch.CredentialMetadata = &models.CredentialMetadata{
+		Display: []models.CredentialDisplay{
+			{Name: "Email Credential", Locale: datatypes.NullString{V: "en-US", Valid: true}},
+		},
+		Claims: []models.CredentialClaim{
+			{
+				Path: datatypes.JSON(`["email"]`),
+				Display: []models.ClaimDisplay{
+					{Name: "Email", Locale: datatypes.NullString{V: "en-US", Valid: true}},
+				},
+			},
+		},
+	}
+	require.NoError(t, store.StoreBatch(batch))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/EmailCredential"]},
+		"claims": [{"path": ["email"]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	require.Len(t, result.OwnedCandidates, 1)
+
+	cand := result.OwnedCandidates[0]
+	assert.Equal(t, "Example Issuer", cand.Issuer.Name["en"], "issuer name must collapse en-US to en")
+	assert.Equal(t, "Email Credential", cand.Name["en"], "credential name must collapse en-US to en")
+	require.NotEmpty(t, cand.Attributes)
+	require.NotNil(t, cand.Attributes[0].DisplayName)
+	assert.Equal(t, "Email", (*cand.Attributes[0].DisplayName)["en"], "claim display must collapse en-US to en")
+}
+
 func TestFindCandidates_NoExpiryOrNotBefore_Included(t *testing.T) {
 	h, store := newTestHandler(t)
 
@@ -636,9 +688,9 @@ func TestComposeUnobtainableDescriptor_VctOk_NoIssuerField(t *testing.T) {
 	vctFetcher := &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
 		"https://example.com/vct/email": {
 			Name:    "Email Credential",
-			Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+			Display: []typemetadata.DisplayEntry{{Locale: "en", Name: "Email Credential"}},
 			Claims: []typemetadata.ClaimMetadata{
-				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Lang: "en", Name: "Email"}}},
+				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Locale: "en", Name: "Email"}}},
 			},
 		},
 	}}
@@ -689,10 +741,10 @@ func TestComposeUnobtainableDescriptor_VctAndIssuerOk(t *testing.T) {
 	vctFetcher := &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
 		"https://example.com/vct/email": {
 			Name:      "Email Credential",
-			Display:   []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+			Display:   []typemetadata.DisplayEntry{{Locale: "en", Name: "Email Credential"}},
 			IssuerURL: "https://issuer.example.com",
 			Claims: []typemetadata.ClaimMetadata{
-				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Lang: "en", Name: "Email"}}},
+				{Path: []any{"email"}, Display: []typemetadata.ClaimDisplayEntry{{Locale: "en", Name: "Email"}}},
 			},
 		},
 	}}
@@ -726,7 +778,7 @@ func TestComposeUnobtainableDescriptor_MultiVct_FirstFailsSecondSucceeds(t *test
 		docs: map[string]*typemetadata.VctTypeMetadata{
 			"https://example.com/vct/good": {
 				Name:    "Good Credential",
-				Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Good Credential"}},
+				Display: []typemetadata.DisplayEntry{{Locale: "en", Name: "Good Credential"}},
 			},
 		},
 	}
@@ -781,7 +833,7 @@ func TestFindCandidates_NoBatches_AppendsUnobtainableDescriptor(t *testing.T) {
 	h.vctFetcher = &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
 		"https://example.com/vct/email": {
 			Name:    "Email Credential",
-			Display: []typemetadata.DisplayEntry{{Lang: "en", Name: "Email Credential"}},
+			Display: []typemetadata.DisplayEntry{{Locale: "en", Name: "Email Credential"}},
 		},
 	}}
 

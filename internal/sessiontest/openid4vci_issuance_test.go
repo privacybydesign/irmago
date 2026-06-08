@@ -23,6 +23,8 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("tx_code retries are exhausted after max attempts", testOpenID4VCIPreAuthFlowTxCodeRetriesExhausted)
 	t.Run("user can cancel mid-tx_code-retry", testOpenID4VCIPreAuthFlowCancelMidTxCodeRetry)
 	t.Run("can be dismissed", testOpenID4VCIPreAuthFlowCanBeDismissed)
+	t.Run("prefers VCT type metadata over issuer credential_metadata", testOpenID4VCIPreAuthFlowPrefersVctMetadataOverCredentialMetadata)
+	t.Run("resolves VCT type metadata from issued JWT when issuer metadata vct is unknown", testOpenID4VCIPreAuthFlowResolvesVctFromIssuedJwt)
 	t.Run("issues credential with nested claims", testOpenID4VCIPreAuthFlowNestedClaims)
 	t.Run("issues multiple credential types", testOpenID4VCIPreAuthFlowMultipleCredentialTypes)
 	t.Run("issues credential with array claims", testOpenID4VCIPreAuthFlowArrayClaims)
@@ -358,6 +360,126 @@ func testOpenID4VCIPreAuthFlowCanBeDismissed(t *testing.T) {
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
+}
+
+// testOpenID4VCIPreAuthFlowPrefersVctMetadataOverCredentialMetadata pins that
+// when the issuer advertises a SD-JWT VC type-metadata URL via the credential's
+// `vct` field, the wallet fetches that document and uses its credential and
+// claim display values in preference to the OID4VCI `credential_metadata`
+// block in the issuer's well-known document.
+//
+// The fixture uses sentinel suffixes — "(from credential_metadata)" vs
+// "(from VCT)" — on every display string so a test failure tells you exactly
+// which path won. The VCT document also uses the current SD-JWT VC draft's
+// "label" field for claim displays (the spec field name; OID4VCI metadata
+// uses "name"), exercising the spec-conformant path.
+func testOpenID4VCIPreAuthFlowPrefersVctMetadataOverCredentialMetadata(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createVctMetadataPreAuthOffer(t)
+
+	startOpenID4VCISession(t, c, 1, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	if session.Status == clientmodels.Status_Error {
+		t.Fatalf("session ended in error: %+v", session.Error)
+	}
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "VCT Metadata Test (from VCT)", offered.Name["en"],
+		"VCT type metadata's credential display name must win over the issuer's credential_metadata")
+	require.Equal(t, "VCT Metadata Test (uit VCT)", offered.Name["nl"],
+		"non-English VCT locale must also reach the wallet")
+
+	requireAttrsInOrder(t, offered.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name (from VCT)", "nl": "Voornaam (uit VCT)"},
+			Value:       strVal("Test"),
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family Name (from VCT)", "nl": "Achternaam (uit VCT)"},
+			Value:       strVal("User"),
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email (from VCT)", "nl": "E-mailadres (uit VCT)"},
+			Value:       strVal("test@example.com"),
+		},
+	)
+}
+
+// testOpenID4VCIPreAuthFlowResolvesVctFromIssuedJwt locks in the wallet's
+// post-issuance VCT resolution behavior: when the issuer's well-known document
+// advertises `vct: "unknown"` (or any other non-URL placeholder) but the
+// issued SD-JWT still carries a fetchable vct URL, the wallet must fetch the
+// type metadata after issuance and surface its values in OfferedCredentials.
+//
+// The fixture stages this with `extends: "TestCredential"` (which doesn't
+// match any VCT file's `credentials` list, so veramo's metadata-serving path
+// returns `vct: "unknown"`) plus a VCT file whose `credentials` array names
+// `PostIssuanceVctTestCredentialSdJwt` (the actual credential id, which
+// veramo's issuance path uses — so the JWT does get a real vct URL).
+//
+// Every VCT display string is suffixed `(from VCT post-issuance)` so a
+// failure tells you the wallet fell back to credential_metadata.
+func testOpenID4VCIPreAuthFlowResolvesVctFromIssuedJwt(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createPostIssuanceVctPreAuthOffer(t)
+
+	startOpenID4VCISession(t, c, 1, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	if session.Status == clientmodels.Status_Error {
+		t.Fatalf("session ended in error: %+v", session.Error)
+	}
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "Post-Issuance VCT Test (from VCT)", offered.Name["en"],
+		"VCT credential name (resolved from issued JWT's vct claim) must reach the wallet even when issuer metadata vct=unknown")
+	require.Equal(t, "Post-Issuance VCT Test (uit VCT)", offered.Name["nl"])
+
+	requireAttrsInOrder(t, offered.Attributes,
+		expectedAttr{
+			Path:        []any{"given_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Given Name (from VCT post-issuance)", "nl": "Voornaam (uit VCT post-issuance)"},
+			Value:       strVal("Test"),
+		},
+		expectedAttr{
+			Path:        []any{"family_name"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Family Name (from VCT post-issuance)", "nl": "Achternaam (uit VCT post-issuance)"},
+			Value:       strVal("User"),
+		},
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: &clientmodels.TranslatedString{"en": "Email (from VCT post-issuance)", "nl": "E-mailadres (uit VCT post-issuance)"},
+			Value:       strVal("test@example.com"),
+		},
+	)
 }
 
 func testOpenID4VCIPreAuthFlowNestedClaims(t *testing.T) {
@@ -1177,7 +1299,7 @@ func testOpenID4VCIAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	require.Len(t, session.OfferedCredentials, 1)
 
 	offered := session.OfferedCredentials[0]
-	require.Equal(t, "Test Credential (SD-JWT, Auth Code)", offered.Name["en"])
+	require.Equal(t, "Test Credential (SD-JWT)", offered.Name["en"])
 	requireAttrsInOrder(t, offered.Attributes,
 		expectedAttr{
 			Path:        []any{"given_name"},
@@ -1209,7 +1331,7 @@ func testOpenID4VCIAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
 
-	cred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT, Auth Code)")
+	cred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued credential should appear in GetCredentials")
 
 	requireAttrsInOrder(t, cred.Attributes,
@@ -1299,7 +1421,7 @@ func testOpenID4VCIAuthCodeFlowNestedClaims(t *testing.T) {
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
 
-	cred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT, Auth Code)")
+	cred := findCredentialByName(t, creds, "en", "House Possession Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued HouseCredential should appear in GetCredentials")
 
 	requireAttrsInOrder(t, cred.Attributes,

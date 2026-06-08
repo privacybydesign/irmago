@@ -3,7 +3,10 @@ package clientmodels
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"os"
+	"strconv"
+	"strings"
 )
 
 const DefaultFallbackLanguage = "en"
@@ -133,8 +136,42 @@ type Attribute struct {
 
 // ClaimPathKey produces a deterministic string key from a claim path for use
 // in maps. Go slices can't be map keys, so this serializes the path.
+//
+// Each element is type-prefixed and delimited so different paths can't
+// collide via formatting accidents (e.g. ["a b"] vs ["a", "b"]). Whole-value
+// float64s — the form JSON unmarshaling produces — are coerced to integer
+// form so a JSON-decoded path matches a Go-literal int path. Unknown element
+// types fall back to a generic format so callers always get a string.
 func ClaimPathKey(path []any) string {
-	return fmt.Sprintf("%v", path)
+	var sb strings.Builder
+	for _, elem := range path {
+		sb.WriteByte('|')
+		switch v := elem.(type) {
+		case nil:
+			sb.WriteString("null")
+		case string:
+			sb.WriteByte('s')
+			sb.WriteString(v)
+		case float64:
+			if !math.IsInf(v, 0) && !math.IsNaN(v) && v == math.Trunc(v) {
+				sb.WriteByte('i')
+				sb.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
+			} else {
+				sb.WriteByte('f')
+				sb.WriteString(strconv.FormatFloat(v, 'g', -1, 64))
+			}
+		case int:
+			sb.WriteByte('i')
+			sb.WriteString(strconv.Itoa(v))
+		case int64:
+			sb.WriteByte('i')
+			sb.WriteString(strconv.FormatInt(v, 10))
+		default:
+			sb.WriteByte('?')
+			fmt.Fprintf(&sb, "%v", v)
+		}
+	}
+	return sb.String()
 }
 
 // Credential represents a full credential with all its metadata and attribute values.

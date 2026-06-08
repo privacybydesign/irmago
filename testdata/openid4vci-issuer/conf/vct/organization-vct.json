@@ -9,7 +9,7 @@
     "language": "en",
     "display": [
       {
-        "lang": "en",
+        "locale": "en",
         "name": "Organization Credential (SD-JWT)"
       }
     ],
@@ -19,21 +19,33 @@
           "university",
           "name"
         ],
-        "sd": "allowed"
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "University Name" },
+          { "locale": "nl", "label": "Naam universiteit" }
+        ]
       },
       {
         "path": [
           "university",
           "faculties"
         ],
-        "sd": "allowed"
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Faculties" },
+          { "locale": "nl", "label": "Faculteiten" }
+        ]
       },
       {
         "path": [
           "university",
           "founded"
         ],
-        "sd": "allowed"
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Founded" },
+          { "locale": "nl", "label": "Opgericht" }
+        ]
       },
       {
         "path": [
@@ -42,7 +54,11 @@
           null,
           "faculty_name"
         ],
-        "sd": "allowed"
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Faculty Name" },
+          { "locale": "nl", "label": "Faculteitsnaam" }
+        ]
       },
       {
         "path": [
@@ -51,7 +67,11 @@
           null,
           "departments"
         ],
-        "sd": "allowed"
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Departments" },
+          { "locale": "nl", "label": "Afdelingen" }
+        ]
       },
       {
         "path": [
@@ -62,7 +82,11 @@
           null,
           "dept_name"
         ],
-        "sd": "allowed"
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Department Name" },
+          { "locale": "nl", "label": "Afdelingsnaam" }
+        ]
       },
       {
         "path": [
@@ -73,7 +97,20 @@
           null,
           "courses"
         ],
-        "sd": "allowed"
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Courses" },
+          { "locale": "nl", "label": "Vakken" }
+        ]
+      },
+      {
+        "path": [
+          "university"
+        ],
+        "display": [
+          { "locale": "en", "label": "University" },
+          { "locale": "nl", "label": "Universiteit" }
+        ]
       }
     ],
     "issuer": "{{ here }}"

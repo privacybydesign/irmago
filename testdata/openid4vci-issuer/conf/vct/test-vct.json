@@ -9,14 +9,35 @@
     "language": "en",
     "display": [
       {
-        "lang": "en",
+        "locale": "en",
         "name": "Test Credential (SD-JWT)"
       }
     ],
     "claims": [
-      { "path": ["given_name"], "sd": "allowed" },
-      { "path": ["family_name"], "sd": "allowed" },
-      { "path": ["email"], "sd": "allowed" }
+      {
+        "path": ["given_name"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Given Name" },
+          { "locale": "nl", "label": "Voornaam" }
+        ]
+      },
+      {
+        "path": ["family_name"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Family Name" },
+          { "locale": "nl", "label": "Achternaam" }
+        ]
+      },
+      {
+        "path": ["email"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Email" },
+          { "locale": "nl", "label": "E-mailadres" }
+        ]
+      }
     ],
     "issuer": "{{ here }}"
   }

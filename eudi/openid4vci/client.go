@@ -1,6 +1,7 @@
 package openid4vci
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 )
 
@@ -86,8 +88,24 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 			return
 		}
 
+		// SD-JWT VC type metadata is the spec-preferred source for credential
+		// display/claims (OID4VCI v1.0 § 12.2.4: format-specific mechanisms are
+		// "always preferred" over credential_metadata). Snapshot the VCI
+		// baseline before resolving so both the pre- and post-issuance merges
+		// can fall back per-locale onto the original credential_metadata
+		// instead of onto each other's outputs.
+		baseline := snapshotCredentialMetadata(credentialIssuerMetadata)
+
+		resolver := typemetadata.NewResolver(client.httpClient)
+		client.resolveCredentialMetadataFromVct(context.Background(), credentialOffer, credentialIssuerMetadata, baseline, resolver)
+
+		// Download credential logos now that CredentialMetadata is final — the
+		// VCT enrichment above can introduce logos (e.g. via
+		// rendering.simple.logo) that weren't present in the issuer document.
+		client.downloadCredentialLogos(credentialOffer, credentialIssuerMetadata)
+
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
-		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, redirectUri, handler)
+		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, handler)
 
 		if err != nil {
 			handleFailure(handler, "failed to handle credential offer: %v", err)
@@ -98,6 +116,8 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 func (client *Client) handleCredentialOffer(
 	credentialOffer *CredentialOffer,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
+	originalCredentialMetadata map[string]*metadata.CredentialMetadata,
+	vctResolver *typemetadata.Resolver,
 	redirectUri string,
 	handler Handler,
 ) error {
@@ -108,15 +128,18 @@ func (client *Client) handleCredentialOffer(
 	}
 
 	client.currentSession = &session{
-		credentialOffer:          credentialOffer,
-		credentialIssuerMetadata: credentialIssuerMetadata,
-		requestorInfo:            requestorInfo,
-		credentials:              creds,
-		handler:                  handler,
-		httpClient:               client.httpClient,
-		holderVerifier:           client.holderVerifier,
-		storage:                  client.Configuration.Storage,
-		redirectUri:              redirectUri,
+		credentialOffer:            credentialOffer,
+		credentialIssuerMetadata:   credentialIssuerMetadata,
+		requestorInfo:              requestorInfo,
+		credentials:                creds,
+		handler:                    handler,
+		httpClient:                 client.httpClient,
+		holderVerifier:             client.holderVerifier,
+		storage:                    client.Configuration.Storage,
+		vctResolver:                vctResolver,
+		allowInsecureHttp:          client.allowInsecureHttp,
+		originalCredentialMetadata: originalCredentialMetadata,
+		redirectUri:                redirectUri,
 	}
 	defer func() {
 		client.currentSession = nil
@@ -298,41 +321,14 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 		}
 	}
 
-	// Also download the logos for the offered credentials, if present in the metadata
-	credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
-	for _, offeredConfiguration := range credentialOffer.CredentialConfigurationIds {
-		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[offeredConfiguration]; ok {
-			if config.CredentialMetadata != nil {
-				for _, display := range config.CredentialMetadata.Display {
-					if display.Logo != nil {
-						// TODO: check if logo is already in cache first
-						logoData, _, err := client.downloadRemoteImage(*display.Logo)
-						if err != nil {
-							eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
-							continue
-						}
-						err = credentialLogoManager.Save(display.Logo.Uri, logoData)
-						if err != nil {
-							eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
-						}
-
-						break
-
-						// TODO: how to handle this error ? Proceed without logo ?
-						// if err != nil {
-						// 	// handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
-						// 	// return
-						// }
-					}
-				}
-			}
-		}
-	}
-
 	return &credentialIssuerMetadata, nil
 }
 
 func (client *Client) downloadRemoteImage(remoteImage metadata.RemoteImage) ([]byte, string, error) {
+	return downloadRemoteImage(client.httpClient, remoteImage)
+}
+
+func downloadRemoteImage(httpClient *http.Client, remoteImage metadata.RemoteImage) ([]byte, string, error) {
 	// data URIs (e.g. "data:image/png;base64,...") carry the image inline — no HTTP request needed.
 	if strings.HasPrefix(remoteImage.Uri, "data:") {
 		// Expected format: data:<mediatype>[;base64],<data>
@@ -357,7 +353,7 @@ func (client *Client) downloadRemoteImage(remoteImage metadata.RemoteImage) ([]b
 		return imageBytes, mediaType, nil
 	}
 
-	response, err := client.httpClient.Get(remoteImage.Uri)
+	response, err := httpClient.Get(remoteImage.Uri)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download image %s: %v", remoteImage.Uri, err)
 	}
@@ -483,4 +479,104 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	handler.Failure(&clientmodels.SessionError{
 		WrappedError: fmt.Sprintf(message, fmtArgs...),
 	})
+}
+
+// snapshotCredentialMetadata captures the VCI-advertised
+// credential_metadata pointer for each configuration so a later VCT
+// merge can recover the pre-merge baseline. The values are pointer
+// copies — VCT resolution replaces the live map entry's pointer with a
+// new CredentialMetadata, leaving the snapshotted pointer untouched.
+func snapshotCredentialMetadata(issuerMetadata *metadata.CredentialIssuerMetadata) map[string]*metadata.CredentialMetadata {
+	snapshot := make(map[string]*metadata.CredentialMetadata, len(issuerMetadata.CredentialConfigurationsSupported))
+	for configID, config := range issuerMetadata.CredentialConfigurationsSupported {
+		snapshot[configID] = config.CredentialMetadata
+	}
+	return snapshot
+}
+
+// resolveCredentialMetadataFromVct fetches SD-JWT VC type metadata for each
+// offered credential configuration whose vct value is an absolute HTTPS URL
+// (or HTTP when allowInsecureHttp is set). On success, the config's
+// CredentialMetadata is replaced with Merge(resolved, baseline[configID]) —
+// VCT translations win per OID4VCI v1.0 § 12.2.4 while VCI fills the
+// locales VCT does not cover. On any failure (URL not fetchable, network
+// error, parse error, extends cycle, extends-integrity mismatch, depth
+// overflow), the existing CredentialMetadata is left as-is so consumers
+// fall back to the issuer metadata's credential_metadata.
+func (client *Client) resolveCredentialMetadataFromVct(
+	ctx context.Context,
+	offer *CredentialOffer,
+	issuerMetadata *metadata.CredentialIssuerMetadata,
+	baseline map[string]*metadata.CredentialMetadata,
+	resolver *typemetadata.Resolver,
+) {
+	for _, configID := range offer.CredentialConfigurationIds {
+		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
+		if !ok {
+			continue
+		}
+		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+			config.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
+			continue
+		}
+		// vct can legally be a non-URL string identifier; if so, there's
+		// nothing to fetch — silently leave CredentialMetadata alone.
+		if !vctLooksFetchable(config.VerifiableCredentialType, client.allowInsecureHttp) {
+			continue
+		}
+
+		resolved, err := resolver.Resolve(ctx, config.VerifiableCredentialType, client.allowInsecureHttp)
+		if err != nil {
+			eudi.Logger.Infof("vct type metadata resolution failed for %q (vct=%q): %v; falling back to credential_metadata", configID, config.VerifiableCredentialType, err)
+			continue
+		}
+
+		merged := Merge(resolved, baseline[configID])
+		config.CredentialMetadata = &merged
+		issuerMetadata.CredentialConfigurationsSupported[configID] = config
+	}
+}
+
+// downloadCredentialLogos caches the first available logo for each offered
+// credential configuration into the credential logo store. Called after
+// resolveCredentialMetadataFromVct so VCT-derived logos (e.g. from
+// rendering.simple.logo) are picked up too.
+func (client *Client) downloadCredentialLogos(
+	offer *CredentialOffer,
+	issuerMetadata *metadata.CredentialIssuerMetadata,
+) {
+	credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
+	for _, configID := range offer.CredentialConfigurationIds {
+		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
+		if !ok || config.CredentialMetadata == nil {
+			continue
+		}
+		for _, display := range config.CredentialMetadata.Display {
+			if display.Logo == nil {
+				continue
+			}
+			// TODO: check if logo is already in cache first
+			logoData, _, err := client.downloadRemoteImage(*display.Logo)
+			if err != nil {
+				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
+				continue
+			}
+			if err := credentialLogoManager.Save(display.Logo.Uri, logoData); err != nil {
+				eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
+			}
+			break
+		}
+	}
+}
+
+// vctLooksFetchable returns true if vct uses a scheme this wallet will attempt
+// to fetch. Avoids spurious Resolve() error logs for non-URL vct identifiers.
+func vctLooksFetchable(vct string, allowInsecureHttp bool) bool {
+	if strings.HasPrefix(vct, "https://") {
+		return true
+	}
+	if allowInsecureHttp && strings.HasPrefix(vct, "http://") {
+		return true
+	}
+	return false
 }
