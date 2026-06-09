@@ -29,6 +29,7 @@ import (
 )
 
 type session struct {
+	id                       int
 	credentialOffer          *CredentialOffer
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata
 	requestorInfo            *clientmodels.TrustedParty
@@ -646,7 +647,9 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 			}
 		}
 
-		issuer := "org.irmacard.cardemu"
+		// The issuer should be equal to the client ID registered with the authorization server
+		// TODO: omit the issuer, in case the access token being used, was obtained via Pre-Authorized Code flow
+		issuer := YiviClientId
 		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
 
 		var proofs []string

@@ -1,13 +1,10 @@
 package client
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"sync"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -632,22 +629,6 @@ func lookupAttrValue(orig *clientmodels.SelectableCredentialInstance, id *irma.A
 	return clientmodels.Attribute{}, false
 }
 
-func (s *session) setPseudoRandomOpenIdState() {
-	if len(s.State.StateSalt) == 0 {
-		salt := [16]byte{}
-		_, err := rand.Read(salt[:])
-		if err != nil {
-			panic(fmt.Sprintf("failed to generate random state salt: %v", err))
-		}
-
-		s.State.StateSalt = salt[:]
-	}
-
-	stateBytes := append(s.State.StateSalt, []byte(strconv.Itoa(s.State.Id))...)
-
-	s.State.OpenID4VCIState = fmt.Sprintf("%x", sha256.Sum256(stateBytes))
-}
-
 // =====================================================================================
 
 func choicesToAnswer(choices []clientmodels.DisclosureDisconSelection, request irma.AttributeConDisCon) (*irma.DisclosureChoice, error) {
@@ -810,7 +791,7 @@ func (client *Client) NewSession(id int, sessionrequest string) {
 			session.error(fmt.Errorf("OpenID4VCI session request is missing openid4vci_redirect_uri"))
 			return
 		}
-		session.dismisser = client.openid4vciClient.NewSession(sessionReq.URL, sessionReq.OpenID4VCIRedirectUri, &openid4vciSessionAdapter{session: session})
+		session.dismisser = client.openid4vciClient.NewSession(id, sessionReq.URL, sessionReq.OpenID4VCIRedirectUri, &openid4vciSessionAdapter{session: session})
 	default:
 		session.dismisser = client.irmaClient.NewSession(sessionrequest, &irmaSessionAdapter{session: session})
 	}

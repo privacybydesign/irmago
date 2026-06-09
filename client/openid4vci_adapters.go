@@ -54,7 +54,7 @@ func (a *openid4vciSessionAdapter) RequestAuthorizationCodeFlowPermission(
 	requestorInfo *clientmodels.TrustedParty,
 	callback openid4vci.AuthCodeHandler,
 ) {
-	a.session.setPseudoRandomOpenIdState()
+	a.session.State.OpenID4VCIState = request.OpenID4VCIState
 
 	// Add the state to the authorization parameters so it will be send to the authorization server and back to us, to verify the response belongs to this session
 	authParams := url.Values(request.AuthorizationParameters)

@@ -2,12 +2,15 @@ package openid4vci
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -96,8 +99,9 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	clientId := YiviClientId
 
 	// Build the authorization request parameters
-	// The 'state' parameter will be added by the openid4vciSessionAdapter, so it can correlate the authorization response to the session when receiving the callback
+	state := s.generatePseudoRandomOpenIdState()
 	authRequest := buildAuthorizationRequestValues(
+		state,
 		s.redirectUri,
 		&clientId,
 		pkce,
@@ -139,6 +143,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	}
 
 	request := &clientmodels.AuthorizationCodeFlowRequest{
+		OpenID4VCIState:         state,
 		Credentials:             s.credentials,
 		AuthorizationEndpoint:   s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint,
 		AuthorizationParameters: authRequest,
@@ -170,7 +175,20 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		*userInteraction.code, pkce, scopes, authDetails, s.redirectUri)
 }
 
+func (s *session) generatePseudoRandomOpenIdState() string {
+	salt := [16]byte{}
+	_, err := rand.Read(salt[:])
+	if err != nil {
+		panic(fmt.Sprintf("failed to generate random state salt: %v", err))
+	}
+
+	stateBytes := append(salt[:], []byte(strconv.Itoa(s.id))...)
+
+	return fmt.Sprintf("%x", sha256.Sum256(stateBytes))
+}
+
 func buildAuthorizationRequestValues(
+	state string,
 	redirectUri string,
 	clientId *string,
 	pkce *pkceParameters,
@@ -179,6 +197,7 @@ func buildAuthorizationRequestValues(
 	q := url.Values{}
 	q.Add("response_type", "code")
 	q.Add("redirect_uri", redirectUri)
+	q.Add("state", state)
 
 	if clientId != nil {
 		q.Add("client_id", *clientId)
@@ -192,7 +211,6 @@ func buildAuthorizationRequestValues(
 		q.Add("issuer_state", *issuerState)
 	}
 
-	// The `state` parameter is added in the adapter, where it is used to correlate the authorization response to the session initiating the request, since we have a browser-based redirect.
 	return q
 }
 
