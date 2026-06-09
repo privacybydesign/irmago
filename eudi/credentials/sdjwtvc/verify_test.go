@@ -785,6 +785,15 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithInvalidTypHeader_Fails
 	require.Error(t, err, "failed to parse JWT: jwt.Parse: failed to parse token: jws.Verify: key provider 0 failed: invalid 'typ' header: jwt")
 }
 
+func Test_HolderVerificationProcessor_BothX5cAndKidHeaders_Fails(t *testing.T) {
+	// A JWT carrying both x5c and kid must be rejected: if both were accepted the kid
+	// branch would overwrite the x5c key provider and the X.509 trust/CRL check would be
+	// silently skipped, allowing a forged credential to verify against the kid-resolved key.
+	bothKeyReferences := newWorkingSdJwtVcTestConfig().
+		withKidHeader("did:jwk:attacker#0")
+	errorTestCaseHolder(t, bothKeyReferences, "both 'x5c' and 'kid' headers are present")
+}
+
 func Test_HolderVerificationProcessor_InvalidSdJwtVc_MissingTrailingTilde_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)

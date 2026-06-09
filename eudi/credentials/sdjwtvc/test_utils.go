@@ -368,6 +368,11 @@ func (c *testSdJwtVcConfig) withIssuerCertificateChainBytes(value []byte) *testS
 	return c
 }
 
+func (c *testSdJwtVcConfig) withKidHeader(kid string) *testSdJwtVcConfig {
+	c.kidHeader = &kid
+	return c
+}
+
 func (c *testSdJwtVcConfig) withDisclosures(disclosures []DisclosureContent) *testSdJwtVcConfig {
 	c.disclosures = disclosures
 	return c
@@ -389,6 +394,7 @@ type testSdJwtVcConfig struct {
 	// stuff inside the issuer signed header
 	typHeader *string
 	x5cHeader []string
+	kidHeader *string
 
 	// general signing stuff
 	holderPrivateKey *ecdsa.PrivateKey
@@ -487,6 +493,10 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 
 	if config.x5cHeader != nil {
 		issuerHeader[Key_X5c] = config.x5cHeader
+	}
+
+	if config.kidHeader != nil {
+		issuerHeader[Key_Kid] = *config.kidHeader
 	}
 
 	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.issuerPrivateKey}
