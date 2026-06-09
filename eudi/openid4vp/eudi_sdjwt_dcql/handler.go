@@ -59,8 +59,7 @@ type SdJwtVcDcqlHandler struct {
 
 	// statusChecker, when non-nil, enforces an IETF OAuth Token
 	// Status List check immediately before the wallet hands a
-	// credential instance over for presentation (the H2 site in
-	// docs/plans/sd-jwt-status-lists.md). Nil disables the check.
+	// credential instance over for presentation. Nil disables the check.
 	statusChecker *statuslist.Checker
 }
 
@@ -86,8 +85,7 @@ func NewSdJwtVcDcqlHandler(
 
 // WithStatusChecker installs a Token Status List checker. When set,
 // every disclosure path consults it for the selected instance and
-// refuses to disclose anything but StatusValid (see H2 in
-// docs/plans/sd-jwt-status-lists.md).
+// refuses to disclose anything but StatusValid.
 func (h *SdJwtVcDcqlHandler) WithStatusChecker(c *statuslist.Checker) *SdJwtVcDcqlHandler {
 	h.statusChecker = c
 	return h
@@ -403,8 +401,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
 		}
 
-		// H2: enforce Token Status List status before disclosure.
-		// docs/plans/sd-jwt-status-lists.md.
+		// Enforce Token Status List status before disclosure.
 		if err := h.checkInstanceStatus(instance, batch.IssuerURL); err != nil {
 			return nil, err
 		}
@@ -1322,7 +1319,7 @@ func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
 }
 
 // checkInstanceStatus runs the Token Status List check for an
-// instance the wallet is about to disclose (H2). Returns nil when
+// instance the wallet is about to disclose. Returns nil when
 // the check is disabled, the instance has no status reference, or
 // the list reads StatusValid; returns an error otherwise so the
 // caller refuses the disclosure (fail-closed).

@@ -290,12 +290,11 @@ func buildInstances(vcs []*sdjwtvc.VerifiedSdJwtVc) []models.IssuedCredentialIns
 		inst := models.IssuedCredentialInstance{
 			RawCredential: []byte(v.GetRawSdJwtVc()),
 		}
-		// Persist the status_list reference so the H2 disclosure
-		// path and the H3 refresh sweep can run without re-parsing
-		// the SD-JWT VC. At issuance time the holder verifier has
-		// just confirmed the bit reads StatusValid (or the
-		// credential has no status reference), so seed
-		// LastKnownStatus accordingly.
+		// Persist the status_list reference so the disclosure path and
+		// the refresh sweep can run without re-parsing the SD-JWT VC.
+		// At issuance time the holder verifier has just confirmed the
+		// bit reads StatusValid (or the credential has no status
+		// reference), so seed LastKnownStatus accordingly.
 		if v.IssuerSignedJwtPayload.Status != nil && v.IssuerSignedJwtPayload.Status.StatusList != nil {
 			ref := v.IssuerSignedJwtPayload.Status.StatusList
 			uri := ref.URI

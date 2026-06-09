@@ -9,9 +9,9 @@ import (
 	"gorm.io/datatypes"
 )
 
-// H2 — status check at disclosure time. The helper does not depend
-// on storage; testing it in isolation isolates the status-policy
-// logic from the rest of the disclosure flow.
+// Status check at disclosure time. The helper does not depend on
+// storage; testing it in isolation isolates the status-policy logic
+// from the rest of the disclosure flow.
 
 func Test_CheckInstanceStatus_NilChecker_AllowsAnyInstance(t *testing.T) {
 	h := &SdJwtVcDcqlHandler{}

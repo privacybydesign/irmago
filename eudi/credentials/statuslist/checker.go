@@ -44,7 +44,7 @@ func (c *Checker) Check(ctx context.Context, ref Reference, expectedIss string) 
 }
 
 // Refresh ignores any cached entry and re-fetches the list. Used by
-// the H3 background sweep to bring stored credential statuses up to
+// the background sweep to bring stored credential statuses up to
 // date independent of the Check-side TTL.
 func (c *Checker) Refresh(ctx context.Context, ref Reference, expectedIss string) (Status, error) {
 	return c.check(ctx, ref, expectedIss, true)

@@ -61,7 +61,7 @@ func (v *verifiedStatusList) ttlFromPayload() time.Duration {
 // verifyStatusListToken parses, signature-verifies, and time-checks a
 // Status List Token. expectedIss MUST equal the iss claim — this is
 // the iss(StatusListToken) == iss(credential) binding required by the
-// trust model (see docs/plans/sd-jwt-status-lists.md, Q6).
+// trust model.
 func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss string, now time.Time) (*verifiedStatusList, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{StatusListTokenTyp}, ctx.AllowInsecureDidWeb)
 

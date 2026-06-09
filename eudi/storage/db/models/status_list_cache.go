@@ -27,6 +27,6 @@ type StatusListCacheEntry struct {
 	ExpiresAt time.Time `gorm:"not null;index"`
 
 	// FetchedAt records when the entry was written. Useful for
-	// diagnostics and for refresh-pacing decisions in H3.
+	// diagnostics and for refresh-pacing decisions.
 	FetchedAt time.Time `gorm:"not null"`
 }

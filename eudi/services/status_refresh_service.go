@@ -13,8 +13,7 @@ import (
 
 // StatusRefreshService keeps the LastKnownStatus column on every
 // stored IssuedCredentialInstance up to date by periodically (or
-// on-demand) re-fetching the referenced Status List Tokens. This is
-// the H3 site from docs/plans/sd-jwt-status-lists.md.
+// on-demand) re-fetching the referenced Status List Tokens.
 //
 // Failures during a sweep are logged and swallowed — the previous
 // LastKnownStatus persists until the next successful refresh.

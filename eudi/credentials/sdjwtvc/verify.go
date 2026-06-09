@@ -179,8 +179,7 @@ func NewSdJwtVcProcessor(verificationContext SdJwtVcVerificationContext) sdJwtVc
 //
 // Status-fetch / verify / decode errors and any non-Valid status are
 // returned to the caller, which will reject the credential. The
-// behaviour is fail-closed (see docs/plans/sd-jwt-status-lists.md
-// "Failure semantics").
+// behaviour is fail-closed.
 func (v *sdJwtVcProcessor) runStatusListCheck(payload *IssuerSignedJwtPayload) error {
 	if v.verificationContext.StatusChecker == nil {
 		return nil

@@ -140,17 +140,17 @@ func New(
 	}
 
 	// Token Status List checker, shared by the holder-side verifier
-	// (H1, attached to sdJwtVcVerificationContext below), the
-	// OpenID4VP disclosure handler (H2, set via WithStatusChecker
-	// further down), and the H3 background refresh service.
+	// (attached to sdJwtVcVerificationContext below), the OpenID4VP
+	// disclosure handler (set via WithStatusChecker further down),
+	// and the background refresh service.
 	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
 	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: &eudiConf.Issuers,
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
 
-	// Wire the checker into the EUDI DCQL handler so H2 runs before
-	// the wallet hands over a credential.
+	// Wire the checker into the EUDI DCQL handler so the status check
+	// runs before the wallet hands over a credential.
 	eudiSdJwtDcqlHandler.WithStatusChecker(statusChecker)
 
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
@@ -244,9 +244,6 @@ func (client *Client) Close() error {
 // this on app resume or when the UI exposes an explicit refresh
 // action. Errors during the sweep are logged; the previous
 // LastKnownStatus persists for any URI that fails to refresh.
-//
-// See docs/plans/sd-jwt-status-lists.md (H3) for the behavior
-// envelope.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
 	return client.statusRefresh.RefreshAll(ctx)
 }
