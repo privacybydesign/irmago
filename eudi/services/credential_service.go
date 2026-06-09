@@ -15,7 +15,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -33,6 +32,10 @@ type CredentialService interface {
 		requireCryptographicKeyBinding bool,
 		publicKeyIdentifiers []models.PublicHolderBindingKey,
 	) error
+
+	// DeleteByHash deletes a stored CredentialBatch by its deterministic hash.
+	// Returns ErrNotFound if no batch exists with that hash.
+	DeleteByHash(hash string) error
 }
 
 type credentialService struct {
@@ -41,12 +44,20 @@ type credentialService struct {
 	fileStorage           filesystem.FileSystemStorage
 }
 
-func NewCredentialService(s storage.Storage) CredentialService {
+func NewCredentialService(
+	credentialStore db.CredentialStore,
+	holderBindingKeyStore db.HolderBindingKeyStore,
+	fileStorage filesystem.FileSystemStorage,
+) CredentialService {
 	return &credentialService{
-		credentialStore:       db.NewCredentialStore(s.Db()),
-		holderBindingKeyStore: db.NewHolderBindingKeyStore(s.Db()),
-		fileStorage:           s.FileSystem(),
+		credentialStore:       credentialStore,
+		holderBindingKeyStore: holderBindingKeyStore,
+		fileStorage:           fileStorage,
 	}
+}
+
+func (s *credentialService) DeleteByHash(hash string) error {
+	return s.credentialStore.DeleteBatchByHash(hash)
 }
 
 func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	dbpkg "github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/stretchr/testify/require"
@@ -65,7 +66,7 @@ func instanceWithStatus(uri string, idx uint64) models.IssuedCredentialInstance 
 
 func Test_RefreshAll_NilChecker_NoOp(t *testing.T) {
 	db := newTestRefreshDB(t)
-	svc := NewStatusRefreshService(db, nil)
+	svc := NewStatusRefreshService(dbpkg.NewCredentialStore(db), nil)
 	require.NoError(t, svc.RefreshAll(context.Background()))
 }
 
@@ -80,7 +81,7 @@ func Test_RefreshAll_NoInstancesWithStatus_NoOp(t *testing.T) {
 		{RawCredential: []byte("raw")},
 	})
 
-	svc := NewStatusRefreshService(db, checker)
+	svc := NewStatusRefreshService(dbpkg.NewCredentialStore(db), checker)
 	require.NoError(t, svc.RefreshAll(context.Background()))
 }
 
@@ -103,7 +104,7 @@ func Test_RefreshAll_GroupsByURI_OneFetchPerURI(t *testing.T) {
 		instanceWithStatus(srv.URL(), 2),
 	})
 
-	svc := NewStatusRefreshService(db, checker)
+	svc := NewStatusRefreshService(dbpkg.NewCredentialStore(db), checker)
 	require.NoError(t, svc.RefreshAll(context.Background()))
 
 	// Exactly one HTTP hit per Refresh + per Check would be 1 + 3,
@@ -142,7 +143,7 @@ func Test_RefreshAll_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 		instanceWithStatus(good.URL(), 0),                // good
 	})
 
-	svc := NewStatusRefreshService(db, checker)
+	svc := NewStatusRefreshService(dbpkg.NewCredentialStore(db), checker)
 	require.NoError(t, svc.RefreshAll(context.Background()))
 
 	// The good one should be updated to Valid; the failing one
@@ -179,7 +180,7 @@ func Test_RefreshAll_OnlyUpdatesOnSuccess(t *testing.T) {
 	}
 	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{inst})
 
-	svc := NewStatusRefreshService(db, checker)
+	svc := NewStatusRefreshService(dbpkg.NewCredentialStore(db), checker)
 	require.NoError(t, svc.RefreshAll(context.Background()))
 
 	var row models.IssuedCredentialInstance
@@ -207,7 +208,7 @@ func Test_StartTicker_FiresAndStops(t *testing.T) {
 		instanceWithStatus(tracker.URL(), 0),
 	})
 
-	svc := NewStatusRefreshService(db, checker)
+	svc := NewStatusRefreshService(dbpkg.NewCredentialStore(db), checker)
 	stop := svc.StartTicker(context.Background(), 30*time.Millisecond)
 	// Let at least one tick fire.
 	require.Eventually(t, func() bool { return tracker.Hits() >= 1 }, 2*time.Second, 5*time.Millisecond)
@@ -226,7 +227,7 @@ func Test_StartTicker_NoOpForNonPositiveInterval(t *testing.T) {
 	checker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: signer.X509VerificationContext(),
 	}, statuslist.NewInMemoryCache())
-	svc := NewStatusRefreshService(db, checker)
+	svc := NewStatusRefreshService(dbpkg.NewCredentialStore(db), checker)
 
 	// Should return without panicking and be safely callable.
 	stop := svc.StartTicker(context.Background(), 0)

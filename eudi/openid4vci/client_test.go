@@ -14,7 +14,9 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -56,7 +58,12 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
-	client, err := NewClient(&http.Client{}, conf, holderVerifier)
+	credentialService := services.NewCredentialService(
+		db.NewCredentialStore(s.Db()),
+		db.NewHolderBindingKeyStore(s.Db()),
+		s.FileSystem(),
+	)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService)
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 

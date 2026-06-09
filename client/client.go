@@ -37,18 +37,19 @@ import (
 )
 
 type Client struct {
-	storage          *clientstorage.Storage
-	eudiStorage      storage.Storage
-	sdjwtvcStorage   irmaclient.SdJwtVcStorage
-	openid4vpClient  *openid4vp.Client
-	openid4vciClient *openid4vci.Client
-	irmaClient       *irmaclient.IrmaClient
-	logsStorage      irmaclient.LogsStorage
-	keyBinder        sdjwtvc.KeyBinder
-	didValidator     *openid4vp.DidVerifierValidator
-	scheduler        gocron.Scheduler
-	sessionManager   sessionManager
-	statusRefresh    services.StatusRefreshService
+	storage           *clientstorage.Storage
+	eudiStorage       storage.Storage
+	sdjwtvcStorage    irmaclient.SdJwtVcStorage
+	openid4vpClient   *openid4vp.Client
+	openid4vciClient  *openid4vci.Client
+	irmaClient        *irmaclient.IrmaClient
+	logsStorage       irmaclient.LogsStorage
+	keyBinder         sdjwtvc.KeyBinder
+	didValidator      *openid4vp.DidVerifierValidator
+	scheduler         gocron.Scheduler
+	sessionManager    sessionManager
+	statusRefresh     services.StatusRefreshService
+	credentialService services.CredentialService
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -111,6 +112,14 @@ func New(
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
+	// Build the gorm-backed stores once and share them across every consumer
+	// (issuance, OpenID4VP, status refresh, the long-lived CredentialService
+	// used by client methods). This is the single point at which the storage
+	// layer is realised; everything below receives the resulting instances.
+	credStore := db.NewCredentialStore(eudiStorage.Db())
+	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem())
+
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	didValidator := openid4vp.NewDidVerifierValidator(false)
@@ -123,6 +132,7 @@ func New(
 	// blank permission prompt.
 	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,
+		credStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
 	)
@@ -191,6 +201,7 @@ func New(
 		&http.Client{},
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
+		credentialService,
 	)
 
 	if err != nil {
@@ -203,17 +214,18 @@ func New(
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	client := &Client{
-		storage:          s,
-		sdjwtvcStorage:   sdjwtvcStorage,
-		eudiStorage:      eudiStorage,
-		openid4vpClient:  openid4vpClient,
-		openid4vciClient: openid4vciClient,
-		irmaClient:       irmaClient,
-		logsStorage:      irmaStorage,
-		keyBinder:        irmaKeyBinder,
-		didValidator:     didValidator,
-		scheduler:        scheduler,
-		statusRefresh:    services.NewStatusRefreshService(eudiStorage.Db(), statusChecker),
+		storage:           s,
+		sdjwtvcStorage:    sdjwtvcStorage,
+		eudiStorage:       eudiStorage,
+		openid4vpClient:   openid4vpClient,
+		openid4vciClient:  openid4vciClient,
+		irmaClient:        irmaClient,
+		logsStorage:       irmaStorage,
+		keyBinder:         irmaKeyBinder,
+		didValidator:      didValidator,
+		scheduler:         scheduler,
+		statusRefresh:     services.NewStatusRefreshService(credStore, statusChecker),
+		credentialService: credentialService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -420,8 +432,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 
 	// Delete EUDI credentials (read metadata first for the removal log).
 	if len(eudiHashes) > 0 {
-		credentialService := services.NewCredentialService(client.eudiStorage)
-		allEudiCreds, err := credentialService.GetCredentialMetadataList()
+		allEudiCreds, err := client.credentialService.GetCredentialMetadataList()
 		if err != nil {
 			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
 		}
@@ -447,9 +458,8 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			}
 		}
 
-		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
 		for _, hash := range eudiHashes {
-			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
+			if err := client.credentialService.DeleteByHash(hash); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}

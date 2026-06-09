@@ -8,8 +8,7 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
-	"github.com/privacybydesign/irmago/eudi/storage/db/models"
-	"gorm.io/gorm"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 )
 
 // StatusRefreshService keeps the LastKnownStatus column on every
@@ -35,19 +34,19 @@ type StatusRefreshService interface {
 }
 
 type statusRefreshService struct {
-	db      *gorm.DB
+	store   db.CredentialStore
 	checker *statuslist.Checker
 }
 
-func NewStatusRefreshService(db *gorm.DB, checker *statuslist.Checker) StatusRefreshService {
-	return &statusRefreshService{db: db, checker: checker}
+func NewStatusRefreshService(store db.CredentialStore, checker *statuslist.Checker) StatusRefreshService {
+	return &statusRefreshService{store: store, checker: checker}
 }
 
 func (s *statusRefreshService) RefreshAll(ctx context.Context) error {
 	if s.checker == nil {
 		return nil
 	}
-	instances, err := s.loadInstancesWithStatusReference()
+	instances, err := s.store.ListInstancesWithStatusReference()
 	if err != nil {
 		return fmt.Errorf("load instances: %w", err)
 	}
@@ -61,20 +60,9 @@ func (s *statusRefreshService) RefreshAll(ctx context.Context) error {
 	// the key so a malicious cross-issuer URI re-use can't borrow
 	// another issuer's cache slot.
 	type key struct{ uri, iss string }
-	groups := map[key][]*models.IssuedCredentialInstance{}
+	groups := map[key][]db.CredentialStatusInstance{}
 	for _, inst := range instances {
-		// The credential's issuer is on the parent batch; reload it
-		// to keep the iss binding intact.
-		var iss string
-		if err := s.db.
-			Model(&models.CredentialBatch{}).
-			Select("issuer_url").
-			Where("id = ?", inst.CredentialBatchID).
-			Row().Scan(&iss); err != nil {
-			eudi.Logger.Warnf("status refresh: skipping instance %s — failed to load batch issuer: %v", inst.ID, err)
-			continue
-		}
-		k := key{uri: *inst.StatusListURI, iss: iss}
+		k := key{uri: inst.StatusListURI, iss: inst.IssuerURL}
 		groups[k] = append(groups[k], inst)
 	}
 
@@ -89,32 +77,17 @@ func (s *statusRefreshService) RefreshAll(ctx context.Context) error {
 		}
 		now := time.Now()
 		for _, inst := range group {
-			st, err := s.checker.Check(ctx, statuslist.Reference{URI: k.uri, Index: *inst.StatusListIdx}, k.iss)
+			st, err := s.checker.Check(ctx, statuslist.Reference{URI: k.uri, Index: inst.StatusListIdx}, k.iss)
 			if err != nil {
-				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", *inst.StatusListIdx, k.uri, err)
+				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, k.uri, err)
 				continue
 			}
-			if err := s.db.
-				Model(&models.IssuedCredentialInstance{}).
-				Where("id = ?", inst.ID).
-				Updates(map[string]any{
-					"last_known_status":    uint8(st),
-					"last_status_check_at": now,
-				}).Error; err != nil {
-				eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.ID, err)
+			if err := s.store.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {
+				eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.InstanceID, err)
 			}
 		}
 	}
 	return nil
-}
-
-func (s *statusRefreshService) loadInstancesWithStatusReference() ([]*models.IssuedCredentialInstance, error) {
-	var instances []*models.IssuedCredentialInstance
-	err := s.db.
-		Model(&models.IssuedCredentialInstance{}).
-		Where("status_list_uri IS NOT NULL AND status_list_idx IS NOT NULL").
-		Find(&instances).Error
-	return instances, err
 }
 
 func (s *statusRefreshService) StartTicker(ctx context.Context, interval time.Duration) func() {

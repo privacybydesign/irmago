@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/services"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -31,6 +32,13 @@ type Client struct {
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
+	// credentialService is the shared CredentialService instance handed to
+	// every issuance session for the storeCredentials step. Constructed once
+	// in client.New() and shared with client.Client and other consumers, so
+	// every code path that reads or writes stored credentials does so through
+	// the same service.
+	credentialService services.CredentialService
+
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
 }
@@ -38,15 +46,17 @@ type Client struct {
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	credentialService services.CredentialService,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
 
 	return &Client{
-		httpClient:     httpClient,
-		Configuration:  config,
-		holderVerifier: holderVerifier,
+		httpClient:        httpClient,
+		Configuration:     config,
+		holderVerifier:    holderVerifier,
+		credentialService: credentialService,
 	}, nil
 }
 
@@ -136,6 +146,7 @@ func (client *Client) handleCredentialOffer(
 		httpClient:                 client.httpClient,
 		holderVerifier:             client.holderVerifier,
 		storage:                    client.Configuration.Storage,
+		credentialService:          client.credentialService,
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,
