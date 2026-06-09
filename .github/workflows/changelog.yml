@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: changelog-${{ github.event.pull_request.number }}
@@ -16,27 +15,19 @@ concurrency:
 jobs:
   changelog:
     runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
     steps:
-      - name: Check for CHANGELOG.md update or skip-changelog label
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for CHANGELOG.md update
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_REPO: ${{ github.event.pull_request.base.repo.full_name }}
-          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-
-          if jq -e 'index("skip-changelog")' <<<"$LABELS" >/dev/null; then
-            echo "skip-changelog label present; skipping check."
-            exit 0
-          fi
-
-          # gh api --paginate handles auth, pagination and non-2xx failures.
-          if gh api --paginate "repos/${PR_REPO}/pulls/${PR_NUMBER}/files" \
-              --jq '.[].filename' | grep -qx "CHANGELOG.md"; then
+          if ! git diff --quiet "$BASE_SHA"...HEAD -- CHANGELOG.md; then
             echo "CHANGELOG.md was updated."
             exit 0
           fi
-
           echo "::error::CHANGELOG.md was not updated. Update it under the 'Unreleased' section, or add the 'skip-changelog' label if this change does not warrant a changelog entry."
           exit 1
