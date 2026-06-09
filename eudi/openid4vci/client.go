@@ -32,11 +32,6 @@ type Client struct {
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
-	// credentialService is the shared CredentialService instance handed to
-	// every issuance session for the storeCredentials step. Constructed once
-	// in client.New() and shared with client.Client and other consumers, so
-	// every code path that reads or writes stored credentials does so through
-	// the same service.
 	credentialService services.CredentialService
 
 	// Allow non-HTTPS for testing purposes

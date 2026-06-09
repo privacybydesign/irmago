@@ -68,9 +68,6 @@ type SdJwtVcDcqlHandler struct {
 // used to describe credentials the wallet has never seen (the verifier requests
 // a VCT for which there is no stored batch). Pass nil to disable that path; the
 // handler will then return empty obtainable descriptors as before.
-//
-// credentialStore is shared with the rest of the wallet (issuance, status
-// refresh) so all paths read/write the same gorm-backed store instance.
 func NewSdJwtVcDcqlHandler(
 	eudiStorage storage.Storage,
 	credentialStore db.CredentialStore,

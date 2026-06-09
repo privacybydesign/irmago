@@ -112,10 +112,6 @@ func New(
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
-	// Build the gorm-backed stores once and share them across every consumer
-	// (issuance, OpenID4VP, status refresh, the long-lived CredentialService
-	// used by client methods). This is the single point at which the storage
-	// layer is realised; everything below receives the resulting instances.
 	credStore := db.NewCredentialStore(eudiStorage.Db())
 	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
 	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem())

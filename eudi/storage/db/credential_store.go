@@ -10,11 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// CredentialStatusInstance is a slim per-instance view used by the
-// status refresh sweep. It pairs the instance's status_list reference
-// with its issuing batch's issuer URL — the latter is required as part
-// of the per-issuer cache key so a malicious cross-issuer URI re-use
-// cannot borrow another issuer's cached status list.
+// CredentialStatusInstance pairs an instance's status_list reference
+// with its issuing batch's IssuerURL. The IssuerURL is part of the
+// status list cache key so a malicious cross-issuer URI re-use cannot
+// borrow another issuer's cached status list.
 type CredentialStatusInstance struct {
 	InstanceID    datatypes.UUID
 	StatusListURI string
@@ -57,13 +56,12 @@ type CredentialStore interface {
 	DeleteBatchByHash(hash string) error
 
 	// ListInstancesWithStatusReference returns every IssuedCredentialInstance
-	// that carries a (status_list.uri, status_list.idx) pair, joined with its
-	// batch's issuer URL. Instances without a status reference are skipped.
+	// with a (status_list.uri, status_list.idx) pair, joined with its batch's
+	// IssuerURL.
 	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
 
 	// UpdateInstanceStatus writes last_known_status and last_status_check_at
-	// on a single IssuedCredentialInstance. Returns ErrNotFound if no row
-	// matches the given instance ID.
+	// on a single IssuedCredentialInstance. Returns ErrNotFound on no match.
 	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
 }
 
