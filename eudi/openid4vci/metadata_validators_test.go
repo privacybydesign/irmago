@@ -18,24 +18,35 @@ var scope = "https://pid-issuer/vct/pid"
 func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 	tests := []struct {
 		name    string
-		format  metadata.CredentialFormatIdentifier
+		config  metadata.CredentialConfiguration
 		wantErr bool
 	}{
-		{"W3CVC", metadata.CredentialFormatIdentifier_W3CVC, false},
-		{"W3CVCLD", metadata.CredentialFormatIdentifier_W3CVCLD, false},
-		{"W3CVCLD_ProofSuite", metadata.CredentialFormatIdentifier_W3CVCLD_ProofSuite, false},
-		{"MsoMdoc", metadata.CredentialFormatIdentifier_MsoMdoc, false},
-		{"SdJwtVc", metadata.CredentialFormatIdentifier_SdJwtVc, false},
+		{"W3CVC", metadata.CredentialConfiguration{
+			Format: metadata.CredentialFormatIdentifier_W3CVC,
+			CredentialDefinition: &metadata.W3CCredentialDefinition{
+				Context: []string{"https://www.w3.org/ns/credentials/v2"},
+				Type:    []string{"VerifiableCredential"},
+			},
+		}, false},
+		{"W3CVCLD", metadata.CredentialConfiguration{
+			Format: metadata.CredentialFormatIdentifier_W3CVCLD,
+		}, false},
+		{"W3CVCLD_ProofSuite", metadata.CredentialConfiguration{
+			Format: metadata.CredentialFormatIdentifier_W3CVCLD_ProofSuite,
+		}, false},
+		{"MsoMdoc", metadata.CredentialConfiguration{
+			Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+		}, false},
+		{"SdJwtVc", metadata.CredentialConfiguration{
+			Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+			VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+		}, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &metadata.CredentialConfiguration{
-				Format:                   tt.format,
-				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
-			}
 			validator := CredentialConfigurationValidator{}
-			err := validator.Verify(c)
+			err := validator.Verify(&tt.config)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Verify() error = %v, wantErr %v", err, tt.wantErr)
 			}

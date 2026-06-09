@@ -517,8 +517,7 @@ func (client *Client) resolveCredentialMetadataFromVct(
 		if !ok {
 			continue
 		}
-		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
-			config.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
+		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
 			continue
 		}
 		// vct can legally be a non-URL string identifier; if so, there's

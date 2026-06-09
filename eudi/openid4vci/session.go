@@ -134,6 +134,8 @@ func (s *session) perform() {
 		return
 	}
 
+	// TODO: enrichment of SD-JWT VC type metadata is only applicable to SD-JWT VCs, but not JWTs or mDLs — we should probably split the fetchedCredential struct into per-format variants so we don't have to carry unused fields around, and so the enrichment step can be a no-op for non-SD-JWT formats rather than having to skip over them with if statements.
+
 	// Resolve SD-JWT VC type metadata using each verified JWT's actual `vct`
 	// claim. Catches issuers whose well-known document advertises a non-URL
 	// `vct` (e.g. veramo's "unknown" placeholder) but whose issued credentials

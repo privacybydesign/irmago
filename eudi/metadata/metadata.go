@@ -141,7 +141,11 @@ const (
 	CredentialFormatIdentifier_W3CVCLD_ProofSuite CredentialFormatIdentifier = "ldp_vc"
 	CredentialFormatIdentifier_MsoMdoc            CredentialFormatIdentifier = "mso_mdoc"
 	CredentialFormatIdentifier_SdJwtVc            CredentialFormatIdentifier = "dc+sd-jwt"
-	CredentialFormatIdentifier_SdJwtVc_Legacy     CredentialFormatIdentifier = "vc+sd-jwt"
+
+	MediaType_SdJwtVc      string = "application/dc+sd-jwt"
+	MediaType_SdJwtVc_Typ  string = "dc+sd-jwt"
+	MediaType_W3C_VCDM     string = "application/vc+sd-jwt"
+	MediaType_W3C_VCDM_Typ string = "vc+sd-jwt"
 
 	ProofTypeIdentifier_JWT         ProofTypeIdentifier = "jwt"
 	ProofTypeIdentifier_DIVP        ProofTypeIdentifier = "di_vp"

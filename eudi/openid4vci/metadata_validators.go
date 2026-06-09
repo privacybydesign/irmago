@@ -162,8 +162,6 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 		verifier = &MdocFormatVerifier{}
 	case metadata.CredentialFormatIdentifier_SdJwtVc:
 		verifier = &SdJwtVcFormatVerifier{}
-	case metadata.CredentialFormatIdentifier_SdJwtVc_Legacy:
-		verifier = &SdJwtVcFormatVerifier{}
 	default:
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
@@ -176,7 +174,6 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 func (v *CredentialConfigurationValidator) ValidateSupportedFeatures(c *metadata.CredentialConfiguration) error {
 	// We only support SD-JWT VC, for now
 	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
-		c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy &&
 		c.Format != metadata.CredentialFormatIdentifier_W3CVC {
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
