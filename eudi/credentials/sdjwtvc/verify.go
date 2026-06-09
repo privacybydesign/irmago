@@ -60,6 +60,10 @@ type SdJwtVcVerificationContext struct {
 	// must match. This prevents replay attacks by ensuring the presentation was created for this
 	// specific request.
 	ExpectedNonce string
+
+	// ExpectedAudience is the audience from the OpenID4VP authorization request that the KB-JWT aud
+	// must match.
+	ExpectedAudience string
 }
 
 func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationContext {
@@ -764,6 +768,10 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 
 	if payload.Nonce != v.verificationContext.ExpectedNonce {
 		return nil, fmt.Errorf("kbjwt 'nonce' field was expected to contain '%s', but contained '%s' instead", v.verificationContext.ExpectedNonce, payload.Nonce)
+	}
+
+	if payload.Audience != v.verificationContext.ExpectedAudience {
+		return nil, fmt.Errorf("kbjwt 'aud' field was expected to contain '%s', but contained '%s' instead", v.verificationContext.ExpectedAudience, payload.Audience)
 	}
 
 	now := v.verificationContext.Clock.Now()

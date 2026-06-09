@@ -1111,11 +1111,13 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 // - [x] sd_hash in KB-JWT does not match calculated hash
 // - [x] missing cnf field in issuer signed JWT, but kb-jwt present
 // - [x] kb-jwt nonce does not match expected nonce
+// - [x] kb-jwt aud does not match expected audience (client_id)
 //
 // succeeds for:
 // - [x] required kb-jwt, valid sd-jwt, matching hash in kb-jwt
 // - [x] non-required kb-jwt, no KB-JWT present
 // - [x] kb-jwt nonce matches expected nonce
+// - [x] kb-jwt aud matches expected audience (client_id)
 
 func Test_VerifierVerificationProcessor_RequiredKbJwt_NoKbJwtInSdJwt_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
@@ -1152,6 +1154,7 @@ func Test_VerifierVerificationProcessor_NoCnfFieldInIssuerSignedJwt_WithKbJwt_Fa
 func Test_VerifierVerificationProcessor_RequiredKbJwt_WithKbJwtInSdJwt_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	context.ExpectedNonce = "nonce"
+	context.ExpectedAudience = "Verifier" // The testdata contains a KB-JWT with aud "Verifier", which would usually be something like "<client_id_prefix>:<orig_client_id>"
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithKbJwt))
 	require.NoError(t, err)
@@ -1167,6 +1170,7 @@ func Test_VerifierVerificationProcessor_KbJwtNonce_MatchesExpectedNonce_Succeeds
 
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	context.ExpectedNonce = realNonce
+	context.ExpectedAudience = "Verifier" // The testdata contains a KB-JWT with aud "Verifier", which would usually be something like "<client_id_prefix>:<orig_client_id>"
 
 	verifier := NewVerifierVerificationProcessor(true, context)
 	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
@@ -1185,6 +1189,40 @@ func Test_VerifierVerificationProcessor_KbJwtNonce_DoesNotMatchExpectedNonce_Fai
 	verifier := NewVerifierVerificationProcessor(true, context)
 	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
 	require.ErrorContains(t, err, "nonce")
+}
+
+func Test_VerifierVerificationProcessor_KbJwtAudience_MatchesExpectedAudience_Succeeds(t *testing.T) {
+	// The KB-JWT `aud` must equal the `client_id` from the OpenID4VP authorization request.
+	clientID := "x509_san_dns:client.example.org"
+
+	config := newWorkingSdJwtVcKbTestConfig()
+	config.withAudience(clientID)
+
+	sdjwtvc := createTestSdJwtVcKb(t, config)
+
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "nonce"
+	context.ExpectedAudience = clientID
+
+	verifier := NewVerifierVerificationProcessor(true, context)
+	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
+	require.NoError(t, err)
+}
+
+func Test_VerifierVerificationProcessor_KbJwtAudience_DoesNotMatchExpectedAudience_Fails(t *testing.T) {
+	// The KB-JWT `aud` must equal the `client_id` from the OpenID4VP authorization request.
+	config := newWorkingSdJwtVcKbTestConfig()
+	config.withAudience("x509_san_dns:client.example.org")
+
+	sdjwtvc := createTestSdJwtVcKb(t, config)
+
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "nonce"
+	context.ExpectedAudience = "x509_san_dns:different-client.example.org"
+
+	verifier := NewVerifierVerificationProcessor(true, context)
+	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
+	require.ErrorContains(t, err, "aud")
 }
 
 func Test_VerifierVerificationProcessor_NonRequiredKbJwt_NoKbJwtInSdJwt_Succeeds(t *testing.T) {
