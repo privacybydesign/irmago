@@ -30,8 +30,7 @@ type GrantHandler interface {
 
 type codeResponse struct {
 	permissionGranted bool
-	code              *string
-	state             *string
+	callbackURL       *string
 }
 
 // AccessTokenResponse handles the authorization of credential configurations.
@@ -155,11 +154,10 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	s.handler.RequestAuthorizationCodeFlowPermission(
 		request,
 		s.requestorInfo,
-		AuthCodeHandler(func(proceed bool, code *string, state *string) {
+		AuthCodeHandler(func(proceed bool, callbackURL *string) {
 			pendingAuthCodeRequestChannel <- &codeResponse{
 				permissionGranted: proceed,
-				code:              code,
-				state:             state,
+				callbackURL:       callbackURL,
 			}
 		}),
 	)
@@ -172,15 +170,22 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		return nil, fmt.Errorf("authorization has been cancelled or denied by user")
 	}
 
+	// Parse the authorization server's callback. This fails when the server
+	// reported an error (RFC 6749 §4.1.2.1) or no code was returned.
+	code, returnedState, err := parseAuthorizationCallback(userInteraction.callbackURL)
+	if err != nil {
+		return nil, err
+	}
+
 	// Verify the state echoed by the authorization server matches the one we generated for
 	// this session, preventing authorization code injection / CSRF (RFC 6749 §10.12).
-	if err := verifyAuthorizationState(state, userInteraction.state); err != nil {
+	if err := verifyAuthorizationState(state, &returnedState); err != nil {
 		return nil, err
 	}
 
 	// Exchange of code for token and return token response
 	return h.doTokenRequest(s.issuerSettings.authorizationServerMetadata.TokenEndpoint,
-		*userInteraction.code, pkce, scopes, authDetails, s.redirectUri)
+		code, pkce, scopes, authDetails, s.redirectUri)
 }
 
 // verifyAuthorizationState checks that the state returned by the authorization server matches
@@ -191,6 +196,40 @@ func verifyAuthorizationState(expected string, returned *string) error {
 		return fmt.Errorf("authorization response state does not match the expected state for this session")
 	}
 	return nil
+}
+
+// parseAuthorizationCallback extracts the authorization code and state from the
+// redirect URL the authorization server sent to the wallet's redirect_uri. It
+// returns an error when the server reported a failure via the `error` parameter
+// (RFC 6749 §4.1.2.1), when neither a code nor an error is present, or when the
+// URL is missing or unparseable. State is returned as-is (including empty) so
+// verifyAuthorizationState can fail closed on a mismatch.
+func parseAuthorizationCallback(callbackURL *string) (code string, state string, err error) {
+	if callbackURL == nil || *callbackURL == "" {
+		return "", "", errors.New("authorization callback URL is missing")
+	}
+
+	parsed, err := url.Parse(*callbackURL)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse authorization callback URL: %w", err)
+	}
+
+	q := parsed.Query()
+
+	if oauthErr := q.Get("error"); oauthErr != "" {
+		if desc := q.Get("error_description"); desc != "" {
+			return "", "", fmt.Errorf("authorization server returned error %q: %s", oauthErr, desc)
+		}
+		return "", "", fmt.Errorf("authorization server returned error %q", oauthErr)
+	}
+
+	code = q.Get("code")
+	if code == "" {
+		return "", "", errors.New("authorization callback URL contains neither a code nor an error")
+	}
+
+	state = q.Get("state")
+	return code, state, nil
 }
 
 func (s *session) generatePseudoRandomOpenIdState() string {

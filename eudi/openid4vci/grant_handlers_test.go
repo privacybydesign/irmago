@@ -164,6 +164,70 @@ func TestVerifyAuthorizationState(t *testing.T) {
 	}
 }
 
+func TestParseAuthorizationCallback(t *testing.T) {
+	ptr := func(s string) *string { return &s }
+
+	tests := []struct {
+		name        string
+		callbackURL *string
+		wantCode    string
+		wantState   string
+		wantErr     bool
+	}{
+		{
+			name:        "code and state",
+			callbackURL: ptr("https://open.yivi.app/-/auth-callback?code=abc123&state=xyz789"),
+			wantCode:    "abc123",
+			wantState:   "xyz789",
+		},
+		{
+			name:        "code without state yields empty state (caller fails closed)",
+			callbackURL: ptr("https://open.yivi.app/-/auth-callback?code=abc123"),
+			wantCode:    "abc123",
+			wantState:   "",
+		},
+		{
+			name:        "error response with description",
+			callbackURL: ptr("https://open.yivi.app/-/auth-callback?error=access_denied&error_description=nope&state=xyz789"),
+			wantErr:     true,
+		},
+		{
+			name:        "error response without description",
+			callbackURL: ptr("https://open.yivi.app/-/auth-callback?error=server_error"),
+			wantErr:     true,
+		},
+		{
+			name:        "neither code nor error",
+			callbackURL: ptr("https://open.yivi.app/-/auth-callback?state=xyz789"),
+			wantErr:     true,
+		},
+		{name: "nil URL", callbackURL: nil, wantErr: true},
+		{name: "empty URL", callbackURL: ptr(""), wantErr: true},
+		{name: "unparseable URL", callbackURL: ptr("http://foo\x00bar"), wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			code, state, err := parseAuthorizationCallback(tc.callbackURL)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("parseAuthorizationCallback(%v) = (%q, %q, nil), want error", tc.callbackURL, code, state)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("parseAuthorizationCallback(%v) returned unexpected error: %v", tc.callbackURL, err)
+			}
+			if code != tc.wantCode {
+				t.Errorf("code = %q, want %q", code, tc.wantCode)
+			}
+			if state != tc.wantState {
+				t.Errorf("state = %q, want %q", state, tc.wantState)
+			}
+		})
+	}
+}
+
 func TestShouldRetryTxCode(t *testing.T) {
 	tests := []struct {
 		name           string

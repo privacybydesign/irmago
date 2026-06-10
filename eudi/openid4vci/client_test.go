@@ -94,9 +94,10 @@ func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl stri
 	authCodeRequest := handler.AwaitAuthCodeRequest()
 
 	permissionGranted := true
-	testCode := "test-code"
-	// Echo back the state the grant handler generated, as a compliant authorization server would.
-	authCodeRequest.callback(permissionGranted, &testCode, &authCodeRequest.state)
+	// Build the callback URL a compliant authorization server would redirect to,
+	// echoing back the state the grant handler generated.
+	callbackURL := "https://open.yivi.app/-/auth-callback?code=test-code&state=" + authCodeRequest.state
+	authCodeRequest.callback(permissionGranted, &callbackURL)
 	success := handler.AwaitSessionEnd()
 
 	require.True(t, success)

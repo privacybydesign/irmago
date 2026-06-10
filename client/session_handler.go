@@ -750,7 +750,9 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 		session.preAuthorizedCodeHandler(payload.Proceed, payload.TransactionCode)
 	case clientmodels.UI_AuthorizationCode:
 		payload := userInteraction.Payload.(clientmodels.SessionAuthCodeInteractionPayload)
-		session.authCodeHandler(payload.Proceed, payload.Code, payload.State)
+		// The openid4vci client parses the callback URL; a denial (Proceed=false)
+		// passes a nil URL and is handled there before any parsing.
+		session.authCodeHandler(payload.Proceed, payload.CallbackURL)
 	}
 
 	return nil

@@ -484,6 +484,11 @@ const (
 	authcodeAdminToken = "authcode-admin-token"
 
 	mockAuthorizationServerURL = "http://localhost:9090"
+
+	// openid4vciRedirectURI is the wallet redirect_uri the authorization server
+	// sends its callback to; the wallet hands the full callback URL back to the
+	// library via SessionAuthCodeInteractionPayload.CallbackURL.
+	openid4vciRedirectURI = "https://open.yivi.app/-/auth-callback"
 )
 
 func init() {
@@ -509,7 +514,7 @@ func startOpenID4VCISession(t *testing.T, c *client.Client, sessionId int, credO
 	sessionReq, err := json.Marshal(client.SessionRequestData{
 		Qr:                    irma.Qr{URL: credOfferURL},
 		Protocol:              clientmodels.Protocol_OpenID4VCI,
-		OpenID4VCIRedirectUri: "https://open.yivi.app/-/auth-callback",
+		OpenID4VCIRedirectUri: openid4vciRedirectURI,
 	})
 	require.NoError(t, err)
 	c.NewSession(sessionId, string(sessionReq))
@@ -539,6 +544,17 @@ func getAuthorizationCode(t *testing.T, authorizationRequestURL string) (code, s
 	require.NotEmpty(t, result.Code)
 	require.NotEmpty(t, result.State, "authorization server must echo the state parameter")
 	return result.Code, result.State
+}
+
+// authCallbackURL assembles the redirect URL the authorization server sends to
+// the wallet's redirect_uri, carrying the given query parameters. The wallet
+// hands this URL back to the library via SessionAuthCodeInteractionPayload.
+func authCallbackURL(params map[string]string) string {
+	q := url.Values{}
+	for k, v := range params {
+		q.Set(k, v)
+	}
+	return openid4vciRedirectURI + "?" + q.Encode()
 }
 
 // ---------------------------------------------------------------------------
