@@ -195,19 +195,20 @@ func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtVcBatchMetadata, credent
 			return err
 		}
 
-		// if the info is not there yet...
-		if credBucket.Get([]byte(infoKey)) == nil {
-			// put the info there...
-			marshalled, err := json.Marshal(info)
-			if err != nil {
-				return err
-			}
+		// Always (over)write the info: a re-issuance reuses this bucket (the hash
+		// covers only the credential type and attributes, not the timestamps), so
+		// the freshly issued metadata must replace the previous values.
+		marshalled, err := json.Marshal(info)
+		if err != nil {
+			return err
+		}
 
-			encryptedInfo, err := s.storage.Encrypt(marshalled)
-			if err != nil {
-				return err
-			}
-			credBucket.Put([]byte(infoKey), encryptedInfo)
+		encryptedInfo, err := s.storage.Encrypt(marshalled)
+		if err != nil {
+			return err
+		}
+		if err = credBucket.Put([]byte(infoKey), encryptedInfo); err != nil {
+			return err
 		}
 
 		if credBucket.Bucket([]byte(credentialsKey)) != nil {
