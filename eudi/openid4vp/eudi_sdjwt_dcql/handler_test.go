@@ -36,8 +36,7 @@ var _ storage.Storage = (*testStorage)(nil)
 
 func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
 	t.Helper()
-	dsn := sqlcipher.DSN(":memory:", "test-key-123")
-	d, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
+	d, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("test-key-123"))}, &gorm.Config{})
 	require.NoError(t, err)
 
 	require.NoError(t, d.AutoMigrate(

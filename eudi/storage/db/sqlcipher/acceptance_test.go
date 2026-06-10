@@ -14,9 +14,9 @@ import (
 )
 
 // openAndMigrateTestDB opens a GORM database backed by SQLCipher and runs AutoMigrate.
-func openAndMigrateTestDB(t *testing.T, dsn string) *gorm.DB {
+func openAndMigrateTestDB(t *testing.T, c *Connector) *gorm.DB {
 	t.Helper()
-	db := openGormDB(t, dsn)
+	db := openGormDB(t, c)
 	require.NoError(t, db.AutoMigrate(
 		&models.ECDSAKeyMetadata{},
 		&models.RSAKeyMetadata{},
@@ -33,9 +33,9 @@ func openAndMigrateTestDB(t *testing.T, dsn string) *gorm.DB {
 }
 
 // openGormDB opens a GORM database backed by SQLCipher without running migrations.
-func openGormDB(t *testing.T, dsn string) *gorm.DB {
+func openGormDB(t *testing.T, c *Connector) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(Dialector{DSN: dsn}, &gorm.Config{})
+	db, err := gorm.Open(Dialector{Connector: c}, &gorm.Config{})
 	require.NoError(t, err)
 	return db
 }
@@ -51,30 +51,30 @@ func closeGormDB(t *testing.T, db *gorm.DB) {
 
 func TestSQLCipher_EncryptedFileCanOnlyBeOpenedWithCorrectKey(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	passphrase := "correct-horse-battery-staple"
+	passphrase := []byte("correct-horse-battery-staple")
 
 	// Create a database with a passphrase and insert a record.
-	db := openAndMigrateTestDB(t, DSN(dbPath, passphrase))
+	db := openAndMigrateTestDB(t, NewConnector(dbPath, passphrase))
 	key := newECDSAKey()
 	require.NoError(t, db.Create(key).Error)
 	closeGormDB(t, db)
 
 	// Re-open with the same passphrase — the record must be readable.
-	db = openGormDB(t, DSN(dbPath, passphrase))
+	db = openGormDB(t, NewConnector(dbPath, passphrase))
 	var got models.HolderBindingKey
 	require.NoError(t, db.First(&got, "id = ?", key.ID).Error)
 	assert.Equal(t, key.PublicKeyThumbprint, got.PublicKeyThumbprint)
 	closeGormDB(t, db)
 
 	// Opening with the wrong passphrase must fail.
-	_, err := gorm.Open(Dialector{DSN: DSN(dbPath, "wrong-key")}, &gorm.Config{})
+	_, err := gorm.Open(Dialector{Connector: NewConnector(dbPath, []byte("wrong-key"))}, &gorm.Config{})
 	require.Error(t, err, "opening with the wrong key should fail")
 }
 
 // --- GORM CRUD through SQLCipher ---
 
 func TestSQLCipher_CreateAndReadBackAllColumnTypes(t *testing.T) {
-	db := openAndMigrateTestDB(t, DSN(":memory:", "test-key"))
+	db := openAndMigrateTestDB(t, NewConnector(":memory:", []byte("test-key")))
 
 	// Use a large random blob to stress the []byte binding path.
 	blob := make([]byte, 4096)
@@ -105,7 +105,7 @@ func TestSQLCipher_CreateAndReadBackAllColumnTypes(t *testing.T) {
 }
 
 func TestSQLCipher_UpdateRecord(t *testing.T) {
-	db := openAndMigrateTestDB(t, DSN(":memory:", "test-key"))
+	db := openAndMigrateTestDB(t, NewConnector(":memory:", []byte("test-key")))
 
 	key := newRSAKey()
 	require.NoError(t, db.Create(key).Error)
@@ -118,7 +118,7 @@ func TestSQLCipher_UpdateRecord(t *testing.T) {
 }
 
 func TestSQLCipher_DeleteRecord(t *testing.T) {
-	db := openAndMigrateTestDB(t, DSN(":memory:", "test-key"))
+	db := openAndMigrateTestDB(t, NewConnector(":memory:", []byte("test-key")))
 
 	key := newECDSAKey()
 	require.NoError(t, db.Create(key).Error)
@@ -132,7 +132,7 @@ func TestSQLCipher_DeleteRecord(t *testing.T) {
 // --- Transactions ---
 
 func TestSQLCipher_TransactionCommit(t *testing.T) {
-	db := openAndMigrateTestDB(t, DSN(":memory:", "test-key"))
+	db := openAndMigrateTestDB(t, NewConnector(":memory:", []byte("test-key")))
 
 	err := db.Transaction(func(tx *gorm.DB) error {
 		return tx.Create(newECDSAKey()).Error
@@ -145,7 +145,7 @@ func TestSQLCipher_TransactionCommit(t *testing.T) {
 }
 
 func TestSQLCipher_TransactionRollback(t *testing.T) {
-	db := openAndMigrateTestDB(t, DSN(":memory:", "test-key"))
+	db := openAndMigrateTestDB(t, NewConnector(":memory:", []byte("test-key")))
 
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(newECDSAKey()).Error; err != nil {
@@ -163,7 +163,7 @@ func TestSQLCipher_TransactionRollback(t *testing.T) {
 // --- Constraints ---
 
 func TestSQLCipher_UniqueIndexEnforced(t *testing.T) {
-	db := openAndMigrateTestDB(t, DSN(":memory:", "test-key"))
+	db := openAndMigrateTestDB(t, NewConnector(":memory:", []byte("test-key")))
 
 	require.NoError(t, db.Create(newECDSAKey()).Error)
 	err := db.Create(newECDSAKey()).Error // same thumbprint
@@ -171,7 +171,7 @@ func TestSQLCipher_UniqueIndexEnforced(t *testing.T) {
 }
 
 func TestSQLCipher_ForeignKeyCascadeDelete(t *testing.T) {
-	db := openAndMigrateTestDB(t, DSN(":memory:", "test-key"))
+	db := openAndMigrateTestDB(t, NewConnector(":memory:", []byte("test-key")))
 
 	key := newECDSAKey()
 	require.NoError(t, db.Create(key).Error)
@@ -194,7 +194,7 @@ func TestSQLCipher_PersistsToDisk(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "persist.db")
 
 	// Write.
-	db := openAndMigrateTestDB(t, DSN(dbPath, "key"))
+	db := openAndMigrateTestDB(t, NewConnector(dbPath, []byte("key")))
 	key := newRSAKey()
 	require.NoError(t, db.Create(key).Error)
 	closeGormDB(t, db)
@@ -205,7 +205,7 @@ func TestSQLCipher_PersistsToDisk(t *testing.T) {
 	assert.Greater(t, info.Size(), int64(0))
 
 	// Read back from the same file (no migration needed).
-	db = openGormDB(t, DSN(dbPath, "key"))
+	db = openGormDB(t, NewConnector(dbPath, []byte("key")))
 	var got models.HolderBindingKey
 	require.NoError(t, db.Preload("RSA").First(&got, "id = ?", key.ID).Error)
 	assert.Equal(t, 2048, got.RSA.ModulusBits)
@@ -215,7 +215,7 @@ func TestSQLCipher_PersistsToDisk(t *testing.T) {
 // --- Unencrypted mode ---
 
 func TestSQLCipher_WorksWithoutEncryption(t *testing.T) {
-	db := openAndMigrateTestDB(t, DSN(":memory:", ""))
+	db := openAndMigrateTestDB(t, &Connector{Path: ":memory:"})
 
 	key := newECDSAKey()
 	require.NoError(t, db.Create(key).Error)
