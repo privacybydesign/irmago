@@ -31,6 +31,7 @@ type GrantHandler interface {
 type codeResponse struct {
 	permissionGranted bool
 	code              *string
+	state             *string
 }
 
 // AccessTokenResponse handles the authorization of credential configurations.
@@ -154,10 +155,11 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	s.handler.RequestAuthorizationCodeFlowPermission(
 		request,
 		s.requestorInfo,
-		AuthCodeHandler(func(proceed bool, code *string) {
+		AuthCodeHandler(func(proceed bool, code *string, state *string) {
 			pendingAuthCodeRequestChannel <- &codeResponse{
 				permissionGranted: proceed,
 				code:              code,
+				state:             state,
 			}
 		}),
 	)
@@ -170,9 +172,25 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		return nil, fmt.Errorf("authorization has been cancelled or denied by user")
 	}
 
+	// Verify the state echoed by the authorization server matches the one we generated for
+	// this session, preventing authorization code injection / CSRF (RFC 6749 §10.12).
+	if err := verifyAuthorizationState(state, userInteraction.state); err != nil {
+		return nil, err
+	}
+
 	// Exchange of code for token and return token response
 	return h.doTokenRequest(s.issuerSettings.authorizationServerMetadata.TokenEndpoint,
 		*userInteraction.code, pkce, scopes, authDetails, s.redirectUri)
+}
+
+// verifyAuthorizationState checks that the state returned by the authorization server matches
+// the one we generated for this session. It fails closed: a missing returned state is treated
+// as a mismatch, so a callback that omits the state cannot bypass the check.
+func verifyAuthorizationState(expected string, returned *string) error {
+	if returned == nil || *returned != expected {
+		return fmt.Errorf("authorization response state does not match the expected state for this session")
+	}
+	return nil
 }
 
 func (s *session) generatePseudoRandomOpenIdState() string {

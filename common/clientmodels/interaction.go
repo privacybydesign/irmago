@@ -53,6 +53,7 @@ type PinInteractionPayload struct {
 // SessionAuthCodeInteractionPayload is the payload for an authorization code interaction.
 type SessionAuthCodeInteractionPayload struct {
 	Code    *string `json:"code,omitempty"`
+	State   *string `json:"state,omitempty"`
 	Proceed bool    `json:"proceed"`
 }
 

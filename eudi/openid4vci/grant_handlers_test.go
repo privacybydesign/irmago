@@ -133,6 +133,37 @@ func contains(s, substr string) bool {
 	return bytes.Contains([]byte(s), []byte(substr))
 }
 
+func TestVerifyAuthorizationState(t *testing.T) {
+	expected := "the-expected-state"
+	matching := expected
+	mismatch := "some-other-state"
+	empty := ""
+
+	tests := []struct {
+		name     string
+		returned *string
+		wantErr  bool
+	}{
+		{name: "matching state → ok", returned: &matching, wantErr: false},
+		{name: "different state → error", returned: &mismatch, wantErr: true},
+		{name: "missing state fails closed → error", returned: nil, wantErr: true},
+		{name: "empty state vs non-empty expected → error", returned: &empty, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := verifyAuthorizationState(expected, tc.returned)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("verifyAuthorizationState(%q, %v) = nil, want error", expected, tc.returned)
+				}
+			} else if err != nil {
+				t.Errorf("verifyAuthorizationState(%q, %v) = %v, want nil", expected, tc.returned, err)
+			}
+		})
+	}
+}
+
 func TestShouldRetryTxCode(t *testing.T) {
 	tests := []struct {
 		name           string

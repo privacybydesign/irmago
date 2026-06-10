@@ -91,11 +91,12 @@ func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl stri
 	handler := newMockSessionHandler(t)
 	client.NewSession(1, credentialOfferEndpointUrl, "https://open.yivi.app/-/auth-callback", handler)
 
-	authCodeRequestHandler := handler.AwaitAuthCodeRequest()
+	authCodeRequest := handler.AwaitAuthCodeRequest()
 
 	permissionGranted := true
 	testCode := "test-code"
-	authCodeRequestHandler(permissionGranted, &testCode)
+	// Echo back the state the grant handler generated, as a compliant authorization server would.
+	authCodeRequest.callback(permissionGranted, &testCode, &authCodeRequest.state)
 	success := handler.AwaitSessionEnd()
 
 	require.True(t, success)

@@ -4,8 +4,9 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 )
 
-// AuthCodeHandler is a callback for providing the authorization code from the app side.
-type AuthCodeHandler func(proceed bool, code *string)
+// AuthCodeHandler is a callback for providing the authorization code (and the state echoed
+// back by the authorization server) from the app side.
+type AuthCodeHandler func(proceed bool, code *string, state *string)
 
 // TokenHandler is a callback for providing the access token (and optionally refresh token)
 // from the app side when the authorization has completed, the code was exchanged for an access token and the flow is hereby returned to the app.

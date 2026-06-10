@@ -516,8 +516,10 @@ func startOpenID4VCISession(t *testing.T, c *client.Client, sessionId int, credO
 }
 
 // getAuthorizationCode simulates the wallet visiting the authorization URL and
-// receiving a code from the mock authorization server.
-func getAuthorizationCode(t *testing.T, authorizationRequestURL string) string {
+// receiving a code from the mock authorization server. It returns both the code
+// and the state echoed back by the server; a compliant authorization server
+// returns the same state it was given in the request.
+func getAuthorizationCode(t *testing.T, authorizationRequestURL string) (code, state string) {
 	t.Helper()
 
 	parsed, err := url.Parse(authorizationRequestURL)
@@ -530,11 +532,13 @@ func getAuthorizationCode(t *testing.T, authorizationRequestURL string) string {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var result struct {
-		Code string `json:"code"`
+		Code  string `json:"code"`
+		State string `json:"state"`
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
 	require.NotEmpty(t, result.Code)
-	return result.Code
+	require.NotEmpty(t, result.State, "authorization server must echo the state parameter")
+	return result.Code, result.State
 }
 
 // ---------------------------------------------------------------------------

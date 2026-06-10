@@ -750,7 +750,7 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 		session.preAuthorizedCodeHandler(payload.Proceed, payload.TransactionCode)
 	case clientmodels.UI_AuthorizationCode:
 		payload := userInteraction.Payload.(clientmodels.SessionAuthCodeInteractionPayload)
-		session.authCodeHandler(payload.Proceed, payload.Code)
+		session.authCodeHandler(payload.Proceed, payload.Code, payload.State)
 	}
 
 	return nil
