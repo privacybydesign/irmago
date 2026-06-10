@@ -151,6 +151,9 @@ func dcqlClaimKey(claim dcql.Claim) string {
 func getClaimMatchesForQuery(metadata irmaclient.SdJwtVcBatchMetadata, claims []dcql.Claim) map[string]dcqlClaimMatch {
 	result := make(map[string]dcqlClaimMatch)
 	for _, claim := range claims {
+		if len(claim.Path) == 0 {
+			continue
+		}
 		attrName, ok := claim.Path[0].(string)
 		if !ok {
 			continue
