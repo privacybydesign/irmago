@@ -474,7 +474,7 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 		return nil, fmt.Errorf("failed to read Token Response body: %v", err)
 	}
 
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+	if response.StatusCode == http.StatusBadRequest {
 		var errResponse oauth2.ErrorResponse
 		err := json.NewDecoder(bytes.NewReader(responseBody)).Decode(&errResponse)
 		if err != nil {
@@ -488,10 +488,22 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 		}
 	}
 
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("unexpected status code: %d", response.StatusCode)
+	}
+
 	var tokenResponse oauth2.TokenResponse
 	err = json.NewDecoder(bytes.NewReader(responseBody)).Decode(&tokenResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode Token Response: %v", err)
+	}
+
+	// Validate the access token
+	if tokenResponse.AccessToken == "" {
+		return nil, fmt.Errorf("token response did not contain an access token")
+	}
+	if tokenResponse.TokenType != "Bearer" {
+		return nil, fmt.Errorf("token response did not contain a valid token type")
 	}
 
 	return &authTokenResponse{
