@@ -93,7 +93,7 @@ func testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	// The offered credential must have a valid issuance date (the test issuer
 	// does not set exp, so expiry may be 0).
 	now := time.Now().Unix()
-	require.InDelta(t, now, offered.IssuanceDate, 60,
+	require.InDelta(t, now, *offered.IssuanceDate, 60,
 		"issuance date should be approximately now")
 
 	grantPermission(t, c, session.Id)
@@ -1256,6 +1256,9 @@ func testSessionHandlerForOpenID4VCIAuthCode(t *testing.T) {
 	t.Run("denies permission after grant", testOpenID4VCIAuthCodeFlowDeniesPermission)
 	t.Run("can be dismissed", testOpenID4VCIAuthCodeFlowCanBeDismissed)
 	t.Run("issues credential with nested claims", testOpenID4VCIAuthCodeFlowNestedClaims)
+	t.Run("rejects mismatched state from authorization server", testOpenID4VCIAuthCodeFlowRejectsMismatchedState)
+	t.Run("rejects missing state from authorization server", testOpenID4VCIAuthCodeFlowRejectsMissingState)
+	t.Run("rejects error response from authorization server", testOpenID4VCIAuthCodeFlowRejectsAuthServerError)
 }
 
 func testOpenID4VCIAuthCodeFlowReachesAuthRequest(t *testing.T) {
@@ -1282,14 +1285,15 @@ func testOpenID4VCIAuthCodeFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
 
-	code := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+	code, state := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+	callback := authCallbackURL(map[string]string{"code": code, "state": state})
 
 	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
 		Type:      clientmodels.UI_AuthorizationCode,
 		Payload: clientmodels.SessionAuthCodeInteractionPayload{
-			Code:    &code,
-			Proceed: true,
+			CallbackURL: &callback,
+			Proceed:     true,
 		},
 	})
 
@@ -1363,14 +1367,15 @@ func testOpenID4VCIAuthCodeFlowDeniesPermission(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
 
-	code := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+	code, state := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+	callback := authCallbackURL(map[string]string{"code": code, "state": state})
 
 	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
 		Type:      clientmodels.UI_AuthorizationCode,
 		Payload: clientmodels.SessionAuthCodeInteractionPayload{
-			Code:    &code,
-			Proceed: true,
+			CallbackURL: &callback,
+			Proceed:     true,
 		},
 	})
 
@@ -1401,6 +1406,112 @@ func testOpenID4VCIAuthCodeFlowCanBeDismissed(t *testing.T) {
 
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Dismissed)
+}
+
+// testOpenID4VCIAuthCodeFlowRejectsMismatchedState pins the fix for the
+// authorization-code-injection / CSRF gap (RFC 6749 §10.12): when the state
+// returned on the callback does not match the one the wallet generated and sent
+// in the authorization request, the wallet must abort the flow instead of
+// exchanging the code. This models an attacker injecting their own code (and a
+// non-matching state) into a victim's in-flight session.
+func testOpenID4VCIAuthCodeFlowRejectsMismatchedState(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createAuthCodeOffer(t)
+
+	startOpenID4VCISession(t, c, 1, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
+
+	code, state := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+
+	// Echo back a state that differs from the one this session generated.
+	callback := authCallbackURL(map[string]string{"code": code, "state": state + "-tampered"})
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_AuthorizationCode,
+		Payload: clientmodels.SessionAuthCodeInteractionPayload{
+			CallbackURL: &callback,
+			Proceed:     true,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
+	require.NotNil(t, session.Error, "session should carry an error on state mismatch")
+
+	// The code must not have been redeemed: the issuer should report no issuance.
+	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
+	require.NotEqual(t, "CREDENTIAL_ISSUED", status,
+		"credential must not be issued when the returned state does not match")
+}
+
+// testOpenID4VCIAuthCodeFlowRejectsMissingState verifies the state check fails
+// closed: a callback whose URL carries a code but no state at all is treated as
+// a mismatch, so it cannot bypass the validation.
+func testOpenID4VCIAuthCodeFlowRejectsMissingState(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createAuthCodeOffer(t)
+
+	startOpenID4VCISession(t, c, 1, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
+
+	code, _ := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+
+	// Proceed with the code but without any state parameter at all.
+	callback := authCallbackURL(map[string]string{"code": code})
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_AuthorizationCode,
+		Payload: clientmodels.SessionAuthCodeInteractionPayload{
+			CallbackURL: &callback,
+			Proceed:     true,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
+	require.NotNil(t, session.Error, "session should carry an error when no state is returned")
+}
+
+// testOpenID4VCIAuthCodeFlowRejectsAuthServerError verifies that an OAuth error
+// response on the callback (RFC 6749 §4.1.2.1) aborts the session instead of
+// being mistaken for a successful authorization. This exercises the error-parsing
+// path the single callback URL makes possible.
+func testOpenID4VCIAuthCodeFlowRejectsAuthServerError(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	offer := createAuthCodeOffer(t)
+
+	startOpenID4VCISession(t, c, 1, offer.URI)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
+
+	_, state := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+
+	// The authorization server denies the request: no code, an error instead.
+	callback := authCallbackURL(map[string]string{
+		"error":             "access_denied",
+		"error_description": "user denied the authorization request",
+		"state":             state,
+	})
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_AuthorizationCode,
+		Payload: clientmodels.SessionAuthCodeInteractionPayload{
+			CallbackURL: &callback,
+			Proceed:     true,
+		},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
+	require.NotNil(t, session.Error, "session should carry an error on an OAuth error response")
 }
 
 func testOpenID4VCIAuthCodeFlowNestedClaims(t *testing.T) {
@@ -1480,14 +1591,15 @@ func issueCredentialViaOpenID4VCIAuthCode(
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, session.Id, clientmodels.Type_Issuance, clientmodels.Status_RequestAuthorizationCode)
 
-	code := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+	code, state := getAuthorizationCode(t, session.AuthorizationRequestUrl)
+	callback := authCallbackURL(map[string]string{"code": code, "state": state})
 
 	userInteraction(t, c, clientmodels.SessionUserInteraction{
 		SessionId: session.Id,
 		Type:      clientmodels.UI_AuthorizationCode,
 		Payload: clientmodels.SessionAuthCodeInteractionPayload{
-			Code:    &code,
-			Proceed: true,
+			CallbackURL: &callback,
+			Proceed:     true,
 		},
 	})
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 )
 
@@ -116,18 +117,17 @@ func GetOpenIdMetadataUrlFromAuthorizationServer(authorizationServer string) (st
 }
 
 func getWellKnownUrlFromAuthorizationServer(authorizationServer string, wellKnownPath string) (string, error) {
-	url, err := url.Parse(authorizationServer)
+	parsed, err := url.Parse(authorizationServer)
 	if err != nil {
 		return "", err
 	}
 
-	asUrl := fmt.Sprintf("%s://%s/.well-known/%s", url.Scheme, url.Host, wellKnownPath)
+	// RFC 8414 §3.1: the well-known segment is inserted between the host and the
+	// issuer's path component (supporting multi-tenant authorization servers).
+	// path.Join cleans duplicate slashes, so a path-bearing issuer doesn't yield "//".
+	asPath := path.Join("/.well-known/"+wellKnownPath, parsed.Path)
 
-	if url.Path != "" {
-		asUrl = fmt.Sprintf("%s/%s", asUrl, url.Path)
-	}
-
-	return asUrl, nil
+	return parsed.Scheme + "://" + parsed.Host + asPath, nil
 }
 
 // TryFetchAuthorizationServerMetadata will try fetching unsigned Authorization Server Metadata from the default OAuth 2.0

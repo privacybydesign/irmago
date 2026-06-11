@@ -7,27 +7,18 @@ package sqlcipher
 #cgo android LDFLAGS: -lsqlcipher -lcrypto
 #include <stdlib.h>
 #include <sqlite3.h>
-
-// sqlite3_key is declared behind #ifdef SQLITE_HAS_CODEC in sqlcipher's sqlite3.h.
-// We declare it explicitly here to avoid defining SQLITE_HAS_CODEC globally,
-// which can change internal struct sizes and cause crashes with Go 1.25+ cgo.
-int sqlite3_key(sqlite3 *db, const void *pKey, int nKey);
-
 */
 import "C"
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"io"
-	"net/url"
-	"strings"
 	"time"
 	"unsafe"
 )
-
-// DSN format: "path/to/db.sqlite?_key=passphrase"
 
 func init() {
 	sql.Register("sqlcipher", &sqlcipherDriver{})
@@ -38,12 +29,25 @@ func init() {
 type sqlcipherDriver struct{}
 
 func (d *sqlcipherDriver) Open(dsn string) (driver.Conn, error) {
-	path, key, err := parseDSN(dsn)
-	if err != nil {
-		return nil, err
-	}
+	return (&Connector{Path: dsn}).Connect(context.Background())
+}
 
-	cPath := C.CString(path)
+// --- Connector ---
+
+// Connector opens a SQLCipher database and sets the encryption key via
+// PRAGMA key after the connection is established, keeping the key out of
+// the DSN entirely.
+type Connector struct {
+	Path string
+	key  []byte // raw key bytes; empty = no encryption
+}
+
+func NewConnector(path string, key []byte) *Connector {
+	return &Connector{Path: path, key: key}
+}
+
+func (c *Connector) Connect(_ context.Context) (driver.Conn, error) {
+	cPath := C.CString(c.Path)
 	defer C.free(unsafe.Pointer(cPath))
 
 	var handle *C.sqlite3
@@ -54,22 +58,16 @@ func (d *sqlcipherDriver) Open(dsn string) (driver.Conn, error) {
 		return nil, fmt.Errorf("sqlite3_open: %s", msg)
 	}
 
-	if key != "" {
-		cKey := C.CString(key)
-		defer C.free(unsafe.Pointer(cKey))
-		rc = C.sqlite3_key(handle, unsafe.Pointer(cKey), C.int(len(key)))
-		if rc != C.SQLITE_OK {
-			msg := C.GoString(C.sqlite3_errmsg(handle))
-			C.sqlite3_close(handle)
-			return nil, fmt.Errorf("sqlite3_key: %s", msg)
-		}
-	}
-
 	conn := &sqlcipherConn{handle: handle}
 
-	// Verify the key is correct by reading the database header.
-	// SQLCipher defers decryption until the first real read.
-	if key != "" {
+	if len(c.key) > 0 {
+		pragma := fmt.Sprintf("PRAGMA key = \"x'%x'\"", c.key)
+		if err := conn.exec(pragma); err != nil {
+			C.sqlite3_close(handle)
+			return nil, fmt.Errorf("PRAGMA key: %w", err)
+		}
+		// Verify the key is correct by reading the database header.
+		// SQLCipher defers decryption until the first real read.
 		if err := conn.exec("SELECT count(*) FROM sqlite_master"); err != nil {
 			C.sqlite3_close(handle)
 			return nil, fmt.Errorf("key verification failed: %w", err)
@@ -82,18 +80,8 @@ func (d *sqlcipherDriver) Open(dsn string) (driver.Conn, error) {
 	return conn, nil
 }
 
-func parseDSN(dsn string) (path, key string, err error) {
-	if idx := strings.IndexByte(dsn, '?'); idx >= 0 {
-		path = dsn[:idx]
-		params, e := url.ParseQuery(dsn[idx+1:])
-		if e != nil {
-			return "", "", e
-		}
-		key = params.Get("_key")
-	} else {
-		path = dsn
-	}
-	return path, key, nil
+func (c *Connector) Driver() driver.Driver {
+	return &sqlcipherDriver{}
 }
 
 // --- driver.Conn ---
@@ -342,12 +330,4 @@ func parseDateTime(s string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("not a datetime")
-}
-
-// DSN builds a SQLCipher connection string. If key is empty, no encryption is used.
-func DSN(path, key string) string {
-	if key == "" {
-		return path
-	}
-	return path + "?_key=" + url.QueryEscape(key)
 }

@@ -484,6 +484,11 @@ const (
 	authcodeAdminToken = "authcode-admin-token"
 
 	mockAuthorizationServerURL = "http://localhost:9090"
+
+	// openid4vciRedirectURI is the wallet redirect_uri the authorization server
+	// sends its callback to; the wallet hands the full callback URL back to the
+	// library via SessionAuthCodeInteractionPayload.CallbackURL.
+	openid4vciRedirectURI = "https://open.yivi.app/-/auth-callback"
 )
 
 func init() {
@@ -509,15 +514,17 @@ func startOpenID4VCISession(t *testing.T, c *client.Client, sessionId int, credO
 	sessionReq, err := json.Marshal(client.SessionRequestData{
 		Qr:                    irma.Qr{URL: credOfferURL},
 		Protocol:              clientmodels.Protocol_OpenID4VCI,
-		OpenID4VCIRedirectUri: "https://open.yivi.app/-/auth-callback",
+		OpenID4VCIRedirectUri: openid4vciRedirectURI,
 	})
 	require.NoError(t, err)
 	c.NewSession(sessionId, string(sessionReq))
 }
 
 // getAuthorizationCode simulates the wallet visiting the authorization URL and
-// receiving a code from the mock authorization server.
-func getAuthorizationCode(t *testing.T, authorizationRequestURL string) string {
+// receiving a code from the mock authorization server. It returns both the code
+// and the state echoed back by the server; a compliant authorization server
+// returns the same state it was given in the request.
+func getAuthorizationCode(t *testing.T, authorizationRequestURL string) (code, state string) {
 	t.Helper()
 
 	parsed, err := url.Parse(authorizationRequestURL)
@@ -530,11 +537,24 @@ func getAuthorizationCode(t *testing.T, authorizationRequestURL string) string {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var result struct {
-		Code string `json:"code"`
+		Code  string `json:"code"`
+		State string `json:"state"`
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
 	require.NotEmpty(t, result.Code)
-	return result.Code
+	require.NotEmpty(t, result.State, "authorization server must echo the state parameter")
+	return result.Code, result.State
+}
+
+// authCallbackURL assembles the redirect URL the authorization server sends to
+// the wallet's redirect_uri, carrying the given query parameters. The wallet
+// hands this URL back to the library via SessionAuthCodeInteractionPayload.
+func authCallbackURL(params map[string]string) string {
+	q := url.Values{}
+	for k, v := range params {
+		q.Set(k, v)
+	}
+	return openid4vciRedirectURI + "?" + q.Encode()
 }
 
 // ---------------------------------------------------------------------------

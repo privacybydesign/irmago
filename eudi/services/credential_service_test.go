@@ -232,9 +232,9 @@ func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, batch.IssuedAt.Unix(), result[0].IssuanceDate)
+	assert.Equal(t, batch.IssuedAt.V.Unix(), *result[0].IssuanceDate)
 	require.True(t, batch.ExpiresAt.Valid)
-	assert.Equal(t, batch.ExpiresAt.V.Unix(), result[0].ExpiryDate)
+	assert.Equal(t, batch.ExpiresAt.V.Unix(), *result[0].ExpiryDate)
 }
 
 func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
@@ -893,11 +893,12 @@ func TestMatchHolderBindingKey_NoCnfFields_ReturnsError(t *testing.T) {
 // ========== holder binding key linking integration ==========
 
 func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwtvc.CnfField) *sdjwtvc.VerifiedSdJwtVc {
+	now := time.Now().Unix()
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			Issuer:                   issuer,
 			VerifiableCredentialType: vct,
-			IssuedAt:                 time.Now().Unix(),
+			IssuedAt:                 &now,
 			Confirm:                  cnf,
 		},
 		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
@@ -1117,9 +1118,9 @@ func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwt
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			Issuer:                   issuer,
 			VerifiableCredentialType: vct,
-			IssuedAt:                 issuedAt,
-			Expiry:                   expiry,
-			NotBefore:                notBefore,
+			IssuedAt:                 &issuedAt,
+			Expiry:                   &expiry,
+			NotBefore:                &notBefore,
 		},
 		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
 			"sub": "user123",
@@ -1180,7 +1181,7 @@ func newStorageBatch() *models.CredentialBatch {
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "testhash",
 		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 now,
+		IssuedAt:                 datatypes.NullTime{V: now, Valid: true},
 		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
 		BatchSize:                1,
 		RemainingCount:           remaining,

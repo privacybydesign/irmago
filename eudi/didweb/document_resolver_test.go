@@ -167,7 +167,8 @@ func Test_Resolve_UnmarshalDocumentCorrectly(t *testing.T) {
 		},
 	}
 
-	doc, err := resolver.Resolve("did:web:example.com")
+	// Resolver does not resolve from actual domain, but host is overridden to point to the test server, so the content of the document is determined by the test server's response.
+	doc, err := resolver.Resolve("did:web:issuer.dev.eduid.nl")
 	require.NoError(t, err)
 	require.Equal(t, "did:web:issuer.dev.eduid.nl", doc.ID)
 	require.Len(t, doc.VerificationMethod, 1)

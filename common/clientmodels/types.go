@@ -196,9 +196,9 @@ type Credential struct {
 	// Nested objects and arrays are flattened with full claim paths.
 	Attributes []Attribute `json:"attributes"`
 	// The date and time (unix format) at which this credential was issued.
-	IssuanceDate int64 `json:"issuance_date"`
+	IssuanceDate *int64 `json:"issuance_date"`
 	// The date and time (unix format) when this credential expires (0 if no expiry).
-	ExpiryDate int64 `json:"expiry_date"`
+	ExpiryDate *int64 `json:"expiry_date"`
 	// Whether or not this credential has been revoked.
 	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential.
@@ -280,10 +280,14 @@ type SelectableCredentialInstance struct {
 	// The attributes selectable for disclosure, ordered by source metadata.
 	// Requested SD claims appear first (in metadata order), non-SD claims after.
 	Attributes []Attribute `json:"attributes"`
+
+	// TODO: IssuanceData + ExpiryDate are mandatory for IRMA credentials, but optional for EUDI credentials.
+	// We need to fix this, also in the frontend
+
 	// The date and time (unix format) at which this credential was issued.
-	IssuanceDate int64 `json:"issuance_date"`
+	IssuanceDate *int64 `json:"issuance_date"`
 	// The date and time (unix format) when this credential expires.
-	ExpiryDate int64 `json:"expiry_date"`
+	ExpiryDate *int64 `json:"expiry_date"`
 	// Whether or not this credential has been revoked.
 	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential.

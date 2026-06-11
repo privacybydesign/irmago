@@ -17,9 +17,7 @@ import (
 func newTestCredentialStore(t *testing.T) CredentialStore {
 	t.Helper()
 
-	const passphrase = "super-secret-key-123"
-	dsn := sqlcipher.DSN(":memory:", passphrase)
-	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
+	db, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("super-secret-key-123"))}, &gorm.Config{})
 	require.NoError(t, err)
 
 	err = db.AutoMigrate(
@@ -46,7 +44,7 @@ func newBatch(hash string) *models.CredentialBatch {
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
 		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 time.Now().UTC().Truncate(time.Second),
+		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,
 		CredentialIssuer:         "https://issuer.example.com",
@@ -115,7 +113,7 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
 		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 time.Now().UTC().Truncate(time.Second),
+		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                uint(instanceCount),
 		RemainingCount:           uint(instanceCount),
 		CredentialIssuer:         "https://issuer.example.com",
@@ -152,7 +150,7 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
 		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 time.Now().UTC().Truncate(time.Second),
+		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                uint(instanceCount),
 		RemainingCount:           uint(instanceCount),
 		CredentialIssuer:         "https://issuer.example.com",

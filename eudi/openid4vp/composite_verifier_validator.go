@@ -43,23 +43,23 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 	clientId := claims.ClientId
 
 	switch {
-	case strings.HasPrefix(clientId, "x509_san_dns:"):
+	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509SanDns)):
 		if v.x509Validator == nil {
 			return nil, nil, nil, fmt.Errorf("X.509 verifier validator not configured")
 		}
 		return v.x509Validator.ParseAndVerifyAuthorizationRequest(requestJwt)
 
-	case strings.HasPrefix(clientId, "decentralized_identifier:did:"):
+	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_DecentralizedDid)):
 		if v.didValidator == nil {
 			return nil, nil, nil, fmt.Errorf("DID verifier validator not configured")
 		}
 		return v.didValidator.ParseAndVerifyAuthorizationRequest(requestJwt)
 
-	case strings.HasPrefix(clientId, "redirect_uri:") ||
-		strings.HasPrefix(clientId, "openid_federation:") ||
-		strings.HasPrefix(clientId, "verifier_attestation:") ||
-		strings.HasPrefix(clientId, "x509_hash:") ||
-		strings.HasPrefix(clientId, "origin:"):
+	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_RedirectUri)) ||
+		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_OpenidFederation)) ||
+		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_VerifierAttestation)) ||
+		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509Hash)) ||
+		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_Origin)):
 		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 
 	default:

@@ -52,8 +52,12 @@ type PinInteractionPayload struct {
 
 // SessionAuthCodeInteractionPayload is the payload for an authorization code interaction.
 type SessionAuthCodeInteractionPayload struct {
-	Code    *string `json:"code,omitempty"`
-	Proceed bool    `json:"proceed"`
+	// CallbackURL is the full redirect URL the authorization server sent to the
+	// wallet's redirect_uri. The library parses its query for the authorization
+	// code and state on success, or the error/error_description on failure
+	// (RFC 6749 §4.1.2). Set only when Proceed is true.
+	CallbackURL *string `json:"callback_url,omitempty"`
+	Proceed     bool    `json:"proceed"`
 }
 
 // SessionPreAuthorizedCodeInteractionPayload is the payload for a pre-authorized code interaction.

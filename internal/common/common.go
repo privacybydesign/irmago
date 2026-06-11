@@ -104,7 +104,7 @@ func EnsureFileExists(path string) error {
 	if exists, err := PathExists(path); err != nil {
 		return err
 	} else if !exists {
-		f, err := os.Create(path)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
 			return err
 		}

@@ -219,6 +219,7 @@ const (
 	Key_NotBefore                         string = "nbf"
 	Key_Typ                               string = "typ"
 	Key_X5c                               string = "x5c"
+	Key_Kid                               string = "kid"
 	Key_Ellipsis                          string = "..."
 	Key_Federation                        string = "fed"
 
@@ -274,12 +275,6 @@ type IssuerSignedJwtPayload struct {
 	// REQUIRED: the type of verifiable credential
 	VerifiableCredentialType string
 
-	// OPTIONAL: expiry time, must not be accepted after this moment
-	Expiry int64
-
-	// OPTIONAL: time of issuance
-	IssuedAt int64
-
 	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the Verifiable Credential
 	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
 	Issuer string
@@ -299,8 +294,14 @@ type IssuerSignedJwtPayload struct {
 	// OPTIONAL: The information on how to read the status of the verifiable credential
 	Status *string
 
+	// OPTIONAL: expiry time, must not be accepted after this moment
+	Expiry *int64
+
+	// OPTIONAL: time of issuance
+	IssuedAt *int64
+
 	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
-	NotBefore int64
+	NotBefore *int64
 }
 
 // IssuerSignedJwt is the issued signed jwt as a string (so only the section of the sd-jwt vc up to and NOT including the first ~)

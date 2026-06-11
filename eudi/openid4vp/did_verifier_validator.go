@@ -94,6 +94,8 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 	requestorInfo := &scheme.RelyingPartyRequestor{}
 	requestorInfo.Organization.LegalName = map[string]string{"en": displayName}
 
+	// We don't validate credential queries using queryValidator.ValidateCredentialQueries(..) on purpose here, because we have no external requestorInfo containing authorized attributes
+
 	return &authRequest, nil, requestorInfo, nil
 }
 

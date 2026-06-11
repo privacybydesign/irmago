@@ -60,6 +60,10 @@ type SdJwtVcVerificationContext struct {
 	// must match. This prevents replay attacks by ensuring the presentation was created for this
 	// specific request.
 	ExpectedNonce string
+
+	// ExpectedAudience is the audience from the OpenID4VP authorization request that the KB-JWT aud
+	// must match.
+	ExpectedAudience string
 }
 
 func CreateDefaultVerificationContext(trustedChain []byte) SdJwtVcVerificationContext {
@@ -225,9 +229,9 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 
 	// Get optional fields
 	sub, _ := token.Subject()
-	exp, _ := token.Expiration()
-	iat, _ := token.IssuedAt()
-	nbf, _ := token.NotBefore()
+	exp, expPresent := token.Expiration()
+	iat, iatPresent := token.IssuedAt()
+	nbf, nbfPresent := token.NotBefore()
 	iss, issPresent := token.Issuer()
 
 	if !issPresent {
@@ -274,14 +278,26 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	// Construct payload — use 0 for missing time claims instead of time.Time{}.Unix()
 	payload := &IssuerSignedJwtPayload{
 		Subject:                  sub,
-		Expiry:                   timeToUnixOrZero(exp),
-		IssuedAt:                 timeToUnixOrZero(iat),
-		NotBefore:                timeToUnixOrZero(nbf),
 		Issuer:                   iss,
 		VerifiableCredentialType: vct,
 		Sd:                       sd,
 		SdAlg:                    iana.HashingAlgorithm(sdAlg),
 		Confirm:                  cnf,
+	}
+
+	if expPresent {
+		expInt := timeToUnixOrZero(exp)
+		payload.Expiry = &expInt
+	}
+
+	if iatPresent {
+		iatInt := timeToUnixOrZero(iat)
+		payload.IssuedAt = &iatInt
+	}
+
+	if nbfPresent {
+		nbfInt := timeToUnixOrZero(nbf)
+		payload.NotBefore = &nbfInt
 	}
 
 	// Verify times
@@ -314,16 +330,16 @@ func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSigned
 	exp := issuerSignedJwtPayload.Expiry
 	nbf := issuerSignedJwtPayload.NotBefore
 
-	if nbf != 0 && maxSkewNow < nbf {
-		return fmt.Errorf("verification before nbf: now: %v + skew: %v < nbf: %v", now, ClockSkewInSeconds, nbf)
+	if nbf != nil && maxSkewNow < *nbf {
+		return fmt.Errorf("verification before nbf: now: %v + skew: %v < nbf: %v", now, ClockSkewInSeconds, *nbf)
 	}
 
-	if maxSkewNow < iat {
-		return fmt.Errorf("verification before issued at: %v + skew: %v < %v", now, ClockSkewInSeconds, iat)
+	if iat != nil && maxSkewNow < *iat {
+		return fmt.Errorf("verification before issued at: %v + skew: %v < %v", now, ClockSkewInSeconds, *iat)
 	}
 
-	if exp != 0 && minSkewNow > exp {
-		return fmt.Errorf("verification after expiry of issuer signed jwt: %v - skew: %v > %v", now, ClockSkewInSeconds, exp)
+	if exp != nil && minSkewNow > *exp {
+		return fmt.Errorf("verification after expiry of issuer signed jwt: %v - skew: %v > %v", now, ClockSkewInSeconds, *exp)
 	}
 
 	return nil
@@ -764,6 +780,10 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 
 	if payload.Nonce != v.verificationContext.ExpectedNonce {
 		return nil, fmt.Errorf("kbjwt 'nonce' field was expected to contain '%s', but contained '%s' instead", v.verificationContext.ExpectedNonce, payload.Nonce)
+	}
+
+	if payload.Audience != v.verificationContext.ExpectedAudience {
+		return nil, fmt.Errorf("kbjwt 'aud' field was expected to contain '%s', but contained '%s' instead", v.verificationContext.ExpectedAudience, payload.Audience)
 	}
 
 	now := v.verificationContext.Clock.Now()
