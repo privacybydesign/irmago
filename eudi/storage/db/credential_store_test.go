@@ -17,9 +17,7 @@ import (
 func newTestCredentialStore(t *testing.T) CredentialStore {
 	t.Helper()
 
-	const passphrase = "super-secret-key-123"
-	dsn := sqlcipher.DSN(":memory:", passphrase)
-	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
+	db, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("super-secret-key-123"))}, &gorm.Config{})
 	require.NoError(t, err)
 
 	err = db.AutoMigrate(

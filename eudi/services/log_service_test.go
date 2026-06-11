@@ -18,8 +18,7 @@ func newTestLogService(t *testing.T) EudiLogService {
 	t.Helper()
 
 	const passphrase = "test-passphrase-1234567890123456"
-	dsn := sqlcipher.DSN(":memory:", passphrase)
-	database, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
+	database, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte(passphrase))}, &gorm.Config{})
 	require.NoError(t, err)
 
 	err = database.AutoMigrate(

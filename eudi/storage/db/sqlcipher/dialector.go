@@ -15,7 +15,7 @@ import (
 
 // Dialector implements gorm.Dialector for SQLCipher.
 type Dialector struct {
-	DSN string
+	Connector *Connector
 }
 
 func (d Dialector) Name() string {
@@ -30,17 +30,14 @@ func (d Dialector) Initialize(db *gorm.DB) error {
 		DeleteClauses: []string{"DELETE", "FROM", "WHERE"},
 	})
 
-	sqlDB, err := sql.Open("sqlcipher", d.DSN)
-	if err != nil {
-		return err
-	}
 	// SQLite/SQLCipher requires a single connection to avoid issues with
 	// in-memory databases (each connection gets its own database) and
 	// to prevent concurrent access crashes.
+	sqlDB := sql.OpenDB(d.Connector)
 	sqlDB.SetMaxOpenConns(1)
 	db.ConnPool = sqlDB
 
-	// Verify the connection works (triggers key validation)
+	// Verify the connection works (triggers key validation via PRAGMA key)
 	if err := sqlDB.Ping(); err != nil {
 		return fmt.Errorf("failed to verify database connection: %w", err)
 	}

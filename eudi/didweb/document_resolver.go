@@ -39,6 +39,11 @@ func (r *DocumentResolver) Resolve(didWeb string) (*did.Document, error) {
 		return nil, err
 	}
 
+	// Verify the resolved document's ID matches the requested DID.
+	if doc.ID != didWeb {
+		return nil, fmt.Errorf("did:web: resolved document ID %q does not match requested DID %q", doc.ID, didWeb)
+	}
+
 	return doc, nil
 }
 
