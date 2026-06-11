@@ -14,8 +14,9 @@ func TestNoIssuerLinkIsErr(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   0,
-		IssuedAt:                 0,
+		Expiry:                   nil,
+		IssuedAt:                 nil,
+		NotBefore:                nil,
 		Issuer:                   "",
 	}
 
@@ -28,8 +29,9 @@ func TestNoHttpsIssuerIsErr(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   0,
-		IssuedAt:                 0,
+		Expiry:                   nil,
+		IssuedAt:                 nil,
+		NotBefore:                nil,
 		Issuer:                   "http://invalid.com",
 	}
 
@@ -41,8 +43,9 @@ func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   0,
-		IssuedAt:                 0,
+		Expiry:                   nil,
+		IssuedAt:                 nil,
+		NotBefore:                nil,
 		Issuer:                   "https://example.com",
 	}
 

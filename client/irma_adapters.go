@@ -354,14 +354,15 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attributes [][]*irma.DisclosedAttribute) ([]clientmodels.LogCredential, error) {
 	// Group disclosed attributes by credential type, preserving per-attr metadata
 	grouped := map[irma.CredentialTypeIdentifier]map[string]*irma.DisclosedAttribute{}
-	issuanceTimes := map[irma.CredentialTypeIdentifier]int64{}
+	issuanceTimes := map[irma.CredentialTypeIdentifier]*int64{}
 
 	for _, con := range attributes {
 		for _, attr := range con {
 			credTypeId := attr.Identifier.CredentialTypeIdentifier()
 			if _, ok := grouped[credTypeId]; !ok {
 				grouped[credTypeId] = map[string]*irma.DisclosedAttribute{}
-				issuanceTimes[credTypeId] = time.Time(attr.IssuanceTime).Unix()
+				x := time.Time(attr.IssuanceTime).Unix()
+				issuanceTimes[credTypeId] = &x
 			}
 			grouped[credTypeId][attr.Identifier.Name()] = attr
 		}
@@ -447,8 +448,8 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 			Name:                clientmodels.TranslatedString(credTypeInfo.Name),
 			Issuer:              buildIssuerTrustedParty(irmaConfig, issuer),
 			Attributes:          attributes,
-			IssuanceDate:        time.Time(cred.SignedOn).Unix(),
-			ExpiryDate:          time.Time(cred.Expires).Unix(),
+			IssuanceDate:        func() *int64 { x := time.Time(cred.SignedOn).Unix(); return &x }(),
+			ExpiryDate:          func() *int64 { x := time.Time(cred.Expires).Unix(); return &x }(),
 			Revoked:             cred.Revoked,
 			RevocationSupported: cred.RevocationSupported,
 			IssueURL:            convertOptionalTranslatedString(credTypeInfo.IssueURL),

@@ -112,8 +112,10 @@ func testReissuingUpdatesSignedOn(t *testing.T, storage SdJwtVcStorage) {
 	require.Equal(t, info1.Hash, info2.Hash, "re-issuance with same attributes must keep the same hash")
 
 	shift := 90 * 24 * time.Hour
-	info2.SignedOn = irma.Timestamp(time.Time(info1.SignedOn).Add(shift))
-	info2.Expires = irma.Timestamp(time.Time(info1.Expires).Add(shift))
+	info2SignedOn := irma.Timestamp(time.Time(*info1.SignedOn).Add(shift))
+	info2.SignedOn = &info2SignedOn
+	info2Expires := irma.Timestamp(time.Time(*info1.Expires).Add(shift))
+	info2.Expires = &info2Expires
 	require.NoError(t, storage.StoreCredential(info2, sdjwts2))
 
 	creds := storage.GetCredentialsForId("test.test.email")

@@ -495,9 +495,9 @@ func getIssuedSinceOriginalPlan(
 					// Keep the most recently issued one so the frontend can show it.
 					// When issuance dates are equal, prefer a credential that differs from the
 					// previously reported wrong credential, as it is more likely to be newly issued.
-					if lastWrongCredential == nil || c.IssuanceDate > lastWrongCredential.IssuanceDate {
+					if lastWrongCredential == nil || (c.IssuanceDate != nil && lastWrongCredential.IssuanceDate != nil && *c.IssuanceDate > *lastWrongCredential.IssuanceDate) {
 						lastWrongCredential = filterCredentialToMismatchedAttributes(c, desc.Attributes)
-					} else if c.IssuanceDate == lastWrongCredential.IssuanceDate &&
+					} else if c.IssuanceDate != nil && lastWrongCredential.IssuanceDate != nil && *c.IssuanceDate == *lastWrongCredential.IssuanceDate &&
 						lastWrongCredential.Hash == previousWrongHash && c.Hash != previousWrongHash {
 						lastWrongCredential = filterCredentialToMismatchedAttributes(c, desc.Attributes)
 					}

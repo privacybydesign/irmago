@@ -114,9 +114,14 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 
 		attrs := buildAttributesFromPayload(processedSdJwtPayload, claimDisplayLookup, metadataOrder)
 
-		exp := int64(0)
+		var iat, exp *int64
 		if batch.ExpiresAt.Valid {
-			exp = batch.ExpiresAt.V.Unix()
+			x := batch.ExpiresAt.V.Unix()
+			exp = &x
+		}
+		if batch.IssuedAt.Valid {
+			x := batch.IssuedAt.V.Unix()
+			iat = &x
 		}
 
 		// Try get the credential image from filesystem storage, if it exists.
@@ -153,8 +158,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			},
 			BatchInstanceCountsRemaining: batchInstanceCountsRemaining(batch),
 			Attributes:                   attrs,
-			IssuanceDate:                 batch.IssuedAt.Unix(),
 			ExpiryDate:                   exp,
+			IssuanceDate:                 iat,
 			Revoked:                      false, // revocation is not yet implemented, so default to false for now
 			RevocationSupported:          false,
 			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
@@ -230,12 +235,19 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
 		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
 		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		IssuedAt:                 time.Unix(first.IssuerSignedJwtPayload.IssuedAt, 0),
-		ExpiresAt:                datatypes.NullTime{V: time.Unix(first.IssuerSignedJwtPayload.Expiry, 0), Valid: true},
-		NotBefore:                datatypes.NullTime{V: time.Unix(first.IssuerSignedJwtPayload.NotBefore, 0), Valid: true},
 		BatchSize:                uint(len(verifiedSdJwtVcs)),
 		RemainingCount:           uint(len(verifiedSdJwtVcs)),
 		Instances:                buildInstances(verifiedSdJwtVcs),
+	}
+
+	if first.IssuerSignedJwtPayload.IssuedAt != nil {
+		batch.IssuedAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.IssuedAt, 0), Valid: true}
+	}
+	if first.IssuerSignedJwtPayload.Expiry != nil {
+		batch.ExpiresAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.Expiry, 0), Valid: true}
+	}
+	if first.IssuerSignedJwtPayload.NotBefore != nil {
+		batch.NotBefore = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.NotBefore, 0), Valid: true}
 	}
 
 	if err := s.credentialStore.StoreBatch(batch); err != nil {

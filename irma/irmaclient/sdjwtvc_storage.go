@@ -17,22 +17,22 @@ import (
 // SdJwtVcBatchMetadata corresponds to a batch of SdJwtVcs that are the same in everything
 // except for the keybinding pub keys and disclosure salts/hashes
 type SdJwtVcBatchMetadata struct {
-	BatchSize              uint           // number of instances originally issued
-	RemainingInstanceCount uint           // number of instances left
-	SignedOn               irma.Timestamp // Unix timestamp
-	Expires                irma.Timestamp // Unix timestamp
-	Attributes             map[string]any // Human-readable rendered attributes
-	Hash                   string         // SHA256 hash over the attributes and credential type
-	CredentialType         string         // corresponds to 'vct' field in jwt
+	BatchSize              uint            // number of instances originally issued
+	RemainingInstanceCount uint            // number of instances left
+	SignedOn               *irma.Timestamp // Unix timestamp
+	Expires                *irma.Timestamp // Unix timestamp
+	Attributes             map[string]any  // Human-readable rendered attributes
+	Hash                   string          // SHA256 hash over the attributes and credential type
+	CredentialType         string          // corresponds to 'vct' field in jwt
 }
 
 // SdJwtVcMetadata corresponds to a single instance of and SdJwtVc
 type SdJwtVcMetadata struct {
-	SignedOn       irma.Timestamp // Unix timestamp
-	Expires        irma.Timestamp // Unix timestamp
-	Attributes     map[string]any // Human-readable rendered attributes
-	Hash           string         // SHA256 hash over the attributes and credential type
-	CredentialType string         // corresponds to 'vct' field in jwt
+	SignedOn       *irma.Timestamp // Unix timestamp
+	Expires        *irma.Timestamp // Unix timestamp
+	Attributes     map[string]any  // Human-readable rendered attributes
+	Hash           string          // SHA256 hash over the attributes and credential type
+	CredentialType string          // corresponds to 'vct' field in jwt
 }
 
 type SdJwtVcStorage interface {

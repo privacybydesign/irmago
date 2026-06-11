@@ -827,7 +827,7 @@ func Test_HolderVerificationProcessor_IatIsAfterVerification_Fails(t *testing.T)
 	iat := now + ClockSkewInSeconds + 100
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(iat)
+		withIssuedAt(&iat)
 
 	context := SdJwtVcVerificationContext{
 		Clock:       &testClock{time: now},
@@ -846,8 +846,8 @@ func Test_HolderVerificationProcessor_VerificationIsAfterExp_Fails(t *testing.T)
 	exp := now - ClockSkewInSeconds - 100
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withExpiryTime(exp)
+		withIssuedAt(&now).
+		withExpiryTime(&exp)
 
 	context := SdJwtVcVerificationContext{
 		Clock:       &testClock{time: now},
@@ -864,11 +864,12 @@ func Test_HolderVerificationProcessor_VerificationIsAfterExp_Fails(t *testing.T)
 func Test_HolderVerificationProcessor_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
 	now := time.Now().Unix()
 	nbf := now + ClockSkewInSeconds + 50
+	exp := int64(100)
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withExpiryTime(100).
-		withNotBefore(nbf)
+		withIssuedAt(&now).
+		withExpiryTime(&exp).
+		withNotBefore(&nbf)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -960,7 +961,7 @@ func Test_HolderVerificationProcessor_Valid_X509Chain_Succeeds(t *testing.T) {
 func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeIat_GivenClockSkew_Success(t *testing.T) {
 	now := time.Now().Unix()
 
-	config := newWorkingSdJwtVcTestConfig().withIssuedAt(now)
+	config := newWorkingSdJwtVcTestConfig().withIssuedAt(&now)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -981,8 +982,8 @@ func Test_HolderVerificationProcessor_VerificationPlusOneMinuteIsAfterExp_GivenC
 	now := time.Now().Unix()
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withExpiryTime(now)
+		withIssuedAt(&now).
+		withExpiryTime(&now)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -1003,8 +1004,8 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 	now := time.Now().Unix()
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withNotBefore(now)
+		withIssuedAt(&now).
+		withNotBefore(&now)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -1027,9 +1028,9 @@ func Test_HolderVerificationProcessor_TimeFieldsAreParsedCorrectly(t *testing.T)
 	nbf := now - 60
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withExpiryTime(exp).
-		withNotBefore(nbf)
+		withIssuedAt(&now).
+		withExpiryTime(&exp).
+		withNotBefore(&nbf)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -1045,9 +1046,36 @@ func Test_HolderVerificationProcessor_TimeFieldsAreParsedCorrectly(t *testing.T)
 	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.NoError(t, err)
 
-	require.Equal(t, now, result.IssuerSignedJwtPayload.IssuedAt, "IssuedAt should match the iat claim")
-	require.Equal(t, exp, result.IssuerSignedJwtPayload.Expiry, "Expiry should match the exp claim")
-	require.Equal(t, nbf, result.IssuerSignedJwtPayload.NotBefore, "NotBefore should match the nbf claim")
+	require.Equal(t, now, *result.IssuerSignedJwtPayload.IssuedAt, "IssuedAt should match the iat claim")
+	require.Equal(t, exp, *result.IssuerSignedJwtPayload.Expiry, "Expiry should match the exp claim")
+	require.Equal(t, nbf, *result.IssuerSignedJwtPayload.NotBefore, "NotBefore should match the nbf claim")
+}
+
+func Test_HolderVerificationProcessor_MissingTimeFieldsAreParsedCorrectly(t *testing.T) {
+	now := time.Now().Unix()
+
+	config := newWorkingSdJwtVcTestConfig().
+		withIssuedAt(nil).
+		withExpiryTime(nil).
+		withNotBefore(nil)
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		},
+		Clock:       &testClock{time: now},
+		JwtVerifier: NewJwxJwtVerifier(),
+	}
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	holderVerifier := NewHolderVerificationProcessor(context)
+
+	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+
+	require.Nil(t, result.IssuerSignedJwtPayload.IssuedAt, "IssuedAt should be nil")
+	require.Nil(t, result.IssuerSignedJwtPayload.Expiry, "Expiry should be nil")
+	require.Nil(t, result.IssuerSignedJwtPayload.NotBefore, "NotBefore should be nil")
 }
 
 func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedClaims(t *testing.T) {
@@ -1064,8 +1092,8 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 
 	config := newWorkingSdJwtVcTestConfig().
 		withVct("test.test.email").
-		withIssuedAt(now).
-		withExpiryTime(exp).
+		withIssuedAt(&now).
+		withExpiryTime(&exp).
 		withSdClaims(disclosures, iana.SHA256).
 		withDisclosures(disclosures)
 

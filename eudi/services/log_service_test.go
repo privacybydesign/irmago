@@ -48,6 +48,9 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 	boolVal := true
 	intVal := int64(42)
 
+	issuanceDate := int64(1700000000)
+	expiryDate := int64(1800000000)
+
 	input := []clientmodels.LogCredential{
 		{
 			CredentialId: "https://example.com/vct/test",
@@ -74,8 +77,8 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 					Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_Int, Int: &intVal},
 				},
 			},
-			IssuanceDate: 1700000000,
-			ExpiryDate:   1800000000,
+			IssuanceDate: &issuanceDate,
+			ExpiryDate:   &expiryDate,
 		},
 	}
 
@@ -110,8 +113,8 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 	// Credential metadata survives round-trip.
 	require.Equal(t, "https://example.com/vct/test", cred.CredentialId)
 	require.Equal(t, "Test Credential", cred.Name["en"])
-	require.Equal(t, int64(1700000000), cred.IssuanceDate)
-	require.Equal(t, int64(1800000000), cred.ExpiryDate)
+	require.Equal(t, issuanceDate, *cred.IssuanceDate)
+	require.Equal(t, expiryDate, *cred.ExpiryDate)
 
 	// Attribute values survive round-trip with correct types.
 	require.Len(t, cred.Attributes, 3)
@@ -132,6 +135,9 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 	credImageData := base64.StdEncoding.EncodeToString([]byte("fake-credential-png"))
 	issuerImageData := base64.StdEncoding.EncodeToString([]byte("fake-issuer-png"))
 
+	issuanceDate := int64(1700000000)
+	expiryDate := int64(1800000000)
+
 	creds := []clientmodels.LogCredential{
 		{
 			CredentialId: "https://example.com/vct/test",
@@ -145,8 +151,8 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 			},
 			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 			Attributes:   []clientmodels.Attribute{},
-			IssuanceDate: 1700000000,
-			ExpiryDate:   1800000000,
+			IssuanceDate: &issuanceDate,
+			ExpiryDate:   &expiryDate,
 		},
 	}
 
@@ -181,6 +187,9 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 func TestRemovalLogRoundTrip(t *testing.T) {
 	svc := newTestLogService(t)
 
+	issuanceDate := int64(1700000000)
+	expiryDate := int64(1800000000)
+
 	creds := []clientmodels.LogCredential{
 		{
 			CredentialId: "https://example.com/vct/removed",
@@ -191,8 +200,8 @@ func TestRemovalLogRoundTrip(t *testing.T) {
 			},
 			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 			Attributes:   []clientmodels.Attribute{},
-			IssuanceDate: 1700000000,
-			ExpiryDate:   1800000000,
+			IssuanceDate: &issuanceDate,
+			ExpiryDate:   &expiryDate,
 		},
 	}
 
@@ -210,7 +219,7 @@ func TestRemovalLogRoundTrip(t *testing.T) {
 	require.Equal(t, "https://example.com/vct/removed", cred.CredentialId)
 	require.Equal(t, "Removed Credential", cred.Name["en"])
 	require.Equal(t, "https://example.com/issuer", cred.Issuer.Id)
-	require.Equal(t, int64(1700000000), cred.IssuanceDate)
+	require.Equal(t, issuanceDate, *cred.IssuanceDate)
 }
 
 func TestGetLogsBefore_Pagination(t *testing.T) {

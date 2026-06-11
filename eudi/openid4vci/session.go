@@ -433,14 +433,14 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			batchSize = &n
 		}
 
-		var issuanceDate, expiryDate int64
+		var issuanceDate, expiryDate *int64
 		if len(fc.verifiedSdJwtVcs) > 0 {
 			jwt := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload
 			issuanceDate = jwt.IssuedAt
 			expiryDate = jwt.Expiry
 		}
 
-		result = append(result, &clientmodels.Credential{
+		cred := clientmodels.Credential{
 			CredentialId: config.VerifiableCredentialType,
 			Name:         name,
 			Issuer: clientmodels.TrustedParty{
@@ -456,7 +456,9 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			Attributes:   attrs,
 			IssuanceDate: issuanceDate,
 			ExpiryDate:   expiryDate,
-		})
+		}
+
+		result = append(result, &cred)
 	}
 	return result
 }
