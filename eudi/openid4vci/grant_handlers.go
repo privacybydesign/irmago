@@ -502,8 +502,8 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 	if tokenResponse.AccessToken == "" {
 		return nil, fmt.Errorf("token response did not contain an access token")
 	}
-	if tokenResponse.TokenType != "Bearer" {
-		return nil, fmt.Errorf("token response did not contain a valid token type")
+	if strings.ToLower(tokenResponse.TokenType) != "bearer" {
+		return nil, fmt.Errorf("token response did not contain a valid token type: %q", tokenResponse.TokenType)
 	}
 
 	return &authTokenResponse{
