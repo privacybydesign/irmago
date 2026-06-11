@@ -93,7 +93,7 @@ func testOpenID4VCIPreAuthFlowGrantsPermissionAndExchangesToken(t *testing.T) {
 	// The offered credential must have a valid issuance date (the test issuer
 	// does not set exp, so expiry may be 0).
 	now := time.Now().Unix()
-	require.InDelta(t, now, offered.IssuanceDate, 60,
+	require.InDelta(t, now, *offered.IssuanceDate, 60,
 		"issuance date should be approximately now")
 
 	grantPermission(t, c, session.Id)
