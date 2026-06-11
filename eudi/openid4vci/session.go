@@ -639,6 +639,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		// Determine the signing algorithm to use for the proofs, based on the supported algorithms in the credential metadata. We'll just pick the first supported algorithm that we also support, since we expect most issuers to only support one algorithm per proof type, and if they support multiple, it doesn't give us any indication of which one to prefer.
 		var alg jwa.SignatureAlgorithm
 		for _, algName := range proofType.ProofSigningAlgValuesSupported {
+			// Skip ES256K for now, since it's not widely supported among JWT libraries and we tests have shown to fail
 			if algName == "ES256K" {
 				continue
 			}

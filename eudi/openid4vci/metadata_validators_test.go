@@ -546,6 +546,23 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
 		},
 		{
+			name: "cryptographic binding method present, proof type JWT, only ES256K - unsupported",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
+				Scope:  &scope,
+				CryptographicBindingMethodsSupported: []proofs.CryptographicBindingMethod{
+					proofs.CryptographicBindingMethod_JWK,
+				},
+				ProofTypesSupported: map[metadata.ProofTypeIdentifier]metadata.ProofType{
+					metadata.ProofTypeIdentifier_JWT: {
+						ProofSigningAlgValuesSupported: []string{"ES256K"},
+					},
+				},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'proof_signing_alg_values_supported' for JWT proof type",
+		},
+		{
 			name: "cryptographic binding method present, proof type JWT, multiple proof signing algorithms, at least one supported",
 			config: metadata.CredentialConfiguration{
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
@@ -985,4 +1002,50 @@ func TestCredentialRequestEncryption_UnmarshalJSON_Success(t *testing.T) {
 	require.Equal(t, []string{"A128GCM"}, creqEnc.EncValuesSupported)
 	require.Equal(t, []string{"DEF"}, creqEnc.ZipValuesSupported)
 	require.Equal(t, true, creqEnc.EncryptionRequired)
+}
+
+func TestGetSupportedSignatureAlgorithms(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{
+			name:  "empty input",
+			input: []string{},
+			want:  []string{},
+		},
+		{
+			name:  "valid algorithms",
+			input: []string{"ES256", "RS256"},
+			want:  []string{"ES256", "RS256"},
+		},
+		{
+			name:  "ES256K is excluded",
+			input: []string{"ES256K"},
+			want:  []string{},
+		},
+		{
+			name:  "ES256K filtered out alongside valid algorithms",
+			input: []string{"ES256", "ES256K", "RS256"},
+			want:  []string{"ES256", "RS256"},
+		},
+		{
+			name:  "unknown algorithm is excluded",
+			input: []string{"NOT_AN_ALG"},
+			want:  []string{},
+		},
+		{
+			name:  "mix of valid, ES256K, and unknown",
+			input: []string{"ES256", "ES256K", "NOT_AN_ALG"},
+			want:  []string{"ES256"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getSupportedSignatureAlgorithms(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
