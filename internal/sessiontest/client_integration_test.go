@@ -493,7 +493,7 @@ func testRemoveStorageClearsEudiDatabaseAndFilesystem(t *testing.T) {
 	eudiPath := filepath.Join(c.GetIrmaConfiguration().Path, "..", "eudi")
 
 	// Verify the EUDI database file exists.
-	dbPath := filepath.Join(eudiPath, "yivi.db")
+	dbPath := filepath.Join(eudiPath, "yivi-eudi.db")
 	_, err = os.Stat(dbPath)
 	require.NoError(t, err, "EUDI database should exist before RemoveStorage")
 
