@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"slices"
+	"strings"
 )
 
 type AuthorizationServerMetadata struct {
@@ -152,17 +153,14 @@ func TryFetchAuthorizationServerMetadata(authorizationServerUrl string) (*Author
 		return asMetadata, nil
 	}
 
-	// As a last resort, well try to append both well-known paths to the authorization server URL (which is not spec-compliant)
-	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(authorizationServerUrl + "/.well-known/oauth-authorization-server")
+	// As a last resort, well try to append (instead of insert) both well-known paths to the authorization server URL (which is not spec-compliant)
+	as := strings.TrimSuffix(authorizationServerUrl, "/")
+	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(as + "/.well-known/oauth-authorization-server")
 	if err == nil {
 		return asMetadata, nil
 	}
 
-	url, err = GetOpenIdMetadataUrlFromAuthorizationServer(authorizationServerUrl + "/.well-known/openid-configuration")
-	if err != nil {
-		return nil, err
-	}
-	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(url)
+	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(as + "/.well-known/openid-configuration")
 	if err != nil {
 		return nil, err
 	}
