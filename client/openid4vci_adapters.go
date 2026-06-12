@@ -56,11 +56,6 @@ func (a *openid4vciSessionAdapter) RequestAuthorizationCodeFlowPermission(
 ) {
 	a.session.State.OpenID4VCIState = request.OpenID4VCIState
 
-	// Add the state to the authorization parameters so it will be send to the authorization server and back to us, to verify the response belongs to this session.
-	// Use Set, not Add: the non-PAR parameters already carry the same state, and RFC 6749 §3.1 forbids a repeated query parameter.
-	authParams := url.Values(request.AuthorizationParameters)
-	authParams.Set("state", a.session.State.OpenID4VCIState)
-
 	// Construct the URL that the client should open in the browser to start the authorization code flow
 	authRequestUrl, err := url.Parse(request.AuthorizationEndpoint)
 	if err != nil {
@@ -68,6 +63,7 @@ func (a *openid4vciSessionAdapter) RequestAuthorizationCodeFlowPermission(
 		return
 	}
 
+	authParams := url.Values(request.AuthorizationParameters)
 	authRequestUrl.RawQuery = authParams.Encode()
 
 	a.session.State.Status = clientmodels.Status_RequestAuthorizationCode
