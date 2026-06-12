@@ -22,6 +22,7 @@ require (
 	github.com/lestrrat-go/jwx/v3 v3.0.10
 	github.com/mdp/qrterminal v1.0.1
 	github.com/mitchellh/mapstructure v1.5.0
+	github.com/mr-tron/base58 v1.1.3
 	github.com/privacybydesign/gabi v0.0.0-20221212095008-68a086907750
 	github.com/sietseringers/go-sse v0.0.0-20200801161811-e2cf2c63ca50
 	github.com/sirupsen/logrus v1.9.0
@@ -35,6 +36,7 @@ require (
 	golang.org/x/crypto v0.40.0
 	golang.org/x/term v0.33.0
 	golang.org/x/text v0.27.0
+	gorm.io/datatypes v1.2.7
 	gorm.io/driver/mysql v1.5.6
 	gorm.io/driver/postgres v1.5.3
 	gorm.io/driver/sqlserver v1.6.0
@@ -82,7 +84,6 @@ require (
 	github.com/microsoft/go-mssqldb v1.7.2 // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect
 	github.com/minio/sha256-simd v0.1.1 // indirect
-	github.com/mr-tron/base58 v1.1.3 // indirect
 	github.com/multiformats/go-multihash v0.0.11 // indirect
 	github.com/nightlyone/lockfile v1.0.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
@@ -106,6 +107,5 @@ require (
 	gopkg.in/ini.v1 v1.66.6 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/datatypes v1.2.7 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
