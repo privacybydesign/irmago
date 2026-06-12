@@ -299,7 +299,9 @@ func (r *sqlcipherRows) Next(dest []driver.Value) error {
 		case C.SQLITE_FLOAT:
 			dest[i] = float64(C.sqlite3_column_double(r.stmt.stmt, C.int(i)))
 		case C.SQLITE_TEXT:
-			text := C.GoString((*C.char)(unsafe.Pointer(C.sqlite3_column_text(r.stmt.stmt, C.int(i)))))
+			n := C.sqlite3_column_bytes(r.stmt.stmt, C.int(i))
+			ptr := C.sqlite3_column_text(r.stmt.stmt, C.int(i))
+			text := string(C.GoBytes(unsafe.Pointer(ptr), n))
 			if t, err := parseDateTime(text); err == nil {
 				dest[i] = t
 			} else {
