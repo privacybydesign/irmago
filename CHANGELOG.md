@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DeleteAll` now also clears the EUDI storage and database contents
 - `yivi` top-level command line tool that wraps the existing `irma` command (container image published as `ghcr.io/privacybydesign/yivi`); the existing `irma` command remains available as `yivi irma ...`
 - Disclosure UI improvements: support for attribute group headers, credential images shown during disclosure, and a more reliable selection of the requestor's display name
+- ISO/IEC 18013-5 mdoc CBOR/COSE foundation in the new `eudi/credentials/mdoc` package: canonical CBOR encode/decode helpers, the tag 24 `EncodedCBOR`, tag 1004 `FullDate` and tag 0 `DateTime` types, COSE_Key (EC2/P-256) ⇄ ECDSA ⇄ JWK conversion, and `COSE_Sign1` sign/verify wrappers with `x5chain` support (validated against the ISO 18013-5 Annex D test vectors)
 
 ### Changed
 - Requests using `irma.HTTPTransport` have a doubled response timeout (20 seconds) to accommodate for slow and/or foreign connections
