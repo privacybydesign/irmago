@@ -9,6 +9,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
+	"github.com/privacybydesign/irmago/eudi/didkey"
 )
 
 type CryptographicBindingMethod string
@@ -16,6 +17,7 @@ type CryptographicBindingMethod string
 const (
 	CryptographicBindingMethod_JWK     CryptographicBindingMethod = "jwk"
 	CryptographicBindingMethod_DID_KEY CryptographicBindingMethod = "did:key"
+	CryptographicBindingMethod_DID_JWK CryptographicBindingMethod = "did:jwk"
 	CryptographicBindingMethod_COSE    CryptographicBindingMethod = "cose_key"
 )
 
@@ -92,6 +94,12 @@ func (b *JwtProofBuilder) Build(privKey *ecdsa.PrivateKey) (any, error) {
 		// For JWK method, include the public key in the JWT header
 		headers.Set(jws.JWKKey, pubJwk)
 	case CryptographicBindingMethod_DID_KEY:
+		did, err := didkey.Create(privKey.PublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create did:key from public key: %v", err)
+		}
+		headers.Set(jws.KeyIDKey, did)
+	case CryptographicBindingMethod_DID_JWK:
 		// TODO: the issuer should be a `did:web:...` reference. We need to perform some kind of check somewhere to ensure that the issuer DID is actually controlled by the issuer, otherwise an attacker could generate a random DID and include it in the proof JWT to trick the client into using a key that is not actually controlled by the issuer
 		didBuilder := didjwk.DocumentBuilder{}
 		did, err := didBuilder.FromJwk(pubJwk)

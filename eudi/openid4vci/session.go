@@ -571,6 +571,8 @@ func getCredentialRequestPreferences(c metadata.CredentialConfiguration) *sessio
 			cryptoBindingMethod = proofs.CryptographicBindingMethod_JWK
 		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) {
 			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_KEY
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_JWK) {
+			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_JWK
 		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_COSE) {
 			cryptoBindingMethod = proofs.CryptographicBindingMethod_COSE
 		}

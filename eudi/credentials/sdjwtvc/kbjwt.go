@@ -12,6 +12,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
+	"github.com/privacybydesign/irmago/eudi/didkey"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -270,13 +271,28 @@ func resolveHolderKey(cnf *CnfField) (jwk.Key, error) {
 }
 
 // resolveKeyFromDid extracts a public key from a DID URL.
-// Currently supports did:jwk where the key is base64url-encoded in the DID itself.
+// Currently supports did:key and did:jwk where the key is base64url-encoded in the DID itself.
 func resolveKeyFromDid(kid string) (jwk.Key, error) {
 	if strings.HasPrefix(kid, didjwk.Prefix) || strings.HasPrefix(strings.SplitN(kid, "#", 2)[0], didjwk.Prefix) {
 		key, err := didjwk.Resolve(kid)
 		if err != nil {
 			return nil, err
 		}
+		// Store the kid (DID URL) on the key so callers can use it for lookups
+		key.Set(jwk.KeyIDKey, kid)
+		return key, nil
+	} else if strings.HasPrefix(kid, didkey.Prefix) {
+		pubkey, err := didkey.Resolve(kid)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create a JWK from the resolved public key
+		key, err := jwk.Import(pubkey)
+		if err != nil {
+			return nil, err
+		}
+
 		// Store the kid (DID URL) on the key so callers can use it for lookups
 		key.Set(jwk.KeyIDKey, kid)
 		return key, nil
