@@ -1,0 +1,55 @@
+{
+  "path": "/vct/house",
+  "credentials": ["HouseCredentialSdJwt"],
+  "document": {
+    "name": "House Possession Credential (SD-JWT)",
+    "description": "VCT metadata for house possession SD-JWT credential",
+    "language": "en",
+    "display": [
+      { "locale": "en", "name": "House Possession Credential (SD-JWT)" }
+    ],
+    "claims": [
+      {
+        "path": ["owner_name"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Owner Name" },
+          { "locale": "nl", "label": "Eigenaar" }
+        ]
+      },
+      {
+        "path": ["address"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Address" },
+          { "locale": "nl", "label": "Adres" }
+        ]
+      },
+      {
+        "path": ["address", "street"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Street" },
+          { "locale": "nl", "label": "Straat" }
+        ]
+      },
+      {
+        "path": ["address", "city"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "City" },
+          { "locale": "nl", "label": "Stad" }
+        ]
+      },
+      {
+        "path": ["address", "country"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Country" },
+          { "locale": "nl", "label": "Land" }
+        ]
+      }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

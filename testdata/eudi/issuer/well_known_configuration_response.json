@@ -1,0 +1,57 @@
+{
+  "credential_issuer": "<BASE_URL>/b0ce4f83-1946-4037-b13c-641191fd3214",
+  "authorization_servers": [
+    "<BASE_URL>"
+  ],
+  "credential_endpoint": "<BASE_URL>/b0ce4f83-1946-4037-b13c-641191fd3214/vci/credential",
+  "notification_endpoint": "<BASE_URL>/b0ce4f83-1946-4037-b13c-641191fd3214/vci/notification",
+  "nonce_endpoint": "<BASE_URL>/b0ce4f83-1946-4037-b13c-641191fd3214/vci/nonce",
+  "display": [
+    {
+      "name": "Yivi Wallet",
+      "locale": "en-US",
+      "logo": {
+        "url": "<BASE_URL>/storage/edf50f11-4941-4dd4-a4df-8c112d54b51e"
+      }
+    }
+  ],
+  "credential_configurations_supported": {
+    "employee-badge": {
+      "format": "dc+sd-jwt",
+      "scope": "employee-badge",
+      "cryptographic_binding_methods_supported": [
+        "jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "display": [
+        {
+          "name": "Employee Badge",
+          "description": "Employee Badge Credential",
+          "locale": "en-US",
+          "background_color": "#FFFFFF",
+          "text_color": "#000000",
+          "background_image": {
+            "uri": "identity-card.jpg"
+          },
+          "logo": {
+            "uri": "logo.jpg"
+          }
+        }
+      ],
+      "vct": "<BASE_URL>/client-1/credentials-metadata/vct/employee-badge"
+    }
+  },
+  "authorization_server": "<BASE_URL>",
+  "batch_credential_issuance": {
+    "batch_size": 10
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "path": "/vct/eduid",
+  "credentials": ["EduIdCredentialSdJwt"],
+  "document": {
+    "name": "eduID",
+    "description": "eduID indicates affiliation with an institute of higher education or research",
+    "language": "en",
+    "display": [
+      { "locale": "en", "name": "eduID" }
+    ],
+    "claims": [
+      {
+        "path": ["schac_home_organization"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Organization" },
+          { "locale": "nl", "label": "Instelling" }
+        ]
+      },
+      {
+        "path": ["name"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Name" },
+          { "locale": "nl", "label": "Naam" }
+        ]
+      },
+      {
+        "path": ["given_name"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Given name" },
+          { "locale": "nl", "label": "Voornaam" }
+        ]
+      },
+      {
+        "path": ["family_name"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Family name" },
+          { "locale": "nl", "label": "Achternaam" }
+        ]
+      },
+      {
+        "path": ["email"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "E-mail" },
+          { "locale": "nl", "label": "E-mail" }
+        ]
+      },
+      {
+        "path": ["eduperson_scoped_affiliation"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Affiliation (scoped)" },
+          { "locale": "nl", "label": "Betrekking (in relatie)" }
+        ]
+      },
+      {
+        "path": ["eduperson_assurance"],
+        "sd": "never",
+        "display": [
+          { "locale": "en", "label": "Assurance" },
+          { "locale": "nl", "label": "Bevestiging" }
+        ]
+      },
+      {
+        "path": ["is_student"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "IsStudent" },
+          { "locale": "nl", "label": "IsStudent" }
+        ]
+      },
+      {
+        "path": ["is_faculty"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "IsFaculty" },
+          { "locale": "nl", "label": "IsFaculteitslid" }
+        ]
+      },
+      {
+        "path": ["is_member"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "IsMember" },
+          { "locale": "nl", "label": "IsLid" }
+        ]
+      },
+      {
+        "path": ["is_staff"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "IsStaff" },
+          { "locale": "nl", "label": "IsStaf" }
+        ]
+      },
+      {
+        "path": ["is_alum"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "IsAlumnus" },
+          { "locale": "nl", "label": "IsAlumnus" }
+        ]
+      },
+      {
+        "path": ["is_affiliate"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "IsAffiliate" },
+          { "locale": "nl", "label": "IsVerbonden" }
+        ]
+      },
+      {
+        "path": ["is_employee"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "IsEmployee" },
+          { "locale": "nl", "label": "IsMedewerker" }
+        ]
+      },
+      {
+        "path": ["is_library-walk-in"],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "IsLibraryWalkIn" },
+          { "locale": "nl", "label": "IsBibliotheekBezoeker" }
+        ]
+      }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

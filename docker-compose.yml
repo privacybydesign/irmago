@@ -25,11 +25,13 @@ services:
     depends_on:
       - postgres
     volumes:
-      - ./server/keyshare/schema.sql:/schema.sql
-      - ./server/keyshare/cleanup.sql:/cleanup.sql
+      - ./irma/server/keyshare/schema.sql:/schema.sql
+      - ./irma/server/keyshare/cleanup.sql:/cleanup.sql
     # We have to wait until the database is up and running.
     # Database might already be running, so we need to do a cleanup first.
-    command: /bin/sh -c "sleep 5 && psql -f cleanup.sql && psql -f schema.sql"
+    # Wait for postgres to be ready before running the schema scripts; a fixed
+    # sleep is flaky on cold CI runners.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -f cleanup.sql && psql -f schema.sql"
   mysql:
     image: mysql:8
     environment:
@@ -78,29 +80,42 @@ services:
 
   # Service to run unit tests
   test:
-    image: golang:1
+    build:
+      dockerfile: Dockerfile.test
     # Add a test profile to prevent this service to be included when running docker-compose up.
     profiles:
       - test
     volumes:
       - .:/irmago
     depends_on:
-      - eudi_verifier
-      - eudi_verifier_jwt
-      - postgres
-      - mysql
-      - sqlserver
-      - mailhog
+      eudi_openid4vp:
+        condition: service_started
+      eudi_openid4vp_jwt:
+        condition: service_started
+      veramo_openid4vp:
+        condition: service_healthy
+      tls_proxy:
+        condition: service_started
+      postgres:
+        condition: service_started
+      mysql:
+        condition: service_started
+      sqlserver:
+        condition: service_started
+      mailhog:
+        condition: service_started
+    environment:
+      CGO_ENABLED: "1"
     # The tests assume postgres and mailhog can be accessed on localhost. Therefore, we use host networking.
     network_mode: host
     working_dir: /irmago
-    entrypoint: go test -p 1
+    entrypoint: ["sh", "-c", "cp /irmago/testdata/configurations/certs/localhost.crt /usr/local/share/ca-certificates/ && update-ca-certificates && exec go test -p 1 \"$@\"", "--"]
     command: ./...
 
   # Service to run the 'irma' command line tool
-  irma:
+  yivi:
     build: .
-    image: privacybydesign/irma:latest
+    image: privacybydesign/yivi:latest
     # Add a run profile to prevent this service to be included when running docker-compose up.
     profiles:
       - run
@@ -114,10 +129,255 @@ services:
     networks:
       - irma-net
 
-  # Eudi openid4vp verifier service 
-  eudi_verifier:
+  # OpenID4VCI issuer for integration tests (eduwallet/veramo-agent)
+  veramo_openid4vci_postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: testpassword
+    networks:
+      irma-net:
+        aliases:
+          - veramo-openid4vci-postgres.localhost
+    ports:
+      - 5434:5432
+
+  veramo_openid4vci_postgres_init:
+    image: postgres:16-bookworm
+    environment:
+      PGHOST: veramo-openid4vci-postgres.localhost
+      PGUSER: postgres
+      PGPASSWORD: testpassword
+      PGDATABASE: postgres
+    networks:
+      - irma-net
+    depends_on:
+      - veramo_openid4vci_postgres
+    # Wait until the postgres server is actually accepting connections before
+    # issuing the CREATE SCHEMA. A naive `sleep 3` is too short on cold CI
+    # runners and causes flaky init failures.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -c 'CREATE SCHEMA IF NOT EXISTS agent'"
+
+  veramo_openid4vci_mock_authorization_server:
+    build:
+      context: ./testdata/openid4vci-issuer/mock-as
+    environment:
+      LISTEN_ADDR: "0.0.0.0:9090"
+      EXTERNAL_URL: "http://localhost:9090"
+    networks:
+      irma-net:
+        aliases:
+          - mock-authorization-server.localhost
+    ports:
+      - 9090:9090
+
+  veramo_openid4vci:
+    build:
+      context: https://github.com/eduwallet/veramo-agent.git#v1.4.1
+    command: ["yarn", "start"]
+    extra_hosts:
+      - "localhost:host-gateway"
+    depends_on:
+      veramo_openid4vci_postgres_init:
+        condition: service_completed_successfully
+      veramo_openid4vci_mock_authorization_server:
+        condition: service_started
+    volumes:
+      - ./testdata/openid4vci-issuer/conf:/app/conf
+    environment:
+      NODE_ENV: development
+      DB_TYPE: postgres
+      DB_HOST: veramo-openid4vci-postgres.localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: testpassword
+      DB_NAME: postgres
+      DB_SCHEMA: agent
+      PORT: 3000
+      LISTEN_ADDRESS: 0.0.0.0
+      BASEURL: https://localhost:8443
+      PASSPHRASE: abcdefghijklmnopqrstuvwxyz012345
+      CONF_PATH: conf
+    networks:
+      irma-net:
+        aliases:
+          - veramo-openid4vci.localhost
+
+  # EUDI Python PID issuer authorization server (companion to eudi_pid_issuer_py).
+  # Issues pre-authorized codes via POST /preauth_generate (used internally by the
+  # backend's /credentialOfferReq2 endpoint).
+  eudi_pid_issuer_py_as:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-issuer-oidc-py:0.9.4
+    volumes:
+      - ./testdata/eudi-pid-issuer-py/as-conf/authorization_config.json:/etc/issuer_config/authorization_config.json:ro
+      - ./testdata/eudi-pid-issuer-py/as-conf/openid-configuration.json:/app/openid-configuration.json:ro
+    networks:
+      irma-net:
+        aliases:
+          - eudi-pid-issuer-py-as.localhost
+    # The python:3.13-slim base has no wget/curl, so probe via urllib.
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/.well-known/openid-configuration').close()\""
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # EUDI Python PID issuer backend (eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py).
+  # Issues PID credentials (vct: urn:eudi:pid:1) — a non-URL vct, in contrast to
+  # the veramo issuer which only emits URL-form vcts.
+  eudi_pid_issuer_py:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py:0.9.4
+    depends_on:
+      eudi_pid_issuer_py_as:
+        condition: service_healthy
+    extra_hosts:
+      - "localhost:host-gateway"
+    volumes:
+      - ./testdata/eudi-pid-issuer-py/conf/config_issuer_backend.yaml:/etc/issuer_config/config_issuer_backend.yaml:ro
+      - ./testdata/eudi-pid-issuer-py/certs/issuer.key:/etc/eudiw/pid-issuer-dev/privKey/issuer.key:ro
+      - ./testdata/eudi-pid-issuer-py/certs/issuer.der:/etc/eudiw/pid-issuer-dev/cert/issuer.der:ro
+      - ./testdata/eudi-pid-issuer-py/certs/metadata_signing.key:/etc/eudiw/pid-issuer-dev/cert/metadata_signing.key:ro
+      - ./testdata/eudi-pid-issuer-py/certs/metadata_signing.pem:/etc/eudiw/pid-issuer-dev/cert/metadata_signing.pem:ro
+      - ./testdata/eudi-pid-issuer-py/certs/nonce_rsa2048.pem:/etc/eudiw/pid-issuer-dev/privKey/nonce_rsa2048.pem:ro
+      - ./testdata/eudi-pid-issuer-py/certs/credential_request.pem:/etc/eudiw/pid-issuer-dev/privKey/credential_request.pem:ro
+      - ./testdata/eudi-pid-issuer-py/trusted-cas:/etc/eudiw/pid-issuer-dev/trusted-cas:ro
+      - ./testdata/configurations/certs/localhost.crt:/etc/issuer_config/tls_proxy_ca.pem:ro
+    environment:
+      ISSUER_CONFIG_PATH: /etc/issuer_config/config_issuer_backend.yaml
+      FLASK_APP: "app:create_app"
+      # Trust the self-signed cert the tls_proxy uses, so the backend can call
+      # back to itself over https when generating credentials.
+      REQUESTS_CA_BUNDLE: /etc/issuer_config/tls_proxy_ca.pem
+      SSL_CERT_FILE: /etc/issuer_config/tls_proxy_ca.pem
+    networks:
+      irma-net:
+        aliases:
+          - eudi-pid-issuer-py.localhost
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/.well-known/openid-credential-issuer').close()\""
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # TLS reverse proxy for the veramo issuer/verifier services and the EUDI Python issuer.
+  tls_proxy:
+    image: nginx:alpine
+    depends_on:
+      veramo_openid4vci:
+        condition: service_started
+      veramo_openid4vp:
+        condition: service_started
+      # Wait for the Python issuer to be fully responsive before exposing it.
+      # Without service_healthy, nginx (and any test downstream of tls_proxy)
+      # can start before the issuer is accepting requests on cold runners.
+      eudi_pid_issuer_py:
+        condition: service_healthy
+    volumes:
+      - ./testdata/configurations/certs/nginx-tls-proxy.conf:/etc/nginx/nginx.conf:ro
+      - ./testdata/configurations/certs/localhost.crt:/etc/nginx/certs/localhost.crt:ro
+      - ./testdata/configurations/certs/localhost.key:/etc/nginx/certs/localhost.key:ro
+      - ./testdata/openid4vci-issuer/logos:/logos:ro
+    networks:
+      irma-net:
+        aliases:
+          - tls-proxy.localhost
+    ports:
+      - 8443:443
+      - 8444:444
+
+  # OpenID4VP verifier for integration tests (eduwallet/veramo-verifier)
+  veramo_openid4vp_postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: testpassword
+    networks:
+      irma-net:
+        aliases:
+          - veramo-openid4vp-postgres.localhost
+    ports:
+      - 5435:5432
+
+  veramo_openid4vp_postgres_init:
+    image: postgres:16-bookworm
+    environment:
+      PGHOST: veramo-openid4vp-postgres.localhost
+      PGUSER: postgres
+      PGPASSWORD: testpassword
+      PGDATABASE: postgres
+    networks:
+      - irma-net
+    depends_on:
+      - veramo_openid4vp_postgres
+    # Wait until the postgres server is actually accepting connections before
+    # issuing the CREATE SCHEMA. A naive `sleep 3` is too short on cold CI
+    # runners and causes flaky init failures.
+    command: /bin/sh -c "until pg_isready -q; do sleep 1; done && psql -c 'CREATE SCHEMA IF NOT EXISTS verifier'"
+
+  veramo_openid4vp:
+    build:
+      context: https://github.com/eduwallet/veramo-verifier.git#v1.6.0
+      dockerfile_inline: |
+        FROM node:20-alpine
+        WORKDIR /app
+        COPY package.json yarn.lock .yarnrc.yml ./
+        RUN yarn install
+        COPY . .
+        # Workaround for https://github.com/eduwallet/veramo-verifier/issues/XXX:
+        # initialiseKey() doesn't set identifier.keys on the in-memory object after
+        # creating a new DID, causing "Missing keys or identifier" on a fresh DB.
+        RUN sed -i '/await prepo.save(pKey);/a\        identifier.keys = [dbKey];' src/dids/Store.ts
+        CMD ["yarn", "start"]
+    extra_hosts:
+      - "localhost:host-gateway"
+    depends_on:
+      veramo_openid4vp_postgres_init:
+        condition: service_completed_successfully
+      veramo_openid4vci:
+        condition: service_started
+    volumes:
+      - ./testdata/openid4vp-verifier/conf:/app/conf
+      - ./testdata/configurations/certs/localhost.crt:/usr/local/share/ca-certificates/localhost.crt:ro
+    environment:
+      NODE_ENV: development
+      NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/localhost.crt
+      DEBUG: "verifier:*"
+      DB_HOST: veramo-openid4vp-postgres.localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: testpassword
+      DB_NAME: postgres
+      PORT: 5000
+      LISTEN_ADDRESS: 0.0.0.0
+      BASEURL: https://localhost:8444
+      PASSPHRASE: abcdefghijklmnopqrstuvwxyz012345
+      ADMIN_BEARER_TOKEN: test-verifier-admin-token
+      CONF_PATH: conf
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 30s
+    networks:
+      irma-net:
+        aliases:
+          - veramo-openid4vp.localhost
+    ports:
+      - 8891:5000
+
+  # Eudi openid4vp verifier service (eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt)
+  eudi_openid4vp:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.6.0
-    container_name: eudi_verifier
+    container_name: eudi_openid4vp
     ports:
       - "8089:8089"
     volumes:
@@ -137,9 +397,9 @@ services:
       - VERIFIER_CLIENTIDPREFIX=x509_san_dns
 
   # Eudi openid4vp verifier service with direct_post.jwt enabled
-  eudi_verifier_jwt:
+  eudi_openid4vp_jwt:
     image: ghcr.io/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt:v0.6.0
-    container_name: eudi_verifier_jwt
+    container_name: eudi_openid4vp_jwt
     ports:
       - "8090:8090"
     volumes:

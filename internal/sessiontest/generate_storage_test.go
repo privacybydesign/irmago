@@ -8,11 +8,15 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/gabi/signed"
-	irma "github.com/privacybydesign/irmago"
+	rootpkg "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/client"
+	"github.com/privacybydesign/irmago/client/clientsettings"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
-	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -41,16 +45,18 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	keyshareServer := testkeyshare.StartKeyshareServerWithDB(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
 	defer keyshareServer.Stop()
 
-	client, storagePath := createClientWithStoragePath(t)
+	c, storagePath, sessionHandler := createClientWithStoragePath(t)
 
 	// 1. Issue idemix-only credential (MijnOverheid.fullName)
-	performIrmaIssuanceSession(t, client, irmaServer, createMijnOverheidIssuanceRequest())
+	issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
+	awaitSessionState(t, sessionHandler)
 
 	// 2. Issue combined idemix + sd-jwt credential (test.test.email)
-	performIrmaIssuanceSession(t, client, irmaServer, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	issue(t, irmaServer, c, sessionHandler, 2, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	awaitSessionState(t, sessionHandler)
 
 	// 3. Issue singleton credential
-	performIrmaIssuanceSession(t, client, irmaServer, &irma.IssuanceRequest{
+	issue(t, irmaServer, c, sessionHandler, 3, &irma.IssuanceRequest{
 		DisclosureRequest: irma.DisclosureRequest{
 			BaseRequest: irma.BaseRequest{LDContext: irma.LDContextIssuanceRequest},
 		},
@@ -63,43 +69,46 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 			},
 		},
 	})
+	awaitSessionState(t, sessionHandler)
 
 	// Verify credentials are present
-	credentialInfoList := client.CredentialInfoList()
-	t.Logf("Credentials after issuance: %d", len(credentialInfoList))
-	for _, cred := range credentialInfoList {
-		t.Logf("  - %s (format: %s, hash: %s)", cred.Identifier(), cred.CredentialFormat, cred.Hash)
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	t.Logf("Credentials after issuance: %d", len(creds))
+	for _, cred := range creds {
+		t.Logf("  - %s", cred.CredentialId)
 	}
 
 	// 4. Perform IRMA disclosure session
-	performIrmaDisclosureSession(t, client, irmaServer)
+	performIrmaDisclosureSession(t, c, 4, sessionHandler, irmaServer)
 
 	// 5. Perform IRMA signature session
-	performIrmaSignatureSession(t, client, irmaServer)
+	performIrmaSignatureSession(t, c, 5, sessionHandler, irmaServer)
 
 	// 6. Perform OpenID4VP disclosure sessions (direct_post and direct_post.jwt)
-	discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPost_Host)
-	discloseOverOpenID4VP(t, client, testdata.OpenID4VP_DirectPostJwt_Host)
+	discloseOverOpenID4VP(t, c, 6, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+	discloseOverOpenID4VP(t, c, 7, sessionHandler, testdata.OpenID4VP_DirectPostJwt_Host)
 
 	// Log final state
-	logs, err := client.LoadNewestLogs(100)
+	logs, err := c.LoadNewestLogs(100)
 	require.NoError(t, err)
 	t.Logf("Total log entries: %d", len(logs))
 	for _, log := range logs {
 		t.Logf("  - type=%s", log.Type)
 	}
 
-	credentialInfoList = client.CredentialInfoList()
-	t.Logf("Final credentials: %d", len(credentialInfoList))
-	for _, cred := range credentialInfoList {
-		t.Logf("  - %s (format: %s, hash: %s)", cred.Identifier(), cred.CredentialFormat, cred.Hash)
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	t.Logf("Final credentials: %d", len(creds))
+	for _, cred := range creds {
+		t.Logf("  - %s", cred.CredentialId)
 	}
 
 	// Close client to flush database
-	require.NoError(t, client.Close())
+	require.NoError(t, c.Close())
 
 	// Copy the storage to a versioned subdirectory
-	versionDir := filepath.Join(outputDir, "v"+irma.Version)
+	versionDir := filepath.Join(outputDir, "v"+rootpkg.Version)
 	require.NoError(t, common.EnsureDirectoryExists(versionDir))
 
 	copyFile(t, filepath.Join(storagePath, "db2"), filepath.Join(versionDir, "bbolt_client_db"))
@@ -114,7 +123,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 
 	metadata := map[string]any{
 		"description": "Client storage generated for regression testing",
-		"credentials": credentialInfoList,
+		"credentials": creds,
 		"logs":        logs,
 		"aes_key":     "asdfasdfasdfasdfasdfasdfasdfasdf",
 	}
@@ -125,7 +134,7 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	fmt.Printf("Storage written to %s\n", versionDir)
 }
 
-func createClientWithStoragePath(t *testing.T) (*irmaclient.Client, string) {
+func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -133,11 +142,12 @@ func createClientWithStoragePath(t *testing.T) (*irmaclient.Client, string) {
 	storageFolder := test.CreateTestStorage(t)
 	storagePath := filepath.Join(storageFolder, "client")
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
+	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
 	require.NoError(t, common.CopyDirectory(filepath.Join(path, "irma_configuration"), filepath.Join(storagePath, "irma_configuration")))
-	require.NoError(t, common.CopyDirectory(filepath.Join(path, "eudi_configuration"), filepath.Join(storagePath, "eudi_configuration")))
+	require.NoError(t, common.EnsureDirectoryExists(eudiAppDataPath))
 
-	certsPath := filepath.Join(storagePath, "eudi_configuration", "issuers", "certs")
+	certsPath := filepath.Join(storagePath, "eudi", "issuers", "certs")
 	require.NoError(t, common.EnsureDirectoryExists(certsPath))
 	require.NoError(t, common.SaveFile(filepath.Join(certsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes))
 
@@ -150,14 +160,17 @@ func createClientWithStoragePath(t *testing.T) (*irmaclient.Client, string) {
 	signer := test.LoadSigner(t, privateKey)
 
 	clientHandler := irmaclient.NewMockClientHandler()
-	client, err := irmaclient.New(storagePath, irmaConfigurationPath, clientHandler, signer, aesKey)
+	sessionHandler := &MockSessionHandler{
+		SessionChan: make(chan clientmodels.SessionState, 10),
+	}
+	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey)
 	require.NoError(t, err)
 
-	client.SetPreferences(irmaclient.Preferences{DeveloperMode: true})
-	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
+	c.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
-	return client, storagePath
+	return c, storagePath, sessionHandler
 }
 
 func copyFile(t *testing.T, src, dst string) {

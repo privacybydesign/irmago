@@ -27,6 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install sqlcipher
+        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -40,8 +43,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: irma-${{ matrix.os }}-${{ matrix.arch }}
-          path: build/irma
+          name: yivi-${{ matrix.os }}-${{ matrix.arch }}
+          path: build/yivi
 
   docker-build:
     runs-on: ubuntu-latest
@@ -50,16 +53,18 @@ jobs:
 
       # We only run the build stage to prevent that the IRMA schemes are downloaded.
       - name: Run Dockerfile build stage
-        run: docker build -t privacybydesign/irma:build --target build .
+        run: docker build -t privacybydesign/yivi:build --target build .
 
       - name: Test Docker image
-        # Because we have only run the build stage, we have to explicitly set irma as entrypoint.
-        run: docker run --entrypoint irma privacybydesign/irma:build version
-
+        # Because we have only run the build stage, we have to explicitly set yivi as entrypoint.
+        run: docker run --entrypoint yivi privacybydesign/yivi:build version
   lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install sqlcipher
+      run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
 
     - name: Clean Go toolchain module cache
       run: rm -rf  /opt/hostedtoolcache/go
@@ -85,7 +90,7 @@ jobs:
       run: go install github.com/client9/misspell/cmd/misspell@latest
       
     - name: Run misspell
-      run: misspell -error .
+      run: find . -type f -not -path './testdata/*.json' | xargs misspell -error -i "adres,instelling,relatie"
 
     - name: Install staticcheck
       run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
@@ -95,9 +100,17 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # The sessiontest package hard-codes listeners on 127.0.0.1:48680-48699.
+      # Those ports sit inside Linux's default ephemeral source-port range
+      # (32768-60999), so an earlier subtest's outgoing connection can land a
+      # TIME_WAIT socket on one of them and cause a later ListenAndServe to
+      # fail with EADDRINUSE. The test service uses network_mode: host, so
+      # setting this on the runner applies to the container.
+      - name: Reserve test port range from ephemeral allocation
+        run: sudo sysctl -w net.ipv4.ip_local_port_range="48700 60999"
       - name: Run all unit tests
         run: docker compose run test -v ./...
 
@@ -114,12 +127,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install sqlcipher
+        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
+
       - name: Run integration test
         uses: ./.github/actions/integration-test
         with:
           test-ref: ${{ github.ref }}
           irma-server-artifact: https://github.com/privacybydesign/irmago/releases/download/${{ matrix.irma-server }}/irma-linux-amd64
-          keyshare-server-artifact: irma-linux-amd64 # Current build
+          keyshare-server-artifact: yivi-linux-amd64 # Current build
 
   integration-test-serverside: # Checks whether IRMA server interacts with older irmaclients
     needs: build
@@ -135,8 +151,8 @@ jobs:
         uses: ./.github/actions/integration-test
         with:
           test-ref: ${{ matrix.irmaclient-ref }}
-          irma-server-artifact: irma-linux-amd64 # Current build
-          keyshare-server-artifact: irma-linux-amd64 # Current build
+          irma-server-artifact: yivi-linux-amd64 # Current build
+          keyshare-server-artifact: yivi-linux-amd64 # Current build
 
   analyze:
     # Add integration tests as dependencies to make sure that PRs are not merged if they fail.

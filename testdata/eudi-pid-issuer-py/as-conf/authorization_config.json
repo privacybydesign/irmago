@@ -1,0 +1,199 @@
+{
+  "logging": {
+    "version": 1,
+    "disable_existing_loggers": false,
+    "root": { "handlers": ["console"], "level": "DEBUG" },
+    "loggers": { "idp": { "level": "DEBUG" } },
+    "handlers": {
+      "console": {
+        "class": "logging.StreamHandler",
+        "stream": "ext://sys.stdout",
+        "formatter": "default"
+      }
+    },
+    "formatters": { "default": { "format": "%(asctime)s %(name)s %(levelname)s %(message)s" } }
+  },
+  "port": 5000,
+  "domain": "localhost:8443/eudi-pid-issuer-py/oidc",
+  "server_name": "{domain}",
+  "base_url": "https://localhost:8443/eudi-pid-issuer-py/oidc",
+  "authorization_redirect_url": "https://localhost:8443/eudi-pid-issuer-py/auth_choice",
+  "op": {
+    "server_info": {
+      "add_ons": {
+        "pkce": {
+          "function": "idpyoidc.server.oauth2.add_on.pkce.add_support",
+          "kwargs": { "essential": false, "code_challenge_method": "S256 S384 S512" }
+        },
+        "dpop": {
+          "function": "idpyoidc.server.oauth2.add_on.dpop.add_support",
+          "kwargs": {
+            "dpop_signing_alg_values_supported": ["RS256", "ES256"],
+            "allowed_htu": [
+              "https://localhost:8443/eudi-pid-issuer-py/oidc/token"
+            ]
+          }
+        }
+      },
+      "authz": {
+        "class": "idpyoidc.server.authz.AuthzHandling",
+        "kwargs": {
+          "grant_config": {
+            "usage_rules": {
+              "authorization_code": {
+                "supports_minting": ["access_token", "refresh_token"],
+                "max_usage": 1,
+                "expires_in": 3600
+              },
+              "access_token": { "expires_in": 3600 },
+              "refresh_token": {
+                "supports_minting": ["access_token", "refresh_token"],
+                "expires_in": 86400
+              }
+            },
+            "expires_in": 2592000
+          }
+        }
+      },
+      "authentication": {
+        "user": {
+          "acr": "urn:oasis:names:tc:SAML:2.0:ac:classes:InternetProtocolPassword",
+          "class": "idpyoidc.server.user_authn.user.EudiwIssuer"
+        }
+      },
+      "preference": {
+        "subject_types_supported": ["public", "pairwise"],
+        "grant_types_supported": [
+          "authorization_code",
+          "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          "refresh_token",
+          "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+        ],
+        "request_object_signing_alg_values_supported": ["RS256", "ES256"]
+      },
+      "claims_interface": {
+        "class": "idpyoidc.server.session.claims.ClaimsInterface",
+        "kwargs": {}
+      },
+      "cookie_handler": {
+        "class": "idpyoidc.server.cookie_handler.CookieHandler",
+        "kwargs": {
+          "keys": {
+            "private_path": "private/cookie_jwks.json",
+            "key_defs": [
+              { "type": "OCT", "use": ["enc"], "kid": "enc" },
+              { "type": "OCT", "use": ["sig"], "kid": "sig" }
+            ],
+            "read_only": false
+          },
+          "name": {
+            "session": "oidc_op",
+            "register": "oidc_op_rp",
+            "session_management": "sman"
+          }
+        }
+      },
+      "endpoint": {
+        "provider_info": {
+          "path": ".well-known/openid-configuration",
+          "class": "idpyoidc.server.oidc.provider_config.ProviderConfiguration",
+          "kwargs": { "client_authn_method": null }
+        },
+        "registration": {
+          "path": "registration",
+          "class": "idpyoidc.server.oidc.registration.Registration",
+          "kwargs": { "client_authn_method": null, "client_secret_expiration_time": 432000 }
+        },
+        "introspection": {
+          "path": "introspection",
+          "class": "idpyoidc.server.oauth2.introspection.Introspection",
+          "kwargs": { "client_authn_method": null, "release": ["username"] }
+        },
+        "authorization": {
+          "path": "authorization",
+          "class": "idpyoidc.server.oidc.authorization.Authorization",
+          "kwargs": {
+            "client_authn_method": null,
+            "response_types_supported": ["code", "token", "id_token", "none"],
+            "response_modes_supported": ["query", "fragment", "form_post"]
+          }
+        },
+        "token": {
+          "path": "token",
+          "class": "idpyoidc.server.oidc.token.Token",
+          "kwargs": {
+            "client_authn_method": [
+              "client_secret_post",
+              "client_secret_basic",
+              "client_secret_jwt",
+              "private_key_jwt",
+              "public",
+              "wallet_attestation",
+              "dpop"
+            ]
+          }
+        },
+        "userinfo": {
+          "path": "userinfo",
+          "class": "idpyoidc.server.oidc.userinfo.UserInfo",
+          "kwargs": { "claim_types_supported": ["normal", "aggregated", "distributed"] }
+        },
+        "pushed_authorization": {
+          "path": "pushed_authorization",
+          "class": "idpyoidc.server.oauth2.pushed_authorization.PushedAuthorization",
+          "kwargs": {
+            "client_authn_method": [
+              "client_secret_post",
+              "client_secret_basic",
+              "client_secret_jwt",
+              "private_key_jwt",
+              "public",
+              "wallet_attestation",
+              "dpop"
+            ]
+          }
+        }
+      },
+      "httpc_params": { "verify": false },
+      "issuer": "https://{domain}",
+      "keys": {
+        "private_path": "private/jwks.json",
+        "key_defs": [
+          { "type": "RSA", "use": ["sig"] },
+          { "type": "EC", "crv": "P-256", "use": ["sig"] }
+        ],
+        "public_path": "static/jwks.json",
+        "read_only": false,
+        "uri_path": "static/jwks.json"
+      },
+      "template_dir": "templates",
+      "token_handler_args": {
+        "jwks_file": "private/token_jwks.json",
+        "code": { "kwargs": { "lifetime": 600 } },
+        "token": {
+          "class": "idpyoidc.server.token.jwt_token.JWTToken",
+          "kwargs": {
+            "lifetime": 3600,
+            "add_claims_by_scope": true,
+            "aud": ["https://example.org/appl"]
+          }
+        },
+        "refresh": {
+          "class": "idpyoidc.server.token.jwt_token.JWTToken",
+          "kwargs": { "lifetime": 3600, "aud": ["https://example.org/appl"] }
+        },
+        "id_token": { "class": "idpyoidc.server.token.id_token.IDToken", "kwargs": {} }
+      },
+      "userinfo": { "class": "idpyoidc.server.user_info.UserInfo" }
+    }
+  },
+  "webserver": {
+    "server_cert": null,
+    "server_key": null,
+    "ca_bundle": null,
+    "verify_user": false,
+    "port": 5000,
+    "domain": "{domain}",
+    "debug": true
+  }
+}

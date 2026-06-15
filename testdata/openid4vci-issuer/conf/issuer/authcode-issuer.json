@@ -1,0 +1,10 @@
+{
+  "name": "authcode-issuer",
+  "baseUrl": "https://localhost:8443/authcode-issuer",
+  "adminToken": "authcode-admin-token",
+  "did": "authcode-issuer-did",
+  "usesNonces": true,
+  "authorizationEndpoint": "http://localhost:9090",
+  "clientId": "issuer-client",
+  "clientSecret": "issuer-client:mock-secret"
+}

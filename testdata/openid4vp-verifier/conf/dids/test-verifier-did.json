@@ -1,0 +1,5 @@
+{
+  "alias": "test-verifier-did",
+  "provider": "did:jwk",
+  "type": "Secp256r1"
+}

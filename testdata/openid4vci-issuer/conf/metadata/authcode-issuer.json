@@ -1,0 +1,74 @@
+{
+  "issuer": "https://localhost:8443/authcode-issuer",
+  "credential_issuer": "https://localhost:8443/authcode-issuer",
+  "credential_configurations_supported": {
+    "TestCredentialSdJwt": {
+      "format": "dc+sd-jwt",
+      "scope": "TestCredentialSdJwt",
+      "extends": "TestCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          { "name": "Test Credential (SD-JWT, Auth Code)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["given_name"], "display": [{ "name": "Given Name", "locale": "en" }, { "name": "Voornaam", "locale": "nl" }] },
+          { "path": ["family_name"], "display": [{ "name": "Family Name", "locale": "en" }, { "name": "Achternaam", "locale": "nl" }] },
+          { "path": ["email"], "display": [{ "name": "Email", "locale": "en" }, { "name": "E-mailadres", "locale": "nl" }] }
+        ]
+      },
+      "display": [
+        {
+          "name": "Test Credential (SD-JWT, Auth Code)",
+          "locale": "en"
+        }
+      ]
+    },
+    "HouseCredentialSdJwt": {
+      "format": "dc+sd-jwt",
+      "scope": "HouseCredentialSdJwt",
+      "extends": "HouseCredential",
+      "cryptographic_binding_methods_supported": ["did:jwk"],
+      "credential_signing_alg_values_supported": ["ES256"],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": ["ES256"]
+        }
+      },
+      "credential_definition": {
+        "type": ["VerifiableCredential", "HouseCredential"],
+        "claims": [
+          { "path": ["owner_name"], "display": [{ "name": "Owner Name", "locale": "en" }, { "name": "Eigenaar", "locale": "nl" }] },
+          { "path": ["address"], "display": [{ "name": "Address", "locale": "en" }, { "name": "Adres", "locale": "nl" }] },
+          { "path": ["address", "street"], "display": [{ "name": "Street", "locale": "en" }, { "name": "Straat", "locale": "nl" }] },
+          { "path": ["address", "city"], "display": [{ "name": "City", "locale": "en" }, { "name": "Stad", "locale": "nl" }] },
+          { "path": ["address", "country"], "display": [{ "name": "Country", "locale": "en" }, { "name": "Land", "locale": "nl" }] }
+        ]
+      },
+      "credential_metadata": {
+        "display": [
+          { "name": "House Possession Credential (SD-JWT, Auth Code)", "locale": "en" }
+        ],
+        "claims": [
+          { "path": ["owner_name"], "display": [{ "name": "Owner Name", "locale": "en" }, { "name": "Eigenaar", "locale": "nl" }] },
+          { "path": ["address"], "display": [{ "name": "Address", "locale": "en" }, { "name": "Adres", "locale": "nl" }] },
+          { "path": ["address", "street"], "display": [{ "name": "Street", "locale": "en" }, { "name": "Straat", "locale": "nl" }] },
+          { "path": ["address", "city"], "display": [{ "name": "City", "locale": "en" }, { "name": "Stad", "locale": "nl" }] },
+          { "path": ["address", "country"], "display": [{ "name": "Country", "locale": "en" }, { "name": "Land", "locale": "nl" }] }
+        ]
+      },
+      "display": [
+        {
+          "name": "House Possession Credential (SD-JWT, Auth Code)",
+          "locale": "en"
+        }
+      ]
+    }
+  }
+}

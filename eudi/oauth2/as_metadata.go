@@ -1,0 +1,189 @@
+package oauth2
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"path"
+	"slices"
+	"strings"
+)
+
+type AuthorizationServerMetadata struct {
+	// RFC 8414 fields
+	Issuer                                             string   `json:"issuer"`
+	AuthorizationEndpoint                              string   `json:"authorization_endpoint"`
+	TokenEndpoint                                      string   `json:"token_endpoint"`
+	JwksUri                                            *string  `json:"jwks_uri,omitempty"`
+	RegistrationEndpoint                               *string  `json:"registration_endpoint,omitempty"`
+	ScopesSupported                                    []string `json:"scopes_supported"`
+	ResponseTypesSupported                             []string `json:"response_types_supported"`
+	ResponseModesSupported                             []string `json:"response_modes_supported,omitempty"`
+	GrantTypesSupported                                []string `json:"grant_types_supported,omitempty"`
+	TokenEndpointAuthMethodsSupported                  []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+	TokenEndpointAuthSigningAlgValuesSupported         []string `json:"token_endpoint_auth_signing_alg_values_supported,omitempty"`
+	ServiceDocumentation                               *string  `json:"service_documentation,omitempty"`
+	UiLocalesSupported                                 []string `json:"ui_locales_supported,omitempty"`
+	OpPolicyUri                                        *string  `json:"op_policy_uri,omitempty"`
+	OpTosUri                                           *string  `json:"op_tos_uri,omitempty"`
+	RevocationEndpoint                                 *string  `json:"revocation_endpoint,omitempty"`
+	RevocationEndpointAuthMethodsSupported             []string `json:"revocation_endpoint_auth_methods_supported,omitempty"`
+	RevocationEndpointAuthSigningAlgValuesSupported    []string `json:"revocation_endpoint_auth_signing_alg_values_supported,omitempty"`
+	IntrospectionEndpoint                              *string  `json:"introspection_endpoint,omitempty"`
+	IntrospectionEndpointAuthMethodsSupported          []string `json:"introspection_endpoint_auth_methods_supported,omitempty"`
+	IntrospectionEndpointAuthSigningAlgValuesSupported []string `json:"introspection_endpoint_auth_signing_alg_values_supported,omitempty"`
+	CodeChallengeMethodsSupported                      []string `json:"code_challenge_methods_supported,omitempty"`
+	PushedAuthorizationRequestEndpoint                 *string  `json:"pushed_authorization_request_endpoint,omitempty"`
+	RequirePushedAuthorizationRequests                 bool     `json:"require_pushed_authorization_requests,omitempty"`
+
+	// RFC 9396 extension for OAuth 2.0 Rich Authorization Requests
+	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported,omitempty"`
+}
+
+type TokenResponse struct {
+	// RFC 6749 fields
+	AccessToken  string  `json:"access_token"`
+	TokenType    string  `json:"token_type"`
+	ExpiresIn    *int    `json:"expires_in,omitempty"`
+	RefreshToken *string `json:"refresh_token,omitempty"`
+	Scope        *string `json:"scope,omitempty"`
+
+	// RFC 9396 extension for OAuth 2.0 Rich Authorization Requests
+	AuthorizationDetails []AuthorizationDetailsResponseRecord `json:"authorization_details,omitempty"`
+}
+
+type ErrorResponse struct {
+	Error            string  `json:"error"`
+	ErrorDescription *string `json:"error_description,omitempty"`
+	ErrorUri         *string `json:"error_uri,omitempty"`
+}
+
+// TokenError is a structured error returned by the Token Endpoint per RFC 6749 §5.2.
+// It implements the error interface so callers can introspect the OAuth2 error code
+// (e.g. "invalid_grant") via errors.As without parsing strings.
+type TokenError struct {
+	StatusCode       int
+	ErrorCode        string
+	ErrorDescription *string
+	ErrorUri         *string
+}
+
+func (e *TokenError) Error() string {
+	desc := ""
+	if e.ErrorDescription != nil {
+		desc = *e.ErrorDescription + " - "
+	}
+	uri := ""
+	if e.ErrorUri != nil {
+		uri = " More info: " + *e.ErrorUri
+	}
+	return fmt.Sprintf("token response returned status code %d, %s%s.%s", e.StatusCode, e.ErrorCode, desc, uri)
+}
+
+type PushedAuthorizationResponse struct {
+	// RFC 9126 fields
+	RequestUri string `json:"request_uri"`
+	ExpiresIn  int    `json:"expires_in"`
+}
+
+type AuthorizationDetailsRequestRecord struct {
+	Type                      string   `json:"type"`
+	CredentialConfigurationId string   `json:"credential_configuration_id"`
+	Locations                 []string `json:"locations,omitempty"`
+}
+
+type AuthorizationDetailsResponseRecord struct {
+	Type                      string   `json:"type"`
+	CredentialConfigurationId string   `json:"credential_configuration_id"`
+	CredentialIdentifiers     []string `json:"credential_identifiers,omitempty"`
+}
+
+func (as *AuthorizationServerMetadata) GetCodeChallengeProvider() CodeChallengeProvider {
+	if slices.Contains(as.CodeChallengeMethodsSupported, "S256") {
+		return &S256CodeChallengeProvider{}
+	} else if slices.Contains(as.CodeChallengeMethodsSupported, "plain") {
+		return &PlainCodeChallengeProvider{}
+	} else {
+		return nil
+	}
+}
+
+func GetOAuthMetadataUrlFromAuthorizationServer(authorizationServer string) (string, error) {
+	return getWellKnownUrlFromAuthorizationServer(authorizationServer, "oauth-authorization-server")
+}
+
+func GetOpenIdMetadataUrlFromAuthorizationServer(authorizationServer string) (string, error) {
+	return getWellKnownUrlFromAuthorizationServer(authorizationServer, "openid-configuration")
+}
+
+func getWellKnownUrlFromAuthorizationServer(authorizationServer string, wellKnownPath string) (string, error) {
+	parsed, err := url.Parse(authorizationServer)
+	if err != nil {
+		return "", err
+	}
+
+	// RFC 8414 §3.1: the well-known segment is inserted between the host and the
+	// issuer's path component (supporting multi-tenant authorization servers).
+	// path.Join cleans duplicate slashes, so a path-bearing issuer doesn't yield "//".
+	asPath := path.Join("/.well-known/"+wellKnownPath, parsed.Path)
+
+	return parsed.Scheme + "://" + parsed.Host + asPath, nil
+}
+
+// TryFetchAuthorizationServerMetadata will try fetching unsigned Authorization Server Metadata from the default OAuth 2.0
+// well-known URL (/.well-known/oauth-authorization-server) first.
+// If that fails, it will try fetching it from the OpenID Connect well-known URL (/.well-known/openid-configuration).
+func TryFetchAuthorizationServerMetadata(authorizationServerUrl string) (*AuthorizationServerMetadata, error) {
+	url, err := GetOAuthMetadataUrlFromAuthorizationServer(authorizationServerUrl)
+	if err != nil {
+		return nil, err
+	}
+	asMetadata, err := fetchUnsignedAuthorizationServerMetadata(url)
+	if err == nil {
+		return asMetadata, nil
+	}
+
+	url, err = GetOpenIdMetadataUrlFromAuthorizationServer(authorizationServerUrl)
+	if err != nil {
+		return nil, err
+	}
+	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(url)
+	if err == nil {
+		return asMetadata, nil
+	}
+
+	// As a last resort, well try to append (instead of insert) both well-known paths to the authorization server URL (which is not spec-compliant)
+	as := strings.TrimSuffix(authorizationServerUrl, "/")
+	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(as + "/.well-known/oauth-authorization-server")
+	if err == nil {
+		return asMetadata, nil
+	}
+
+	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(as + "/.well-known/openid-configuration")
+	if err != nil {
+		return nil, err
+	}
+
+	return asMetadata, nil
+}
+
+func fetchUnsignedAuthorizationServerMetadata(url string) (*AuthorizationServerMetadata, error) {
+	response, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("could not fetch authorization server metadata from %s (status: %d)", url, response.StatusCode)
+	}
+
+	var asMetadata AuthorizationServerMetadata
+	err = json.NewDecoder(response.Body).Decode(&asMetadata)
+	if err != nil {
+		return nil, err
+	}
+
+	return &asMetadata, nil
+}

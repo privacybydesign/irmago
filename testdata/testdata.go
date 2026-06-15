@@ -9,7 +9,6 @@ import (
 	_ "embed"
 	"encoding/asn1"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -24,8 +23,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/privacybydesign/irmago/eudi/openid4vp"
-	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,6 +43,11 @@ var IssuerPubJwkBytes []byte
 //go:embed eudi/issuer_cert_openid4vc_staging_yivi_app.pem
 var IssuerCert_openid4vc_staging_yivi_app_Bytes []byte
 
+// this one is specifically for sdjwtvc tests
+//
+//go:embed eudi/sdjwtvc/issuer_cert_openid4vc_staging_yivi_app.pem
+var SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes []byte
+
 //go:embed eudi/issuer_cert_irma_app.pem
 var IssuerCert_irma_app_Bytes []byte
 
@@ -54,6 +56,15 @@ var IssuerCertChain_irma_app_Bytes []byte
 
 //go:embed eudi/verifier/verifier_scheme_data.json
 var VerifierCertSchemeData string
+
+//go:embed eudi/verifier/ca.crt
+var VerifierCACertBytes []byte
+
+//go:embed eudi/issuer/well_known_configuration_response.json
+var OpenID4VciIssuerWellKnownConfigurationResponse string
+
+//go:embed didweb/eduid-did-document.json
+var ValidDidDocument []byte
 
 type PkiGenerationOptions int
 
@@ -128,37 +139,30 @@ func CreateTestAuthorizationRequestRequest(issuerCert []byte) string {
 }
 
 func CreateTestAuthorizationRequestJWT(hostname string, verifierKey *ecdsa.PrivateKey, verifierCert *x509.Certificate, modifyTokenFunc func(token *jwt.Token)) string {
-	authReq := openid4vp.AuthorizationRequest{
-		Audience: "https://audience",
-		ClientId: "x509_san_dns:" + hostname,
-		DcqlQuery: dcql.DcqlQuery{
-			Credentials: []dcql.CredentialQuery{
+	claims := jwt.MapClaims{
+		"aud":       "https://audience",
+		"client_id": "x509_san_dns:" + hostname,
+		"dcql_query": map[string]any{
+			"credentials": []map[string]any{
 				{
-					Id:     "32f54163-7166-48f1-93d8-ff217bdb0653",
-					Format: "dc+sd-jwt",
-					Claims: []dcql.Claim{
-						{
-							Path: []string{"email"},
-						},
+					"id":     "32f54163-7166-48f1-93d8-ff217bdb0653",
+					"format": "dc+sd-jwt",
+					"claims": []map[string]any{
+						{"path": []string{"email"}},
 					},
 				},
 			},
 		},
-		Nonce:        "nonce",
-		ResponseMode: openid4vp.ResponseMode_DirectPost,
-		ResponseType: string(openid4vp.ResponseType_VpToken),
-		ResponseUri:  "https://response.uri",
-		RedirectUri:  "https://redirect.uri",
-		State:        "state",
+		"nonce":         "nonce",
+		"response_mode": "direct_post",
+		"response_type": "vp_token",
+		"response_uri":  "https://response.uri",
+		"redirect_uri":  "https://redirect.uri",
+		"state":         "state",
 	}
 
-	authReqBytes, _ := json.Marshal(authReq)
-
-	var c jwt.MapClaims
-	json.Unmarshal(authReqBytes, &c)
-
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, c)
-	token.Header["typ"] = openid4vp.AuthRequestJwtTyp
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	token.Header["typ"] = "oauth-authz-req+jwt"
 	token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(verifierCert.Raw)}
 
 	if modifyTokenFunc != nil {
@@ -404,4 +408,13 @@ func WritePrivateKeyToFile(t *testing.T, path string, key *ecdsa.PrivateKey) {
 	}
 	err = pem.Encode(file, pemBlock)
 	require.NoError(t, err)
+}
+
+func GetCredentialOfferEndpointUrl(baseUrl string) string {
+	encodedUrl := url.PathEscape(baseUrl)
+	return "openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22" + encodedUrl + "%2Fb0ce4f83-1946-4037-b13c-641191fd3214%22%2C%22credential_configuration_ids%22%3A%5B%22employee-badge%22%5D%2C%22grants%22%3A%7B%22authorization_code%22%3A%7B%22issuer_state%22%3A%22b0ce4f83-1946-4037-b13c-641191fd3214%22%7D%7D%7D"
+}
+
+func GetWellKnownConfigurationUrl(baseUrl string) string {
+	return strings.ReplaceAll(OpenID4VciIssuerWellKnownConfigurationResponse, "<BASE_URL>", baseUrl)
 }

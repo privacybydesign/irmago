@@ -1,5 +1,5 @@
 name: Build
-description: Builds the irma CLI tool for the given operating system and architecture.
+description: Builds the yivi CLI tool for the given operating system and architecture.
 inputs:
   os:
     description: Operating system to build for
@@ -23,11 +23,11 @@ runs:
 
     - name: Determine artifact output filename
       id: artifact-name-generator
-      run: echo "artifact-name=irma-${{ inputs.os }}-${{ inputs.arch }}${{ inputs.os == 'windows' && '.exe' || '' }}" >> $GITHUB_OUTPUT
+      run: echo "artifact-name=yivi-${{ inputs.os }}-${{ inputs.arch }}${{ inputs.os == 'windows' && '.exe' || '' }}" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Build
-      run: go build -v -a -ldflags '-extldflags "-static"' -o ${{ steps.artifact-name-generator.outputs.artifact-name }} ./irma
+      run: go build -v -a -ldflags '-extldflags "-static"' -o ${{ steps.artifact-name-generator.outputs.artifact-name }} ./yivi
       shell: bash
       env:
         GOOS: ${{ inputs.os }}

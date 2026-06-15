@@ -6,6 +6,38 @@ mkdir -p $DIR
 PRIV_KEY="issuer_ec_priv.pem"
 URI="openid4vc.staging.yivi.app"
 
+json='{
+  "registration":"https://portal.dev/organizations/yivi/",
+  "organization":{
+    "legalName":{
+      "en":"Yivi B.V.",
+      "nl":"Yivi B.V."
+    }
+  },
+  "ap":{
+    "authorized":[
+      {
+        "credential":"test.test.email",
+        "attributes":["email", "domain"]
+      },
+      {
+        "credential":"test.test.mobilephone",
+        "attributes":["mobilephone"]
+      },
+      {
+        "credential":"irma-demo.RU.studentCard",
+        "attributes":["university", "studentCardNumber", "studentID", "level"]
+      },
+      {
+        "credential":"irma-demo.MijnOverheid.studentCard",
+        "attributes":["firstname", "firstnames", "familyname", "prefix"]
+      }
+    ]
+  }
+}
+'
+
+escaped_json=$(echo $json | jq -c | jq -R)
 
 echo "
 [ req ]
@@ -24,11 +56,10 @@ CN 	= $URI
 
 [ v3_req ]
 subjectAltName = @alt_names
-basicConstraints = critical,CA:false
-keyUsage = digitalSignature,keyEncipherment
-extendedKeyUsage = clientAuth
-2.1.123.1 = ASN1:UTF8String:{\\\"registration\\\":\\\"https://portal.dev/organizations/yivi/\\\",\\\"organization\\\":{\\\"legalName\\\":{\\\"en\\\":\\\"Yivi B.V.\\\",\\\"nl\\\":\\\"Yivi B.V.\\\"}},\\\"ap\\\":{\\\"authorized\\\":[{\\\"credential\\\":\\\"test.test.email\\\",\\\"attributes\\\":[\\\"email\\\", \\\"domain\\\"]}, {\\\"credential\\\":\\\"test.test.mobilephone\\\",\\\"attributes\\\":[\\\"mobilephone\\\"]}]}}
-
+basicConstraints = critical,CA:true,pathlen:0
+keyUsage = keyCertSign,cRLSign
+#extendedKeyUsage = clientAuth
+2.1.123.1 = ASN1:UTF8String:$escaped_json
 [ alt_names ]
 URI.0 = https://$URI
 DNS.0 = $URI

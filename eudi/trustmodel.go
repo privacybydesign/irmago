@@ -2,24 +2,21 @@ package eudi
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/eudi/utils"
-	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/sirupsen/logrus"
 )
 
 type TrustModel struct {
-	basePath                          string
+	storageContainer filesystem.FileSystemContainer
+
 	trustedRootCertificates           *x509.CertPool
 	trustedIntermediateCertificates   *x509.CertPool
 	allCerts                          []*x509.Certificate
@@ -27,35 +24,22 @@ type TrustModel struct {
 	revocationListsDistributionPoints []string
 	httpClient                        *http.Client
 	logger                            *logrus.Logger
+	certificateVerificationMode       CertificateVerificationMode
 }
 
-func (tm *TrustModel) GetCertificatePath() string {
-	return filepath.Join(tm.basePath, "certs")
-}
+type CertificateVerificationMode int
 
-func (tm *TrustModel) GetCrlPath() string {
-	return filepath.Join(tm.basePath, "crls")
-}
-
-func (tm *TrustModel) GetLogosPath() string {
-	return filepath.Join(tm.basePath, "logos")
-}
+const (
+	StrictCertificateVerification CertificateVerificationMode = iota
+	DeveloperModeCertificateVerification
+)
 
 func (tm *TrustModel) GetRevocationLists() []*x509.RevocationList {
 	return tm.revocationLists
 }
 
-func (tm *TrustModel) ensureDirectoryExists() error {
-	if err := common.EnsureDirectoryExists(tm.GetCertificatePath()); err != nil {
-		return err
-	}
-	if err := common.EnsureDirectoryExists(tm.GetCrlPath()); err != nil {
-		return err
-	}
-	if err := common.EnsureDirectoryExists(tm.GetLogosPath()); err != nil {
-		return err
-	}
-	return nil
+func (tm *TrustModel) SetCertificateVerificationMode(mode CertificateVerificationMode) {
+	tm.certificateVerificationMode = mode
 }
 
 func (tm *TrustModel) clear() {
@@ -64,16 +48,6 @@ func (tm *TrustModel) clear() {
 	tm.trustedIntermediateCertificates = x509.NewCertPool()
 	tm.revocationLists = []*x509.RevocationList{}
 	tm.revocationListsDistributionPoints = []string{}
-}
-
-func getCrlFileNameForCertDistributionPoint(distPoint string) string {
-	return fmt.Sprintf("%x.crl", sha256.Sum256([]byte(distPoint)))
-}
-
-func (tm *TrustModel) isCrlFileCached(crlFileName string) bool {
-	crlFilePath := filepath.Join(tm.GetCrlPath(), crlFileName)
-	_, err := os.Stat(crlFilePath)
-	return err == nil
 }
 
 func (tm *TrustModel) findCertificateForRevocationList(crl *x509.RevocationList) *x509.Certificate {
@@ -88,44 +62,32 @@ func (tm *TrustModel) findCertificateForRevocationList(crl *x509.RevocationList)
 
 func (tm *TrustModel) readAndVerifyRevocationListsForCert(cert *x509.Certificate, parentCert *x509.Certificate) ([]*x509.RevocationList, error) {
 	var crls []*x509.RevocationList
+	mgr := tm.storageContainer.CertificateRevocationListManager()
 
 	// Loop over the distribution points to get the list of CRLs files to load
 	for _, distPoint := range cert.CRLDistributionPoints {
-		crlFile := getCrlFileNameForCertDistributionPoint(distPoint)
+		if present, err := mgr.Exists(distPoint); err != nil {
+			tm.logger.Warnf("Failed to check presence of CRL for distribution point %q: %v. Skip loading the CRL.", distPoint, err)
+			continue
+		} else if !present {
+			tm.logger.Infof("CRL for distribution point %q not present. Skip loading the CRL.", distPoint)
+			continue
+		}
 
-		crl, err := tm.readRevocationListFromFile(crlFile)
+		crl, err := mgr.Read(distPoint)
 		if err != nil {
-			tm.logger.Warnf("Failed to read CRL file %q for distribution point %q: %v. Skip loading the CRL.", crlFile, distPoint, err)
-
-			// Skip loading this CRL, for instance on first startup
+			tm.logger.Warnf("Failed to read CRL for distribution point %q: %v. Skip loading the CRL.", distPoint, err)
 			continue
 		}
 
 		// Verify the CRL signature using the parent cert
-		err = crl.CheckSignatureFrom(parentCert)
-		if err != nil {
-			tm.logger.Warnf("Failed to verify CRL file %q for distribution point %q: %v. Skip loading the CRL.", crlFile, distPoint, err)
-
-			// Skip loading this CRL, for instance on first startup
+		if err := crl.CheckSignatureFrom(parentCert); err != nil {
+			tm.logger.Warnf("Failed to verify CRL for distribution point %q: %v. Skip loading the CRL.", distPoint, err)
 			continue
 		}
 		crls = append(crls, crl)
 	}
 	return crls, nil
-}
-
-func (tm *TrustModel) readRevocationListFromFile(fileName string) (*x509.RevocationList, error) {
-	crlBytes, err := os.ReadFile(filepath.Join(tm.GetCrlPath(), fileName))
-	if err != nil {
-		return nil, err
-	}
-
-	crl, err := x509.ParseRevocationList(crlBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return crl, nil
 }
 
 func (tm *TrustModel) isCrlValid(crl *x509.RevocationList) bool {
@@ -175,57 +137,85 @@ func (tm *TrustModel) Reload() error {
 	return nil
 }
 
+func (tm *TrustModel) GetSavedTrustChains() ([][]byte, error) {
+	return tm.storageContainer.CertificateManager().GetRawCertificates()
+}
+
 func (tm *TrustModel) loadTrustChains() error {
-	chains, err := filepath.Glob(filepath.Join(tm.GetCertificatePath(), "*.pem"))
+	trustedChainFiles, err := tm.storageContainer.CertificateManager().GetRawCertificates()
 	if err != nil {
 		return err
 	}
-	trustAnchors := make([][]byte, len(chains))
-	for i, trustChainFile := range chains {
-		bts, err := os.ReadFile(trustChainFile)
-		if err != nil {
-			return err
-		}
-		trustAnchors[i] = bts
-	}
-	return tm.addTrustAnchors(trustAnchors...)
+	return tm.addTrustAnchors(trustedChainFiles...)
 }
 
 func (tm *TrustModel) addRevocationListDistributionPoints(distPointUrls ...string) {
 	tm.revocationListsDistributionPoints = append(tm.revocationListsDistributionPoints, distPointUrls...)
 }
 
-func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
-	rootValidationOptions := x509.VerifyOptions{
+func (tm *TrustModel) getRootVerificationOptions(rootCerts *x509.CertPool) x509.VerifyOptions {
+	validationOptions := x509.VerifyOptions{
 		CurrentTime: time.Now(),
-		Roots:       tm.trustedRootCertificates,
-		KeyUsages: []x509.ExtKeyUsage{
-			x509.ExtKeyUsage(x509.KeyUsageCertSign),
-			x509.ExtKeyUsage(x509.KeyUsageCRLSign),
-		},
+		Roots:       rootCerts,
 	}
 
+	if tm.certificateVerificationMode == StrictCertificateVerification {
+		validationOptions.KeyUsages = []x509.ExtKeyUsage{
+			x509.ExtKeyUsage(x509.KeyUsageCertSign),
+			x509.ExtKeyUsage(x509.KeyUsageCRLSign),
+		}
+	}
+
+	return validationOptions
+}
+
+func (tm *TrustModel) getIntermediateCertificateVerificationOptions() x509.VerifyOptions {
+	validationOptions := x509.VerifyOptions{
+		CurrentTime:   time.Now(),
+		Roots:         tm.trustedRootCertificates,
+		Intermediates: tm.trustedIntermediateCertificates,
+	}
+
+	if tm.certificateVerificationMode == StrictCertificateVerification {
+		validationOptions.KeyUsages = []x509.ExtKeyUsage{
+			x509.ExtKeyUsage(x509.KeyUsageCertSign),
+			x509.ExtKeyUsage(x509.KeyUsageCRLSign),
+		}
+	}
+
+	return validationOptions
+}
+
+func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 	for _, bts := range trustAnchors {
 		chain, err := utils.ParsePemCertificateChain(bts)
 		if err != nil {
 			return err
 		}
 
-		// Add the root cert to the root pool
+		// Add the root cert to the root pool. Chains on disk are stored in
+		// leaf-to-root order (matching the convention enforced by
+		// certificateManager.InstallCertificate, where the filename is
+		// derived from chain[0] — the leaf). The root is therefore the
+		// last element, and the intermediates follow in root→leaf order.
 		if len(chain) >= 1 {
-			rootCert := chain[0]
+			rootCert := chain[len(chain)-1]
+			intermediateChain := chain[:len(chain)-1]
 
 			// For now, we only accept the root certs that are self-signed (no system CA certs)
 			// Verify if the root is self-signed, otherwise this is not a valid root cert
 			if !bytes.Equal(rootCert.RawSubject, rootCert.RawIssuer) {
-				tm.logger.Warnf("Root certificate %s is a self-signed certificate. Skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String())
+				tm.logger.Warnf("Root certificate %s is no root or self-signed certificate. Skipping the rest of the chain", rootCert.Subject.ToRDNSequence().String())
 				continue
 			}
 
 			// Self-signed root cert, verify other options, add to the root pool and continue with intermediate certs
 			// Note: duplicates are filtered out by the call to .AddCert()
-			// Note: if the root cert is not valid, the cert will still be in the trustedRootCertificates pool, but the verification will fail later on
-			tm.trustedRootCertificates.AddCert(rootCert)
+
+			rootCertsForValidation := tm.trustedRootCertificates.Clone()
+			rootCertsForValidation.AddCert(rootCert)
+			rootValidationOptions := tm.getRootVerificationOptions(rootCertsForValidation)
+
 			_, err = rootCert.Verify(rootValidationOptions)
 			if err != nil {
 				// If the root cert is not valid, skip the rest of the chain
@@ -240,19 +230,19 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 				tm.allCerts = append(tm.allCerts, rootCert)
 			}
 
-			// Add the intermediate certs to the intermediate pool
-			if len(chain) >= 2 {
+			// Valid root cert, add to the trusted root pool
+			tm.trustedRootCertificates.AddCert(rootCert)
+
+			// Add the intermediate certs to the intermediate pool. The chain
+			// on disk is leaf-to-root, so to walk outward from the root we
+			// iterate intermediateChain in reverse (last → first).
+			if len(intermediateChain) > 0 {
 				parentCert := rootCert
-				intermediateCerts := chain[1:]
-				validationOptions := x509.VerifyOptions{
-					CurrentTime:   time.Now(),
-					Roots:         tm.trustedRootCertificates,
-					Intermediates: tm.trustedIntermediateCertificates,
-					KeyUsages: []x509.ExtKeyUsage{
-						x509.ExtKeyUsage(x509.KeyUsageCertSign),
-						x509.ExtKeyUsage(x509.KeyUsageCRLSign),
-					},
+				intermediateCerts := make([]*x509.Certificate, len(intermediateChain))
+				for i, c := range intermediateChain {
+					intermediateCerts[len(intermediateChain)-1-i] = c
 				}
+				validationOptions := tm.getIntermediateCertificateVerificationOptions()
 
 				for _, caCert := range intermediateCerts {
 					// Verify the certificate against the root pools
@@ -308,19 +298,17 @@ func (tm *TrustModel) addTrustAnchors(trustAnchors ...[]byte) error {
 }
 
 func (tm *TrustModel) loadRevocationLists() error {
-	crlPaths, err := filepath.Glob(filepath.Join(tm.GetCrlPath(), "*.crl"))
+	mgr := tm.storageContainer.CertificateRevocationListManager()
+
+	loaded, err := mgr.LoadAll(func(loadErr error) {
+		tm.logger.Warnf("Failed to load CRL from disk: %v, skipping", loadErr)
+	})
 	if err != nil {
 		return err
 	}
-	crls := make([]*x509.RevocationList, len(crlPaths))
-	for i, crlPath := range crlPaths {
-		crlFilename := filepath.Base(crlPath)
-		crl, err := tm.readRevocationListFromFile(crlFilename)
-		if err != nil {
-			tm.logger.Warnf("Failed to read CRL file %q: %v, skipping loading the CRL", crlPath, err)
-			continue
-		}
 
+	verified := make([]*x509.RevocationList, 0, len(loaded))
+	for _, crl := range loaded {
 		// Find the issuing certificate for this CRL
 		issuingCert := tm.findCertificateForRevocationList(crl)
 		if issuingCert == nil {
@@ -330,16 +318,15 @@ func (tm *TrustModel) loadRevocationLists() error {
 
 		tm.logger.Tracef("Found issuing certificate %s for CRL from issuer %s. Verifying...", issuingCert.Subject.ToRDNSequence().String(), crl.Issuer.ToRDNSequence().String())
 		// Verify the CRL signature using the issuing cert
-		err = crl.CheckSignatureFrom(issuingCert)
-		if err != nil {
+		if err := crl.CheckSignatureFrom(issuingCert); err != nil {
 			tm.logger.Warnf("Failed to verify CRL from issuer %s: %v, skipping loading the CRL", crl.Issuer.ToRDNSequence().String(), err)
 			continue
 		}
 
 		tm.logger.Tracef("Successfully loaded and verified CRL %x issued by %s", crl.Signature, crl.Issuer.ToRDNSequence().String())
-		crls[i] = crl
+		verified = append(verified, crl)
 	}
-	tm.revocationLists = crls
+	tm.revocationLists = verified
 	return nil
 }
 
@@ -354,19 +341,19 @@ func (tm *TrustModel) GetVerificationOptionsTemplate() x509.VerifyOptions {
 func (tm *TrustModel) syncCertificateRevocationLists() {
 	tm.logger.Debugf("Starting CRL sync...")
 
+	mgr := tm.storageContainer.CertificateRevocationListManager()
+
 	// Loop over the known distribution points to download and verify CRLs
 	for _, distPoint := range tm.revocationListsDistributionPoints {
 		tm.logger.Debugf("Checking CRL distribution point %q...", distPoint)
 
-		crlFilename := getCrlFileNameForCertDistributionPoint(distPoint)
-
 		// If the CRL is not cached, download and verify it
-		if !tm.isCrlFileCached(crlFilename) {
+		if present, _ := mgr.Exists(distPoint); !present {
 			tm.logger.Info("CRL not cached, downloading file...")
 		} else {
 			// CRL is cached, read it, verify it and check if an update might be available
 			// If the cached CRL is invalid, remove it and download it anew
-			crl, err := tm.readRevocationListFromFile(crlFilename)
+			crl, err := mgr.Read(distPoint)
 			if err != nil || !tm.isCrlValid(crl) {
 				tm.logger.Warnf("Failed to verify cached CRL: %v. Downloading new version...", err)
 			} else if tm.isCrlUpToDate(crl) {
@@ -378,10 +365,11 @@ func (tm *TrustModel) syncCertificateRevocationLists() {
 		}
 
 		// At this point, we need to download a CRL update
-		err := tm.downloadVerifyAndCacheCrl(distPoint, crlFilename)
-		if err != nil {
+		if err := tm.downloadVerifyAndCacheCrl(distPoint); err != nil {
 			tm.logger.Warnf("Failed to download and cache CRL from %q: %v. Removing cached CRL.", distPoint, err)
-			os.Remove(filepath.Join(tm.GetCrlPath(), crlFilename))
+			if rmErr := mgr.Remove(distPoint); rmErr != nil {
+				tm.logger.Warnf("Failed to remove cached CRL for %q: %v", distPoint, rmErr)
+			}
 			tm.logger.Info("Removed cached CRL.")
 			continue
 		}
@@ -424,46 +412,22 @@ func (tm *TrustModel) downloadAndVerifyCrl(distPoint string) (*x509.RevocationLi
 	return crl, nil
 }
 
-func (tm *TrustModel) cacheCrl(crl *x509.RevocationList, crlFileName string) error {
-	if crl == nil {
-		return fmt.Errorf("invalid CRL: crl cannot be nil")
-	}
-
-	if !strings.Contains(crlFileName, ".crl") {
-		return fmt.Errorf("invalid CRL: crlFileName must have .crl extension")
-	}
-
-	// Determine filename (hash cert subject + hash dist point) + filepath
-	filePath := filepath.Join(tm.GetCrlPath(), crlFileName)
-
-	out, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("error creating file on disk: %v", err)
-	}
-	defer out.Close()
-
-	// Write the body to file
-	_, err = out.Write(crl.Raw)
-	if err != nil {
-		return fmt.Errorf("error saving file content: %v", err)
-	}
-
-	return nil
-}
-
-func (tm *TrustModel) downloadVerifyAndCacheCrl(crlDistPoint string, crlFileName string) error {
+func (tm *TrustModel) downloadVerifyAndCacheCrl(crlDistPoint string) error {
 	tm.logger.Infof("Downloading and verifying CRL from %q...", crlDistPoint)
 	newCrl, err := tm.downloadAndVerifyCrl(crlDistPoint)
 	if err != nil {
 		return err
 	}
 
-	tm.logger.Infof("Successfully downloaded and verified CRL from %q, saving to file %q...", crlDistPoint, crlFileName)
-	err = tm.cacheCrl(newCrl, crlFileName)
-	if err != nil {
+	tm.logger.Infof("Successfully downloaded and verified CRL from %q, caching...", crlDistPoint)
+	if err := tm.storageContainer.CertificateRevocationListManager().Save(newCrl, crlDistPoint); err != nil {
 		return err
 	}
 
-	tm.logger.Infof("Successfully cached CRL to %q.", crlFileName)
+	tm.logger.Infof("Successfully cached CRL for %q.", crlDistPoint)
 	return nil
+}
+
+func (tm *TrustModel) InstallCertificate(pemData []byte) error {
+	return tm.storageContainer.CertificateManager().InstallCertificate(pemData)
 }

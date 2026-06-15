@@ -1,85 +1,118 @@
 package dcql
 
 import (
-	"encoding/json"
-	"slices"
 	"testing"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseValidDcqlQuery(t *testing.T) {
-	queryJson := `{
-		  "credential_sets": [
-			{
-			  "options": [
-				[
-				  "32f54163-7166-48f1-93d8-ff217bdb0653"
-				]
-			  ],
-			  "purpose": "We need to verify your identity"
-			}
-		  ],
-		  "credentials": [
-			{
-			  "claims": [
-				{
-				  "claim_name": "family_name",
-				  "namespace": "eu.europa.ec.eudi.pid.1"
-				}
-			  ],
-			  "format": "dc+sd-jwt",
-			  "id": "32f54163-7166-48f1-93d8-ff217bdb0653",
-			  "meta": {
-				"doctype_value": "eu.europa.ec.eudi.pid.1"
-			  }
-			}
-		  ]
-		}`
-
-	dcqlQuery, err := parseDcqlQuery(queryJson)
-
-	require.NoError(t, err)
-	require.Len(t, dcqlQuery.Credentials, 1)
-	require.Len(t, dcqlQuery.Credentials[0].Claims, 1)
-}
-
-func parseDcqlQuery(query string) (DcqlQuery, error) {
-	var q DcqlQuery
-	err := json.Unmarshal([]byte(query), &q)
-	if err != nil {
-		return DcqlQuery{}, nil
-	}
-	return q, nil
-}
-
-func TestGetAllClaimPathsShouldReturnAllPathsFromCredentialQuery(t *testing.T) {
-	// Arrange
-	cq := CredentialQuery{
-		Claims: []Claim{
-			{
-				Id: "1",
-				Path: []string{
-					"email",
-					"domain",
+func TestBuildPlanFromCredentialQueries(t *testing.T) {
+	t.Run("single query with owned candidates", func(t *testing.T) {
+		queries := []CredentialQuery{
+			{Id: "q1", Format: "dc+sd-jwt"},
+		}
+		queryResults := map[string]*CredentialQueryResult{
+			"q1": {
+				OwnedCandidates: []*clientmodels.SelectableCredentialInstance{
+					{CredentialId: "test.email", Hash: "abc123"},
+				},
+				ObtainableDescriptors: []*clientmodels.CredentialDescriptor{
+					{CredentialId: "test.email"},
 				},
 			},
-			{
-				Id: "2",
-				Path: []string{
-					"location",
-					"country",
-				},
-			},
-		},
-	}
-	// Act
-	paths := slices.Collect(cq.AllClaimPaths())
+		}
 
-	// Assert
-	require.Len(t, paths, 4)
-	require.Equal(t, "email", paths[0])
-	require.Equal(t, "domain", paths[1])
-	require.Equal(t, "location", paths[2])
-	require.Equal(t, "country", paths[3])
+		plan, err := buildPlanFromCredentialQueries(queries, queryResults, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, plan.DisclosureChoicesOverview, 1)
+
+		pickOne := plan.DisclosureChoicesOverview[0]
+		assert.False(t, pickOne.Optional)
+		assert.Len(t, pickOne.OwnedOptions, 1)
+		require.Len(t, pickOne.OwnedOptions[0].Credentials, 1)
+		assert.Equal(t, "abc123", pickOne.OwnedOptions[0].Credentials[0].Hash)
+		assert.Len(t, pickOne.ObtainableOptions, 1)
+	})
+
+	t.Run("multiple queries all required", func(t *testing.T) {
+		queries := []CredentialQuery{
+			{Id: "q1", Format: "dc+sd-jwt"},
+			{Id: "q2", Format: "dc+sd-jwt"},
+		}
+		queryResults := map[string]*CredentialQueryResult{
+			"q1": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h1"}}},
+			"q2": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h2"}}},
+		}
+
+		plan, err := buildPlanFromCredentialQueries(queries, queryResults, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, plan.DisclosureChoicesOverview, 2)
+		assert.False(t, plan.DisclosureChoicesOverview[0].Optional)
+		assert.False(t, plan.DisclosureChoicesOverview[1].Optional)
+	})
+
+	t.Run("missing query result returns error", func(t *testing.T) {
+		queries := []CredentialQuery{{Id: "missing"}}
+		_, err := buildPlanFromCredentialQueries(queries, map[string]*CredentialQueryResult{}, nil, nil)
+		require.Error(t, err)
+	})
+}
+
+func TestBuildPlanFromCredentialSets(t *testing.T) {
+	t.Run("required credential set groups options", func(t *testing.T) {
+		queryResults := map[string]*CredentialQueryResult{
+			"q1": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h1"}}},
+			"q2": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h2"}}},
+		}
+		credSets := []CredentialSetQuery{
+			{Options: [][]string{{"q1"}, {"q2"}}},
+		}
+
+		plan, err := buildPlanFromCredentialSets(queryResults, credSets, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, plan.DisclosureChoicesOverview, 1)
+		assert.False(t, plan.DisclosureChoicesOverview[0].Optional)
+		assert.Len(t, plan.DisclosureChoicesOverview[0].OwnedOptions, 2)
+	})
+
+	t.Run("optional credential set", func(t *testing.T) {
+		notRequired := false
+		queryResults := map[string]*CredentialQueryResult{
+			"q1": {OwnedCandidates: []*clientmodels.SelectableCredentialInstance{{Hash: "h1"}}},
+		}
+		credSets := []CredentialSetQuery{
+			{Options: [][]string{{"q1"}}, Required: &notRequired},
+		}
+
+		plan, err := buildPlanFromCredentialSets(queryResults, credSets, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, plan.DisclosureChoicesOverview, 1)
+		assert.True(t, plan.DisclosureChoicesOverview[0].Optional)
+	})
+
+	t.Run("multi-query options not supported", func(t *testing.T) {
+		queryResults := map[string]*CredentialQueryResult{
+			"q1": {},
+			"q2": {},
+		}
+		credSets := []CredentialSetQuery{
+			{Options: [][]string{{"q1", "q2"}}},
+		}
+
+		_, err := buildPlanFromCredentialSets(queryResults, credSets, nil, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not supported")
+	})
+
+	t.Run("empty option array returns error instead of panicking", func(t *testing.T) {
+		credSets := []CredentialSetQuery{
+			{Options: [][]string{{}}},
+		}
+
+		_, err := buildPlanFromCredentialSets(map[string]*CredentialQueryResult{}, credSets, nil, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "empty inner option array")
+	})
 }

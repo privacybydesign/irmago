@@ -14,10 +14,10 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/signed"
-	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"

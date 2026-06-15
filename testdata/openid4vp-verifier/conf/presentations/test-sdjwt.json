@@ -1,0 +1,17 @@
+{
+  "shortname": "test-sdjwt",
+  "name": "Test SD-JWT Verification",
+  "purpose": "Verify SD-JWT credentials issued by veramo-agent",
+  "query": {
+    "credentials": [
+      {
+        "id": "test-credential",
+        "format": "vc+sd-jwt",
+        "claims": [
+          { "path": ["given_name"] },
+          { "path": ["email"] }
+        ]
+      }
+    ]
+  }
+}

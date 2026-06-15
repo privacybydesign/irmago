@@ -100,6 +100,19 @@ func EnsureDirectoryExists(path string) error {
 	return nil
 }
 
+func EnsureFileExists(path string) error {
+	if exists, err := PathExists(path); err != nil {
+		return err
+	} else if !exists {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		return f.Close()
+	}
+	return nil
+}
+
 // SaveFile saves the file contents at the specified path atomically:
 // - first save the content in a temp file with a random filename in the same dir
 // - then rename the temp file to the specified filepath, overwriting the old file

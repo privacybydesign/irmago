@@ -2,14 +2,14 @@ package sessiontest
 
 import (
 	"testing"
+	"time"
 
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/irma"
 	"github.com/stretchr/testify/require"
 )
 
 func TestLogging(t *testing.T) {
-	client, handler := parseStorage(t)
-	defer client.Close()
+	storage, client, handler := parseStorage(t)
 
 	logs, err := client.LoadNewestLogs(100)
 	oldLogLength := len(logs)
@@ -26,8 +26,10 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+1)
 
 	// Check whether newly issued credential is actually stored
-	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client.Close()
+	storage.Close()
+
+	storage, client, handler = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
@@ -50,8 +52,10 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+2)
 
 	// Check whether log entry for disclosing session is actually stored
-	require.NoError(t, client.Close())
-	client, handler = parseExistingStorage(t, handler.storage)
+	client.Close()
+	storage.Close()
+
+	storage, client, handler = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+2)
@@ -64,10 +68,10 @@ func TestLogging(t *testing.T) {
 	require.NotEmpty(t, disclosed)
 
 	// Test before parameter
-	logs, err = client.LoadLogsBefore(entry.ID, 100)
+	logs, err = client.LoadLogsBeforeTime(time.Time(entry.Time), 100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+1)
-	require.True(t, logs[0].ID < entry.ID)
+	require.True(t, time.Time(logs[0].Time).Before(time.Time(entry.Time)))
 
 	// Test max parameter
 	logs, err = client.LoadNewestLogs(1)
@@ -82,8 +86,10 @@ func TestLogging(t *testing.T) {
 	require.True(t, len(logs) == oldLogLength+3)
 
 	// Check whether log entry for signature session is actually stored
-	require.NoError(t, client.Close())
-	client, _ = parseExistingStorage(t, handler.storage)
+	client.Close()
+	storage.Close()
+
+	storage, client, _ = parseExistingStorage(t, handler.Storage)
 	logs, err = client.LoadNewestLogs(100)
 	require.NoError(t, err)
 	require.True(t, len(logs) == oldLogLength+3)
@@ -99,5 +105,7 @@ func TestLogging(t *testing.T) {
 	require.Equal(t, irma.ProofStatusValid, status)
 	require.NotEmpty(t, attrs)
 	require.Equal(t, attrid, attrs[0][0].Identifier)
-	require.NoError(t, client.Close())
+
+	client.Close()
+	storage.Close()
 }
