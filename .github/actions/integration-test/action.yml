@@ -118,5 +118,5 @@ runs:
       working-directory: irmago_test_checkout
       env:
         IRMAGO_INTEGRATION_TESTS: Y
-      run: go test -v -run TestClientIntegration -p 1 ./...
+      run: go test -run TestClientIntegration -p 1 ./...
       shell: bash

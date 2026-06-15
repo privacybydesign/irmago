@@ -42,7 +42,7 @@ func Test_FromJwk_Given_AsymmetricKeyWithSignatureKeyUsage_Succeeds(t *testing.T
 
 	require.Len(t, doc.VerificationMethod, 1)
 	require.Equal(t, doc.VerificationMethod[0].ID, expectedKid)
-	require.Equal(t, doc.VerificationMethod[0].Type, did.VerificationMethodType("JsonWebKey2020"))
+	require.Equal(t, doc.VerificationMethod[0].Type, did.VerificationMethodType_JsonWebKey2020)
 	require.Equal(t, doc.VerificationMethod[0].Controller, expectedDid)
 	require.NotNil(t, doc.VerificationMethod[0].PublicKeyJwk)
 
@@ -89,7 +89,7 @@ func Test_FromJwk_Given_AsymmetricKeyWithEncryptionKeyUsage_Succeeds(t *testing.
 
 	require.Len(t, doc.VerificationMethod, 1)
 	require.Equal(t, doc.VerificationMethod[0].ID, expectedKid)
-	require.Equal(t, doc.VerificationMethod[0].Type, did.VerificationMethodType("JsonWebKey2020"))
+	require.Equal(t, doc.VerificationMethod[0].Type, did.VerificationMethodType_JsonWebKey2020)
 	require.Equal(t, doc.VerificationMethod[0].Controller, expectedDid)
 	require.NotNil(t, doc.VerificationMethod[0].PublicKeyJwk)
 
