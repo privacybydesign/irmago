@@ -5,7 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
-
+### Fixed
+- The keyshare `tasks` command no longer logs a confusing `mode=development` line on startup; the tasks command has no development/production distinction, so no mode is reported
 
 ## [1.0.0-beta.1] - 2026-06-15
 ### Added
