@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+
+## [1.0.0-beta.1] - 2026-06-15
 ### Added
 - Support for issuing SD-JWT VC credentials over the OpenID4VCI protocol to the new `client` package
   - Supports the Pre-Authorized Code flow, including an optional `tx_code` (with retry on incorrect entry)
@@ -12,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports DID-based holder binding: keys are bound to the credential at issuance, stored securely on the client, and removed together with the credential
   - Supports `authorization_details` in Authorization and Token requests
   - Supports encrypted credential request bodies
-  - Issuers are verified via `did:web` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
+  - Issuers are verified via `did:web`, `did:key` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
 - Support for disclosing SD-JWT VC credentials with nested selectively-disclosable claims and array claims over the OpenID4VP 1.0 protocol
   - DCQL support extended with `claim_sets`, the `multiple` flag, predefined claim values (also for non-string values), and `require_cryptographic_holder_binding`
   - Adds the `did` verifier identifier prefix in addition to the existing `x509_san_dns`
@@ -641,6 +644,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.0.0-beta.1]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0-beta.1
 [0.19.2]: https://github.com/privacybydesign/irmago/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/privacybydesign/irmago/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/privacybydesign/irmago/compare/v0.18.1...v0.19.0

@@ -173,7 +173,7 @@ func Test_Resolve_UnmarshalDocumentCorrectly(t *testing.T) {
 	require.Equal(t, "did:web:issuer.dev.eduid.nl", doc.ID)
 	require.Len(t, doc.VerificationMethod, 1)
 	require.Equal(t, "did:web:issuer.dev.eduid.nl#0", doc.VerificationMethod[0].ID)
-	require.Equal(t, "JsonWebKey2020", doc.VerificationMethod[0].Type)
+	require.Equal(t, did.VerificationMethodType_JsonWebKey2020, doc.VerificationMethod[0].Type)
 	require.Equal(t, "did:web:issuer.dev.eduid.nl", doc.VerificationMethod[0].Controller)
 	require.NotNil(t, doc.VerificationMethod[0].PublicKeyJwk)
 }

@@ -30,7 +30,7 @@ func Test_Unmarshal_VerificationMethod_Success(t *testing.T) {
 	err := json.Unmarshal([]byte(jsonData), &vm)
 	require.NoError(t, err)
 	require.Equal(t, "did:example:123#key-1", vm.ID)
-	require.Equal(t, "JsonWebKey2020", vm.Type)
+	require.Equal(t, VerificationMethodType_JsonWebKey2020, vm.Type)
 	require.Equal(t, "did:example:123", vm.Controller)
 	require.NotNil(t, vm.PublicKeyJwk)
 }
