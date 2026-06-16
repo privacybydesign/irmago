@@ -35,7 +35,7 @@ func TestClientStorageRegression(t *testing.T) {
 	testdataPath := test.FindTestdataFolder(t)
 	fixtureDir := filepath.Join(testdataPath, storageRegressionFixtureDir)
 
-	// Find all version subdirectories (v0.19.2, v0.20.0, etc.)
+	// Find all version subdirectories (v0.19.2, v1.0.0, etc.)
 	entries, err := os.ReadDir(fixtureDir)
 	if os.IsNotExist(err) {
 		t.Skipf("Fixture directory not found at %s; run TestGenerateClientStorageForRegressionTests first", fixtureDir)
