@@ -72,11 +72,11 @@ To install the latest released version of the `yivi` command line tool using Go,
 
     go install github.com/privacybydesign/irmago/yivi@latest
 
-You can also specify an exact version, from version v0.20.0 or newer. You should replace `v0.0.0` with the desired version number.
+You can also specify an exact version, from version v1.0.0 or newer. You should replace `v0.0.0` with the desired version number.
   
     go install github.com/privacybydesign/irmago/yivi@v0.0.0
 
-The `yivi` command is only available from v0.20.0 and newer. If you want to use an older version of IRMA, use the command below.
+The `yivi` command is only available from v1.0.0 and newer. If you want to use an older version of IRMA, use the command below.
 
     go install github.com/privacybydesign/irmago/irma@v0.0.0
 
