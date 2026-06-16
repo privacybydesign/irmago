@@ -79,7 +79,11 @@ jobs:
       
     - name: Run go vet
       run: go vet ./...
-      
+
+    - name: Run go fix
+      # go fix -diff exits non-zero (and prints a diff) if any modernization fix is unapplied.
+      run: go fix -diff ./...
+
     - name: Install ineffassign
       run: go install github.com/gordonklaus/ineffassign@latest
       
