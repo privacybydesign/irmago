@@ -93,7 +93,7 @@ func printMetadataAttr(metaint *big.Int, confPath string, confAssetsPath string)
 	return nil
 }
 
-func prettyprint(ob interface{}) string {
+func prettyprint(ob any) string {
 	b, err := json.MarshalIndent(ob, "", "  ")
 	if err != nil {
 		fmt.Println("error:", err)

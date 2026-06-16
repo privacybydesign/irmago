@@ -132,7 +132,7 @@ func configureTLS() *tls.Config {
 	return conf
 }
 
-func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, productionDefaults map[string]interface{}) {
+func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, productionDefaults map[string]any) {
 	dashReplacer := strings.NewReplacer("-", "_")
 	viper.SetEnvKeyReplacer(dashReplacer)
 	viper.SetEnvPrefix(strings.ToUpper(name))
@@ -216,8 +216,8 @@ func wasProvidedInAnyWay(key string) bool {
 	return true
 }
 
-func handleMapOrString(key string, dest interface{}) error {
-	var m map[string]interface{}
+func handleMapOrString(key string, dest any) error {
+	var m map[string]any
 	var err error
 	if val, flagOrEnv := viper.Get(key).(string); !flagOrEnv || val != "" {
 		if m, err = cast.ToStringMapE(viper.Get(key)); err != nil {

@@ -122,8 +122,8 @@ func (oi metaObjectIdentifier) Empty() bool {
 
 func (oi metaObjectIdentifier) Root() string {
 	str := string(oi)
-	if i := strings.Index(str, "."); i != -1 {
-		return str[:i]
+	if before, _, ok := strings.Cut(str, "."); ok {
+		return before
 	} else {
 		return str
 	}
@@ -281,7 +281,7 @@ func (pki *PublicKeyIdentifier) UnmarshalText(text []byte) error {
 }
 
 func (pki *PublicKeyIdentifier) MarshalText() (text []byte, err error) {
-	return []byte(fmt.Sprintf("%s-%d", pki.Issuer, pki.Counter)), nil
+	return fmt.Appendf(nil, "%s-%d", pki.Issuer, pki.Counter), nil
 }
 
 // MarshalText implements encoding.TextMarshaler.
@@ -405,7 +405,7 @@ func (oi metaObjectIdentifier) Value() (driver.Value, error) {
 }
 
 // Scan implements sql/driver Scanner interface.
-func (oi *metaObjectIdentifier) Scan(src interface{}) error {
+func (oi *metaObjectIdentifier) Scan(src any) error {
 	switch s := src.(type) {
 	case string:
 		*oi = metaObjectIdentifier(s)

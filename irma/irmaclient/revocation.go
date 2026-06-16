@@ -126,7 +126,7 @@ func (client *IrmaClient) nonrevUpdate(id irma.CredentialTypeIdentifier, updates
 
 	// Per credential and issuer key counter we may possess multiple credential instances.
 	// Of the nonrevocation witnesses of these, take the lowest index.
-	for i := 0; i < len(attrs); i++ {
+	for i := range attrs {
 		cred, err := client.credential(id, i)
 		if err != nil {
 			return err
@@ -177,7 +177,7 @@ func (client *IrmaClient) nonrevApplyUpdates(id irma.CredentialTypeIdentifier, c
 
 	attrs := client.attrs(id)
 	var save bool
-	for i := 0; i < len(attrs); i++ {
+	for i := range attrs {
 		cred, err := client.credential(id, i)
 		if err != nil {
 			return err

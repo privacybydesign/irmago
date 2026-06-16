@@ -128,7 +128,7 @@ func (s *unencryptedUserSecrets) UnmarshalCBOR(bytes []byte) error {
 }
 
 // publicKey returns the user's public key. For use in jwt.ParseWithClaims().
-func (s *unencryptedUserSecrets) publicKey(_ *jwt.Token) (interface{}, error) {
+func (s *unencryptedUserSecrets) publicKey(_ *jwt.Token) (any, error) {
 	if s.PublicKey == nil {
 		return nil, ErrKeyNotFound
 	}

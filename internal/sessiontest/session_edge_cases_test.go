@@ -83,7 +83,7 @@ func testKeyshareBlocked(
 		},
 	})
 
-	expectedRemainingAttempts := []*int{nil, intPtr(2), intPtr(1), intPtr(0)}
+	expectedRemainingAttempts := []*int{nil, new(2), new(1), new(0)}
 	for _, expected := range expectedRemainingAttempts {
 		session = awaitSessionState(t, sessionHandler)
 		requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPin)

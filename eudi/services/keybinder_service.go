@@ -235,8 +235,8 @@ func decodePKCS8PrivateKey(pkcs8Bytes []byte) (*ecdsa.PrivateKey, error) {
 }
 
 func stripFragment(didUrl string) string {
-	if idx := strings.Index(didUrl, "#"); idx != -1 {
-		return didUrl[:idx]
+	if before, _, ok := strings.Cut(didUrl, "#"); ok {
+		return before
 	}
 	return didUrl
 }

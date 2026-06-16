@@ -416,7 +416,7 @@ func (conf *Configuration) parseSchemeDescription(dir string) (Scheme, SchemeMan
 }
 
 func (conf *Configuration) parseSchemeFile(
-	scheme Scheme, path string, description interface{},
+	scheme Scheme, path string, description any,
 ) (bool, error) {
 	abs := filepath.Join(scheme.path(), path)
 	if _, err := os.Stat(abs); err != nil {
@@ -1062,7 +1062,7 @@ func (ct CredentialType) validateDependencies(conf *Configuration, validatedDeps
 
 func (d DependencyChain) String() string {
 	deps := make([]string, len(d))
-	for i := 0; i < len(d); i++ {
+	for i := range d {
 		deps[i] = d[i].String()
 	}
 	return strings.Join(deps, ", ")

@@ -797,7 +797,7 @@ func (s *Server) parseRegistrationMessage(msg irma.KeyshareEnrollment) (*irma.Ke
 		err    error
 		claims = &irma.KeyshareEnrollmentClaims{}
 	)
-	_, err = jwt.ParseWithClaims(msg.EnrollmentJWT, claims, func(token *jwt.Token) (interface{}, error) {
+	_, err = jwt.ParseWithClaims(msg.EnrollmentJWT, claims, func(token *jwt.Token) (any, error) {
 		// Similar to a CSR, the JWT contains in its body the public key with which it is signed.
 		pk, err = signed.UnmarshalPublicKey(claims.KeyshareEnrollmentData.PublicKey)
 		return pk, err

@@ -802,14 +802,12 @@ func (client RevocationClient) FetchUpdateFrom(id CredentialTypeIdentifier, pkco
 	}
 
 	// Gather responses from async GETs above
-	wg.Add(1)
-	go func() {
-		for i := 0; i < len(indices); i++ {
+	wg.Go(func() {
+		for range indices {
 			e := <-eventsChan
 			eventsList = append(eventsList, e)
 		}
-		wg.Done()
-	}()
+	})
 
 	// Wait for everything to be done
 	wg.Wait()
@@ -850,7 +848,7 @@ func (client RevocationClient) FetchUpdatesLatest(id CredentialTypeIdentifier, c
 	)
 }
 
-func (client RevocationClient) getMultiple(urls []string, path string, dest interface{}) error {
+func (client RevocationClient) getMultiple(urls []string, path string, dest any) error {
 	var (
 		errs      multierror.Error
 		transport = client.transport(false)

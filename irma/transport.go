@@ -151,28 +151,28 @@ func NewHTTPTransport(serverURL string, forceHTTPS bool) *HTTPTransport {
 	}
 }
 
-func (transport *HTTPTransport) marshal(o interface{}) ([]byte, error) {
+func (transport *HTTPTransport) marshal(o any) ([]byte, error) {
 	if transport.Binary {
 		return MarshalBinary(o)
 	}
 	return json.Marshal(o)
 }
 
-func (transport *HTTPTransport) unmarshal(data []byte, dst interface{}) error {
+func (transport *HTTPTransport) unmarshal(data []byte, dst any) error {
 	if transport.Binary {
 		return UnmarshalBinary(data, dst)
 	}
 	return json.Unmarshal(data, dst)
 }
 
-func (transport *HTTPTransport) unmarshalValidate(data []byte, dst interface{}) error {
+func (transport *HTTPTransport) unmarshalValidate(data []byte, dst any) error {
 	if transport.Binary {
 		return UnmarshalValidateBinary(data, dst)
 	}
 	return UnmarshalValidate(data, dst)
 }
 
-func (transport *HTTPTransport) log(prefix string, message interface{}, binary bool) {
+func (transport *HTTPTransport) log(prefix string, message any, binary bool) {
 	if !Logger.IsLevelEnabled(logrus.TraceLevel) {
 		return // do nothing if nothing would be printed anyway
 	}
@@ -229,7 +229,7 @@ func (transport *HTTPTransport) request(
 	return res, nil
 }
 
-func (transport *HTTPTransport) jsonRequest(url string, method string, result interface{}, object interface{}) error {
+func (transport *HTTPTransport) jsonRequest(url string, method string, result any, object any) error {
 	if method != http.MethodPost && method != http.MethodGet && method != http.MethodDelete {
 		panic("Unsupported HTTP method " + method)
 	}
@@ -338,12 +338,12 @@ func (transport *HTTPTransport) GetBytes(url string) ([]byte, error) {
 }
 
 // Post sends the object to the server and parses its response into result.
-func (transport *HTTPTransport) Post(url string, result interface{}, object interface{}) error {
+func (transport *HTTPTransport) Post(url string, result any, object any) error {
 	return transport.jsonRequest(url, http.MethodPost, result, object)
 }
 
 // Get performs a GET request and parses the server's response into result.
-func (transport *HTTPTransport) Get(url string, result interface{}) error {
+func (transport *HTTPTransport) Get(url string, result any) error {
 	return transport.jsonRequest(url, http.MethodGet, result, nil)
 }
 

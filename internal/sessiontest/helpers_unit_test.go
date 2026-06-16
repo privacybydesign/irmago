@@ -37,9 +37,9 @@ type fakeT struct {
 	failed bool
 }
 
-func (f *fakeT) Errorf(format string, args ...interface{}) { f.failed = true }
-func (f *fakeT) FailNow()                                  { f.failed = true; panic(fakeFailNow{}) }
-func (f *fakeT) Helper()                                   {}
+func (f *fakeT) Errorf(format string, args ...any) { f.failed = true }
+func (f *fakeT) FailNow()                          { f.failed = true; panic(fakeFailNow{}) }
+func (f *fakeT) Helper()                           {}
 
 type fakeFailNow struct{}
 
@@ -78,7 +78,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 				ClaimPath:   []any{"email"},
 				DisplayName: &dn,
 				Description: &desc,
-				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("test@example.com")},
+				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("test@example.com")},
 			},
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
@@ -107,7 +107,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 			{
 				ClaimPath:   []any{"email"},
 				DisplayName: &dn,
-				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("foo@bar.com")},
+				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("foo@bar.com")},
 			},
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
@@ -119,7 +119,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 
 	t.Run("requested value checked", func(t *testing.T) {
 		dn := clientmodels.TranslatedString{"en": "University"}
-		reqVal := &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("TU Delft")}
+		reqVal := &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("TU Delft")}
 		attrs := []clientmodels.Attribute{
 			{
 				ClaimPath:      []any{"university"},
@@ -130,7 +130,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:           []any{"university"},
 			DisplayName:    &clientmodels.TranslatedString{"en": "University"},
-			RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("TU Delft")},
+			RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("TU Delft")},
 		})
 	})
 
@@ -139,7 +139,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 		attrs := []clientmodels.Attribute{
 			{
 				ClaimPath: []any{"courses", 0},
-				Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Algorithms")},
+				Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Algorithms")},
 			},
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
@@ -157,7 +157,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 				ClaimPath:   []any{"email"},
 				DisplayName: &dn,
 				Description: &desc, // actual has a description
-				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")},
+				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")},
 			},
 		}
 		// Expected Description is nil → skip the check (don't assert nil).
@@ -176,12 +176,12 @@ func testRequireAttrsInOrder(t *testing.T) {
 			{
 				ClaimPath:   []any{"given_name"},
 				DisplayName: &dn1,
-				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Jan")},
+				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Jan")},
 			},
 			{
 				ClaimPath:   []any{"email"},
 				DisplayName: &dn2,
-				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("jan@example.com")},
+				Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("jan@example.com")},
 			},
 		}
 		requireAttrsInOrder(t, attrs,
@@ -245,7 +245,7 @@ func testCredMatchesExpected(t *testing.T) {
 
 	emailAttr := clientmodels.Attribute{
 		ClaimPath: []any{"email"},
-		Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("test@example.com")},
+		Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("test@example.com")},
 	}
 
 	t.Run("matches by id and attributes", func(t *testing.T) {
@@ -456,7 +456,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 						{
 							ClaimPath:   []any{"university"},
 							DisplayName: &dn,
-							Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Wrong Uni")},
+							Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Wrong Uni")},
 						},
 					},
 				},
@@ -490,7 +490,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 								{
 									ClaimPath:   []any{"email"},
 									DisplayName: &dn,
-									Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")},
+									Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")},
 								},
 							},
 						},
@@ -580,14 +580,14 @@ func testRequireDisclosurePlan(t *testing.T) {
 							CredentialId: "sc",
 							Name:         clientmodels.TranslatedString{"en": "Student Card"},
 							Attributes: []clientmodels.Attribute{
-								{ClaimPath: []any{"university"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Amsterdam")}},
+								{ClaimPath: []any{"university"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Amsterdam")}},
 							},
 						},
 						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "sc",
 							Name:         clientmodels.TranslatedString{"en": "Student Card"},
 							Attributes: []clientmodels.Attribute{
-								{ClaimPath: []any{"university"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Delft")}},
+								{ClaimPath: []any{"university"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Delft")}},
 							},
 						},
 					),
@@ -638,7 +638,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "test.email",
 							Attributes: []clientmodels.Attribute{
-								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("x@y.com")}},
+								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("x@y.com")}},
 							},
 						},
 					),
@@ -745,8 +745,8 @@ func testFindAttr(t *testing.T) {
 	dn1 := clientmodels.TranslatedString{"en": "Email"}
 	dn2 := clientmodels.TranslatedString{"en": "Street"}
 	attrs := []clientmodels.Attribute{
-		{ClaimPath: []any{"email"}, DisplayName: &dn1, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")}},
-		{ClaimPath: []any{"address", "street"}, DisplayName: &dn2, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Main St")}},
+		{ClaimPath: []any{"email"}, DisplayName: &dn1, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")}},
+		{ClaimPath: []any{"address", "street"}, DisplayName: &dn2, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Main St")}},
 	}
 
 	t.Run("finds by single path", func(t *testing.T) {
@@ -776,7 +776,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 	emailAttr := clientmodels.Attribute{
 		ClaimPath:   []any{"email"},
 		DisplayName: &dn,
-		Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")},
+		Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")},
 	}
 
 	shouldFail(t, "wrong attribute count", func(t testingT) {
@@ -820,7 +820,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 	shouldFail(t, "display name expected non-nil but actual is nil", func(t testingT) {
 		noDisplayName := clientmodels.Attribute{
 			ClaimPath: []any{"email"},
-			Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")},
+			Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")},
 		}
 		requireAttrsInOrder(t, []clientmodels.Attribute{noDisplayName},
 			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("a@b.com")},
@@ -845,7 +845,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 			ClaimPath:   []any{"email"},
 			DisplayName: &dn,
 			Description: &desc,
-			Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")},
+			Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")},
 		}
 		requireAttrsInOrder(t, []clientmodels.Attribute{attrWithDesc},
 			expectedAttr{
@@ -858,7 +858,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 	})
 
 	shouldFail(t, "requested value mismatch", func(t testingT) {
-		reqVal := &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("actual")}
+		reqVal := &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("actual")}
 		attrWithReq := clientmodels.Attribute{
 			ClaimPath:      []any{"email"},
 			DisplayName:    &dn,
@@ -870,7 +870,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 				Path:           []any{"email"},
 				DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
 				Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
-				RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("expected")},
+				RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("expected")},
 			},
 		)
 	})
@@ -931,7 +931,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "test.email",
 							Attributes: []clientmodels.Attribute{
-								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")}},
+								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")}},
 							},
 						},
 					),
@@ -959,7 +959,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "test.email",
 							Attributes: []clientmodels.Attribute{
-								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("a@b.com")}},
+								{ClaimPath: []any{"email"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")}},
 							},
 						},
 					),

@@ -2657,7 +2657,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 		"EmailCredentialSdJwt", `{"email": "batch2@example.com", "domain": "example.com"}`)
 
 	// Batch-of-2 should have a non-nil remaining count of 2.
-	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", uintPtr(2))
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", new(uint(2)))
 
 	// Step 2: First disclosure — uses first instance.
 	veramoSession1 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
@@ -2684,7 +2684,7 @@ func testBatchOfTwoCredentialExhaustedAfterTwoDisclosures(t *testing.T) {
 	)
 
 	// After first disclosure, remaining should be 1.
-	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", uintPtr(1))
+	requireBatchRemaining(t, c, "Email Credential (SD-JWT)", new(uint(1)))
 
 	// Step 3: Second disclosure — uses last instance.
 	veramoSession2 := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
@@ -4896,8 +4896,6 @@ func requireBatchRemaining(t *testing.T, c *client.Client, credName string, expe
 		}
 	}
 }
-
-func uintPtr(v uint) *uint { return &v }
 
 // startOpenID4VPDisclosureSession starts an OpenID4VP disclosure session in the
 // client using the given verifier request URI.

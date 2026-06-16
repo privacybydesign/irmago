@@ -373,7 +373,7 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		}
 	}
 
-	for attempt := 0; attempt < maxTxCodeAttempts; attempt++ {
+	for attempt := range maxTxCodeAttempts {
 		// Fresh channel per attempt: if a stale callback fires after we've moved on
 		// (race during cancel/dismiss), it lands on a channel we no longer read
 		// rather than corrupting the next iteration's response.

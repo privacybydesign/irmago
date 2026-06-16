@@ -1,5 +1,4 @@
 //go:build !local_tests
-// +build !local_tests
 
 package keyshareserver
 
@@ -46,7 +45,7 @@ func TestPostgresDBUserManagement(t *testing.T) {
 	err = db.addLog(context.Background(), nuser, eventTypePinCheckFailed, 15)
 	assert.NoError(t, err)
 
-	for i := 0; i < emailTokenRateLimit; i++ {
+	for i := range emailTokenRateLimit {
 		err = db.addEmailVerification(context.Background(), nuser, "test@example.com", fmt.Sprintf("testtoken-%d", i), 168)
 		assert.NoError(t, err)
 	}
@@ -225,7 +224,7 @@ func (db *testPostgresDB) setSeen(ctx context.Context, user *User) error {
 	return db.wrapped.setSeen(ctx, user)
 }
 
-func (db *testPostgresDB) addLog(ctx context.Context, user *User, eventType eventType, param interface{}) error {
+func (db *testPostgresDB) addLog(ctx context.Context, user *User, eventType eventType, param any) error {
 	if _, err := db.wrapped.db.ExecContext(ctx, "SELECT pg_sleep($1)", db.delay); err != nil {
 		return err
 	}
