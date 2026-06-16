@@ -25,9 +25,9 @@
 
 ### Cryptographic agility
 
-The EUDI client is designed to support multiple signature schemes, holder binding methods and DID methods side by side, so that algorithms and key representations can evolve without changing the surrounding protocol code:
+The EUDI client's architecture is designed to accommodate multiple signature schemes, holder binding methods and DID methods side by side, so that algorithms and key representations can evolve without changing the surrounding protocol code:
 
-* **Signature algorithms**: ECDSA (ES256/ES384/ES512), RSA (RS256/PS256) and EdDSA (Ed25519).
+* **Signature algorithms**: holder signing currently uses ES256 (ECDSA over P-256). Issuer-signature verification is algorithm-agile via [`lestrrat-go/jwx`](https://github.com/lestrrat-go/jwx).
 * **Holder binding**: `jwk`, `did:key`, `did:jwk` and COSE key binding.
 * **DID methods**: `did:web`, `did:jwk` and `did:key` resolution for verifying issuers and verifiers.
 
