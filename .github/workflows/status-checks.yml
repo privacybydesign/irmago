@@ -79,7 +79,14 @@ jobs:
       
     - name: Run go vet
       run: go vet ./...
-      
+
+    - name: Run go fix
+      # go fix -diff exits non-zero (and prints a diff) if any modernization fix is unapplied.
+      # The available modernizers are tied to the Go toolchain (pinned via the `toolchain`
+      # directive in go.mod), so when that toolchain is bumped, run `go fix ./...` and commit
+      # the result, otherwise this step can fail on files the PR did not touch.
+      run: go fix -diff ./...
+
     - name: Install ineffassign
       run: go install github.com/gordonklaus/ineffassign@latest
       

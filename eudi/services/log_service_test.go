@@ -66,7 +66,7 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 			Attributes: []clientmodels.Attribute{
 				{
 					ClaimPath: []any{"name"},
-					Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: strPtr("Alice")},
+					Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Alice")},
 				},
 				{
 					ClaimPath: []any{"is_student"},

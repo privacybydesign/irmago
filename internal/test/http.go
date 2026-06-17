@@ -21,15 +21,15 @@ func NewHTTPClient() *http.Client {
 	return httpclient
 }
 
-func HTTPPost(t *testing.T, client *http.Client, url, body string, headers http.Header, expectedStatus int, result interface{}) {
+func HTTPPost(t *testing.T, client *http.Client, url, body string, headers http.Header, expectedStatus int, result any) {
 	httpDo(t, client, url, "POST", body, headers, expectedStatus, result)
 }
 
-func HTTPGet(t *testing.T, client *http.Client, url string, headers http.Header, expectedStatus int, result interface{}) {
+func HTTPGet(t *testing.T, client *http.Client, url string, headers http.Header, expectedStatus int, result any) {
 	httpDo(t, client, url, "GET", "", headers, expectedStatus, result)
 }
 
-func httpDo(t *testing.T, client *http.Client, url, method, body string, headers http.Header, expectedStatus int, result interface{}) {
+func httpDo(t *testing.T, client *http.Client, url, method, body string, headers http.Header, expectedStatus int, result any) {
 	var buf io.Reader
 	if body != "" {
 		buf = bytes.NewBufferString(body)

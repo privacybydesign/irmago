@@ -216,9 +216,7 @@ func serverRequest(
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 
 		if pairing {
 			err = handlePairing(sessionOptions, statuschan, func() error {
@@ -247,7 +245,7 @@ func serverRequest(
 			err = errors.Errorf("Unexpected status: %s", status)
 			return
 		}
-	}()
+	})
 
 	wg.Wait()
 

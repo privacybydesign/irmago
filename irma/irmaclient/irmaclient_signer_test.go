@@ -15,7 +15,7 @@ func TestSignerJWT(t *testing.T) {
 	jwtt, err := SignerCreateJWT(signer, "keyname", jwt.MapClaims{"foo": "bar"})
 	require.NoError(t, err)
 
-	token, err := jwt.Parse(jwtt, func(*jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(jwtt, func(*jwt.Token) (any, error) {
 		pk, err := signer.PublicKey("keyname")
 		if err != nil {
 			return nil, err

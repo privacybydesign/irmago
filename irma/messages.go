@@ -133,7 +133,7 @@ type Validator interface {
 
 // UnmarshalValidate json.Unmarshal's data, and validates it using the
 // Validate() method if dest implements the Validator interface.
-func UnmarshalValidate(data []byte, dest interface{}) error {
+func UnmarshalValidate(data []byte, dest any) error {
 	if err := json.Unmarshal(data, dest); err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func UnmarshalValidate(data []byte, dest interface{}) error {
 	return nil
 }
 
-func UnmarshalValidateBinary(data []byte, dest interface{}) error {
+func UnmarshalValidateBinary(data []byte, dest any) error {
 	if err := UnmarshalBinary(data, dest); err != nil {
 		return err
 	}
@@ -153,11 +153,11 @@ func UnmarshalValidateBinary(data []byte, dest interface{}) error {
 	return nil
 }
 
-func MarshalBinary(message interface{}) ([]byte, error) {
+func MarshalBinary(message any) ([]byte, error) {
 	return cbor.Marshal(message, cbor.EncOptions{})
 }
 
-func UnmarshalBinary(data []byte, dst interface{}) error {
+func UnmarshalBinary(data []byte, dst any) error {
 	return cbor.Unmarshal(data, dst)
 }
 

@@ -88,7 +88,7 @@ func (db *postgresDB) user(ctx context.Context, username string) (*User, error) 
 	err := db.db.QueryUserContext(
 		ctx,
 		"SELECT id, username, language, coredata FROM irma.users WHERE username = $1 AND coredata IS NOT NULL",
-		[]interface{}{&result.id, &result.Username, &result.Language, &result.Secrets},
+		[]any{&result.id, &result.Username, &result.Language, &result.Secrets},
 		username,
 	)
 	if err != nil {
@@ -179,16 +179,10 @@ func (db *postgresDB) reservePinTry(ctx context.Context, user *User) (bool, int,
 			server.LogError(err, "Failed to scan for pin counter and block date")
 			return false, 0, 0, keyshare.ErrDB
 		}
-		tries = maxPinTries - tries
-		if tries < 0 {
-			tries = 0
-		}
+		tries = max(maxPinTries-tries, 0)
 	}
 
-	wait = wait - time.Now().Unix()
-	if wait < 0 {
-		wait = 0
-	}
+	wait = max(wait-time.Now().Unix(), 0)
 	return allowed, tries, wait, nil
 }
 
@@ -231,7 +225,7 @@ func (db *postgresDB) setSeen(ctx context.Context, user *User) error {
 	return nil
 }
 
-func (db *postgresDB) addLog(ctx context.Context, user *User, eventType eventType, param interface{}) error {
+func (db *postgresDB) addLog(ctx context.Context, user *User, eventType eventType, param any) error {
 	var encodedParamString *string
 	if param != nil {
 		encodedParam, err := json.Marshal(param)
