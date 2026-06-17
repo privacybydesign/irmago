@@ -9,7 +9,7 @@ import (
 
 // Document represents a W3C DID Document.
 type Document struct {
-	Context            interface{}          `json:"@context"`
+	Context            any                  `json:"@context"`
 	ID                 string               `json:"id"`
 	Controller         string               `json:"controller,omitempty"`
 	VerificationMethod []VerificationMethod `json:"verificationMethod,omitempty"`
@@ -29,7 +29,7 @@ const (
 
 // VerificationMethod represents a verification method in a DID Document.
 type VerificationMethod struct {
-	Context      interface{}            `json:"@context,omitempty"`
+	Context      any                    `json:"@context,omitempty"`
 	ID           string                 `json:"id"`
 	Type         VerificationMethodType `json:"type"`
 	Controller   string                 `json:"controller"`
@@ -39,13 +39,13 @@ type VerificationMethod struct {
 }
 
 // VerificationRef can be either a string (reference) or an embedded VerificationMethod.
-type VerificationRef interface{}
+type VerificationRef any
 
 // Service represents a service endpoint in a DID Document.
 type Service struct {
-	ID              string      `json:"id"`
-	Type            string      `json:"type"`
-	ServiceEndpoint interface{} `json:"serviceEndpoint"`
+	ID              string `json:"id"`
+	Type            string `json:"type"`
+	ServiceEndpoint any    `json:"serviceEndpoint"`
 }
 
 func (v *VerificationMethod) UnmarshalJSON(data []byte) error {

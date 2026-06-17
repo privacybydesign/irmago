@@ -43,7 +43,7 @@ func TestPinFunctionality(t *testing.T) {
 		j, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
 		var claims jwt.StandardClaims
-		_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (interface{}, error) {
+		_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (any, error) {
 			return &jwtTestKey.PublicKey, nil
 		})
 		assert.NoError(t, err)
@@ -200,7 +200,7 @@ func TestProofFunctionality(t *testing.T) {
 			ProofP *gabi.ProofP
 		}{}
 		fmt.Println(Rjwt)
-		_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (interface{}, error) {
+		_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (any, error) {
 			return &c.jwtPrivateKey.PublicKey, nil
 		})
 		require.NoError(t, err)

@@ -24,12 +24,10 @@ import (
 // testingT is a minimal testing interface that our assertion helpers accept.
 // Both *testing.T and fakeT (for failure tests) satisfy this interface.
 type testingT interface {
-	Errorf(format string, args ...interface{})
+	Errorf(format string, args ...any)
 	FailNow()
 	Helper()
 }
-
-func strPtr(s string) *string { return &s }
 
 func userInteraction(t *testing.T, c *client.Client, interaction clientmodels.SessionUserInteraction) {
 	go func() {
@@ -238,8 +236,6 @@ func denyPermission(t *testing.T, c *client.Client, sessionId int) {
 		},
 	})
 }
-
-func intPtr(v int) *int { return &v }
 
 // requireAttr asserts that the attribute map contains an attribute at the given
 // claim path with the expected string value.

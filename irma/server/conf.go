@@ -60,7 +60,7 @@ type Configuration struct {
 	redisClient *RedisClient `json:"-"`
 
 	// Static session requests that can be created by POST /session/{name}
-	StaticSessions map[string]interface{} `json:"static_sessions"`
+	StaticSessions map[string]any `json:"static_sessions"`
 	// Static session requests after parsing
 	StaticSessionRequests map[string]irma.RequestorRequest `json:"-"`
 
@@ -251,7 +251,7 @@ func (conf *Configuration) verifyStaticSessions() error {
 }
 
 func GocronPanicHandler(logger *logrus.Logger) gocron.PanicHandlerFunc {
-	return func(jobName string, recoverData interface{}) {
+	return func(jobName string, recoverData any) {
 		var details string
 		b, err := json.Marshal(recoverData)
 		if err == nil {

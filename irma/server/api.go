@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"reflect"
@@ -642,9 +643,7 @@ func (r *HTTPResponseRecorder) WriteHeader(statusCode int) {
 // Flush implements http.Flusher.
 func (r *HTTPResponseRecorder) Flush() {
 	if !r.Flushed {
-		for k, v := range r.Header() {
-			r.wrapped.Header()[k] = v
-		}
+		maps.Copy(r.wrapped.Header(), r.Header())
 		if r.statusCode > 0 {
 			r.wrapped.WriteHeader(r.statusCode)
 		}

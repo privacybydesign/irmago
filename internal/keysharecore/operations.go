@@ -157,7 +157,7 @@ func (c *Core) ChangePin(secrets UserSecrets, jwtt string) (UserSecrets, error) 
 // Note: Although this is an internal function, it is tested directly
 func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUserSecrets, error) {
 	// Verify token validity
-	token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(jwtToken, func(token *jwt.Token) (any, error) {
 		if token.Method != jwt.SigningMethodRS256 {
 			return nil, ErrInvalidJWT
 		}

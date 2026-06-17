@@ -279,7 +279,7 @@ func testOpenID4VCIPreAuthFlowTxCodeRetriesExhausted(t *testing.T) {
 
 	wrongCode := "000000"
 	expectedRemaining := []int{2, 1}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		userInteraction(t, c, clientmodels.SessionUserInteraction{
 			SessionId: session.Id,
 			Type:      clientmodels.UI_PreAuthorizedCode,

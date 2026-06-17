@@ -91,10 +91,6 @@ func TestServerHandleRegisterLegacy(t *testing.T) {
 	)
 }
 
-func stringPtr(s string) *string {
-	return &s
-}
-
 func TestServerHandleRegister(t *testing.T) {
 	keyshareServer, httpServer := StartKeyshareServer(t, NewMemoryDB(), "")
 	defer StopKeyshareServer(t, keyshareServer, httpServer)
@@ -102,8 +98,8 @@ func TestServerHandleRegister(t *testing.T) {
 	var j string
 
 	for _, data := range []irma.KeyshareEnrollmentData{
-		{Pin: "testpin", Email: stringPtr("test@test.com"), Language: "en"},
-		{Pin: "testpin", Email: stringPtr("test@test.com"), Language: "nonexistinglanguage"},
+		{Pin: "testpin", Email: new("test@test.com"), Language: "en"},
+		{Pin: "testpin", Email: new("test@test.com"), Language: "nonexistinglanguage"},
 		{Pin: "testpin", Language: "en"},
 		{Pin: "testpin", Language: "nonexistinglanguage"},
 	} {
@@ -187,7 +183,7 @@ func TestPinTryChallengeResponse(t *testing.T) {
 	)
 }
 
-func marshalJSON(t *testing.T, v interface{}) string {
+func marshalJSON(t *testing.T, v any) string {
 	j, err := json.Marshal(v)
 	require.NoError(t, err)
 	return string(j)
@@ -552,7 +548,7 @@ func (db *testDB) setSeen(ctx context.Context, user *User) error {
 	return db.db.setSeen(ctx, user)
 }
 
-func (db *testDB) addLog(ctx context.Context, user *User, entrytype eventType, params interface{}) error {
+func (db *testDB) addLog(ctx context.Context, user *User, entrytype eventType, params any) error {
 	return db.db.addLog(ctx, user, entrytype, params)
 }
 

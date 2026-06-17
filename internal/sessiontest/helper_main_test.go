@@ -201,7 +201,7 @@ func extractClientMaxVersion(client *irmaclient.IrmaClient) *irma.ProtocolVersio
 	return extractPrivateField(client, "maxVersion").(*irma.ProtocolVersion)
 }
 
-func extractPrivateField(i interface{}, field string) interface{} {
+func extractPrivateField(i any, field string) any {
 	rct := reflect.ValueOf(i).Elem().FieldByName(field)
 	return reflect.NewAt(rct.Type(), unsafe.Pointer(rct.UnsafeAddr())).Elem().Interface()
 }

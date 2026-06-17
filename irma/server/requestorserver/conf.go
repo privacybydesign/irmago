@@ -222,8 +222,8 @@ func (conf *Configuration) initialize() error {
 			}
 		}
 		authenticators = map[AuthenticationMethod]Authenticator{
-			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]interface{}{}, maxRequestAge: conf.MaxRequestAge},
-			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]interface{}{}, maxRequestAge: conf.MaxRequestAge},
+			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]any{}, maxRequestAge: conf.MaxRequestAge},
+			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]any{}, maxRequestAge: conf.MaxRequestAge},
 			AuthenticationMethodToken:     &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
 		}
 
