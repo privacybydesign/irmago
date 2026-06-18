@@ -267,11 +267,11 @@ func (s *Server) startNextSession(
 	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": ses.RequestorToken}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
 		s.conf.Logger.
-			WithFields(logrus.Fields{"session": ses.RequestorToken, "clienttoken": ses.ClientToken}).
+			WithFields(logrus.Fields{"session": common.SanitizeForLog(string(ses.RequestorToken)), "clienttoken": common.SanitizeForLog(string(ses.ClientToken))}).
 			Info("Session request: ", server.ToJson(rrequest))
 	} else {
 		s.conf.Logger.
-			WithFields(logrus.Fields{"session": ses.RequestorToken}).
+			WithFields(logrus.Fields{"session": common.SanitizeForLog(string(ses.RequestorToken))}).
 			Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
 

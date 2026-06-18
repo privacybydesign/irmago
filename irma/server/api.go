@@ -99,7 +99,7 @@ func RemoteError(err Error, message string) *irma.RemoteError {
 		"status":      err.Status,
 		"description": err.Description,
 		"error":       err.Type,
-		"message":     message,
+		"message":     common.SanitizeForLog(message),
 	}).Warnf("Sending session error")
 	if Logger.IsLevelEnabled(logrus.DebugLevel) {
 		stack = string(debug.Stack())
@@ -405,15 +405,36 @@ func LogWarning(err error, msg ...string) error {
 	return log(logrus.WarnLevel, err, msg...)
 }
 
+// sensitiveHeaders lists HTTP header names that must not appear in logs.
+var sensitiveHeaders = map[string]struct{}{
+	"authorization": {},
+	"cookie":        {},
+	"set-cookie":    {},
+	"x-auth-token":  {},
+}
+
+// filterHeaders returns a copy of headers with sensitive values redacted.
+func filterHeaders(headers http.Header) http.Header {
+	filtered := make(http.Header, len(headers))
+	for k, v := range headers {
+		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
+			filtered[k] = []string{"[redacted]"}
+		} else {
+			filtered[k] = v
+		}
+	}
+	return filtered
+}
+
 func LogRequest(typ, proto, method, url, from string, headers http.Header, message []byte) {
 	fields := logrus.Fields{
 		"type":   typ,
 		"proto":  proto,
 		"method": method,
-		"url":    url,
+		"url":    common.SanitizeForLog(url),
 	}
 	if len(headers) > 0 {
-		fields["headers"] = headers
+		fields["headers"] = filterHeaders(headers)
 	}
 	if len(message) > 0 {
 		if headers.Get("Content-Type") == "application/octet-stream" {
@@ -423,7 +444,7 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 		}
 	}
 	if from != "" {
-		fields["from"] = from
+		fields["from"] = common.SanitizeForLog(from)
 	}
 	Logger.WithFields(fields).Tracef("=> request")
 }
@@ -444,7 +465,7 @@ func LogResponse(url string, status int, duration time.Duration, binary bool, re
 	if status < 400 {
 		l.Trace("<= response")
 	} else {
-		l.WithField("url", url).Warn("<= response")
+		l.WithField("url", common.SanitizeForLog(url)).Warn("<= response")
 	}
 }
 

@@ -29,6 +29,14 @@ var Logger *logrus.Logger
 // Only for use in unit tests.
 var ForceHTTPS = true
 
+// logSanitizer replaces newline characters so user-controlled strings cannot inject fake log entries.
+var logSanitizer = strings.NewReplacer("\r\n", "\\r\\n", "\r", "\\r", "\n", "\\n")
+
+// SanitizeForLog replaces CR and LF characters in s to prevent log injection.
+func SanitizeForLog(s string) string {
+	return logSanitizer.Replace(s)
+}
+
 const (
 	AlphanumericChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	NumericChars      = "0123456789"
@@ -76,6 +84,7 @@ func PathExists(path string) (bool, error) {
 }
 
 func Stat(path string) (os.FileInfo, bool, error) {
+	path = filepath.Clean(path)
 	info, err := os.Lstat(path)
 	if err == nil {
 		return info, true, nil
