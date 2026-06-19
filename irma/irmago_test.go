@@ -1594,6 +1594,38 @@ func TestParseKeysFolderConcurrency(t *testing.T) {
 	}
 }
 
+// TestPublicKeyUnknownScheme is a regression test for a nil dereference that occurred when a
+// session referenced an issuer whose scheme is not present in the configuration. This can happen
+// when a session runs concurrently with the periodic scheme update, during which a scheme is
+// temporarily removed from conf.SchemeManagers. Looking up a public key for such an issuer used to
+// dereference a nil *SchemeManager (scheme.path()) and panic; it must now return a clean error.
+func TestPublicKeyUnknownScheme(t *testing.T) {
+	conf := parseConfiguration(t)
+
+	issuerid := NewIssuerIdentifier("irma-demo.MijnOverheid")
+	schemeid := issuerid.SchemeManagerIdentifier()
+
+	// Simulate the scheme being temporarily absent (e.g. during a scheme update).
+	require.Contains(t, conf.SchemeManagers, schemeid)
+	delete(conf.SchemeManagers, schemeid)
+	// Clear any cached public keys so the lookup actually hits the scheme-folder code path.
+	conf.publicKeys = concmap.New[PublicKeyIdentifier, *gabikeys.PublicKey]()
+
+	require.NotPanics(t, func() {
+		err := conf.parseKeysFolder(issuerid)
+		require.Error(t, err)
+
+		_, err = conf.PublicKeyIndices(issuerid)
+		require.Error(t, err)
+
+		_, err = conf.PublicKey(issuerid, 0)
+		require.Error(t, err)
+
+		_, err = conf.PublicKeyLatest(issuerid)
+		require.Error(t, err)
+	})
+}
+
 func TestInstallSchemeUnstableRemote(t *testing.T) {
 	testSchemeID := NewSchemeManagerIdentifier("test")
 	testSchemeURL := "http://localhost:48681/irma_configuration/test"
