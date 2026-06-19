@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
 - Sanitize user-controlled strings before writing them to log entries to prevent log injection, including serialized session and revocation requests, request bodies and HTTP header values
 - Log only an allowlist of non-sensitive HTTP headers in request logs, redacting all other header values (credentials, PII) by default
-- Fix email header injection by validating recipient addresses (rejecting embedded CR/LF) and using them in both the SMTP `To:` header and the SMTP envelope recipients
+- Fix email header injection by neutralizing CR/LF in recipient addresses written to the SMTP `To:` header and using the parsed addresses as the SMTP envelope recipients
 - Normalize file paths via `filepath.Clean` before filesystem operations
 - Reject issuer identifiers that would escape the private key ring folder, preventing path traversal through the credential type in a session or revocation request
 
