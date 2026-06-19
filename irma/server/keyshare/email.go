@@ -115,19 +115,24 @@ func (conf EmailConfiguration) SendEmail(
 		return ErrInvalidEmail
 	}
 
-	// Use the parsed, validated addresses as the SMTP envelope recipients so that
-	// only well-formed addresses (no embedded CRLF or extra headers) are sent.
+	// Build the validated recipient list, used both as the SMTP envelope recipients
+	// and in the To header. mail.ParseAddressList already rejects control characters,
+	// but guard explicitly so that a recipient address can never inject extra SMTP
+	// headers or message content.
 	recipients := make([]string, len(parsedTo))
 	for i, addr := range parsedTo {
+		if strings.ContainsAny(addr.Address, "\r\n") {
+			return ErrInvalidEmail
+		}
 		recipients[i] = addr.Address
 	}
 
 	message := bytes.Buffer{}
 
 	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email.
-	// Use the parsed address to prevent CRLF injection in the email header.
+	// Use the validated address to prevent CRLF injection in the email header.
 	if len(to) == 1 {
-		fmt.Fprintf(&message, "To: %s\r\n", parsedTo[0].Address)
+		fmt.Fprintf(&message, "To: %s\r\n", recipients[0])
 	}
 
 	fmt.Fprintf(&message, "From: %s\r\n", from.Address)
