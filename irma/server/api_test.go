@@ -203,5 +203,7 @@ func TestFilterHeadersCaseInsensitive(t *testing.T) {
 	// in case headers are constructed directly with lower-case keys.
 	headers := http.Header{"authorization": []string{"secret"}}
 	filtered := filterHeaders(headers)
-	require.Equal(t, []string{"[redacted]"}, filtered["authorization"])
+	// filterHeaders preserves the original (lower-case) key, so look it up via the
+	// underlying map type to avoid http.Header key canonicalization (SA1008).
+	require.Equal(t, []string{"[redacted]"}, map[string][]string(filtered)["authorization"])
 }
