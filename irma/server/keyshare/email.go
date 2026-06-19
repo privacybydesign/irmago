@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/irma/server"
 )
 
@@ -68,7 +69,7 @@ func (conf EmailConfiguration) TranslateString(strings map[string]string, lang s
 	if ok {
 		return s
 	}
-	server.Logger.WithField("lang", lang).
+	server.Logger.WithField("lang", common.SanitizeForLog(lang)).
 		Warn("email string translation requested for unknown language, falling back to default")
 	return strings[conf.DefaultLanguage]
 }
@@ -78,7 +79,7 @@ func (conf EmailConfiguration) translateTemplate(templates map[string]*template.
 	if ok {
 		return t
 	}
-	server.Logger.WithField("lang", lang).
+	server.Logger.WithField("lang", common.SanitizeForLog(lang)).
 		Warn("email template translation requested for unknown language, falling back to default")
 	return templates[conf.DefaultLanguage]
 }
@@ -109,15 +110,17 @@ func (conf EmailConfiguration) SendEmail(
 		return errors.New("no to address specified")
 	}
 
-	if _, err = mail.ParseAddressList(strings.Join(to, ",")); err != nil {
+	parsedTo, err := mail.ParseAddressList(strings.Join(to, ","))
+	if err != nil {
 		return ErrInvalidEmail
 	}
 
 	message := bytes.Buffer{}
 
-	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email
+	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email.
+	// Use the parsed address to prevent CRLF injection in the email header.
 	if len(to) == 1 {
-		fmt.Fprintf(&message, "To: %s\r\n", to[0])
+		fmt.Fprintf(&message, "To: %s\r\n", parsedTo[0].Address)
 	}
 
 	fmt.Fprintf(&message, "From: %s\r\n", from.Address)

@@ -140,6 +140,9 @@ jobs:
             arch: 386
           - os: darwin
             arch: arm
+          # Go 1.26 removed the 32-bit windows/arm port (windows/arm64 remains).
+          - os: windows
+            arch: arm
     steps:
       - uses: actions/checkout@v6
 
