@@ -84,6 +84,10 @@ func PathExists(path string) (bool, error) {
 }
 
 func Stat(path string) (os.FileInfo, bool, error) {
+	// Clean normalizes the path (collapsing ., .. and repeated separators) before it
+	// reaches the filesystem. Note that Clean also strips a trailing slash, so a symlink
+	// referenced as "link/" is statted as the link itself rather than its target; this is
+	// intentional and harmless for the existence checks that use this helper.
 	path = filepath.Clean(path)
 	info, err := os.Lstat(path)
 	if err == nil {

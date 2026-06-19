@@ -172,3 +172,36 @@ func stopServer(t *testing.T, server *http.Server) {
 	require.NoError(t, server.Shutdown(ctx))
 	cancel()
 }
+
+func TestFilterHeaders(t *testing.T) {
+	headers := http.Header{
+		"Authorization": []string{"Bearer supersecret-token"},
+		"Cookie":        []string{"session=abc123"},
+		"Set-Cookie":    []string{"session=def456; HttpOnly"},
+		"X-Auth-Token":  []string{"another-secret"},
+		"Content-Type":  []string{"application/json"},
+		"User-Agent":    []string{"irma-test"},
+	}
+
+	filtered := filterHeaders(headers)
+
+	// Sensitive headers must be redacted, regardless of header-name casing.
+	for _, name := range []string{"Authorization", "Cookie", "Set-Cookie", "X-Auth-Token"} {
+		require.Equal(t, []string{"[redacted]"}, filtered[name], "header %s should be redacted", name)
+	}
+
+	// Non-sensitive headers must pass through unchanged.
+	require.Equal(t, []string{"application/json"}, filtered["Content-Type"])
+	require.Equal(t, []string{"irma-test"}, filtered["User-Agent"])
+
+	// The original headers must not be mutated by filtering.
+	require.Equal(t, []string{"Bearer supersecret-token"}, headers["Authorization"])
+}
+
+func TestFilterHeadersCaseInsensitive(t *testing.T) {
+	// http.Header keys are canonicalized, but verify lookups are case-insensitive
+	// in case headers are constructed directly with lower-case keys.
+	headers := http.Header{"authorization": []string{"secret"}}
+	filtered := filterHeaders(headers)
+	require.Equal(t, []string{"[redacted]"}, filtered["authorization"])
+}

@@ -6,16 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Security
-- Update Go toolchain to 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
-- Update dependencies to resolve Dependabot security advisories:
-  - `golang.org/x/crypto` 0.40.0 → 0.53.0 (GHSA-f6x5-jh6r-wrfv, GHSA-j5w8-q4qc-rx2x)
-  - `github.com/sirupsen/logrus` 1.9.0 → 1.9.4 (GHSA-4f99-4q7p-p3gh)
-  - `github.com/jackc/pgx/v5` 5.5.5 → 5.10.0 (GHSA-9jj7-4m8r-rfcm, GHSA-j88v-2chj-qfwx)
-  - `filippo.io/edwards25519` 1.1.0 → 1.2.0 (GHSA-fw7p-63qq-7hpr)
+- Update Go toolchain 1.26.3 → 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
+- Update dependencies with security relevance:
+  - `github.com/go-chi/chi/v5` 5.2.5 → 5.3.0 (host header handling)
+  - `github.com/golang-jwt/jwt/v5` 5.2.2 → 5.3.1
+  - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
 - Sanitize user-controlled strings before writing them to log entries to prevent log injection
-- Filter sensitive HTTP headers (Authorization, Cookie) from request logs
-- Fix email header injection by using parsed recipient addresses in SMTP `To:` header
+- Filter sensitive HTTP headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`) from request logs
+- Fix email header injection by using the parsed recipient address in the SMTP `To:` header
 - Normalize file paths via `filepath.Clean` before filesystem operations
+
+### Changed
+- Update other dependencies to their latest releases: `github.com/lestrrat-go/jwx/v3`, `github.com/go-co-op/gocron` (v1 and v2), `github.com/spf13/{cast,cobra,pflag,viper}`, `go.etcd.io/bbolt`, `gorm.io/driver/{mysql,postgres,sqlserver}`, `github.com/alicebob/miniredis/v2`, `github.com/go-chi/cors` and `github.com/go-errors/errors`
 
 ## [1.0.0] - 2026-06-19
 ### Added
