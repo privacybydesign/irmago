@@ -115,11 +115,9 @@ func (conf EmailConfiguration) SendEmail(
 		return ErrInvalidEmail
 	}
 
-	// Build the recipient list, used both as the SMTP envelope recipients and in
-	// the To header. mail.ParseAddressList already rejects control characters; we
-	// additionally neutralize any CR/LF (common.SanitizeForLog) when writing the
-	// address into the message, so a recipient can never inject extra SMTP headers
-	// or message content. This is a no-op for the well-formed addresses we accept.
+	// Use the parsed addresses as the SMTP envelope recipients and in the To header.
+	// mail.ParseAddressList rejects control characters, so .Address cannot contain
+	// CR/LF and cannot inject extra SMTP headers (see TestParseEmailAddressRejectsHeaderInjection).
 	recipients := make([]string, len(parsedTo))
 	for i, addr := range parsedTo {
 		recipients[i] = addr.Address
@@ -129,7 +127,7 @@ func (conf EmailConfiguration) SendEmail(
 
 	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email.
 	if len(to) == 1 {
-		fmt.Fprintf(&message, "To: %s\r\n", common.SanitizeForLog(recipients[0]))
+		fmt.Fprintf(&message, "To: %s\r\n", recipients[0])
 	}
 
 	fmt.Fprintf(&message, "From: %s\r\n", from.Address)
