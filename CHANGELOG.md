@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `github.com/go-chi/chi/v5` 5.2.5 → 5.3.0 (host header handling)
   - `github.com/golang-jwt/jwt/v5` 5.2.2 → 5.3.1
   - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
-- Sanitize user-controlled strings before writing them to log entries to prevent log injection
+- Sanitize user-controlled strings before writing them to log entries to prevent log injection, including serialized session and revocation requests, request bodies and HTTP header values
 - Filter sensitive HTTP headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`) from request logs
-- Fix email header injection by using the parsed recipient address in the SMTP `To:` header
+- Fix email header injection by using the parsed recipient address in the SMTP `To:` header and as the SMTP envelope recipients
 - Normalize file paths via `filepath.Clean` before filesystem operations
 
 ### Changed

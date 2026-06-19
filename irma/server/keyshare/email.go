@@ -115,6 +115,13 @@ func (conf EmailConfiguration) SendEmail(
 		return ErrInvalidEmail
 	}
 
+	// Use the parsed, validated addresses as the SMTP envelope recipients so that
+	// only well-formed addresses (no embedded CRLF or extra headers) are sent.
+	recipients := make([]string, len(parsedTo))
+	for i, addr := range parsedTo {
+		recipients[i] = addr.Address
+	}
+
 	message := bytes.Buffer{}
 
 	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email.
@@ -129,7 +136,7 @@ func (conf EmailConfiguration) SendEmail(
 	fmt.Fprintf(&message, "\r\n")
 	fmt.Fprint(&message, content.String())
 
-	if err := smtp.SendMail(conf.EmailServer, conf.EmailAuth, from.Address, to, message.Bytes()); err != nil {
+	if err := smtp.SendMail(conf.EmailServer, conf.EmailAuth, from.Address, recipients, message.Bytes()); err != nil {
 		server.Logger.WithField("error", err).Error("Could not send email")
 		return err
 	}

@@ -420,7 +420,11 @@ func filterHeaders(headers http.Header) http.Header {
 		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
 			filtered[k] = []string{"[redacted]"}
 		} else {
-			filtered[k] = v
+			sanitized := make([]string, len(v))
+			for i, val := range v {
+				sanitized[i] = common.SanitizeForLog(val)
+			}
+			filtered[k] = sanitized
 		}
 	}
 	return filtered
@@ -440,7 +444,7 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 		if headers.Get("Content-Type") == "application/octet-stream" {
 			fields["message"] = hex.EncodeToString(message)
 		} else {
-			fields["message"] = string(message)
+			fields["message"] = common.SanitizeForLog(string(message))
 		}
 	}
 	if from != "" {
