@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Filter sensitive HTTP headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`) from request logs
 - Fix email header injection by using the parsed recipient address in the SMTP `To:` header and as the SMTP envelope recipients
 - Normalize file paths via `filepath.Clean` before filesystem operations
+- Reject issuer identifiers that would escape the private key ring folder, preventing path traversal through the credential type in a session or revocation request
 
 ### Changed
 - Raise the minimum Go version to 1.26
