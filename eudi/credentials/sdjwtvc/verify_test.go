@@ -941,11 +941,11 @@ func Test_HolderVerificationProcessor_StatusClaim_AbsentLeavesPayloadStatusNil(t
 
 func Test_HolderVerificationProcessor_StatusCheck_ValidList_Accepts(t *testing.T) {
 	signer := statuslist.NewTestStatusListSigner(t)
-	srv := statuslist.NewTestStatusListServer(t, signer.SignToken(t, statuslist.TestStatusListOpts{
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://openid4vc.staging.yivi.app",
 		Bits:     1,
 		Statuses: map[uint64]uint8{7: 0}, // Valid at idx 7
-	}))
+	})
 
 	config := newWorkingSdJwtVcTestConfig().withStatusListReference(srv.URL(), 7)
 	sdjwtvc := createTestSdJwtVc(t, config)
@@ -960,11 +960,11 @@ func Test_HolderVerificationProcessor_StatusCheck_ValidList_Accepts(t *testing.T
 
 func Test_HolderVerificationProcessor_StatusCheck_InvalidList_Rejects(t *testing.T) {
 	signer := statuslist.NewTestStatusListSigner(t)
-	srv := statuslist.NewTestStatusListServer(t, signer.SignToken(t, statuslist.TestStatusListOpts{
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://openid4vc.staging.yivi.app",
 		Bits:     1,
 		Statuses: map[uint64]uint8{7: 1}, // Invalid at idx 7
-	}))
+	})
 
 	config := newWorkingSdJwtVcTestConfig().withStatusListReference(srv.URL(), 7)
 	sdjwtvc := createTestSdJwtVc(t, config)

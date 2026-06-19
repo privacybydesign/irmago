@@ -88,11 +88,11 @@ func Test_RefreshAll_GroupsByURI_OneFetchPerURI(t *testing.T) {
 	db := newTestRefreshDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 	// Single URI, multiple credentials at different idx values.
-	srv := statuslist.NewTestStatusListServer(t, signer.SignToken(t, statuslist.TestStatusListOpts{
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0, 1: 0, 2: 1},
-	}))
+	})
 	checker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: signer.X509VerificationContext(),
 	}, statuslist.NewInMemoryCache())
@@ -128,11 +128,11 @@ func Test_RefreshAll_GroupsByURI_OneFetchPerURI(t *testing.T) {
 func Test_RefreshAll_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 	db := newTestRefreshDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
-	good := statuslist.NewTestStatusListServer(t, signer.SignToken(t, statuslist.TestStatusListOpts{
+	good := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0},
-	}))
+	})
 	checker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: signer.X509VerificationContext(),
 	}, statuslist.NewInMemoryCache())
@@ -192,11 +192,11 @@ func Test_StartTicker_FiresAndStops(t *testing.T) {
 	db := newTestRefreshDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 	var hits atomic.Int64
-	tracker := statuslist.NewTestStatusListServer(t, signer.SignToken(t, statuslist.TestStatusListOpts{
+	tracker := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0},
-	}))
+	})
 	// Wrap server hits via the underlying tracker.Hits() count.
 
 	checker := statuslist.NewChecker(statuslist.VerificationContext{

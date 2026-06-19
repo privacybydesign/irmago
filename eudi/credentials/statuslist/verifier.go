@@ -42,27 +42,45 @@ type verifiedStatusList struct {
 	verifyAt time.Time
 }
 
-// ttlFromPayload returns the JWT-side TTL signal: the `ttl` claim if
-// present, otherwise the remaining `exp - now`, otherwise the package
-// default (post-clamp).
-func (v *verifiedStatusList) ttlFromPayload() time.Duration {
+// payloadTTLSignal reports the caching lifetime advertised by the
+// Status List Token itself — the `ttl` claim if present, otherwise the
+// remaining `exp - now` — together with whether the token advertised
+// one at all. draft-ietf-oauth-status-list-15 §8.2 requires the `ttl`
+// and `exp` claims to take priority over HTTP caching headers, so the
+// caller must distinguish "token said nothing" (fall back to the HTTP
+// header) from "token advertised a lifetime".
+func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
 	if v.payload.TTLSeconds > 0 {
-		return time.Duration(v.payload.TTLSeconds) * time.Second
+		return time.Duration(v.payload.TTLSeconds) * time.Second, true
 	}
 	if v.payload.Expiry > 0 {
-		remaining := time.Until(time.Unix(v.payload.Expiry, 0))
-		if remaining > 0 {
-			return remaining
+		if remaining := time.Until(time.Unix(v.payload.Expiry, 0)); remaining > 0 {
+			return remaining, true
 		}
+	}
+	return 0, false
+}
+
+// ttlFromPayload returns the JWT-side TTL signal, falling back to the
+// package default when the token advertises neither `ttl` nor `exp`.
+func (v *verifiedStatusList) ttlFromPayload() time.Duration {
+	if d, ok := v.payloadTTLSignal(); ok {
+		return d
 	}
 	return TTLDefault
 }
 
 // verifyStatusListToken parses, signature-verifies, and time-checks a
-// Status List Token. expectedIss MUST equal the iss claim — this is
-// the iss(StatusListToken) == iss(credential) binding required by the
-// trust model.
-func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss string, now time.Time) (*verifiedStatusList, error) {
+// Status List Token.
+//
+//   - expectedIss MUST equal the iss claim — the iss(StatusListToken)
+//     == iss(credential) binding required by this deployment's trust
+//     model (stricter than the spec, which leaves issuer alignment to
+//     the trust model — see draft-ietf-oauth-status-list-15 §11.3).
+//   - expectedURI MUST equal the sub claim — the spec's anti-substitution
+//     binding (§5.1, validation step §8.3): the fetched token's subject
+//     must be the very URI the credential pointed at.
+func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss, expectedURI string, now time.Time) (*verifiedStatusList, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{StatusListTokenTyp}, ctx.AllowInsecureDidWeb)
 
 	clock := ctx.Clock
@@ -105,6 +123,23 @@ func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss s
 	var payload statusListPayload
 	if err := payloadFromToken(token, &payload); err != nil {
 		return nil, fmt.Errorf("%w: invalid payload: %v", ErrUnauthorized, err)
+	}
+
+	// sub MUST equal the URI the token was fetched from (§5.1,
+	// validation step §8.3). This binds the fetched Status List Token
+	// to the reference carried in the credential — without it a valid
+	// token for a *different* list could be substituted.
+	if payload.Subject == "" {
+		return nil, fmt.Errorf("%w: missing sub claim", ErrUnauthorized)
+	}
+	if payload.Subject != expectedURI {
+		return nil, fmt.Errorf("%w: sub %q does not match status list uri %q", ErrUnauthorized, payload.Subject, expectedURI)
+	}
+
+	// iat is REQUIRED (§5.1). jwx validates it when present but does
+	// not enforce presence, so reject a token that omits it.
+	if payload.IssuedAt == 0 {
+		return nil, fmt.Errorf("%w: missing iat claim", ErrUnauthorized)
 	}
 
 	// Token has a status_list claim; bits must be set to one of the

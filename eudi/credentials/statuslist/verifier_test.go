@@ -18,7 +18,7 @@ func Test_VerifyStatusListToken_ValidX5cSignature(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	v, err := verifyStatusListToken(body, vc, "https://issuer.example", time.Now())
+	v, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "https://issuer.example", v.payload.Issuer)
 	require.Equal(t, 1, v.payload.StatusList.Bits)
@@ -36,7 +36,7 @@ func Test_VerifyStatusListToken_IssMismatch_Rejected(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://other-issuer.example", time.Now())
+	_, err := verifyStatusListToken(body, vc, "https://other-issuer.example", "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Contains(t, err.Error(), "iss mismatch")
 }
@@ -52,7 +52,7 @@ func Test_VerifyStatusListToken_WrongTyp_Rejected(t *testing.T) {
 	}, "dc+sd-jwt")
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example", time.Now())
+	_, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -68,7 +68,7 @@ func Test_VerifyStatusListToken_X5cWithoutTrustAnchor_Rejected(t *testing.T) {
 
 	// No X509Context configured — x5c path can't validate.
 	vc := VerificationContext{}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example", time.Now())
+	_, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -84,7 +84,7 @@ func Test_VerifyStatusListToken_FutureIat_BeyondSkew_Rejected(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example", time.Now())
+	_, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -101,7 +101,7 @@ func Test_VerifyStatusListToken_ExpiredBeyondSkew_Rejected(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(body, vc, "https://issuer.example", now)
+	_, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", now)
 	require.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -112,9 +112,57 @@ func Test_VerifyStatusListToken_InvalidBitSize_Rejected(t *testing.T) {
 	bits3Token := buildTokenWithBits(t, signer, 3)
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	_, err := verifyStatusListToken(bits3Token, vc, "https://issuer.example", time.Now())
+	_, err := verifyStatusListToken(bits3Token, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Contains(t, err.Error(), "bits")
+}
+
+func Test_VerifyStatusListToken_SubMismatch_Rejected(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	body := signer.SignToken(t, TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Subject:  "https://issuer.example/sl/1",
+		IssuedAt: time.Now(),
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+
+	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	_, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/DIFFERENT", time.Now())
+	require.ErrorIs(t, err, ErrUnauthorized)
+	require.Contains(t, err.Error(), "sub")
+}
+
+func Test_VerifyStatusListToken_MissingSub_Rejected(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	body := signer.SignToken(t, TestStatusListOpts{
+		Issuer: "https://issuer.example",
+		// no Subject
+		IssuedAt: time.Now(),
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+
+	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	_, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
+	require.ErrorIs(t, err, ErrUnauthorized)
+	require.Contains(t, err.Error(), "sub")
+}
+
+func Test_VerifyStatusListToken_MissingIat_Rejected(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	body := signer.SignToken(t, TestStatusListOpts{
+		Issuer:       "https://issuer.example",
+		Subject:      "https://issuer.example/sl/1",
+		OmitIssuedAt: true,
+		Bits:         1,
+		Statuses:     map[uint64]uint8{0: 0},
+	})
+
+	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	_, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
+	require.ErrorIs(t, err, ErrUnauthorized)
+	require.Contains(t, err.Error(), "iat")
 }
 
 func Test_VerifyStatusListToken_TTLClaim_ReadOnPayload(t *testing.T) {
@@ -129,7 +177,7 @@ func Test_VerifyStatusListToken_TTLClaim_ReadOnPayload(t *testing.T) {
 	})
 
 	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
-	v, err := verifyStatusListToken(body, vc, "https://issuer.example", time.Now())
+	v, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
 	require.NoError(t, err)
 	require.Equal(t, int64(600), v.payload.TTLSeconds)
 }

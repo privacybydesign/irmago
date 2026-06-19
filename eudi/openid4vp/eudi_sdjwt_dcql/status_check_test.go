@@ -34,11 +34,11 @@ func Test_CheckInstanceStatus_NoStatusReference_AllowsInstance(t *testing.T) {
 
 func Test_CheckInstanceStatus_ValidList_AllowsInstance(t *testing.T) {
 	signer := statuslist.NewTestStatusListSigner(t)
-	srv := statuslist.NewTestStatusListServer(t, signer.SignToken(t, statuslist.TestStatusListOpts{
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{3: 0},
-	}))
+	})
 	h := &SdJwtVcDcqlHandler{
 		statusChecker: statuslist.NewChecker(statuslist.VerificationContext{
 			X509Context: signer.X509VerificationContext(),
@@ -56,11 +56,11 @@ func Test_CheckInstanceStatus_ValidList_AllowsInstance(t *testing.T) {
 
 func Test_CheckInstanceStatus_InvalidList_RefusesInstance(t *testing.T) {
 	signer := statuslist.NewTestStatusListSigner(t)
-	srv := statuslist.NewTestStatusListServer(t, signer.SignToken(t, statuslist.TestStatusListOpts{
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{3: 1},
-	}))
+	})
 	h := &SdJwtVcDcqlHandler{
 		statusChecker: statuslist.NewChecker(statuslist.VerificationContext{
 			X509Context: signer.X509VerificationContext(),
@@ -97,11 +97,11 @@ func Test_CheckInstanceStatus_UnreachableURI_FailsClosed(t *testing.T) {
 
 func Test_CheckInstanceStatus_IssMismatch_FailsClosed(t *testing.T) {
 	signer := statuslist.NewTestStatusListSigner(t)
-	srv := statuslist.NewTestStatusListServer(t, signer.SignToken(t, statuslist.TestStatusListOpts{
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://attacker.example", // wrong iss
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0},
-	}))
+	})
 	h := &SdJwtVcDcqlHandler{
 		statusChecker: statuslist.NewChecker(statuslist.VerificationContext{
 			X509Context: signer.X509VerificationContext(),

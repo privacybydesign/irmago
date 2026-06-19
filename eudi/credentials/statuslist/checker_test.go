@@ -24,11 +24,11 @@ func makeSignerServerChecker(t *testing.T) (*TestStatusListSigner, *TestStatusLi
 
 func Test_Checker_Check_1Bit_AllValid(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0, 1: 0, 2: 0, 3: 0},
-	}))
+	})
 
 	s, err := checker.Check(context.Background(), Reference{Index: 2, URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
@@ -37,11 +37,11 @@ func Test_Checker_Check_1Bit_AllValid(t *testing.T) {
 
 func Test_Checker_Check_1Bit_Invalid(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{5: 1},
-	}))
+	})
 
 	s, err := checker.Check(context.Background(), Reference{Index: 5, URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
@@ -50,11 +50,11 @@ func Test_Checker_Check_1Bit_Invalid(t *testing.T) {
 
 func Test_Checker_Check_2Bit_Suspended(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     2,
 		Statuses: map[uint64]uint8{3: 2},
-	}))
+	})
 
 	s, err := checker.Check(context.Background(), Reference{Index: 3, URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
@@ -63,11 +63,11 @@ func Test_Checker_Check_2Bit_Suspended(t *testing.T) {
 
 func Test_Checker_Check_4Bit_ApplicationSpecific(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     4,
 		Statuses: map[uint64]uint8{0: 7},
-	}))
+	})
 
 	s, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
@@ -76,11 +76,11 @@ func Test_Checker_Check_4Bit_ApplicationSpecific(t *testing.T) {
 
 func Test_Checker_Check_8Bit_FullRange(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     8,
 		Statuses: map[uint64]uint8{0: 0, 1: 1, 2: 2, 3: 200},
-	}))
+	})
 
 	for idx, want := range map[uint64]Status{0: StatusValid, 1: StatusInvalid, 2: StatusSuspended, 3: StatusApplicationSpecific} {
 		s, err := checker.Check(context.Background(), Reference{Index: idx, URI: srv.URL()}, "https://issuer.example")
@@ -91,12 +91,12 @@ func Test_Checker_Check_8Bit_FullRange(t *testing.T) {
 
 func Test_Checker_Check_CachesAcrossCalls(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
 		TTLSeconds: 3600,
-	}))
+	})
 
 	for range 5 {
 		_, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()}, "https://issuer.example")
@@ -107,12 +107,12 @@ func Test_Checker_Check_CachesAcrossCalls(t *testing.T) {
 
 func Test_Checker_Refresh_BypassesCache(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
 		TTLSeconds: 3600,
-	}))
+	})
 
 	_, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
@@ -125,13 +125,12 @@ func Test_Checker_Refresh_BypassesCache(t *testing.T) {
 
 func Test_Checker_Check_Singleflight_CollapsesConcurrentFetches(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
-	body := signer.SignToken(t, TestStatusListOpts{
-		Issuer:   "https://issuer.example",
-		Bits:     1,
-		Statuses: map[uint64]uint8{0: 0},
-	})
 	var hits int64
 	release := make(chan struct{})
+	// body is assigned after the server exists so its `sub` can be set
+	// to the server URL (the §5.1 sub == uri binding). The handler
+	// closure reads body only at request time, after assignment.
+	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&hits, 1)
 		<-release // hold the request open while concurrent callers pile up
@@ -139,6 +138,13 @@ func Test_Checker_Check_Singleflight_CollapsesConcurrentFetches(t *testing.T) {
 		_, _ = w.Write(body)
 	}))
 	defer srv.Close()
+
+	body = signer.SignToken(t, TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Subject:  srv.URL,
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
 
 	checker := NewChecker(VerificationContext{X509Context: signer.X509VerificationContext()}, NewInMemoryCache())
 
@@ -171,23 +177,40 @@ func Test_Checker_Check_FetchFailure_FailsClosed(t *testing.T) {
 
 func Test_Checker_Check_IssMismatch_FailsClosed(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://attacker.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+
+	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	require.ErrorIs(t, err, ErrUnauthorized)
+}
+
+func Test_Checker_Check_SubMismatch_FailsClosed(t *testing.T) {
+	signer, srv, checker := makeSignerServerChecker(t)
+	// Sign with a sub that is NOT this server's URL. The token is
+	// otherwise valid (correct iss, signature), but the sub != uri
+	// binding must reject it (§5.1 / §8.3).
+	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Subject:  "https://issuer.example/some-other-list",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0},
 	}))
 
 	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
 	require.ErrorIs(t, err, ErrUnauthorized)
+	require.Contains(t, err.Error(), "sub")
 }
 
 func Test_Checker_Check_IndexOutOfBounds_FailsClosed(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
 		Statuses: map[uint64]uint8{0: 0, 1: 0, 2: 0},
-	}))
+	})
 
 	// Status array has 3 entries (= 1 byte at 1 bit each = 8 entries
 	// total). idx 999 must be rejected.
@@ -197,12 +220,12 @@ func Test_Checker_Check_IndexOutOfBounds_FailsClosed(t *testing.T) {
 
 func Test_Checker_Check_TTLClampedToMinimum(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
 		TTLSeconds: 1, // below TTLMin (60s)
-	}))
+	})
 
 	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
@@ -214,12 +237,12 @@ func Test_Checker_Check_TTLClampedToMinimum(t *testing.T) {
 
 func Test_Checker_Check_TTLClampedToMaximum(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
 		TTLSeconds: 7 * 24 * 3600, // above TTLMax (24h)
-	}))
+	})
 
 	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
@@ -229,23 +252,43 @@ func Test_Checker_Check_TTLClampedToMaximum(t *testing.T) {
 	require.LessOrEqual(t, expires.Sub(now), TTLMax+time.Second)
 }
 
-func Test_Checker_Check_TakesMinOfHttpMaxAgeAndJwtTtl(t *testing.T) {
+func Test_Checker_Check_PrioritizesJwtTtlOverHttpMaxAge(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
 	srv.SetMaxAge(120)
-	srv.SetBody(signer.SignToken(t, TestStatusListOpts{
+	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:     "https://issuer.example",
 		Bits:       1,
 		Statuses:   map[uint64]uint8{0: 0},
 		TTLSeconds: 3600,
-	}))
+	})
 
 	before := checker.nowFn()
 	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
 	_, expires, ok := checker.cache.Get(srv.URL())
 	require.True(t, ok)
-	// Effective TTL should be close to 120 s (the http max-age), not 3600 (the jwt ttl).
-	require.InDelta(t, 120*time.Second, expires.Sub(before), float64(5*time.Second))
+	// §8.2: the JWT ttl (3600 s) takes priority over the HTTP max-age
+	// (120 s), so the effective TTL is ~3600 s, not 120 s.
+	require.InDelta(t, 3600*time.Second, expires.Sub(before), float64(5*time.Second))
+}
+
+func Test_Checker_Check_FallsBackToHttpMaxAgeWhenNoJwtTtl(t *testing.T) {
+	signer, srv, checker := makeSignerServerChecker(t)
+	srv.SetMaxAge(300)
+	// No ttl and no exp on the token → the HTTP max-age is the only
+	// caching signal and is used as the fallback.
+	srv.Serve(t, signer, TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+
+	before := checker.nowFn()
+	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	require.NoError(t, err)
+	_, expires, ok := checker.cache.Get(srv.URL())
+	require.True(t, ok)
+	require.InDelta(t, 300*time.Second, expires.Sub(before), float64(5*time.Second))
 }
 
 func Test_Checker_Check_EmptyURI_FailsClosed(t *testing.T) {

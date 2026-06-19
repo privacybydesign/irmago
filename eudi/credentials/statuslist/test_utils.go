@@ -68,12 +68,15 @@ func (s *TestStatusListSigner) X509VerificationContext() eudi_jwt.X509Verificati
 // Zero-value defaults: bits=1, lst=all-zero (everyone Valid) sized
 // to fit the highest Statuses key, iat=now, no exp/ttl.
 type TestStatusListOpts struct {
-	Issuer     string
-	Subject    string // typically the status list URI
-	IssuedAt   time.Time
-	Expiry     time.Time
-	TTLSeconds int64
-	Bits       int
+	Issuer   string
+	Subject  string // typically the status list URI
+	IssuedAt time.Time
+	// OmitIssuedAt builds a token without an `iat` claim, for
+	// negative-path tests — `iat` is REQUIRED by §5.1.
+	OmitIssuedAt bool
+	Expiry       time.Time
+	TTLSeconds   int64
+	Bits         int
 	// Statuses maps idx → raw status value. Indices not listed
 	// default to 0 (Valid). The lst is sized to fit max(idx)+1
 	// entries at the requested bits per entry.
@@ -96,20 +99,22 @@ func (s *TestStatusListSigner) SignTokenWithTyp(t *testing.T, opts TestStatusLis
 	if bits == 0 {
 		bits = 1
 	}
-	if opts.IssuedAt.IsZero() {
-		opts.IssuedAt = time.Now()
-	}
 
 	lstBytes := encodeStatusBits(t, opts.Statuses, bits)
 
 	builder := jwt.NewBuilder().
 		Issuer(opts.Issuer).
 		Subject(opts.Subject).
-		IssuedAt(opts.IssuedAt).
 		Claim("status_list", map[string]any{
 			"bits": bits,
 			"lst":  lstBytes,
 		})
+	if !opts.OmitIssuedAt {
+		if opts.IssuedAt.IsZero() {
+			opts.IssuedAt = time.Now()
+		}
+		builder = builder.IssuedAt(opts.IssuedAt)
+	}
 	if !opts.Expiry.IsZero() {
 		builder = builder.Expiration(opts.Expiry)
 	}
@@ -201,9 +206,31 @@ func NewTestStatusListServer(t *testing.T, body []byte) *TestStatusListServer {
 	return s
 }
 
+// NewTestStatusListServerWithToken starts a server and serves a Status
+// List Token signed by signer. opts.Subject defaults to the server's
+// own URL when unset, so the §5.1 `sub` == `uri` binding holds for
+// callers that reference the token by this server's URL.
+func NewTestStatusListServerWithToken(t *testing.T, signer *TestStatusListSigner, opts TestStatusListOpts) *TestStatusListServer {
+	t.Helper()
+	srv := NewTestStatusListServer(t, nil)
+	srv.Serve(t, signer, opts)
+	return srv
+}
+
 // URL returns the server's base URL — what callers use as the
 // status_list.uri.
 func (s *TestStatusListServer) URL() string { return s.server.URL }
+
+// Serve signs opts with signer and serves the result on subsequent
+// requests. opts.Subject defaults to this server's URL when unset so
+// the spec-required `sub` == `uri` binding holds.
+func (s *TestStatusListServer) Serve(t *testing.T, signer *TestStatusListSigner, opts TestStatusListOpts) {
+	t.Helper()
+	if opts.Subject == "" {
+		opts.Subject = s.URL()
+	}
+	s.SetBody(signer.SignToken(t, opts))
+}
 
 // SetBody atomically replaces the body served on subsequent requests.
 func (s *TestStatusListServer) SetBody(body []byte) { s.bodyBytes.Store(&body) }

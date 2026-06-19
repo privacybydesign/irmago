@@ -84,16 +84,20 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri, expectedIss string,
 		return nil, err
 	}
 
-	v, err := verifyStatusListToken(res.rawJwt, c.ctx, expectedIss, now)
+	v, err := verifyStatusListToken(res.rawJwt, c.ctx, expectedIss, uri, now)
 	if err != nil {
 		return nil, err
 	}
 
-	// TTL = min(http max-age, jwt ttl/exp) before clamping. If only
-	// one signal is present, ClampTTL handles the missing-signal case.
-	httpSig := res.httpMaxAge
-	jwtSig := v.ttlFromPayload()
-	ttl := minTTL(httpSig, jwtSig)
+	// Caching lifetime. draft-ietf-oauth-status-list-15 §8.2 requires
+	// the token's own ttl/exp claims to take priority over HTTP caching
+	// headers, so the HTTP max-age is only a fallback used when the
+	// token advertises no lifetime of its own. ClampTTL bounds the
+	// result and supplies the default when neither signal is present.
+	ttl, ok := v.payloadTTLSignal()
+	if !ok {
+		ttl = res.httpMaxAge
+	}
 	expires := now.Add(ClampTTL(ttl))
 
 	if err := c.cache.Put(uri, res.rawJwt, expires); err != nil {
@@ -106,7 +110,7 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri, expectedIss string,
 // verifyAndDecode runs the verify+decode path against an already
 // cached raw JWT.
 func (c *Checker) verifyAndDecode(raw []byte, ref Reference, expectedIss string, now time.Time) (Status, error) {
-	v, err := verifyStatusListToken(raw, c.ctx, expectedIss, now)
+	v, err := verifyStatusListToken(raw, c.ctx, expectedIss, ref.URI, now)
 	if err != nil {
 		// Cached value failed re-verification — drop it so the
 		// next call re-fetches.
@@ -122,19 +126,4 @@ func decodeStatusFromVerified(v *verifiedStatusList, ref Reference, maxBytes int
 		return StatusUnknown, err
 	}
 	return statusAtIndex(bits, v.payload.StatusList.Bits, ref.Index)
-}
-
-// minTTL returns the smaller of two positive durations; if one is
-// non-positive (no signal), the other wins.
-func minTTL(a, b time.Duration) time.Duration {
-	if a <= 0 {
-		return b
-	}
-	if b <= 0 {
-		return a
-	}
-	if a < b {
-		return a
-	}
-	return b
 }
