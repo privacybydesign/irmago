@@ -82,3 +82,29 @@ func TestVerifyMXRecordImplicitMX(t *testing.T) {
 	err := VerifyMXRecord("user@example.com")
 	require.NoError(t, err)
 }
+
+func TestParseEmailAddressRejectsHeaderInjection(t *testing.T) {
+	// A valid address parses and exposes only the address part.
+	addr, err := ParseEmailAddress("Barry Gibbs <bg@example.com>")
+	require.NoError(t, err)
+	require.Equal(t, "bg@example.com", addr.Address)
+
+	// Addresses carrying CRLF (an attempt to inject extra SMTP headers) must be rejected,
+	// which is what protects the "To:"/"From:" header construction in SendEmail.
+	injections := []string{
+		"victim@example.com\r\nBcc: attacker@evil.com",
+		"victim@example.com\nBcc: attacker@evil.com",
+		"victim@example.com\r\nSubject: spoofed",
+	}
+	for _, in := range injections {
+		_, err := ParseEmailAddress(in)
+		require.ErrorIs(t, err, ErrInvalidEmail, "input %q must be rejected", in)
+	}
+
+	// Even when the input parses, the extracted .Address used in the header must never
+	// contain CR or LF, so it cannot break out of its header line.
+	parsed, err := ParseEmailAddress("plain@example.com")
+	require.NoError(t, err)
+	require.NotContains(t, parsed.Address, "\r")
+	require.NotContains(t, parsed.Address, "\n")
+}

@@ -72,7 +72,7 @@ func (session *sessionData) handleGetClientRequest(min, max *irma.ProtocolVersio
 		logger.Info("Using condiscon: backwards compatibility with legacy IRMA apps is disabled")
 	}
 
-	logger.WithFields(logrus.Fields{"version": session.Version.String()}).Debugf("Protocol version negotiated")
+	logger.WithFields(logrus.Fields{"version": common.SanitizeForLog(session.Version.String())}).Debugf("Protocol version negotiated")
 	sessionRequest.Base().ProtocolVersion = session.Version
 
 	if session.Options.PairingMethod != irma.PairingMethodNone && session.Version.Above(2, 7) {

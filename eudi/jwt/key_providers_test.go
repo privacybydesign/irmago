@@ -149,18 +149,20 @@ func Test_X509KeyProvider_FetchKeys_EmptyChain_ReturnsError(t *testing.T) {
 
 func Test_X509KeyProvider_FetchKeys_InvalidBase64InChain_ReturnsError(t *testing.T) {
 	chain := &cert.Chain{}
-	_ = chain.Add([]byte("not-valid-base64===!!!"))
+	// cert.Chain.Add now validates; invalid base64 is rejected during Add.
+	require.Error(t, chain.Add([]byte("not-valid-base64===!!!")))
 	p := NewX509KeyProvider(chain)
 	err := p.FetchKeys(context.Background(), &testKeySink{}, nil, nil)
-	require.ErrorContains(t, err, "failed to decode end-entity base64 encoded der")
+	require.ErrorContains(t, err, "expected x5c header, but is empty")
 }
 
 func Test_X509KeyProvider_FetchKeys_InvalidDERInChain_ReturnsError(t *testing.T) {
 	chain := &cert.Chain{}
-	_ = chain.Add([]byte(base64.StdEncoding.EncodeToString([]byte("not valid DER"))))
+	// cert.Chain.Add now validates; invalid DER is rejected during Add.
+	require.Error(t, chain.Add([]byte(base64.StdEncoding.EncodeToString([]byte("not valid DER")))))
 	p := NewX509KeyProvider(chain)
 	err := p.FetchKeys(context.Background(), &testKeySink{}, nil, nil)
-	require.ErrorContains(t, err, "failed to parse end-entity certificate")
+	require.ErrorContains(t, err, "expected x5c header, but is empty")
 }
 
 func Test_X509KeyProvider_FetchKeys_NilSignature_ReturnsError(t *testing.T) {
