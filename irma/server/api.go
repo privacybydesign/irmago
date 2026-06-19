@@ -405,27 +405,40 @@ func LogWarning(err error, msg ...string) error {
 	return log(logrus.WarnLevel, err, msg...)
 }
 
-// sensitiveHeaders lists HTTP header names that must not appear in logs.
-var sensitiveHeaders = map[string]struct{}{
-	"authorization": {},
-	"cookie":        {},
-	"set-cookie":    {},
-	"x-auth-token":  {},
+// loggableHeaders is the allowlist of HTTP header names whose values are safe to
+// write to logs. Any header not listed has its value redacted (its presence is
+// still logged). An allowlist fails closed: credentials and PII in unanticipated
+// or deployment-specific headers (e.g. Proxy-Authorization, X-Api-Key,
+// X-Forwarded-For, X-IRMA-Keyshare-Username) never leak into logs, and the
+// protection does not silently degrade as new headers are introduced.
+var loggableHeaders = map[string]struct{}{
+	"accept":                    {},
+	"accept-encoding":           {},
+	"accept-language":           {},
+	"cache-control":             {},
+	"connection":                {},
+	"content-length":            {},
+	"content-type":              {},
+	"host":                      {},
+	"user-agent":                {},
+	"x-irma-minprotocolversion": {},
+	"x-irma-maxprotocolversion": {},
 }
 
-// filterHeaders returns a copy of headers with sensitive values redacted.
+// filterHeaders returns a copy of headers in which only allowlisted header values
+// are kept (sanitized against log injection); every other header value is redacted.
 func filterHeaders(headers http.Header) http.Header {
 	filtered := make(http.Header, len(headers))
 	for k, v := range headers {
-		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
+		if _, ok := loggableHeaders[strings.ToLower(k)]; !ok {
 			filtered[k] = []string{"[redacted]"}
-		} else {
-			sanitized := make([]string, len(v))
-			for i, val := range v {
-				sanitized[i] = common.SanitizeForLog(val)
-			}
-			filtered[k] = sanitized
+			continue
 		}
+		sanitized := make([]string, len(v))
+		for i, val := range v {
+			sanitized[i] = common.SanitizeForLog(val)
+		}
+		filtered[k] = sanitized
 	}
 	return filtered
 }
