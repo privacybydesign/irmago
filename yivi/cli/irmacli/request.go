@@ -46,10 +46,10 @@ var requestCmd = &cobra.Command{
 	},
 }
 
-func configureJWTKey(authmethod, key string) (interface{}, jwt.SigningMethod, error) {
+func configureJWTKey(authmethod, key string) (any, jwt.SigningMethod, error) {
 	var (
 		err    error
-		sk     interface{}
+		sk     any
 		jwtalg jwt.SigningMethod
 		bts    []byte
 	)
@@ -250,8 +250,8 @@ func parseAttrs(attrsStr []string, conf *irma.Configuration) (irma.AttributeConD
 	list := make(irma.AttributeConDisCon, 0, len(attrsStr))
 	for _, disjunctionStr := range attrsStr {
 		disjunction := irma.AttributeDisCon{}
-		attrids := strings.Split(disjunctionStr, ",")
-		for _, attridStr := range attrids {
+		attrids := strings.SplitSeq(disjunctionStr, ",")
+		for attridStr := range attrids {
 			attrid := irma.NewAttributeTypeIdentifier(attridStr)
 			if conf.AttributeTypes[attrid] == nil {
 				return nil, errors.New("unknown attribute: " + attridStr)

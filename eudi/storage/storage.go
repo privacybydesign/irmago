@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-const DbFilename = "yivi.db"
+const DbFilename = "yivi-eudi.db"
 
 type Storage interface {
 	Close() error
@@ -43,8 +43,7 @@ func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, er
 		}
 	}
 
-	passphrase := string(aesKey[:])
-	dsn := sqlcipher.DSN(dbPath, passphrase)
+	connector := &sqlcipher.Connector{Path: dbPath}
 	dbLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		logger.Config{
@@ -54,7 +53,7 @@ func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, er
 			Colorful:                  true,
 		},
 	)
-	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{Logger: dbLogger})
+	db, err := gorm.Open(sqlcipher.Dialector{Connector: connector}, &gorm.Config{Logger: dbLogger})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

@@ -13,16 +13,9 @@ on:
 
 jobs:
 
+  # Host build of the whole module (cgo/sqlcipher enabled) that both compile-checks
+  # every package and produces the yivi-linux-amd64 binary the integration tests run.
   build:
-    strategy:
-      matrix:
-        os: [ linux, darwin, windows ]
-        arch: [ amd64, 386, arm, arm64 ]
-        exclude:
-          - os: darwin
-            arch: 386
-          - os: darwin
-            arch: arm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,8 +36,34 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: yivi-${{ matrix.os }}-${{ matrix.arch }}
+          name: yivi-linux-amd64
           path: build/yivi
+
+  # Cross-compile every release target on PRs with the same composite action the
+  # Delivery workflow uses, so an unsupported GOOS/GOARCH pair (e.g. the windows/arm
+  # port removed in Go 1.26) fails here instead of only after merge to master.
+  build-release-artifact:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ linux, darwin, windows ]
+        arch: [ amd64, 386, arm, arm64 ]
+        exclude:
+          - os: darwin
+            arch: 386
+          - os: darwin
+            arch: arm
+          # Go 1.26 removed the 32-bit windows/arm port (windows/arm64 remains).
+          - os: windows
+            arch: arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build artifact
+        uses: ./.github/actions/build
+        with:
+          os: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
 
   docker-build:
     runs-on: ubuntu-latest
@@ -79,7 +98,14 @@ jobs:
       
     - name: Run go vet
       run: go vet ./...
-      
+
+    - name: Run go fix
+      # go fix -diff exits non-zero (and prints a diff) if any modernization fix is unapplied.
+      # The available modernizers are tied to the Go toolchain (pinned via the `toolchain`
+      # directive in go.mod), so when that toolchain is bumped, run `go fix ./...` and commit
+      # the result, otherwise this step can fail on files the PR did not touch.
+      run: go fix -diff ./...
+
     - name: Install ineffassign
       run: go install github.com/gordonklaus/ineffassign@latest
       

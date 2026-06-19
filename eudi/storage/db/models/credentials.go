@@ -44,7 +44,7 @@ type CredentialBatch struct {
 	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
 	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
-	IssuedAt time.Time
+	IssuedAt datatypes.NullTime
 
 	// ExpiresAt is taken from the exp claim of the issuer-signed JWT. Nil if the credential does not expire.
 	ExpiresAt datatypes.NullTime
@@ -102,7 +102,7 @@ func (b *CredentialBatch) validate() error {
 	if b.Hash == "" {
 		return fmt.Errorf("hash is required")
 	}
-	if b.IssuedAt.IsZero() {
+	if !b.IssuedAt.Valid {
 		return fmt.Errorf("issued_at is required")
 	}
 	if b.BatchSize == 0 {

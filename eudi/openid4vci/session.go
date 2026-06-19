@@ -29,6 +29,7 @@ import (
 )
 
 type session struct {
+	id                       int
 	credentialOffer          *CredentialOffer
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata
 	requestorInfo            *clientmodels.TrustedParty
@@ -322,10 +323,6 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 	return nil
 }
 
-// vctIntegrityClaim is the JWT claim name carrying the integrity hash of the
-// SD-JWT VC type metadata document referenced by the credential's vct field.
-const vctIntegrityClaim = "vct#integrity"
-
 // verifyVctIntegrity checks each fetched credential's vct#integrity claim
 // against the raw bytes of the type-metadata document fetched (and cached)
 // pre-issuance. Policy (per Q6a-C):
@@ -349,7 +346,7 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 	}
 	for _, fc := range fetched {
 		for _, vc := range fc.verifiedSdJwtVcs {
-			integrity, present, err := lookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
+			integrity, present, err := sdjwtvc.LookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
 			if err != nil {
 				return fmt.Errorf("vct#integrity on credential %q: %w", fc.credentialConfigurationId, err)
 			}
@@ -366,26 +363,6 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 		}
 	}
 	return nil
-}
-
-// lookupVctIntegrityClaim returns the vct#integrity claim string if present
-// and a non-empty string. A claim present with a non-string (or empty) value
-// is an error: the JWT shape for vct#integrity is defined as a string, so a
-// non-string here is either an issuer bug or a downgrade attempt that
-// shouldn't silently bypass integrity verification.
-func lookupVctIntegrityClaim(payload sdjwtvc.ProcessedSdJwtPayload) (string, bool, error) {
-	raw, ok := payload[vctIntegrityClaim]
-	if !ok {
-		return "", false, nil
-	}
-	str, ok := raw.(string)
-	if !ok {
-		return "", false, fmt.Errorf("claim %q has non-string value", vctIntegrityClaim)
-	}
-	if str == "" {
-		return "", false, fmt.Errorf("claim %q is an empty string", vctIntegrityClaim)
-	}
-	return str, true, nil
 }
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
@@ -456,14 +433,14 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			batchSize = &n
 		}
 
-		var issuanceDate, expiryDate int64
+		var issuanceDate, expiryDate *int64
 		if len(fc.verifiedSdJwtVcs) > 0 {
 			jwt := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload
 			issuanceDate = jwt.IssuedAt
 			expiryDate = jwt.Expiry
 		}
 
-		result = append(result, &clientmodels.Credential{
+		cred := clientmodels.Credential{
 			CredentialId: config.VerifiableCredentialType,
 			Name:         name,
 			Issuer: clientmodels.TrustedParty{
@@ -479,7 +456,9 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			Attributes:   attrs,
 			IssuanceDate: issuanceDate,
 			ExpiryDate:   expiryDate,
-		})
+		}
+
+		result = append(result, &cred)
 	}
 	return result
 }
@@ -592,6 +571,8 @@ func getCredentialRequestPreferences(c metadata.CredentialConfiguration) *sessio
 			cryptoBindingMethod = proofs.CryptographicBindingMethod_JWK
 		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_KEY) {
 			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_KEY
+		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_DID_JWK) {
+			cryptoBindingMethod = proofs.CryptographicBindingMethod_DID_JWK
 		} else if slices.Contains(c.CryptographicBindingMethodsSupported, proofs.CryptographicBindingMethod_COSE) {
 			cryptoBindingMethod = proofs.CryptographicBindingMethod_COSE
 		}
@@ -660,6 +641,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		// Determine the signing algorithm to use for the proofs, based on the supported algorithms in the credential metadata. We'll just pick the first supported algorithm that we also support, since we expect most issuers to only support one algorithm per proof type, and if they support multiple, it doesn't give us any indication of which one to prefer.
 		var alg jwa.SignatureAlgorithm
 		for _, algName := range proofType.ProofSigningAlgValuesSupported {
+			// Skip ES256K for now, since it's not widely supported among JWT libraries and we tests have shown to fail
 			if algName == "ES256K" {
 				continue
 			}
@@ -670,7 +652,9 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 			}
 		}
 
-		issuer := "org.irmacard.cardemu"
+		// The issuer should be equal to the client ID registered with the authorization server
+		// TODO: omit the issuer, in case the access token being used, was obtained via Pre-Authorized Code flow
+		issuer := YiviClientId
 		proofBuilder := proofs.NewJwtProofBuilder(issuer, s.credentialIssuerMetadata.CredentialIssuer, alg, cNonce, eudi_jwt.NewSystemClock(), *credentialRequestPreferences.cryptographicBindingMethod)
 
 		var proofs []string

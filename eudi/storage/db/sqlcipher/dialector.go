@@ -15,7 +15,7 @@ import (
 
 // Dialector implements gorm.Dialector for SQLCipher.
 type Dialector struct {
-	DSN string
+	Connector *Connector
 }
 
 func (d Dialector) Name() string {
@@ -30,17 +30,14 @@ func (d Dialector) Initialize(db *gorm.DB) error {
 		DeleteClauses: []string{"DELETE", "FROM", "WHERE"},
 	})
 
-	sqlDB, err := sql.Open("sqlcipher", d.DSN)
-	if err != nil {
-		return err
-	}
 	// SQLite/SQLCipher requires a single connection to avoid issues with
 	// in-memory databases (each connection gets its own database) and
 	// to prevent concurrent access crashes.
+	sqlDB := sql.OpenDB(d.Connector)
 	sqlDB.SetMaxOpenConns(1)
 	db.ConnPool = sqlDB
 
-	// Verify the connection works (triggers key validation)
+	// Verify the connection works (triggers key validation via PRAGMA key)
 	if err := sqlDB.Ping(); err != nil {
 		return fmt.Errorf("failed to verify database connection: %w", err)
 	}
@@ -86,7 +83,7 @@ func (d Dialector) DefaultValueOf(field *schema.Field) clause.Expression {
 	return clause.Expr{SQL: "DEFAULT NULL"}
 }
 
-func (d Dialector) BindVarTo(writer clause.Writer, stmt *gorm.Statement, v interface{}) {
+func (d Dialector) BindVarTo(writer clause.Writer, stmt *gorm.Statement, v any) {
 	writer.WriteByte('?')
 }
 
@@ -99,7 +96,7 @@ func (d Dialector) QuoteTo(writer clause.Writer, str string) {
 	writer.WriteByte('`')
 }
 
-func (d Dialector) Explain(sql string, vars ...interface{}) string {
+func (d Dialector) Explain(sql string, vars ...any) string {
 	return logger.ExplainSQL(sql, nil, `"`, vars...)
 }
 
@@ -108,7 +105,7 @@ type sqlcipherMigrator struct {
 	migrator.Migrator
 }
 
-func (m *sqlcipherMigrator) HasTable(value interface{}) bool {
+func (m *sqlcipherMigrator) HasTable(value any) bool {
 	var count int64
 	m.RunWithValue(value, func(stmt *gorm.Statement) error {
 		return m.DB.Raw(
@@ -119,7 +116,7 @@ func (m *sqlcipherMigrator) HasTable(value interface{}) bool {
 	return count > 0
 }
 
-func (m *sqlcipherMigrator) HasColumn(value interface{}, field string) bool {
+func (m *sqlcipherMigrator) HasColumn(value any, field string) bool {
 	var count int64
 	m.RunWithValue(value, func(stmt *gorm.Statement) error {
 		name := field
@@ -134,7 +131,7 @@ func (m *sqlcipherMigrator) HasColumn(value interface{}, field string) bool {
 	return count > 0
 }
 
-func (m *sqlcipherMigrator) HasIndex(value interface{}, name string) bool {
+func (m *sqlcipherMigrator) HasIndex(value any, name string) bool {
 	var count int64
 	m.RunWithValue(value, func(stmt *gorm.Statement) error {
 		if idx := stmt.Schema.LookIndex(name); idx != nil {
@@ -148,14 +145,14 @@ func (m *sqlcipherMigrator) HasIndex(value interface{}, name string) bool {
 	return count > 0
 }
 
-func (m *sqlcipherMigrator) HasConstraint(value interface{}, name string) bool {
+func (m *sqlcipherMigrator) HasConstraint(value any, name string) bool {
 	return true // SQLite doesn't support ALTER TABLE ADD CONSTRAINT
 }
 
-func (m *sqlcipherMigrator) CreateConstraint(value interface{}, name string) error {
+func (m *sqlcipherMigrator) CreateConstraint(value any, name string) error {
 	return nil // SQLite doesn't support ALTER TABLE ADD CONSTRAINT
 }
 
-func (m *sqlcipherMigrator) AlterColumn(value interface{}, field string) error {
+func (m *sqlcipherMigrator) AlterColumn(value any, field string) error {
 	return nil // SQLite doesn't support ALTER TABLE ... ALTER COLUMN
 }

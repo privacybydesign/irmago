@@ -28,7 +28,7 @@ func (s *Server) handleRegisterPublicKey(w http.ResponseWriter, r *http.Request)
 		claims = &irma.KeyshareKeyRegistrationClaims{}
 		err    error
 	)
-	_, err = jwt.ParseWithClaims(msg.PublicKeyRegistrationJWT, claims, func(token *jwt.Token) (interface{}, error) {
+	_, err = jwt.ParseWithClaims(msg.PublicKeyRegistrationJWT, claims, func(token *jwt.Token) (any, error) {
 		pk, err = signed.UnmarshalPublicKey(claims.PublicKey)
 		return pk, err
 	})

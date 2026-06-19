@@ -67,6 +67,11 @@ func buildPlanFromCredentialSets(
 		var allObtainable []*clientmodels.CredentialDescriptor
 
 		for _, option := range credentialSet.Options {
+			if len(option) == 0 {
+				return nil, fmt.Errorf(
+					"credential set `options` field has an empty inner option array",
+				)
+			}
 			if len(option) > 1 {
 				return nil, fmt.Errorf(
 					"credential set `options` field has inner option array that consists of multiple credential queries, which is not supported at the moment",

@@ -2,6 +2,7 @@ package myirmaserver
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -75,11 +76,8 @@ func (db *memoryDB) addLoginToken(_ context.Context, email, token string) error 
 
 	found := false
 	for _, user := range db.userData {
-		for _, userEmail := range user.email {
-			if userEmail == email {
-				found = true
-				break
-			}
+		if slices.Contains(user.email, email) {
+			found = true
 		}
 		if found {
 			break
@@ -107,11 +105,8 @@ func (db *memoryDB) loginUserCandidates(_ context.Context, token string) ([]logi
 
 	var result []loginCandidate
 	for name, user := range db.userData {
-		for _, userEmail := range user.email {
-			if userEmail == email {
-				result = append(result, loginCandidate{Username: name, LastActive: user.lastActive.Unix()})
-				break
-			}
+		if slices.Contains(user.email, email) {
+			result = append(result, loginCandidate{Username: name, LastActive: user.lastActive.Unix()})
 		}
 	}
 	return result, nil
@@ -131,11 +126,9 @@ func (db *memoryDB) verifyLoginToken(_ context.Context, token, username string) 
 		return 0, keyshare.ErrUserNotFound
 	}
 
-	for _, userEmail := range user.email {
-		if userEmail == email {
-			delete(db.loginEmailTokens, token)
-			return user.id, nil
-		}
+	if slices.Contains(user.email, email) {
+		delete(db.loginEmailTokens, token)
+		return user.id, nil
 	}
 	return 0, keyshare.ErrUserNotFound
 }
@@ -160,14 +153,6 @@ func (db *memoryDB) user(_ context.Context, id int64) (user, error) {
 		}
 	}
 	return user{}, keyshare.ErrUserNotFound
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	} else {
-		return b
-	}
 }
 
 func (db *memoryDB) logs(_ context.Context, id int64, offset, amount int) ([]logEntry, error) {

@@ -66,12 +66,12 @@ func (client *Client) AllowInsecureHttpForTesting() {
 // (both auth-code and pre-authorized-code flows). The mobile wallet derives it
 // from the host of the inbound universal link that started the session, so
 // staging-host offers result in staging-host callbacks.
-func (client *Client) NewSession(credentialOfferEndpointUrl string, redirectUri string, handler Handler) SessionDismisser {
-	client.handleSessionAsync(credentialOfferEndpointUrl, redirectUri, handler)
+func (client *Client) NewSession(sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) SessionDismisser {
+	client.handleSessionAsync(sessionId, credentialOfferEndpointUrl, redirectUri, handler)
 	return client
 }
 
-func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redirectUri string, handler Handler) {
+func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) {
 	go func() {
 		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
 		if err != nil {
@@ -110,7 +110,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 		client.downloadCredentialLogos(credentialOffer, credentialIssuerMetadata)
 
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
-		err = client.handleCredentialOffer(credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, handler)
+		err = client.handleCredentialOffer(sessionId, credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, handler)
 
 		if err != nil {
 			handleFailure(handler, "failed to handle credential offer: %v", err)
@@ -119,6 +119,7 @@ func (client *Client) handleSessionAsync(credentialOfferEndpointUrl string, redi
 }
 
 func (client *Client) handleCredentialOffer(
+	sessionId int,
 	credentialOffer *CredentialOffer,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
 	originalCredentialMetadata map[string]*metadata.CredentialMetadata,
@@ -133,6 +134,7 @@ func (client *Client) handleCredentialOffer(
 	}
 
 	client.currentSession = &session{
+		id:                         sessionId,
 		credentialOffer:            credentialOffer,
 		credentialIssuerMetadata:   credentialIssuerMetadata,
 		requestorInfo:              requestorInfo,
@@ -339,12 +341,12 @@ func downloadRemoteImage(httpClient *http.Client, remoteImage metadata.RemoteIma
 	if strings.HasPrefix(remoteImage.Uri, "data:") {
 		// Expected format: data:<mediatype>[;base64],<data>
 		rest := remoteImage.Uri[len("data:"):]
-		commaIdx := strings.IndexByte(rest, ',')
-		if commaIdx < 0 {
+		before, after, ok := strings.Cut(rest, ",")
+		if !ok {
 			return nil, "", fmt.Errorf("invalid data URI: missing comma in %q", remoteImage.Uri)
 		}
-		meta := rest[:commaIdx]
-		payload := rest[commaIdx+1:]
+		meta := before
+		payload := after
 		var imageBytes []byte
 		if strings.HasSuffix(meta, ";base64") {
 			decoded, err := base64.StdEncoding.DecodeString(payload)

@@ -150,7 +150,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 
 		image := h.credentialImage(batch)
 
-		result.OwnedCandidates = append(result.OwnedCandidates, &clientmodels.SelectableCredentialInstance{
+		candidate := clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch),
@@ -158,10 +158,16 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Format:                      clientmodels.Format_SdJwtVc,
 			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
-			IssuanceDate:                batch.IssuedAt.Unix(),
 			ExpiryDate:                  expiryUnix(batch),
 			Image:                       image,
-		})
+		}
+
+		if batch.IssuedAt.Valid {
+			x := batch.IssuedAt.V.Unix()
+			candidate.IssuanceDate = &x
+		}
+
+		result.OwnedCandidates = append(result.OwnedCandidates, &candidate)
 	}
 
 	// If matching batches exist but all are exhausted and no usable candidates
@@ -908,23 +914,30 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	requestedKeys := make(map[string]struct{})
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder)
 
-	return clientmodels.LogCredential{
+	log := clientmodels.LogCredential{
 		CredentialId: batch.VerifiableCredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 		Name:         credentialDisplayName(batch),
 		Image:        h.credentialImage(batch),
 		Issuer:       h.issuerTrustedParty(batch),
 		Attributes:   attrs,
-		IssuanceDate: batch.IssuedAt.Unix(),
 		ExpiryDate:   expiryUnix(batch),
 	}
+
+	if batch.IssuedAt.Valid {
+		x := batch.IssuedAt.V.Unix()
+		log.IssuanceDate = &x
+	}
+
+	return log
 }
 
-func expiryUnix(batch *models.CredentialBatch) int64 {
+func expiryUnix(batch *models.CredentialBatch) *int64 {
 	if batch.ExpiresAt.Valid {
-		return batch.ExpiresAt.V.Unix()
+		x := batch.ExpiresAt.V.Unix()
+		return &x
 	}
-	return 0
+	return nil
 }
 
 // isBatchValid returns false if the credential batch is expired or not yet valid.
@@ -1141,11 +1154,8 @@ func arrayIndexValue(component any) int {
 // makes parseBatchAttributes emit attributes in the same order as a
 // depth-first walk of the credential value tree, matching FlattenClaimValue.
 func pathLess(a, b []any, metadataOrder map[string]int) bool {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	for k := 0; k < n; k++ {
+	n := min(len(b), len(a))
+	for k := range n {
 		aIsIdx := isArrayIndex(a[k])
 		bIsIdx := isArrayIndex(b[k])
 		switch {

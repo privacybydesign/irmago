@@ -290,12 +290,10 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMeta
 		attrs[id] = translatedValue
 	}
 
-	return &irma.CredentialInfo{
+	info := irma.CredentialInfo{
 		ID:                  credIdSegments[2],
 		IssuerID:            credIdSegments[1],
 		SchemeManagerID:     credIdSegments[0],
-		SignedOn:            metadata.SignedOn,
-		Expires:             metadata.Expires,
 		Attributes:          attrs,
 		Hash:                metadata.Hash,
 		Revoked:             false,
@@ -303,6 +301,15 @@ func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMeta
 		CredentialFormat:    clientmodels.Format_SdJwtVc,
 		InstanceCount:       &metadata.RemainingInstanceCount,
 	}
+
+	if metadata.SignedOn != nil {
+		info.SignedOn = *metadata.SignedOn
+	}
+	if metadata.Expires != nil {
+		info.Expires = *metadata.Expires
+	}
+
+	return &info
 }
 
 func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {

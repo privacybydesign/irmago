@@ -184,7 +184,7 @@ func configureServer(cmd *cobra.Command) (*requestorserver.Configuration, error)
 	}
 
 	readConfig(cmd, "irmaserver", "irma server", []string{".", "/etc/irmaserver/", "$HOME/.irmaserver"},
-		map[string]interface{}{
+		map[string]any{
 			"no_auth": false,
 			"url":     "",
 		},

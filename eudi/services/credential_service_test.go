@@ -232,9 +232,9 @@ func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, batch.IssuedAt.Unix(), result[0].IssuanceDate)
+	assert.Equal(t, batch.IssuedAt.V.Unix(), *result[0].IssuanceDate)
 	require.True(t, batch.ExpiresAt.Valid)
-	assert.Equal(t, batch.ExpiresAt.V.Unix(), result[0].ExpiryDate)
+	assert.Equal(t, batch.ExpiresAt.V.Unix(), *result[0].ExpiryDate)
 }
 
 func TestGetCredentialMetadataList_MapsRemainingCount(t *testing.T) {
@@ -748,8 +748,8 @@ func TestHashForSdJwtVc_IgnoresAllKnownMetadataKeys(t *testing.T) {
 func TestHashForSdJwtVc_ClaimValuesDetermineHash(t *testing.T) {
 	// Same metadata, different actual claim values → different hash.
 	base := `{"iat":1000,"exp":2000,"iss":"https://issuer","given_name":"%s"}`
-	payload1 := []byte(fmt.Sprintf(base, "Alice"))
-	payload2 := []byte(fmt.Sprintf(base, "Bob"))
+	payload1 := fmt.Appendf(nil, base, "Alice")
+	payload2 := fmt.Appendf(nil, base, "Bob")
 
 	h1, err := hashForSdJwtVc("https://vct.example.com/Cred", payload1)
 	require.NoError(t, err)
@@ -893,11 +893,12 @@ func TestMatchHolderBindingKey_NoCnfFields_ReturnsError(t *testing.T) {
 // ========== holder binding key linking integration ==========
 
 func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwtvc.CnfField) *sdjwtvc.VerifiedSdJwtVc {
+	now := time.Now().Unix()
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			Issuer:                   issuer,
 			VerifiableCredentialType: vct,
-			IssuedAt:                 time.Now().Unix(),
+			IssuedAt:                 &now,
 			Confirm:                  cnf,
 		},
 		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
@@ -1116,18 +1117,14 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 	}
 }
 
-func strPtr(s string) *string { return &s }
-
-func boolPtr(b bool) *bool { return &b }
-
 func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			Issuer:                   issuer,
 			VerifiableCredentialType: vct,
-			IssuedAt:                 issuedAt,
-			Expiry:                   expiry,
-			NotBefore:                notBefore,
+			IssuedAt:                 &issuedAt,
+			Expiry:                   &expiry,
+			NotBefore:                &notBefore,
 		},
 		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
 			"sub": "user123",
@@ -1139,7 +1136,7 @@ func newMinimalIssuerMetadata(configID string, format metadata.CredentialFormatI
 	return metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com",
 		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Test Issuer", Locale: strPtr("en")}},
+			{Display: metadata.Display{Name: "Test Issuer", Locale: new("en")}},
 		},
 		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
 			configID: {Format: format},
@@ -1151,23 +1148,23 @@ func newFullIssuerMetadata(configID string) metadata.CredentialIssuerMetadata {
 	return metadata.CredentialIssuerMetadata{
 		CredentialIssuer: "https://issuer.example.com",
 		Display: metadata.CredentialIssuerDisplays{
-			{Display: metadata.Display{Name: "Test Issuer", Locale: strPtr("en")}},
-			{Display: metadata.Display{Name: "Test Issuer NL", Locale: strPtr("nl")}},
+			{Display: metadata.Display{Name: "Test Issuer", Locale: new("en")}},
+			{Display: metadata.Display{Name: "Test Issuer NL", Locale: new("nl")}},
 		},
 		CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
 			configID: {
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
 				CredentialMetadata: &metadata.CredentialMetadata{
 					Display: metadata.CredentialDisplays{
-						{Display: metadata.Display{Name: "My Credential", Locale: strPtr("en")}},
+						{Display: metadata.Display{Name: "My Credential", Locale: new("en")}},
 					},
 					Claims: []metadata.ClaimsDescription{
 						{
 							Path:      metadata.ClaimsPathPointer{"family_name"},
-							Mandatory: boolPtr(true),
+							Mandatory: new(true),
 							Display: []metadata.Display{
-								{Name: "Family Name", Locale: strPtr("en")},
-								{Name: "Achternaam", Locale: strPtr("nl")},
+								{Name: "Family Name", Locale: new("en")},
+								{Name: "Achternaam", Locale: new("nl")},
 							},
 						},
 					},
@@ -1188,7 +1185,7 @@ func newStorageBatch() *models.CredentialBatch {
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "testhash",
 		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 now,
+		IssuedAt:                 datatypes.NullTime{V: now, Valid: true},
 		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
 		BatchSize:                1,
 		RemainingCount:           remaining,

@@ -304,12 +304,17 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 					format: cred.InstanceCount,
 				},
 				Attributes:          attributes,
-				IssuanceDate:        time.Time(cred.SignedOn).Unix(),
-				ExpiryDate:          time.Time(cred.Expires).Unix(),
 				Revoked:             cred.Revoked,
 				RevocationSupported: cred.RevocationSupported,
 				IssueURL:            convertOptionalTranslatedString(info.IssueURL),
 			}
+
+			issuanceDate := time.Time(cred.SignedOn).Unix()
+			newCred.IssuanceDate = &issuanceDate
+
+			expiryDate := time.Time(cred.Expires).Unix()
+			newCred.ExpiryDate = &expiryDate
+
 			intermediateResult[instanceHash] = &newCred
 		}
 	}

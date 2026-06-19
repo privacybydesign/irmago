@@ -10,8 +10,8 @@ type LogCredential struct {
 	Name                TranslatedString   `json:"name"`
 	Issuer              TrustedParty       `json:"issuer"`
 	Attributes          []Attribute        `json:"attributes"`
-	IssuanceDate        int64              `json:"issuance_date"`
-	ExpiryDate          int64              `json:"expiry_date"`
+	IssuanceDate        *int64             `json:"issuance_date"`
+	ExpiryDate          *int64             `json:"expiry_date"`
 	Revoked             bool               `json:"revoked"`
 	RevocationSupported bool               `json:"revocation_supported"`
 	IssueURL            *TranslatedString  `json:"issue_url,omitempty"`

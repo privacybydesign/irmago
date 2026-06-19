@@ -5,6 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Security
+- Update dependencies to resolve Dependabot security advisories:
+  - `golang.org/x/crypto` 0.40.0 → 0.53.0 (GHSA-f6x5-jh6r-wrfv, GHSA-j5w8-q4qc-rx2x)
+  - `github.com/sirupsen/logrus` 1.9.0 → 1.9.4 (GHSA-4f99-4q7p-p3gh)
+  - `github.com/jackc/pgx/v5` 5.5.5 → 5.10.0 (GHSA-9jj7-4m8r-rfcm, GHSA-j88v-2chj-qfwx)
+  - `filippo.io/edwards25519` 1.1.0 → 1.2.0 (GHSA-fw7p-63qq-7hpr)
+
+### Changed
+- Raise the minimum Go version to 1.26
+- Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
+
+## [1.0.0-beta.1] - 2026-06-15
 ### Added
 - Support for the IETF OAuth Token Status List (draft-ietf-oauth-status-list-15) on SD-JWT VC credentials
   - New `eudi/credentials/statuslist` package: fetches, verifies, and decodes Status List Tokens (`application/statuslist+jwt`) over HTTP, with singleflight dedup, body-size caps, and zlib decoding for all four bit-sizes (1, 2, 4, 8)
@@ -18,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports DID-based holder binding: keys are bound to the credential at issuance, stored securely on the client, and removed together with the credential
   - Supports `authorization_details` in Authorization and Token requests
   - Supports encrypted credential request bodies
-  - Issuers are verified via `did:web` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
+  - Issuers are verified via `did:web`, `did:key` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
 - Support for disclosing SD-JWT VC credentials with nested selectively-disclosable claims and array claims over the OpenID4VP 1.0 protocol
   - DCQL support extended with `claim_sets`, the `multiple` flag, predefined claim values (also for non-string values), and `require_cryptographic_holder_binding`
   - Adds the `did` verifier identifier prefix in addition to the existing `x509_san_dns`
@@ -647,6 +659,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.0.0-beta.1]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0-beta.1
 [0.19.2]: https://github.com/privacybydesign/irmago/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/privacybydesign/irmago/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/privacybydesign/irmago/compare/v0.18.1...v0.19.0

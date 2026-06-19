@@ -151,6 +151,9 @@ func dcqlClaimKey(claim dcql.Claim) string {
 func getClaimMatchesForQuery(metadata irmaclient.SdJwtVcBatchMetadata, claims []dcql.Claim) map[string]dcqlClaimMatch {
 	result := make(map[string]dcqlClaimMatch)
 	for _, claim := range claims {
+		if len(claim.Path) == 0 {
+			continue
+		}
 		attrName, ok := claim.Path[0].(string)
 		if !ok {
 			continue
@@ -264,7 +267,7 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 	attributes := h.buildMatchedAttributes(credType, candidate.claimMatches, metadata)
 
 	remainingCount := metadata.RemainingInstanceCount
-	return &clientmodels.SelectableCredentialInstance{
+	model := clientmodels.SelectableCredentialInstance{
 		CredentialId:                credTypeId.String(),
 		Hash:                        metadata.Hash,
 		Image:                       clientmodels.ImageFromFile(credType.Logo(h.config)),
@@ -273,10 +276,19 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 		Format:                      clientmodels.Format_SdJwtVc,
 		BatchInstanceCountRemaining: &remainingCount,
 		Attributes:                  attributes,
-		IssuanceDate:                time.Time(metadata.SignedOn).Unix(),
-		ExpiryDate:                  time.Time(metadata.Expires).Unix(),
 		IssueURL:                    convertOptionalTranslatedString(credType.IssueURL),
-	}, nil
+	}
+
+	if metadata.SignedOn != nil {
+		x := time.Time(*metadata.SignedOn).Unix()
+		model.IssuanceDate = &x
+	}
+	if metadata.Expires != nil {
+		x := time.Time(*metadata.Expires).Unix()
+		model.ExpiryDate = &x
+	}
+
+	return &model, nil
 }
 
 // buildMatchedAttributes builds Attribute objects for the matched claims with display names and values.
@@ -468,8 +480,15 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 	logCred := clientmodels.LogCredential{
 		CredentialId: metadata.CredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
-		IssuanceDate: time.Time(metadata.SignedOn).Unix(),
-		ExpiryDate:   time.Time(metadata.Expires).Unix(),
+	}
+
+	if metadata.SignedOn != nil {
+		x := time.Time(*metadata.SignedOn).Unix()
+		logCred.IssuanceDate = &x
+	}
+	if metadata.Expires != nil {
+		x := time.Time(*metadata.Expires).Unix()
+		logCred.ExpiryDate = &x
 	}
 
 	// Enrich with display metadata if available

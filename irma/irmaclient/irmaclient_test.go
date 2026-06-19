@@ -524,12 +524,10 @@ func TestCredentialsConcurrency(t *testing.T) {
 		client.credentialsCache = concmap.New[credLookup, *credential]()
 
 		for range 10 {
-			grp.Add(1)
-			go func() {
+			grp.Go(func() {
 				_, err := client.credential(irma.NewCredentialTypeIdentifier("irma-demo.RU.studentCard"), 0)
 				require.NoError(t, err)
-				grp.Done()
-			}()
+			})
 		}
 
 		grp.Wait()

@@ -211,25 +211,48 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 }
 
 const (
-	Key_Subject                  string = "sub"
-	Key_VerifiableCredentialType string = "vct"
-	Key_ExpiryTime               string = "exp"
-	Key_IssuedAt                 string = "iat"
-	Key_Issuer                   string = "iss"
-	Key_Sd                       string = "_sd"
-	Key_SdAlg                    string = "_sd_alg"
-	Key_Confirmationkey          string = "cnf"
-	Key_Status                   string = "status"
-	Key_NotBefore                string = "nbf"
-	Key_Typ                      string = "typ"
-	Key_X5c                      string = "x5c"
-	Key_Ellipsis                 string = "..."
-	Key_Federation               string = "fed"
+	Key_Subject                           string = "sub"
+	Key_VerifiableCredentialType          string = "vct"
+	Key_VerifiableCredentialTypeIntegrity string = "vct#integrity"
+	Key_ExpiryTime                        string = "exp"
+	Key_IssuedAt                          string = "iat"
+	Key_Issuer                            string = "iss"
+	Key_Sd                                string = "_sd"
+	Key_SdAlg                             string = "_sd_alg"
+	Key_Confirmationkey                   string = "cnf"
+	Key_Status                            string = "status"
+	Key_NotBefore                         string = "nbf"
+	Key_Typ                               string = "typ"
+	Key_X5c                               string = "x5c"
+	Key_Kid                               string = "kid"
+	Key_Ellipsis                          string = "..."
+	Key_Federation                        string = "fed"
 
 	SdJwtVcTyp        string = "dc+sd-jwt"
 	SdJwtVcTyp_Legacy string = "vc+sd-jwt"
 	KbJwtTyp          string = "kb+jwt"
 )
+
+// LookupVctIntegrityClaim returns the vct#integrity claim string from the
+// processed SD-JWT payload if present and a non-empty string. A claim present
+// with a non-string (or empty) value is an error: the JWT shape for
+// vct#integrity is defined as a string, so a non-string here is either an
+// issuer bug or a downgrade attempt that shouldn't silently bypass integrity
+// verification.
+func LookupVctIntegrityClaim(payload ProcessedSdJwtPayload) (string, bool, error) {
+	raw, ok := payload[Key_VerifiableCredentialTypeIntegrity]
+	if !ok {
+		return "", false, nil
+	}
+	str, ok := raw.(string)
+	if !ok {
+		return "", false, fmt.Errorf("claim %q has non-string value", Key_VerifiableCredentialTypeIntegrity)
+	}
+	if str == "" {
+		return "", false, fmt.Errorf("claim %q is an empty string", Key_VerifiableCredentialTypeIntegrity)
+	}
+	return str, true, nil
+}
 
 // StandardClaims contains JWT-registered and SD-JWT-specific claims that are not user data.
 // Use this to distinguish issuer/protocol metadata from actual credential attributes.
@@ -257,12 +280,6 @@ type IssuerSignedJwtPayload struct {
 	// REQUIRED: the type of verifiable credential
 	VerifiableCredentialType string
 
-	// OPTIONAL: expiry time, must not be accepted after this moment
-	Expiry int64
-
-	// OPTIONAL: time of issuance
-	IssuedAt int64
-
 	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the Verifiable Credential
 	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
 	Issuer string
@@ -283,8 +300,14 @@ type IssuerSignedJwtPayload struct {
 	// (draft-ietf-oauth-status-list-15 §5.1).
 	Status *statuslist.StatusClaim
 
+	// OPTIONAL: expiry time, must not be accepted after this moment
+	Expiry *int64
+
+	// OPTIONAL: time of issuance
+	IssuedAt *int64
+
 	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
-	NotBefore int64
+	NotBefore *int64
 }
 
 // IssuerSignedJwt is the issued signed jwt as a string (so only the section of the sd-jwt vc up to and NOT including the first ~)

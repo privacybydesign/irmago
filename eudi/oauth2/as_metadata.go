@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
+	"strings"
 )
 
 type AuthorizationServerMetadata struct {
@@ -116,18 +118,17 @@ func GetOpenIdMetadataUrlFromAuthorizationServer(authorizationServer string) (st
 }
 
 func getWellKnownUrlFromAuthorizationServer(authorizationServer string, wellKnownPath string) (string, error) {
-	url, err := url.Parse(authorizationServer)
+	parsed, err := url.Parse(authorizationServer)
 	if err != nil {
 		return "", err
 	}
 
-	asUrl := fmt.Sprintf("%s://%s/.well-known/%s", url.Scheme, url.Host, wellKnownPath)
+	// RFC 8414 §3.1: the well-known segment is inserted between the host and the
+	// issuer's path component (supporting multi-tenant authorization servers).
+	// path.Join cleans duplicate slashes, so a path-bearing issuer doesn't yield "//".
+	asPath := path.Join("/.well-known/"+wellKnownPath, parsed.Path)
 
-	if url.Path != "" {
-		asUrl = fmt.Sprintf("%s/%s", asUrl, url.Path)
-	}
-
-	return asUrl, nil
+	return parsed.Scheme + "://" + parsed.Host + asPath, nil
 }
 
 // TryFetchAuthorizationServerMetadata will try fetching unsigned Authorization Server Metadata from the default OAuth 2.0
@@ -152,17 +153,14 @@ func TryFetchAuthorizationServerMetadata(authorizationServerUrl string) (*Author
 		return asMetadata, nil
 	}
 
-	// As a last resort, well try to append both well-known paths to the authorization server URL (which is not spec-compliant)
-	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(authorizationServerUrl + "/.well-known/oauth-authorization-server")
+	// As a last resort, well try to append (instead of insert) both well-known paths to the authorization server URL (which is not spec-compliant)
+	as := strings.TrimSuffix(authorizationServerUrl, "/")
+	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(as + "/.well-known/oauth-authorization-server")
 	if err == nil {
 		return asMetadata, nil
 	}
 
-	url, err = GetOpenIdMetadataUrlFromAuthorizationServer(authorizationServerUrl + "/.well-known/openid-configuration")
-	if err != nil {
-		return nil, err
-	}
-	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(url)
+	asMetadata, err = fetchUnsignedAuthorizationServerMetadata(as + "/.well-known/openid-configuration")
 	if err != nil {
 		return nil, err
 	}

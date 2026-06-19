@@ -129,10 +129,14 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 		if err != nil {
 			return nil, fmt.Errorf("marshal issue URL for %q: %w", c.CredentialId, err)
 		}
-		var expiryDate datatypes.NullTime
-		if c.ExpiryDate != 0 {
-			expiryDate = datatypes.NullTime{V: time.Unix(c.ExpiryDate, 0), Valid: true}
+		var issuanceDate, expiryDate datatypes.NullTime
+		if c.IssuanceDate != nil {
+			issuanceDate = datatypes.NullTime{V: time.Unix(*c.IssuanceDate, 0), Valid: true}
 		}
+		if c.ExpiryDate != nil {
+			expiryDate = datatypes.NullTime{V: time.Unix(*c.ExpiryDate, 0), Valid: true}
+		}
+
 		saveLogoFromBase64(s.credLogoManager, c.CredentialId, c.Image)
 		saveLogoFromBase64(s.issuerLogoManager, c.Issuer.Id, c.Issuer.Image)
 		result[i] = models.EudiLogCredential{
@@ -144,7 +148,7 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			IssuerId:            c.Issuer.Id,
 			IssuerVerified:      c.Issuer.Verified,
 			Attributes:          attrsJSON,
-			IssuanceDate:        time.Unix(c.IssuanceDate, 0),
+			IssuanceDate:        issuanceDate,
 			ExpiryDate:          expiryDate,
 			Revoked:             c.Revoked,
 			RevocationSupported: c.RevocationSupported,
@@ -256,9 +260,14 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 				issueURL = nil
 			}
 		}
-		var expiryDate int64
+		var issuanceDate, expiryDate *int64
+		if c.IssuanceDate.Valid {
+			x := c.IssuanceDate.V.Unix()
+			issuanceDate = &x
+		}
 		if c.ExpiryDate.Valid {
-			expiryDate = c.ExpiryDate.V.Unix()
+			y := c.ExpiryDate.V.Unix()
+			expiryDate = &y
 		}
 		result[i] = clientmodels.LogCredential{
 			CredentialId:        c.CredentialId,
@@ -267,7 +276,7 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 			Image:               credImage,
 			Issuer:              clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage, Verified: c.IssuerVerified},
 			Attributes:          attrs,
-			IssuanceDate:        c.IssuanceDate.Unix(),
+			IssuanceDate:        issuanceDate,
 			ExpiryDate:          expiryDate,
 			Revoked:             c.Revoked,
 			RevocationSupported: c.RevocationSupported,

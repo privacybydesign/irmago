@@ -63,7 +63,6 @@ type SessionState struct {
 	OfferedCredentialTypes []*CredentialDescriptor `json:"offered_credential_types"`
 
 	// OID4VCI - Authorization Code Flow parameters
-	StateSalt               []byte `json:"-"`
 	OpenID4VCIState         string `json:"openid4vci_state,omitempty"`
 	AuthorizationRequestUrl string `json:"authorization_request_url,omitempty"`
 
@@ -102,6 +101,9 @@ type PreAuthorizedCodeFlowPermissionRequest struct {
 
 // AuthorizationCodeFlowRequest is a request to proceed with an authorization code issuance flow.
 type AuthorizationCodeFlowRequest struct {
+	// The state will be the external identifier for this session, so it should be unique and unguessable. The session will generate a random state if this is not set.
+	OpenID4VCIState string
+
 	Credentials             []*CredentialDescriptor
 	AuthorizationEndpoint   string
 	AuthorizationParameters map[string][]string // url.Values

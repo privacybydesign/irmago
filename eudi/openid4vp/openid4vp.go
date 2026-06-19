@@ -128,6 +128,7 @@ type ClientMetadata struct {
 type ResponseMode string
 type RequestUriMethod string
 type ResponseType string
+type ClientIdentifierPrefix string
 
 const (
 	ResponseMode_DirectPost    ResponseMode = "direct_post"
@@ -153,6 +154,14 @@ const (
 	Key_RequestUriMethod string = "request_uri_method"
 	Key_Scope            string = "scope"
 	Key_State            string = "state"
+
+	ClientIdentifierPrefix_RedirectUri         ClientIdentifierPrefix = "redirect_uri:"
+	ClientIdentifierPrefix_OpenidFederation    ClientIdentifierPrefix = "openid_federation:"
+	ClientIdentifierPrefix_DecentralizedDid    ClientIdentifierPrefix = "decentralized_identifier:"
+	ClientIdentifierPrefix_VerifierAttestation ClientIdentifierPrefix = "verifier_attestation:"
+	ClientIdentifierPrefix_X509SanDns          ClientIdentifierPrefix = "x509_san_dns:"
+	ClientIdentifierPrefix_X509Hash            ClientIdentifierPrefix = "x509_hash:"
+	ClientIdentifierPrefix_Origin              ClientIdentifierPrefix = "origin:"
 )
 
 type AuthorizationRequest struct {

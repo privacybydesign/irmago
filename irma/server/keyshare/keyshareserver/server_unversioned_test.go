@@ -90,8 +90,8 @@ func TestUnversionedServerHandleRegister(t *testing.T) {
 	var j string
 
 	for _, data := range []irma.KeyshareEnrollmentData{
-		{Pin: "testpin", Email: stringPtr("test@test.com"), Language: "en"},
-		{Pin: "testpin", Email: stringPtr("test@test.com"), Language: "nonexistinglanguage"},
+		{Pin: "testpin", Email: new("test@test.com"), Language: "en"},
+		{Pin: "testpin", Email: new("test@test.com"), Language: "nonexistinglanguage"},
 		{Pin: "testpin", Language: "en"},
 		{Pin: "testpin", Language: "nonexistinglanguage"},
 	} {

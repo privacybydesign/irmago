@@ -409,6 +409,10 @@ func isValidCSSColorLevel3(s string) bool {
 func getSupportedSignatureAlgorithms(input []string) []string {
 	supportedAlgs := []string{}
 	for _, alg := range input {
+		// Skip ES256K for now, since it's not widely supported among JWT libraries and we tests have shown to fail
+		if alg == "ES256K" {
+			continue
+		}
 		if _, ok := jwa.LookupSignatureAlgorithm(alg); ok {
 			supportedAlgs = append(supportedAlgs, alg)
 		}

@@ -70,13 +70,21 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 	info := SdJwtVcMetadata{
 		Hash:           hash,
 		CredentialType: verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
-		SignedOn: irma.Timestamp(
-			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt, 0),
-		),
-		Expires: irma.Timestamp(
-			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry, 0),
-		),
-		Attributes: attributes,
+		Attributes:     attributes,
+	}
+
+	if verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt != nil {
+		signedOn := irma.Timestamp(
+			time.Unix(*verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt, 0),
+		)
+		info.SignedOn = &signedOn
+	}
+
+	if verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry != nil {
+		expires := irma.Timestamp(
+			time.Unix(*verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry, 0),
+		)
+		info.Expires = &expires
 	}
 
 	return &info, verifiedSdJwtVc, nil

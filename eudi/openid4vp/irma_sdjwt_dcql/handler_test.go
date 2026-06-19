@@ -40,6 +40,7 @@ func TestDcqlCandidateSelection(t *testing.T) {
 	t.Run("claim sets both satisfiable by different instances", testClaimSetsBothSatisfiableByDifferentInstances)
 	t.Run("claim sets not satisfiable", testClaimSetsNotSatisfiable)
 	t.Run("non-required credential set", testNonRequiredCredentialSet)
+	t.Run("empty claim path does not panic", testEmptyClaimPathDoesNotPanic)
 }
 
 func testSatisfiableSingleCredentialSingleOption(t *testing.T) {
@@ -588,6 +589,24 @@ func testNonRequiredCredentialSet(t *testing.T) {
 	}`)
 
 	requireSatisfiable(t, plan, expectPickOne{owned: 3, obtainable: 2, optional: true})
+}
+
+func testEmptyClaimPathDoesNotPanic(t *testing.T) {
+	h, s := createTestDcqlHandler(t)
+	storeTestCred(t, s, "test.test.email", map[string]string{"email": "a@t.com"})
+
+	// A claim with an empty path must not panic on claim.Path[0]; it is skipped,
+	// so the stored credential doesn't match and the query is unsatisfiable.
+	plan := buildPlan(t, h, `{
+		"credentials": [{
+			"id": "q1",
+			"format": "dc+sd-jwt",
+			"meta": { "vct_values": ["test.test.email"] },
+			"claims": [{ "path": [] }]
+		}]
+	}`)
+
+	requireUnsatisfiable(t, plan, 1)
 }
 
 // ========================================================================

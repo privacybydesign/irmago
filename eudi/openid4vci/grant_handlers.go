@@ -2,12 +2,15 @@ package openid4vci
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -27,7 +30,7 @@ type GrantHandler interface {
 
 type codeResponse struct {
 	permissionGranted bool
-	code              *string
+	callbackURL       *string
 }
 
 // AccessTokenResponse handles the authorization of credential configurations.
@@ -96,8 +99,9 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	clientId := YiviClientId
 
 	// Build the authorization request parameters
-	// The 'state' parameter will be added by the openid4vciSessionAdapter, so it can correlate the authorization response to the session when receiving the callback
+	state := s.generatePseudoRandomOpenIdState()
 	authRequest := buildAuthorizationRequestValues(
+		state,
 		s.redirectUri,
 		&clientId,
 		pkce,
@@ -139,6 +143,7 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	}
 
 	request := &clientmodels.AuthorizationCodeFlowRequest{
+		OpenID4VCIState:         state,
 		Credentials:             s.credentials,
 		AuthorizationEndpoint:   s.issuerSettings.authorizationServerMetadata.AuthorizationEndpoint,
 		AuthorizationParameters: authRequest,
@@ -149,10 +154,10 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 	s.handler.RequestAuthorizationCodeFlowPermission(
 		request,
 		s.requestorInfo,
-		AuthCodeHandler(func(proceed bool, code *string) {
+		AuthCodeHandler(func(proceed bool, callbackURL *string) {
 			pendingAuthCodeRequestChannel <- &codeResponse{
 				permissionGranted: proceed,
-				code:              code,
+				callbackURL:       callbackURL,
 			}
 		}),
 	)
@@ -165,12 +170,82 @@ func (h *AuthorizationCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		return nil, fmt.Errorf("authorization has been cancelled or denied by user")
 	}
 
+	// Parse the authorization server's callback. This fails when the server
+	// reported an error (RFC 6749 §4.1.2.1) or no code was returned.
+	code, returnedState, err := parseAuthorizationCallback(userInteraction.callbackURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify the state echoed by the authorization server matches the one we generated for
+	// this session, preventing authorization code injection / CSRF (RFC 6749 §10.12).
+	if err := verifyAuthorizationState(state, &returnedState); err != nil {
+		return nil, err
+	}
+
 	// Exchange of code for token and return token response
 	return h.doTokenRequest(s.issuerSettings.authorizationServerMetadata.TokenEndpoint,
-		*userInteraction.code, pkce, scopes, authDetails, s.redirectUri)
+		code, pkce, scopes, authDetails, s.redirectUri)
+}
+
+// verifyAuthorizationState checks that the state returned by the authorization server matches
+// the one we generated for this session. It fails closed: a missing returned state is treated
+// as a mismatch, so a callback that omits the state cannot bypass the check.
+func verifyAuthorizationState(expected string, returned *string) error {
+	if returned == nil || *returned != expected {
+		return fmt.Errorf("authorization response state does not match the expected state for this session")
+	}
+	return nil
+}
+
+// parseAuthorizationCallback extracts the authorization code and state from the
+// redirect URL the authorization server sent to the wallet's redirect_uri. It
+// returns an error when the server reported a failure via the `error` parameter
+// (RFC 6749 §4.1.2.1), when neither a code nor an error is present, or when the
+// URL is missing or unparseable. State is returned as-is (including empty) so
+// verifyAuthorizationState can fail closed on a mismatch.
+func parseAuthorizationCallback(callbackURL *string) (code string, state string, err error) {
+	if callbackURL == nil || *callbackURL == "" {
+		return "", "", errors.New("authorization callback URL is missing")
+	}
+
+	parsed, err := url.Parse(*callbackURL)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse authorization callback URL: %w", err)
+	}
+
+	q := parsed.Query()
+
+	if oauthErr := q.Get("error"); oauthErr != "" {
+		if desc := q.Get("error_description"); desc != "" {
+			return "", "", fmt.Errorf("authorization server returned error %q: %s", oauthErr, desc)
+		}
+		return "", "", fmt.Errorf("authorization server returned error %q", oauthErr)
+	}
+
+	code = q.Get("code")
+	if code == "" {
+		return "", "", errors.New("authorization callback URL contains neither a code nor an error")
+	}
+
+	state = q.Get("state")
+	return code, state, nil
+}
+
+func (s *session) generatePseudoRandomOpenIdState() string {
+	salt := [16]byte{}
+	_, err := rand.Read(salt[:])
+	if err != nil {
+		panic(fmt.Sprintf("failed to generate random state salt: %v", err))
+	}
+
+	stateBytes := append(salt[:], []byte(strconv.Itoa(s.id))...)
+
+	return fmt.Sprintf("%x", sha256.Sum256(stateBytes))
 }
 
 func buildAuthorizationRequestValues(
+	state string,
 	redirectUri string,
 	clientId *string,
 	pkce *pkceParameters,
@@ -179,6 +254,7 @@ func buildAuthorizationRequestValues(
 	q := url.Values{}
 	q.Add("response_type", "code")
 	q.Add("redirect_uri", redirectUri)
+	q.Add("state", state)
 
 	if clientId != nil {
 		q.Add("client_id", *clientId)
@@ -192,7 +268,6 @@ func buildAuthorizationRequestValues(
 		q.Add("issuer_state", *issuerState)
 	}
 
-	// The `state` parameter is added in the adapter, where it is used to correlate the authorization response to the session initiating the request, since we have a browser-based redirect.
 	return q
 }
 
@@ -298,7 +373,7 @@ func (h *PreAuthorizedCodeFlowHandler) HandleGrant(s *session) (AccessTokenRespo
 		}
 	}
 
-	for attempt := 0; attempt < maxTxCodeAttempts; attempt++ {
+	for attempt := range maxTxCodeAttempts {
 		// Fresh channel per attempt: if a stale callback fires after we've moved on
 		// (race during cancel/dismiss), it lands on a channel we no longer read
 		// rather than corrupting the next iteration's response.
@@ -399,7 +474,7 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 		return nil, fmt.Errorf("failed to read Token Response body: %v", err)
 	}
 
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+	if response.StatusCode == http.StatusBadRequest {
 		var errResponse oauth2.ErrorResponse
 		err := json.NewDecoder(bytes.NewReader(responseBody)).Decode(&errResponse)
 		if err != nil {
@@ -413,10 +488,22 @@ func handleTokenResponse(response *http.Response) (*authTokenResponse, error) {
 		}
 	}
 
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("unexpected status code: %d", response.StatusCode)
+	}
+
 	var tokenResponse oauth2.TokenResponse
 	err = json.NewDecoder(bytes.NewReader(responseBody)).Decode(&tokenResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode Token Response: %v", err)
+	}
+
+	// Validate the access token
+	if tokenResponse.AccessToken == "" {
+		return nil, fmt.Errorf("token response did not contain an access token")
+	}
+	if strings.ToLower(tokenResponse.TokenType) != "bearer" {
+		return nil, fmt.Errorf("token response did not contain a valid token type: %q", tokenResponse.TokenType)
 	}
 
 	return &authTokenResponse{

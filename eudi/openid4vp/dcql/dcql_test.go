@@ -105,4 +105,14 @@ func TestBuildPlanFromCredentialSets(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not supported")
 	})
+
+	t.Run("empty option array returns error instead of panicking", func(t *testing.T) {
+		credSets := []CredentialSetQuery{
+			{Options: [][]string{{}}},
+		}
+
+		_, err := buildPlanFromCredentialSets(map[string]*CredentialQueryResult{}, credSets, nil, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "empty inner option array")
+	})
 }

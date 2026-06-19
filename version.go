@@ -5,4 +5,4 @@
 package irmago
 
 // Version of the IRMA command line and libraries
-const Version = "0.20.0"
+const Version = "1.0.0-beta.1"

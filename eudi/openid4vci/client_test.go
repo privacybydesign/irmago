@@ -96,13 +96,15 @@ func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl stri
 	storage, client := createOpenID4VCiClientForTesting(t)
 
 	handler := newMockSessionHandler(t)
-	client.NewSession(credentialOfferEndpointUrl, "https://open.yivi.app/-/auth-callback", handler)
+	client.NewSession(1, credentialOfferEndpointUrl, "https://open.yivi.app/-/auth-callback", handler)
 
-	authCodeRequestHandler := handler.AwaitAuthCodeRequest()
+	authCodeRequest := handler.AwaitAuthCodeRequest()
 
 	permissionGranted := true
-	testCode := "test-code"
-	authCodeRequestHandler(permissionGranted, &testCode)
+	// Build the callback URL a compliant authorization server would redirect to,
+	// echoing back the state the grant handler generated.
+	callbackURL := "https://open.yivi.app/-/auth-callback?code=test-code&state=" + authCodeRequest.state
+	authCodeRequest.callback(permissionGranted, &callbackURL)
 	success := handler.AwaitSessionEnd()
 
 	require.True(t, success)
@@ -283,13 +285,21 @@ func createCredentialInfoAndVerifiedSdJwtVc(
 	info := irmaclient.SdJwtVcMetadata{
 		Hash:           hash,
 		CredentialType: verifiedSdJwtVc.IssuerSignedJwtPayload.VerifiableCredentialType,
-		SignedOn: irma.Timestamp(
-			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt, 0),
-		),
-		Expires: irma.Timestamp(
-			time.Unix(verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry, 0),
-		),
-		Attributes: attributes,
+		Attributes:     attributes,
+	}
+
+	if verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt != nil {
+		signedOn := irma.Timestamp(
+			time.Unix(*verifiedSdJwtVc.IssuerSignedJwtPayload.IssuedAt, 0),
+		)
+		info.SignedOn = &signedOn
+	}
+
+	if verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry != nil {
+		expires := irma.Timestamp(
+			time.Unix(*verifiedSdJwtVc.IssuerSignedJwtPayload.Expiry, 0),
+		)
+		info.Expires = &expires
 	}
 
 	return &info, verifiedSdJwtVc, nil

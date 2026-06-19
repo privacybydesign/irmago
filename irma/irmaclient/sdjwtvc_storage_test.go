@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
+	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
@@ -25,6 +26,11 @@ func TestSdJwtVcStorage(t *testing.T) {
 	RunTestWithTempBboltSdJwtVcStorage(t,
 		"storing same attributes replaces instances",
 		testStoringSameAttributesReplacesInstances,
+	)
+
+	RunTestWithTempBboltSdJwtVcStorage(t,
+		"reissuing updates the stored timestamps",
+		testReissuingUpdatesSignedOn,
 	)
 
 	RunTestWithTempBboltSdJwtVcStorage(t,
@@ -86,6 +92,41 @@ func testStoringSameAttributesReplacesInstances(t *testing.T, storage SdJwtVcSto
 	require.Len(t, creds, 1)
 	require.Equal(t, 10, int(creds[0].Metadata.BatchSize))
 	require.Equal(t, 10, int(creds[0].Metadata.RemainingInstanceCount))
+}
+
+// Re-issuing a credential with the same type and attributes (so the same hash)
+// must refresh the stored issuance/expiry timestamps. The hash deliberately does
+// not include the timestamps, so the storage layer must overwrite the metadata
+// rather than keep the first-issued values.
+func testReissuingUpdatesSignedOn(t *testing.T, storage SdJwtVcStorage) {
+	info1, sdjwts1 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, 1, false)
+	require.NoError(t, storage.StoreCredential(info1, sdjwts1))
+
+	// Simulate a re-issuance ~90 days later: same type and attributes (so the same
+	// hash), but freshly signed with later iat/exp claims.
+	info2, sdjwts2 := createMultipleSdJwtVcs(t, "test.test.email", "https://openid4vc.staging.yivi.app", map[string]string{
+		"email": "test@gmail.com",
+	}, 1, false)
+	require.Equal(t, info1.Hash, info2.Hash, "re-issuance with same attributes must keep the same hash")
+
+	shift := 90 * 24 * time.Hour
+	info2SignedOn := irma.Timestamp(time.Time(*info1.SignedOn).Add(shift))
+	info2.SignedOn = &info2SignedOn
+	info2Expires := irma.Timestamp(time.Time(*info1.Expires).Add(shift))
+	info2.Expires = &info2Expires
+	require.NoError(t, storage.StoreCredential(info2, sdjwts2))
+
+	creds := storage.GetCredentialsForId("test.test.email")
+	require.Len(t, creds, 1)
+	require.Equal(t, info2.SignedOn, creds[0].Metadata.SignedOn, "SignedOn should reflect the re-issued credential")
+	require.Equal(t, info2.Expires, creds[0].Metadata.Expires, "Expires should reflect the re-issued credential")
+
+	byHash, err := storage.GetCredentialByHash(info2.Hash)
+	require.NoError(t, err)
+	require.Equal(t, info2.SignedOn, byHash.Metadata.SignedOn)
+	require.Equal(t, info2.Expires, byHash.Metadata.Expires)
 }
 
 func testNumInstanceLeft(t *testing.T, storage SdJwtVcStorage) {

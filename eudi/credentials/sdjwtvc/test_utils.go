@@ -226,15 +226,19 @@ func newWorkingSdJwtVcTestConfig() *testSdJwtVcConfig {
 		log.Fatalf("failed to read issuer priv key: %v", err)
 	}
 
+	iat := int64(1745394126)
+	exp := int64(1945394126)
+	nbf := int64(50)
+
 	return newEmptyTestConfig().
 		withIssuerCertificateChainBytes(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes).
 		withHolderPrivateKey(holderKey).
 		withIssuerPrivateKey(issuerKey).
 		withVct("test.test.email").
 		withIssuerUrl("https://openid4vc.staging.yivi.app", false).
-		withIssuedAt(1745394126).
-		withExpiryTime(1945394126).
-		withNotBefore(50).
+		withIssuedAt(&iat).
+		withExpiryTime(&exp).
+		withNotBefore(&nbf).
 		withSdClaims(disclosures, iana.SHA256).
 		withDisclosures(disclosures).
 		withTypHeader(SdJwtVcTyp)
@@ -277,13 +281,13 @@ func (c *testSdJwtVcConfig) withVct(vct string) *testSdJwtVcConfig {
 	return c
 }
 
-func (c *testSdJwtVcConfig) withIssuedAt(time int64) *testSdJwtVcConfig {
-	c.issuedAt = &time
+func (c *testSdJwtVcConfig) withIssuedAt(time *int64) *testSdJwtVcConfig {
+	c.issuedAt = time
 	return c
 }
 
-func (c *testSdJwtVcConfig) withExpiryTime(time int64) *testSdJwtVcConfig {
-	c.expiryTime = &time
+func (c *testSdJwtVcConfig) withExpiryTime(time *int64) *testSdJwtVcConfig {
+	c.expiryTime = time
 	return c
 }
 
@@ -297,8 +301,8 @@ func (c *testSdJwtVcConfig) withSdAlg(alg iana.HashingAlgorithm) *testSdJwtVcCon
 	return c
 }
 
-func (c *testSdJwtVcConfig) withNotBefore(time int64) *testSdJwtVcConfig {
-	c.notBefore = &time
+func (c *testSdJwtVcConfig) withNotBefore(time *int64) *testSdJwtVcConfig {
+	c.notBefore = time
 	return c
 }
 
@@ -369,6 +373,11 @@ func (c *testSdJwtVcConfig) withIssuerCertificateChainBytes(value []byte) *testS
 	return c
 }
 
+func (c *testSdJwtVcConfig) withKidHeader(kid string) *testSdJwtVcConfig {
+	c.kidHeader = &kid
+	return c
+}
+
 func (c *testSdJwtVcConfig) withDisclosures(disclosures []DisclosureContent) *testSdJwtVcConfig {
 	c.disclosures = disclosures
 	return c
@@ -391,6 +400,7 @@ type testSdJwtVcConfig struct {
 	// stuff inside the issuer signed header
 	typHeader *string
 	x5cHeader []string
+	kidHeader *string
 
 	// general signing stuff
 	holderPrivateKey *ecdsa.PrivateKey
@@ -502,6 +512,10 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (IssuerSignedJwt, error
 
 	if config.x5cHeader != nil {
 		issuerHeader[Key_X5c] = config.x5cHeader
+	}
+
+	if config.kidHeader != nil {
+		issuerHeader[Key_Kid] = *config.kidHeader
 	}
 
 	jwtCreator := DefaultEcdsaJwtCreator{privateKey: config.issuerPrivateKey}

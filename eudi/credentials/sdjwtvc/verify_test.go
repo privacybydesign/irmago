@@ -786,6 +786,15 @@ func Test_HolderVerificationProcessor_IssuerSignedJwt_WithInvalidTypHeader_Fails
 	require.Error(t, err, "failed to parse JWT: jwt.Parse: failed to parse token: jws.Verify: key provider 0 failed: invalid 'typ' header: jwt")
 }
 
+func Test_HolderVerificationProcessor_BothX5cAndKidHeaders_Fails(t *testing.T) {
+	// A JWT carrying both x5c and kid must be rejected: if both were accepted the kid
+	// branch would overwrite the x5c key provider and the X.509 trust/CRL check would be
+	// silently skipped, allowing a forged credential to verify against the kid-resolved key.
+	bothKeyReferences := newWorkingSdJwtVcTestConfig().
+		withKidHeader("did:jwk:attacker#0")
+	errorTestCaseHolder(t, bothKeyReferences, "both 'x5c' and 'kid' headers are present")
+}
+
 func Test_HolderVerificationProcessor_InvalidSdJwtVc_MissingTrailingTilde_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	holderVerifier := NewHolderVerificationProcessor(context)
@@ -819,7 +828,7 @@ func Test_HolderVerificationProcessor_IatIsAfterVerification_Fails(t *testing.T)
 	iat := now + ClockSkewInSeconds + 100
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(iat)
+		withIssuedAt(&iat)
 
 	context := SdJwtVcVerificationContext{
 		Clock:       &testClock{time: now},
@@ -838,8 +847,8 @@ func Test_HolderVerificationProcessor_VerificationIsAfterExp_Fails(t *testing.T)
 	exp := now - ClockSkewInSeconds - 100
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withExpiryTime(exp)
+		withIssuedAt(&now).
+		withExpiryTime(&exp)
 
 	context := SdJwtVcVerificationContext{
 		Clock:       &testClock{time: now},
@@ -856,11 +865,12 @@ func Test_HolderVerificationProcessor_VerificationIsAfterExp_Fails(t *testing.T)
 func Test_HolderVerificationProcessor_VerificationIsBeforeNotBefore_Fails(t *testing.T) {
 	now := time.Now().Unix()
 	nbf := now + ClockSkewInSeconds + 50
+	exp := int64(100)
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withExpiryTime(100).
-		withNotBefore(nbf)
+		withIssuedAt(&now).
+		withExpiryTime(&exp).
+		withNotBefore(&nbf)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -1053,7 +1063,7 @@ func Test_HolderVerificationProcessor_Valid_X509Chain_Succeeds(t *testing.T) {
 func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeIat_GivenClockSkew_Success(t *testing.T) {
 	now := time.Now().Unix()
 
-	config := newWorkingSdJwtVcTestConfig().withIssuedAt(now)
+	config := newWorkingSdJwtVcTestConfig().withIssuedAt(&now)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -1074,8 +1084,8 @@ func Test_HolderVerificationProcessor_VerificationPlusOneMinuteIsAfterExp_GivenC
 	now := time.Now().Unix()
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withExpiryTime(now)
+		withIssuedAt(&now).
+		withExpiryTime(&now)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -1096,8 +1106,8 @@ func Test_HolderVerificationProcessor_VerificationMinusOneMinuteIsBeforeNotBefor
 	now := time.Now().Unix()
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withNotBefore(now)
+		withIssuedAt(&now).
+		withNotBefore(&now)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -1120,9 +1130,9 @@ func Test_HolderVerificationProcessor_TimeFieldsAreParsedCorrectly(t *testing.T)
 	nbf := now - 60
 
 	config := newWorkingSdJwtVcTestConfig().
-		withIssuedAt(now).
-		withExpiryTime(exp).
-		withNotBefore(nbf)
+		withIssuedAt(&now).
+		withExpiryTime(&exp).
+		withNotBefore(&nbf)
 
 	context := SdJwtVcVerificationContext{
 		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
@@ -1138,9 +1148,36 @@ func Test_HolderVerificationProcessor_TimeFieldsAreParsedCorrectly(t *testing.T)
 	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
 	require.NoError(t, err)
 
-	require.Equal(t, now, result.IssuerSignedJwtPayload.IssuedAt, "IssuedAt should match the iat claim")
-	require.Equal(t, exp, result.IssuerSignedJwtPayload.Expiry, "Expiry should match the exp claim")
-	require.Equal(t, nbf, result.IssuerSignedJwtPayload.NotBefore, "NotBefore should match the nbf claim")
+	require.Equal(t, now, *result.IssuerSignedJwtPayload.IssuedAt, "IssuedAt should match the iat claim")
+	require.Equal(t, exp, *result.IssuerSignedJwtPayload.Expiry, "Expiry should match the exp claim")
+	require.Equal(t, nbf, *result.IssuerSignedJwtPayload.NotBefore, "NotBefore should match the nbf claim")
+}
+
+func Test_HolderVerificationProcessor_MissingTimeFieldsAreParsedCorrectly(t *testing.T) {
+	now := time.Now().Unix()
+
+	config := newWorkingSdJwtVcTestConfig().
+		withIssuedAt(nil).
+		withExpiryTime(nil).
+		withNotBefore(nil)
+
+	context := SdJwtVcVerificationContext{
+		X509VerificationContext: &eudi_jwt.StaticVerificationContext{
+			VerifyOpts: newWorkingVerifyOptions(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes),
+		},
+		Clock:       &testClock{time: now},
+		JwtVerifier: NewJwxJwtVerifier(),
+	}
+
+	sdjwtvc := createTestSdJwtVc(t, config)
+	holderVerifier := NewHolderVerificationProcessor(context)
+
+	result, err := holderVerifier.ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+
+	require.Nil(t, result.IssuerSignedJwtPayload.IssuedAt, "IssuedAt should be nil")
+	require.Nil(t, result.IssuerSignedJwtPayload.Expiry, "Expiry should be nil")
+	require.Nil(t, result.IssuerSignedJwtPayload.NotBefore, "NotBefore should be nil")
 }
 
 func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedClaims(t *testing.T) {
@@ -1157,8 +1194,8 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 
 	config := newWorkingSdJwtVcTestConfig().
 		withVct("test.test.email").
-		withIssuedAt(now).
-		withExpiryTime(exp).
+		withIssuedAt(&now).
+		withExpiryTime(&exp).
 		withSdClaims(disclosures, iana.SHA256).
 		withDisclosures(disclosures)
 
@@ -1204,11 +1241,13 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 // - [x] sd_hash in KB-JWT does not match calculated hash
 // - [x] missing cnf field in issuer signed JWT, but kb-jwt present
 // - [x] kb-jwt nonce does not match expected nonce
+// - [x] kb-jwt aud does not match expected audience (client_id)
 //
 // succeeds for:
 // - [x] required kb-jwt, valid sd-jwt, matching hash in kb-jwt
 // - [x] non-required kb-jwt, no KB-JWT present
 // - [x] kb-jwt nonce matches expected nonce
+// - [x] kb-jwt aud matches expected audience (client_id)
 
 func Test_VerifierVerificationProcessor_RequiredKbJwt_NoKbJwtInSdJwt_Fails(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
@@ -1245,6 +1284,7 @@ func Test_VerifierVerificationProcessor_NoCnfFieldInIssuerSignedJwt_WithKbJwt_Fa
 func Test_VerifierVerificationProcessor_RequiredKbJwt_WithKbJwtInSdJwt_Succeeds(t *testing.T) {
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	context.ExpectedNonce = "nonce"
+	context.ExpectedAudience = "Verifier" // The testdata contains a KB-JWT with aud "Verifier", which would usually be something like "<client_id_prefix>:<orig_client_id>"
 	verifierVerificationProcessor := NewVerifierVerificationProcessor(true, context)
 	_, err := verifierVerificationProcessor.ParseAndVerifySdJwtVc(SdJwtVcKb(validSdJwtVc_DcTypHeader_WithKbJwt))
 	require.NoError(t, err)
@@ -1260,6 +1300,7 @@ func Test_VerifierVerificationProcessor_KbJwtNonce_MatchesExpectedNonce_Succeeds
 
 	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
 	context.ExpectedNonce = realNonce
+	context.ExpectedAudience = "Verifier" // The testdata contains a KB-JWT with aud "Verifier", which would usually be something like "<client_id_prefix>:<orig_client_id>"
 
 	verifier := NewVerifierVerificationProcessor(true, context)
 	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
@@ -1278,6 +1319,40 @@ func Test_VerifierVerificationProcessor_KbJwtNonce_DoesNotMatchExpectedNonce_Fai
 	verifier := NewVerifierVerificationProcessor(true, context)
 	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
 	require.ErrorContains(t, err, "nonce")
+}
+
+func Test_VerifierVerificationProcessor_KbJwtAudience_MatchesExpectedAudience_Succeeds(t *testing.T) {
+	// The KB-JWT `aud` must equal the `client_id` from the OpenID4VP authorization request.
+	clientID := "x509_san_dns:client.example.org"
+
+	config := newWorkingSdJwtVcKbTestConfig()
+	config.withAudience(clientID)
+
+	sdjwtvc := createTestSdJwtVcKb(t, config)
+
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "nonce"
+	context.ExpectedAudience = clientID
+
+	verifier := NewVerifierVerificationProcessor(true, context)
+	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
+	require.NoError(t, err)
+}
+
+func Test_VerifierVerificationProcessor_KbJwtAudience_DoesNotMatchExpectedAudience_Fails(t *testing.T) {
+	// The KB-JWT `aud` must equal the `client_id` from the OpenID4VP authorization request.
+	config := newWorkingSdJwtVcKbTestConfig()
+	config.withAudience("x509_san_dns:client.example.org")
+
+	sdjwtvc := createTestSdJwtVcKb(t, config)
+
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.ExpectedNonce = "nonce"
+	context.ExpectedAudience = "x509_san_dns:different-client.example.org"
+
+	verifier := NewVerifierVerificationProcessor(true, context)
+	_, err := verifier.ParseAndVerifySdJwtVc(sdjwtvc)
+	require.ErrorContains(t, err, "aud")
 }
 
 func Test_VerifierVerificationProcessor_NonRequiredKbJwt_NoKbJwtInSdJwt_Succeeds(t *testing.T) {

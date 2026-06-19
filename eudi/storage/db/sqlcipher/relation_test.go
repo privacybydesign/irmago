@@ -49,7 +49,8 @@ type review struct {
 // openRelationDB creates an encrypted in-memory DB with the relation models migrated.
 func openRelationDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(Dialector{DSN: DSN(":memory:", "rel-test-key")}, &gorm.Config{})
+	key := []byte("rel-test-key")
+	db, err := gorm.Open(Dialector{Connector: NewConnector(":memory:", key)}, &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&author{}, &book{}, &tag{}, &review{}))
 	return db
@@ -241,7 +242,7 @@ func TestRelation_NullableFieldsRoundTrip(t *testing.T) {
 	// Update to non-nil values.
 	now := time.Now().Truncate(time.Second)
 	cover := []byte{0x89, 0x50, 0x4E, 0x47} // PNG magic bytes
-	require.NoError(t, db.Model(&got).Updates(map[string]interface{}{
+	require.NoError(t, db.Model(&got).Updates(map[string]any{
 		"published_at": now,
 		"cover_image":  cover,
 	}).Error)

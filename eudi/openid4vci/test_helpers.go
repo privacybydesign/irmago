@@ -9,10 +9,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// authCodeRequest bundles the callback with the state the grant handler generated for the
+// session, so tests can echo the correct state back (or deliberately echo a wrong one).
+type authCodeRequest struct {
+	callback AuthCodeHandler
+	state    string
+}
+
 type MockSessionHandler struct {
 	t                             *testing.T
 	sessionEndChannel             chan bool // true if successful
-	authCodeRequestChannel        chan AuthCodeHandler
+	authCodeRequestChannel        chan authCodeRequest
 	tokenRequestChannel           chan TokenHandler
 	tokenPermissionRequestChannel chan TokenPermissionHandler
 	permissionRequestChannel      chan PermissionHandler
@@ -23,7 +30,7 @@ func newMockSessionHandler(t *testing.T) *MockSessionHandler {
 	return &MockSessionHandler{
 		t:                             t,
 		sessionEndChannel:             make(chan bool, 1),
-		authCodeRequestChannel:        make(chan AuthCodeHandler, 1),
+		authCodeRequestChannel:        make(chan authCodeRequest, 1),
 		tokenRequestChannel:           make(chan TokenHandler, 1),
 		tokenPermissionRequestChannel: make(chan TokenPermissionHandler, 1),
 		permissionRequestChannel:      make(chan PermissionHandler, 1),
@@ -35,7 +42,7 @@ func (h *MockSessionHandler) AwaitSessionEnd() bool {
 	return <-h.sessionEndChannel
 }
 
-func (h *MockSessionHandler) AwaitAuthCodeRequest() AuthCodeHandler {
+func (h *MockSessionHandler) AwaitAuthCodeRequest() authCodeRequest {
 	return <-h.authCodeRequestChannel
 }
 
@@ -70,7 +77,7 @@ func (h *MockSessionHandler) RequestAuthorizationCodeFlowPermission(request *cli
 		fmt.Printf("OpenID4VCIIssuanceRequest: %v\n", string(issuanceRequestJson))
 	}
 
-	h.authCodeRequestChannel <- callback
+	h.authCodeRequestChannel <- authCodeRequest{callback: callback, state: request.OpenID4VCIState}
 }
 
 func (h *MockSessionHandler) RequestPreAuthorizedCodeFlowPermission(

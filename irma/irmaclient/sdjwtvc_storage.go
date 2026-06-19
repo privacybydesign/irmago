@@ -17,22 +17,22 @@ import (
 // SdJwtVcBatchMetadata corresponds to a batch of SdJwtVcs that are the same in everything
 // except for the keybinding pub keys and disclosure salts/hashes
 type SdJwtVcBatchMetadata struct {
-	BatchSize              uint           // number of instances originally issued
-	RemainingInstanceCount uint           // number of instances left
-	SignedOn               irma.Timestamp // Unix timestamp
-	Expires                irma.Timestamp // Unix timestamp
-	Attributes             map[string]any // Human-readable rendered attributes
-	Hash                   string         // SHA256 hash over the attributes and credential type
-	CredentialType         string         // corresponds to 'vct' field in jwt
+	BatchSize              uint            // number of instances originally issued
+	RemainingInstanceCount uint            // number of instances left
+	SignedOn               *irma.Timestamp // Unix timestamp
+	Expires                *irma.Timestamp // Unix timestamp
+	Attributes             map[string]any  // Human-readable rendered attributes
+	Hash                   string          // SHA256 hash over the attributes and credential type
+	CredentialType         string          // corresponds to 'vct' field in jwt
 }
 
 // SdJwtVcMetadata corresponds to a single instance of and SdJwtVc
 type SdJwtVcMetadata struct {
-	SignedOn       irma.Timestamp // Unix timestamp
-	Expires        irma.Timestamp // Unix timestamp
-	Attributes     map[string]any // Human-readable rendered attributes
-	Hash           string         // SHA256 hash over the attributes and credential type
-	CredentialType string         // corresponds to 'vct' field in jwt
+	SignedOn       *irma.Timestamp // Unix timestamp
+	Expires        *irma.Timestamp // Unix timestamp
+	Attributes     map[string]any  // Human-readable rendered attributes
+	Hash           string          // SHA256 hash over the attributes and credential type
+	CredentialType string          // corresponds to 'vct' field in jwt
 }
 
 type SdJwtVcStorage interface {
@@ -195,19 +195,20 @@ func (s *BboltSdJwtVcStorage) StoreCredential(info SdJwtVcBatchMetadata, credent
 			return err
 		}
 
-		// if the info is not there yet...
-		if credBucket.Get([]byte(infoKey)) == nil {
-			// put the info there...
-			marshalled, err := json.Marshal(info)
-			if err != nil {
-				return err
-			}
+		// Always (over)write the info: a re-issuance reuses this bucket (the hash
+		// covers only the credential type and attributes, not the timestamps), so
+		// the freshly issued metadata must replace the previous values.
+		marshalled, err := json.Marshal(info)
+		if err != nil {
+			return err
+		}
 
-			encryptedInfo, err := s.storage.Encrypt(marshalled)
-			if err != nil {
-				return err
-			}
-			credBucket.Put([]byte(infoKey), encryptedInfo)
+		encryptedInfo, err := s.storage.Encrypt(marshalled)
+		if err != nil {
+			return err
+		}
+		if err = credBucket.Put([]byte(infoKey), encryptedInfo); err != nil {
+			return err
 		}
 
 		if credBucket.Bucket([]byte(credentialsKey)) != nil {

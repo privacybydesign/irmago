@@ -86,7 +86,7 @@ func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 	key := []byte("953BCAB6F25F3622619A9A16BE895")
 	invalidKey := []byte("A5BB219FFB6199756DF8A284A3392")
 	authenticator := HmacAuthenticator{
-		hmackeys: map[string]interface{}{
+		hmackeys: map[string]any{
 			"my_requestor": key,
 		},
 		maxRequestAge: 500,
@@ -125,11 +125,11 @@ func TestHmacAuthenticator_AuthenticateSession(t *testing.T) {
 	})
 
 	t.Run("empty jwt data", func(t *testing.T) {
-		claims := (*jwt.MapClaims)(&map[string]interface{}{
+		claims := (*jwt.MapClaims)(&map[string]any{
 			"sub":       "verification_request",
 			"iss":       "my_requestor",
 			"iat":       time.Now().Unix(),
-			"sprequest": map[string]interface{}{},
+			"sprequest": map[string]any{},
 		})
 		emptyJwtData, jErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
 		require.NoError(t, jErr)
@@ -175,7 +175,7 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	key := []byte("953BCAB6F25F3622619A9A16BE895")
 	invalidKey := []byte("A5BB219FFB6199756DF8A284A3392")
 	authenticator := HmacAuthenticator{
-		hmackeys: map[string]interface{}{
+		hmackeys: map[string]any{
 			"my_requestor": key,
 		},
 		maxRequestAge: 500,
@@ -215,10 +215,10 @@ func TestHmacAuthenticator_AuthenticateRevocation(t *testing.T) {
 	})
 
 	t.Run("empty jwt data", func(t *testing.T) {
-		claims := (*jwt.MapClaims)(&map[string]interface{}{
+		claims := (*jwt.MapClaims)(&map[string]any{
 			"iss":        "my_requestor",
 			"iat":        time.Now().Unix(),
-			"revrequest": map[string]interface{}{},
+			"revrequest": map[string]any{},
 		})
 		emptyJwtData, jErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
 		require.NoError(t, jErr)

@@ -104,7 +104,7 @@ func EnsureFileExists(path string) error {
 	if exists, err := PathExists(path); err != nil {
 		return err
 	} else if !exists {
-		f, err := os.Create(path)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
 			return err
 		}
@@ -440,7 +440,7 @@ func SchemeInfo(filename string, bts []byte) (string, string, error) {
 	return temp.ID, temp.Type, nil
 }
 
-func Unmarshal(filename string, bts []byte, dest interface{}) error {
+func Unmarshal(filename string, bts []byte, dest any) error {
 	switch filepath.Ext(filename) {
 	case ".xml":
 		return xml.Unmarshal(bts, dest)

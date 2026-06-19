@@ -9,7 +9,7 @@ import (
 
 // Document represents a W3C DID Document.
 type Document struct {
-	Context            interface{}          `json:"@context"`
+	Context            any                  `json:"@context"`
 	ID                 string               `json:"id"`
 	Controller         string               `json:"controller,omitempty"`
 	VerificationMethod []VerificationMethod `json:"verificationMethod,omitempty"`
@@ -19,23 +19,33 @@ type Document struct {
 	Service            []Service            `json:"service,omitempty"`
 }
 
+type VerificationMethodType string
+
+const (
+	VerificationMethodType_JsonWebKey     VerificationMethodType = "JsonWebKey"
+	VerificationMethodType_JsonWebKey2020 VerificationMethodType = "JsonWebKey2020"
+	VerificationMethodType_Multikey       VerificationMethodType = "Multikey"
+)
+
 // VerificationMethod represents a verification method in a DID Document.
 type VerificationMethod struct {
-	ID                 string   `json:"id"`
-	Type               string   `json:"type"`
-	Controller         string   `json:"controller"`
-	PublicKeyJwk       *jwk.Key `json:"publicKeyJwk,omitempty"`
-	PublicKeyMultibase string   `json:"publicKeyMultibase,omitempty"`
+	Context      any                    `json:"@context,omitempty"`
+	ID           string                 `json:"id"`
+	Type         VerificationMethodType `json:"type"`
+	Controller   string                 `json:"controller"`
+	PublicKeyJwk *jwk.Key               `json:"publicKeyJwk,omitempty"`
+	Expires      *string                `json:"expires,omitempty"`
+	Revoked      *string                `json:"revoked,omitempty"`
 }
 
 // VerificationRef can be either a string (reference) or an embedded VerificationMethod.
-type VerificationRef interface{}
+type VerificationRef any
 
 // Service represents a service endpoint in a DID Document.
 type Service struct {
-	ID              string      `json:"id"`
-	Type            string      `json:"type"`
-	ServiceEndpoint interface{} `json:"serviceEndpoint"`
+	ID              string `json:"id"`
+	Type            string `json:"type"`
+	ServiceEndpoint any    `json:"serviceEndpoint"`
 }
 
 func (v *VerificationMethod) UnmarshalJSON(data []byte) error {

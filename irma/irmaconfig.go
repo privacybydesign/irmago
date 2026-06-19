@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -398,8 +399,8 @@ func (conf *Configuration) ValidateKeys() error {
 
 // KeyshareServerKeyFunc returns a function that returns the public key with which to verify a keyshare server JWT,
 // suitable for passing to jwt.Parse() and jwt.ParseWithClaims().
-func (conf *Configuration) KeyshareServerKeyFunc(scheme SchemeManagerIdentifier) func(t *jwt.Token) (interface{}, error) {
-	return func(t *jwt.Token) (i interface{}, e error) {
+func (conf *Configuration) KeyshareServerKeyFunc(scheme SchemeManagerIdentifier) func(t *jwt.Token) (any, error) {
+	return func(t *jwt.Token) (i any, e error) {
 		var kid int
 		if kidstr, ok := t.Header["kid"].(string); ok {
 			var err error
@@ -743,23 +744,22 @@ func (conf *Configuration) validateAttributes(cred *CredentialType) error {
 
 // validateTranslations checks for each member of the interface o that is of type TranslatedString
 // that it contains all necessary translations.
-func (conf *Configuration) validateTranslations(file string, o interface{}, langs []string) {
+func (conf *Configuration) validateTranslations(file string, o any, langs []string) {
 	v := reflect.ValueOf(o)
 
 	// Dereference in case of pointer or interface
-	if v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	if v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		v = v.Elem()
 	}
 
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		name := v.Type().Field(i).Name
-		translatedString := TranslatedString{}
-		if field.Type() != reflect.TypeOf(translatedString) && field.Type() != reflect.TypeOf(&translatedString) {
+		if field.Type() != reflect.TypeFor[TranslatedString]() && field.Type() != reflect.TypeFor[*TranslatedString]() {
 			continue
 		}
 		var val TranslatedString
-		if field.Type() == reflect.TypeOf(&translatedString) {
+		if field.Type() == reflect.TypeFor[*TranslatedString]() {
 			tmp := field.Interface().(*TranslatedString)
 			if tmp == nil {
 				return
@@ -783,39 +783,17 @@ func (conf *Configuration) validateTranslations(file string, o interface{}, lang
 }
 
 func (conf *Configuration) join(other *Configuration) {
-	for key, val := range other.SchemeManagers {
-		conf.SchemeManagers[key] = val
-	}
-	for key, val := range other.DisabledSchemeManagers {
-		conf.DisabledSchemeManagers[key] = val
-	}
-	for key, val := range other.Issuers {
-		conf.Issuers[key] = val
-	}
-	for key, val := range other.CredentialTypes {
-		conf.CredentialTypes[key] = val
-	}
-	for key, val := range other.reverseHashes {
-		conf.reverseHashes[key] = val
-	}
-	for key, val := range other.AttributeTypes {
-		conf.AttributeTypes[key] = val
-	}
-	for key, val := range other.kssPublicKeys {
-		conf.kssPublicKeys[key] = val
-	}
-	for key, val := range other.RequestorSchemes {
-		conf.RequestorSchemes[key] = val
-	}
-	for key, val := range other.Requestors {
-		conf.Requestors[key] = val
-	}
-	for key, val := range other.IssueWizards {
-		conf.IssueWizards[key] = val
-	}
-	for key, val := range other.DisabledRequestorSchemes {
-		conf.DisabledRequestorSchemes[key] = val
-	}
+	maps.Copy(conf.SchemeManagers, other.SchemeManagers)
+	maps.Copy(conf.DisabledSchemeManagers, other.DisabledSchemeManagers)
+	maps.Copy(conf.Issuers, other.Issuers)
+	maps.Copy(conf.CredentialTypes, other.CredentialTypes)
+	maps.Copy(conf.reverseHashes, other.reverseHashes)
+	maps.Copy(conf.AttributeTypes, other.AttributeTypes)
+	maps.Copy(conf.kssPublicKeys, other.kssPublicKeys)
+	maps.Copy(conf.RequestorSchemes, other.RequestorSchemes)
+	maps.Copy(conf.Requestors, other.Requestors)
+	maps.Copy(conf.IssueWizards, other.IssueWizards)
+	maps.Copy(conf.DisabledRequestorSchemes, other.DisabledRequestorSchemes)
 	other.publicKeys.Iterate(func(key PublicKeyIdentifier, val *gabikeys.PublicKey) {
 		conf.publicKeys.Set(key, val)
 	})

@@ -54,15 +54,24 @@ func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 		return fmt.Errorf("invalid 'typ' header: %v", typ)
 	}
 
-	if x5c, x5cPresent := sig.ProtectedHeaders().X509CertChain(); x5cPresent && x5c != nil {
+	// Select the key reference. x5c and kid are mutually exclusive: if both were
+	// accepted, a kid would overwrite an x5c here while the X.509 trust/CRL check
+	// downstream (gated on the *X509KeyProvider type) is silently skipped, letting a
+	// forged credential be verified against the kid-resolved key.
+	x5c, x5cPresent := sig.ProtectedHeaders().X509CertChain()
+	x5cPresent = x5cPresent && x5c != nil
+
+	kid, kidPresent := sig.ProtectedHeaders().KeyID()
+	kidPresent = kidPresent && kid != ""
+
+	switch {
+	case x5cPresent && kidPresent:
+		return fmt.Errorf("ambiguous key reference: both 'x5c' and 'kid' headers are present")
+	case x5cPresent:
 		p.InnerKeyProvider = NewX509KeyProvider(x5c)
-	}
-
-	if kid, kidPresent := sig.ProtectedHeaders().KeyID(); kidPresent && kid != "" {
+	case kidPresent:
 		p.InnerKeyProvider = NewKidKeyProvider(kid, p.allowInsecure)
-	}
-
-	if p.InnerKeyProvider == nil {
+	default:
 		return fmt.Errorf("no supported key reference header (x5c or kid) present in the signature")
 	}
 

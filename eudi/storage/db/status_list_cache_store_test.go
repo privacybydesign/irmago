@@ -13,8 +13,7 @@ import (
 func newTestStatusListCacheStore(t *testing.T) (*statusListCacheStore, *gorm.DB) {
 	t.Helper()
 	const passphrase = "super-secret-key-123"
-	dsn := sqlcipher.DSN(":memory:", passphrase)
-	db, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
+	db, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte(passphrase))}, &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.StatusListCacheEntry{}))
 	return &statusListCacheStore{db: db}, db

@@ -17,8 +17,7 @@ import (
 
 func newTestRefreshDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := sqlcipher.DSN(":memory:", "test-key-refresh")
-	d, err := gorm.Open(sqlcipher.Dialector{DSN: dsn}, &gorm.Config{})
+	d, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("test-key-refresh"))}, &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, d.AutoMigrate(
 		&models.HolderBindingKey{},
@@ -44,7 +43,7 @@ func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []model
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
 		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"u"}`),
-		IssuedAt:                 time.Now().UTC().Truncate(time.Second),
+		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                uint(len(instances)),
 		RemainingCount:           uint(len(instances)),
 		CredentialIssuer:         issuer,
