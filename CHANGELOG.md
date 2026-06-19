@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Normalize file paths via `filepath.Clean` before filesystem operations
 
 ### Changed
+- Raise the minimum Go version to 1.26
+- Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
+- Update CI GitHub Action versions to Node 24 supported once
 - Update other dependencies to their latest releases: `github.com/lestrrat-go/jwx/v3`, `github.com/go-co-op/gocron` (v1 and v2), `github.com/spf13/{cast,cobra,pflag,viper}`, `go.etcd.io/bbolt`, `gorm.io/driver/{mysql,postgres,sqlserver}`, `github.com/alicebob/miniredis/v2`, `github.com/go-chi/cors` and `github.com/go-errors/errors`
 
 ## [1.0.0] - 2026-06-19
