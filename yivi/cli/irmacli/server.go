@@ -1,11 +1,11 @@
 package irmacli
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
 	"github.com/privacybydesign/irmago/irma/server/requestorserver"
@@ -24,11 +24,11 @@ var serverCmd = &cobra.Command{
 	Run: func(command *cobra.Command, args []string) {
 		conf, err := configureServer(command)
 		if err != nil {
-			clihelpers.Die("", errors.WrapPrefix(err, "Failed to read configuration", 0), Logger)
+			clihelpers.Die("", fmt.Errorf("Failed to read configuration: %w", err), Logger)
 		}
 		serv, err := requestorserver.New(conf)
 		if err != nil {
-			clihelpers.Die("", errors.WrapPrefix(err, "Failed to configure server", 0), Logger)
+			clihelpers.Die("", fmt.Errorf("Failed to configure server: %w", err), Logger)
 		}
 
 		stopped := make(chan struct{})
@@ -37,7 +37,7 @@ var serverCmd = &cobra.Command{
 
 		go func() {
 			if err := serv.Start(conf); err != nil {
-				clihelpers.Die("", errors.WrapPrefix(err, "Failed to start server", 0), Logger)
+				clihelpers.Die("", fmt.Errorf("Failed to start server: %w", err), Logger)
 			}
 			conf.Logger.Debug("Server stopped")
 			stopped <- struct{}{}
@@ -63,7 +63,7 @@ func init() {
 	IrmaRootCmd.AddCommand(serverCmd)
 
 	if err := setFlags(serverCmd, productionMode()); err != nil {
-		clihelpers.Die("", errors.WrapPrefix(err, "Failed to attach flags to "+serverCmd.Name()+" command", 0), Logger)
+		clihelpers.Die("", fmt.Errorf("Failed to attach flags to %s command: %w", serverCmd.Name(), err), Logger)
 	}
 }
 
