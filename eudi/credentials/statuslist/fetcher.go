@@ -84,7 +84,7 @@ func parseMaxAge(cc string) time.Duration {
 	if cc == "" {
 		return 0
 	}
-	for _, part := range strings.Split(cc, ",") {
+	for part := range strings.SplitSeq(cc, ",") {
 		part = strings.TrimSpace(part)
 		if !strings.HasPrefix(strings.ToLower(part), "max-age=") {
 			continue
