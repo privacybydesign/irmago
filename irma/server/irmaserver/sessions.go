@@ -285,6 +285,11 @@ func (s *memorySessionStore) deleteExpired() {
 	defer s.Unlock()
 	for _, token := range expired {
 		session := s.requestor[token]
+		if session == nil {
+			// A concurrent deleteExpired run may already have removed this
+			// session between the ttl check above and acquiring the write lock.
+			continue
+		}
 		// The client token lives in the per-session-locked sessionData, which may
 		// be swapped concurrently by handleTransaction, so read it under that lock.
 		session.Lock()
