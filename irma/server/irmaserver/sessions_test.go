@@ -3,6 +3,8 @@ package irmaserver
 import (
 	"context"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,6 +81,89 @@ func TestSessionHandlerInvokedOnTimeout(t *testing.T) {
 	require.True(t, handlerInvoked)
 }
 
+// TestMemoryStoreExpiryDoesNotPanic is a regression test for the
+// "panic: send on closed channel" that occurred when an expired session was
+// deleted while a status update for that session was still being delivered to
+// its subscribers (see issue #406). It concurrently subscribes to session
+// updates, fires status updates (which notify subscribers) and deletes the
+// expired sessions (which closes the subscription channels). With the previous
+// implementation, the unsynchronized fire-and-forget notification goroutine
+// could send on a channel that deleteExpired had already closed, panicking and
+// crashing the server. Run with -race to also catch the data race on the
+// updateChannels map.
+func TestMemoryStoreExpiryDoesNotPanic(t *testing.T) {
+	s, err := New(sessionsConf(t))
+	require.NoError(t, err)
+	defer s.Stop()
+
+	store := s.sessions.(*memorySessionStore)
+
+	const rounds = 25
+	const sessionsPerRound = 20
+
+	for round := 0; round < rounds; round++ {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// Setup phase (sequential): create expired sessions and subscribe to
+		// their updates without reading, emulating subscribers that have gone
+		// away while an update is in flight. Each session gets a freshly parsed
+		// request so the concurrent phase below does not race on shared request
+		// state during (de)serialization.
+		tokens := make([]irma.RequestorToken, 0, sessionsPerRound)
+		for i := 0; i < sessionsPerRound; i++ {
+			req, err := server.ParseSessionRequest(`{"request":{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"MtILupG0g0J23GNR1YtupQ==","devMode":true,"disclose":[[[{"type":"test.test.email.email","value":"example@example.com"}]]]}}`)
+			require.NoError(t, err)
+			session, err := s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "", "")
+			require.NoError(t, err)
+			token := session.RequestorToken
+
+			// Mark the session as expired so deleteExpired will remove it and
+			// close its subscription channels.
+			memSes := store.requestor[token]
+			memSes.Lock()
+			memSes.Status = irma.ServerStatusDone
+			memSes.LastActive = time.Now().Add(-time.Hour)
+			memSes.Unlock()
+
+			_, err = store.subscribeUpdates(ctx, token)
+			require.NoError(t, err)
+			tokens = append(tokens, token)
+		}
+
+		// Race phase: fire a status update for every session (which notifies its
+		// subscribers) while concurrently deleting the expired sessions (which
+		// closes the subscription channels).
+		var wg sync.WaitGroup
+		for _, token := range tokens {
+			wg.Add(1)
+			go func(token irma.RequestorToken) {
+				defer wg.Done()
+				_ = store.transaction(context.Background(), token, func(ses *sessionData) (bool, error) {
+					ses.setStatus(irma.ServerStatusCancelled, store.conf)
+					return true, nil
+				})
+			}(token)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			store.deleteExpired()
+		}()
+
+		wg.Wait()
+		// Delete anything that survived the race above.
+		store.deleteExpired()
+		cancel()
+	}
+
+	// Give the per-subscription cleanup goroutines time to run, then verify that
+	// all subscription channels have been cleaned up.
+	time.Sleep(100 * time.Millisecond)
+	store.RLock()
+	require.Empty(t, store.updateChannels)
+	store.RUnlock()
+}
+
 func TestMemoryStoreNoDeadlock(t *testing.T) {
 	s, err := New(sessionsConf(t))
 	require.NoError(t, err)
@@ -94,18 +179,17 @@ func TestMemoryStoreNoDeadlock(t *testing.T) {
 	memSession := memSessions.requestor[session.RequestorToken]
 
 	memSession.Lock()
-	deletingCompleted := false
-	addingCompleted := false
+	var deletingCompleted, addingCompleted atomic.Bool
 	// Make sure the deleting continues on completion such that the test itself will not hang.
 	defer func() {
 		memSession.Unlock()
 		time.Sleep(100 * time.Millisecond)
-		require.True(t, deletingCompleted)
+		require.True(t, deletingCompleted.Load())
 	}()
 
 	go func() {
 		s.sessions.(*memorySessionStore).deleteExpired()
-		deletingCompleted = true
+		deletingCompleted.Store(true)
 	}()
 
 	// Make sure the goroutine above is running
@@ -114,11 +198,11 @@ func TestMemoryStoreNoDeadlock(t *testing.T) {
 	// Make a new session; this involves adding it to the memory session store.
 	go func() {
 		_, _ = s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "", "")
-		addingCompleted = true
+		addingCompleted.Store(true)
 	}()
 
 	// Check whether the IRMA server doesn't hang
 	time.Sleep(100 * time.Millisecond)
-	require.True(t, addingCompleted)
-	require.False(t, deletingCompleted)
+	require.True(t, addingCompleted.Load())
+	require.False(t, deletingCompleted.Load())
 }
