@@ -101,7 +101,7 @@ func TestMemoryStoreExpiryDoesNotPanic(t *testing.T) {
 	const rounds = 25
 	const sessionsPerRound = 20
 
-	for round := 0; round < rounds; round++ {
+	for range rounds {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		// Setup phase (sequential): create expired sessions and subscribe to
@@ -110,7 +110,7 @@ func TestMemoryStoreExpiryDoesNotPanic(t *testing.T) {
 		// request so the concurrent phase below does not race on shared request
 		// state during (de)serialization.
 		tokens := make([]irma.RequestorToken, 0, sessionsPerRound)
-		for i := 0; i < sessionsPerRound; i++ {
+		for range sessionsPerRound {
 			req, err := server.ParseSessionRequest(`{"request":{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"MtILupG0g0J23GNR1YtupQ==","devMode":true,"disclose":[[[{"type":"test.test.email.email","value":"example@example.com"}]]]}}`)
 			require.NoError(t, err)
 			session, err := s.newSession(context.Background(), irma.ActionDisclosing, req, nil, "", "")
@@ -144,11 +144,9 @@ func TestMemoryStoreExpiryDoesNotPanic(t *testing.T) {
 				})
 			}(token)
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			store.deleteExpired()
-		}()
+		})
 
 		wg.Wait()
 		// Delete anything that survived the race above.
