@@ -392,8 +392,8 @@ func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int) er
 	// access. Only invalidating {id, index} (as before) left the shifted
 	// credentials' stale entries in place, so a later credentialByHash lookup
 	// (whose counter had been decremented) returned the wrong instance — the
-	// root cause of disclosing the wrong credential after a deletion
-	// (irmamobile#520 / irmamobile#579). `list` still has its original length
+	// root cause of disclosing the wrong credential after a deletion.
+	// `list` still has its original length
 	// here because append() reused its backing array without changing the
 	// `list` header.
 	for i := index; i < len(list); i++ {
