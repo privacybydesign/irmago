@@ -78,7 +78,7 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 	)
 
 	runSessionTest(t,
-		"selection survives deleting another credential mid-session",
+		"selection survives deleting another credential before the session",
 		testDisclosureKeepsSelectionAfterDeletingAnotherCredential,
 	)
 
