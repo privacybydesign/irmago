@@ -12,25 +12,29 @@ import (
 )
 
 // testDisclosureKeepsSelectionAfterDeletingAnotherCredential reproduces the
-// scenario behind irmamobile#520 / irmamobile#579 ("disclosure selects the
+// scenario behind irmamobile#520 / irmamobile#579 ("disclosure discloses the
 // wrong email after a credential is deleted") against irmago's own session
 // logic.
 //
-// The irmamobile bug was a UI-layer one: the make-choice screen tracked the
-// selected credential by its *list index* into the owned-options list. Deleting
-// a credential that sits earlier in that list shifts every later entry up by
-// one, so a stored index ends up pointing at whichever credential slid into
-// that slot, and the wrong email gets disclosed.
-//
 // w-ensink asked whether this is reproducible in irmago, where all session
-// logic lives. This test attempts exactly that: it issues three email
-// credentials, selects the last one, deletes an earlier one (which would shift
-// an index-based selection), and then discloses. If irmago resolved the
-// selection by list position the wrong email would be disclosed and this test
-// would fail. It passes because irmago keys the selection on the credential
-// hash (clientmodels.SelectedCredential.CredentialHash), so the selection is
-// stable across the deletion — demonstrating the failure mode is not
-// reproducible in the session logic.
+// logic lives. It is, and the root cause is in irmago — not (only) in the
+// irmamobile UI. The disclosure choice already round-trips by credential hash
+// (clientmodels.SelectedCredential.CredentialHash), so the selection itself is
+// stable across a deletion. The defect was in IrmaClient.remove: deleting a
+// credential shifts every later instance of that type down one position, and
+// their lookup counters are decremented to match, but the credentialsCache is
+// keyed by positional counter and only the deleted index's entry was
+// invalidated. The shifted instances kept STALE cache entries, so a subsequent
+// credentialByHash lookup resolved hash -> decremented counter ->
+// credentialsCache.Get -> the credential previously cached at that counter =
+// the WRONG instance.
+//
+// This test issues three email credentials, selects the last one, deletes an
+// earlier one (which shifts the selected one's counter down), and then
+// discloses. On master it discloses the credential that slid into the freed
+// counter slot; with the IrmaClient.remove cache-invalidation fix it discloses
+// the originally-selected email. The test therefore fails before the fix and
+// passes after it.
 func testDisclosureKeepsSelectionAfterDeletingAnotherCredential(
 	t *testing.T,
 	irmaServer *IrmaServer,
@@ -73,10 +77,11 @@ func testDisclosureKeepsSelectionAfterDeletingAnotherCredential(
 	// list position.
 	choice := makeDisclosureChoice(selectedBundle)
 
-	// Now delete a DIFFERENT credential that sits BEFORE the selected one. An
-	// index-based selection would shift "third@example.com" from index 2 down
-	// to index 1, so disclosing "index 2" would disclose the wrong email (or
-	// fall off the end of the list) — the irmamobile#520 failure mode.
+	// Now delete a DIFFERENT credential that sits BEFORE the selected one. This
+	// shifts "third@example.com" from positional counter 2 down to 1; with the
+	// stale-cache bug the credentialsCache entry for counter 1 still holds
+	// "second@example.com", so resolving the selected hash discloses the wrong
+	// email — the irmamobile#520 failure mode.
 	deleteBundle := bundleForEmail(t, owned, "first@example.com")
 	require.Less(t, slices.Index(owned, deleteBundle), selectedIndex,
 		"the deleted credential must sit before the selected one to trigger a shift")
