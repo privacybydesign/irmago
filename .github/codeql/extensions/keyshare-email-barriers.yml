@@ -1,0 +1,9 @@
+extensions:
+  - addsTo:
+      pack: codeql/go-all
+      extensible: barrierModel
+    data:
+      # buildRecipients validates email addresses via mail.ParseAddressList, which rejects
+      # CR/LF and other control characters. Its first return value (the parsed address slice)
+      # is therefore safe to use as an SMTP recipient or To: header value.
+      - ["github.com/privacybydesign/irmago/irma/server/keyshare", "", false, "buildRecipients", "", "", "ReturnValue[0]", "sanitize", "manual"]
