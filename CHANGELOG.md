@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reject issuer identifiers that would escape the private key ring folder, preventing path traversal through the credential type in a session or revocation request
 
 ### Changed
+- Replace `github.com/go-errors/errors` `WrapPrefix` calls with stdlib `fmt.Errorf` wrapping so `errors.Is`/`errors.As` traverse wrapped errors
 - Raise the minimum Go version to 1.26
 - Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
 - Update CI GitHub Action versions to Node 24 supported once
