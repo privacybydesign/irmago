@@ -508,7 +508,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	if conf.RedisSettings.DisableTLS {
 		if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
 			err := errors.New("Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
-			return nil, fmt.Errorf("Redis TLS config failed: %w", err)
+			return nil, fmt.Errorf("redis TLS config failed: %w", err)
 		}
 		return nil, nil
 	}
@@ -516,7 +516,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
 		caCert, err := common.ReadKey(conf.RedisSettings.TLSCertificate, conf.RedisSettings.TLSCertificateFile)
 		if err != nil {
-			return nil, fmt.Errorf("Redis TLS config failed: %w", err)
+			return nil, fmt.Errorf("redis TLS config failed: %w", err)
 		}
 
 		tlsConfig := &tls.Config{
@@ -531,7 +531,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 
 			cert, err := tls.LoadX509KeyPair(conf.RedisSettings.TLSClientCertificateFile, conf.RedisSettings.TLSClientKeyFile)
 			if err != nil {
-				return nil, fmt.Errorf("Redis TLS config failed: %w", err)
+				return nil, fmt.Errorf("redis TLS config failed: %w", err)
 			}
 
 			tlsConfig.Certificates = []tls.Certificate{cert}
@@ -542,7 +542,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	// By default, the certificate pool of the system is used
 	systemCerts, err := x509.SystemCertPool()
 	if err != nil {
-		return nil, fmt.Errorf("Redis TLS config failed: %w", err)
+		return nil, fmt.Errorf("redis TLS config failed: %w", err)
 	}
 	tlsConfig := &tls.Config{
 		RootCAs: systemCerts,

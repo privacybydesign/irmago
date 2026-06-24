@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Normalize file paths via `filepath.Clean` before filesystem operations
 
 ### Changed
+- Replace `github.com/go-errors/errors` `WrapPrefix` calls with the stdlib `fmt.Errorf("...: %w", err)` so that `errors.Is` and `errors.As` traverse wrapped errors
 - Raise the minimum Go version to 1.26
 - Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
 - Update CI GitHub Action versions to Node 24 supported once

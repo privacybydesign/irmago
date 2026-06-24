@@ -147,27 +147,27 @@ func libraryRequest(
 		optionsRequest := irma.NewFrontendOptionsRequest()
 		optionsRequest.PairingMethod = irma.PairingMethodPin
 		if sessionOptions, err = irmaServer.SetFrontendOptions(requestorToken, &optionsRequest); err != nil {
-			return nil, fmt.Errorf("Failed to enable pairing: %w", err)
+			return nil, fmt.Errorf("failed to enable pairing: %w", err)
 		}
 	}
 
 	// Print QR code
 	if err := printQr(qr, noqr); err != nil {
-		return nil, fmt.Errorf("Failed to print QR: %w", err)
+		return nil, fmt.Errorf("failed to print QR: %w", err)
 	}
 
 	if pairing {
 		// Listen for session status
 		statuschan, err := irmaServer.SessionStatus(requestorToken)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to start listening for session statuses: %w", err)
+			return nil, fmt.Errorf("failed to start listening for session statuses: %w", err)
 		}
 
 		err = handlePairing(sessionOptions, statuschan, func() error {
 			return irmaServer.PairingCompleted(requestorToken)
 		})
 		if err != nil {
-			return nil, fmt.Errorf("Failed to handle pairing: %w", err)
+			return nil, fmt.Errorf("failed to handle pairing: %w", err)
 		}
 	}
 
@@ -194,14 +194,14 @@ func serverRequest(
 		optionsRequest.PairingMethod = irma.PairingMethodPin
 		err = transport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to enable pairing: %w", err)
+			return nil, fmt.Errorf("failed to enable pairing: %w", err)
 		}
 	}
 
 	// Print session QR
 	Logger.Debug("QR: ", prettyprint(qr))
 	if err := printQr(qr, noqr); err != nil {
-		return nil, fmt.Errorf("Failed to print QR: %w", err)
+		return nil, fmt.Errorf("failed to print QR: %w", err)
 	}
 
 	statuschan := make(chan irma.ServerStatus)
@@ -222,12 +222,12 @@ func serverRequest(
 			err = handlePairing(sessionOptions, statuschan, func() error {
 				err = transport.Post("frontend/pairingcompleted", nil, nil)
 				if err != nil {
-					return fmt.Errorf("Failed to complete pairing: %w", err)
+					return fmt.Errorf("failed to complete pairing: %w", err)
 				}
 				return nil
 			})
 			if err != nil {
-				err = fmt.Errorf("Failed to handle pairing: %w", err)
+				err = fmt.Errorf("failed to handle pairing: %w", err)
 				return
 			}
 		} else {

@@ -364,7 +364,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 		var err error
 		res, err = ResultJwt(result, issuer, validity, privatekey)
 		if err != nil {
-			_ = LogError(fmt.Errorf("Failed to create JWT for result callback: %w", err))
+			_ = LogError(fmt.Errorf("failed to create JWT for result callback: %w", err))
 			return
 		}
 	} else {
@@ -373,7 +373,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 
 	if err := irma.NewHTTPTransport(callbackUrl, false).Post("", nil, res); err != nil {
 		// not our problem, log it and go on
-		logger.Warn(fmt.Errorf("Failed to POST session result to callback URL: %w", err))
+		logger.Warn(fmt.Errorf("failed to POST session result to callback URL: %w", err))
 	}
 }
 

@@ -201,7 +201,7 @@ func readConfig(cmd *cobra.Command, name, logname string, configpaths []string, 
 		if _, notfound := err.(viper.ConfigFileNotFoundError); notfound {
 			logger.Info("No configuration file found")
 		} else {
-			clihelpers.Die("", fmt.Errorf("Failed to unmarshal configuration file at %s: %w", viper.ConfigFileUsed(), err), logger)
+			clihelpers.Die("", fmt.Errorf("failed to unmarshal configuration file at %s: %w", viper.ConfigFileUsed(), err), logger)
 		}
 	} else {
 		logger.Info("Config file: ", viper.ConfigFileUsed())
@@ -222,14 +222,14 @@ func handleMapOrString(key string, dest any) error {
 	var err error
 	if val, flagOrEnv := viper.Get(key).(string); !flagOrEnv || val != "" {
 		if m, err = cast.ToStringMapE(viper.Get(key)); err != nil {
-			return fmt.Errorf("Failed to unmarshal %s from flag or env var: %w", key, err)
+			return fmt.Errorf("failed to unmarshal %s from flag or env var: %w", key, err)
 		}
 	}
 	if len(m) == 0 {
 		return nil
 	}
 	if err := mapstructure.Decode(m, dest); err != nil {
-		return fmt.Errorf("Failed to unmarshal %s from config file: %w", key, err)
+		return fmt.Errorf("failed to unmarshal %s from config file: %w", key, err)
 	}
 	return nil
 }

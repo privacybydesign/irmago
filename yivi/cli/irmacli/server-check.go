@@ -20,7 +20,7 @@ Specify -v to see the configuration.`,
 	Run: func(command *cobra.Command, args []string) {
 		conf, err := configureServer(command)
 		if err != nil {
-			clihelpers.Die("", fmt.Errorf("Failed to read configuration from file, args, or env vars: %w", err), Logger)
+			clihelpers.Die("", fmt.Errorf("failed to read configuration from file, args, or env vars: %w", err), Logger)
 		}
 
 		// Hack: temporarily disable scheme updating to prevent verifyConfiguration() from immediately updating schemes
@@ -28,7 +28,7 @@ Specify -v to see the configuration.`,
 		conf.DisableSchemesUpdate = true
 
 		if _, err := requestorserver.New(conf); err != nil {
-			clihelpers.Die("", fmt.Errorf("Invalid configuration: %w", err), Logger)
+			clihelpers.Die("", fmt.Errorf("invalid configuration: %w", err), Logger)
 		}
 
 		conf.DisableSchemesUpdate = enabled // restore previous value before printing configuration
@@ -41,6 +41,6 @@ func init() {
 	serverCmd.AddCommand(serverCheckCmd)
 
 	if err := setFlags(serverCheckCmd, productionMode()); err != nil {
-		clihelpers.Die("", fmt.Errorf("Failed to attach flags to %s command: %w", serverCheckCmd.Name(), err), Logger)
+		clihelpers.Die("", fmt.Errorf("failed to attach flags to %s command: %w", serverCheckCmd.Name(), err), Logger)
 	}
 }

@@ -45,12 +45,12 @@ Careful: this command could fail and invalidate or destroy your scheme directory
 			confpath, err = filepath.Abs(args[1])
 		}
 		if err != nil {
-			return fmt.Errorf("Invalid path: %w", err)
+			return fmt.Errorf("invalid path: %w", err)
 		}
 
 		privatekey, err := readPrivateKey(sk)
 		if err != nil {
-			return fmt.Errorf("Failed to read private key:: %w", err)
+			return fmt.Errorf("failed to read private key: %w", err)
 		}
 
 		if err = common.AssertPathExists(confpath); err != nil {
@@ -91,7 +91,7 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 	// Write timestamp
 	bts = []byte(strconv.FormatInt(time.Now().Unix(), 10) + "\n")
 	if err := os.WriteFile(filepath.Join(path, "timestamp"), bts, 0644); err != nil {
-		return fmt.Errorf("Failed to write timestamp: %w", err)
+		return fmt.Errorf("failed to write timestamp: %w", err)
 	}
 
 	// Traverse dir and add file hashes to index
@@ -100,31 +100,31 @@ func signScheme(privatekey *ecdsa.PrivateKey, path string, skipverification bool
 		return calculateFileHash(id, path, p, info, index, irma.SchemeType(typ))
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to calculate file index: %w", err)
+		return fmt.Errorf("failed to calculate file index: %w", err)
 	}
 
 	// Write index
 	bts = []byte(index.String())
 	if err := os.WriteFile(filepath.Join(path, "index"), bts, 0644); err != nil {
-		return fmt.Errorf("Failed to write index: %w", err)
+		return fmt.Errorf("failed to write index: %w", err)
 	}
 
 	// Create and write signature
 	sigbytes, err := signed.Sign(privatekey, bts)
 	if err != nil {
-		return fmt.Errorf("Failed to serialize signature:: %w", err)
+		return fmt.Errorf("failed to serialize signature: %w", err)
 	}
 	if err = os.WriteFile(filepath.Join(path, "index.sig"), sigbytes, 0644); err != nil {
-		return fmt.Errorf("Failed to write index.sig: %w", err)
+		return fmt.Errorf("failed to write index.sig: %w", err)
 	}
 
 	// Write public key
 	pemEncodedPub, err := signed.MarshalPemPublicKey(&privatekey.PublicKey)
 	if err != nil {
-		return fmt.Errorf("Failed to serialize public key: %w", err)
+		return fmt.Errorf("failed to serialize public key: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(path, "pk.pem"), pemEncodedPub, 0644); err != nil {
-		return fmt.Errorf("Failed to write public key: %w", err)
+		return fmt.Errorf("failed to write public key: %w", err)
 	}
 
 	if skipverification {

@@ -596,7 +596,7 @@ func (session *session) sendResponse(message any) {
 	// Changing this would require a major refactor. Therefore, we currently start a separate transaction
 	// to add the log entry. If this fails, we log the error as a warning.
 	if err = session.client.storage.AddLogEntry(log); err != nil {
-		irma.Logger.Warn(fmt.Errorf("Failed to write log entry: %w", err))
+		irma.Logger.Warn(fmt.Errorf("failed to write log entry: %w", err))
 	}
 	if session.Action == irma.ActionIssuing {
 		session.client.handler.UpdateAttributes()

@@ -101,13 +101,13 @@ func (hauth *HmacAuthenticator) AuthenticateRevocation(headers http.Header, body
 func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) error {
 	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return fmt.Errorf("Failed to read key of requestor %s: %w", name, err)
+		return fmt.Errorf("failed to read key of requestor %s: %w", name, err)
 	}
 
 	// We accept any of the base64 encodings
 	bts, err = common.Base64Decode(bts)
 	if err != nil {
-		return fmt.Errorf("Failed to base64 decode hmac key of requestor %s: %w", name, err)
+		return fmt.Errorf("failed to base64 decode hmac key of requestor %s: %w", name, err)
 	}
 
 	hauth.hmackeys[name] = bts
@@ -128,7 +128,7 @@ func (pkauth *PublicKeyAuthenticator) AuthenticateRevocation(headers http.Header
 func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
 	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return fmt.Errorf("Failed to read key of requestor %s: %w", name, err)
+		return fmt.Errorf("failed to read key of requestor %s: %w", name, err)
 	}
 
 	pk, err := jwt.ParseRSAPublicKeyFromPEM(bts)
@@ -177,7 +177,7 @@ func (pskauth *PresharedKeyAuthenticator) AuthenticateRevocation(headers http.He
 func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requestor) error {
 	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return fmt.Errorf("Failed to read key of requestor %s: %w", name, err)
+		return fmt.Errorf("failed to read key of requestor %s: %w", name, err)
 	}
 	pskauth.presharedkeys[string(bts)] = name
 	return nil
