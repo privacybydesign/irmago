@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- Fix nil pointer dereference (panic) when looking up public keys for an issuer whose scheme is not present in the configuration, which could occur when a session runs concurrently with the periodic scheme update; such lookups now return a clear error instead of panicking
+
 ### Security
 - Update Go toolchain 1.26.3 → 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
 - Update dependencies with security relevance:
