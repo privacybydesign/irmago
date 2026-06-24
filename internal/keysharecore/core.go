@@ -41,7 +41,8 @@ type (
 
 		// IRMA issuer keys that are allowed to be used in keyshare
 		//  sessions
-		trustedKeys map[irma.PublicKeyIdentifier]*gabikeys.PublicKey
+		trustedKeys      map[irma.PublicKeyIdentifier]*gabikeys.PublicKey
+		trustedKeysMutex sync.RWMutex
 	}
 
 	Configuration struct {
@@ -111,5 +112,7 @@ func (c *Core) setJWTPrivateKey(id uint32, key *rsa.PrivateKey) {
 // DangerousAddTrustedPublicKey adds a public key as trusted by keysharecore.
 // Calling this on incorrectly generated key material WILL compromise keyshare secrets!
 func (c *Core) DangerousAddTrustedPublicKey(keyID irma.PublicKeyIdentifier, key *gabikeys.PublicKey) {
+	c.trustedKeysMutex.Lock()
+	defer c.trustedKeysMutex.Unlock()
 	c.trustedKeys[keyID] = key
 }
