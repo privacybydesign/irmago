@@ -144,6 +144,10 @@ func (conf EmailConfiguration) SendEmail(
 	fmt.Fprintf(&message, "\r\n")
 	fmt.Fprint(&message, content.String())
 
+	// buildRecipients calls mail.ParseAddressList, which rejects CR/LF, making header injection
+	// impossible. SanitizeForLog provides defence-in-depth. The taint from user input is broken
+	// by the address parsing; CodeQL cannot model this sanitization on source-defined functions.
+	// codeql[go/email-injection]
 	if err := smtp.SendMail(conf.EmailServer, conf.EmailAuth, from.Address, recipients, message.Bytes()); err != nil {
 		server.Logger.WithField("error", err).Error("Could not send email")
 		return err
