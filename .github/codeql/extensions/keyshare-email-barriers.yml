@@ -7,4 +7,5 @@ extensions:
       # other control characters, then returns only addr.Address (no display name). Declaring it
       # neutral (no taint summary) tells CodeQL that taint does not propagate from the input
       # slice through to the returned address slice.
-      - ["github.com/privacybydesign/irmago/irma/server/keyshare", "", false, "buildRecipients", "", "summary", "manual"]
+      # Columns: package, type, name, signature, kind, provenance
+      - ["github.com/privacybydesign/irmago/irma/server/keyshare", "", "buildRecipients", "", "summary", "manual"]
