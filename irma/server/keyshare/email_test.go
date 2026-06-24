@@ -145,6 +145,31 @@ func TestVerifyMXRecordTransientFailure(t *testing.T) {
 	}
 }
 
+func TestBuildRecipients(t *testing.T) {
+	// Single plain address.
+	got, err := buildRecipients([]string{"user@example.com"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"user@example.com"}, got)
+
+	// Display name is stripped, only the bare address is returned.
+	got, err = buildRecipients([]string{"Alice <alice@example.com>"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"alice@example.com"}, got)
+
+	// Multiple recipients (BCC case): each address is included in the SMTP envelope.
+	got, err = buildRecipients([]string{"alice@example.com", "bob@example.com"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"alice@example.com", "bob@example.com"}, got)
+
+	// Invalid address is rejected.
+	_, err = buildRecipients([]string{"not-an-email"})
+	require.ErrorIs(t, err, ErrInvalidEmail)
+
+	// CR/LF injection is rejected.
+	_, err = buildRecipients([]string{"victim@example.com\r\nBcc: attacker@evil.com"})
+	require.ErrorIs(t, err, ErrInvalidEmail)
+}
+
 func TestParseEmailAddressRejectsHeaderInjection(t *testing.T) {
 	// A valid address parses and exposes only the address part.
 	addr, err := ParseEmailAddress("Barry Gibbs <bg@example.com>")

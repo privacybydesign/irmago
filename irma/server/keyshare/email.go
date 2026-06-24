@@ -84,6 +84,20 @@ func (conf EmailConfiguration) translateTemplate(templates map[string]*template.
 	return templates[conf.DefaultLanguage]
 }
 
+// buildRecipients parses to into bare email addresses suitable for use as SMTP envelope recipients.
+// mail.ParseAddressList rejects control characters, so the returned addresses cannot contain CR/LF.
+func buildRecipients(to []string) ([]string, error) {
+	parsedTo, err := mail.ParseAddressList(strings.Join(to, ","))
+	if err != nil {
+		return nil, ErrInvalidEmail
+	}
+	recipients := make([]string, len(parsedTo))
+	for i, addr := range parsedTo {
+		recipients[i] = addr.Address
+	}
+	return recipients, nil
+}
+
 // SendEmail sends a templated email to the supplied email address(es).
 // When multiple recipients are specified, the email is sent as a BCC email.
 func (conf EmailConfiguration) SendEmail(
@@ -110,24 +124,18 @@ func (conf EmailConfiguration) SendEmail(
 		return errors.New("no to address specified")
 	}
 
-	parsedTo, err := mail.ParseAddressList(strings.Join(to, ","))
+	recipients, err := buildRecipients(to)
 	if err != nil {
-		return ErrInvalidEmail
-	}
-
-	// Use the parsed addresses as the SMTP envelope recipients and in the To header.
-	// mail.ParseAddressList rejects control characters, so .Address cannot contain
-	// CR/LF and cannot inject extra SMTP headers (see TestParseEmailAddressRejectsHeaderInjection).
-	recipients := make([]string, len(parsedTo))
-	for i, addr := range parsedTo {
-		recipients[i] = addr.Address
+		return err
 	}
 
 	message := bytes.Buffer{}
 
 	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email.
+	// SanitizeForLog strips any residual CR/LF — mail.ParseAddressList already rejects such input
+	// (see TestParseEmailAddressRejectsHeaderInjection), so this is a defence-in-depth barrier.
 	if len(to) == 1 {
-		fmt.Fprintf(&message, "To: %s\r\n", recipients[0])
+		fmt.Fprintf(&message, "To: %s\r\n", common.SanitizeForLog(recipients[0]))
 	}
 
 	fmt.Fprintf(&message, "From: %s\r\n", from.Address)
