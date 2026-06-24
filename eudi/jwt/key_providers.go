@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/cert"
@@ -16,6 +17,66 @@ import (
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
 )
+
+// JwtKeyProvider validates the 'typ' header against a configured allow-list,
+// then dispatches signature key resolution to either X509KeyProvider (when the
+// JWS protected header carries x5c) or KidKeyProvider (when it carries kid).
+//
+// Callers that need post-fetch access to the resolved certificate (for chain
+// validation against an X509VerificationContext) can type-assert
+// InnerKeyProvider to *X509KeyProvider after FetchKeys returns.
+type JwtKeyProvider struct {
+	allowedTyps   []string
+	allowInsecure bool
+
+	// InnerKeyProvider is populated by FetchKeys and exposes the concrete
+	// provider used for verification (currently *X509KeyProvider or
+	// *KidKeyProvider).
+	InnerKeyProvider jws.KeyProvider
+}
+
+func NewJwtKeyProvider(allowedTyps []string, allowInsecure bool) *JwtKeyProvider {
+	return &JwtKeyProvider{
+		allowedTyps:   allowedTyps,
+		allowInsecure: allowInsecure,
+	}
+}
+
+// FetchKeys validates the 'typ' header against allowedTyps and dispatches to
+// X509KeyProvider or KidKeyProvider depending on which header is present.
+// 'typ' MUST be present in the protected header and MUST be one of allowedTyps.
+func (p *JwtKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *jws.Signature, msg *jws.Message) error {
+	if sig == nil {
+		return fmt.Errorf("missing JWS signature")
+	}
+	typ, ok := sig.ProtectedHeaders().Type()
+	if !ok || !slices.Contains(p.allowedTyps, typ) {
+		return fmt.Errorf("invalid 'typ' header: %v", typ)
+	}
+
+	// Select the key reference. x5c and kid are mutually exclusive: if both were
+	// accepted, a kid would overwrite an x5c here while the X.509 trust/CRL check
+	// downstream (gated on the *X509KeyProvider type) is silently skipped, letting a
+	// forged credential be verified against the kid-resolved key.
+	x5c, x5cPresent := sig.ProtectedHeaders().X509CertChain()
+	x5cPresent = x5cPresent && x5c != nil
+
+	kid, kidPresent := sig.ProtectedHeaders().KeyID()
+	kidPresent = kidPresent && kid != ""
+
+	switch {
+	case x5cPresent && kidPresent:
+		return fmt.Errorf("ambiguous key reference: both 'x5c' and 'kid' headers are present")
+	case x5cPresent:
+		p.InnerKeyProvider = NewX509KeyProvider(x5c)
+	case kidPresent:
+		p.InnerKeyProvider = NewKidKeyProvider(kid, p.allowInsecure)
+	default:
+		return fmt.Errorf("no supported key reference header (x5c or kid) present in the signature")
+	}
+
+	return p.InnerKeyProvider.FetchKeys(ctx, sink, sig, msg)
+}
 
 type X509KeyProvider struct {
 	x5cHeader *cert.Chain

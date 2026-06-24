@@ -3,11 +3,23 @@ package db
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+// CredentialStatusInstance pairs an instance's status_list reference
+// with its issuing batch's IssuerURL. The IssuerURL is part of the
+// status list cache key so a malicious cross-issuer URI re-use cannot
+// borrow another issuer's cached status list.
+type CredentialStatusInstance struct {
+	InstanceID    datatypes.UUID
+	StatusListURI string
+	StatusListIdx uint64
+	IssuerURL     string
+}
 
 // CredentialStore is the public interface for inserting and retrieving issued credentials.
 type CredentialStore interface {
@@ -42,6 +54,15 @@ type CredentialStore interface {
 	// DeleteBatchByHash looks up a CredentialBatch by its deterministic hash and deletes it
 	// along with all its instances (via CASCADE). Returns ErrNotFound if no batch exists with that hash.
 	DeleteBatchByHash(hash string) error
+
+	// ListInstancesWithStatusReference returns every IssuedCredentialInstance
+	// with a (status_list.uri, status_list.idx) pair, joined with its batch's
+	// IssuerURL.
+	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
+
+	// UpdateInstanceStatus writes last_known_status and last_status_check_at
+	// on a single IssuedCredentialInstance. Returns ErrNotFound on no match.
+	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
 }
 
 type credentialStore struct {
@@ -180,5 +201,56 @@ func (s *credentialStore) DeleteBatch(batchID datatypes.UUID) error {
 		return ErrNotFound
 	}
 
+	return nil
+}
+
+func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
+	type row struct {
+		ID            datatypes.UUID
+		StatusListURI string
+		StatusListIdx uint64
+		IssuerURL     string
+	}
+	var rows []row
+	err := s.db.
+		Model(&models.IssuedCredentialInstance{}).
+		Select("issued_credential_instances.id AS id, " +
+			"issued_credential_instances.status_list_uri AS status_list_uri, " +
+			"issued_credential_instances.status_list_idx AS status_list_idx, " +
+			"credential_batches.issuer_url AS issuer_url").
+		Joins("JOIN credential_batches ON credential_batches.id = issued_credential_instances.credential_batch_id").
+		Where("issued_credential_instances.status_list_uri IS NOT NULL AND issued_credential_instances.status_list_idx IS NOT NULL").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CredentialStatusInstance, len(rows))
+	for i, r := range rows {
+		out[i] = CredentialStatusInstance{
+			InstanceID:    r.ID,
+			StatusListURI: r.StatusListURI,
+			StatusListIdx: r.StatusListIdx,
+			IssuerURL:     r.IssuerURL,
+		}
+	}
+	return out, nil
+}
+
+func (s *credentialStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
+	if instanceID.IsNil() {
+		return fmt.Errorf("instanceID is required")
+	}
+	res := s.db.Model(&models.IssuedCredentialInstance{}).
+		Where("id = ?", instanceID).
+		Updates(map[string]any{
+			"last_known_status":    status,
+			"last_status_check_at": checkedAt,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
 	return nil
 }

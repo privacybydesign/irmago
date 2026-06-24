@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
@@ -338,8 +337,7 @@ func (client *Client) GetCredentials() ([]*clientmodels.Credential, error) {
 	}
 
 	// Get EUDI credentials and convert to the same format, then combine with IRMA credentials.
-	credentialService := services.NewCredentialService(client.eudiStorage)
-	oidCreds, err := credentialService.GetCredentialMetadataList()
+	oidCreds, err := client.credentialService.GetCredentialMetadataList()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
 	}
@@ -358,8 +356,7 @@ func (client *Client) getCredentialsIncludingKeyshare() ([]*clientmodels.Credent
 		return nil, fmt.Errorf("failed to convert IRMA credentials to schemaless format: %v", err)
 	}
 
-	credentialService := services.NewCredentialService(client.eudiStorage)
-	oidCreds, err := credentialService.GetCredentialMetadataList()
+	oidCreds, err := client.credentialService.GetCredentialMetadataList()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
 	}

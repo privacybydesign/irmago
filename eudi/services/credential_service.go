@@ -13,8 +13,8 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -32,6 +32,10 @@ type CredentialService interface {
 		requireCryptographicKeyBinding bool,
 		publicKeyIdentifiers []models.PublicHolderBindingKey,
 	) error
+
+	// DeleteByHash deletes a stored CredentialBatch by its deterministic hash.
+	// Returns ErrNotFound if no batch exists with that hash.
+	DeleteByHash(hash string) error
 }
 
 type credentialService struct {
@@ -40,12 +44,20 @@ type credentialService struct {
 	fileStorage           filesystem.FileSystemStorage
 }
 
-func NewCredentialService(s storage.Storage) CredentialService {
+func NewCredentialService(
+	credentialStore db.CredentialStore,
+	holderBindingKeyStore db.HolderBindingKeyStore,
+	fileStorage filesystem.FileSystemStorage,
+) CredentialService {
 	return &credentialService{
-		credentialStore:       db.NewCredentialStore(s.Db()),
-		holderBindingKeyStore: db.NewHolderBindingKeyStore(s.Db()),
-		fileStorage:           s.FileSystem(),
+		credentialStore:       credentialStore,
+		holderBindingKeyStore: holderBindingKeyStore,
+		fileStorage:           fileStorage,
 	}
+}
+
+func (s *credentialService) DeleteByHash(hash string) error {
+	return s.credentialStore.DeleteBatchByHash(hash)
 }
 
 func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
@@ -285,10 +297,27 @@ func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJ
 
 func buildInstances(vcs []*sdjwtvc.VerifiedSdJwtVc) []models.IssuedCredentialInstance {
 	instances := make([]models.IssuedCredentialInstance, len(vcs))
+	now := time.Now()
 	for i, v := range vcs {
-		instances[i] = models.IssuedCredentialInstance{
+		inst := models.IssuedCredentialInstance{
 			RawCredential: []byte(v.GetRawSdJwtVc()),
 		}
+		// Persist the status_list reference so the disclosure path and
+		// the refresh sweep can run without re-parsing the SD-JWT VC.
+		// At issuance time the holder verifier has just confirmed the
+		// bit reads StatusValid (or the credential has no status
+		// reference), so seed LastKnownStatus accordingly.
+		if v.IssuerSignedJwtPayload.Status != nil && v.IssuerSignedJwtPayload.Status.StatusList != nil {
+			ref := v.IssuerSignedJwtPayload.Status.StatusList
+			uri := ref.URI
+			idx := ref.Index
+			t := now
+			inst.StatusListURI = &uri
+			inst.StatusListIdx = &idx
+			inst.LastKnownStatus = uint8(statuslist.StatusValid)
+			inst.LastStatusCheckAt = &t
+		}
+		instances[i] = inst
 	}
 	return instances
 }

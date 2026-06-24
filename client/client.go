@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
@@ -35,17 +37,19 @@ import (
 )
 
 type Client struct {
-	storage          *clientstorage.Storage
-	eudiStorage      storage.Storage
-	sdjwtvcStorage   irmaclient.SdJwtVcStorage
-	openid4vpClient  *openid4vp.Client
-	openid4vciClient *openid4vci.Client
-	irmaClient       *irmaclient.IrmaClient
-	logsStorage      irmaclient.LogsStorage
-	keyBinder        sdjwtvc.KeyBinder
-	didValidator     *openid4vp.DidVerifierValidator
-	scheduler        gocron.Scheduler
-	sessionManager   sessionManager
+	storage           *clientstorage.Storage
+	eudiStorage       storage.Storage
+	sdjwtvcStorage    irmaclient.SdJwtVcStorage
+	openid4vpClient   *openid4vp.Client
+	openid4vciClient  *openid4vci.Client
+	irmaClient        *irmaclient.IrmaClient
+	logsStorage       irmaclient.LogsStorage
+	keyBinder         sdjwtvc.KeyBinder
+	didValidator      *openid4vp.DidVerifierValidator
+	scheduler         gocron.Scheduler
+	sessionManager    sessionManager
+	statusRefresh     services.StatusRefreshService
+	credentialService services.CredentialService
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -108,6 +112,10 @@ func New(
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
+	credStore := db.NewCredentialStore(eudiStorage.Db())
+	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem())
+
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	didValidator := openid4vp.NewDidVerifierValidator(false)
@@ -120,6 +128,7 @@ func New(
 	// blank permission prompt.
 	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,
+		credStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
 	)
@@ -130,12 +139,27 @@ func New(
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
 
+	// Token Status List checker, shared by the holder-side verifier
+	// (attached to sdJwtVcVerificationContext below), the OpenID4VP
+	// disclosure handler (set via WithStatusChecker further down),
+	// and the background refresh service.
+	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
+	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: &eudiConf.Issuers,
+		Clock:       eudi_jwt.NewSystemClock(),
+	}, statusListCache)
+
+	// Wire the checker into the EUDI DCQL handler so the status check
+	// runs before the wallet hands over a credential.
+	eudiSdJwtDcqlHandler.WithStatusChecker(statusChecker)
+
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: true,
+		StatusChecker: statusChecker,
 	}
 
 	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, handler, signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
@@ -165,6 +189,7 @@ func New(
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
+		StatusChecker: statusChecker,
 	}
 
 	// Initiate the OpenID4VCI client
@@ -172,6 +197,7 @@ func New(
 		&http.Client{},
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
+		credentialService,
 	)
 
 	if err != nil {
@@ -184,16 +210,18 @@ func New(
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	client := &Client{
-		storage:          s,
-		sdjwtvcStorage:   sdjwtvcStorage,
-		eudiStorage:      eudiStorage,
-		openid4vpClient:  openid4vpClient,
-		openid4vciClient: openid4vciClient,
-		irmaClient:       irmaClient,
-		logsStorage:      irmaStorage,
-		keyBinder:        irmaKeyBinder,
-		didValidator:     didValidator,
-		scheduler:        scheduler,
+		storage:           s,
+		sdjwtvcStorage:    sdjwtvcStorage,
+		eudiStorage:       eudiStorage,
+		openid4vpClient:   openid4vpClient,
+		openid4vciClient:  openid4vciClient,
+		irmaClient:        irmaClient,
+		logsStorage:       irmaStorage,
+		keyBinder:         irmaKeyBinder,
+		didValidator:      didValidator,
+		scheduler:         scheduler,
+		statusRefresh:     services.NewStatusRefreshService(credStore, statusChecker),
+		credentialService: credentialService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -209,6 +237,15 @@ func (client *Client) Close() error {
 	client.irmaClient.Close()
 	client.eudiStorage.Close()
 	return client.storage.Close()
+}
+
+// RefreshStatuses re-fetches the Token Status List for every stored
+// SD-JWT VC instance and updates its LastKnownStatus column. Use
+// this on app resume or when the UI exposes an explicit refresh
+// action. Errors during the sweep are logged; the previous
+// LastKnownStatus persists for any URI that fails to refresh.
+func (client *Client) RefreshStatuses(ctx context.Context) error {
+	return client.statusRefresh.RefreshAll(ctx)
 }
 
 type SessionRequestData struct {
@@ -395,8 +432,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 
 	// Delete EUDI credentials (read metadata first for the removal log).
 	if len(eudiHashes) > 0 {
-		credentialService := services.NewCredentialService(client.eudiStorage)
-		allEudiCreds, err := credentialService.GetCredentialMetadataList()
+		allEudiCreds, err := client.credentialService.GetCredentialMetadataList()
 		if err != nil {
 			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
 		}
@@ -422,9 +458,8 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			}
 		}
 
-		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
 		for _, hash := range eudiHashes {
-			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
+			if err := client.credentialService.DeleteByHash(hash); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}

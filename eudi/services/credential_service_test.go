@@ -1068,6 +1068,14 @@ func (m *mockCredentialStore) DeleteBatchByHash(hash string) error {
 	return nil
 }
 
+func (m *mockCredentialStore) ListInstancesWithStatusReference() ([]db.CredentialStatusInstance, error) {
+	return nil, nil
+}
+
+func (m *mockCredentialStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
+	return nil
+}
+
 // --- mock HolderBindingKeyStore ---
 
 type mockHolderBindingKeyStore struct {

@@ -1,6 +1,7 @@
 package sdjwtvc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
@@ -60,6 +62,14 @@ type SdJwtVcVerificationContext struct {
 	// must match. This prevents replay attacks by ensuring the presentation was created for this
 	// specific request.
 	ExpectedNonce string
+
+	// StatusChecker, when set, runs an IETF OAuth Token Status List
+	// check after the SD-JWT VC verification succeeds: if the
+	// payload carries a `status.status_list` reference, the verifier
+	// fetches/verifies the referenced Status List Token and rejects
+	// the credential unless the indexed bit reads StatusValid.
+	// Nil disables the check.
+	StatusChecker *statuslist.Checker
 
 	// ExpectedAudience is the audience from the OpenID4VP authorization request that the KB-JWT aud
 	// must match.
@@ -166,6 +176,32 @@ func NewSdJwtVcProcessor(verificationContext SdJwtVcVerificationContext) sdJwtVc
 	}
 }
 
+// runStatusListCheck consults the configured StatusChecker (if any)
+// for the credential's status reference. Returns nil when no checker
+// is configured or when the credential has no status_list reference;
+// otherwise returns nil only when the indexed bit reads StatusValid.
+//
+// Status-fetch / verify / decode errors and any non-Valid status are
+// returned to the caller, which will reject the credential. The
+// behaviour is fail-closed.
+func (v *sdJwtVcProcessor) runStatusListCheck(payload *IssuerSignedJwtPayload) error {
+	if v.verificationContext.StatusChecker == nil {
+		return nil
+	}
+	if payload.Status == nil || payload.Status.StatusList == nil {
+		return nil
+	}
+	ctx := context.Background()
+	status, err := v.verificationContext.StatusChecker.Check(ctx, *payload.Status.StatusList, payload.Issuer)
+	if err != nil {
+		return fmt.Errorf("status list check failed: %w", err)
+	}
+	if status != statuslist.StatusValid {
+		return fmt.Errorf("credential status is %s, not valid", status)
+	}
+	return nil
+}
+
 // ProcessAndVerifySdJwtVc implements chapter 7.1 of the SD-JWT VC specification.
 func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 	sdjwtvc SdJwtVcKb,
@@ -198,6 +234,13 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 	// 		return nil, fmt.Errorf("failed to verify SD-JWT issuance: %v", err)
 	// 	}
 	// }
+
+	// Token Status List check (draft-ietf-oauth-status-list-15). Skip
+	// silently when no checker is configured or the credential carries
+	// no status_list reference.
+	if err := v.runStatusListCheck(issuerSignedJwtPayload); err != nil {
+		return nil, err
+	}
 
 	// Valid SD-JWT, optionally with valid key binding JWT, depending on the key binding processor used
 	return &VerifiedSdJwtVc{
@@ -268,6 +311,15 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 		}
 	}
 
+	// Optional Token Status List reference (draft-ietf-oauth-status-list-15 §5.1).
+	var status *statuslist.StatusClaim
+	if token.Has(Key_Status) {
+		status, err = parseStatusClaim(token)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to parse status claim: %v", err)
+		}
+	}
+
 	// Verify and process disclosures
 	// Get structured SD-JWT claims, which we can check for embedded disclosure digests
 	issuerSignedJwtClaims, err := extractClaimsAndDisclosuresDigestsFromToken(token)
@@ -283,6 +335,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 		Sd:                       sd,
 		SdAlg:                    iana.HashingAlgorithm(sdAlg),
 		Confirm:                  cnf,
+		Status:                   status,
 	}
 
 	if expPresent {
@@ -393,6 +446,63 @@ func parseConfirmField(value any) (*CnfField, error) {
 	}
 
 	return nil, fmt.Errorf("failed to parse cnf field: unsupported confirmation method, expected jwk or did:jwk: %v", value)
+}
+
+// parseStatusClaim reads the `status` claim from a verified jwt.Token
+// into the structured form expected by the Token Status List
+// pipeline. Only the `status_list` member is parsed in v1; other
+// sibling members defined by future specs are silently ignored.
+func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
+	var raw map[string]any
+	if err := token.Get(Key_Status, &raw); err != nil {
+		return nil, fmt.Errorf("status claim is not an object: %v", err)
+	}
+	slRaw, ok := raw["status_list"]
+	if !ok {
+		// status object present without a status_list member is a
+		// well-formed extension point; treat as "no status list
+		// reference on this credential".
+		return &statuslist.StatusClaim{}, nil
+	}
+	slMap, ok := slRaw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("status_list is not an object: %T", slRaw)
+	}
+	idxRaw, ok := slMap["idx"]
+	if !ok {
+		return nil, fmt.Errorf("status_list.idx missing")
+	}
+	uriRaw, ok := slMap["uri"]
+	if !ok {
+		return nil, fmt.Errorf("status_list.uri missing")
+	}
+	uri, ok := uriRaw.(string)
+	if !ok {
+		return nil, fmt.Errorf("status_list.uri is not a string: %T", uriRaw)
+	}
+	var idx uint64
+	switch n := idxRaw.(type) {
+	case float64:
+		if n < 0 {
+			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
+		}
+		idx = uint64(n)
+	case int:
+		if n < 0 {
+			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
+		}
+		idx = uint64(n)
+	case int64:
+		if n < 0 {
+			return nil, fmt.Errorf("status_list.idx is negative: %v", n)
+		}
+		idx = uint64(n)
+	case uint64:
+		idx = n
+	default:
+		return nil, fmt.Errorf("status_list.idx is not a number: %T", idxRaw)
+	}
+	return &statuslist.StatusClaim{StatusList: &statuslist.Reference{Index: idx, URI: uri}}, nil
 }
 
 func verifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,
@@ -599,11 +709,11 @@ func extractClaimsAndDisclosuresDigestsFromToken(token jwt.Token) (map[string]an
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
 ) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
-	keyProvider := SdJwtKeyProvider{allowInsecure: v.allowInsecureDidWeb}
+	keyProvider := NewSdJwtVcKeyProvider(v.allowInsecureDidWeb)
 
 	// Create a context for the verification where we can retrieve the requestor info back
 	token, err := jwt.Parse(signedJwt,
-		jwt.WithKeyProvider(&keyProvider),
+		jwt.WithKeyProvider(keyProvider),
 		jwt.WithClock(v.verificationContext.Clock),
 		jwt.WithAcceptableSkew(ClockSkewInSeconds*time.Second),
 		jwt.WithVerify(true),
@@ -613,7 +723,7 @@ func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	}
 
 	// If the key provider used was a X509KeyProvider, we can get the certificate and verify it against the trusted roots/intermediates and CRLs.
-	if x509KeyProvider, ok := keyProvider.innerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
+	if x509KeyProvider, ok := keyProvider.InnerKeyProvider.(*eudi_jwt.X509KeyProvider); ok {
 		cert := x509KeyProvider.GetCert()
 		err = eudi_jwt.VerifyCertificate(v.verificationContext.X509VerificationContext, cert, nil)
 		if err != nil {

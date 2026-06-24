@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -912,6 +913,107 @@ func Test_HolderVerificationProcessor_ValidSdJwtVc_NoDisclosures_NoKbJwt_Succeed
 func Test_HolderVerificationProcessor_BaselineGeneratedSdJwtVc_Succeeds(t *testing.T) {
 	config := newWorkingSdJwtVcTestConfig()
 	noErrorTestCaseHolder(t, config, "default working test sdjwtvc creator is valid")
+}
+
+func Test_HolderVerificationProcessor_StatusClaim_RoundtripsThroughPayload(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig().
+		withStatusListReference("https://issuer.example/sl/1", 42)
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.NotNil(t, verified.IssuerSignedJwtPayload.Status)
+	require.NotNil(t, verified.IssuerSignedJwtPayload.Status.StatusList)
+	require.Equal(t, "https://issuer.example/sl/1", verified.IssuerSignedJwtPayload.Status.StatusList.URI)
+	require.Equal(t, uint64(42), verified.IssuerSignedJwtPayload.Status.StatusList.Index)
+}
+
+func Test_HolderVerificationProcessor_StatusClaim_AbsentLeavesPayloadStatusNil(t *testing.T) {
+	config := newWorkingSdJwtVcTestConfig() // no status reference
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+
+	verified, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+	require.Nil(t, verified.IssuerSignedJwtPayload.Status)
+}
+
+func Test_HolderVerificationProcessor_StatusCheck_ValidList_Accepts(t *testing.T) {
+	signer := statuslist.NewTestStatusListSigner(t)
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
+		Issuer:   "https://openid4vc.staging.yivi.app",
+		Bits:     1,
+		Statuses: map[uint64]uint8{7: 0}, // Valid at idx 7
+	})
+
+	config := newWorkingSdJwtVcTestConfig().withStatusListReference(srv.URL(), 7)
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.StatusChecker = statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+}
+
+func Test_HolderVerificationProcessor_StatusCheck_InvalidList_Rejects(t *testing.T) {
+	signer := statuslist.NewTestStatusListSigner(t)
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
+		Issuer:   "https://openid4vc.staging.yivi.app",
+		Bits:     1,
+		Statuses: map[uint64]uint8{7: 1}, // Invalid at idx 7
+	})
+
+	config := newWorkingSdJwtVcTestConfig().withStatusListReference(srv.URL(), 7)
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.StatusChecker = statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.ErrorContains(t, err, "credential status is invalid")
+}
+
+func Test_HolderVerificationProcessor_StatusCheck_UnreachableURI_FailsClosed(t *testing.T) {
+	signer := statuslist.NewTestStatusListSigner(t)
+	config := newWorkingSdJwtVcTestConfig().withStatusListReference("http://127.0.0.1:0/nope", 0)
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.StatusChecker = statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.ErrorContains(t, err, "status list check failed")
+}
+
+func Test_HolderVerificationProcessor_StatusCheck_NilCheckerLeavesClaimUnverified(t *testing.T) {
+	// Even with a status reference present, a nil StatusChecker
+	// must not reject the credential — this is the back-compat path
+	// for callers that haven't opted into status checks.
+	config := newWorkingSdJwtVcTestConfig().withStatusListReference("https://issuer.example/sl/1", 0)
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	// context.StatusChecker is nil.
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
+}
+
+func Test_HolderVerificationProcessor_StatusCheck_NoStatusClaim_PassesWithCheckerConfigured(t *testing.T) {
+	signer := statuslist.NewTestStatusListSigner(t)
+	config := newWorkingSdJwtVcTestConfig() // no status reference
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.StatusChecker = statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.NoError(t, err)
 }
 
 func Test_HolderVerificationProcessor_FewerDisclosuresThanSdHashes_Succeeds(t *testing.T) {
