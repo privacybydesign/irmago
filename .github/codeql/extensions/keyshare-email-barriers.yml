@@ -1,9 +1,10 @@
 extensions:
   - addsTo:
       pack: codeql/go-all
-      extensible: barrierModel
+      extensible: neutralModel
     data:
-      # buildRecipients validates email addresses via mail.ParseAddressList, which rejects
-      # CR/LF and other control characters. Its first return value (the parsed address slice)
-      # is therefore safe to use as an SMTP recipient or To: header value.
-      - ["github.com/privacybydesign/irmago/irma/server/keyshare", "", false, "buildRecipients", "", "", "ReturnValue[0]", "sanitize", "manual"]
+      # buildRecipients validates addresses via mail.ParseAddressList, which rejects CR/LF and
+      # other control characters, then returns only addr.Address (no display name). Declaring it
+      # neutral (no taint summary) tells CodeQL that taint does not propagate from the input
+      # slice through to the returned address slice.
+      - ["github.com/privacybydesign/irmago/irma/server/keyshare", "", false, "buildRecipients", "", "summary", "manual"]
