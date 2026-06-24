@@ -293,8 +293,11 @@ type emailLoginRequest struct {
 }
 
 func (s *Server) sendLoginEmail(ctx context.Context, request emailLoginRequest) error {
-	// Early detect input error of s.conf.SendEmail to prevent a database lookup with unvalidated user input.
-	if _, err := keyshare.ParseEmailAddress(request.Email); err != nil {
+	// Parse and validate the address early, both to reject invalid input before the DB lookup
+	// and to obtain a clean, parsed address for use in SendEmail (so only post-parse data
+	// flows into the email message, not the raw request string).
+	parsedEmail, err := keyshare.ParseEmailAddress(request.Email)
+	if err != nil {
 		return keyshare.ErrInvalidEmail
 	}
 
@@ -303,7 +306,7 @@ func (s *Server) sendLoginEmail(ctx context.Context, request emailLoginRequest) 
 	}
 
 	token := common.NewSessionToken()
-	err := s.db.addLoginToken(ctx, request.Email, token)
+	err = s.db.addLoginToken(ctx, request.Email, token)
 	if err == errEmailNotFound || err == errTooManyTokens {
 		return err
 	} else if err != nil {
@@ -316,7 +319,7 @@ func (s *Server) sendLoginEmail(ctx context.Context, request emailLoginRequest) 
 		s.conf.loginEmailTemplates,
 		s.conf.LoginEmailSubjects,
 		map[string]string{"TokenURL": baseURL + token},
-		[]string{request.Email},
+		[]string{parsedEmail.Address},
 		request.Language,
 	)
 }
