@@ -203,13 +203,16 @@ func (c *Core) verifyAccess(secrets UserSecrets, jwtToken string) (unencryptedUs
 func (c *Core) GeneratePs(secrets UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*big.Int, error) {
 	// Validate input request and build key list
 	var keyList []*gabikeys.PublicKey
+	c.trustedKeysMutex.RLock()
 	for _, keyID := range keyIDs {
 		key, ok := c.trustedKeys[keyID]
 		if !ok {
+			c.trustedKeysMutex.RUnlock()
 			return nil, ErrKeyNotFound
 		}
 		keyList = append(keyList, key)
 	}
+	c.trustedKeysMutex.RUnlock()
 
 	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
 	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
@@ -232,13 +235,16 @@ func (c *Core) GeneratePs(secrets UserSecrets, accessToken string, keyIDs []irma
 func (c *Core) GenerateCommitments(secrets UserSecrets, accessToken string, keyIDs []irma.PublicKeyIdentifier) ([]*gabi.ProofPCommitment, uint64, error) {
 	// Validate input request and build key list
 	var keyList []*gabikeys.PublicKey
+	c.trustedKeysMutex.RLock()
 	for _, keyID := range keyIDs {
 		key, ok := c.trustedKeys[keyID]
 		if !ok {
+			c.trustedKeysMutex.RUnlock()
 			return nil, 0, ErrKeyNotFound
 		}
 		keyList = append(keyList, key)
 	}
+	c.trustedKeysMutex.RUnlock()
 
 	// Use verifyAccess to get the decrypted secrets. The access has already been verified in the
 	// middleware. We use the call merely to fetch the unencryptedUserSecrets here.
@@ -274,7 +280,9 @@ func (c *Core) GenerateResponse(secrets UserSecrets, accessToken string, commitI
 	if uint(challenge.BitLen()) > gabikeys.DefaultSystemParameters[1024].Lh || challenge.Cmp(big.NewInt(0)) < 0 {
 		return "", ErrInvalidChallenge
 	}
+	c.trustedKeysMutex.RLock()
 	key, ok := c.trustedKeys[keyID]
+	c.trustedKeysMutex.RUnlock()
 	if !ok {
 		return "", ErrKeyNotFound
 	}
@@ -317,8 +325,16 @@ func (c *Core) GenerateResponseV2(
 	req gabi.KeyshareResponseRequest[irma.PublicKeyIdentifier],
 	keyID irma.PublicKeyIdentifier,
 	linkable bool) (string, error) {
-	// Validate request
+	// Validate request. Look up the requested key and take a snapshot of the
+	// trusted keys map under the read lock, so gabi.KeyshareResponse below never
+	// reads the live map while DangerousAddTrustedPublicKey may be writing it.
+	c.trustedKeysMutex.RLock()
 	key, ok := c.trustedKeys[keyID]
+	trustedKeys := make(map[irma.PublicKeyIdentifier]*gabikeys.PublicKey, len(c.trustedKeys))
+	for id, k := range c.trustedKeys {
+		trustedKeys[id] = k
+	}
+	c.trustedKeysMutex.RUnlock()
 	if !ok {
 		return "", ErrKeyNotFound
 	}
@@ -339,7 +355,7 @@ func (c *Core) GenerateResponseV2(
 		return "", ErrUnknownCommit
 	}
 
-	proofP, err := gabi.KeyshareResponse(s.KeyshareSecret, commit, hashedComms, req, c.trustedKeys)
+	proofP, err := gabi.KeyshareResponse(s.KeyshareSecret, commit, hashedComms, req, trustedKeys)
 	if err != nil {
 		return "", err
 	}
