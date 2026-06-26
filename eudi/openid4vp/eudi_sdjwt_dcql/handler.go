@@ -1134,11 +1134,8 @@ func arrayIndexValue(component any) int {
 // makes parseBatchAttributes emit attributes in the same order as a
 // depth-first walk of the credential value tree, matching FlattenClaimValue.
 func pathLess(a, b []any, metadataOrder map[string]int) bool {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	for k := 0; k < n; k++ {
+	n := min(len(b), len(a))
+	for k := range n {
 		aIsIdx := isArrayIndex(a[k])
 		bIsIdx := isArrayIndex(b[k])
 		switch {

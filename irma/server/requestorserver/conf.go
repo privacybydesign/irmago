@@ -222,8 +222,8 @@ func (conf *Configuration) initialize() error {
 			}
 		}
 		authenticators = map[AuthenticationMethod]Authenticator{
-			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]interface{}{}, maxRequestAge: conf.MaxRequestAge},
-			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]interface{}{}, maxRequestAge: conf.MaxRequestAge},
+			AuthenticationMethodHmac:      &HmacAuthenticator{hmackeys: map[string]any{}, maxRequestAge: conf.MaxRequestAge},
+			AuthenticationMethodPublicKey: &PublicKeyAuthenticator{publickeys: map[string]any{}, maxRequestAge: conf.MaxRequestAge},
 			AuthenticationMethodToken:     &PresharedKeyAuthenticator{presharedkeys: map[string]string{}},
 		}
 
@@ -256,11 +256,11 @@ func (conf *Configuration) initialize() error {
 
 	tlsConf, err := conf.tlsConfig()
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to read TLS configuration", 0)
+		return fmt.Errorf("failed to read TLS configuration: %w", err)
 	}
 	clientTlsConf, err := conf.clientTlsConfig()
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to read client TLS configuration", 0)
+		return fmt.Errorf("failed to read client TLS configuration: %w", err)
 	}
 
 	if err := conf.validatePermissions(); err != nil {
@@ -269,7 +269,7 @@ func (conf *Configuration) initialize() error {
 
 	if conf.StaticPath != "" {
 		if err := common.AssertPathExists(conf.StaticPath); err != nil {
-			return errors.WrapPrefix(err, "Invalid static_path", 0)
+			return fmt.Errorf("invalid static_path: %w", err)
 		}
 		if conf.StaticPrefix[0] != '/' {
 			return errors.New("static_prefix must start with a slash, was " + conf.StaticPrefix)

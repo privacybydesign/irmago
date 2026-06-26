@@ -1,5 +1,4 @@
 //go:build !local_tests
-// +build !local_tests
 
 package keyshareserver
 

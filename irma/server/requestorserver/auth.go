@@ -1,6 +1,7 @@
 package requestorserver
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -45,11 +46,11 @@ const (
 )
 
 type HmacAuthenticator struct {
-	hmackeys      map[string]interface{}
+	hmackeys      map[string]any
 	maxRequestAge int
 }
 type PublicKeyAuthenticator struct {
-	publickeys    map[string]interface{}
+	publickeys    map[string]any
 	maxRequestAge int
 }
 type PresharedKeyAuthenticator struct {
@@ -100,13 +101,13 @@ func (hauth *HmacAuthenticator) AuthenticateRevocation(headers http.Header, body
 func (hauth *HmacAuthenticator) Initialize(name string, requestor Requestor) error {
 	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
+		return fmt.Errorf("failed to read key of requestor %s: %w", name, err)
 	}
 
 	// We accept any of the base64 encodings
 	bts, err = common.Base64Decode(bts)
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to base64 decode hmac key of requestor "+name, 0)
+		return fmt.Errorf("failed to base64 decode hmac key of requestor %s: %w", name, err)
 	}
 
 	hauth.hmackeys[name] = bts
@@ -127,7 +128,7 @@ func (pkauth *PublicKeyAuthenticator) AuthenticateRevocation(headers http.Header
 func (pkauth *PublicKeyAuthenticator) Initialize(name string, requestor Requestor) error {
 	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
+		return fmt.Errorf("failed to read key of requestor %s: %w", name, err)
 	}
 
 	pk, err := jwt.ParseRSAPublicKeyFromPEM(bts)
@@ -176,7 +177,7 @@ func (pskauth *PresharedKeyAuthenticator) AuthenticateRevocation(headers http.He
 func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requestor) error {
 	bts, err := common.ReadKey(requestor.AuthenticationKey, requestor.AuthenticationKeyFile)
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to read key of requestor "+name, 0)
+		return fmt.Errorf("failed to read key of requestor %s: %w", name, err)
 	}
 	pskauth.presharedkeys[string(bts)] = name
 	return nil
@@ -185,8 +186,8 @@ func (pskauth *PresharedKeyAuthenticator) Initialize(name string, requestor Requ
 // Helper functions
 
 // Given an (unauthenticated) jwt, return the key against which it should be verified using the "kid" header
-func jwtKeyExtractor(publickeys map[string]interface{}) func(token *jwt.Token) (interface{}, error) {
-	return func(token *jwt.Token) (interface{}, error) {
+func jwtKeyExtractor(publickeys map[string]any) func(token *jwt.Token) (any, error) {
+	return func(token *jwt.Token) (any, error) {
 		var ok bool
 		kid, ok := token.Header["kid"]
 		if !ok {
@@ -206,7 +207,7 @@ func jwtKeyExtractor(publickeys map[string]interface{}) func(token *jwt.Token) (
 
 // jwtAuthenticate is a helper function for JWT-based authenticators that verifies and parses JWTs.
 func jwtAuthenticate(
-	headers http.Header, body []byte, signatureAlg string, keys map[string]interface{}, maxRequestAge int,
+	headers http.Header, body []byte, signatureAlg string, keys map[string]any, maxRequestAge int,
 ) (bool, irma.RequestorRequest, string, *irma.RemoteError) {
 	if !jwtApplies(headers, body, signatureAlg) {
 		return false, nil, "", nil
@@ -228,7 +229,7 @@ func jwtAuthenticate(
 }
 
 func jwtAutheticateRevocation(
-	headers http.Header, body []byte, signatureAlg string, keys map[string]interface{}, maxRequestAge int,
+	headers http.Header, body []byte, signatureAlg string, keys map[string]any, maxRequestAge int,
 ) (bool, *irma.RevocationRequest, string, *irma.RemoteError) {
 	if !jwtApplies(headers, body, signatureAlg) {
 		return false, nil, "", nil
@@ -251,7 +252,7 @@ func jwtAutheticateRevocation(
 }
 
 func jwtValidateClaims(
-	body []byte, keys map[string]interface{}, maxRequestAge int,
+	body []byte, keys map[string]any, maxRequestAge int,
 ) (string, *jwt.StandardClaims, *irma.RemoteError) {
 	// Verify JWT signature. We do not yet store the JWT contents here, because we need to know the session type first
 	// before we can construct a struct instance of the appropriate type into which to unmarshal the JWT contents.

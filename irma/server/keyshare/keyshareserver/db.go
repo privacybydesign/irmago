@@ -48,7 +48,7 @@ type DB interface {
 	// User activity registration.
 	// setSeen calls are used to track when a users account was last active, for deleting old accounts.
 	setSeen(ctx context.Context, user *User) error
-	addLog(ctx context.Context, user *User, eventType eventType, param interface{}) error
+	addLog(ctx context.Context, user *User, eventType eventType, param any) error
 
 	// Store email verification tokens on registration
 	addEmailVerification(ctx context.Context, user *User, emailAddress, token string, validity int) error
@@ -66,7 +66,7 @@ type User struct {
 }
 
 // Scan implements sql/driver Scanner interface.
-func (us *UserSecrets) Scan(src interface{}) (err error) {
+func (us *UserSecrets) Scan(src any) (err error) {
 	bts, ok := src.([]byte)
 	if !ok {
 		return errors.New("cannot convert source: not a byte slice")

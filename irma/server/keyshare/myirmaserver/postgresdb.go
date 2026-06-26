@@ -45,7 +45,7 @@ func newPostgresDB(connstring string, maxIdleConns, maxOpenConns int, maxIdleTim
 
 func (db *postgresDB) userIDByUsername(ctx context.Context, username string) (int64, error) {
 	var id int64
-	if err := db.db.QueryUserContext(ctx, "SELECT id FROM irma.users WHERE username = $1", []interface{}{&id}, username); err != nil {
+	if err := db.db.QueryUserContext(ctx, "SELECT id FROM irma.users WHERE username = $1", []any{&id}, username); err != nil {
 		server.LogError(err, "Failed to query user id by username")
 		if err == keyshare.ErrUserNotFound {
 			return 0, err
@@ -61,7 +61,7 @@ func (db *postgresDB) verifyEmailToken(ctx context.Context, token string) (int64
 	err := db.db.QueryScanContext(
 		ctx,
 		"SELECT user_id, email FROM irma.email_verification_tokens WHERE token = $1 AND expiry >= $2",
-		[]interface{}{&id, &email},
+		[]any{&id, &email},
 		token, time.Now().Unix())
 	if err == sql.ErrNoRows {
 		server.Logger.Info("Unknown email verification token")
@@ -178,7 +178,7 @@ func (db *postgresDB) verifyLoginToken(ctx context.Context, token, username stri
 		`SELECT users.id FROM irma.users INNER JOIN irma.emails ON users.id = emails.user_id WHERE
 		     username = $1 AND (emails.delete_on >= $3 OR emails.delete_on IS NULL) AND
 		     email = (SELECT email FROM irma.email_login_tokens WHERE token = $2 AND expiry >= $3)`,
-		[]interface{}{&id}, username, token, time.Now().Unix())
+		[]any{&id}, username, token, time.Now().Unix())
 	if err == sql.ErrNoRows {
 		return 0, errTokenNotFound
 	}
@@ -204,7 +204,7 @@ func (db *postgresDB) user(ctx context.Context, id int64) (user, error) {
 
 	// fetch username
 	err := db.db.QueryUserContext(ctx, "SELECT username, language, (coredata IS NULL) AS delete_in_progress FROM irma.users WHERE id = $1",
-		[]interface{}{&result.Username, &result.language, &result.DeleteInProgress},
+		[]any{&result.Username, &result.language, &result.DeleteInProgress},
 		id)
 	if err != nil {
 		server.LogError(err, "Failed to query user")

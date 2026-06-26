@@ -43,7 +43,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 	timestampServerUrl := ""
 	disclosedint := make([][]*gobig.Int, len(disclosed))
 	dlreps := make([]*gobig.Int, len(disclosed))
-	var d interface{} = disclosedint
+	var d any = disclosedint
 	for i := range disclosed {
 		meta := MetadataFromInt(disclosed[i][1], conf)
 		if meta.CredentialType() == nil {
@@ -87,7 +87,7 @@ func TimestampRequest(message string, sigs []*big.Int, disclosed [][]*big.Int, n
 	bts, err := asn1.Marshal(struct {
 		Sigs      []*gobig.Int
 		MsgHash   []byte
-		Disclosed interface{}
+		Disclosed any
 	}{
 		sigsint, msgHash[:], d,
 	})
@@ -117,7 +117,7 @@ func (sm *SignedMessage) VerifyTimestamp(message string, conf *Configuration) er
 		}
 		attrcount := len(ct.AttributeTypes) + 2 // plus secret key and metadata
 		disclosed[i] = make([]*big.Int, attrcount)
-		for j := 0; j < attrcount; j++ {
+		for j := range attrcount {
 			val, ok := proofd.ADisclosed[j]
 			if !ok {
 				disclosed[i][j] = zero

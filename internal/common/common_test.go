@@ -26,3 +26,32 @@ func TestSchemePrivateKeyWithPassphrase(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, decryptedKey.Equal(key))
 }
+
+func TestSanitizeForLog(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"clean input unchanged", "GET /irma/session/abc123", "GET /irma/session/abc123"},
+		{"empty string", "", ""},
+		{"newline escaped", "line1\nline2", "line1\\nline2"},
+		{"carriage return escaped", "line1\rline2", "line1\\rline2"},
+		{"crlf escaped as one token", "line1\r\nline2", "line1\\r\\nline2"},
+		{
+			"forged log entry is neutralized",
+			"user\r\nlevel=fatal msg=\"forged entry\"",
+			"user\\r\\nlevel=fatal msg=\"forged entry\"",
+		},
+		{"multiple newlines", "a\nb\nc", "a\\nb\\nc"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := SanitizeForLog(tc.input)
+			require.Equal(t, tc.expected, out)
+			// The result must never contain a raw CR or LF that could start a new log line.
+			require.NotContains(t, out, "\n")
+			require.NotContains(t, out, "\r")
+		})
+	}
+}

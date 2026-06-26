@@ -806,7 +806,7 @@ func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Up
 	acc := update.SignedAccumulator.Accumulator
 	event := update.Events[len(update.Events)-1]
 	events := update.Events
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		acc, event = revoke(t, acc, event, sk)
 		events = append(events, event)
 	}
@@ -1580,16 +1580,14 @@ func TestParseKeysFolderConcurrency(t *testing.T) {
 	conf := parseConfiguration(t)
 	grp := sync.WaitGroup{}
 
-	for j := 0; j < 1000; j++ {
+	for range 1000 {
 		// Clear map for next iteration
 		conf.publicKeys = concmap.New[PublicKeyIdentifier, *gabikeys.PublicKey]()
 
-		for i := 0; i < 10; i++ {
-			grp.Add(1)
-			go func() {
+		for range 10 {
+			grp.Go(func() {
 				require.NoError(t, conf.parseKeysFolder(NewIssuerIdentifier("irma-demo.MijnOverheid")))
-				grp.Done()
-			}()
+			})
 		}
 
 		grp.Wait()

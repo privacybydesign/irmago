@@ -335,12 +335,12 @@ func downloadRemoteImage(httpClient *http.Client, remoteImage metadata.RemoteIma
 	if strings.HasPrefix(remoteImage.Uri, "data:") {
 		// Expected format: data:<mediatype>[;base64],<data>
 		rest := remoteImage.Uri[len("data:"):]
-		commaIdx := strings.IndexByte(rest, ',')
-		if commaIdx < 0 {
+		before, after, ok := strings.Cut(rest, ",")
+		if !ok {
 			return nil, "", fmt.Errorf("invalid data URI: missing comma in %q", remoteImage.Uri)
 		}
-		meta := rest[:commaIdx]
-		payload := rest[commaIdx+1:]
+		meta := before
+		payload := after
 		var imageBytes []byte
 		if strings.HasSuffix(meta, ";base64") {
 			decoded, err := base64.StdEncoding.DecodeString(payload)
