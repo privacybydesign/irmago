@@ -101,7 +101,7 @@ func New(conf *server.Configuration) (*Server, error) {
 				continue
 			}
 			if err := s.conf.IrmaConfiguration.Revocation.SyncIfOld(credid, settings.Tolerance/2); err != nil {
-				s.conf.Logger.Errorf("failed to update revocation database for %s", credid.String())
+				s.conf.LoggerEntry.Errorf("failed to update revocation database for %s", credid.String())
 				_ = server.LogError(err)
 			}
 		}
@@ -264,13 +264,13 @@ func (s *Server) startNextSession(
 	if err != nil {
 		return nil, "", nil, err
 	}
-	s.conf.Logger.WithFields(logrus.Fields{"action": action, "session": ses.RequestorToken}).Infof("Session started")
+	s.conf.LoggerEntry.WithFields(logrus.Fields{"action": action, "session": ses.RequestorToken}).Infof("Session started")
 	if s.conf.Logger.IsLevelEnabled(logrus.DebugLevel) {
-		s.conf.Logger.
+		s.conf.LoggerEntry.
 			WithFields(logrus.Fields{"session": common.SanitizeForLog(string(ses.RequestorToken)), "clienttoken": common.SanitizeForLog(string(ses.ClientToken))}).
 			Info("Session request: ", server.ToJson(rrequest))
 	} else {
-		s.conf.Logger.
+		s.conf.LoggerEntry.
 			WithFields(logrus.Fields{"session": common.SanitizeForLog(string(ses.RequestorToken))}).
 			Info("Session request (purged of attribute values): ", server.ToJson(purgeRequest(rrequest)))
 	}
@@ -279,7 +279,7 @@ func (s *Server) startNextSession(
 		go func() {
 			statusChan, err := s.sessionStatusChannel(context.Background(), ses.RequestorToken, ses.timeout(s.conf))
 			if err != nil {
-				s.conf.Logger.WithError(err).Error("Failed to subscribe to session status updates for handler")
+				s.conf.LoggerEntry.WithError(err).Error("Failed to subscribe to session status updates for handler")
 				return
 			}
 			for status := range statusChan {
@@ -288,7 +288,7 @@ func (s *Server) startNextSession(
 						handler(ses.Result)
 						return false, nil
 					}); err != nil {
-						s.conf.Logger.WithError(err).Error("Failed to execute session handler")
+						s.conf.LoggerEntry.WithError(err).Error("Failed to execute session handler")
 					}
 					return
 				}
@@ -410,7 +410,7 @@ func (s *Server) subscribeServerSentEvents(w http.ResponseWriter, r *http.Reques
 			Description: "Server sent events disabled",
 			ErrorName:   "SSE_DISABLED",
 		})
-		s.conf.Logger.Info("GET /statusevents: endpoint disabled (see --sse in irma server -h)")
+		s.conf.LoggerEntry.Info("GET /statusevents: endpoint disabled (see --sse in irma server -h)")
 		return nil
 	}
 

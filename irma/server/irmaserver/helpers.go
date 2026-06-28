@@ -40,7 +40,7 @@ const defaultCredentialValidityInMonths = 6
 
 func (session *sessionData) markAlive(conf *server.Configuration) {
 	session.LastActive = time.Now()
-	conf.Logger.
+	conf.LoggerEntry.
 		WithFields(logrus.Fields{"session": session.RequestorToken}).
 		Debug("Session marked active, deletion delayed")
 }
@@ -296,7 +296,7 @@ func (session *sessionData) getProofP(commitments *irma.IssueCommitmentMessage, 
 		if !contains {
 			return nil, errors.Errorf("no keyshare proof included for scheme %s", scheme.Name())
 		}
-		conf.Logger.Trace("Parsing keyshare ProofP JWT: ", common.SanitizeForLog(str))
+		conf.LoggerEntry.Trace("Parsing keyshare ProofP JWT: ", common.SanitizeForLog(str))
 		claims := &struct {
 			jwt.StandardClaims
 			ProofP *gabi.ProofP
@@ -506,7 +506,7 @@ func eventServer(conf *server.Configuration) *sse.Server {
 			"Access-Control-Allow-Methods": "GET, OPTIONS",
 			"Access-Control-Allow-Headers": "Keep-Alive,X-Requested-With,Cache-Control,Content-Type,Last-Event-ID",
 		},
-		Logger: log.New(conf.Logger.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
+		Logger: log.New(conf.LoggerEntry.WithField("type", "sse").WriterLevel(logrus.DebugLevel), "", 0),
 	})
 }
 
@@ -605,12 +605,12 @@ func (s *Server) sessionMiddleware(next http.Handler) http.Handler {
 			return sessionUpdated, nil
 		}); err != nil {
 			if recorder.Flushed {
-				s.conf.Logger.WithError(err).Error("Session middleware: error could not be written to client")
+				s.conf.LoggerEntry.WithError(err).Error("Session middleware: error could not be written to client")
 			} else if _, ok := err.(*UnknownSessionError); ok {
-				s.conf.Logger.WithError(err).Warn("Session middleware: unknown session")
+				s.conf.LoggerEntry.WithError(err).Warn("Session middleware: unknown session")
 				server.WriteError(w, server.ErrorSessionUnknown, "")
 			} else {
-				s.conf.Logger.WithError(err).Error("Session middleware: error")
+				s.conf.LoggerEntry.WithError(err).Error("Session middleware: error")
 				server.WriteError(w, server.ErrorInternal, "")
 			}
 			return
@@ -668,7 +668,7 @@ func (s *Server) serverSentEventsHandler(initialSession *sessionData, updateChan
 
 			frontendStatusBytes, err := json.Marshal(update.frontendSessionStatus())
 			if err != nil {
-				s.conf.Logger.Error(err)
+				s.conf.LoggerEntry.Error(err)
 				return
 			}
 
@@ -691,7 +691,7 @@ func (s *Server) serverSentEventsHandler(initialSession *sessionData, updateChan
 			}
 			frontendStatusBytes, err := json.Marshal(frontendStatus)
 			if err != nil {
-				s.conf.Logger.Error(err)
+				s.conf.LoggerEntry.Error(err)
 				return
 			}
 
@@ -799,7 +799,7 @@ func (s *Server) newSession(
 		Requestor:          requestor,
 	}
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")
+	s.conf.LoggerEntry.WithFields(logrus.Fields{"session": ses.RequestorToken}).Debug("New session started")
 	nonce, _ := gabi.GenerateNonce()
 	base.Nonce = nonce
 	base.Context = one

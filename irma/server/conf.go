@@ -91,6 +91,13 @@ type Configuration struct {
 	LogJSON bool `json:"log_json" mapstructure:"log_json"`
 	// Custom logger instance. If specified, Verbose, Quiet and LogJSON are ignored.
 	Logger *logrus.Logger `json:"-"`
+	// Custom logger entry. Takes precedence over Logger and allows attaching
+	// persistent fields (e.g. LoggerEntry.WithField("lib", "irma")) that are
+	// then included on every log line emitted by the server. If specified,
+	// Logger, Verbose, Quiet and LogJSON are ignored (Logger is derived from
+	// LoggerEntry.Logger). If only Logger is specified, an entry is derived from
+	// it automatically, so all server logging flows through a *logrus.Entry.
+	LoggerEntry *logrus.Entry `json:"-"`
 
 	// Connection string for revocation database
 	RevocationDBConnStr string `json:"revocation_db_str" mapstructure:"revocation_db_str"`
@@ -161,13 +168,33 @@ type SdJwtIssuanceSettings struct {
 	Issuers map[irma.IssuerIdentifier]*SdJwtIssuer `json:"-"`
 }
 
-// Check ensures that the Configuration is loaded, usable and free of errors.
-func (conf *Configuration) Check() error {
-	if conf.Logger == nil {
+// resolveLogger initializes conf.Logger and conf.LoggerEntry and points the
+// package-level Logger and LoggerEntry at the resolved values. A caller-provided
+// LoggerEntry takes precedence; otherwise an entry is derived from a provided
+// Logger; otherwise a new logger and entry are created from Verbose/Quiet/LogJSON.
+// After this runs both conf.Logger and conf.LoggerEntry are non-nil and share the
+// same underlying *logrus.Logger.
+func (conf *Configuration) resolveLogger() {
+	switch {
+	case conf.LoggerEntry != nil:
+		if conf.LoggerEntry.Logger == nil {
+			conf.LoggerEntry.Logger = NewLogger(conf.Verbose, conf.Quiet, conf.LogJSON)
+		}
+		conf.Logger = conf.LoggerEntry.Logger
+	case conf.Logger != nil:
+		conf.LoggerEntry = logrus.NewEntry(conf.Logger)
+	default:
 		conf.Logger = NewLogger(conf.Verbose, conf.Quiet, conf.LogJSON)
+		conf.LoggerEntry = logrus.NewEntry(conf.Logger)
 	}
 	Logger = conf.Logger
+	LoggerEntry = conf.LoggerEntry
 	irma.SetLogger(conf.Logger)
+}
+
+// Check ensures that the Configuration is loaded, usable and free of errors.
+func (conf *Configuration) Check() error {
+	conf.resolveLogger()
 
 	// Use default session lifetimes if not specified
 	if conf.MaxSessionLifetime == 0 {
