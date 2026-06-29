@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -30,7 +31,9 @@ func init() {
 // The trust chains are stored in the issuers and verifiers subfolders (.pem files), and the crls in the crls subfolder (.crl files).
 // The trust chains are expected to be in PEM format, where the first certificate is the root, followed by intermediate certificates.
 type Configuration struct {
-	useStagingTrustAnchors bool
+	useStagingTrustAnchors      bool
+	strictJwtVcJsonVerification bool
+	strictJwtVcJsonTemporalSkew time.Duration
 
 	Storage   storage.Storage
 	Issuers   TrustModel
@@ -42,7 +45,8 @@ func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 	httpClient := &http.Client{}
 
 	conf = &Configuration{
-		Storage: s,
+		Storage:                     s,
+		strictJwtVcJsonTemporalSkew: 5 * time.Minute,
 		Issuers: TrustModel{
 			storageContainer:                  s.FileSystem().Issuers(),
 			logger:                            Logger,
@@ -62,6 +66,41 @@ func NewConfiguration(s storage.Storage) (conf *Configuration, err error) {
 
 func (c *Configuration) EnableStagingTrustAnchors() {
 	c.useStagingTrustAnchors = true
+}
+
+// EnableStrictJwtVcJsonVerification enables strict verification behavior for
+// OpenID4VCI jwt_vc_json credentials. In strict mode, credentials without
+// verifiable key material (currently x5c) are rejected.
+func (c *Configuration) EnableStrictJwtVcJsonVerification() {
+	c.strictJwtVcJsonVerification = true
+}
+
+// DisableStrictJwtVcJsonVerification disables strict jwt_vc_json verification
+// and restores compatibility-focused behavior.
+func (c *Configuration) DisableStrictJwtVcJsonVerification() {
+	c.strictJwtVcJsonVerification = false
+}
+
+// StrictJwtVcJsonVerificationEnabled reports whether strict jwt_vc_json
+// verification mode is enabled.
+func (c *Configuration) StrictJwtVcJsonVerificationEnabled() bool {
+	return c.strictJwtVcJsonVerification
+}
+
+// SetStrictJwtVcJsonTemporalClockSkew configures allowable clock skew for
+// strict jwt_vc_json temporal checks.
+func (c *Configuration) SetStrictJwtVcJsonTemporalClockSkew(skew time.Duration) error {
+	if skew < 0 {
+		return fmt.Errorf("strict jwt_vc_json temporal clock skew must be non-negative")
+	}
+	c.strictJwtVcJsonTemporalSkew = skew
+	return nil
+}
+
+// StrictJwtVcJsonTemporalClockSkew returns configured clock skew used by
+// strict jwt_vc_json temporal checks.
+func (c *Configuration) StrictJwtVcJsonTemporalClockSkew() time.Duration {
+	return c.strictJwtVcJsonTemporalSkew
 }
 
 func (c *Configuration) SetCertificateVerificationMode(mode CertificateVerificationMode) {

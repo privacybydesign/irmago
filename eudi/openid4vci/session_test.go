@@ -4,19 +4,26 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
@@ -210,6 +217,7 @@ type CredentialRequestTestOptions uint
 const (
 	NonceNotRequired                              CredentialRequestTestOptions = 1
 	CredentialConfigurationWithUnsupportedFeature CredentialRequestTestOptions = 2
+	CredentialConfigurationWithW3CVC              CredentialRequestTestOptions = 4
 )
 
 func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credEndpointHandler http.Handler) (
@@ -228,6 +236,13 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	if opts&CredentialConfigurationWithUnsupportedFeature == CredentialConfigurationWithUnsupportedFeature {
 		// Configure unsupported format to force 'unsupported'
 		credentialConfig.Format = metadata.CredentialFormatIdentifier_W3CVCLD
+	}
+
+	if opts&CredentialConfigurationWithW3CVC == CredentialConfigurationWithW3CVC {
+		credentialConfig.Format = metadata.CredentialFormatIdentifier_W3CVC
+		credentialConfig.CredentialDefinition = &metadata.W3CCredentialDefinition{
+			Type: []string{"VerifiableCredential"},
+		}
 	}
 
 	var aesKey [32]byte
@@ -258,6 +273,1603 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	}
 
 	return session, ts
+}
+
+func Test_openid4vciSession_obtainCredential_jwtVcJsonAdapterNotImplemented(t *testing.T) {
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: "header.payload.signature"}},
+		})
+		w.Write(resp)
+	})
+
+	session, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	_, err := session.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid JWT header JSON")
+}
+
+func Test_openid4vciSession_obtainCredential_jwtVcJsonStrictModeRequiresKeyMaterial(t *testing.T) {
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t,
+				map[string]any{"alg": "ES256", "typ": "JWT"},
+				map[string]any{"iss": "https://issuer.example.com", "sub": "did:example:alice"},
+			)}},
+		})
+		w.Write(resp)
+	})
+
+	session, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	conf, err := eudi.NewConfiguration(session.storage)
+	require.NoError(t, err)
+	conf.EnableStrictJwtVcJsonVerification()
+	session.issuerSettings.strictJwtVcJsonVerification = conf.StrictJwtVcJsonVerificationEnabled()
+
+	_, err = session.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: missing JWT key material (x5c)")
+}
+
+func Test_openid4vciSession_obtainCredential_jwtVcJsonStrictModeHonorsTemporalClockSkew(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	createSession := func(expiryOffset time.Duration) (*session, *httptest.Server) {
+		credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+			payload := map[string]any{
+				"iss": "https://issuer.example.com",
+				"sub": "did:example:alice",
+				"exp": time.Now().Add(expiryOffset).Unix(),
+			}
+
+			resp, _ := json.Marshal(CredentialResponse{
+				Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+			})
+			w.Write(resp)
+		})
+
+		s, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+		s.issuerSettings.strictJwtVcJsonVerification = true
+		s.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+		return s, ts
+	}
+
+	t.Run("accepts credential expired within skew", func(t *testing.T) {
+		s, ts := createSession(-2 * time.Minute)
+		defer ts.Close()
+
+		s.issuerSettings.jwtVcJsonTemporalClockSkew = 5 * time.Minute
+		fetched, err := s.obtainCredential("credential-config-1", nil, "test-token")
+		require.NoError(t, err)
+		require.NotNil(t, fetched)
+		require.Len(t, fetched.vcdmEnvelopes, 1)
+	})
+
+	t.Run("rejects credential expired outside skew", func(t *testing.T) {
+		s, ts := createSession(-3 * time.Minute)
+		defer ts.Close()
+
+		s.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+		_, err := s.obtainCredential("credential-config-1", nil, "test-token")
+		require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claims: credential is expired")
+	})
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModePersistsAndLists(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+	issuedAt := time.Now().Unix()
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"iat": issuedAt,
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	config.CredentialMetadata = &metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{Display: metadata.Display{Name: "Email Credential", Locale: new("en")}},
+		},
+	}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 2 * time.Minute
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Empty(t, fetched.verifiedSdJwtVcs)
+	require.Len(t, fetched.vcdmEnvelopes, 1)
+
+	err = sess.storeCredentials([]*fetchedCredential{fetched})
+	require.NoError(t, err)
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+
+	cred := stored[0]
+	require.Equal(t, "EmailCredential", cred.CredentialId)
+	require.Equal(t, "https://issuer.example.com", cred.Issuer.Id)
+	require.Equal(t, issuedAt, *cred.IssuanceDate)
+	require.Contains(t, cred.CredentialInstanceIds, clientmodels.CredentialFormat("jwt_vc_json"))
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeUntrustedChainNotPersisted(t *testing.T) {
+	trustedRootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, trustedRootPem)
+
+	// Build a different CA/leaf pair not present in the trusted root set.
+	_, untrustedRoot, untrustedLeaf, untrustedLeafPriv := mustCreateTrustedRootAndLeaf(t)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{untrustedLeaf, untrustedRoot}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, untrustedLeafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 2 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: JWT x5c certificate is not trusted")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeIssuerHostnameMismatchNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://wrong-issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: JWT x5c certificate is not trusted")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeMissingTrustConfigurationNotPersisted(t *testing.T) {
+	_, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: missing JWT trust configuration")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidIssuerURINotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "not-a-uri",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid issuer URI for JWT x5c validation")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeRejectsHmacAlgWithX5cNotPersisted(t *testing.T) {
+	rootPem, root, leaf, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "HS256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t, header, payload)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: JWT alg \"HS256\" is not allowed with x5c")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeRejectsAlgNoneNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "none", "typ": "JWT"}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t, header, payload)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: JWT alg \"none\" is not allowed")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeRejectsUnsupportedAsymmetricAlgWithX5cNotPersisted(t *testing.T) {
+	rootPem, _, leaf, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256K", "typ": "JWT", "x5c": []any{leaf}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t, header, payload)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: JWT alg \"ES256K\" is not allowed with x5c")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidCompactJWTNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: "only-two.parts"}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid compact JWT format")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidHeaderEncodingNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: "%.payload.sig"}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid JWT header encoding")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidHeaderJSONNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	invalidHeaderJSON := base64.RawURLEncoding.EncodeToString([]byte("not-json"))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"iss":"https://issuer.example.com"}`))
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: fmt.Sprintf("%s.%s.sig", invalidHeaderJSON, payload)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid JWT header JSON")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeMissingAlgHeaderNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	headerWithoutAlg := base64.RawURLEncoding.EncodeToString([]byte(`{"typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"iss":"https://issuer.example.com"}`))
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: fmt.Sprintf("%s.%s.sig", headerWithoutAlg, payload)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: missing JWT alg header")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeMissingIssuerClaimNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"JWT"}`))
+	payloadWithoutIssuer := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"did:example:alice"}`))
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: fmt.Sprintf("%s.%s.sig", header, payloadWithoutIssuer)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: missing issuer claim \"iss\"")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidPayloadEncodingNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"JWT"}`))
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: fmt.Sprintf("%s.%%.sig", header)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid JWT payload encoding")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidPayloadJSONNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"JWT"}`))
+	invalidPayloadJSON := base64.RawURLEncoding.EncodeToString([]byte("not-json"))
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: fmt.Sprintf("%s.%s.sig", header, invalidPayloadJSON)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid JWT payload JSON")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidSignatureNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{mustLeafX5cB64FromPemChain(t, testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)}}
+	payload := map[string]any{
+		"iss": "https://issuer.example.com",
+		"sub": "did:example:alice",
+		"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+	}
+
+	valid := mustSignTestJWT(t, header, payload)
+	parts := strings.Split(valid, ".")
+	require.Len(t, parts, 3)
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
+	require.NoError(t, err)
+	require.NotEmpty(t, sigBytes)
+	sigBytes[len(sigBytes)-1] ^= 0x01
+	parts[2] = base64.RawURLEncoding.EncodeToString(sigBytes)
+	invalid := strings.Join(parts, ".")
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: invalid}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err = sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid JWT signature")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidX5cChainOrderNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	leaf, parent, leafPriv := mustCreateX5cLeafAndParent(t)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{parent, leaf}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid JWT x5c chain")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeMissingX5cNotPersisted(t *testing.T) {
+	rootPem, _, _, _ := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT"}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t, header, payload)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: missing JWT key material (x5c)")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidX5cHeaderNotPersisted(t *testing.T) {
+	rootPem, _, _, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid JWT x5c header")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeMalformedX5cHeaderNotPersisted(t *testing.T) {
+	rootPem, _, _, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": "not-an-array"}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: missing JWT key material (x5c)")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidTemporalClaimExpNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": "not-a-number",
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		payloadJSON, err := json.Marshal(payload)
+		require.NoError(t, err)
+		protected := jwsHeadersFromMap(header)
+		signed, err := jws.Sign(payloadJSON, jws.WithKey(jwa.ES256(), leafPriv, jws.WithProtectedHeaders(protected)))
+		require.NoError(t, err)
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: string(signed)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claim \"exp\"")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidTemporalClaimIatNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"iat": "not-a-number",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		payloadJSON, err := json.Marshal(payload)
+		require.NoError(t, err)
+		protected := jwsHeadersFromMap(header)
+		signed, err := jws.Sign(payloadJSON, jws.WithKey(jwa.ES256(), leafPriv, jws.WithProtectedHeaders(protected)))
+		require.NoError(t, err)
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: string(signed)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claim \"iat\"")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeInvalidTemporalClaimNbfNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"nbf": "not-a-number",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		payloadJSON, err := json.Marshal(payload)
+		require.NoError(t, err)
+		protected := jwsHeadersFromMap(header)
+		signed, err := jws.Sign(payloadJSON, jws.WithKey(jwa.ES256(), leafPriv, jws.WithProtectedHeaders(protected)))
+		require.NoError(t, err)
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: string(signed)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claim \"nbf\"")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeNegativeTemporalClockSkewNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(5 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = -1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal clock skew: must be non-negative")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeExpiredOutsideSkewNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(-3 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claims: credential is expired")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeNotYetValidOutsideSkewNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"nbf": time.Now().Add(3 * time.Minute).Unix(),
+			"exp": time.Now().Add(10 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claims: credential is not yet valid")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeIssuedAtInFutureOutsideSkewNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"iat": time.Now().Add(3 * time.Minute).Unix(),
+			"exp": time.Now().Add(15 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claims: iat is in the future")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeExpBeforeNbfNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": time.Now().Add(1 * time.Minute).Unix(),
+			"nbf": time.Now().Add(3 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claims: exp is before nbf")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCStrictModeExpBeforeIatNotPersisted(t *testing.T) {
+	rootPem, root, leaf, leafPriv := mustCreateTrustedRootAndLeaf(t)
+	conf := mustCreateOpenID4vciConfigWithIssuerTrustAnchor(t, rootPem)
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT", "x5c": []any{leaf, root}}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"iat": time.Now().Add(3 * time.Minute).Unix(),
+			"exp": time.Now().Add(1 * time.Minute).Unix(),
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: mustSignTestJWTWithPrivKey(t, header, payload, leafPriv)}},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	sess.issuerSettings.strictJwtVcJsonVerification = true
+	sess.issuerSettings.jwtVcJsonX509VerificationContext = &conf.Issuers
+	sess.issuerSettings.jwtVcJsonTemporalClockSkew = 1 * time.Minute
+
+	_, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.EqualError(t, err, "failed to parse jwt_vc_json credential: invalid temporal claims: exp is before iat")
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCSucceeds(t *testing.T) {
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT"}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"vc":  map[string]any{"type": []any{"VerifiableCredential"}},
+		}
+		resp, _ := json.Marshal(CredentialResponse{Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t, header, payload)}}})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Empty(t, fetched.verifiedSdJwtVcs)
+	require.Len(t, fetched.vcdmEnvelopes, 1)
+
+	err = sess.storeCredentials([]*fetchedCredential{fetched})
+	require.NoError(t, err)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCPersistsAndLists(t *testing.T) {
+	issuedAt := time.Now().Unix()
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT"}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"iat": issuedAt,
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+		resp, _ := json.Marshal(CredentialResponse{Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t, header, payload)}}})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	// Provide enough metadata so the retrieved list can expose expected display information.
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	config.CredentialMetadata = &metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{Display: metadata.Display{Name: "Email Credential", Locale: new("en")}},
+		},
+	}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Empty(t, fetched.verifiedSdJwtVcs)
+	require.Len(t, fetched.vcdmEnvelopes, 1)
+
+	err = sess.storeCredentials([]*fetchedCredential{fetched})
+	require.NoError(t, err)
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+
+	cred := stored[0]
+	require.Equal(t, "EmailCredential", cred.CredentialId)
+	require.Equal(t, "https://issuer.example.com", cred.Issuer.Id)
+	require.Equal(t, "Email Credential", cred.Name["en"])
+	require.Equal(t, issuedAt, *cred.IssuanceDate)
+	require.Contains(t, cred.CredentialInstanceIds, clientmodels.CredentialFormat("jwt_vc_json"))
+	require.Contains(t, cred.BatchInstanceCountsRemaining, clientmodels.CredentialFormat("jwt_vc_json"))
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCWithoutIatPersistsAndLists(t *testing.T) {
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT"}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+		resp, _ := json.Marshal(CredentialResponse{Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t, header, payload)}}})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	config.CredentialMetadata = &metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{Display: metadata.Display{Name: "Email Credential", Locale: new("en")}},
+		},
+	}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Empty(t, fetched.verifiedSdJwtVcs)
+	require.Len(t, fetched.vcdmEnvelopes, 1)
+
+	err = sess.storeCredentials([]*fetchedCredential{fetched})
+	require.NoError(t, err)
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+
+	cred := stored[0]
+	require.Equal(t, "EmailCredential", cred.CredentialId)
+	require.Nil(t, cred.IssuanceDate)
+	require.Contains(t, cred.CredentialInstanceIds, clientmodels.CredentialFormat("jwt_vc_json"))
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCFallbackIdAndExpiryPersistsAndLists(t *testing.T) {
+	expiry := time.Now().Add(2 * time.Hour).Unix()
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		header := map[string]any{"alg": "ES256", "typ": "JWT"}
+		payload := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"exp": expiry,
+			"vc":  map[string]any{"type": []any{"VerifiableCredential"}},
+		}
+		resp, _ := json.Marshal(CredentialResponse{Credentials: []CredentialInstance{{Credential: mustMakeTestJWT(t, header, payload)}}})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	// Keep only generic type to force fallback CredentialId == credential_configuration_id.
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential"}}
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Empty(t, fetched.verifiedSdJwtVcs)
+	require.Len(t, fetched.vcdmEnvelopes, 1)
+
+	err = sess.storeCredentials([]*fetchedCredential{fetched})
+	require.NoError(t, err)
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+
+	cred := stored[0]
+	require.Equal(t, "credential-config-1", cred.CredentialId)
+	require.NotNil(t, cred.ExpiryDate)
+	require.Equal(t, expiry, *cred.ExpiryDate)
+	require.Contains(t, cred.CredentialInstanceIds, clientmodels.CredentialFormat("jwt_vc_json"))
+	require.Nil(t, cred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat("jwt_vc_json")])
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCBatchPersistsAndLists(t *testing.T) {
+	issuedAt := time.Now().Unix()
+
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		header := map[string]any{"alg": "ES256", "typ": "JWT"}
+		payloadA := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"iat": issuedAt,
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+		payloadB := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:bob",
+			"iat": issuedAt,
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{
+				{Credential: mustMakeTestJWT(t, header, payloadA)},
+				{Credential: mustMakeTestJWT(t, header, payloadB)},
+			},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	config.CredentialMetadata = &metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{Display: metadata.Display{Name: "Email Credential", Locale: new("en")}},
+		},
+	}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Empty(t, fetched.verifiedSdJwtVcs)
+	require.Len(t, fetched.vcdmEnvelopes, 2)
+
+	err = sess.storeCredentials([]*fetchedCredential{fetched})
+	require.NoError(t, err)
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+
+	cred := stored[0]
+	require.Equal(t, "EmailCredential", cred.CredentialId)
+	require.Equal(t, issuedAt, *cred.IssuanceDate)
+	require.Contains(t, cred.CredentialInstanceIds, clientmodels.CredentialFormat("jwt_vc_json"))
+
+	remaining, ok := cred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat("jwt_vc_json")]
+	require.True(t, ok)
+	require.NotNil(t, remaining)
+	require.Equal(t, uint(2), *remaining)
+}
+
+func Test_openid4vciSession_storeCredentials_W3CVCBatchWithoutIatPersistsAndLists(t *testing.T) {
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		header := map[string]any{"alg": "ES256", "typ": "JWT"}
+		payloadA := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:alice",
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+		payloadB := map[string]any{
+			"iss": "https://issuer.example.com",
+			"sub": "did:example:bob",
+			"vc":  map[string]any{"type": []any{"VerifiableCredential", "EmailCredential"}},
+		}
+
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{
+				{Credential: mustMakeTestJWT(t, header, payloadA)},
+				{Credential: mustMakeTestJWT(t, header, payloadB)},
+			},
+		})
+		w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired|CredentialConfigurationWithW3CVC, credEndpointHandler)
+	defer ts.Close()
+
+	config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+	config.CredentialDefinition = &metadata.W3CCredentialDefinition{Type: []string{"VerifiableCredential", "EmailCredential"}}
+	config.CredentialMetadata = &metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{Display: metadata.Display{Name: "Email Credential", Locale: new("en")}},
+		},
+	}
+	sess.credentialIssuerMetadata.CredentialIssuer = "https://issuer.example.com"
+	sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Empty(t, fetched.verifiedSdJwtVcs)
+	require.Len(t, fetched.vcdmEnvelopes, 2)
+
+	err = sess.storeCredentials([]*fetchedCredential{fetched})
+	require.NoError(t, err)
+
+	credentialService := services.NewCredentialService(sess.storage)
+	stored, err := credentialService.GetCredentialMetadataList()
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+
+	cred := stored[0]
+	require.Equal(t, "EmailCredential", cred.CredentialId)
+	require.Nil(t, cred.IssuanceDate)
+	require.Contains(t, cred.CredentialInstanceIds, clientmodels.CredentialFormat("jwt_vc_json"))
+
+	remaining, ok := cred.BatchInstanceCountsRemaining[clientmodels.CredentialFormat("jwt_vc_json")]
+	require.True(t, ok)
+	require.NotNil(t, remaining)
+	require.Equal(t, uint(2), *remaining)
 }
 
 func Test_openid4vciSession_configureIssuerSettings_credentialRequestEncryption(t *testing.T) {

@@ -19,8 +19,9 @@ func newTestStore(t *testing.T) HolderBindingKeyStore {
 	db, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("super-secret-key-123"))}, &gorm.Config{})
 	require.NoError(t, err)
 
-	err = db.AutoMigrate(&models.HolderBindingKey{}, &models.ECDSAKeyMetadata{}, &models.RSAKeyMetadata{})
+	sqlDB, err := db.DB()
 	require.NoError(t, err)
+	require.NoError(t, RunMigrations(sqlDB))
 
 	return NewHolderBindingKeyStore(db)
 }

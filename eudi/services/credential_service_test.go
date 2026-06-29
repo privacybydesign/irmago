@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/eudi/vcdm"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,7 +77,7 @@ func TestGetCredentialMetadataList_MapsCredentialId(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, batch.VerifiableCredentialType, result[0].CredentialId)
+	assert.Equal(t, batch.CredentialType, result[0].CredentialId)
 }
 
 func TestGetCredentialMetadataList_MapsHash(t *testing.T) {
@@ -118,7 +119,7 @@ func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 	batch := newStorageBatch()
-	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"family_name":"Smith","sub":"user123"}`)
+	batch.ProcessedClaims = datatypes.JSON(`{"family_name":"Smith","sub":"user123"}`)
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -132,7 +133,7 @@ func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 
 func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
 	batch := newStorageBatch()
-	batch.ProcessedSdJwtPayload = datatypes.JSON(`{
+	batch.ProcessedClaims = datatypes.JSON(`{
 		"family_name": "Smith",
 		"given_name": "Alice",
 		"address": {"city": "Amsterdam", "extra": ""},
@@ -232,7 +233,7 @@ func TestGetCredentialMetadataList_MapsIssuanceAndExpiry(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, batch.IssuedAt.V.Unix(), *result[0].IssuanceDate)
+	assert.Equal(t, batch.IssuanceDate.V.Unix(), *result[0].IssuanceDate)
 	require.True(t, batch.ExpiresAt.Valid)
 	assert.Equal(t, batch.ExpiresAt.V.Unix(), *result[0].ExpiryDate)
 }
@@ -319,7 +320,7 @@ func TestGetCredentialMetadataList_MultipleCredentials(t *testing.T) {
 	batch1 := newStorageBatch()
 	batch2 := newStorageBatch()
 	batch2.Hash = "testhash2"
-	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
+	batch2.CredentialType = "https://vct.example.com/OtherCredential"
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch1, batch2}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -328,6 +329,51 @@ func TestGetCredentialMetadataList_MultipleCredentials(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
+}
+
+func TestGetCredentialMetadataList_MixedFormatsSameCredentialType(t *testing.T) {
+	batchSd := newStorageBatch()
+	batchSd.Hash = "mixed-hash-sd"
+	batchSd.CredentialType = "https://vct.example.com/SharedType"
+	batchSd.Format = models.CredentialFormatSdJwtVc
+	batchSd.RemainingCount = 2
+	batchSd.BatchSize = 2
+
+	batchJwt := newStorageBatch()
+	batchJwt.Hash = "mixed-hash-jwt"
+	batchJwt.CredentialType = "https://vct.example.com/SharedType"
+	batchJwt.Format = models.CredentialFormatW3CVC
+	batchJwt.RemainingCount = 1
+	batchJwt.BatchSize = 1
+
+	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batchSd, batchJwt}}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
+
+	result, err := svc.GetCredentialMetadataList()
+
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+
+	byHash := map[string]*clientmodels.Credential{}
+	for _, c := range result {
+		byHash[c.Hash] = c
+	}
+
+	sd := byHash[batchSd.Hash]
+	require.NotNil(t, sd)
+	assert.Equal(t, batchSd.CredentialType, sd.CredentialId)
+	assert.Equal(t, batchSd.Hash, sd.CredentialInstanceIds[clientmodels.CredentialFormat(batchSd.Format)])
+	countSd := sd.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(batchSd.Format)]
+	require.NotNil(t, countSd)
+	assert.Equal(t, batchSd.RemainingCount, *countSd)
+
+	jwt := byHash[batchJwt.Hash]
+	require.NotNil(t, jwt)
+	assert.Equal(t, batchJwt.CredentialType, jwt.CredentialId)
+	assert.Equal(t, batchJwt.Hash, jwt.CredentialInstanceIds[clientmodels.CredentialFormat(batchJwt.Format)])
+	countJwt := jwt.BatchInstanceCountsRemaining[clientmodels.CredentialFormat(batchJwt.Format)]
+	assert.Nil(t, countJwt, "batch size 1 should be represented as unlimited")
 }
 
 // ========== VerifyAndStoreIssuedCredentials ==========
@@ -488,12 +534,12 @@ func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 	assert.Equal(t, issuer, batch.CredentialIssuer)
 }
 
-func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
+func TestVerifyAndStoreIssuedCredentials_SetsCredentialType(t *testing.T) {
 	mock := &mockCredentialStore{}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
-	vct := "https://vct.example.com/Cred"
-	vc := newVerifiedVc(vct, "https://issuer.example.com", time.Now().Unix(), 0, 0)
+	credentialType := "https://vct.example.com/Cred"
+	vc := newVerifiedVc(credentialType, "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
 		[]*sdjwtvc.VerifiedSdJwtVc{vc},
@@ -504,7 +550,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, vct, mock.storedBatches[0].VerifiableCredentialType)
+	assert.Equal(t, credentialType, mock.storedBatches[0].CredentialType)
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsFormat(t *testing.T) {
@@ -688,6 +734,117 @@ func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 	assert.Equal(t, mock.storedBatches[0].Hash, mock.storedBatches[1].Hash)
 }
 
+func TestStoreIssuedVcdmEnvelopes_UsesCredentialDefinitionTypeForCredentialType(t *testing.T) {
+	store := &mockCredentialStore{}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	svc := newServiceWithMocks(store, fileStorageMock)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	envelope := &vcdm.CredentialEnvelope{
+		ID:            "env-id-1",
+		Issuer:        "https://issuer.example.com",
+		Types:         []string{"VerifiableCredential", "EmailCredential"},
+		IssuanceDate:  &now,
+		Claims:        map[string]any{"sub": "did:example:alice"},
+		RawCredential: "header.payload.signature",
+	}
+
+	err := svc.StoreIssuedVcdmEnvelopes(
+		[]*vcdm.CredentialEnvelope{envelope},
+		"config-id",
+		metadata.CredentialIssuerMetadata{
+			CredentialIssuer: "https://issuer.example.com",
+			CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+				"config-id": {
+					Format: metadata.CredentialFormatIdentifier_W3CVC,
+					CredentialDefinition: &metadata.W3CCredentialDefinition{
+						Type: []string{"VerifiableCredential", "EmailCredential"},
+					},
+				},
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, store.storedBatches, 1)
+	batch := store.storedBatches[0]
+
+	assert.Equal(t, models.CredentialFormatW3CVC, batch.Format)
+	assert.Equal(t, "EmailCredential", batch.CredentialType)
+	assert.Equal(t, "https://issuer.example.com", batch.IssuerURL)
+	assert.Equal(t, "https://issuer.example.com", batch.CredentialIssuer)
+	require.True(t, batch.IssuanceDate.Valid)
+	assert.Equal(t, now, batch.IssuanceDate.V)
+	require.Len(t, batch.Instances, 1)
+	assert.Equal(t, []byte("header.payload.signature"), batch.Instances[0].RawCredential)
+}
+
+func TestStoreIssuedVcdmEnvelopes_FallsBackToCredentialConfigurationIDForCredentialType(t *testing.T) {
+	store := &mockCredentialStore{}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	svc := newServiceWithMocks(store, fileStorageMock)
+
+	envelope := &vcdm.CredentialEnvelope{
+		Issuer:        "https://issuer.example.com",
+		Types:         []string{"VerifiableCredential"},
+		Claims:        map[string]any{"sub": "did:example:alice"},
+		RawCredential: "jwt-token",
+	}
+
+	err := svc.StoreIssuedVcdmEnvelopes(
+		[]*vcdm.CredentialEnvelope{envelope},
+		"credential-config-1",
+		metadata.CredentialIssuerMetadata{
+			CredentialIssuer: "https://issuer.example.com",
+			CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+				"credential-config-1": {
+					Format: metadata.CredentialFormatIdentifier_W3CVC,
+					CredentialDefinition: &metadata.W3CCredentialDefinition{
+						Type: []string{"VerifiableCredential"},
+					},
+				},
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, store.storedBatches, 1)
+	assert.Equal(t, "credential-config-1", store.storedBatches[0].CredentialType)
+}
+
+func TestStoreIssuedVcdmEnvelopes_FallsBackToMetadataIssuer(t *testing.T) {
+	store := &mockCredentialStore{}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	svc := newServiceWithMocks(store, fileStorageMock)
+
+	envelope := &vcdm.CredentialEnvelope{
+		Types:         []string{"VerifiableCredential", "EmailCredential"},
+		Claims:        map[string]any{"sub": "did:example:alice"},
+		RawCredential: "jwt-token",
+	}
+
+	err := svc.StoreIssuedVcdmEnvelopes(
+		[]*vcdm.CredentialEnvelope{envelope},
+		"config-id",
+		metadata.CredentialIssuerMetadata{
+			CredentialIssuer: "https://issuer-metadata.example.com",
+			CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{
+				"config-id": {
+					Format: metadata.CredentialFormatIdentifier_W3CVC,
+					CredentialDefinition: &metadata.W3CCredentialDefinition{
+						Type: []string{"VerifiableCredential", "EmailCredential"},
+					},
+				},
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, store.storedBatches, 1)
+	assert.Equal(t, "https://issuer-metadata.example.com", store.storedBatches[0].IssuerURL)
+	assert.Equal(t, "https://issuer-metadata.example.com", store.storedBatches[0].CredentialIssuer)
+}
+
 // ========== hashForSdJwtVc ==========
 
 func TestHashForSdJwtVc_NonEmpty(t *testing.T) {
@@ -704,7 +861,7 @@ func TestHashForSdJwtVc_Deterministic(t *testing.T) {
 	assert.Equal(t, h1, h2)
 }
 
-func TestHashForSdJwtVc_DifferentVCT(t *testing.T) {
+func TestHashForSdJwtVc_DifferentCredentialType(t *testing.T) {
 	h1, err := hashForSdJwtVc("https://vct.example.com/CredA", []byte(`{"given_name":"Alice"}`))
 	require.NoError(t, err)
 	h2, err := hashForSdJwtVc("https://vct.example.com/CredB", []byte(`{"given_name":"Alice"}`))
@@ -892,12 +1049,12 @@ func TestMatchHolderBindingKey_NoCnfFields_ReturnsError(t *testing.T) {
 
 // ========== holder binding key linking integration ==========
 
-func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwtvc.CnfField) *sdjwtvc.VerifiedSdJwtVc {
+func newVerifiedVcWithCnf(credentialType, issuer string, cnf *sdjwtvc.CnfField) *sdjwtvc.VerifiedSdJwtVc {
 	now := time.Now().Unix()
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			Issuer:                   issuer,
-			VerifiableCredentialType: vct,
+			VerifiableCredentialType: credentialType,
 			IssuedAt:                 &now,
 			Confirm:                  cnf,
 		},
@@ -1048,7 +1205,15 @@ func (m *mockCredentialStore) GetBatchByHash(hash string) (*models.CredentialBat
 	return nil, db.ErrNotFound
 }
 
-func (m *mockCredentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
+func (m *mockCredentialStore) GetBatchesByCredentialType(credentialType string) ([]*models.CredentialBatch, error) {
+	return nil, nil
+}
+
+func (m *mockCredentialStore) GetBatchesByCredentialTypeAndFormat(credentialType string, format models.CredentialFormat) ([]*models.CredentialBatch, error) {
+	return nil, nil
+}
+
+func (m *mockCredentialStore) GetBatchesByVCT(credentialType string) ([]*models.CredentialBatch, error) {
 	return nil, nil
 }
 
@@ -1109,11 +1274,11 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 	}
 }
 
-func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
+func newVerifiedVc(credentialType, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 			Issuer:                   issuer,
-			VerifiableCredentialType: vct,
+			VerifiableCredentialType: credentialType,
 			IssuedAt:                 &issuedAt,
 			Expiry:                   &expiry,
 			NotBefore:                &notBefore,
@@ -1172,16 +1337,16 @@ func newStorageBatch() *models.CredentialBatch {
 	exp := now.Add(24 * time.Hour)
 	remaining := uint(1)
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     "testhash",
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: now, Valid: true},
-		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
-		BatchSize:                1,
-		RemainingCount:           remaining,
-		CredentialIssuer:         "https://issuer.example.com",
+		IssuerURL:        "https://issuer.example.com",
+		CredentialType:   "https://vct.example.com/MyCredential",
+		Format:           models.CredentialFormatSdJwtVc,
+		Hash:             "testhash",
+		ProcessedClaims:  datatypes.JSON(`{"sub":"user123"}`),
+		IssuanceDate:     datatypes.NullTime{V: now, Valid: true},
+		ExpiresAt:        datatypes.NullTime{V: exp, Valid: true},
+		BatchSize:        1,
+		RemainingCount:   remaining,
+		CredentialIssuer: "https://issuer.example.com",
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Name: "Test Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
 		},

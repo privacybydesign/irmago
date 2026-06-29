@@ -128,7 +128,37 @@ func (client *Client) handleCredentialOffer(
 		return fmt.Errorf("failed to convert credential info list: %v", err)
 	}
 
-	client.currentSession = &session{
+	client.currentSession = client.buildSession(
+		sessionId,
+		credentialOffer,
+		credentialIssuerMetadata,
+		requestorInfo,
+		creds,
+		originalCredentialMetadata,
+		vctResolver,
+		redirectUri,
+		handler,
+	)
+	defer func() {
+		client.currentSession = nil
+	}()
+
+	client.currentSession.perform()
+	return nil
+}
+
+func (client *Client) buildSession(
+	sessionId int,
+	credentialOffer *CredentialOffer,
+	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
+	requestorInfo *clientmodels.TrustedParty,
+	creds []*clientmodels.CredentialDescriptor,
+	originalCredentialMetadata map[string]*metadata.CredentialMetadata,
+	vctResolver *typemetadata.Resolver,
+	redirectUri string,
+	handler Handler,
+) *session {
+	return &session{
 		id:                         sessionId,
 		credentialOffer:            credentialOffer,
 		credentialIssuerMetadata:   credentialIssuerMetadata,
@@ -142,13 +172,12 @@ func (client *Client) handleCredentialOffer(
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,
 		redirectUri:                redirectUri,
+		issuerSettings: openid4vciSessionIssuerSettings{
+			strictJwtVcJsonVerification:      client.Configuration.StrictJwtVcJsonVerificationEnabled(),
+			jwtVcJsonX509VerificationContext: &client.Configuration.Issuers,
+			jwtVcJsonTemporalClockSkew:       client.Configuration.StrictJwtVcJsonTemporalClockSkew(),
+		},
 	}
-	defer func() {
-		client.currentSession = nil
-	}()
-
-	client.currentSession.perform()
-	return nil
 }
 
 func (client *Client) validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialEndpointUrl string) (string, error) {

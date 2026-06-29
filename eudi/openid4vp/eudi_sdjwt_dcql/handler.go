@@ -136,7 +136,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		image := h.credentialImage(batch)
 
 		candidate := clientmodels.SelectableCredentialInstance{
-			CredentialId:                batch.VerifiableCredentialType,
+			CredentialId:                batch.CredentialType,
 			Hash:                        batch.Hash,
 			Name:                        credentialDisplayName(batch),
 			Issuer:                      h.issuerTrustedParty(batch),
@@ -147,8 +147,8 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Image:                       image,
 		}
 
-		if batch.IssuedAt.Valid {
-			x := batch.IssuedAt.V.Unix()
+		if batch.IssuanceDate.Valid {
+			x := batch.IssuanceDate.V.Unix()
 			candidate.IssuanceDate = &x
 		}
 
@@ -361,7 +361,7 @@ func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.
 	}
 	var filtered []*models.CredentialBatch
 	for _, batch := range allBatches {
-		if _, ok := vctSet[batch.VerifiableCredentialType]; ok {
+		if _, ok := vctSet[batch.CredentialType]; ok {
 			filtered = append(filtered, batch)
 		}
 	}
@@ -441,7 +441,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 // first fully satisfiable set determines which claims are included.
 func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, rawSdJwt sdjwtvc.SdJwtVc) ([]clientmodels.Attribute, error) {
 	var resolved sdjwtvc.ProcessedSdJwtPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
+	if err := json.Unmarshal([]byte(batch.ProcessedClaims), &resolved); err != nil {
 		return nil, err
 	}
 
@@ -464,7 +464,7 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	// flattening the resolved payload at the requested paths. That keeps the
 	// pre-existing behavior for unit tests that work with synthetic batches,
 	// at the cost of not previewing bundled siblings in those tests.
-	leafPaths := computeDisclosurePreviewLeaves(rawSdJwt, requestedPaths, &resolved, batch.VerifiableCredentialType)
+	leafPaths := computeDisclosurePreviewLeaves(rawSdJwt, requestedPaths, &resolved, batch.CredentialType)
 	pairs := buildPairsFromLeaves(leafPaths, constrainedKeys)
 
 	metadataOrder := buildMetadataOrder(batch)
@@ -870,8 +870,8 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	attrs := make([]clientmodels.Attribute, 0)
 
 	var resolved sdjwtvc.ProcessedSdJwtPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
-		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.VerifiableCredentialType, err)
+	if err := json.Unmarshal([]byte(batch.ProcessedClaims), &resolved); err != nil {
+		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.CredentialType, err)
 	}
 
 	// Compute the verifier-side view for the user's authorized paths so the
@@ -880,11 +880,11 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	// requested leaf.
 	rawSdJwt, err := loadRawSdJwt(batch, h.credentialStore)
 	if err != nil {
-		eudi.Logger.Warnf("failed to load raw SD-JWT for log credential %q: %v", batch.VerifiableCredentialType, err)
+		eudi.Logger.Warnf("failed to load raw SD-JWT for log credential %q: %v", batch.CredentialType, err)
 	}
 	view, err := sdjwtvc.PostDisclosureView(rawSdJwt, claimPaths)
 	if err != nil {
-		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.VerifiableCredentialType, err)
+		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.CredentialType, err)
 	}
 
 	leafPaths := collectViewLeafPaths(view)
@@ -895,7 +895,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder)
 
 	log := clientmodels.LogCredential{
-		CredentialId: batch.VerifiableCredentialType,
+		CredentialId: batch.CredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 		Name:         credentialDisplayName(batch),
 		Image:        h.credentialImage(batch),
@@ -904,8 +904,8 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 		ExpiryDate:   expiryUnix(batch),
 	}
 
-	if batch.IssuedAt.Valid {
-		x := batch.IssuedAt.V.Unix()
+	if batch.IssuanceDate.Valid {
+		x := batch.IssuanceDate.V.Unix()
 		log.IssuanceDate = &x
 	}
 
@@ -1248,7 +1248,7 @@ func credentialDisplayName(batch *models.CredentialBatch) clientmodels.Translate
 			return ts
 		}
 	}
-	return clientmodels.TranslatedString{clientmodels.DefaultFallbackLanguage: batch.VerifiableCredentialType}
+	return clientmodels.TranslatedString{clientmodels.DefaultFallbackLanguage: batch.CredentialType}
 }
 
 // claimDisplayName looks up the display name for a claim from the stored credential

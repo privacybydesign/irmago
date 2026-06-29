@@ -23,9 +23,17 @@ type CredentialStore interface {
 	// deterministic hash. Returns ErrNotFound if no matching batch exists.
 	GetBatchByHash(hash string) (*models.CredentialBatch, error)
 
-	// GetBatchesByVCT returns all CredentialBatches whose VerifiableCredentialType matches
-	// the given vct string. Does not preload instances.
-	GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error)
+	// GetBatchesByCredentialType returns all CredentialBatches whose credential type
+	// matches the given identifier. Does not preload instances.
+	GetBatchesByCredentialType(credentialType string) ([]*models.CredentialBatch, error)
+
+	// GetBatchesByCredentialTypeAndFormat returns all CredentialBatches whose
+	// credential type and format match the given identifiers. Does not preload instances.
+	GetBatchesByCredentialTypeAndFormat(credentialType string, format models.CredentialFormat) ([]*models.CredentialBatch, error)
+
+	// GetBatchesByVCT is a compatibility alias for GetBatchesByCredentialType.
+	// Deprecated: use GetBatchesByCredentialType.
+	GetBatchesByVCT(credentialType string) ([]*models.CredentialBatch, error)
 
 	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
 	// not yet been marked as used. Returns ErrNotFound if all instances are used.
@@ -96,22 +104,47 @@ func (s *credentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, 
 	return &batch, nil
 }
 
-func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error) {
-	if vct == "" {
-		return nil, fmt.Errorf("vct is required")
+func (s *credentialStore) GetBatchesByCredentialType(credentialType string) ([]*models.CredentialBatch, error) {
+	if credentialType == "" {
+		return nil, fmt.Errorf("credential type is required")
 	}
 
 	var batches []*models.CredentialBatch
 	err := s.db.
 		Preload("CredentialMetadata").
 		Preload("CredentialMetadata.Display").
-		Where("verifiable_credential_type = ?", vct).
+		Where("(credential_type = ? OR verifiable_credential_type = ?)", credentialType, credentialType).
 		Find(&batches).Error
 	if err != nil {
 		return nil, err
 	}
 
 	return batches, nil
+}
+
+func (s *credentialStore) GetBatchesByCredentialTypeAndFormat(credentialType string, format models.CredentialFormat) ([]*models.CredentialBatch, error) {
+	if credentialType == "" {
+		return nil, fmt.Errorf("credential type is required")
+	}
+	if format == "" {
+		return nil, fmt.Errorf("format is required")
+	}
+
+	var batches []*models.CredentialBatch
+	err := s.db.
+		Preload("CredentialMetadata").
+		Preload("CredentialMetadata.Display").
+		Where("(credential_type = ? OR verifiable_credential_type = ?) AND format = ?", credentialType, credentialType, format).
+		Find(&batches).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return batches, nil
+}
+
+func (s *credentialStore) GetBatchesByVCT(credentialType string) ([]*models.CredentialBatch, error) {
+	return s.GetBatchesByCredentialType(credentialType)
 }
 
 func (s *credentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {

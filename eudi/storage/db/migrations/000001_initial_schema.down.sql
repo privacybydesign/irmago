@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS `claim_displays`;
+DROP TABLE IF EXISTS `credential_claims`;
+DROP TABLE IF EXISTS `credential_displays`;
+DROP TABLE IF EXISTS `credential_metadata`;
+DROP TABLE IF EXISTS `issuer_metadata_displays`;
+DROP TABLE IF EXISTS `issued_credential_instances`;
+DROP TABLE IF EXISTS `credential_batches`;
+DROP TABLE IF EXISTS `ecdsa_key_metadata`;
+DROP TABLE IF EXISTS `rsa_key_metadata`;
+DROP TABLE IF EXISTS `holder_binding_keys`;
+DROP TABLE IF EXISTS `eudi_log_credentials`;
+DROP TABLE IF EXISTS `eudi_log_entries`;

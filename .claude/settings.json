@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go test *)",
+      "Read(//c/msys64/mingw64/lib/**)",
+      "Bash(go env *)",
+      "PowerShell(cd \"c:\\\\Users\\\\m.kamphuis\\\\code\\\\Yivi\\\\irmago\"; $env:CGO_CFLAGS = \"-DSQLITE_HAS_CODEC -IC:/msys64/mingw64/include/sqlcipher -Wno-builtin-declaration-mismatch\"; $env:CGO_LDFLAGS = \"-LC:/msys64/mingw64/lib -lsqlcipher -lcrypto -lws2_32\"; go test ./eudi/storage/... -count=1 2>&1)",
+      "Bash(git diff *)",
+      "Bash(git ls-tree *)",
+      "PowerShell(cd \"c:\\\\Users\\\\m.kamphuis\\\\code\\\\Yivi\\\\irmago\"; $env:CGO_CFLAGS = \"-DSQLITE_HAS_CODEC -IC:/msys64/mingw64/include/sqlcipher -Wno-builtin-declaration-mismatch\"; $env:CGO_LDFLAGS = \"-LC:/msys64/mingw64/lib -lsqlcipher -lcrypto -lws2_32\"; go test ./eudi/storage/db/sqlcipher/... -run \"TestDumpMasterSchema\" -v 2>&1 | Select-Object -First 30)",
+      "PowerShell(cd \"c:\\\\Users\\\\m.kamphuis\\\\code\\\\Yivi\\\\irmago\"; $env:CGO_CFLAGS = \"-DSQLITE_HAS_CODEC -IC:/msys64/mingw64/include/sqlcipher -Wno-builtin-declaration-mismatch\"; $env:CGO_LDFLAGS = \"-LC:/msys64/mingw64/lib -lsqlcipher -lcrypto -lws2_32\"; go test ./eudi/storage/db/sqlcipher/... -run \"TestDumpMasterSchema\" -v 2>&1)",
+      "PowerShell(cd \"c:\\\\Users\\\\m.kamphuis\\\\code\\\\Yivi\\\\irmago\"; $env:CGO_CFLAGS = \"-DSQLITE_HAS_CODEC -IC:/msys64/mingw64/include/sqlcipher -Wno-builtin-declaration-mismatch\"; $env:CGO_LDFLAGS = \"-LC:/msys64/mingw64/lib -lsqlcipher -lcrypto -lws2_32\"; go test ./eudi/storage/db -run TestStoreBatch_Success -v 2>&1 | head -30)",
+      "PowerShell(cd C:\\\\Users\\\\m.kamphuis\\\\code\\\\Yivi\\\\irmago; $env:CGO_CFLAGS = \"-DSQLITE_HAS_CODEC -IC:/msys64/mingw64/include/sqlcipher -Wno-builtin-declaration-mismatch\"; $env:CGO_LDFLAGS = \"-LC:/msys64/mingw64/lib -lsqlcipher -lcrypto -lws2_32\"; go test ./eudi/storage/db -run TestStoreBatch_Success -v 2>&1)",
+      "PowerShell(cd C:\\\\Users\\\\m.kamphuis\\\\code\\\\Yivi\\\\irmago; $env:CGO_CFLAGS = \"-DSQLITE_HAS_CODEC -IC:/msys64/mingw64/include/sqlcipher -Wno-builtin-declaration-mismatch\"; $env:CGO_LDFLAGS = \"-LC:/msys64/mingw64/lib -lsqlcipher -lcrypto -lws2_32\"; go test ./eudi/storage/db/... -v 2>&1)"
+    ]
+  }
+}

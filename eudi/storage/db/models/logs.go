@@ -33,7 +33,7 @@ type EudiLogCredential struct {
 	ID             datatypes.UUID `gorm:"type:uuid;primaryKey"`
 	EudiLogEntryID datatypes.UUID `gorm:"index"`
 
-	// VCT URL or IRMA credential type identifier.
+	// Credential type URL (e.g. vct) or IRMA credential type identifier.
 	CredentialId string
 
 	// JSON-encoded []string of credential formats (e.g. ["dc+sd-jwt"]).

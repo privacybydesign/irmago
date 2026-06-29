@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
@@ -26,6 +26,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/vcdm"
 	"gorm.io/datatypes"
 )
 
@@ -68,6 +69,12 @@ type openid4vciSessionIssuerSettings struct {
 	grantType                   Grant
 	authorizationServer         string
 	authorizationServerMetadata *oauth2.AuthorizationServerMetadata
+
+	// strictJwtVcJsonVerification requires verifiable key material for jwt_vc_json
+	// credentials (currently x5c), and rejects parser-only processing when absent.
+	strictJwtVcJsonVerification      bool
+	jwtVcJsonX509VerificationContext eudi_jwt.X509VerificationContext
+	jwtVcJsonTemporalClockSkew       time.Duration
 
 	useCredentialRequestEncryption        bool
 	credentialRequestContentEncryptionAlg *jwa.ContentEncryptionAlgorithm
@@ -207,6 +214,7 @@ func (s *session) perform() {
 type fetchedCredential struct {
 	credentialConfigurationId      string
 	verifiedSdJwtVcs               []*sdjwtvc.VerifiedSdJwtVc
+	vcdmEnvelopes                  []*vcdm.CredentialEnvelope
 	requireCryptographicKeyBinding bool
 	publicKeyIdentifiers           []models.PublicHolderBindingKey
 	keyBindingService              services.HolderBindingKeyService
@@ -370,6 +378,18 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
 	credentialService := services.NewCredentialService(s.storage)
 	for _, fc := range fetched {
+		if len(fc.verifiedSdJwtVcs) == 0 && len(fc.vcdmEnvelopes) > 0 {
+			err := credentialService.StoreIssuedVcdmEnvelopes(
+				fc.vcdmEnvelopes,
+				fc.credentialConfigurationId,
+				*s.credentialIssuerMetadata,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to store credentials for %q: %v", fc.credentialConfigurationId, err)
+			}
+			continue
+		}
+
 		err := credentialService.VerifyAndStoreIssuedCredentials(
 			fc.verifiedSdJwtVcs,
 			fc.credentialConfigurationId,
@@ -796,27 +816,20 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("invalid credential response: %v", err)
 	}
 
-	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
-	for i, cred := range credentialResponse.Credentials {
-		if i == 0 {
-			log.Printf("First credential: %s", cred.Credential)
-		}
-
-		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify credential: %v", err)
-		}
-		verifiedSdJwtVcs[i] = verifiedSdJwt
+	adapter, err := getCredentialFormatAdapter(s, credentialConfig.Format)
+	if err != nil {
+		return nil, fmt.Errorf("credential configuration %q uses unsupported runtime adapter: %v", credentialConfigurationId, err)
 	}
 
-	err = sdjwtvc.CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs)
+	verificationResult, err := adapter.VerifyCredentialInstances(credentialResponse.Credentials)
 	if err != nil {
-		return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
+		return nil, err
 	}
 
 	return &fetchedCredential{
 		credentialConfigurationId:      credentialConfigurationId,
-		verifiedSdJwtVcs:               verifiedSdJwtVcs,
+		verifiedSdJwtVcs:               verificationResult.VerifiedSdJwtVcs,
+		vcdmEnvelopes:                  verificationResult.Envelopes,
 		requireCryptographicKeyBinding: requireCryptographicKeyBinding,
 		publicKeyIdentifiers:           publicKeyIdentifiers,
 		keyBindingService:              keyBindingService,

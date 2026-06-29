@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -41,6 +42,52 @@ func TestIntegrationConfig(t *testing.T) {
 func TestConfig(t *testing.T) {
 	t.Run("NewConfiguration creates required directories and initializes successfully", testNewConfigurationSuccessfulInitialization)
 	t.Run("NewConfiguration reads the pinned issuer and verifier trust anchor(s)", testNewConfigurationReadsPinnedTrustAnchors)
+	t.Run("Strict jwt_vc_json verification toggle", testStrictJwtVcJsonVerificationToggle)
+}
+
+func testStrictJwtVcJsonVerificationToggle(t *testing.T) {
+	storageFolder := test.CreateTestStorage(t)
+	eudiAppDataPath := filepath.Join(storageFolder, "eudi")
+	err := common.EnsureDirectoryExists(eudiAppDataPath)
+	require.NoError(t, err)
+
+	aesKey := [32]byte{}
+	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
+	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
+	require.NoError(t, err)
+
+	conf, err := NewConfiguration(s)
+	require.NoError(t, err)
+
+	// Default mode is compatibility-focused.
+	require.False(t, conf.StrictJwtVcJsonVerificationEnabled())
+	require.Equal(t, 5*time.Minute, conf.StrictJwtVcJsonTemporalClockSkew())
+
+	conf.EnableStrictJwtVcJsonVerification()
+	require.True(t, conf.StrictJwtVcJsonVerificationEnabled())
+
+	// Idempotent enable should keep strict mode on.
+	conf.EnableStrictJwtVcJsonVerification()
+	require.True(t, conf.StrictJwtVcJsonVerificationEnabled())
+
+	conf.DisableStrictJwtVcJsonVerification()
+	require.False(t, conf.StrictJwtVcJsonVerificationEnabled())
+
+	// Idempotent disable should keep strict mode off.
+	conf.DisableStrictJwtVcJsonVerification()
+	require.False(t, conf.StrictJwtVcJsonVerificationEnabled())
+
+	err = conf.SetStrictJwtVcJsonTemporalClockSkew(2 * time.Minute)
+	require.NoError(t, err)
+	require.Equal(t, 2*time.Minute, conf.StrictJwtVcJsonTemporalClockSkew())
+
+	err = conf.SetStrictJwtVcJsonTemporalClockSkew(0)
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(0), conf.StrictJwtVcJsonTemporalClockSkew())
+
+	err = conf.SetStrictJwtVcJsonTemporalClockSkew(-1 * time.Second)
+	require.EqualError(t, err, "strict jwt_vc_json temporal clock skew must be non-negative")
+	require.Equal(t, time.Duration(0), conf.StrictJwtVcJsonTemporalClockSkew())
 }
 
 func testNewConfigurationSuccessfulInitialization(t *testing.T) {

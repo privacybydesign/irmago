@@ -167,6 +167,78 @@
         }
       ]
     },
+    "EmailCredentialJwtVcJson": {
+      "format": "jwt_vc_json",
+      "scope": "EmailCredentialJwtVcJson",
+      "extends": "EmailCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Email Credential (JWT VC)",
+            "locale": "en"
+          },
+          {
+            "name": "E-mail Credential (JWT VC)",
+            "locale": "nl"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "email"
+            ],
+            "display": [
+              {
+                "name": "Email",
+                "locale": "en"
+              },
+              {
+                "name": "E-mailadres",
+                "locale": "nl"
+              }
+            ]
+          },
+          {
+            "path": [
+              "domain"
+            ],
+            "display": [
+              {
+                "name": "Domain",
+                "locale": "en"
+              },
+              {
+                "name": "Domein",
+                "locale": "nl"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "Email Credential (JWT VC)",
+          "locale": "en"
+        },
+        {
+          "name": "E-mail Credential (JWT VC)",
+          "locale": "nl"
+        }
+      ]
+    },
     "PhoneCredentialSdJwt": {
       "format": "dc+sd-jwt",
       "scope": "PhoneCredentialSdJwt",

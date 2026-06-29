@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -241,6 +242,65 @@ func TestDownloadRemoteImage_DataURI(t *testing.T) {
 		require.Equal(t, "image/png", mediaType)
 		require.Equal(t, imageData, data)
 	})
+}
+
+func TestClient_buildSession_PropagatesStrictJwtVcJsonVerificationSetting(t *testing.T) {
+	_, client := createOpenID4VCiClientForTesting(t)
+	client.Configuration.EnableStrictJwtVcJsonVerification()
+
+	s := client.buildSession(
+		1,
+		&CredentialOffer{CredentialConfigurationIds: []string{"credential-config-1"}},
+		&metadata.CredentialIssuerMetadata{CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{}},
+		&clientmodels.TrustedParty{Name: clientmodels.TranslatedString{"en": "issuer"}},
+		nil,
+		nil,
+		nil,
+		"https://open.yivi.app/-/auth-callback",
+		newMockSessionHandler(t),
+	)
+
+	require.NotNil(t, s)
+	require.True(t, s.issuerSettings.strictJwtVcJsonVerification)
+}
+
+func TestClient_buildSession_PropagatesStrictJwtVcJsonTemporalClockSkew(t *testing.T) {
+	_, client := createOpenID4VCiClientForTesting(t)
+	require.NoError(t, client.Configuration.SetStrictJwtVcJsonTemporalClockSkew(2*time.Minute))
+
+	s := client.buildSession(
+		1,
+		&CredentialOffer{CredentialConfigurationIds: []string{"credential-config-1"}},
+		&metadata.CredentialIssuerMetadata{CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{}},
+		&clientmodels.TrustedParty{Name: clientmodels.TranslatedString{"en": "issuer"}},
+		nil,
+		nil,
+		nil,
+		"https://open.yivi.app/-/auth-callback",
+		newMockSessionHandler(t),
+	)
+
+	require.NotNil(t, s)
+	require.Equal(t, 2*time.Minute, s.issuerSettings.jwtVcJsonTemporalClockSkew)
+}
+
+func TestClient_buildSession_PropagatesDefaultStrictJwtVcJsonTemporalClockSkew(t *testing.T) {
+	_, client := createOpenID4VCiClientForTesting(t)
+
+	s := client.buildSession(
+		1,
+		&CredentialOffer{CredentialConfigurationIds: []string{"credential-config-1"}},
+		&metadata.CredentialIssuerMetadata{CredentialConfigurationsSupported: map[string]metadata.CredentialConfiguration{}},
+		&clientmodels.TrustedParty{Name: clientmodels.TranslatedString{"en": "issuer"}},
+		nil,
+		nil,
+		nil,
+		"https://open.yivi.app/-/auth-callback",
+		newMockSessionHandler(t),
+	)
+
+	require.NotNil(t, s)
+	require.Equal(t, 5*time.Minute, s.issuerSettings.jwtVcJsonTemporalClockSkew)
 }
 
 // TODO: this func becomes irrelevant once we have our own metadata storage (and no longer depend on metadata in the IrmaClient)

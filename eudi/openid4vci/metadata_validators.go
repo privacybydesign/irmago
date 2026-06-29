@@ -172,9 +172,7 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 // ValidateSupportedFeatures verifies that the credential configuration is supported by our client. It is split from the credential configuration validation, so it can be used at the moment a configuration is used to request credentials,
 // because it makes no sense to validate configurations up front, which will not be requested either way.
 func (v *CredentialConfigurationValidator) ValidateSupportedFeatures(c *metadata.CredentialConfiguration) error {
-	// We only support SD-JWT VC, for now
-	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
-		c.Format != metadata.CredentialFormatIdentifier_W3CVC {
+	if !isRuntimeSupportedCredentialFormat(c.Format) {
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 

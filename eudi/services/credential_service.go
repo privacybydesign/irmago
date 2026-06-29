@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/eudi/vcdm"
 	"gorm.io/datatypes"
 )
 
@@ -31,6 +32,11 @@ type CredentialService interface {
 		metadata metadata.CredentialIssuerMetadata,
 		requireCryptographicKeyBinding bool,
 		publicKeyIdentifiers []models.PublicHolderBindingKey,
+	) error
+	StoreIssuedVcdmEnvelopes(
+		envelopes []*vcdm.CredentialEnvelope,
+		credentialConfigurationId string,
+		metadata metadata.CredentialIssuerMetadata,
 	) error
 }
 
@@ -58,7 +64,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	clientModels := make([]*clientmodels.Credential, len(m))
 	for i, batch := range m {
 		var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
-		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &processedSdJwtPayload); err != nil {
+		if err := json.Unmarshal(batch.ProcessedClaims, &processedSdJwtPayload); err != nil {
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
 		}
 
@@ -119,8 +125,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			x := batch.ExpiresAt.V.Unix()
 			exp = &x
 		}
-		if batch.IssuedAt.Valid {
-			x := batch.IssuedAt.V.Unix()
+		if batch.IssuanceDate.Valid {
+			x := batch.IssuanceDate.V.Unix()
 			iat = &x
 		}
 
@@ -141,7 +147,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		}
 
 		clientModels[i] = &clientmodels.Credential{
-			CredentialId: batch.VerifiableCredentialType,
+			CredentialId: batch.CredentialType,
 			Hash:         batch.Hash,
 			Image:        credentialImage,
 			Name:         credentialDisplays,
@@ -184,7 +190,8 @@ func batchInstanceCountsRemaining(batch *models.CredentialBatch) map[clientmodel
 //
 // keyModels must either be empty (no cryptographic key binding required) or have exactly the same length as
 // verifiedSdJwtVcs (one key per instance). All credentials in the slice are assumed to have been
-// issued from the same credential_configuration_id and therefore share vct, issuer, and timing claims.
+// issued from the same credential_configuration_id and therefore share credential type,
+// issuer, and timing claims.
 func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	verifiedSdJwtVcs []*sdjwtvc.VerifiedSdJwtVc,
 	credentialConfigurationId string,
@@ -215,7 +222,7 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		}
 	}
 
-	// All instances in a batch share the same vct, issuer, and timing claims.
+	// All instances in a batch share the same credential type, issuer, and timing claims.
 	// Use the first credential as the source of truth for batch-level metadata.
 	first := verifiedSdJwtVcs[0]
 
@@ -227,21 +234,21 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                first.IssuerSignedJwtPayload.Issuer,
-		VerifiableCredentialType: first.IssuerSignedJwtPayload.VerifiableCredentialType,
-		Format:                   models.CredentialFormat(credentialConfiguration.Format),
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(processedPayload),
-		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
-		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                uint(len(verifiedSdJwtVcs)),
-		RemainingCount:           uint(len(verifiedSdJwtVcs)),
-		Instances:                buildInstances(verifiedSdJwtVcs),
+		IssuerURL:          first.IssuerSignedJwtPayload.Issuer,
+		CredentialType:     first.IssuerSignedJwtPayload.VerifiableCredentialType,
+		Format:             models.CredentialFormat(credentialConfiguration.Format),
+		Hash:               hash,
+		ProcessedClaims:    datatypes.JSON(processedPayload),
+		CredentialIssuer:   first.IssuerSignedJwtPayload.Issuer,
+		IssuerDisplay:      slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata: convertCredentialMetadata(credentialConfiguration),
+		BatchSize:          uint(len(verifiedSdJwtVcs)),
+		RemainingCount:     uint(len(verifiedSdJwtVcs)),
+		Instances:          buildInstances(verifiedSdJwtVcs),
 	}
 
 	if first.IssuerSignedJwtPayload.IssuedAt != nil {
-		batch.IssuedAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.IssuedAt, 0), Valid: true}
+		batch.IssuanceDate = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.IssuedAt, 0), Valid: true}
 	}
 	if first.IssuerSignedJwtPayload.Expiry != nil {
 		batch.ExpiresAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.Expiry, 0), Valid: true}
@@ -259,6 +266,95 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	return nil
+}
+
+func (s *credentialService) StoreIssuedVcdmEnvelopes(
+	envelopes []*vcdm.CredentialEnvelope,
+	credentialConfigurationId string,
+	issuerMetadata metadata.CredentialIssuerMetadata,
+) error {
+	if len(envelopes) == 0 {
+		return nil
+	}
+
+	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
+	instances := make([]models.IssuedCredentialInstance, len(envelopes))
+	for i, env := range envelopes {
+		raw := []byte(fmt.Sprintf("%v", env.RawCredential))
+		instances[i] = models.IssuedCredentialInstance{RawCredential: raw}
+	}
+
+	first := envelopes[0]
+	credentialType := resolveCredentialTypeForStorage(credentialConfiguration, first, credentialConfigurationId)
+	credentialIssuer := first.Issuer
+	if credentialIssuer == "" {
+		credentialIssuer = issuerMetadata.CredentialIssuer
+	}
+	hash := first.ID
+	if hash == "" {
+		hash = fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%v", first.RawCredential))))
+	}
+
+	processedPayload, err := json.Marshal(first.Claims)
+	if err != nil {
+		return fmt.Errorf("failed to marshal envelope claims: %w", err)
+	}
+
+	batch := &models.CredentialBatch{
+		IssuerURL:          credentialIssuer,
+		CredentialType:     credentialType,
+		Format:             models.CredentialFormat(credentialConfiguration.Format),
+		Hash:               hash,
+		ProcessedClaims:    datatypes.JSON(processedPayload),
+		CredentialIssuer:   credentialIssuer,
+		IssuerDisplay:      slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata: convertCredentialMetadata(credentialConfiguration),
+		BatchSize:          uint(len(envelopes)),
+		RemainingCount:     uint(len(envelopes)),
+		Instances:          instances,
+	}
+
+	if first.IssuanceDate != nil {
+		batch.IssuanceDate = datatypes.NullTime{V: *first.IssuanceDate, Valid: true}
+	}
+	if first.ExpirationDate != nil {
+		batch.ExpiresAt = datatypes.NullTime{V: *first.ExpirationDate, Valid: true}
+	}
+	if first.ValidFrom != nil {
+		batch.NotBefore = datatypes.NullTime{V: *first.ValidFrom, Valid: true}
+	}
+
+	if err := s.credentialStore.StoreBatch(batch); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func resolveCredentialTypeForStorage(
+	credentialConfiguration metadata.CredentialConfiguration,
+	envelope *vcdm.CredentialEnvelope,
+	credentialConfigurationId string,
+) string {
+	if credentialConfiguration.VerifiableCredentialType != "" {
+		return credentialConfiguration.VerifiableCredentialType
+	}
+
+	for _, t := range credentialConfiguration.CredentialDefinition.Type {
+		if t != "" && t != "VerifiableCredential" {
+			return t
+		}
+	}
+
+	if envelope != nil {
+		for _, t := range envelope.Types {
+			if t != "" && t != "VerifiableCredential" {
+				return t
+			}
+		}
+	}
+
+	return credentialConfigurationId
 }
 
 func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJwtVc) (string, []byte, error) {

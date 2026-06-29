@@ -14,6 +14,7 @@ type CredentialFormat string
 
 const (
 	CredentialFormatSdJwtVc CredentialFormat = "dc+sd-jwt"
+	CredentialFormatW3CVC   CredentialFormat = "jwt_vc_json"
 )
 
 // CredentialBatch groups all credential instances issued from a single credential_configuration_id
@@ -28,8 +29,12 @@ type CredentialBatch struct {
 	// This is the value used for DCQL TrustedAuthority resolution in OID4VP.
 	IssuerURL string
 
-	// VerifiableCredentialType is the vct claim from the issued SD-JWT VC.
-	VerifiableCredentialType string
+	// CredentialType is the normalized credential type identifier used for storage.
+	// Examples include SD-JWT VC vct values and derived jwt_vc_json credential types.
+	CredentialType string
+
+	// LegacyCredentialType preserves backward compatibility with older schema versions.
+	LegacyCredentialType string `gorm:"column:verifiable_credential_type"`
 
 	// Format is the credential format identifier (e.g. "dc+sd-jwt").
 	Format CredentialFormat
@@ -39,16 +44,25 @@ type CredentialBatch struct {
 	// storage remains compatible with the IRMA client's deduplication logic.
 	Hash string `gorm:"uniqueIndex"`
 
-	// ProcessedSdJwtPayload is the JSON-encoded payload of the SD-JWT after processing/verifying the issuer-signed JWT.
-	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
+	// ProcessedClaims is the JSON-encoded canonical claims payload used by wallet
+	// and disclosure flows, independent of credential format.
+	ProcessedClaims datatypes.JSON `gorm:"type:JSON;not null"`
 
-	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
-	IssuedAt datatypes.NullTime
+	// LegacyProcessedClaims preserves backward compatibility with older schema versions.
+	LegacyProcessedClaims datatypes.JSON `gorm:"column:processed_sd_jwt_payload;type:JSON"`
 
-	// ExpiresAt is taken from the exp claim of the issuer-signed JWT. Nil if the credential does not expire.
+	// IssuanceDate is derived from the credential issuance time (typically iat when present).
+	IssuanceDate datatypes.NullTime
+
+	// LegacyIssuanceDate preserves backward compatibility with older schema versions.
+	LegacyIssuanceDate datatypes.NullTime `gorm:"column:issued_at"`
+
+	// ExpiresAt is derived from credential validity metadata (typically exp). Nil if
+	// the credential does not expire.
 	ExpiresAt datatypes.NullTime
 
-	// NotBefore is taken from the nbf claim of the issuer-signed JWT. Nil if the credential has no nbf restriction.
+	// NotBefore is derived from credential validity metadata (typically nbf). Nil if
+	// the credential has no not-before restriction.
 	// OID4VP wallets must not present a credential before this time.
 	NotBefore datatypes.NullTime
 
@@ -72,8 +86,45 @@ func (b *CredentialBatch) BeforeCreate(tx *gorm.DB) error {
 	if b.ID.IsNil() {
 		b.ID = datatypes.NewUUIDv4()
 	}
+	b.syncCanonicalFromLegacy()
 	b.normalizeChildren()
+	b.syncLegacyColumns()
 	return b.validate()
+}
+
+func (b *CredentialBatch) BeforeUpdate(tx *gorm.DB) error {
+	b.syncCanonicalFromLegacy()
+	b.syncLegacyColumns()
+	return nil
+}
+
+func (b *CredentialBatch) AfterFind(tx *gorm.DB) error {
+	b.syncCanonicalFromLegacy()
+	return nil
+}
+
+func (b *CredentialBatch) syncCanonicalFromLegacy() {
+	if b.CredentialType == "" {
+		b.CredentialType = b.LegacyCredentialType
+	}
+	if len(b.ProcessedClaims) == 0 {
+		b.ProcessedClaims = b.LegacyProcessedClaims
+	}
+	if !b.IssuanceDate.Valid {
+		b.IssuanceDate = b.LegacyIssuanceDate
+	}
+}
+
+func (b *CredentialBatch) syncLegacyColumns() {
+	if b.LegacyCredentialType == "" {
+		b.LegacyCredentialType = b.CredentialType
+	}
+	if len(b.LegacyProcessedClaims) == 0 {
+		b.LegacyProcessedClaims = b.ProcessedClaims
+	}
+	if !b.LegacyIssuanceDate.Valid {
+		b.LegacyIssuanceDate = b.IssuanceDate
+	}
 }
 
 func (b *CredentialBatch) normalizeChildren() {
@@ -92,8 +143,8 @@ func (b *CredentialBatch) validate() error {
 	if b.IssuerURL == "" {
 		return fmt.Errorf("issuer_url is required")
 	}
-	if b.VerifiableCredentialType == "" {
-		return fmt.Errorf("verifiable_credential_type is required")
+	if b.CredentialType == "" {
+		return fmt.Errorf("credential_type is required")
 	}
 	if b.Format == "" {
 		return fmt.Errorf("format is required")
@@ -101,8 +152,8 @@ func (b *CredentialBatch) validate() error {
 	if b.Hash == "" {
 		return fmt.Errorf("hash is required")
 	}
-	if !b.IssuedAt.Valid {
-		return fmt.Errorf("issued_at is required")
+	if b.Format == CredentialFormatSdJwtVc && !b.IssuanceDate.Valid {
+		return fmt.Errorf("issuance_date is required")
 	}
 	if b.BatchSize == 0 {
 		return fmt.Errorf("batch_size must be at least 1")

@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- OpenID4VCI jwt_vc_json verification hardening:
+  - Add normalized VCDM proof mapping for jwt_vc_json credentials (proof type, cryptosuite, purpose, proof value, optional verification method from `kid`)
+  - Add deterministic validation and error contracts for malformed jwt_vc_json inputs (`alg`, `iss`, temporal claim typing/order, compact/header/payload parsing)
+  - Add optional strict jwt_vc_json verification mode in EUDI configuration (`EnableStrictJwtVcJsonVerification` / `DisableStrictJwtVcJsonVerification`), requiring verifiable key material (`x5c`) for jwt_vc_json processing
+  - Add configurable strict temporal validation clock skew (`SetStrictJwtVcJsonTemporalClockSkew`, default `5m`) and wire it into OpenID4VCI session runtime verification
+  - Add strict runtime defense to reject negative temporal skew values with deterministic error behavior
+  - In strict mode, validate jwt_vc_json `x5c` against configured issuer trust anchors (including intermediate chain material when provided)
+
 ### Security
 - Update Go toolchain 1.26.3 → 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
 - Update dependencies with security relevance:
@@ -23,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update CI GitHub Action versions to Node 24 supported once
 - Update other dependencies to their latest releases: `github.com/lestrrat-go/jwx/v3`, `github.com/go-co-op/gocron` (v1 and v2), `github.com/spf13/{cast,cobra,pflag,viper}`, `go.etcd.io/bbolt`, `gorm.io/driver/{mysql,postgres,sqlserver}`, `github.com/alicebob/miniredis/v2`, `github.com/go-chi/cors` and `github.com/go-errors/errors`
 - Added DID First Candidate Recommendation backwards-compatibility for verification methods containing `publicKeyBase58` verification material.
+- EUDI credential-batch persistence now uses neutral columns (`credential_type`, `processed_claims`, `issuance_date`) while keeping legacy columns (`verifiable_credential_type`, `processed_sd_jwt_payload`, `issued_at`) synchronized for backward compatibility
+- Add startup backfill migration for credential batch legacy/new column parity and extend store filtering with a format-aware query API (`GetBatchesByCredentialTypeAndFormat`)
+- OpenID4VP/DCQL now routes `jwt_vc_json` queries to a dedicated VCDM candidate handler so owned credentials can be discovered in mixed-format wallets; disclosure preparation for `jwt_vc_json` remains explicitly unsupported for now and returns a deterministic error
 
 ### Fixed
 - Treat email addresses with a non-resolvable (NXDOMAIN) domain as permanently invalid instead of a transient network error, so the keyshare email task no longer retries them indefinitely and crowds out delivery of valid emails

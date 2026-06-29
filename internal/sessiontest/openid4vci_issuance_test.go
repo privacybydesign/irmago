@@ -1445,6 +1445,10 @@ func testOpenID4VCIAuthCodeFlowRejectsMismatchedState(t *testing.T) {
 	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
 	require.NotEqual(t, "CREDENTIAL_ISSUED", status,
 		"credential must not be issued when the returned state does not match")
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	require.Empty(t, creds, "no credential should be stored when state validation fails")
 }
 
 // testOpenID4VCIAuthCodeFlowRejectsMissingState verifies the state check fails
@@ -1476,6 +1480,14 @@ func testOpenID4VCIAuthCodeFlowRejectsMissingState(t *testing.T) {
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
 	require.NotNil(t, session.Error, "session should carry an error when no state is returned")
+
+	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
+	require.NotEqual(t, "CREDENTIAL_ISSUED", status,
+		"credential must not be issued when callback state is missing")
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	require.Empty(t, creds, "no credential should be stored when callback state is missing")
 }
 
 // testOpenID4VCIAuthCodeFlowRejectsAuthServerError verifies that an OAuth error
@@ -1512,6 +1524,14 @@ func testOpenID4VCIAuthCodeFlowRejectsAuthServerError(t *testing.T) {
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Error)
 	require.NotNil(t, session.Error, "session should carry an error on an OAuth error response")
+
+	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
+	require.NotEqual(t, "CREDENTIAL_ISSUED", status,
+		"credential must not be issued when authorization server returns an error")
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	require.Empty(t, creds, "no credential should be stored when authorization fails")
 }
 
 func testOpenID4VCIAuthCodeFlowNestedClaims(t *testing.T) {

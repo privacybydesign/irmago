@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	eudidb "github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -31,7 +32,7 @@ type storage struct {
 	fs filesystem.FileSystemStorage
 }
 
-// NewStorage opens (or creates) a SQLite database at path, then auto-migrates all registered models.
+// NewStorage opens (or creates) a SQLite database at path and runs any pending schema migrations.
 // The dbPath can be ":memory:" to use an in-memory database (useful for testing) or a path to a file.
 // Note: the default transaction has been DISABLED, which means, any Create or Update operation should be wrapped in a transaction (either directly or using the UnitOfWork) to ensure data integrity.
 func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, error) {
@@ -58,29 +59,14 @@ func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, er
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// TODO: separate the migration logic from the storage initialization logic, so that we can run migrations without needing to initialize the whole storage
-	// This will also save us from executing migrations every time we're creating UnitOfWork instances (which will create new repositories, which will otherwise auto-migrate their models if needed)
-
-	err = db.AutoMigrate(
-		&models.HolderBindingKey{},
-		&models.ECDSAKeyMetadata{},
-		&models.RSAKeyMetadata{},
-		&models.IssuerMetadataDisplay{},
-		&models.CredentialMetadata{},
-		&models.CredentialDisplay{},
-		&models.CredentialClaim{},
-		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
-		&models.EudiLogEntry{},
-		&models.EudiLogCredential{},
-	)
-
+	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("auto-migrate database failed: %w", err)
+		return nil, fmt.Errorf("get underlying sql.DB: %w", err)
+	}
+	if err := eudidb.RunMigrations(sqlDB); err != nil {
+		return nil, fmt.Errorf("run database migrations: %w", err)
 	}
 
-	// Initialize the repositories, which will auto-migrate their models if needed
 	return &storage{
 		db: db,
 		fs: filesystem.NewFileSystemStorage(aesKey, storagePath),

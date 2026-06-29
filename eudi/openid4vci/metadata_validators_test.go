@@ -437,7 +437,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 	}
 
 	unsupportedCredentialConfig := metadata.CredentialConfiguration{
-		Format: metadata.CredentialFormatIdentifier_W3CVC,
+		Format: metadata.CredentialFormatIdentifier_W3CVCLD,
 		Scope:  &scope,
 	}
 
@@ -451,7 +451,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name:        "unsupported credential format",
 			config:      unsupportedCredentialConfig,
 			wantErr:     true,
-			expectedErr: `unsupported credential format "jwt_vc_json"`,
+			expectedErr: `unsupported credential format "jwt_vc_json-ld"`,
 		},
 		{
 			name: "credential signing algorithms can be nil",
@@ -632,6 +632,46 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 					t.Errorf("ValidateSupportedFeatures() unexpected error: %v", err)
 				}
 			}
+		})
+	}
+}
+
+func TestIsRuntimeSupportedCredentialFormat(t *testing.T) {
+	tests := []struct {
+		name   string
+		format metadata.CredentialFormatIdentifier
+		want   bool
+	}{
+		{
+			name:   "sd-jwt vc supported",
+			format: metadata.CredentialFormatIdentifier_SdJwtVc,
+			want:   true,
+		},
+		{
+			name:   "w3c vc jwt supported",
+			format: metadata.CredentialFormatIdentifier_W3CVC,
+			want:   true,
+		},
+		{
+			name:   "w3c vc json-ld not supported yet",
+			format: metadata.CredentialFormatIdentifier_W3CVCLD,
+			want:   false,
+		},
+		{
+			name:   "w3c vc ldp not supported yet",
+			format: metadata.CredentialFormatIdentifier_W3CVCLD_ProofSuite,
+			want:   false,
+		},
+		{
+			name:   "mdoc not supported yet",
+			format: metadata.CredentialFormatIdentifier_MsoMdoc,
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isRuntimeSupportedCredentialFormat(tt.format))
 		})
 	}
 }

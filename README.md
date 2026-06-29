@@ -66,6 +66,39 @@ You can verify the installation by running:
 
 > **Note:** Pre-compiled release binaries are built with `CGO_ENABLED=0` and do not include SQLCipher. This prerequisite only applies when building from source.
 
+## OpenID4VCI jwt_vc_json strict verification
+
+For OpenID4VCI issuance using `jwt_vc_json`, the default behavior remains compatibility-focused:
+- JWT parsing and claim validation are performed.
+- Signature verification is performed when verifiable key material (`x5c`) is present.
+- Tokens without `x5c` are still accepted in default mode.
+
+You can enable strict mode to require verifiable key material (`x5c`) for `jwt_vc_json` credentials:
+
+```go
+conf, err := eudi.NewConfiguration(storage)
+if err != nil {
+    // handle error
+}
+
+conf.EnableStrictJwtVcJsonVerification()
+
+// Optional: tune strict temporal validation skew (default: 5 minutes).
+// Use this to control tolerance for small clock differences.
+if err := conf.SetStrictJwtVcJsonTemporalClockSkew(2 * time.Minute); err != nil {
+    // handle error
+}
+
+client, err := openid4vci.NewClient(httpClient, conf, holderVerifier)
+if err != nil {
+    // handle error
+}
+```
+
+When strict mode is enabled, `jwt_vc_json` credentials without `x5c` are rejected.
+In strict mode, temporal freshness checks (`exp`, `nbf`, `iat`) use a configurable
+clock skew (default `5m`) via `SetStrictJwtVcJsonTemporalClockSkew`.
+
 ## Installing
 ### Using Go
 To install the latest released version of the `yivi` command line tool using Go, you do the following.
@@ -137,6 +170,62 @@ You can override the default command by specifying command line options for `go 
     docker-compose run test ./internal/sessiontest -run TestDisclosureSession
 
 We always enforce the `-p 1` option to be used (as explained [above](#running-the-tests)).
+
+### OpenID4VP Sessiontest Checklist (Veramo + jwt_vc_json)
+
+Before running the OpenID4VP session subtests that use the Veramo issuer/verifier
+(including `jwt_vc_json` and mixed-format disclosure tests), make sure the required
+containers are up.
+
+`jwt_vc_json` holder-binding note: when a DCQL query sets
+`require_cryptographic_holder_binding: true`, the wallet now only discloses
+`jwt_vc_json` credentials that contain `cnf` key material in the JWT payload
+(`cnf.jwk`, `cnf.kid`, or `cnf.jkt`).
+
+1. Start required services (PowerShell):
+
+        docker-compose up -d veramo_openid4vci_postgres veramo_openid4vci_postgres_init veramo_openid4vci_mock_authorization_server veramo_openid4vci veramo_openid4vp_postgres veramo_openid4vp_postgres_init veramo_openid4vp tls_proxy
+
+     Optional multiline PowerShell variant:
+
+        docker-compose up -d `
+            veramo_openid4vci_postgres `
+            veramo_openid4vci_postgres_init `
+            veramo_openid4vci_mock_authorization_server `
+            veramo_openid4vci `
+            veramo_openid4vp_postgres `
+            veramo_openid4vp_postgres_init `
+            veramo_openid4vp `
+            tls_proxy
+
+2. Verify TLS proxy ports are reachable (issuer/verifier endpoints used by tests):
+
+    curl -k https://localhost:8443/test-issuer/.well-known/openid-credential-issuer
+    curl -k https://localhost:8444/
+
+3. Run the targeted subtests (PowerShell):
+
+    go test ./internal/sessiontest -run "TestSessionHandler/openid4vp/sdjwtvc/disclose_jwt_vc_json_credential" -count=1
+    go test ./internal/sessiontest -run "TestSessionHandler/openid4vp/sdjwtvc/disclose_mixed_sd-jwt_and_jwt_vc_json_credentials" -count=1
+
+   Optional: run both in one command:
+
+    go test ./internal/sessiontest -run "TestSessionHandler/openid4vp/sdjwtvc/(disclose_jwt_vc_json_credential|disclose_mixed_sd-jwt_and_jwt_vc_json_credentials)" -count=1
+
+4. If you see `connectex: No connection could be made` on `localhost:8443` or
+   `localhost:8444`, do this recovery flow:
+
+    docker-compose ps
+    docker-compose logs --tail=200 veramo_openid4vci veramo_openid4vp tls_proxy
+
+   If one of these services is not `Up`/`healthy`, restart just those:
+
+    docker-compose up -d veramo_openid4vci veramo_openid4vp tls_proxy
+
+   Re-check endpoints and rerun step 3:
+
+    curl -k https://localhost:8443/test-issuer/.well-known/openid-credential-issuer
+    curl -k https://localhost:8444/
 
 ## Using a local Redis datastore
 `irmago` can either store session states in memory (default) or in a Redis datastore. For local testing purposes you can use the standard [Redis docker container](https://hub.docker.com/_/redis):

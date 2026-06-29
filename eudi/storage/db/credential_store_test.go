@@ -20,34 +20,24 @@ func newTestCredentialStore(t *testing.T) CredentialStore {
 	db, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("super-secret-key-123"))}, &gorm.Config{})
 	require.NoError(t, err)
 
-	err = db.AutoMigrate(
-		&models.HolderBindingKey{},
-		&models.ECDSAKeyMetadata{},
-		&models.RSAKeyMetadata{},
-		&models.IssuerMetadataDisplay{},
-		&models.CredentialMetadata{},
-		&models.CredentialDisplay{},
-		&models.CredentialClaim{},
-		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
-	)
+	sqlDB, err := db.DB()
 	require.NoError(t, err)
+	require.NoError(t, RunMigrations(sqlDB))
 
 	return &credentialStore{db: db}
 }
 
 func newBatch(hash string) *models.CredentialBatch {
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                1,
-		RemainingCount:           1,
-		CredentialIssuer:         "https://issuer.example.com",
+		IssuerURL:        "https://issuer.example.com",
+		CredentialType:   "https://vct.example.com/MyCredential",
+		Format:           models.CredentialFormatSdJwtVc,
+		Hash:             hash,
+		ProcessedClaims:  datatypes.JSON(`{"sub":"user123"}`),
+		IssuanceDate:     datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:        1,
+		RemainingCount:   1,
+		CredentialIssuer: "https://issuer.example.com",
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -108,15 +98,15 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 		instances[i] = models.IssuedCredentialInstance{RawCredential: []byte("raw-credential-token")}
 	}
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                uint(instanceCount),
-		RemainingCount:           uint(instanceCount),
-		CredentialIssuer:         "https://issuer.example.com",
+		IssuerURL:        "https://issuer.example.com",
+		CredentialType:   "https://vct.example.com/MyCredential",
+		Format:           models.CredentialFormatSdJwtVc,
+		Hash:             hash,
+		ProcessedClaims:  datatypes.JSON(`{"sub":"user123"}`),
+		IssuanceDate:     datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:        uint(instanceCount),
+		RemainingCount:   uint(instanceCount),
+		CredentialIssuer: "https://issuer.example.com",
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			models.IssuerMetadataDisplay{
 				Locale: datatypes.NullString{V: "nl", Valid: true},
@@ -145,15 +135,15 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 		}
 	}
 	return &models.CredentialBatch{
-		IssuerURL:                "https://issuer.example.com",
-		VerifiableCredentialType: "https://vct.example.com/MyCredential",
-		Format:                   models.CredentialFormatSdJwtVc,
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
-		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
-		BatchSize:                uint(instanceCount),
-		RemainingCount:           uint(instanceCount),
-		CredentialIssuer:         "https://issuer.example.com",
+		IssuerURL:        "https://issuer.example.com",
+		CredentialType:   "https://vct.example.com/MyCredential",
+		Format:           models.CredentialFormatSdJwtVc,
+		Hash:             hash,
+		ProcessedClaims:  datatypes.JSON(`{"sub":"user123"}`),
+		IssuanceDate:     datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
+		BatchSize:        uint(instanceCount),
+		RemainingCount:   uint(instanceCount),
+		CredentialIssuer: "https://issuer.example.com",
 		IssuerDisplay: []models.IssuerMetadataDisplay{
 			{Locale: datatypes.NullString{V: "en", Valid: true}, Name: "Issuer Name"},
 		},
@@ -250,7 +240,7 @@ func TestGetCredentialBatchList_ContainsBatchFields(t *testing.T) {
 
 	got := batches[0]
 	assert.Equal(t, batch.IssuerURL, got.IssuerURL)
-	assert.Equal(t, batch.VerifiableCredentialType, got.VerifiableCredentialType)
+	assert.Equal(t, batch.CredentialType, got.CredentialType)
 	assert.Equal(t, batch.Hash, got.Hash)
 	assert.Equal(t, batch.Format, got.Format)
 }
@@ -302,50 +292,161 @@ func TestGetBatchByHash_EmptyHash(t *testing.T) {
 	require.Error(t, err)
 }
 
-// --- GetBatchesByVCT ---
+// --- GetBatchesByCredentialType ---
 
-func TestGetBatchesByVCT_Found(t *testing.T) {
+func TestGetBatchesByCredentialType_Found(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	require.NoError(t, store.StoreBatch(newBatch("hash-vct-1")))
 	require.NoError(t, store.StoreBatch(newBatch("hash-vct-2")))
+
+	batches, err := store.GetBatchesByCredentialType("https://vct.example.com/MyCredential")
+	require.NoError(t, err)
+	assert.Len(t, batches, 2)
+}
+
+func TestGetBatchesByCredentialType_NoMatch(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	require.NoError(t, store.StoreBatch(newBatch("hash-vct-nomatch")))
+
+	batches, err := store.GetBatchesByCredentialType("https://vct.example.com/OtherCredential")
+	require.NoError(t, err)
+	assert.Empty(t, batches)
+}
+
+func TestGetBatchesByCredentialType_Empty(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	_, err := store.GetBatchesByCredentialType("")
+	require.Error(t, err)
+}
+
+func TestGetBatchesByCredentialType_FiltersCorrectly(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	batch1 := newBatch("hash-filter-1")
+	batch2 := newBatch("hash-filter-2")
+	batch2.CredentialType = "https://vct.example.com/OtherCredential"
+
+	require.NoError(t, store.StoreBatch(batch1))
+	require.NoError(t, store.StoreBatch(batch2))
+
+	batches, err := store.GetBatchesByCredentialType("https://vct.example.com/MyCredential")
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	assert.Equal(t, batch1.Hash, batches[0].Hash)
+}
+
+func TestGetBatchesByVCT_CompatibilityAlias(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	require.NoError(t, store.StoreBatch(newBatch("hash-vct-compat-1")))
+	require.NoError(t, store.StoreBatch(newBatch("hash-vct-compat-2")))
 
 	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
 	require.NoError(t, err)
 	assert.Len(t, batches, 2)
 }
 
-func TestGetBatchesByVCT_NoMatch(t *testing.T) {
-	store := newTestCredentialStore(t)
-
-	require.NoError(t, store.StoreBatch(newBatch("hash-vct-nomatch")))
-
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/OtherCredential")
-	require.NoError(t, err)
-	assert.Empty(t, batches)
-}
-
-func TestGetBatchesByVCT_EmptyVCT(t *testing.T) {
+func TestGetBatchesByVCT_CompatibilityAlias_Empty(t *testing.T) {
 	store := newTestCredentialStore(t)
 
 	_, err := store.GetBatchesByVCT("")
-	require.Error(t, err)
+	require.EqualError(t, err, "credential type is required")
 }
 
-func TestGetBatchesByVCT_FiltersCorrectly(t *testing.T) {
+func TestGetBatchesByCredentialTypeAndFormat_Found(t *testing.T) {
 	store := newTestCredentialStore(t)
 
-	batch1 := newBatch("hash-filter-1")
-	batch2 := newBatch("hash-filter-2")
-	batch2.VerifiableCredentialType = "https://vct.example.com/OtherCredential"
+	batch1 := newBatch("hash-format-filter-1")
+	batch1.Format = models.CredentialFormatSdJwtVc
+
+	batch2 := newBatch("hash-format-filter-2")
+	batch2.Format = models.CredentialFormatW3CVC
 
 	require.NoError(t, store.StoreBatch(batch1))
 	require.NoError(t, store.StoreBatch(batch2))
 
-	batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
+	batches, err := store.GetBatchesByCredentialTypeAndFormat("https://vct.example.com/MyCredential", models.CredentialFormatW3CVC)
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
-	assert.Equal(t, batch1.Hash, batches[0].Hash)
+	assert.Equal(t, "hash-format-filter-2", batches[0].Hash)
+}
+
+func TestGetBatchesByCredentialTypeAndFormat_EmptyCredentialType(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	_, err := store.GetBatchesByCredentialTypeAndFormat("", models.CredentialFormatSdJwtVc)
+	require.EqualError(t, err, "credential type is required")
+}
+
+func TestGetBatchesByCredentialTypeAndFormat_EmptyFormat(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	_, err := store.GetBatchesByCredentialTypeAndFormat("https://vct.example.com/MyCredential", "")
+	require.EqualError(t, err, "format is required")
+}
+
+func TestGetBatchesByCredentialType_ReadsLegacyColumnRows(t *testing.T) {
+	store := newTestCredentialStore(t)
+	db := store.(*credentialStore).db
+
+	batch := newBatch("hash-legacy-row")
+	require.NoError(t, store.StoreBatch(batch))
+
+	legacyType := "https://vct.example.com/LegacyOnly"
+	require.NoError(t, db.Exec(
+		"UPDATE credential_batches SET credential_type = '', verifiable_credential_type = ? WHERE id = ?",
+		legacyType,
+		batch.ID,
+	).Error)
+
+	batches, err := store.GetBatchesByCredentialType(legacyType)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	assert.Equal(t, legacyType, batches[0].CredentialType)
+}
+
+func TestStoreBatch_SyncsLegacyCompatibilityColumns(t *testing.T) {
+	store := newTestCredentialStore(t)
+	db := store.(*credentialStore).db
+
+	batch := newBatch("hash-sync-legacy-columns")
+	require.NoError(t, store.StoreBatch(batch))
+
+	type storedCredentialBatchColumns struct {
+		CredentialType           string
+		VerifiableCredentialType string
+		ProcessedClaims          datatypes.JSON
+		ProcessedSdJwtPayload    datatypes.JSON
+		IssuanceDate             datatypes.NullTime
+		IssuedAt                 datatypes.NullTime
+	}
+
+	var row storedCredentialBatchColumns
+	require.NoError(t, db.Raw(`
+		SELECT
+			credential_type,
+			verifiable_credential_type,
+			processed_claims,
+			processed_sd_jwt_payload,
+			issuance_date,
+			issued_at
+		FROM credential_batches
+		WHERE id = ?
+	`, batch.ID).Scan(&row).Error)
+
+	assert.Equal(t, batch.CredentialType, row.CredentialType)
+	assert.Equal(t, batch.CredentialType, row.VerifiableCredentialType)
+	assert.Equal(t, string(batch.ProcessedClaims), string(row.ProcessedClaims))
+	assert.Equal(t, string(batch.ProcessedClaims), string(row.ProcessedSdJwtPayload))
+	assert.Equal(t, batch.IssuanceDate.Valid, row.IssuanceDate.Valid)
+	assert.Equal(t, batch.IssuanceDate.Valid, row.IssuedAt.Valid)
+	if batch.IssuanceDate.Valid {
+		assert.Equal(t, batch.IssuanceDate.V.Unix(), row.IssuanceDate.V.Unix())
+		assert.Equal(t, batch.IssuanceDate.V.Unix(), row.IssuedAt.V.Unix())
+	}
 }
 
 // --- GetUnusedInstance ---

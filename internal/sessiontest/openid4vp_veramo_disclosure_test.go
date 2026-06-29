@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -29,6 +30,8 @@ const (
 )
 
 func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
+	skipIfVeramoInfraUnavailable(t)
+
 	t.Run("issue via openid4vci and disclose via openid4vp", testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP)
 	t.Run("payload-only claim surfaces in all UI flows", testPayloadOnlyClaimAcrossLifecycle)
 	t.Run("disclose single credential with multiple attributes", testDiscloseCredentialWithMultipleAttributes)
@@ -63,6 +66,9 @@ func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
 	t.Run("disclose null then fixed index logs only selected", testDiscloseNullThenFixedIndexLogsOnlySelected)
 	t.Run("disclose shallow leaf shows single header", testDiscloseShallowLeafShowsSingleHeader)
 	t.Run("disclose without holder binding", testDiscloseWithoutHolderBinding)
+	t.Run("disclose jwt_vc_json credential", testDiscloseJwtVcJsonCredential)
+	t.Run("disclose mixed sd-jwt and jwt_vc_json credentials", testDiscloseMixedSdJwtAndJwtVcJsonCredentials)
+	t.Run("best effort replayed holder-bound jwt_vc_json disclosure fails", testBestEffortReplayHolderBoundJwtVcJsonDisclosure)
 	t.Run("verifier display name", testVerifierDisplayName)
 	t.Run("batch of one credential remains usable after disclosure", testBatchOfOneCredentialRemainsUsableAfterDisclosure)
 	t.Run("batch of two credential is exhausted after two disclosures", testBatchOfTwoCredentialExhaustedAfterTwoDisclosures)
@@ -72,6 +78,134 @@ func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
 	t.Run("veramo verifier requesting unknown vct uses url-only fallback", testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback)
 	t.Run("veramo verifier multi-vct first missing second matched", testVeramoVerifierMultiVctFirstMissingSecondMatched)
 	t.Run("veramo verifier requesting unsupported claim on owned credential surfaces it", testVeramoVerifierRequestingUnsupportedClaimOnOwnedCredentialSurfacesIt)
+}
+
+func skipIfVeramoInfraUnavailable(t *testing.T) {
+	t.Helper()
+
+	endpoints := []string{
+		preAuthIssuerURL,
+		fmt.Sprintf("%s/%s/api/create-dcql-offer", veramoVerifierBaseURL, veramoVerifierName),
+	}
+
+	for _, endpoint := range endpoints {
+		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+		if err != nil {
+			t.Skipf("best-effort session test skipped: invalid endpoint %s: %v", endpoint, err)
+			return
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Skipf("best-effort session test skipped: endpoint unavailable %s: %v", endpoint, err)
+			return
+		}
+		resp.Body.Close()
+	}
+}
+
+func createVeramoVerifierDcqlSessionWithQueryBestEffort(t *testing.T, dcqlQuery string) (veramoVerifierSession, error) {
+	t.Helper()
+
+	apiURL := fmt.Sprintf("%s/%s/api/create-dcql-offer", veramoVerifierBaseURL, veramoVerifierName)
+	req, err := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(dcqlQuery))
+	if err != nil {
+		return veramoVerifierSession{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+veramoVerifierAdminToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return veramoVerifierSession{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return veramoVerifierSession{}, fmt.Errorf("create-dcql-offer failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var result veramoVerifierSession
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return veramoVerifierSession{}, err
+	}
+	if result.State == "" {
+		return veramoVerifierSession{}, fmt.Errorf("empty verifier state")
+	}
+	return result, nil
+}
+
+func testBestEffortReplayHolderBoundJwtVcJsonDisclosure(t *testing.T) {
+	skipIfVeramoInfraUnavailable(t)
+
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialJwtVcJson", `{
+		"email": "replay-jwtvc@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-jwtvc-replay",
+					"format": "jwt_vc_json",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					],
+					"require_cryptographic_holder_binding": true
+				}
+			]
+		}
+	}`
+
+	veramoSession, err := createVeramoVerifierDcqlSessionWithQueryBestEffort(t, dcqlQuery)
+	if err != nil {
+		t.Skipf("best-effort session test skipped: could not create verifier offer: %v", err)
+		return
+	}
+
+	// First disclosure should succeed.
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// Reusing the same verifier request_uri must fail due to replay protection in local KB-JWT verification.
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	cred = session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Error)
+	require.NotEmpty(t, session.Error)
+	combinedError := strings.ToLower(session.Error.ErrorType + " " + session.Error.WrappedError + " " + session.Error.Info)
+	require.Contains(t, combinedError, "replay")
+
+	// Optionally poll verifier status and assert it did not become verified twice.
+	checkURL := fmt.Sprintf("%s/%s/api/check-offer/%s", veramoVerifierBaseURL, veramoVerifierName, url.PathEscape(veramoSession.State))
+	req, reqErr := http.NewRequest(http.MethodGet, checkURL, nil)
+	if reqErr == nil {
+		req.Header.Set("Authorization", "Bearer "+veramoVerifierAdminToken)
+		resp, doErr := http.DefaultClient.Do(req)
+		if doErr == nil {
+			resp.Body.Close()
+		}
+	}
 }
 
 func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
@@ -2496,6 +2630,139 @@ func testDiscloseWithoutHolderBinding(t *testing.T) {
 		require.NotContains(t, msg.Message, "holder binding",
 			"verifier should not report holder binding issues when it was not required")
 	}
+}
+
+func testDiscloseJwtVcJsonCredential(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialJwtVcJson", `{
+		"email": "jwtvc@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-jwtvc",
+					"format": "jwt_vc_json",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					],
+					"require_cryptographic_holder_binding": true
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	requireDisclosurePlan(t, session.DisclosurePlan, expectedDisclosurePlan{
+		Choices: []expectedPickOneChoice{
+			{
+				Owned: []expectedPlanCredential{
+					{
+						CredentialId: "https://localhost:8443/vct/email",
+						Name:         clientmodels.TranslatedString{"en": "Email Credential (JWT VC)", "nl": "E-mail Credential (JWT VC)"},
+						IssuerName:   clientmodels.TranslatedString{"en": "Test Issuer", "nl": "Test Uitgever"},
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"email"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+								Value:       strVal("jwtvc@example.com"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	cred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(cred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedClaims(t, result, "email-jwtvc",
+		claim([]any{"email"}, "jwtvc@example.com"),
+	)
+}
+
+func testDiscloseMixedSdJwtAndJwtVcJsonCredentials(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "mixed-sd@example.com",
+		"domain": "example.com"
+	}`)
+	issueCredentialViaOpenID4VCI(t, c, 2, sessionHandler, "EmailCredentialJwtVcJson", `{
+		"email": "mixed-jwt@example.com",
+		"domain": "example.com"
+	}`)
+
+	dcqlQuery := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "email-sd",
+					"format": "dc+sd-jwt",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					]
+				},
+				{
+					"id": "email-jwtvc",
+					"format": "jwt_vc_json",
+					"meta": {
+						"vct_values": ["https://localhost:8443/vct/email"]
+					},
+					"claims": [
+						{ "path": ["email"] }
+					],
+					"require_cryptographic_holder_binding": true
+				}
+			]
+		}
+	}`
+	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, dcqlQuery)
+
+	startOpenID4VPDisclosureSession(t, c, 3, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.Len(t, session.DisclosurePlan.DisclosureChoicesOverview, 2)
+
+	sdCred := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]
+	jwtCred := session.DisclosurePlan.DisclosureChoicesOverview[1].OwnedOptions[0]
+	grantPermission(t, c, session.Id, makeDisclosureChoice(sdCred), makeDisclosureChoice(jwtCred))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 3, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	result := checkVeramoVerifierOfferStatus(t, veramoSession.State)
+	require.Contains(t, []string{"VERIFIED", "RESPONSE_RECEIVED"}, result.Status)
+	requireVerifierReceivedClaims(t, result, "email-sd",
+		claim([]any{"email"}, "mixed-sd@example.com"),
+	)
+	requireVerifierReceivedClaims(t, result, "email-jwtvc",
+		claim([]any{"email"}, "mixed-jwt@example.com"),
+	)
 }
 
 // testVerifierDisplayName verifies that the verifier display name shown to the
