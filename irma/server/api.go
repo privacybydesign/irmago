@@ -421,15 +421,20 @@ var sensitiveHeaders = map[string]struct{}{
 	"x-auth-token":  {},
 }
 
-// filterHeaders returns a copy of headers with sensitive values redacted.
+// filterHeaders returns a copy of headers with sensitive values redacted and
+// all remaining (user-controlled) values sanitized to prevent log injection.
 func filterHeaders(headers http.Header) http.Header {
 	filtered := make(http.Header, len(headers))
 	for k, v := range headers {
 		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
 			filtered[k] = []string{"[redacted]"}
-		} else {
-			filtered[k] = v
+			continue
 		}
+		sanitized := make([]string, len(v))
+		for i, value := range v {
+			sanitized[i] = common.SanitizeForLog(value)
+		}
+		filtered[k] = sanitized
 	}
 	return filtered
 }
@@ -448,7 +453,7 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 		if headers.Get("Content-Type") == "application/octet-stream" {
 			fields["message"] = hex.EncodeToString(message)
 		} else {
-			fields["message"] = string(message)
+			fields["message"] = common.SanitizeForLog(string(message))
 		}
 	}
 	if from != "" {

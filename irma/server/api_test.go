@@ -207,3 +207,19 @@ func TestFilterHeadersCaseInsensitive(t *testing.T) {
 	// underlying map type to avoid http.Header key canonicalization (SA1008).
 	require.Equal(t, []string{"[redacted]"}, map[string][]string(filtered)["authorization"])
 }
+
+func TestFilterHeadersSanitizesValues(t *testing.T) {
+	// Non-sensitive header values are user-controlled and must have CR/LF removed
+	// before logging to prevent log injection (forging of fake log entries).
+	headers := http.Header{
+		"X-Forwarded-For": []string{"1.2.3.4\r\nFATAL injected log line"},
+		"X-Multi":         []string{"a\nb", "c\rd"},
+	}
+
+	filtered := filterHeaders(headers)
+
+	require.Equal(t, []string{`1.2.3.4\r\nFATAL injected log line`}, filtered["X-Forwarded-For"])
+	require.Equal(t, []string{`a\nb`, `c\rd`}, filtered["X-Multi"])
+	// The original headers must not be mutated by filtering.
+	require.Equal(t, []string{"1.2.3.4\r\nFATAL injected log line"}, headers["X-Forwarded-For"])
+}
