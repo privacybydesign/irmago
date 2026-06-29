@@ -1690,3 +1690,64 @@ func TestEmptyConSatisfyDoesNotSwallowDisclosure(t *testing.T) {
 		require.Equal(t, "456", *attrs[0].RawValue)
 	})
 }
+
+// TestDeprecatedAttributes is a regression test for issue #522: a session request
+// that includes a deprecated attribute (such as pbdf.pbdf.mobilenumber.mobilenumber)
+// should be detectable so operators can be warned at validation time, instead of the
+// session silently failing with only a generic end-user error and nothing logged.
+func TestDeprecatedAttributes(t *testing.T) {
+	const (
+		credID = "irma-demo.RU.studentCard"
+		attrID = "irma-demo.RU.studentCard.studentID"
+	)
+	past := Timestamp(time.Now().AddDate(-1, 0, 0))
+
+	disclose := AttributeConDisCon{
+		AttributeDisCon{
+			AttributeCon{NewAttributeRequest("irma-demo.MijnOverheid.ageLimits.over18")},
+		},
+		AttributeDisCon{
+			AttributeCon{NewAttributeRequest(attrID)},
+		},
+	}
+
+	t.Run("no deprecated attributes", func(t *testing.T) {
+		conf := parseConfiguration(t)
+		require.Empty(t, disclose.DeprecatedAttributes(conf))
+	})
+
+	t.Run("deprecated credential type is reported", func(t *testing.T) {
+		conf := parseConfiguration(t)
+		conf.CredentialTypes[NewCredentialTypeIdentifier(credID)].DeprecatedSince = past
+
+		deprecated := disclose.DeprecatedAttributes(conf)
+		require.Equal(t, []AttributeTypeIdentifier{NewAttributeTypeIdentifier(attrID)}, deprecated)
+	})
+
+	t.Run("deprecated issuer is reported", func(t *testing.T) {
+		conf := parseConfiguration(t)
+		conf.Issuers[NewIssuerIdentifier("irma-demo.RU")].DeprecatedSince = past
+
+		deprecated := disclose.DeprecatedAttributes(conf)
+		require.Equal(t, []AttributeTypeIdentifier{NewAttributeTypeIdentifier(attrID)}, deprecated)
+	})
+
+	t.Run("future deprecation date is not reported", func(t *testing.T) {
+		conf := parseConfiguration(t)
+		conf.CredentialTypes[NewCredentialTypeIdentifier(credID)].DeprecatedSince =
+			Timestamp(time.Now().AddDate(1, 0, 0))
+
+		require.Empty(t, disclose.DeprecatedAttributes(conf))
+	})
+
+	t.Run("each deprecated attribute is reported at most once", func(t *testing.T) {
+		conf := parseConfiguration(t)
+		conf.CredentialTypes[NewCredentialTypeIdentifier(credID)].DeprecatedSince = past
+
+		repeated := AttributeConDisCon{
+			AttributeDisCon{AttributeCon{NewAttributeRequest(attrID)}},
+			AttributeDisCon{AttributeCon{NewAttributeRequest(attrID)}},
+		}
+		require.Len(t, repeated.DeprecatedAttributes(conf), 1)
+	})
+}
