@@ -2,14 +2,14 @@
 
 `irmago` is an IRMA implementation in Go. It contains multiple libraries and applications:
 
-* The commandline tool [`yivi`](https://yivi.app/docs/yivi-cli/), which contains an [IRMA server](https://yivi.app/docs/irma-server/); subcommands for manipulating [IRMA schemes](https://yivi.app/docs/schemes/), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
-* The Go library [`irmaserver`](https://yivi.app/docs/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
-* The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://yivi.app/docs/schemes/), parsing [IRMA metadata attributes](https://docs.yivi.app/technical-overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
+* The commandline tool [`yivi`](https://docs.yivi.app/irma-cli/), which contains an [IRMA server](https://docs.yivi.app/irma-server/); subcommands for manipulating [IRMA schemes](https://docs.yivi.app/schemes/), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
+* The Go library [`irmaserver`](https://docs.yivi.app/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
+* The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://docs.yivi.app/schemes/), parsing [IRMA metadata attributes](https://docs.yivi.app/technical-overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
 * The Go package `irmaclient` is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
 
 ## Documentation
 
-Technical documentation of all components of `irmago` and more can be found at https://yivi.app/docs.
+Technical documentation of all components of `irmago` and more can be found at https://docs.yivi.app.
 
 ## Running (development)
 
