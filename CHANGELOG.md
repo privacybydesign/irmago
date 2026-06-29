@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- `server.Configuration` now accepts an optional `LoggerEntry *logrus.Entry`, allowing callers to attach persistent fields (e.g. `LoggerEntry.WithField("lib", "irma")`) that are then included on every log line emitted by the `server`, `irmaserver` and `requestorserver` packages. Logging in those packages now flows through a `*logrus.Entry`, and a matching package-level `server.LoggerEntry` is exported. The existing `Logger *logrus.Logger` field keeps working (an entry is derived from it automatically), so this is a backward-compatible addition (closes #232)
+
 ### Security
 - Update Go toolchain 1.26.3 → 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
 - Update dependencies with security relevance:
@@ -12,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `github.com/golang-jwt/jwt/v5` 5.2.2 → 5.3.1
   - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
 - Sanitize user-controlled strings before writing them to log entries to prevent log injection
-- Filter sensitive HTTP headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`) from request logs
+- Restrict request-log headers to a constant allowlist of known-safe header names and redact their values, so no credential-, session- or otherwise sensitive header value is ever written to the logs
 - Fix email header injection by using the parsed recipient address in the SMTP `To:` header
 - Normalize file paths via `filepath.Clean` before filesystem operations
 
