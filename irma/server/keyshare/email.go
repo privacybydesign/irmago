@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/irma/server"
 )
 
