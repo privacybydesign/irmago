@@ -378,7 +378,7 @@ func (conf *Configuration) verifyRevocation() error {
 			conf.Logger.Info("revocation server mode enabled for " + credid.String())
 		}
 		if settings.Server {
-			conf.Logger.Info("Being the revocation server for a credential type comes with special responsibilities. Failure can lead to all IRMA apps being unable to disclose credentials of this type. Read more at https://irma.app/docs/revocation/#issuer-responsibilities.")
+			conf.Logger.Info("Being the revocation server for a credential type comes with special responsibilities. Failure can lead to all IRMA apps being unable to disclose credentials of this type. Read more at https://docs.yivi.app/revocation#issuer-responsibilities.")
 		}
 	}
 
