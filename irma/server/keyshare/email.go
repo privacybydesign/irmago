@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/irma/server"
 )
 
@@ -98,6 +97,11 @@ func buildRecipients(to []string) ([]string, error) {
 	return recipients, nil
 }
 
+// sanitizeEmailHeaderValue removes CR/LF to prevent header injection when rendering mail headers.
+func sanitizeEmailHeaderValue(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
+}
+
 // SendEmail sends a templated email to the supplied email address(es).
 // When multiple recipients are specified, the email is sent as a BCC email.
 func (conf EmailConfiguration) SendEmail(
@@ -132,10 +136,9 @@ func (conf EmailConfiguration) SendEmail(
 	message := bytes.Buffer{}
 
 	// When single recipient, add the To header. Otherwise it is excluded, making this a BCC email.
-	// SanitizeForLog strips any residual CR/LF — mail.ParseAddressList already rejects such input
-	// (see TestParseEmailAddressRejectsHeaderInjection), so this is a defence-in-depth barrier.
+	// mail.ParseAddressList already rejects CR/LF in addresses; this is defence-in-depth for header rendering.
 	if len(to) == 1 {
-		fmt.Fprintf(&message, "To: %s\r\n", common.SanitizeForLog(recipients[0]))
+		fmt.Fprintf(&message, "To: %s\r\n", sanitizeEmailHeaderValue(recipients[0]))
 	}
 
 	fmt.Fprintf(&message, "From: %s\r\n", from.Address)
