@@ -199,12 +199,14 @@ func TestFilterHeaders(t *testing.T) {
 		require.NotContains(t, filtered, name, "header %s must not be logged", name)
 	}
 
-	// Allowlisted, non-sensitive headers must pass through unchanged.
-	require.Equal(t, []string{"application/json"}, filtered["Content-Type"])
-	require.Equal(t, []string{"irma-test"}, filtered["User-Agent"])
+	// Allowlisted headers are reported as present, but their (user-controlled,
+	// potentially sensitive) values are redacted rather than logged clear-text.
+	require.Equal(t, []string{"<redacted>"}, filtered["Content-Type"])
+	require.Equal(t, []string{"<redacted>"}, filtered["User-Agent"])
 
 	// The original headers must not be mutated by filtering.
 	require.Equal(t, []string{"Bearer supersecret-token"}, headers["Authorization"])
+	require.Equal(t, []string{"application/json"}, headers["Content-Type"])
 }
 
 func TestFilterHeadersDropsUnlistedHeaders(t *testing.T) {
@@ -216,12 +218,14 @@ func TestFilterHeadersDropsUnlistedHeaders(t *testing.T) {
 	}
 	filtered := filterHeaders(headers)
 	require.NotContains(t, filtered, "X-Custom-Debug")
-	require.Equal(t, []string{"application/json"}, filtered["Content-Type"])
+	require.Equal(t, []string{"<redacted>"}, filtered["Content-Type"])
 }
 
-func TestFilterHeadersSanitizesValues(t *testing.T) {
-	// Allowlisted header values are still user-controlled and must have CR/LF
-	// removed before logging to prevent log injection (forging of fake entries).
+func TestFilterHeadersRedactsValues(t *testing.T) {
+	// Allowlisted header values are user-controlled and may carry sensitive data,
+	// so they are redacted entirely (one "<redacted>" placeholder per value)
+	// rather than logged. This guarantees no header value reaches the logs, which
+	// also removes any log-injection surface from CR/LF in header values.
 	headers := http.Header{
 		"X-Forwarded-For": []string{"1.2.3.4\r\nFATAL injected log line"},
 		"Accept-Language": []string{"a\nb", "c\rd"},
@@ -229,8 +233,8 @@ func TestFilterHeadersSanitizesValues(t *testing.T) {
 
 	filtered := filterHeaders(headers)
 
-	require.Equal(t, []string{`1.2.3.4\r\nFATAL injected log line`}, filtered["X-Forwarded-For"])
-	require.Equal(t, []string{`a\nb`, `c\rd`}, filtered["Accept-Language"])
+	require.Equal(t, []string{"<redacted>"}, filtered["X-Forwarded-For"])
+	require.Equal(t, []string{"<redacted>", "<redacted>"}, filtered["Accept-Language"])
 	// The original headers must not be mutated by filtering.
 	require.Equal(t, []string{"1.2.3.4\r\nFATAL injected log line"}, headers["X-Forwarded-For"])
 }
