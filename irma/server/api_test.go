@@ -190,15 +190,16 @@ func TestFilterHeaders(t *testing.T) {
 
 	filtered := filterHeaders(headers)
 
-	// Sensitive headers must be redacted, regardless of header-name casing.
+	// Headers outside the allowlist (including all credential-/session-carrying
+	// ones) must be dropped entirely, never logged.
 	for _, name := range []string{
 		"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie",
 		"X-Auth-Token", "X-Api-Key", "Api-Key", "X-Csrf-Token", "X-Xsrf-Token",
 	} {
-		require.Equal(t, []string{"[redacted]"}, filtered[name], "header %s should be redacted", name)
+		require.NotContains(t, filtered, name, "header %s must not be logged", name)
 	}
 
-	// Non-sensitive headers must pass through unchanged.
+	// Allowlisted, non-sensitive headers must pass through unchanged.
 	require.Equal(t, []string{"application/json"}, filtered["Content-Type"])
 	require.Equal(t, []string{"irma-test"}, filtered["User-Agent"])
 
@@ -206,28 +207,30 @@ func TestFilterHeaders(t *testing.T) {
 	require.Equal(t, []string{"Bearer supersecret-token"}, headers["Authorization"])
 }
 
-func TestFilterHeadersCaseInsensitive(t *testing.T) {
-	// http.Header keys are canonicalized, but verify lookups are case-insensitive
-	// in case headers are constructed directly with lower-case keys.
-	headers := http.Header{"authorization": []string{"secret"}}
+func TestFilterHeadersDropsUnlistedHeaders(t *testing.T) {
+	// Any header whose name is not in the allowlist is omitted, even non-sensitive
+	// custom headers, so that no unvetted user-controlled data reaches the logs.
+	headers := http.Header{
+		"X-Custom-Debug": []string{"some value"},
+		"Content-Type":   []string{"application/json"},
+	}
 	filtered := filterHeaders(headers)
-	// filterHeaders preserves the original (lower-case) key, so look it up via the
-	// underlying map type to avoid http.Header key canonicalization (SA1008).
-	require.Equal(t, []string{"[redacted]"}, map[string][]string(filtered)["authorization"])
+	require.NotContains(t, filtered, "X-Custom-Debug")
+	require.Equal(t, []string{"application/json"}, filtered["Content-Type"])
 }
 
 func TestFilterHeadersSanitizesValues(t *testing.T) {
-	// Non-sensitive header values are user-controlled and must have CR/LF removed
-	// before logging to prevent log injection (forging of fake log entries).
+	// Allowlisted header values are still user-controlled and must have CR/LF
+	// removed before logging to prevent log injection (forging of fake entries).
 	headers := http.Header{
 		"X-Forwarded-For": []string{"1.2.3.4\r\nFATAL injected log line"},
-		"X-Multi":         []string{"a\nb", "c\rd"},
+		"Accept-Language": []string{"a\nb", "c\rd"},
 	}
 
 	filtered := filterHeaders(headers)
 
 	require.Equal(t, []string{`1.2.3.4\r\nFATAL injected log line`}, filtered["X-Forwarded-For"])
-	require.Equal(t, []string{`a\nb`, `c\rd`}, filtered["X-Multi"])
+	require.Equal(t, []string{`a\nb`, `c\rd`}, filtered["Accept-Language"])
 	// The original headers must not be mutated by filtering.
 	require.Equal(t, []string{"1.2.3.4\r\nFATAL injected log line"}, headers["X-Forwarded-For"])
 }

@@ -413,34 +413,39 @@ func LogWarning(err error, msg ...string) error {
 	return log(logrus.WarnLevel, err, msg...)
 }
 
-// sensitiveHeaders lists HTTP header names (lower-cased) whose values must not
-// appear in logs because they commonly carry credentials or session secrets.
-var sensitiveHeaders = map[string]struct{}{
-	"authorization":       {},
-	"proxy-authorization": {},
-	"cookie":              {},
-	"set-cookie":          {},
-	"x-auth-token":        {},
-	"x-api-key":           {},
-	"api-key":             {},
-	"x-csrf-token":        {},
-	"x-xsrf-token":        {},
+// loggableHeaders is the allowlist of HTTP header names that may appear in
+// request logs. An allowlist of known-safe, non-credential headers is used
+// rather than a denylist of sensitive ones: this guarantees that no header
+// carrying credentials or session secrets is ever logged, including headers we
+// did not anticipate, and avoids logging unvetted user-controlled header data.
+var loggableHeaders = []string{
+	"Accept",
+	"Accept-Encoding",
+	"Accept-Language",
+	"Content-Length",
+	"Content-Type",
+	"User-Agent",
+	"X-Forwarded-For",
+	"X-Forwarded-Host",
+	"X-Forwarded-Proto",
+	"X-Real-Ip",
 }
 
-// filterHeaders returns a copy of headers with sensitive values redacted and
-// all remaining (user-controlled) values sanitized to prevent log injection.
+// filterHeaders returns the subset of headers whose names are in the
+// loggableHeaders allowlist, with their (user-controlled) values sanitized to
+// prevent log injection. Headers outside the allowlist are dropped entirely.
 func filterHeaders(headers http.Header) http.Header {
-	filtered := make(http.Header, len(headers))
-	for k, v := range headers {
-		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
-			filtered[k] = []string{"[redacted]"}
+	filtered := make(http.Header, len(loggableHeaders))
+	for _, name := range loggableHeaders {
+		values := headers.Values(name)
+		if len(values) == 0 {
 			continue
 		}
-		sanitized := make([]string, len(v))
-		for i, value := range v {
+		sanitized := make([]string, len(values))
+		for i, value := range values {
 			sanitized[i] = common.SanitizeForLog(value)
 		}
-		filtered[k] = sanitized
+		filtered[name] = sanitized
 	}
 	return filtered
 }
