@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `github.com/golang-jwt/jwt/v5` 5.2.2 → 5.3.1
   - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
 - Sanitize user-controlled strings before writing them to log entries to prevent log injection
-- Redact sensitive HTTP headers (`Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`, `X-Api-Key`, `Api-Key`, `X-Csrf-Token`, `X-Xsrf-Token`) from request logs
+- Restrict request-log headers to a constant allowlist of known-safe header names and redact their values, so no credential-, session- or otherwise sensitive header value is ever written to the logs
 - Fix email header injection by using the parsed recipient address in the SMTP `To:` header
 - Normalize file paths via `filepath.Clean` before filesystem operations
 
