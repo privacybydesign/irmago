@@ -413,12 +413,18 @@ func LogWarning(err error, msg ...string) error {
 	return log(logrus.WarnLevel, err, msg...)
 }
 
-// sensitiveHeaders lists HTTP header names that must not appear in logs.
+// sensitiveHeaders lists HTTP header names (lower-cased) whose values must not
+// appear in logs because they commonly carry credentials or session secrets.
 var sensitiveHeaders = map[string]struct{}{
-	"authorization": {},
-	"cookie":        {},
-	"set-cookie":    {},
-	"x-auth-token":  {},
+	"authorization":       {},
+	"proxy-authorization": {},
+	"cookie":              {},
+	"set-cookie":          {},
+	"x-auth-token":        {},
+	"x-api-key":           {},
+	"api-key":             {},
+	"x-csrf-token":        {},
+	"x-xsrf-token":        {},
 }
 
 // filterHeaders returns a copy of headers with sensitive values redacted and

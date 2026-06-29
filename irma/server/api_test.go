@@ -175,18 +175,26 @@ func stopServer(t *testing.T, server *http.Server) {
 
 func TestFilterHeaders(t *testing.T) {
 	headers := http.Header{
-		"Authorization": []string{"Bearer supersecret-token"},
-		"Cookie":        []string{"session=abc123"},
-		"Set-Cookie":    []string{"session=def456; HttpOnly"},
-		"X-Auth-Token":  []string{"another-secret"},
-		"Content-Type":  []string{"application/json"},
-		"User-Agent":    []string{"irma-test"},
+		"Authorization":       []string{"Bearer supersecret-token"},
+		"Proxy-Authorization": []string{"Basic c2VjcmV0"},
+		"Cookie":              []string{"session=abc123"},
+		"Set-Cookie":          []string{"session=def456; HttpOnly"},
+		"X-Auth-Token":        []string{"another-secret"},
+		"X-Api-Key":           []string{"key-secret"},
+		"Api-Key":             []string{"key-secret"},
+		"X-Csrf-Token":        []string{"csrf-secret"},
+		"X-Xsrf-Token":        []string{"xsrf-secret"},
+		"Content-Type":        []string{"application/json"},
+		"User-Agent":          []string{"irma-test"},
 	}
 
 	filtered := filterHeaders(headers)
 
 	// Sensitive headers must be redacted, regardless of header-name casing.
-	for _, name := range []string{"Authorization", "Cookie", "Set-Cookie", "X-Auth-Token"} {
+	for _, name := range []string{
+		"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie",
+		"X-Auth-Token", "X-Api-Key", "Api-Key", "X-Csrf-Token", "X-Xsrf-Token",
+	} {
 		require.Equal(t, []string{"[redacted]"}, filtered[name], "header %s should be redacted", name)
 	}
 
