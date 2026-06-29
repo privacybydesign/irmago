@@ -432,8 +432,8 @@ var loggableHeaders = []string{
 }
 
 // filterHeaders returns the subset of headers whose names are in the
-// loggableHeaders allowlist, with their (user-controlled) values sanitized to
-// prevent log injection. Headers outside the allowlist are dropped entirely.
+// loggableHeaders allowlist, with their values redacted to avoid clear-text
+// logging of potentially sensitive user-controlled data.
 func filterHeaders(headers http.Header) http.Header {
 	filtered := make(http.Header, len(loggableHeaders))
 	for _, name := range loggableHeaders {
@@ -441,11 +441,11 @@ func filterHeaders(headers http.Header) http.Header {
 		if len(values) == 0 {
 			continue
 		}
-		sanitized := make([]string, len(values))
-		for i, value := range values {
-			sanitized[i] = common.SanitizeForLog(value)
+		redacted := make([]string, len(values))
+		for i := range values {
+			redacted[i] = "<redacted>"
 		}
-		filtered[name] = sanitized
+		filtered[name] = redacted
 	}
 	return filtered
 }
