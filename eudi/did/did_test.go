@@ -111,6 +111,19 @@ func Test_Unmarshal_Document_VerificationRefs_Mixed(t *testing.T) {
 	require.Equal(t, "did:example:123#key-2", vm.ID)
 }
 
+func Test_parseVerificationRefs_SkipsNullItems(t *testing.T) {
+	raw := []json.RawMessage{
+		json.RawMessage(`"did:example:123#key-1"`),
+		json.RawMessage(`null`),
+		json.RawMessage(`"did:example:123#key-2"`),
+	}
+
+	refs, err := parseVerificationRefs(raw)
+	require.NoError(t, err)
+	require.Len(t, refs, 2)
+	require.Equal(t, []VerificationRef{"did:example:123#key-1", "did:example:123#key-2"}, refs)
+}
+
 func Test_Unmarshal_Document_Controller_AsString(t *testing.T) {
 	jsonData := `{
 		"@context": "https://www.w3.org/ns/did/v1",

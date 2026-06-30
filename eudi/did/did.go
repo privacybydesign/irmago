@@ -114,7 +114,7 @@ func parseVerificationRefs(raw []json.RawMessage) ([]VerificationRef, error) {
 	refs := make([]VerificationRef, 0, len(raw))
 	for _, r := range raw {
 		trimmed := bytes.TrimSpace(r)
-		if len(trimmed) == 0 {
+		if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 			continue
 		}
 		if trimmed[0] == '"' {
