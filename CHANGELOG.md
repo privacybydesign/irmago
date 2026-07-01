@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
 - Update CI GitHub Action versions to Node 24 supported once
 - Update other dependencies to their latest releases: `github.com/lestrrat-go/jwx/v3`, `github.com/go-co-op/gocron` (v1 and v2), `github.com/spf13/{cast,cobra,pflag,viper}`, `go.etcd.io/bbolt`, `gorm.io/driver/{mysql,postgres,sqlserver}`, `github.com/alicebob/miniredis/v2`, `github.com/go-chi/cors` and `github.com/go-errors/errors`
+- Update remaining outdated dependencies to their latest releases, most notably `github.com/privacybydesign/gabi` (picks up a revocation witness-randomizer race fix), `go.etcd.io/bbolt` 1.4.3 → 1.5.0, `github.com/mr-tron/base58`, `gorm.io/gorm`, `github.com/minio/sha256-simd` and a batch of minor/patch indirect bumps
 - Added DID First Candidate Recommendation backwards-compatibility for verification methods containing `publicKeyBase58` verification material.
 
 ### Fixed
