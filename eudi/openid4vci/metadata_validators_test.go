@@ -14,6 +14,7 @@ var locale_EN_US = "en-US"
 var invalid_Locale = "invalid_locale"
 
 var scope = "https://pid-issuer/vct/pid"
+var vct = "https://issuer.example.com/credential/my-type"
 
 func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 	tests := []struct {
@@ -39,7 +40,7 @@ func TestValidateCredentialConfiguration_SupportedFormats(t *testing.T) {
 		}, false},
 		{"SdJwtVc", metadata.CredentialConfiguration{
 			Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
-			VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+			VerifiableCredentialType: &vct,
 		}, false},
 	}
 
@@ -107,7 +108,7 @@ func TestValidateCredentialConfiguration_SdJwtVc_ValidCredentialMetadata(t *test
 				},
 			},
 		},
-		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+		VerifiableCredentialType: &vct,
 	}
 	validator := CredentialConfigurationValidator{}
 	err := validator.Verify(c)
@@ -130,7 +131,7 @@ func TestCredentialIssuerMetadata_Verify(t *testing.T) {
 				},
 			},
 		},
-		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+		VerifiableCredentialType: &vct,
 	}
 	tests := []struct {
 		name     string
@@ -375,7 +376,7 @@ func TestCredentialConfiguration_Verify(t *testing.T) {
 			proofs.CryptographicBindingMethod_JWK,
 		},
 		ProofTypesSupported:      map[metadata.ProofTypeIdentifier]metadata.ProofType{metadata.ProofTypeIdentifier_JWT: {ProofSigningAlgValuesSupported: []string{"test"}}},
-		VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+		VerifiableCredentialType: &vct,
 	}
 
 	tests := []struct {

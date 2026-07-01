@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 	"time"
@@ -41,6 +40,9 @@ var credentialFormatAdapterFactories = map[metadata.CredentialFormatIdentifier]c
 			x509VerificationContext:     s.issuerSettings.jwtVcJsonX509VerificationContext,
 			temporalClockSkew:           s.issuerSettings.jwtVcJsonTemporalClockSkew,
 		}
+	},
+	metadata.CredentialFormatIdentifier_SdJwtVc_Legacy: func(s *session) credentialFormatAdapter {
+		return &sdJwtCredentialFormatAdapter{holderVerifier: s.holderVerifier}
 	},
 }
 
@@ -76,9 +78,10 @@ func (a *sdJwtCredentialFormatAdapter) VerifyCredentialInstances(credentials []C
 	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentials))
 	envelopes := make([]*vcdm.CredentialEnvelope, len(credentials))
 	for i, cred := range credentials {
-		if i == 0 {
-			log.Printf("First credential: %s", cred.Credential)
-		}
+		// Useful for debugging, but can be very verbose if there are many credentials.
+		// if i == 0 {
+		// 	log.Printf("First credential: %s", cred.Credential)
+		// }
 
 		verifiedSdJwt, err := a.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
 		if err != nil {

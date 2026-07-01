@@ -451,8 +451,14 @@ func (client *Client) convertToCredentialInfoList(
 				}
 			}
 
+			// CredentialId is either the VerifiableCredentialType (for SD-JWT VCs) or the CredentialDefinition.Type (for W3C VCDM VCs)
+			err, id := config.GetCredentialId()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get credential id for config %q: %v", configID, err)
+			}
+
 			result = append(result, &clientmodels.CredentialDescriptor{
-				CredentialId: config.VerifiableCredentialType,
+				CredentialId: id,
 				Name:         name,
 				Issuer: clientmodels.TrustedParty{
 					Name: issuerName,
@@ -549,15 +555,19 @@ func (client *Client) resolveCredentialMetadataFromVct(
 		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
 			continue
 		}
-		// vct can legally be a non-URL string identifier; if so, there's
-		// nothing to fetch — silently leave CredentialMetadata alone.
-		if !vctLooksFetchable(config.VerifiableCredentialType, client.allowInsecureHttp) {
+		if config.VerifiableCredentialType == nil {
 			continue
 		}
 
-		resolved, err := resolver.Resolve(ctx, config.VerifiableCredentialType, client.allowInsecureHttp)
+		// vct can legally be a non-URL string identifier; if so, there's
+		// nothing to fetch — silently leave CredentialMetadata alone.
+		if !vctLooksFetchable(*config.VerifiableCredentialType, client.allowInsecureHttp) {
+			continue
+		}
+
+		resolved, err := resolver.Resolve(ctx, *config.VerifiableCredentialType, client.allowInsecureHttp)
 		if err != nil {
-			eudi.Logger.Infof("vct type metadata resolution failed for %q (vct=%q): %v; falling back to credential_metadata", configID, config.VerifiableCredentialType, err)
+			eudi.Logger.Infof("vct type metadata resolution failed for %q (vct=%q): %v; falling back to credential_metadata", configID, *config.VerifiableCredentialType, err)
 			continue
 		}
 

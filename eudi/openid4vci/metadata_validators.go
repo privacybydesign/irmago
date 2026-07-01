@@ -160,7 +160,7 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 		verifier = &W3CDILDFormatVerifier{}
 	case metadata.CredentialFormatIdentifier_MsoMdoc:
 		verifier = &MdocFormatVerifier{}
-	case metadata.CredentialFormatIdentifier_SdJwtVc:
+	case metadata.CredentialFormatIdentifier_SdJwtVc, metadata.CredentialFormatIdentifier_SdJwtVc_Legacy:
 		verifier = &SdJwtVcFormatVerifier{}
 	default:
 		return fmt.Errorf("unsupported credential format %q", c.Format)
@@ -219,8 +219,12 @@ type SdJwtVcFormatVerifier struct{}
 
 // Verify SD-JWT VC credential configuration according to the Credential Format Profile specification
 func (v *SdJwtVcFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
-	if credentialConfiguration.VerifiableCredentialType == "" {
-		return fmt.Errorf("missing 'vct' field for SD-JWT VC credential format")
+	// Verify that the credential data model is IETF SD-JWT VC or W3C Verifiable Credential, as per the specification
+	if credentialConfiguration.VerifiableCredentialType == nil && credentialConfiguration.CredentialDefinition == nil {
+		if credentialConfiguration.VerifiableCredentialType == nil {
+			return fmt.Errorf("missing 'vct' field for SD-JWT VC credential data model")
+		}
+		return fmt.Errorf("missing 'credential_definition' field for W3C VCDM credential data model")
 	}
 	return nil
 }

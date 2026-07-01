@@ -28,12 +28,13 @@ func TestResolveCredentialMetadataFromVct_VctEntryWinsOnLocaleCollision(t *testi
 	})
 	defer srv.Close()
 
+	vct := srv.URL + "/vct/Email"
 	enLocale := "en"
 	client := &Client{httpClient: srv.Client(), allowInsecureHttp: true}
 	resolver := typemetadata.NewResolver(srv.Client())
 	issuerMeta := singleConfigMetadata("Email", metadata.CredentialConfiguration{
 		Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
-		VerifiableCredentialType: srv.URL + "/vct/Email",
+		VerifiableCredentialType: &vct,
 		CredentialMetadata: &metadata.CredentialMetadata{
 			Display: metadata.CredentialDisplays{
 				// Same locale (en) as VCT — collision; VCT wins.
@@ -97,12 +98,13 @@ func TestResolveCredentialMetadataFromVct_VctWinsOverCredentialMetadata_Sphereon
 	})
 	defer srv.Close()
 
+	vct := srv.URL + "/vct/Test"
 	enLocale := "en"
 	client := &Client{httpClient: srv.Client(), allowInsecureHttp: true}
 	resolver := typemetadata.NewResolver(srv.Client())
 	issuerMeta := singleConfigMetadata("Test", metadata.CredentialConfiguration{
 		Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
-		VerifiableCredentialType: srv.URL + "/vct/Test",
+		VerifiableCredentialType: &vct,
 		CredentialMetadata: &metadata.CredentialMetadata{
 			// credential_metadata uses sentinel names so we can detect if the
 			// wallet wrongly preferred it over the VCT.
@@ -166,6 +168,8 @@ func TestResolveCredentialMetadataFromVct_FetchFailureLeavesCredentialMetadata(t
 	srv := newVctTestServer(t, map[string]string{}) // empty: every URL 404s
 	defer srv.Close()
 
+	vct := srv.URL + "/vct/missing"
+
 	client := &Client{httpClient: srv.Client(), allowInsecureHttp: true}
 	resolver := typemetadata.NewResolver(srv.Client())
 	original := &metadata.CredentialMetadata{
@@ -175,7 +179,7 @@ func TestResolveCredentialMetadataFromVct_FetchFailureLeavesCredentialMetadata(t
 	}
 	issuerMeta := singleConfigMetadata("Email", metadata.CredentialConfiguration{
 		Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
-		VerifiableCredentialType: srv.URL + "/vct/missing",
+		VerifiableCredentialType: &vct,
 		CredentialMetadata:       original,
 	})
 	offer := &CredentialOffer{CredentialConfigurationIds: []string{"Email"}}
@@ -188,12 +192,14 @@ func TestResolveCredentialMetadataFromVct_FetchFailureLeavesCredentialMetadata(t
 }
 
 func TestResolveCredentialMetadataFromVct_NonURLVctSkipsResolution(t *testing.T) {
+	vct := "urn:eu:eudi:pid"
+
 	client := &Client{httpClient: &http.Client{}, allowInsecureHttp: false}
 	resolver := typemetadata.NewResolver(nil)
 	original := &metadata.CredentialMetadata{}
 	issuerMeta := singleConfigMetadata("Foo", metadata.CredentialConfiguration{
 		Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
-		VerifiableCredentialType: "urn:eu:eudi:pid", // not a URL
+		VerifiableCredentialType: &vct, // not a URL
 		CredentialMetadata:       original,
 	})
 	offer := &CredentialOffer{CredentialConfigurationIds: []string{"Foo"}}
@@ -210,12 +216,14 @@ func TestResolveCredentialMetadataFromVct_NonSdJwtFormatSkipsResolution(t *testi
 	})
 	defer srv.Close()
 
+	vct := srv.URL + "/vct/X"
+
 	client := &Client{httpClient: srv.Client(), allowInsecureHttp: true}
 	resolver := typemetadata.NewResolver(srv.Client())
 	original := &metadata.CredentialMetadata{}
 	issuerMeta := singleConfigMetadata("X", metadata.CredentialConfiguration{
 		Format:                   metadata.CredentialFormatIdentifier_W3CVC, // not SD-JWT VC
-		VerifiableCredentialType: srv.URL + "/vct/X",
+		VerifiableCredentialType: &vct,
 		CredentialMetadata:       original,
 	})
 	offer := &CredentialOffer{CredentialConfigurationIds: []string{"X"}}

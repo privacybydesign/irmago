@@ -336,8 +336,8 @@ func resolveCredentialTypeForStorage(
 	envelope *vcdm.CredentialEnvelope,
 	credentialConfigurationId string,
 ) string {
-	if credentialConfiguration.VerifiableCredentialType != "" {
-		return credentialConfiguration.VerifiableCredentialType
+	if credentialConfiguration.VerifiableCredentialType != nil {
+		return *credentialConfiguration.VerifiableCredentialType
 	}
 
 	for _, t := range credentialConfiguration.CredentialDefinition.Type {

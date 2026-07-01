@@ -143,6 +143,8 @@ func (b *CredentialBatch) validate() error {
 	if b.IssuerURL == "" {
 		return fmt.Errorf("issuer_url is required")
 	}
+
+	// TODO: the type depends on the credential profile/data model (e.g. SD-JWT VC vs W3C VCDM VC). We should validate that the type is valid for the given format.
 	if b.CredentialType == "" {
 		return fmt.Errorf("credential_type is required")
 	}

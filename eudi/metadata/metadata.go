@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"slices"
@@ -59,6 +60,7 @@ type RemoteImage struct {
 }
 
 type CredentialFormatIdentifier string
+type CredentialDataModel string
 type CredentialSigningAlgorithm string
 type ProofTypeIdentifier string
 type Proofs map[ProofTypeIdentifier][]any
@@ -71,9 +73,44 @@ type CredentialConfiguration struct {
 	ProofTypesSupported                  map[ProofTypeIdentifier]ProofType   `json:"proof_types_supported,omitempty"`
 	CredentialMetadata                   *CredentialMetadata                 `json:"credential_metadata,omitempty"`
 
-	// The following fields are present/absent, depending on the credential format
-	VerifiableCredentialType string                   `json:"vct,omitempty"`                   // SD-JWT VC
-	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC Signed as JWT, no JSON-LD
+	// The following fields are present/absent, depending on the credential data model
+	VerifiableCredentialType *string                  `json:"vct,omitempty"`                   // SD-JWT VC
+	CredentialDefinition     *W3CCredentialDefinition `json:"credential_definition,omitempty"` // W3C VC
+}
+
+func (c CredentialConfiguration) GetCredentialDataModel() (error, CredentialDataModel) {
+	if c.VerifiableCredentialType != nil {
+		return nil, CredentialDataModel_IETF_SDJWTVC
+	} else if c.CredentialDefinition != nil {
+		if len(c.CredentialDefinition.Context) > 0 && c.CredentialDefinition.Context[0] == "https://www.w3.org/2018/credentials/v1" {
+			return nil, CredentialDataModel_W3CVC_JSONLD
+		}
+
+		return nil, CredentialDataModel_W3CVC_JWT
+	}
+	return errors.New("unknown credential data model"), ""
+}
+
+func (c CredentialConfiguration) GetCredentialId() (error, string) {
+	err, dm := c.GetCredentialDataModel()
+	if err != nil {
+		return err, ""
+	}
+
+	switch dm {
+	case CredentialDataModel_IETF_SDJWTVC:
+		if c.VerifiableCredentialType != nil {
+			return nil, *c.VerifiableCredentialType
+		}
+	case CredentialDataModel_W3CVC_JWT:
+		if c.CredentialDefinition != nil && len(c.CredentialDefinition.Type) > 0 {
+			return nil, c.CredentialDefinition.Type[0]
+		}
+	case CredentialDataModel_W3CVC_JSONLD:
+		return errors.New("W3C VC JSON-LD is not yet supported"), ""
+	}
+
+	return errors.New("unknown credential data model"), ""
 }
 
 type ProofType struct {
@@ -141,11 +178,14 @@ const (
 	CredentialFormatIdentifier_W3CVCLD_ProofSuite CredentialFormatIdentifier = "ldp_vc"
 	CredentialFormatIdentifier_MsoMdoc            CredentialFormatIdentifier = "mso_mdoc"
 	CredentialFormatIdentifier_SdJwtVc            CredentialFormatIdentifier = "dc+sd-jwt"
+	CredentialFormatIdentifier_SdJwtVc_Legacy     CredentialFormatIdentifier = "vc+sd-jwt"
 
-	MediaType_SdJwtVc      string = "application/dc+sd-jwt"
-	MediaType_SdJwtVc_Typ  string = "dc+sd-jwt"
-	MediaType_W3C_VCDM     string = "application/vc+sd-jwt"
-	MediaType_W3C_VCDM_Typ string = "vc+sd-jwt"
+	CredentialDataModel_IETF_SDJWTVC CredentialDataModel = "ietf_sd-jwt_vc"
+	CredentialDataModel_W3CVC_JSONLD CredentialDataModel = "w3c_vc_json-ld"
+	CredentialDataModel_W3CVC_JWT    CredentialDataModel = "w3c_vc_jwt"
+
+	MediaType_SdJwtVc     string = "application/dc+sd-jwt"
+	MediaType_SdJwtVc_Typ string = "dc+sd-jwt"
 
 	ProofTypeIdentifier_JWT         ProofTypeIdentifier = "jwt"
 	ProofTypeIdentifier_DIVP        ProofTypeIdentifier = "di_vp"

@@ -84,7 +84,8 @@ type openid4vciSessionIssuerSettings struct {
 // sessionCredentialRequestPreferences contains wallet-based preferences related to the credential that will be requested
 // We define this struct, so that we apply logic to the credential metadata, and choose the preferences from the available options, in case multiple options are offered by the issuer metadata (e.g. multiple supported encryption algorithms, or multiple supported key binding methods)
 type sessionCredentialRequestPreferences struct {
-	cryptographicBindingMethod *proofs.CryptographicBindingMethod
+	cryptographicBindingMethod  *proofs.CryptographicBindingMethod
+	expectedCredentialDataModel *metadata.CredentialDataModel
 }
 
 func (s *session) perform() {
@@ -463,8 +464,13 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			expiryDate = jwt.Expiry
 		}
 
+		err, id := config.GetCredentialId()
+		if err != nil {
+			panic(fmt.Sprintf("failed to determine credential data model for %q: %v; falling back to IETF SD-JWT VC", fc.credentialConfigurationId, err))
+		}
+
 		cred := clientmodels.Credential{
-			CredentialId: config.VerifiableCredentialType,
+			CredentialId: id,
 			Name:         name,
 			Issuer: clientmodels.TrustedParty{
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
@@ -626,7 +632,7 @@ func (s *session) getAuthorizationServer() (string, error) {
 	return "", fmt.Errorf("no valid authorization server found in credential issuer metadata")
 }
 
-// fetchCredential requests and verifies a credential for a given configuration
+// obtainCredential requests and verifies a credential for a given configuration
 // ID without storing it. The caller stores via storeCredentials or cleans up
 // via cleanupKeys.
 func (s *session) obtainCredential(credentialConfigurationId string, cNonce *string, accessToken string) (*fetchedCredential, error) {

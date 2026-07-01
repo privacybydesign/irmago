@@ -588,6 +588,23 @@ func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
+// RepairEudiDatabase repairs schema drift in the EUDI SQLite database by creating any
+// table or column that is missing compared to the canonical schema (see
+// eudi/storage/db/repair/full_schema_repair.sql), independent of which versioned migrations
+// have been recorded as applied. It is only available in developer mode, since it is a
+// diagnostic/repair tool rather than something that should run unattended in production.
+func (client *Client) RepairEudiDatabase() error {
+	if !client.irmaClient.Preferences.DeveloperMode {
+		return fmt.Errorf("full database repair is only available in developer mode")
+	}
+
+	sqlDB, err := client.eudiStorage.Db().DB()
+	if err != nil {
+		return fmt.Errorf("get underlying sql.DB: %v", err)
+	}
+	return db.RunFullRepair(sqlDB)
+}
+
 func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(

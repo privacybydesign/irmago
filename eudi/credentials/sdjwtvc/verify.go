@@ -234,7 +234,8 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt IssuerSignedJ
 	var vct string
 	err = token.Get(Key_VerifiableCredentialType, &vct)
 	if err != nil {
-		return nil, nil, nil, nil, errors.New("missing vct field")
+		// TODO: vct is only required for SD-JWT VCs, not for W3C VCDM VCs. We should check the format first and only require vct for SD-JWT VCs.
+		//return nil, nil, nil, nil, errors.New("missing vct field")
 	}
 
 	// Get optional fields
