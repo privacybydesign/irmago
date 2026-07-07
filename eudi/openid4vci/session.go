@@ -309,7 +309,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 			if display.Logo == nil {
 				continue
 			}
-			logoData, _, err := helpers.DownloadRemoteImage(s.httpClient, *&display.Logo.Uri)
+			logoData, _, err := helpers.DownloadRemoteImage(s.httpClient, display.Logo.Uri)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
 				continue
