@@ -334,7 +334,7 @@ func (tm *TrustModel) GetVerificationOptionsTemplate() x509.VerifyOptions {
 	return x509.VerifyOptions{
 		Roots:         tm.trustedRootCertificates,
 		Intermediates: tm.trustedIntermediateCertificates,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsage(x509.ExtKeyUsageAny)}, // VerifyOptions does not check against the KeyUsage extension, but we set it to ExtKeyUsageAny to allow any usage and validate the digital signature key usage ourselfs.
 	}
 }
 

@@ -43,6 +43,8 @@ func GetX509VerificationOptionsFromTemplate(context X509VerificationContext, hos
 	}
 }
 
+// VerifyCertificate verifies the given certificate against the trusted chains and revocation lists in the provided context.
+// If a hostname is provided, it will be used for the SAN check during verification.
 func VerifyCertificate(context X509VerificationContext, cert *x509.Certificate, hostname *string) error {
 	// Verify the end-entity cert against the trusted chains
 	var verifyOpts x509.VerifyOptions
@@ -53,8 +55,15 @@ func VerifyCertificate(context X509VerificationContext, cert *x509.Certificate, 
 	}
 
 	// Verify the end-entity cert against the trusted chains
-	if _, err := cert.Verify(verifyOpts); err != nil {
+	chain, err := cert.Verify(verifyOpts)
+	if err != nil {
 		return fmt.Errorf("failed to verify x5c end-entity certificate: %v", err)
+	}
+
+	// Verify the digital signature key usage of the end-entity cert
+	leafCert := chain[0][0]
+	if leafCert.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
+		return fmt.Errorf("issuer certificate missing digitalSignature key usage")
 	}
 
 	// Check the end-entity cert against all revocation lists from the issuing cert
