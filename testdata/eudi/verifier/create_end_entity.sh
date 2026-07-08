@@ -18,7 +18,6 @@ CN  = localhost
 
 [ v3_req ]
 subjectAltName   = @alt_names
-extendedKeyUsage = clientAuth
 keyUsage         = digitalSignature, keyEncipherment
 basicConstraints = critical, CA:FALSE
 2.1.123.1        = ASN1:UTF8String:$escaped_json

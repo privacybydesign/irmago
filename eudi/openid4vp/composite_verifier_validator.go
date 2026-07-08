@@ -11,8 +11,8 @@ import (
 
 // CompositeVerifierValidator dispatches authorization request verification to the
 // appropriate validator based on the client_id scheme in the JWT claims.
-// This supports both X.509-based (x509_san_dns:) and DID-based (did:jwk, did:web)
-// verifier authentication as defined in the OpenID4VP specification.
+// This supports both X.509-based (x509_san_dns:, x509_hash:) and DID-based
+// (did:jwk, did:web) verifier authentication as defined in the OpenID4VP specification.
 type CompositeVerifierValidator struct {
 	x509Validator *RequestorCertificateStoreVerifierValidator
 	didValidator  *DidVerifierValidator
@@ -43,7 +43,8 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 	clientId := claims.ClientId
 
 	switch {
-	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509SanDns)):
+	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509SanDns)) ||
+		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509Hash)):
 		if v.x509Validator == nil {
 			return nil, nil, nil, fmt.Errorf("X.509 verifier validator not configured")
 		}
@@ -58,7 +59,6 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_RedirectUri)) ||
 		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_OpenidFederation)) ||
 		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_VerifierAttestation)) ||
-		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509Hash)) ||
 		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_Origin)):
 		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 

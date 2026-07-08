@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- Added support for `x509_hash` client identifier prefix in OpenID4VP flow
+- Added support for Verifier Metadata in OpenID4VP flow
+
 ### Security
 - Update Go toolchain 1.26.3 → 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
 - Update dependencies with security relevance:
@@ -41,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Issuers are verified via `did:web`, `did:key` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
 - Support for disclosing SD-JWT VC credentials with nested selectively-disclosable claims and array claims over the OpenID4VP 1.0 protocol
   - DCQL support extended with `claim_sets`, the `multiple` flag, predefined claim values (also for non-string values), and `require_cryptographic_holder_binding`
-  - Adds the `did` verifier identifier prefix in addition to the existing `x509_san_dns`
+  - Adds the `decentralized_identifier` client identifier prefix in addition to the existing `x509_san_dns`
   - Stricter validation of presentation nonces and verifier metadata
 - New top-level Go package `client`, offering a unified `Client` that wraps the existing `irmaclient` (renamed to `IrmaClient`) together with an `OpenID4VCIClient` and an `OpenID4VPClient`
   - New schemaless session implementation that no longer relies on `IrmaConfiguration` for OpenID4VCI/VP credential types
