@@ -83,7 +83,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 	// 3. domain from did:web
 	// 4. "unknown" (raw did:jwk is never useful to a user)
 	displayName := "unknown"
-	if authRequest.ClientMetadata.ClientName != nil {
+	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
 		displayName = *authRequest.ClientMetadata.ClientName
 	} else if host := hostFromURL(authRequest.ResponseUri); host != "" {
 		displayName = host

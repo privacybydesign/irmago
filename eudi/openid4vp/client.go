@@ -292,7 +292,7 @@ func (session *openid4vpSession) perform() error {
 	}
 
 	if session.request.ResponseMode == ResponseMode_DirectPostJwt {
-		if session.request.ClientMetadata.Jwks == nil {
+		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
 			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", ResponseMode_DirectPostJwt)
 		}
 		responseConfig.EncryptionKeys = &session.request.ClientMetadata.Jwks.Set

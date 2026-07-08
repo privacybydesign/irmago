@@ -66,11 +66,11 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 			if err != nil {
 				// If the logo download fails, we log a warning but continue without the logo
 				eudi.Logger.Warnf("failed to download verifier logo from %q: %v", *authRequest.ClientMetadata.LogoUri, err)
-			}
-
-			requestorInfo.Organization.Logo = &scheme.Logo{
-				Data:     logoData,
-				MimeType: mimeType,
+			} else {
+				requestorInfo.Organization.Logo = &scheme.Logo{
+					Data:     logoData,
+					MimeType: mimeType,
+				}
 			}
 		}
 	} else if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert); err == nil {

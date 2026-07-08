@@ -63,7 +63,7 @@ func VerifyCertificate(context X509VerificationContext, cert *x509.Certificate, 
 	// Verify the digital signature key usage of the end-entity cert
 	leafCert := chain[0][0]
 	if leafCert.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
-		return fmt.Errorf("issuer certificate missing digitalSignature key usage")
+		return fmt.Errorf("end-entity certificate missing digitalSignature key usage")
 	}
 
 	// Check the end-entity cert against all revocation lists from the issuing cert

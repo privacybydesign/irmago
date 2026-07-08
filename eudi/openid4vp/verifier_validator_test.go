@@ -43,6 +43,13 @@ func TestVerifierValidator(t *testing.T) {
 	// x509_hash scheme tests
 	t.Run("ParseAndVerifyAuthorizationRequest validates an x509_hash JWT successfully", testParseAndVerifyAuthorizationRequestSuccessX509Hash)
 	t.Run("ParseAndVerifyAuthorizationRequest fails when x509_hash doesn't match the leaf certificate", testParseAndVerifyAuthorizationRequestFailureX509HashMismatch)
+
+	// client_metadata (nil-pointer) tests
+	t.Run("ParseAndVerifyAuthorizationRequest falls back to certificate scheme data when client_metadata is absent", testParseAndVerifyAuthorizationRequestNilClientMetadata_FallsBackToCertificateSchemeData)
+	t.Run("ParseAndVerifyAuthorizationRequest falls back to certificate scheme data when client_metadata has no client_name", testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_FallsBackToCertificateSchemeData)
+	t.Run("ParseAndVerifyAuthorizationRequest uses client_metadata client_name when present", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName)
+	t.Run("ParseAndVerifyAuthorizationRequest downloads the logo referenced in client_metadata", testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo)
+	t.Run("ParseAndVerifyAuthorizationRequest continues without a logo when it fails to download", testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo)
 }
 
 func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
@@ -255,6 +262,90 @@ func testParseAndVerifyAuthorizationRequestFailureX509HashMismatch(t *testing.T)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not match leaf certificate hash")
+}
+
+func testParseAndVerifyAuthorizationRequestNilClientMetadata_FallsBackToCertificateSchemeData(t *testing.T) {
+	// Setup test data. By default the test JWT doesn't set client_metadata at all, so
+	// AuthorizationRequest.ClientMetadata (a pointer) is nil.
+	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	claims, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Nil(t, claims.ClientMetadata)
+	require.Equal(t, "Yivi B.V.", requestorInfo.Organization.LegalName["en"])
+}
+
+func testParseAndVerifyAuthorizationRequestClientMetadataWithoutClientName_FallsBackToCertificateSchemeData(t *testing.T) {
+	// Setup test data with a client_metadata object present, but without a client_name.
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_uri": "https://verifier.example.com",
+		}
+	}, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	claims, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.NotNil(t, claims.ClientMetadata)
+	require.Nil(t, claims.ClientMetadata.ClientName)
+	require.Equal(t, "Yivi B.V.", requestorInfo.Organization.LegalName["en"])
+}
+
+func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName(t *testing.T) {
+	// Setup test data with client_metadata.client_name set, and no logo_uri.
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_name": "Acme Verifier",
+		}
+	}, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Equal(t, "Acme Verifier", requestorInfo.Organization.LegalName["en"])
+	require.Nil(t, requestorInfo.Organization.Logo)
+}
+
+func testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo(t *testing.T) {
+	// Setup test data with client_metadata.client_name and a data-uri logo_uri, so the
+	// logo can be "downloaded" without a real network call.
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_name": "Acme Verifier",
+			"logo_uri":    "data:image/png;base64,aGVsbG8=",
+		}
+	}, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Equal(t, "Acme Verifier", requestorInfo.Organization.LegalName["en"])
+	require.NotNil(t, requestorInfo.Organization.Logo)
+	require.Equal(t, "image/png", requestorInfo.Organization.Logo.MimeType)
+	require.Equal(t, []byte("hello"), requestorInfo.Organization.Logo.Data)
+}
+
+func testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo(t *testing.T) {
+	// Setup test data with client_metadata.client_name and a malformed logo_uri (missing
+	// the comma separator), so downloading the logo fails.
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_name": "Acme Verifier",
+			"logo_uri":    "data:image/png;base64",
+		}
+	}, testdata.PkiOption_None)
+
+	// Parse and verify the authorization request
+	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Equal(t, "Acme Verifier", requestorInfo.Organization.LegalName["en"])
+	require.Nil(t, requestorInfo.Organization.Logo)
 }
 
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {
