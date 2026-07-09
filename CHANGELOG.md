@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [1.1.0] - 2026-07-08
+### Added
+- Added support for `x509_hash` client identifier prefix in OpenID4VP flow
+- Added support for Verifier Metadata in OpenID4VP flow
+
 ### Security
 - Update Go toolchain 1.26.3 → 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
 - Update dependencies with security relevance:
@@ -17,10 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Normalize file paths via `filepath.Clean` before filesystem operations
 
 ### Changed
+- Replace `github.com/go-errors/errors` `WrapPrefix` calls with stdlib `fmt.Errorf` wrapping so `errors.Is`/`errors.As` traverse wrapped errors
 - Raise the minimum Go version to 1.26
 - Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
 - Update CI GitHub Action versions to Node 24 supported once
 - Update other dependencies to their latest releases: `github.com/lestrrat-go/jwx/v3`, `github.com/go-co-op/gocron` (v1 and v2), `github.com/spf13/{cast,cobra,pflag,viper}`, `go.etcd.io/bbolt`, `gorm.io/driver/{mysql,postgres,sqlserver}`, `github.com/alicebob/miniredis/v2`, `github.com/go-chi/cors` and `github.com/go-errors/errors`
+- Added DID First Candidate Recommendation backwards-compatibility for verification methods containing `publicKeyBase58` verification material.
+
+### Fixed
+- Treat email addresses with a non-resolvable (NXDOMAIN) domain as permanently invalid instead of a transient network error, so the keyshare email task no longer retries them indefinitely and crowds out delivery of valid emails
+- Fix `panic: send on closed channel` in the in-memory session store that could crash the server when an expired session was deleted while a status update for it was still being delivered to subscribers. Session-update notifications are now delivered synchronously under the read lock (mutually exclusive with channel closing) instead of from an unsynchronized goroutine, and subscription channels are cleaned up when their subscriber goes away. This also fixes two related data races on the session store detected under `-race`.
+- Fix disclosure returning the wrong credential instance after another instance of the same credential type was deleted, caused by the positional credential cache not being invalidated for the instances shifted by the deletion
+- Fixed a DidDocument deserialisation bug, where the `controller` attribute can be either a single string or a set of strings.
 
 ## [1.0.0] - 2026-06-19
 ### Added
@@ -39,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Issuers are verified via `did:web`, `did:key` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
 - Support for disclosing SD-JWT VC credentials with nested selectively-disclosable claims and array claims over the OpenID4VP 1.0 protocol
   - DCQL support extended with `claim_sets`, the `multiple` flag, predefined claim values (also for non-string values), and `require_cryptographic_holder_binding`
-  - Adds the `did` verifier identifier prefix in addition to the existing `x509_san_dns`
+  - Adds the `decentralized_identifier` client identifier prefix in addition to the existing `x509_san_dns`
   - Stricter validation of presentation nonces and verifier metadata
 - New top-level Go package `client`, offering a unified `Client` that wraps the existing `irmaclient` (renamed to `IrmaClient`) together with an `OpenID4VCIClient` and an `OpenID4VPClient`
   - New schemaless session implementation that no longer relies on `IrmaConfiguration` for OpenID4VCI/VP credential types
@@ -674,6 +688,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.1.0]: https://github.com/privacybydesign/irmago/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0
 [0.19.2]: https://github.com/privacybydesign/irmago/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/privacybydesign/irmago/compare/v0.19.0...v0.19.1

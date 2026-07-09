@@ -384,8 +384,21 @@ func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int) er
 		return err
 	}
 
-	// Remove credential from cache
-	client.credentialsCache.Delete(credLookup{id: id, counter: index})
+	// Remove credential from cache. Deleting the credential at `index` shifts
+	// every later credential of this type down by one position. The cache is
+	// keyed by positional counter, so the entries for the deleted credential
+	// AND for every credential after it are now stale and must all be
+	// invalidated; they are rebuilt lazily under their new counter on next
+	// access. Only invalidating {id, index} (as before) left the shifted
+	// credentials' stale entries in place, so a later credentialByHash lookup
+	// (whose counter had been decremented) returned the wrong instance — the
+	// root cause of disclosing the wrong credential after a deletion.
+	// `list` still has its original length
+	// here because append() reused its backing array without changing the
+	// `list` header.
+	for i := index; i < len(list); i++ {
+		client.credentialsCache.Delete(credLookup{id: id, counter: i})
+	}
 	delete(client.lookup, attrs.Hash())
 	for i, attrs := range client.attributes[id] {
 		client.lookup[attrs.Hash()].counter = i

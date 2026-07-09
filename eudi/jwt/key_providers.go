@@ -168,11 +168,13 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 
 	for _, vm := range doc.VerificationMethod {
 		if vm.ID == fullKid {
-			if vm.PublicKeyJwk == nil {
+			pk := vm.PublicKey()
+			if pk == nil {
 				return fmt.Errorf("verification method %s has no publicKeyJwk", vm.ID)
 			}
+
 			// Verify the key is a public key, or throw an error if it contains private key material (which should not be used in a did:web document, but we want to be sure)
-			isPrivateKey, err := jwk.IsPrivateKey(*vm.PublicKeyJwk)
+			isPrivateKey, err := jwk.IsPrivateKey(*pk)
 			if err != nil {
 				return fmt.Errorf("failed to determine if JWK contains private key material: %v", err)
 			}
@@ -188,7 +190,7 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 				return fmt.Errorf("missing alg header in JWS signature")
 			}
 
-			sink.Key(alg, *vm.PublicKeyJwk)
+			sink.Key(alg, *pk)
 
 			return nil
 		}

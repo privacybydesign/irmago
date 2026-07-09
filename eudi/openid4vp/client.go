@@ -132,7 +132,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		// Store the verifier logo in the cache (only when a certificate is available, e.g. X.509 trust model)
-		if endEntityCert != nil {
+		if endEntityCert != nil && requestorSchemeData.Organization.Logo != nil {
 			err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
 				endEntityCert.SerialNumber.String(),
 				requestorSchemeData.Organization.Logo.Data,
@@ -151,7 +151,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			requestor.Id = endEntityCert.SerialNumber.String()
 		}
 
-		if len(requestorSchemeData.Organization.Logo.Data) > 0 {
+		if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
 			requestor.Image = &clientmodels.Image{
 				Base64: base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
 			}
@@ -292,7 +292,7 @@ func (session *openid4vpSession) perform() error {
 	}
 
 	if session.request.ResponseMode == ResponseMode_DirectPostJwt {
-		if session.request.ClientMetadata.Jwks == nil {
+		if session.request.ClientMetadata == nil || session.request.ClientMetadata.Jwks == nil {
 			return fmt.Errorf("client metadata jwks was nil while response_mode %s was used", ResponseMode_DirectPostJwt)
 		}
 		responseConfig.EncryptionKeys = &session.request.ClientMetadata.Jwks.Set

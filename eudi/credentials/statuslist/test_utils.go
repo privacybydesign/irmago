@@ -46,6 +46,7 @@ func NewTestStatusListSigner(t *testing.T) *TestStatusListSigner {
 		Subject:      pkix.Name{CommonName: "statuslist-test"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, priv.Public(), priv)
 	require.NoError(t, err)

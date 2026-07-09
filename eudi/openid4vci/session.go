@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/internal/httpext"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -309,7 +310,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 			if display.Logo == nil {
 				continue
 			}
-			logoData, _, err := downloadRemoteImage(s.httpClient, *display.Logo)
+			logoData, _, err := helpers.DownloadRemoteImage(s.httpClient, display.Logo.Uri)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
 				continue

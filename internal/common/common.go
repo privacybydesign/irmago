@@ -219,7 +219,7 @@ func ReadKey(key, path string) ([]byte, error) {
 	} else {
 		stat, err := os.Stat(path)
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "failed to stat key", 0)
+			return nil, fmt.Errorf("failed to stat key: %w", err)
 		}
 		if stat.IsDir() {
 			return nil, errors.New("cannot read key from a directory")
@@ -448,7 +448,7 @@ func SchemeInfo(filename string, bts []byte) (string, string, error) {
 		return "", "", errors.New("unsupported scheme type")
 	}
 	if err := ValidateSchemeID(temp.ID); err != nil {
-		return "", "", errors.WrapPrefix(err, fmt.Sprintf("invalid scheme id %s", temp.ID), 0)
+		return "", "", fmt.Errorf("invalid scheme id %s: %w", temp.ID, err)
 	}
 	return temp.ID, temp.Type, nil
 }
