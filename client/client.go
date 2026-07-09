@@ -621,7 +621,7 @@ func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
-func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {
+func (client *Client) InitJobs(eudiRevocationListUpdateInterval, statusRefreshInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(
 		gocron.DurationJob(eudiRevocationListUpdateInterval),
@@ -631,5 +631,24 @@ func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {
 
 	if err != nil {
 		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
+	}
+
+	// Periodically re-fetch every referenced Token Status List and update
+	// each stored credential instance's LastKnownStatus. Skipped when the
+	// interval is non-positive. The sweep is fail-soft: per-URI errors are
+	// logged inside RefreshAll and the previous status is kept.
+	if statusRefreshInterval > 0 {
+		_, err = client.scheduler.NewJob(
+			gocron.DurationJob(statusRefreshInterval),
+			gocron.NewTask(func() {
+				if err := client.RefreshStatuses(context.Background()); err != nil {
+					common.Logger.Warnf("scheduled status refresh failed: %v", err)
+				}
+			}),
+			gocron.WithStartAt(gocron.WithStartImmediately()),
+		)
+		if err != nil {
+			common.Logger.Warnf("failed to create new cron job for refreshing credential statuses: %v", err)
+		}
 	}
 }
