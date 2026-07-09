@@ -66,6 +66,26 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		return nil, err
 	}
 
+	// Derive per-credential revocation from the stored Token Status List
+	// statuses (updated by the background sweep / RefreshStatuses). A batch's
+	// instances are the same credential (distinct status bits only for
+	// unlinkability) and are revoked together by the issuer, and StatusInvalid
+	// is permanent — so the batch is revoked as soon as any status-referenced
+	// instance reads StatusInvalid, and supports revocation if it carries any
+	// status reference at all.
+	instanceStatuses, err := s.credentialStore.ListStatusReferencedInstanceStatuses()
+	if err != nil {
+		return nil, err
+	}
+	revocable := map[string]bool{}
+	revoked := map[string]bool{}
+	for _, st := range instanceStatuses {
+		revocable[st.Hash] = true
+		if statuslist.Status(st.LastKnownStatus) == statuslist.StatusInvalid {
+			revoked[st.Hash] = true
+		}
+	}
+
 	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, len(m))
 	for i, batch := range m {
@@ -172,8 +192,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Attributes:                   attrs,
 			ExpiryDate:                   exp,
 			IssuanceDate:                 iat,
-			Revoked:                      false, // revocation is not yet implemented, so default to false for now
-			RevocationSupported:          false,
+			Revoked:                      revoked[batch.Hash],
+			RevocationSupported:          revocable[batch.Hash],
 			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
 		}
 	}
@@ -206,6 +226,18 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 ) error {
 	if len(verifiedSdJwtVcs) == 0 {
 		return nil // nothing to store
+	}
+
+	// A batch's instances are the same logical credential and are revoked
+	// together, so they must all carry the identical Token Status List
+	// reference (or none). Reject a divergent batch here, before any side
+	// effects, so a malformed issuance can't delete the user's existing
+	// credential (computeHashAndDeleteExisting below is destructive).
+	if err := validateStatusReferences(verifiedSdJwtVcs); err != nil {
+		if requireCryptographicKeyBinding {
+			s.deleteOrphanedKeys(publicKeyIdentifiers)
+		}
+		return err
 	}
 
 	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(verifiedSdJwtVcs) {
@@ -293,6 +325,33 @@ func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJ
 	}
 
 	return hash, processedPayload, nil
+}
+
+// statusReferenceOf returns the credential's Token Status List reference, or
+// the zero Reference when it carries none. The zero value (empty URI) is a
+// safe "absent" sentinel because a real reference always has a non-empty URI.
+func statusReferenceOf(v *sdjwtvc.VerifiedSdJwtVc) statuslist.Reference {
+	if v.IssuerSignedJwtPayload.Status == nil || v.IssuerSignedJwtPayload.Status.StatusList == nil {
+		return statuslist.Reference{}
+	}
+	return *v.IssuerSignedJwtPayload.Status.StatusList
+}
+
+// validateStatusReferences requires every credential in the batch to carry the
+// identical status_list reference (same uri and idx), or for none to carry one.
+// A divergent or partially-present reference is malformed: it would make the
+// batch's single revocation state ambiguous.
+func validateStatusReferences(vcs []*sdjwtvc.VerifiedSdJwtVc) error {
+	want := statusReferenceOf(vcs[0])
+	for i, v := range vcs {
+		if got := statusReferenceOf(v); got != want {
+			return fmt.Errorf(
+				"inconsistent status_list reference in batch: instance 0 has %+v, instance %d has %+v",
+				want, i, got,
+			)
+		}
+	}
+	return nil
 }
 
 func buildInstances(vcs []*sdjwtvc.VerifiedSdJwtVc) []models.IssuedCredentialInstance {

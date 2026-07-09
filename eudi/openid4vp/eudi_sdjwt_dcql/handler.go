@@ -1345,6 +1345,9 @@ func (h *SdJwtVcDcqlHandler) checkInstanceStatus(instance *models.IssuedCredenti
 		return nil
 	}
 	ref := statuslist.Reference{Index: *instance.StatusListIdx, URI: *instance.StatusListURI}
+	// context.Background: the disclosure path (PrepareDisclosure and its
+	// callers) is not request-context plumbed, so there is no session context
+	// to thread here. The fetch is bounded by the checker's FetchTimeout.
 	status, err := h.statusChecker.Check(context.Background(), ref, expectedIssuer)
 	if err != nil {
 		return fmt.Errorf("status list check failed for instance %s: %w", instance.ID, err)

@@ -234,6 +234,25 @@ func TestStoreBatch_PersistsStatusListColumns(t *testing.T) {
 	require.WithinDuration(t, checked, got.LastStatusCheckAt.UTC(), time.Second)
 }
 
+func TestListStatusReferencedInstanceStatuses(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	uri := "https://issuer.example/sl/1"
+	idx := uint64(7)
+	withStatus := newBatch("hash-with-status")
+	withStatus.Instances[0].StatusListURI = &uri
+	withStatus.Instances[0].StatusListIdx = &idx
+	withStatus.Instances[0].LastKnownStatus = 2 // StatusInvalid
+	require.NoError(t, store.StoreBatch(withStatus))
+
+	// Batch without a status reference must be excluded (status_list_uri IS NULL).
+	require.NoError(t, store.StoreBatch(newBatch("hash-no-status")))
+
+	got, err := store.ListStatusReferencedInstanceStatuses()
+	require.NoError(t, err)
+	require.Equal(t, []BatchInstanceStatus{{Hash: "hash-with-status", LastKnownStatus: 2}}, got)
+}
+
 func TestStoreBatch_StatusListColumnsDefaultToNil(t *testing.T) {
 	store := newTestCredentialStore(t)
 	batch := newBatch("hash-no-status")

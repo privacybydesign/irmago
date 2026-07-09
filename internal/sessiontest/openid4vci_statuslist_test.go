@@ -1,7 +1,5 @@
 package sessiontest
 
-// !!! UNVERIFIED SCAFFOLDING — never executed against a running stack. !!!
-//
 // End-to-end Token Status List (draft-ietf-oauth-status-list-15) tests over
 // OpenID4VCI. These require the full docker-compose stack including the
 // statuslist_agent service and veramo bumped to v1.5.5. See
@@ -16,10 +14,13 @@ package sessiontest
 //   - disclosure-time fail-closed: after the issuer revokes the credential,
 //     a subsequent OpenID4VP disclosure is refused.
 //
-// NOTE: the wallet does not currently surface LastKnownStatus via
-// GetCredentials().Revoked (credential_service.go hardcodes Revoked:false,
-// "revocation not yet implemented"), so the revocation effect is asserted via
-// disclosure refusal rather than via the credential model.
+// NOTE: revocation now surfaces on the credential model —
+// GetCredentialMetadataList sets Credential.Revoked from the stored
+// LastKnownStatus (revoked when any status-referenced instance of the batch
+// reads StatusInvalid; a batch's instances are revoked together). The
+// revocation effect below is still asserted via disclosure refusal, which is
+// the fail-closed guarantee; asserting Revoked on the model after
+// RefreshStatuses would be a valid additional check once this suite runs.
 
 import (
 	"context"

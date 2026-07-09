@@ -2,6 +2,7 @@ package statuslist
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -72,6 +73,34 @@ func Test_Checker_Check_4Bit_ApplicationSpecific(t *testing.T) {
 	s, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()}, "https://issuer.example")
 	require.NoError(t, err)
 	require.Equal(t, StatusApplicationSpecific, s)
+}
+
+// failingPutCache always errors on Put, simulating a transient cache-write
+// failure (e.g. a locked/full DB). Get/Delete delegate to the wrapped cache.
+type failingPutCache struct{ Cache }
+
+func (failingPutCache) Put(string, []byte, time.Time) error {
+	return fmt.Errorf("simulated cache write failure")
+}
+
+// A cache-write failure must NOT fail-closed: the token is already verified,
+// so Check must still return the decoded status rather than an error.
+func Test_Checker_Check_CacheWriteFailure_NotFatal(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	srv := NewTestStatusListServer(t, nil)
+	checker := NewChecker(
+		VerificationContext{X509Context: signer.X509VerificationContext()},
+		failingPutCache{NewInMemoryCache()},
+	)
+	srv.Serve(t, signer, TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{2: 0},
+	})
+
+	s, err := checker.Check(context.Background(), Reference{Index: 2, URI: srv.URL()}, "https://issuer.example")
+	require.NoError(t, err)
+	require.Equal(t, StatusValid, s)
 }
 
 func Test_Checker_Check_8Bit_FullRange(t *testing.T) {

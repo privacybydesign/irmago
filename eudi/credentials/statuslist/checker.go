@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/privacybydesign/irmago/internal/common"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -101,8 +102,13 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri, expectedIss string,
 	expires := now.Add(ClampTTL(ttl))
 
 	if err := c.cache.Put(uri, res.rawJwt, expires); err != nil {
-		// Cache failures aren't fatal — log via err wrap but proceed.
-		return nil, fmt.Errorf("%w: cache write: %v", ErrFetch, err)
+		// Cache failures aren't fatal — the token is already verified.
+		// Log and proceed rather than fail-closed on a transient cache
+		// error (e.g. a locked/full DB), which would otherwise reject an
+		// otherwise-valid credential at issuance and disclosure.
+		if common.Logger != nil { // nil when this package is used without irma (e.g. unit tests)
+			common.Logger.Warnf("statuslist: cache write for %q failed, proceeding: %v", uri, err)
+		}
 	}
 	return v, nil
 }

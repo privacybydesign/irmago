@@ -21,6 +21,14 @@ type CredentialStatusInstance struct {
 	IssuerURL     string
 }
 
+// BatchInstanceStatus pairs a batch's deterministic hash with one of its
+// instances' last-known Token Status List status. Only instances that carry
+// a status_list reference are reported.
+type BatchInstanceStatus struct {
+	Hash            string
+	LastKnownStatus uint8
+}
+
 // CredentialStore is the public interface for inserting and retrieving issued credentials.
 type CredentialStore interface {
 	// StoreBatch inserts a CredentialBatch and all its IssuedCredentialInstances atomically.
@@ -59,6 +67,12 @@ type CredentialStore interface {
 	// with a (status_list.uri, status_list.idx) pair, joined with its batch's
 	// IssuerURL.
 	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
+
+	// ListStatusReferencedInstanceStatuses returns the (batch hash,
+	// last_known_status) pair for every instance carrying a Token Status List
+	// reference. Used to surface per-credential revocation in the credential
+	// list without loading full instances.
+	ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error)
 
 	// UpdateInstanceStatus writes last_known_status and last_status_check_at
 	// on a single IssuedCredentialInstance. Returns ErrNotFound on no match.
@@ -234,6 +248,18 @@ func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatus
 		}
 	}
 	return out, nil
+}
+
+func (s *credentialStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
+	var out []BatchInstanceStatus
+	err := s.db.
+		Model(&models.IssuedCredentialInstance{}).
+		Select("credential_batches.hash AS hash, " +
+			"issued_credential_instances.last_known_status AS last_known_status").
+		Joins("JOIN credential_batches ON credential_batches.id = issued_credential_instances.credential_batch_id").
+		Where("issued_credential_instances.status_list_uri IS NOT NULL").
+		Scan(&out).Error
+	return out, err
 }
 
 func (s *credentialStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {

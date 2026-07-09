@@ -191,6 +191,10 @@ func (v *sdJwtVcProcessor) runStatusListCheck(payload *IssuerSignedJwtPayload) e
 	if payload.Status == nil || payload.Status.StatusList == nil {
 		return nil
 	}
+	// context.Background: the wallet client verify path is not request-context
+	// plumbed (all callers up to irmaclient manufacture their own Background),
+	// so there is no session context to thread here. The fetch is bounded by
+	// the checker's FetchTimeout.
 	ctx := context.Background()
 	status, err := v.verificationContext.StatusChecker.Check(ctx, *payload.Status.StatusList, payload.Issuer)
 	if err != nil {

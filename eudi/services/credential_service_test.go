@@ -68,6 +68,39 @@ func TestGetCredentialMetadataList_ReturnsSingleCredential(t *testing.T) {
 	require.Len(t, result, 1)
 }
 
+func TestGetCredentialMetadataList_SurfacesRevocation(t *testing.T) {
+	tests := []struct {
+		name          string
+		statusRefs    []db.BatchInstanceStatus
+		wantRevoked   bool
+		wantRevocable bool
+	}{
+		{"no status reference", nil, false, false},
+		{"valid status", []db.BatchInstanceStatus{{Hash: "testhash", LastKnownStatus: uint8(statuslist.StatusValid)}}, false, true},
+		{"invalid status is revoked", []db.BatchInstanceStatus{{Hash: "testhash", LastKnownStatus: uint8(statuslist.StatusInvalid)}}, true, true},
+		{"any invalid instance marks the batch revoked", []db.BatchInstanceStatus{
+			{Hash: "testhash", LastKnownStatus: uint8(statuslist.StatusInvalid)},
+			{Hash: "testhash", LastKnownStatus: uint8(statuslist.StatusValid)},
+		}, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockCredentialStore{
+				batchListResult: []*models.CredentialBatch{newStorageBatch()},
+				statusRefs:      tt.statusRefs,
+			}
+			svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+
+			result, err := svc.GetCredentialMetadataList()
+
+			require.NoError(t, err)
+			require.Len(t, result, 1)
+			assert.Equal(t, tt.wantRevoked, result[0].Revoked)
+			assert.Equal(t, tt.wantRevocable, result[0].RevocationSupported)
+		})
+	}
+}
+
 func TestGetCredentialMetadataList_MapsCredentialId(t *testing.T) {
 	batch := newStorageBatch()
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
@@ -466,6 +499,57 @@ func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
 	assert.Equal(t, uint(2), batch.BatchSize)
 	assert.Equal(t, uint(2), batch.RemainingCount)
 	assert.Len(t, batch.Instances, 2)
+}
+
+func withStatusRef(vc *sdjwtvc.VerifiedSdJwtVc, uri string, idx uint64) *sdjwtvc.VerifiedSdJwtVc {
+	vc.IssuerSignedJwtPayload.Status = &statuslist.StatusClaim{StatusList: &statuslist.Reference{URI: uri, Index: idx}}
+	return vc
+}
+
+func newVc() *sdjwtvc.VerifiedSdJwtVc {
+	return newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
+}
+
+func storeBatch(t *testing.T, mock *mockCredentialStore, vcs ...*sdjwtvc.VerifiedSdJwtVc) error {
+	t.Helper()
+	svc := newServiceWithMocks(mock, filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()))
+	return svc.VerifyAndStoreIssuedCredentials(
+		vcs, "config-id",
+		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
+		false, nil,
+	)
+}
+
+func TestVerifyAndStoreIssuedCredentials_ConsistentStatusReferences_Stored(t *testing.T) {
+	mock := &mockCredentialStore{}
+	err := storeBatch(t, mock,
+		withStatusRef(newVc(), "https://sl.example/1", 5),
+		withStatusRef(newVc(), "https://sl.example/1", 5),
+	)
+	require.NoError(t, err)
+	require.Len(t, mock.storedBatches, 1)
+}
+
+func TestVerifyAndStoreIssuedCredentials_DivergentStatusReferences_Rejected(t *testing.T) {
+	// Same list, different index — malformed batch.
+	mock := &mockCredentialStore{}
+	err := storeBatch(t, mock,
+		withStatusRef(newVc(), "https://sl.example/1", 1),
+		withStatusRef(newVc(), "https://sl.example/1", 2),
+	)
+	require.Error(t, err)
+	assert.Empty(t, mock.storedBatches, "malformed batch must not be stored")
+}
+
+func TestVerifyAndStoreIssuedCredentials_PartialStatusReference_Rejected(t *testing.T) {
+	// One instance has a reference, the other doesn't — malformed batch.
+	mock := &mockCredentialStore{}
+	err := storeBatch(t, mock,
+		withStatusRef(newVc(), "https://sl.example/1", 1),
+		newVc(),
+	)
+	require.Error(t, err)
+	assert.Empty(t, mock.storedBatches, "malformed batch must not be stored")
 }
 
 func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
@@ -1091,6 +1175,8 @@ type mockCredentialStore struct {
 	batchListResult []*models.CredentialBatch
 	storeBatchErr   error
 	batchListErr    error
+	statusRefs      []db.BatchInstanceStatus
+	statusRefsErr   error
 }
 
 func (m *mockCredentialStore) StoreBatch(batch *models.CredentialBatch) error {
@@ -1131,6 +1217,10 @@ func (m *mockCredentialStore) DeleteBatchByHash(hash string) error {
 
 func (m *mockCredentialStore) ListInstancesWithStatusReference() ([]db.CredentialStatusInstance, error) {
 	return nil, nil
+}
+
+func (m *mockCredentialStore) ListStatusReferencedInstanceStatuses() ([]db.BatchInstanceStatus, error) {
+	return m.statusRefs, m.statusRefsErr
 }
 
 func (m *mockCredentialStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
