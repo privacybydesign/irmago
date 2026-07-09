@@ -58,9 +58,14 @@ func fetchStatusListToken(ctx context.Context, vc VerificationContext, uri strin
 
 	ct := resp.Header.Get("Content-Type")
 	// Accept "application/statuslist+jwt" with or without parameters
-	// like "; charset=...". Reject anything else (RFC §8.2).
+	// like "; charset=...". Reject anything else (RFC §8.2). Note the
+	// CWT encoding (application/statuslist+cwt) is intentionally not
+	// supported by v1 — a CWT-only status list is rejected here.
 	if !strings.HasPrefix(strings.ToLower(ct), StatusListTokenContentType) {
-		return nil, fmt.Errorf("%w: unexpected Content-Type: %q", ErrFetch, ct)
+		return nil, fmt.Errorf(
+			"%w: unexpected Content-Type %q: only %s is supported (CWT status lists are not implemented)",
+			ErrFetch, ct, StatusListTokenContentType,
+		)
 	}
 
 	limited := io.LimitReader(resp.Body, maxBody+1)

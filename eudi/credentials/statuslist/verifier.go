@@ -28,7 +28,6 @@ type statusListPayload struct {
 	Subject    string          `json:"sub"`
 	IssuedAt   int64           `json:"iat"`
 	Expiry     int64           `json:"exp,omitempty"`
-	NotBefore  int64           `json:"nbf,omitempty"`
 	TTLSeconds int64           `json:"ttl,omitempty"`
 	StatusList statusListClaim `json:"status_list"`
 }
@@ -37,9 +36,8 @@ type statusListPayload struct {
 // iss, and time bounds have been validated. The lst field is still
 // base64url-encoded and zlib-compressed; the decoder consumes it.
 type verifiedStatusList struct {
-	payload  statusListPayload
-	rawJwt   []byte // original signed JWT bytes — kept for caching
-	verifyAt time.Time
+	payload statusListPayload
+	rawJwt  []byte // original signed JWT bytes — kept for caching
 }
 
 // payloadTTLSignal reports the caching lifetime advertised by the
@@ -59,15 +57,6 @@ func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
 		}
 	}
 	return 0, false
-}
-
-// ttlFromPayload returns the JWT-side TTL signal, falling back to the
-// package default when the token advertises neither `ttl` nor `exp`.
-func (v *verifiedStatusList) ttlFromPayload() time.Duration {
-	if d, ok := v.payloadTTLSignal(); ok {
-		return d
-	}
-	return TTLDefault
 }
 
 // verifyStatusListToken parses, signature-verifies, and time-checks a
@@ -153,7 +142,7 @@ func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss, 
 		return nil, fmt.Errorf("%w: empty status_list.lst", ErrUnauthorized)
 	}
 
-	return &verifiedStatusList{payload: payload, rawJwt: rawJwt, verifyAt: now}, nil
+	return &verifiedStatusList{payload: payload, rawJwt: rawJwt}, nil
 }
 
 // validBitSize matches RFC §6.1 — `bits` must be 1, 2, 4, or 8.

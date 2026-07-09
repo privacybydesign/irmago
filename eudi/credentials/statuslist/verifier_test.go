@@ -201,25 +201,32 @@ func Test_VerifyStatusListToken_TTLClaim_ReadOnPayload(t *testing.T) {
 	require.Equal(t, int64(600), v.payload.TTLSeconds)
 }
 
-func Test_VerifyStatusListToken_TTLFromPayload_Precedence(t *testing.T) {
+func Test_VerifyStatusListToken_TTLSignal_Precedence(t *testing.T) {
 	// Explicit TTL claim wins over remaining exp duration.
 	v := &verifiedStatusList{payload: statusListPayload{
 		TTLSeconds: 60,
 		Expiry:     time.Now().Add(2 * time.Hour).Unix(),
 	}}
-	require.Equal(t, time.Minute, v.ttlFromPayload())
+	d, ok := v.payloadTTLSignal()
+	require.True(t, ok)
+	require.Equal(t, time.Minute, d)
 }
 
-func Test_VerifyStatusListToken_TTLFromPayload_FallsBackToExp(t *testing.T) {
+func Test_VerifyStatusListToken_TTLSignal_FallsBackToExp(t *testing.T) {
 	exp := time.Now().Add(30 * time.Minute)
 	v := &verifiedStatusList{payload: statusListPayload{Expiry: exp.Unix()}}
+	d, ok := v.payloadTTLSignal()
+	require.True(t, ok)
 	// Allow a small window so the test isn't time-sensitive.
-	require.InDelta(t, 30*time.Minute, v.ttlFromPayload(), float64(2*time.Second))
+	require.InDelta(t, 30*time.Minute, d, float64(2*time.Second))
 }
 
-func Test_VerifyStatusListToken_TTLFromPayload_FallsBackToDefault(t *testing.T) {
+func Test_VerifyStatusListToken_TTLSignal_AbsentWhenNoTTLorExp(t *testing.T) {
+	// No ttl and no exp: the token advertises no lifetime, so the caller
+	// falls back to the HTTP max-age (and ultimately ClampTTL's default).
 	v := &verifiedStatusList{}
-	require.Equal(t, TTLDefault, v.ttlFromPayload())
+	_, ok := v.payloadTTLSignal()
+	require.False(t, ok)
 }
 
 // buildTokenWithBits builds a token whose status_list.bits is set to

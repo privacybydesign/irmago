@@ -74,9 +74,6 @@ func payloadFromToken(token jwt.Token, out *statusListPayload) error {
 	if exp, ok := token.Expiration(); ok && !exp.IsZero() {
 		out.Expiry = exp.Unix()
 	}
-	if nbf, ok := token.NotBefore(); ok && !nbf.IsZero() {
-		out.NotBefore = nbf.Unix()
-	}
 
 	if token.Has("ttl") {
 		var ttl float64
