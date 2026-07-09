@@ -1,0 +1,399 @@
+<svg width="100%" viewBox="0 0 3240 2060" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Full SD-JWT VC Structure — AV compliant</title>
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#555" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#b04040" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#1a7a3a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#1a4fa0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+<style>
+  text { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .title { font-size:13px; font-weight:700; }
+  .sub   { font-size:11px; }
+  .label { font-size:10px; }
+  .tag   { font-size:9px; font-style:italic; }
+  .new   { font-size:9px; font-weight:700; }
+</style>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- LEGEND + TITLE -->
+<!-- ══════════════════════════════════════════ -->
+<rect x="20" y="20" width="360" height="112" rx="6" fill="#f9f9f9" stroke="#ccc" stroke-width="1"/>
+<text x="32" y="42" class="title" fill="#333">Legend</text>
+<rect x="32" y="52" width="16" height="12" rx="2" fill="#e8edfc" stroke="#3b55b0" stroke-width="0.8"/>
+<text x="54" y="63" class="label" fill="#333">Implemented in irmago Go code (solid border)</text>
+<rect x="32" y="74" width="16" height="12" rx="2" fill="#fff0e0" stroke="#c06010" stroke-width="1.5" stroke-dasharray="3,2"/>
+<text x="54" y="85" class="label" fill="#333">Spec feature — not implemented / not enforced (dashed)</text>
+<line x1="32" y1="104" x2="56" y2="104" stroke="#1a7a3a" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-green)"/>
+<text x="62" y="108" class="label" fill="#333">digest / hash link (SHA-256 relationship)</text>
+<rect x="32" y="114" width="16" height="12" rx="2" fill="#fdf6ee" stroke="#8a5a2b" stroke-width="1"/>
+<text x="54" y="125" class="label" fill="#333">crypto / explanatory detail (amber)</text>
+
+<text x="1620" y="46" text-anchor="middle" class="title" fill="#333" style="font-size:18px;">Full SD-JWT VC Structure — AV compliant</text>
+<text x="1620" y="68" text-anchor="middle" class="sub" fill="#888">IETF SD-JWT + SD-JWT VC  ·  EUDI Age-Verification profile  ·  as built in irmago/eudi/credentials/sdjwtvc</text>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 0  Compact serialization wrapper -->
+<!-- ══════════════════════════════════════════ -->
+<rect x="900" y="150" width="1440" height="80" rx="8" fill="#eeedfb" stroke="#534ab7" stroke-width="1.2"/>
+<text x="1620" y="176" text-anchor="middle" class="title" fill="#3c3489">SD-JWT VC — compact serialization</text>
+<text x="1620" y="198" text-anchor="middle" class="sub" fill="#3c3489">&lt;Issuer-signed JWT&gt;~&lt;Disclosure 1&gt;~ … ~&lt;Disclosure N&gt;~&lt;KB-JWT&gt;</text>
+<text x="1620" y="218" text-anchor="middle" class="tag" fill="#888">✓ tilde-separated  ·  trailing ~ after each disclosure  ·  KB-JWT appended only at presentation</text>
+
+<path d="M1360 230 L1360 260 L380 260 L380 290"  fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1560 230 L1560 260 L1390 260 L1390 290" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1780 230 L1780 260 L2300 260 L2300 290" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 1  three components -->
+<!-- ══════════════════════════════════════════ -->
+
+<!-- Issuer-signed JWT -->
+<rect x="120" y="290" width="520" height="60" rx="8" fill="#eeedfb" stroke="#534ab7" stroke-width="1.2"/>
+<text x="380" y="315" text-anchor="middle" class="title" fill="#3c3489">Issuer-signed JWT  (JWS compact)</text>
+<text x="380" y="337" text-anchor="middle" class="sub" fill="#6a63bd">signed once by the issuer at issuance</text>
+
+<!-- Disclosures -->
+<rect x="1160" y="290" width="460" height="60" rx="8" fill="#d8f5eb" stroke="#0f6e56" stroke-width="1.2"/>
+<text x="1390" y="315" text-anchor="middle" class="title" fill="#08503a">Disclosures</text>
+<text x="1390" y="337" text-anchor="middle" class="sub" fill="#0f6e56">one per selectively-disclosable claim</text>
+
+<!-- KB-JWT -->
+<rect x="2020" y="290" width="560" height="60" rx="8" fill="#e3f0e4" stroke="#2f6b3a" stroke-width="1.2"/>
+<text x="2300" y="315" text-anchor="middle" class="title" fill="#1f5a2a">Key Binding JWT  (KB-JWT)</text>
+<text x="2300" y="337" text-anchor="middle" class="sub" fill="#2f6b3a">created by the holder, fresh per presentation</text>
+
+<!-- arrows to internals -->
+<path d="M260 350 L260 388 L210 388 L210 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M380 350 L380 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M500 350 L500 388 L910 388 L910 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<path d="M1290 350 L1290 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1490 350 L1490 400 L1610 400 L1610 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<path d="M2180 350 L2180 388 L2020 388 L2020 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M2300 350 L2300 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M2420 350 L2420 388 L2630 388 L2630 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 2  component internals -->
+<!-- ══════════════════════════════════════════ -->
+
+<!-- Issuer JWT: header -->
+<rect x="60" y="420" width="300" height="180" rx="6" fill="#f0f0f0" stroke="#666" stroke-width="0.8"/>
+<text x="210" y="442" text-anchor="middle" class="title" fill="#333">header</text>
+<line x1="66" y1="452" x2="354" y2="452" stroke="#aaa" stroke-width="0.5"/>
+<text x="74" y="472" class="sub" fill="#555">typ: "dc+sd-jwt"</text>
+<text x="74" y="490" class="tag" fill="#888">legacy: "vc+sd-jwt"</text>
+<text x="74" y="510" class="sub" fill="#555">alg: "ES256"  (ECDSA P-256)</text>
+<text x="74" y="530" class="sub" fill="#555">x5c: [ DS cert chain ]</text>
+<text x="74" y="548" class="label" fill="#2a7a2a">✓ verified against trust anchor</text>
+<text x="74" y="568" class="tag" fill="#888">did:web key resolution also</text>
+<text x="74" y="582" class="tag" fill="#888">supported as an alternative</text>
+
+<!-- Issuer JWT: payload -->
+<rect x="380" y="420" width="360" height="180" rx="6" fill="#fce8e8" stroke="#a03030" stroke-width="0.8"/>
+<text x="560" y="442" text-anchor="middle" class="title" fill="#a03030">payload  (claims)</text>
+<line x1="386" y1="452" x2="734" y2="452" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="394" y="472" class="sub" fill="#666">registered:</text>
+<text x="406" y="490" class="label" fill="#555">iss · vct · iat · exp · nbf · sub</text>
+<text x="394" y="512" class="sub" fill="#666">SD / binding:</text>
+<text x="406" y="530" class="label" fill="#555">_sd[]  ·  _sd_alg  ·  cnf</text>
+<text x="394" y="558" class="tag" fill="#a06060">the digests in _sd commit to the</text>
+<text x="394" y="572" class="tag" fill="#a06060">disclosures without revealing them</text>
+<text x="560" y="592" text-anchor="middle" class="new" fill="#a03030">▼ full claim set expanded below</text>
+
+<!-- Issuer JWT: signature -->
+<rect x="760" y="420" width="300" height="180" rx="6" fill="#fce8e8" stroke="#a03030" stroke-width="0.8"/>
+<text x="910" y="442" text-anchor="middle" class="title" fill="#a03030">signature</text>
+<line x1="766" y1="452" x2="1054" y2="452" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="774" y="474" class="sub" fill="#c04040">ECDSA( issuer DS priv,</text>
+<text x="794" y="494" class="sub" fill="#c04040">SHA-256(signing input) )</text>
+<text x="774" y="520" class="tag" fill="#888">key: Issuer DS key pair (P-256)</text>
+<text x="774" y="538" class="tag" fill="#888">3rd dot-separated JWS part</text>
+<text x="774" y="568" class="label" fill="#8a5a2b" font-weight="700">→ see "JWS signing input"</text>
+
+<!-- Disclosure 0 -->
+<rect x="1140" y="420" width="300" height="252" rx="6" fill="#c8eed8" stroke="#0f6e56" stroke-width="0.8"/>
+<text x="1290" y="442" text-anchor="middle" class="title" fill="#08503a">Disclosure 0</text>
+<line x1="1146" y1="452" x2="1434" y2="452" stroke="#7fd0b0" stroke-width="0.5"/>
+<text x="1152" y="472" class="label" fill="#0f6e56">base64url( JSON array ):</text>
+<text x="1152" y="494" class="label" fill="#0f6e56">salt</text>
+<text x="1428" y="494" text-anchor="end" class="label" fill="#0f6e56">h'…128-bit…'</text>
+<text x="1152" y="514" class="label" fill="#0f6e56">key</text>
+<text x="1428" y="514" text-anchor="end" class="label" fill="#0f6e56">"age_over_18"</text>
+<text x="1152" y="534" class="label" fill="#0f6e56">value</text>
+<text x="1428" y="534" text-anchor="end" class="label" fill="#0f6e56">true</text>
+<line x1="1146" y1="548" x2="1434" y2="548" stroke="#7fd0b0" stroke-width="0.5"/>
+<text x="1152" y="568" class="label" fill="#2a7a2a">→ digest in _sd[]</text>
+<text x="1152" y="586" class="tag" fill="#666">SHA-256(base64url(disclosure))</text>
+<text x="1152" y="606" class="tag" fill="#888">salt: unique per claim, ≥128 bit</text>
+<line x1="1146" y1="618" x2="1434" y2="618" stroke="#7fd0b0" stroke-width="0.5"/>
+<text x="1152" y="640" class="label" fill="#1a7a3a" font-weight="700">✓ mandatory AV attribute</text>
+<text x="1152" y="658" class="tag" fill="#888">held back unless verifier asks</text>
+
+<!-- Disclosure 1 -->
+<rect x="1460" y="420" width="300" height="252" rx="6" fill="#c8eed8" stroke="#0f6e56" stroke-width="0.8"/>
+<text x="1610" y="442" text-anchor="middle" class="title" fill="#08503a">Disclosure 1</text>
+<line x1="1466" y1="452" x2="1754" y2="452" stroke="#7fd0b0" stroke-width="0.5"/>
+<text x="1472" y="472" class="label" fill="#0f6e56">base64url( JSON array ):</text>
+<text x="1472" y="494" class="label" fill="#0f6e56">salt</text>
+<text x="1748" y="494" text-anchor="end" class="label" fill="#0f6e56">h'…128-bit…'</text>
+<text x="1472" y="514" class="label" fill="#0f6e56">key</text>
+<text x="1748" y="514" text-anchor="end" class="label" fill="#0f6e56">"age_over_21"</text>
+<text x="1472" y="534" class="label" fill="#0f6e56">value</text>
+<text x="1748" y="534" text-anchor="end" class="label" fill="#0f6e56">true</text>
+<line x1="1466" y1="548" x2="1754" y2="548" stroke="#7fd0b0" stroke-width="0.5"/>
+<text x="1472" y="568" class="label" fill="#2a7a2a">→ digest in _sd[]</text>
+<text x="1472" y="586" class="tag" fill="#666">SHA-256(base64url(disclosure))</text>
+<text x="1472" y="606" class="tag" fill="#888">array-element form: [salt, value]</text>
+<line x1="1466" y1="618" x2="1754" y2="618" stroke="#7fd0b0" stroke-width="0.5"/>
+<text x="1472" y="640" class="label" fill="#1a7a3a" font-weight="700">✓ optional age_over_NN</text>
+<text x="1472" y="658" class="tag" fill="#888">e.g. age_over_16 / _21 / _65</text>
+
+<!-- KB-JWT: header -->
+<rect x="1900" y="420" width="240" height="150" rx="6" fill="#eef6ef" stroke="#2f6b3a" stroke-width="0.8"/>
+<text x="2020" y="442" text-anchor="middle" class="title" fill="#1f5a2a">header</text>
+<line x1="1908" y1="452" x2="2132" y2="452" stroke="#bcd9bf" stroke-width="0.5"/>
+<text x="1912" y="474" class="sub" fill="#2f6b3a">typ: "kb+jwt"</text>
+<text x="1912" y="496" class="sub" fill="#2f6b3a">alg: "ES256"</text>
+<text x="1912" y="522" class="tag" fill="#888">no x5c — verified with</text>
+<text x="1912" y="536" class="tag" fill="#888">the holder key from cnf</text>
+
+<!-- KB-JWT: payload -->
+<rect x="2160" y="420" width="340" height="252" rx="6" fill="#eef6ef" stroke="#2f6b3a" stroke-width="0.8"/>
+<text x="2330" y="442" text-anchor="middle" class="title" fill="#1f5a2a">payload</text>
+<line x1="2168" y1="452" x2="2492" y2="452" stroke="#bcd9bf" stroke-width="0.5"/>
+<text x="2172" y="472" class="sub" fill="#2f6b3a">sd_hash</text>
+<text x="2486" y="472" text-anchor="end" class="tag" fill="#888">hash of presentation</text>
+<text x="2172" y="494" class="sub" fill="#2f6b3a">nonce</text>
+<text x="2486" y="494" text-anchor="end" class="tag" fill="#888">from OpenID4VP req</text>
+<text x="2172" y="516" class="sub" fill="#2f6b3a">aud</text>
+<text x="2486" y="516" text-anchor="end" class="tag" fill="#888">= verifier client_id</text>
+<text x="2172" y="538" class="sub" fill="#2f6b3a">iat</text>
+<text x="2486" y="538" text-anchor="end" class="tag" fill="#888">issued-at (freshness)</text>
+<line x1="2168" y1="552" x2="2492" y2="552" stroke="#bcd9bf" stroke-width="0.5"/>
+<text x="2172" y="574" class="tag" fill="#c04040">← fresh every session,</text>
+<text x="2172" y="588" class="tag" fill="#c04040">   defeats replay</text>
+<text x="2172" y="612" class="label" fill="#2f6b3a">nonce + aud bind the</text>
+<text x="2172" y="628" class="label" fill="#2f6b3a">presentation to THIS</text>
+<text x="2172" y="644" class="label" fill="#2f6b3a">request + verifier</text>
+<text x="2330" y="666" text-anchor="middle" class="new" fill="#8a5a2b">▼ sd_hash detail below</text>
+
+<!-- KB-JWT: signature -->
+<rect x="2520" y="420" width="220" height="150" rx="6" fill="#eef6ef" stroke="#2f6b3a" stroke-width="0.8"/>
+<text x="2630" y="442" text-anchor="middle" class="title" fill="#1f5a2a">signature</text>
+<line x1="2528" y1="452" x2="2732" y2="452" stroke="#bcd9bf" stroke-width="0.5"/>
+<text x="2534" y="472" class="sub" fill="#2f6b3a">ECDSA( holder priv,</text>
+<text x="2544" y="490" class="label" fill="#2f6b3a">SHA-256(signing in) )</text>
+<text x="2534" y="514" class="tag" fill="#888">key: holder key (cnf)</text>
+<text x="2534" y="540" class="label" fill="#1a7a3a" font-weight="700">✓ proves possession</text>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 3  Issuer payload full claim set -->
+<!-- ══════════════════════════════════════════ -->
+<rect x="60" y="720" width="760" height="450" rx="8" fill="#fff5f5" stroke="#c04040" stroke-width="1.2"/>
+<text x="440" y="746" text-anchor="middle" class="title" fill="#a03030">Issuer-signed JWT payload — full claim set</text>
+<line x1="66" y1="756" x2="814" y2="756" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="74" y="778" class="sub" fill="#666">iss</text>
+<text x="814" y="778" text-anchor="end" class="sub" fill="#888">"https://issuer.example"  (✓ https required)</text>
+<text x="74" y="800" class="sub" fill="#666">vct</text>
+<text x="814" y="800" text-anchor="end" class="sub" fill="#888">"…age-verification credential…"</text>
+<text x="74" y="822" class="sub" fill="#666">iat / exp / nbf</text>
+<text x="814" y="822" text-anchor="end" class="sub" fill="#888">unix times  (checked ± 180s skew)</text>
+<text x="74" y="844" class="sub" fill="#666">sub</text>
+<text x="814" y="844" text-anchor="end" class="sub" fill="#888">subject id  (optional)</text>
+<line x1="66" y1="858" x2="814" y2="858" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="74" y="880" class="sub" fill="#666">_sd_alg</text>
+<text x="814" y="880" text-anchor="end" class="sub" fill="#888">"sha-256"  (only supported value)</text>
+<text x="74" y="904" class="sub" fill="#c06010">cnf   holder key binding</text>
+<text x="90" y="924" class="label" fill="#a06020">jwk { kty:"EC", crv:"P-256", x, y }</text>
+<text x="90" y="942" class="label" fill="#a06020">— or —  kid: "did:jwk:…"</text>
+<text x="90" y="960" class="tag" fill="#888">holder public key, embedded at issuance</text>
+<line x1="66" y1="974" x2="814" y2="974" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="74" y="996" class="sub" fill="#c04040">_sd   [ disclosure digests ]</text>
+<text x="90" y="1018" class="label" fill="#888">digest[0]</text>
+<text x="814" y="1018" text-anchor="end" class="label" fill="#888">h'3f9a1c…'   ← age_over_18</text>
+<text x="90" y="1040" class="label" fill="#888">digest[1]</text>
+<text x="814" y="1040" text-anchor="end" class="label" fill="#888">h'b7e291…'   ← age_over_21</text>
+<text x="90" y="1062" class="label" fill="#888">digest[…]</text>
+<text x="814" y="1062" text-anchor="end" class="label" fill="#888">(decoy digests permitted)</text>
+<line x1="66" y1="1076" x2="814" y2="1076" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="74" y="1098" class="tag" fill="#888">nested objects/arrays each carry their own _sd or "..." digests</text>
+<text x="74" y="1114" class="tag" fill="#888">only the disclosed claims' salts+values ever reach the verifier</text>
+<text x="74" y="1136" class="label" fill="#2a7a2a">✓ decoy digests can hide the real number of hidden claims</text>
+<text x="74" y="1156" class="label" fill="#c06010">✗ status / revocation claim not yet enforced</text>
+
+<!-- digest links: disclosures → _sd -->
+<path d="M1290 672 C 1150 900, 1000 1018, 826 1018" fill="none" stroke="#1a7a3a" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr-green)"/>
+<path d="M1610 672 C 1300 960, 1060 1040, 826 1040" fill="none" stroke="#1a7a3a" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr-green)"/>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 3b  sd_hash detail -->
+<!-- ══════════════════════════════════════════ -->
+<path d="M2330 672 L2330 700" fill="none" stroke="#8a5a2b" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#arr)"/>
+<rect x="1860" y="700" width="540" height="330" rx="8" fill="#fdf6ee" stroke="#8a5a2b" stroke-width="1.4"/>
+<text x="2130" y="726" text-anchor="middle" class="title" fill="#7a4a1a">sd_hash — binds KB-JWT to this presentation</text>
+<text x="2130" y="744" text-anchor="middle" class="sub" fill="#a06a30">SD-JWT VC §4.3 — recomputed at verify time</text>
+<line x1="1868" y1="756" x2="2392" y2="756" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="1876" y="780" class="label" fill="#7a4a1a">sd_hash = BASE64URL(</text>
+<text x="1900" y="800" class="label" fill="#7a4a1a">SHA-256( ASCII(</text>
+<text x="1924" y="820" class="label" fill="#7a4a1a">&lt;Issuer-JWT&gt;~&lt;Disc?&gt;~ … ~</text>
+<text x="1900" y="840" class="label" fill="#7a4a1a">) ) )</text>
+<line x1="1868" y1="854" x2="2392" y2="854" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="1876" y="876" class="tag" fill="#a06a30">covers the issuer JWT + the disclosures actually</text>
+<text x="1876" y="892" class="tag" fill="#a06a30">presented, up to &amp; including the last ~,</text>
+<text x="1876" y="908" class="tag" fill="#a06a30">EXCLUDING the KB-JWT itself</text>
+<line x1="1868" y1="922" x2="2392" y2="922" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="1876" y="944" class="label" fill="#a23b2e">verifier recomputes and compares:</text>
+<text x="1876" y="964" class="label" fill="#333">any disclosure added, dropped or swapped</text>
+<text x="1876" y="982" class="label" fill="#333">⇒ sd_hash mismatch ⇒ rejected</text>
+<text x="1876" y="1006" class="tag" fill="#888">holder cannot present claims the issuer never signed</text>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 3c  JWS signing input (Sig_structure analogue) -->
+<!-- ══════════════════════════════════════════ -->
+<path d="M2630 570 L2630 700" fill="none" stroke="#8a5a2b" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#arr)"/>
+<rect x="2440" y="700" width="760" height="330" rx="8" fill="#fdf6ee" stroke="#8a5a2b" stroke-width="1.4"/>
+<text x="2820" y="726" text-anchor="middle" class="title" fill="#7a4a1a">JWS signing input — the bytes ECDSA actually signs</text>
+<text x="2820" y="744" text-anchor="middle" class="sub" fill="#a06a30">RFC 7515 compact — used by BOTH the issuer JWT and the KB-JWT</text>
+<line x1="2448" y1="756" x2="3192" y2="756" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="2456" y="782" class="label" fill="#7a4a1a">signing input = ASCII(</text>
+<text x="2480" y="802" class="label" fill="#7a4a1a">BASE64URL(protected header)</text>
+<text x="2820" y="802" class="tag" fill="#a06a30">← e.g. {typ,alg,x5c}</text>
+<text x="2480" y="822" class="label" fill="#7a4a1a">+ "." +</text>
+<text x="2480" y="842" class="label" fill="#7a4a1a">BASE64URL(payload) )</text>
+<text x="2820" y="842" class="tag" fill="#a06a30">← the JSON claim set</text>
+<line x1="2448" y1="856" x2="3192" y2="856" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="2456" y="880" class="sub" fill="#a23b2e">verify = ECDSA-verify( pubKey, SHA-256(signing input), sig )</text>
+<text x="2456" y="900" class="label" fill="#333">signature = 3rd dot-separated part = BASE64URL(r ‖ s)</text>
+<text x="2456" y="922" class="tag" fill="#888">issuer JWT verified with the x5c DS public key (or did:web key)</text>
+<text x="2456" y="938" class="tag" fill="#888">KB-JWT verified with the holder public key taken from cnf</text>
+<line x1="2448" y1="952" x2="3192" y2="952" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="2456" y="974" class="label" fill="#c06010" font-weight="700">hashing the raw JSON payload (not its base64url form) → fails every time</text>
+<text x="2456" y="994" class="tag" fill="#888">most common JWS implementation mistake — mirrors the COSE Sig_structure trap</text>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 4  holder-key note  |  two-signatures note -->
+<!-- ══════════════════════════════════════════ -->
+<rect x="60" y="1210" width="760" height="250" rx="8" fill="#fbfaf6" stroke="#8a5a2b" stroke-width="1.2"/>
+<text x="440" y="1234" text-anchor="middle" class="title" fill="#7a4a1a">Who generates the holder key pair?  (cnf)</text>
+<line x1="68" y1="1246" x2="812" y2="1246" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="80" y="1268" class="label" fill="#1f5a2a">✓ the HOLDER generates it locally — ideally inside Secure Enclave / TEE</text>
+<text x="80" y="1288" class="label" fill="#1f5a2a">✓ only the PUBLIC key is sent to the issuer, embedded in payload.cnf</text>
+<text x="80" y="1308" class="label" fill="#c04040">✗ issuer NEVER sees the private key — would defeat key binding entirely</text>
+<text x="80" y="1332" class="tag" fill="#888">private key stays on device, signs a fresh KB-JWT for each presentation</text>
+<text x="80" y="1348" class="tag" fill="#888">public key locked into the issuer JWT once, signed by issuer, trusted thereafter</text>
+<text x="80" y="1364" class="tag" fill="#888">irmago holds holder private keys in KeyBindingStorage (batch-issued, one-time use)</text>
+<text x="80" y="1388" class="label" fill="#8a5a2b" font-weight="700">exactly the TrustZone / StrongBox boundary as the mDoc device key</text>
+<text x="80" y="1410" class="tag" fill="#888">SD-JWT VC cnf  ≙  mDoc MSO.deviceKeyInfo  ·  KB-JWT  ≙  mDoc deviceAuth</text>
+
+<rect x="860" y="1210" width="1080" height="250" rx="8" fill="#fbfaf6" stroke="#8a5a2b" stroke-width="1.2"/>
+<text x="1400" y="1234" text-anchor="middle" class="title" fill="#7a4a1a">Two signatures — two ECDSA operations, two key pairs</text>
+<line x1="868" y1="1246" x2="1932" y2="1246" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="880"  y="1264" class="label" fill="#888">Signature</text>
+<text x="1080" y="1264" class="label" fill="#888">Key pair</text>
+<text x="1330" y="1264" class="label" fill="#888">Signs over</text>
+<text x="1680" y="1264" class="label" fill="#888">Frequency</text>
+<line x1="868" y1="1270" x2="1932" y2="1270" stroke="#dcc7a0" stroke-width="0.3"/>
+<text x="880"  y="1292" class="label" fill="#7a4a1a" font-weight="700">Issuer JWT</text>
+<text x="1080" y="1292" class="label" fill="#333">Issuer DS key (P-256)</text>
+<text x="1330" y="1292" class="label" fill="#333">claims incl. _sd digests + cnf</text>
+<text x="1680" y="1292" class="label" fill="#333">Once, at issuance</text>
+<text x="880"  y="1308" class="tag"   fill="#a06a30">proves: "claims are authentic, from a trusted issuer — and this holder key is bound"</text>
+<text x="880"  y="1336" class="label" fill="#1f5a2a" font-weight="700">KB-JWT</text>
+<text x="1080" y="1336" class="label" fill="#333">Holder key (P-256, cnf)</text>
+<text x="1330" y="1336" class="label" fill="#333">sd_hash + nonce + aud + iat</text>
+<text x="1680" y="1336" class="label" fill="#333">Fresh, every presentation</text>
+<text x="880"  y="1352" class="tag"   fill="#2f6b3a">proves: "this holder, right now, is presenting to THIS verifier for THIS request"</text>
+<line x1="868" y1="1366" x2="1932" y2="1366" stroke="#dcc7a0" stroke-width="0.3"/>
+<text x="880" y="1388" class="tag" fill="#c04040">Both must pass — the issuer JWT + disclosures alone can be replayed by anyone who copied the credential.</text>
+<text x="880" y="1404" class="tag" fill="#c04040">The KB-JWT ties the presentation to a live session (nonce + aud) on the key-bound device.</text>
+<text x="880" y="1428" class="tag" fill="#888">a plain SD-JWT VC (no KB-JWT) is accepted only when key binding is not required by the verifier</text>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 5  Verification order / trust chain  |  AV profile -->
+<!-- ══════════════════════════════════════════ -->
+<rect x="60" y="1520" width="1780" height="410" rx="8" fill="#eef3ee" stroke="#2f6b3a" stroke-width="1.4"/>
+<text x="950" y="1546" text-anchor="middle" class="title" fill="#1f5a2a">Verification order (SD-JWT VC §7 — all steps required)</text>
+<text x="950" y="1564" text-anchor="middle" class="sub" fill="#2f6b3a">trust anchored in the x5c certificate chain  (contrast: the mDoc learning test skipped chain validation)</text>
+<line x1="68" y1="1576" x2="1832" y2="1576" stroke="#cfe0cf" stroke-width="0.5"/>
+
+<!-- chain nodes -->
+<rect x="90" y="1596" width="170" height="60" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="175" y="1620" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">Trusted root CA</text>
+<text x="175" y="1638" text-anchor="middle" class="tag" fill="#2f6b3a">trust anchor (scheme)</text>
+<path d="M262 1626 L300 1626" stroke="#2f6b3a" stroke-width="1.3"/>
+<text x="266" y="1619" class="tag" fill="#2f6b3a">signs</text>
+<rect x="302" y="1596" width="170" height="60" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="387" y="1620" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">DS cert (x5c)</text>
+<text x="387" y="1638" text-anchor="middle" class="tag" fill="#2f6b3a">in JWS header</text>
+<path d="M474 1626 L512 1626" stroke="#2f6b3a" stroke-width="1.3"/>
+<text x="478" y="1619" class="tag" fill="#2f6b3a">key signs</text>
+<rect x="514" y="1596" width="180" height="60" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="604" y="1620" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">Issuer JWT (JWS)</text>
+<text x="604" y="1638" text-anchor="middle" class="tag" fill="#2f6b3a">payload = claims</text>
+<path d="M696 1626 L734 1626" stroke="#2f6b3a" stroke-width="1.3"/>
+<text x="700" y="1619" class="tag" fill="#2f6b3a">commits</text>
+<rect x="736" y="1596" width="170" height="60" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="821" y="1620" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">_sd digests</text>
+<text x="821" y="1638" text-anchor="middle" class="tag" fill="#2f6b3a">per-disclosure hashes</text>
+<path d="M908 1626 L946 1626" stroke="#2f6b3a" stroke-width="1.3"/>
+<text x="912" y="1619" class="tag" fill="#2f6b3a">binds</text>
+<rect x="948" y="1596" width="170" height="60" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="1033" y="1620" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">cnf → KB-JWT</text>
+<text x="1033" y="1638" text-anchor="middle" class="tag" fill="#2f6b3a">holder possession</text>
+
+<line x1="68" y1="1676" x2="1832" y2="1676" stroke="#cfe0cf" stroke-width="0.5"/>
+
+<text x="90" y="1700" class="sub" fill="#1f5a2a" font-weight="700">Steps:</text>
+<text x="90" y="1726" class="label" fill="#1f5a2a">①</text>
+<text x="114" y="1726" class="label" fill="#333">Issuer JWT signature valid over the JWS signing input, using the DS public key from x5c (or did:web)</text>
+<text x="90" y="1752" class="label" fill="#1f5a2a">②</text>
+<text x="114" y="1752" class="label" fill="#333">DS cert chains to a trusted root and is not revoked (CRL)</text>
+<text x="820" y="1752" class="tag" fill="#2a7a2a">✓ implemented — VerifyCertificate()</text>
+<text x="90" y="1778" class="label" fill="#1f5a2a">③</text>
+<text x="114" y="1778" class="label" fill="#333">every presented disclosure's SHA-256 digest is found in _sd (recompute &amp; match); no unreferenced disclosures</text>
+<text x="90" y="1804" class="label" fill="#1f5a2a">④</text>
+<text x="114" y="1804" class="label" fill="#333">KB-JWT: signature valid via cnf key · sd_hash matches · nonce &amp; aud match the request · iat fresh</text>
+<text x="114" y="1822" class="tag" fill="#c06010">⚠ KB-JWT verification currently supports cnf.jwk only — cnf.kid (did:jwk) resolution is a TODO</text>
+<text x="90" y="1848" class="label" fill="#1f5a2a">⑤</text>
+<text x="114" y="1848" class="label" fill="#333">time checks: iat / nbf / exp within ± 180s clock skew</text>
+
+<rect x="90" y="1868" width="1720" height="44" rx="4" fill="#f6e4e0"/>
+<text x="104" y="1888" class="tag" fill="#a23b2e">⚠ vct ↔ issuer-authorization check (requestor cert) is currently DISABLED (TODO) — an issuer's cert is not yet checked to be entitled to issue this vct.</text>
+<text x="104" y="1904" class="tag" fill="#a23b2e">⚠ credential status / revocation (status claim) is parsed but not yet enforced.</text>
+
+<!-- AV profile -->
+<rect x="1880" y="1520" width="1320" height="410" rx="8" fill="#fff5f5" stroke="#c04040" stroke-width="1.2"/>
+<text x="2540" y="1546" text-anchor="middle" class="title" fill="#a03030">EUDI Age-Verification profile</text>
+<text x="2540" y="1564" text-anchor="middle" class="sub" fill="#c04040">minimal disclosure — reveal a threshold, nothing more</text>
+<line x1="1888" y1="1576" x2="3192" y2="1576" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="1900" y="1600" class="label" fill="#333">vct identifies an age-verification credential type</text>
+<text x="1900" y="1622" class="label" fill="#1a7a3a">✓ mandatory:  age_over_18</text>
+<text x="1900" y="1644" class="label" fill="#333">   optional:   age_over_NN  (age_over_16, _21, _65, …)</text>
+<text x="1900" y="1666" class="label" fill="#333">each age_over_* is a selectively-disclosable boolean</text>
+<text x="1900" y="1688" class="label" fill="#333">the holder discloses ONLY the requested threshold</text>
+<line x1="1888" y1="1704" x2="3192" y2="1704" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="1900" y="1728" class="sub" fill="#a03030">typical presentation on the wire:</text>
+<text x="1900" y="1752" class="label" fill="#555">&lt;Issuer JWT&gt; ~ &lt;Disc: age_over_18=true&gt; ~ &lt;KB-JWT&gt;</text>
+<text x="1900" y="1778" class="label" fill="#333">verifier learns: "holder is over 18"</text>
+<text x="1900" y="1798" class="label" fill="#c04040">name, birth_date and every other claim stay withheld</text>
+<line x1="1888" y1="1814" x2="3192" y2="1814" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="1900" y="1836" class="tag" fill="#888">undisclosed claims remain opaque digests in _sd — the verifier sees a hash, never a value</text>
+<text x="1900" y="1854" class="tag" fill="#888">decoy digests can pad _sd so even the number of hidden claims is not revealed</text>
+<text x="1900" y="1878" class="label" fill="#8a5a2b" font-weight="700">SD-JWT VC ≙ mDoc: same AV goal, JWS/JSON instead of COSE/CBOR</text>
+<text x="1900" y="1900" class="tag" fill="#888">Disclosure ≙ IssuerSignedItem  ·  _sd digest ≙ MSO valueDigest  ·  x5c ≙ DS cert in COSE hdr 33</text>
+
+<!-- footer -->
+<text x="1620" y="1980" text-anchor="middle" style="font-size:11px; font-family:ui-monospace,monospace;" fill="#aaa">Full SD-JWT VC Structure — solid = implemented in irmago  |  dashed orange = spec-only / not enforced  |  amber = crypto detail  |  green = trust &amp; disclosure-digest links</text>
+
+</svg>
