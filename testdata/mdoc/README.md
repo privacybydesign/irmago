@@ -3,8 +3,8 @@
 A minimal, self-contained implementation of ISO 18013-5 mDoc selective disclosure,
 built against the EU Age Verification Blueprint (Annex A, `eu.europa.ec.av.1`).
 
-Written to learn how mDoc, CBOR, COSE_Sign1, Tag-24 wrapping, and selective disclosure
-fit together — not production code.
+Not production code — written to understand how mDoc, CBOR, COSE_Sign1, Tag-24,
+certificate chains, and selective disclosure fit together.
 
 ---
 
@@ -13,27 +13,49 @@ fit together — not production code.
 | Component | Status | Notes |
 |---|---|---|
 | `IssuerSignedItem` (4-field envelope) | ✓ | digestID, random, elementIdentifier, elementValue |
-| CBOR encoding (fxamacker/cbor) | ✓ | shortest-form deterministic encoding |
+| CBOR encoding | ✓ | shortest-form deterministic, fxamacker/cbor |
 | Tag-24 wrapping | ✓ | freezes bytes before hashing |
-| SHA-256 valueDigests | ✓ | per-item, `hash(Tag24(CBOR(item)))` |
+| SHA-256 valueDigests | ✓ | `hash(Tag24(CBOR(item)))` per item |
 | MSO construction | ✓ | version, digestAlgorithm, valueDigests, docType, validityInfo |
-| COSE_Sign1 issuerAuth | ✓ | ES256 (ECDSA P-256 + SHA-256), x5chain in header 33 |
-| Self-signed DS certificate | ✓ | test only — no IACA → DS chain |
-| Selective disclosure | ✓ | holder filters which items to reveal, issuerAuth reused unchanged |
-| Digest verification | ✓ | recomputes hash, matches against MSO valueDigests |
-| Tamper detection | ✓ | demonstrates digest mismatch on value tampering |
-| `deviceKeyInfo` in MSO | ✗ | not implemented — device key not embedded at issuance |
-| `deviceSigned` / `deviceAuth` | ✗ | not implemented — no proof of device possession |
-| IACA → DS certificate chain | ✗ | self-signed cert used instead |
-| `DeviceRequest` | ✗ | verifier request format not built |
-| `DeviceResponse` wrapper | ✗ | top-level container not built |
+| COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert |
+| Two-level certificate chain | ✓ | IACA root CA → DS cert, real x509 chain walk |
+| Chain attack rejection | ✓ | untrusted root rejected before signature check |
+| Selective disclosure | ✓ | holder filters items, issuerAuth reused unchanged |
+| Digest verification | ✓ | constant-time comparison via `crypto/subtle` |
+| Tamper detection | ✓ | digest mismatch on value tampering |
+| `deviceKeyInfo` in MSO | ✗ | device key not embedded at issuance |
+| `deviceSigned` / `deviceAuth` | ✗ | no proof of device possession |
+| `DeviceRequest` / `DeviceResponse` | ✗ | verifier request format not built |
 | Session encryption (BLE/NFC) | ✗ | transport layer not built |
+
+---
+
+## Certificate chain
+
+```
+IACA root CA  (self-signed, IsCA=true, offline in production)
+      ↓ signs
+DS cert       (IsCA=false, signs every MSO)
+      ↓ signs
+MSO           (inside COSE_Sign1 issuerAuth)
+```
+
+x5chain header 33 carries `[DS cert, IACA cert]`.
+The verifier pre-installs only the IACA root cert — DS cert arrives with each mDoc.
+
+### Deployment phases
+
+| Phase | Trust anchor | Status |
+|---|---|---|
+| 1 — testing | self-signed IACA root (this code) | current |
+| 2 — pilot | Yivi's own IACA root, manually configured on verifiers | next |
+| 3 — production | EU AV Blueprint root CA, registered AP trust list | future |
 
 ---
 
 ## Crypto suite
 
-Matches EU AV Blueprint Annex A §A.7 — mandatory, no alternatives:
+Matches EU AV Blueprint Annex A §A.7:
 
 ```
 Key type:   P-256 (secp256r1)
@@ -47,62 +69,23 @@ Signing:    COSE_Sign1 (RFC 9052)
 
 ## Data model
 
-Namespace and docType per EU AV Blueprint Annex A §4.1.1 and §4.1.2:
+Per EU AV Blueprint Annex A §4.1.1 and §4.1.2:
 
 ```
-docType:   eu.europa.ec.av.1
-namespace: eu.europa.ec.av.1
-allowed attributes: age_over_18 (mandatory), age_over_NN (optional)
-no other attributes permitted
+docType:    eu.europa.ec.av.1
+namespace:  eu.europa.ec.av.1
+attributes: age_over_18 (mandatory), age_over_NN (optional)
+            no other attributes permitted
 ```
-
----
-
-## Structure
-
-### `main.go`
-
-All code lives in one file, divided into four sections:
-
-```
-Data structures     IssuerSignedItem, MSO, IssuerSigned, MDoc, Tag24Item, etc.
-Tag-24 helpers      tag24Wrap(), hashTag24Item(), mustMarshal()
-Issuer              NewIssuer(), Issue()
-Holder              SelectiveDisclose()
-Verifier            NewVerifier(), Verify()
-main()              wires everything together + runs a tamper test
-```
-
-### `go.mod`
-
-```
-module mdoc_test
-go 1.21
-requires: github.com/fxamacker/cbor/v2, github.com/veraison/go-cose
-```
-
----
-
-## Dependencies
-
-| Package | Purpose |
-|---|---|
-| `github.com/fxamacker/cbor/v2` | CBOR encoding/decoding, Tag-24 wrapping |
-| `github.com/veraison/go-cose` | COSE_Sign1 signing and verification |
-| `crypto/ecdsa`, `crypto/elliptic` | P-256 key generation (Go stdlib) |
-| `crypto/rand` | OS CSPRNG via `/dev/urandom` or `BCryptGenRandom` |
-| `crypto/sha256` | SHA-256 digest computation |
-| `crypto/x509` | Self-signed DS certificate construction |
 
 ---
 
 ## Running
 
 ```bash
-# first time only — downloads dependencies, generates go.sum
+# first time only
 go mod tidy
 
-# run
 go run .\main.go        # Windows
 go run ./main.go        # Linux/macOS
 ```
@@ -112,20 +95,19 @@ go run ./main.go        # Linux/macOS
 ## Expected output
 
 ```
-========================================
-  mDoc Issuer → Holder → Verifier Test
-========================================
-
-Issuer key pair and cert generated
+IACA root CA generated (self-signed, offline in production)
+  Subject: Test Age Verification IACA Root CA
+DS cert generated (signed by IACA root)
+  Subject: Test Age Verification DS - 001
+  Issuer:  Test Age Verification IACA Root CA
 
 --- ISSUER: Building mDoc ---
-  Item 0: age_over_18 = true   (salt: <32 random hex chars>)
-  Item 1: age_over_16 = true   (salt: <32 random hex chars>)
-  Item 2: age_over_21 = false  (salt: <32 random hex chars>)
-  Digest[0]: <64 hex chars>
-  Digest[1]: <64 hex chars>
-  Digest[2]: <64 hex chars>
-  MSO signed: 710 bytes
+  Item 0: age_over_18 = true   (salt: <32 hex chars>)
+  Item 1: age_over_16 = true   (salt: <32 hex chars>)
+  Item 2: age_over_21 = false  (salt: <32 hex chars>)
+  Digest[0..2]: <64 hex chars each>
+  MSO signed by DS cert ✓
+  x5chain: DS cert + IACA cert
 
 --- HOLDER: Selective disclosure ---
   Revealing:   age_over_18
@@ -133,79 +115,54 @@ Issuer key pair and cert generated
   Withholding: age_over_21
 
 --- VERIFIER: Verifying mDoc ---
-  Issuer cert: trusted ✓
+  Certificate chain: valid ✓  (depth 2: DS → IACA root)
   MSO signature: valid ✓
   age_over_18 = true  digest: ✓
   Verification: PASSED ✓
 
-========================================
-  RESULT
-========================================
-  DocType:  eu.europa.ec.av.1
-  Valid:    true
-  Disclosed attributes:
-    age_over_18 = true
+CHAIN ATTACK TEST:
+  Attacker's mDoc valid: false
+  Error: chain verification failed: x509: certificate signed by unknown authority
 
-========================================
-  TAMPER TEST (flip age_over_18 to false)
-========================================
+TAMPER TEST:
   Tampered valid: false
   Error: digest mismatch for age_over_18
-  (tamper correctly rejected ✓)
 ```
 
 ---
 
-## What is NOT checked (known gaps vs real mDoc)
+## Known gaps vs real mDoc
 
-### 1. No IACA → DS certificate chain validation
+### deviceAuth not implemented (replay attack possible)
 
-The verifier only checks if the cert matches its trusted list directly
-(shallow equality, no chain walk). A real verifier would:
+Without `deviceSigned`/`deviceAuth`, a valid presented mDoc can be replayed to any
+verifier. A real implementation embeds the holder's public key in `MSO.deviceKeyInfo`
+at issuance, then requires a fresh `deviceAuth` signature (over `DeviceAuthentication`
+containing a per-session `SessionTranscript`) at every presentation.
 
-```
-dsCert chains to intermediateCert chains to IACARootCert
-```
+Note: EU AV Blueprint Annex A §A.3 lists "Device bound Proof of Age attestations" as
+out of scope for the current spec version — but `deviceKeyInfo` is still present in
+the reference example and will likely be mandated in future versions.
 
-Our self-signed test cert acts as both root and DS simultaneously —
-so anyone with a self-signed cert would pass verification.
+### Verifier sees total digest count
 
-### 2. No deviceAuth (replay attack possible)
-
-Without `deviceSigned` / `deviceAuth`, a valid `presented` mDoc can be
-replayed verbatim to any verifier. A real implementation would:
-
-```
-1. Embed holder's public key in MSO.deviceKeyInfo at issuance
-2. Holder signs DeviceAuthentication (containing fresh SessionTranscript)
-   using their device private key at each presentation
-3. Verifier checks deviceAuth against deviceKeyInfo in the trusted MSO
-```
-
-### 3. Verifier sees total digest count
-
-The verifier receives the full `issuerAuth` (containing all digests), so
-it can call `len(mso.ValueDigests[namespace])` and learn how many total
-claims exist — even for undisclosed ones. Only the *values* are hidden,
-not the *count*.
+The full `issuerAuth` (all digests) travels with every presentation. The verifier can
+call `len(mso.ValueDigests[namespace])` to learn how many total claims exist, even for
+undisclosed ones. Values are hidden — count is not.
 
 ---
 
-## Key concepts covered
+## Dependencies
 
-| Concept | Where in code |
+| Package | Purpose |
 |---|---|
-| CBOR major types and length encoding | implicit in `cbor.Marshal()` calls |
-| Tag-24 `D8 18` wrap (freeze bytes) | `tag24Wrap()` |
-| Deterministic encoding requirement | enforced by fxamacker/cbor |
-| Salt (`random`) purpose | `rand.Read(salt)` in `Issue()` |
-| `digestID` as index into valueDigests | `IssuerSignedItem.DigestID` field |
-| COSE_Sign1 `[protected, unprotected, payload, signature]` | `cose.NewSign1Message()` |
-| protected headers `{1: -7}` = `{alg: ES256}` | `msg.Headers.Protected.SetAlgorithm()` |
-| unprotected header 33 = x5chain (DS cert) | `msg.Headers.Unprotected[int64(33)]` |
-| Sig_structure (what ECDSA actually signs) | handled internally by go-cose |
-| Selective disclosure = filter NameSpaces, reuse issuerAuth | `SelectiveDisclose()` |
-| Tamper detection via digest mismatch | `Verify()` + tamper test in `main()` |
+| `github.com/fxamacker/cbor/v2` | CBOR encoding/decoding, Tag-24 wrapping |
+| `github.com/veraison/go-cose` | COSE_Sign1 signing and verification |
+| `crypto/ecdsa`, `crypto/elliptic` | P-256 key generation |
+| `crypto/rand` | OS CSPRNG (`/dev/urandom` / `BCryptGenRandom`) |
+| `crypto/sha256` | SHA-256 digest computation |
+| `crypto/subtle` | Constant-time digest comparison |
+| `crypto/x509` | Certificate generation and chain validation |
 
 ---
 
@@ -213,7 +170,7 @@ not the *count*.
 
 - ISO 18013-5 — mDoc/mDL standard
 - RFC 8949 — CBOR
-- RFC 9052 — COSE (CBOR Object Signing and Encryption)
+- RFC 9052 — COSE
 - EU Age Verification Blueprint Annex A — `eu.europa.ec.av.1` profile
-- IANA COSE Algorithms registry — algorithm numbers (`-7` = ES256)
-- IANA COSE Key Types registry — key parameter labels (`1`=kty, `-1`=crv, `-2`=x, `-3`=y)
+- IANA COSE Algorithms registry — `-7` = ES256
+- IANA COSE Key Types registry — `1`=kty, `-1`=crv, `-2`=x, `-3`=y

@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -66,7 +67,7 @@ func tag24Wrap(v interface{}) ([]byte, error) {
 		return nil, fmt.Errorf("tag24 inner encode: %w", err)
 	}
 	tagged := cbor.RawTag{
-		Number:  24, // Tagged.ENCODED_CBOR as defined in the Multipaz Kotlin library
+		Number:  24,
 		Content: cbor.RawMessage(mustMarshal(innerBytes)),
 	}
 	return cbor.Marshal(tagged)
@@ -94,39 +95,83 @@ func mustMarshal(v interface{}) []byte {
 // ============================================================
 
 type Issuer struct {
-	privateKey *ecdsa.PrivateKey
-	cert       *x509.Certificate
+	iacakey  *ecdsa.PrivateKey
+	iacacert *x509.Certificate
+
+	dskey  *ecdsa.PrivateKey
+	dscert *x509.Certificate
 }
 
 func NewIssuer() (*Issuer, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	// ── Step 1: IACA root CA (self-signed, kept offline in production) ──
+	iacaKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("generate key: %w", err)
+		return nil, fmt.Errorf("generate IACA key: %w", err)
 	}
 
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
+	iacaSerial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	iacaTemplate := &x509.Certificate{
+		SerialNumber: iacaSerial,
 		Subject: pkix.Name{
-			CommonName:   "Test mDoc Issuer",
-			Organization: []string{"IdPro Test"},
+			CommonName:   "Test Age Verification IACA Root CA",
+			Organization: []string{"Yivi Test"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            1,
+	}
+
+	// self-signed: parent == template
+	iacaDER, err := x509.CreateCertificate(rand.Reader, iacaTemplate, iacaTemplate, &iacaKey.PublicKey, iacaKey)
+	if err != nil {
+		return nil, fmt.Errorf("create IACA cert: %w", err)
+	}
+
+	iacaCert, err := x509.ParseCertificate(iacaDER)
+	if err != nil {
+		return nil, fmt.Errorf("parse IACA cert: %w", err)
+	}
+
+	// ── Step 2: DS cert (signed by IACA root, used online to sign MSOs) ──
+	dsKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generate DS key: %w", err)
+	}
+
+	dsSerial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	dsTemplate := &x509.Certificate{
+		SerialNumber: dsSerial,
+		Subject: pkix.Name{
+			CommonName:   "Test Age Verification DS - 001",
+			Organization: []string{"Yivi Test"},
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
+		IsCA:                  false,
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	// parent = iacaCert (parsed cert), signed with iacaKey
+	dsDER, err := x509.CreateCertificate(rand.Reader, dsTemplate, iacaCert, &dsKey.PublicKey, iacaKey)
 	if err != nil {
-		return nil, fmt.Errorf("create cert: %w", err)
+		return nil, fmt.Errorf("create DS cert: %w", err)
 	}
 
-	cert, err := x509.ParseCertificate(certDER)
+	dsCert, err := x509.ParseCertificate(dsDER)
 	if err != nil {
-		return nil, fmt.Errorf("parse cert: %w", err)
+		return nil, fmt.Errorf("parse DS cert: %w", err)
 	}
 
-	return &Issuer{privateKey: privateKey, cert: cert}, nil
+	return &Issuer{
+		iacakey:  iacaKey,
+		iacacert: iacaCert,
+		dskey:    dsKey,
+		dscert:   dsCert,
+	}, nil
 }
 
 func (iss *Issuer) Issue(docType string, namespace string, claims map[string]interface{}) (*MDoc, error) {
@@ -179,7 +224,8 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]int
 		return nil, fmt.Errorf("marshal mso: %w", err)
 	}
 
-	signer, err := cose.NewSigner(cose.AlgorithmES256, iss.privateKey)
+	// sign with dskey (NOT the IACA key)
+	signer, err := cose.NewSigner(cose.AlgorithmES256, iss.dskey)
 	if err != nil {
 		return nil, fmt.Errorf("create signer: %w", err)
 	}
@@ -187,8 +233,14 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]int
 	msg := cose.NewSign1Message()
 	msg.Payload = msoBytes
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
-	// Store cert DER bytes directly under key 33 (x5chain)
-	msg.Headers.Unprotected[int64(33)] = iss.cert.Raw
+
+	// x5chain header 33: [DS cert, IACA cert]
+	// EU root NOT included — verifier has it pre-installed
+	chain := [][]byte{
+		iss.dscert.Raw,   // leaf — verifier uses this pubkey to verify MSO
+		iss.iacacert.Raw, // intermediate — verifier uses this to verify DS cert
+	}
+	msg.Headers.Unprotected[int64(33)] = chain
 
 	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
 		return nil, fmt.Errorf("sign mso: %w", err)
@@ -199,7 +251,8 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]int
 		return nil, fmt.Errorf("marshal cose: %w", err)
 	}
 
-	fmt.Printf("  MSO signed: %d bytes\n", len(coseBytes))
+	fmt.Printf("  MSO signed by DS cert ✓  (%d bytes)\n", len(coseBytes))
+	fmt.Printf("  x5chain: DS cert + IACA cert\n")
 
 	tag24Items := make([]Tag24Item, len(items))
 	for i, item := range items {
@@ -270,11 +323,19 @@ func SelectiveDisclose(mdoc *MDoc, namespace string, reveal []string) (*MDoc, er
 // ============================================================
 
 type Verifier struct {
-	trustedCerts []*x509.Certificate
+	// trustedRoots: IACA root cert(s) pre-installed on the verifier
+	// Phase 1: test self-signed IACA root
+	// Phase 2: Yivi's own IACA root, manually configured
+	// Phase 3: EU AV Blueprint root CA cert
+	trustedRoots *x509.CertPool
 }
 
-func NewVerifier(trustedCerts []*x509.Certificate) *Verifier {
-	return &Verifier{trustedCerts: trustedCerts}
+func NewVerifier(rootCerts []*x509.Certificate) *Verifier {
+	pool := x509.NewCertPool()
+	for _, c := range rootCerts {
+		pool.AddCert(c)
+	}
+	return &Verifier{trustedRoots: pool}
 }
 
 type VerificationResult struct {
@@ -299,46 +360,82 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		return result
 	}
 
-	// Step 2: extract cert — go-cose stores unprotected headers as []byte directly
+	// Step 2: extract x5chain from unprotected header 33
+	// x5chain = [DS cert DER, IACA cert DER]
 	rawVal, exists := msg.Headers.Unprotected[int64(33)]
 	if !exists {
-		result.Error = "no cert in issuerAuth"
+		result.Error = "no x5chain in issuerAuth header 33"
 		return result
 	}
-	certBytes, ok := rawVal.([]byte)
+
+	// go-cose decodes [][]byte as []interface{} where each element is []byte
+	chainRaw, ok := rawVal.([]interface{})
 	if !ok {
-		result.Error = fmt.Sprintf("cert header wrong type: %T", rawVal)
-		return result
-	}
-
-	issuerCert, err := x509.ParseCertificate(certBytes)
-	if err != nil {
-		result.Error = fmt.Sprintf("parse issuer cert: %v", err)
-		return result
-	}
-
-	// Step 3: check cert is trusted
-	trusted := false
-	for _, tc := range v.trustedCerts {
-		if tc.Equal(issuerCert) {
-			trusted = true
-			break
+		// fallback: single cert (old self-signed style)
+		single, ok2 := rawVal.([]byte)
+		if !ok2 {
+			result.Error = fmt.Sprintf("x5chain wrong type: %T", rawVal)
+			return result
 		}
+		chainRaw = []interface{}{single}
 	}
-	if !trusted {
-		result.Error = "issuer cert not trusted"
+
+	if len(chainRaw) == 0 {
+		result.Error = "x5chain is empty"
 		return result
 	}
-	fmt.Println("  Issuer cert: trusted ✓")
 
-	// Step 4: verify COSE signature
-	verifier, err := cose.NewVerifier(cose.AlgorithmES256, issuerCert.PublicKey)
+	// parse all certs in the chain
+	certs := make([]*x509.Certificate, 0, len(chainRaw))
+	for i, raw := range chainRaw {
+		b, ok := raw.([]byte)
+		if !ok {
+			result.Error = fmt.Sprintf("x5chain[%d] wrong type: %T", i, raw)
+			return result
+		}
+		c, err := x509.ParseCertificate(b)
+		if err != nil {
+			result.Error = fmt.Sprintf("parse x5chain[%d]: %v", i, err)
+			return result
+		}
+		certs = append(certs, c)
+	}
+
+	// certs[0] = DS cert (leaf), certs[1..] = intermediates (IACA cert)
+	dsCert := certs[0]
+
+	// build intermediate pool from certs[1..n]
+	intermediates := x509.NewCertPool()
+	for _, c := range certs[1:] {
+		intermediates.AddCert(c)
+	}
+
+	// Step 3: verify full chain — DS cert → IACA cert → trusted root
+	// x509.Verify walks the chain automatically
+	_, err := dsCert.Verify(x509.VerifyOptions{
+		Roots:         v.trustedRoots,
+		Intermediates: intermediates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		CurrentTime:   time.Now(),
+	})
+	if err != nil {
+		result.Error = fmt.Sprintf("chain verification failed: %v", err)
+		return result
+	}
+	fmt.Printf("  Certificate chain: valid ✓  (depth %d: %s → %s)\n",
+		len(certs),
+		dsCert.Subject.CommonName,
+		certs[len(certs)-1].Subject.CommonName,
+	)
+
+	// Step 4: verify COSE_Sign1 signature using DS cert's public key
+	coseverifier, err := cose.NewVerifier(cose.AlgorithmES256, dsCert.PublicKey)
 	if err != nil {
 		result.Error = fmt.Sprintf("create verifier: %v", err)
 		return result
 	}
-	if err := msg.Verify(nil, verifier); err != nil {
-		result.Error = fmt.Sprintf("signature invalid: %v", err)
+	if err := msg.Verify(nil, coseverifier); err != nil {
+		result.Error = fmt.Sprintf("MSO signature invalid: %v", err)
 		return result
 	}
 	fmt.Println("  MSO signature: valid ✓")
@@ -374,16 +471,15 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 			return result
 		}
 
-		// hash the frozen tag-24 bytes — must match what issuer signed
 		hash := sha256.Sum256(tag24item.EncodedItem)
-
 		expectedDigest, exists := nsDigests[item.DigestID]
 		if !exists {
 			result.Error = fmt.Sprintf("digestID %d not in MSO", item.DigestID)
 			return result
 		}
-
-		if hex.EncodeToString(hash[:]) != hex.EncodeToString(expectedDigest) {
+		if subtle.ConstantTimeCompare(hash[:], expectedDigest) != 1 {
+			// Constant-Time comparison — prevents timing side channel
+			// where early exit on first mismatch would leak digest bytes
 			result.Error = fmt.Sprintf("digest mismatch for %s", item.ElementIdentifier)
 			return result
 		}
@@ -404,13 +500,18 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 func main() {
 	fmt.Println("========================================")
 	fmt.Println("  mDoc Issuer → Holder → Verifier Test")
+	fmt.Println("  with two-level certificate chain")
 	fmt.Println("========================================")
 
 	issuer, err := NewIssuer()
 	if err != nil {
 		log.Fatal("issuer setup:", err)
 	}
-	fmt.Println("\nIssuer key pair and cert generated")
+	fmt.Println("\nIACA root CA generated (self-signed, offline in production)")
+	fmt.Printf("  Subject: %s\n", issuer.iacacert.Subject.CommonName)
+	fmt.Println("DS cert generated (signed by IACA root)")
+	fmt.Printf("  Subject: %s\n", issuer.dscert.Subject.CommonName)
+	fmt.Printf("  Issuer:  %s\n", issuer.dscert.Issuer.CommonName)
 
 	docType := "eu.europa.ec.av.1"
 	namespace := "eu.europa.ec.av.1"
@@ -431,7 +532,8 @@ func main() {
 		log.Fatal("selective disclose:", err)
 	}
 
-	verifier := NewVerifier([]*x509.Certificate{issuer.cert})
+	// verifier trusts ONLY the IACA root — receives DS cert via x5chain at verification time
+	verifier := NewVerifier([]*x509.Certificate{issuer.iacacert})
 	result := verifier.Verify(presented, namespace)
 
 	fmt.Println("\n========================================")
@@ -447,7 +549,27 @@ func main() {
 		fmt.Printf("    %s = %v\n", k, v)
 	}
 
-	// --- TAMPER TEST ---
+	// ── CHAIN ATTACK TEST ──────────────────────────────────────
+	// Attacker generates their own valid IACA + DS pair and issues
+	// a correctly signed mDoc — but their IACA root is not in the
+	// verifier's trusted pool, so chain verification fails before
+	// signature or digest checks are even reached.
+
+	fmt.Println("\n========================================")
+	fmt.Println("  CHAIN ATTACK TEST (attacker's own cert chain)")
+	fmt.Println("========================================")
+
+	attackerIssuer, _ := NewIssuer()
+	// attacker has their own valid IACA+DS chain — but their root is unknown to the verifier
+	attackerMDoc, _ := attackerIssuer.Issue(docType, namespace, map[string]interface{}{"age_over_18": true})
+	attackerPresented, _ := SelectiveDisclose(attackerMDoc, namespace, []string{"age_over_18"})
+
+	attackResult := verifier.Verify(attackerPresented, namespace)
+	fmt.Printf("  Attacker's mDoc valid: %v\n", attackResult.Valid)
+	fmt.Printf("  Error: %s\n", attackResult.Error)
+	fmt.Println("  (correctly rejected — attacker's root not trusted ✓)")
+
+	// ── TAMPER TEST ────────────────────────────────────────────
 	fmt.Println("\n========================================")
 	fmt.Println("  TAMPER TEST (flip age_over_18 to false)")
 	fmt.Println("========================================")
@@ -459,7 +581,6 @@ func main() {
 		ElementValue:      false,
 	}
 	tamperedWrapped, _ := tag24Wrap(tamperedItem)
-
 	tamperedMDoc := &MDoc{
 		DocType: presented.DocType,
 		IssuerSigned: IssuerSigned{
