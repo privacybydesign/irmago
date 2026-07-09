@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- Fix `200 serverResponse: context deadline exceeded (Client.Timeout or context cancellation while reading body)` on slow connections or large/slow response bodies: the outbound `http.Client` in `irma/transport.go` had a 5s `Timeout` that covered the whole request (including reading the response body) and silently overrode the intended 20s per-request context deadline. The 5s timeout is removed so the 20s deadline is the single source of truth.
 
 ## [1.1.0] - 2026-07-08
 ### Added
