@@ -1,0 +1,498 @@
+<svg width="100%" viewBox="0 0 3200 2102" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Full mDoc ISO 18013-5 Structure — AV compliant</title>
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#555" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#b04040" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#1a7a3a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arr-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#1a4fa0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+<style>
+  text { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .title { font-size:13px; font-weight:700; }
+  .sub   { font-size:11px; }
+  .label { font-size:10px; }
+  .tag   { font-size:9px; font-style:italic; }
+  .new   { font-size:9px; font-weight:700; }
+</style>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- LEGEND -->
+<!-- ══════════════════════════════════════════ -->
+<rect x="20" y="20" width="340" height="96" rx="6" fill="#f9f9f9" stroke="#ccc" stroke-width="1"/>
+<text x="32" y="42" class="title" fill="#333">Legend</text>
+<rect x="32" y="52" width="16" height="12" rx="2" fill="#e8edfc" stroke="#3b55b0" stroke-width="0.8"/>
+<text x="54" y="63" class="label" fill="#333">Implemented in Go code (solid border)</text>
+<rect x="32" y="74" width="16" height="12" rx="2" fill="#fff0e0" stroke="#c06010" stroke-width="1.5" stroke-dasharray="3,2"/>
+<text x="54" y="85" class="label" fill="#333">Full spec only — not implemented (dashed)</text>
+<line x1="32" y1="104" x2="56" y2="104" stroke="#1a7a3a" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-green)"/>
+<text x="62" y="108" class="label" fill="#333">digest link (hash relationship)</text>
+
+
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 0  DeviceResponse wrapper -->
+<!-- ══════════════════════════════════════════ -->
+<rect x="780" y="20" width="500" height="54" rx="8" fill="#fff0e0" stroke="#c06010" stroke-width="1.5" stroke-dasharray="4,2"/>
+<text x="1030" y="44" text-anchor="middle" class="title" fill="#7a3a00">DeviceResponse</text>
+<text x="1030" y="62" text-anchor="middle" class="sub" fill="#a05010">top-level container sent to verifier  ✗ not implemented</text>
+
+<line x1="1030" y1="74" x2="1030" y2="104" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 1  MDoc -->
+<!-- ══════════════════════════════════════════ -->
+<rect x="850" y="106" width="360" height="46" rx="8" fill="#eeedfb" stroke="#534ab7" stroke-width="1.2"/>
+<text x="1030" y="129" text-anchor="middle" class="title" fill="#3c3489">MDoc</text>
+
+<path d="M920 152 L920 174 L600 174 L600 196" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<line x1="1030" y1="152" x2="1030" y2="196" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1140 152 L1140 174 L1880 174 L1880 196" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 2  docType | issuerSigned  ........  deviceSigned (far right column) -->
+<!-- ══════════════════════════════════════════ -->
+
+<!-- docType -->
+<rect x="440" y="198" width="280" height="46" rx="6" fill="#f4f3e8" stroke="#7a7a6e" stroke-width="0.8"/>
+<text x="456" y="218" class="title" fill="#555">docType</text>
+<text x="714" y="218" text-anchor="end" class="sub" fill="#888">"eu.europa.ec.av.1"</text>
+<text x="456" y="236" class="sub" fill="#888">(same as namespace)</text>
+
+<!-- issuerSigned -->
+<rect x="760" y="198" width="300" height="58" rx="6" fill="#f4f3e8" stroke="#7a7a6e" stroke-width="0.8"/>
+<text x="780" y="218" class="title" fill="#555">issuerSigned</text>
+<text x="1056" y="212" text-anchor="end" class="sub" fill="#888">├── nameSpaces</text>
+<text x="1056" y="230" text-anchor="end" class="sub" fill="#888">└── issuerAuth</text>
+<text x="780" y="248" class="label" fill="#aaa">contains claims + cryptographic proof</text>
+
+<!-- deviceSigned — pushed far right, own column -->
+<rect x="1720" y="198" width="320" height="70" rx="6" fill="#fff0e0" stroke="#c06010" stroke-width="1.5" stroke-dasharray="4,2"/>
+<text x="1880" y="220" text-anchor="middle" class="title" fill="#7a3a00">deviceSigned</text>
+<text x="1880" y="240" text-anchor="middle" class="sub" fill="#a05010">holder proves device possession</text>
+<text x="1880" y="258" text-anchor="middle" class="new" fill="#c06010">✗ not implemented</text>
+
+<path d="M840 256 L840 284 L340 284 L340 306" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M940 256 L940 284 L1260 284 L1260 306" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- deviceSigned → deviceNameSpaces + deviceAuth, both directly below, own column, no overlap -->
+<path d="M1820 268 L1820 290 L1700 290 L1700 306" fill="none" stroke="#b04040" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#arr-red)"/>
+<path d="M1940 268 L1940 290 L2060 290 L2060 306" fill="none" stroke="#b04040" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#arr-red)"/>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 3  nameSpaces | issuerAuth | deviceNameSpaces | deviceAuth -->
+<!-- ══════════════════════════════════════════ -->
+
+<rect x="180" y="308" width="320" height="64" rx="8" fill="#d8f5eb" stroke="#0f6e56" stroke-width="1.2"/>
+<text x="340" y="330" text-anchor="middle" class="title" fill="#08503a">nameSpaces</text>
+<text x="340" y="354" text-anchor="middle" class="sub" fill="#0f6e56">actual claim data — plaintext items</text>
+
+<rect x="1060" y="308" width="360" height="80" rx="8" fill="#fce8e8" stroke="#a03030" stroke-width="1.2"/>
+<text x="1240" y="330" text-anchor="middle" class="title" fill="#a03030">issuerAuth  (COSE_Sign1)</text>
+<text x="1240" y="354" text-anchor="middle" class="sub" fill="#c04040">cryptographic proof — signed by issuer</text>
+<text x="1240" y="372" text-anchor="middle" class="tag" fill="#888">ES256 (ECDSA P-256)  |  Issuer DS key pair</text>
+
+<!-- deviceNameSpaces — own column, far right, clear of issuerAuth/unprotected entirely -->
+<rect x="1580" y="308" width="240" height="64" rx="6" fill="#fff0e0" stroke="#c06010" stroke-width="1.5" stroke-dasharray="4,2"/>
+<text x="1700" y="330" text-anchor="middle" class="title" fill="#7a3a00">nameSpaces</text>
+<text x="1700" y="350" text-anchor="middle" class="sub" fill="#a05010">empty map { }</text>
+<text x="1700" y="366" text-anchor="middle" class="new" fill="#c06010">✗ device side</text>
+
+<rect x="1940" y="308" width="300" height="116" rx="8" fill="#e3f0e4" stroke="#2f6b3a" stroke-width="1.5" stroke-dasharray="4,2"/>
+<text x="2090" y="330" text-anchor="middle" class="title" fill="#1f5a2a">deviceAuth  (COSE_Sign1)</text>
+<text x="2090" y="350" text-anchor="middle" class="sub" fill="#2f6b3a">holder's OWN key signs — never the issuer's</text>
+<text x="2090" y="368" text-anchor="middle" class="label" fill="#2f6b3a">[ protected, unprotected, payload, signature ]</text>
+<text x="2090" y="384" text-anchor="middle" class="tag" fill="#888">ES256 (ECDSA P-256)  |  key: Holder device key pair</text>
+<text x="2090" y="400" text-anchor="middle" class="new" fill="#c06010">✗ not implemented</text>
+
+<path d="M280 372 L280 400 L160 400 L160 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M400 372 L400 400 L500 400 L500 420" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<path d="M1140 388 L1140 408 L1060 408 L1060 422" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1240 388 L1240 422" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1340 388 L1340 408 L1460 408 L1460 422" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 4  example | ns1 | ns2 | protected | unprotected | payload -->
+<!-- ══════════════════════════════════════════ -->
+
+<!-- ns1: org.iso.18013.5.1 -->
+<rect x="60" y="422" width="200" height="56" rx="6" fill="#c8eed8" stroke="#0f6e56" stroke-width="0.8"/>
+<text x="160" y="444" text-anchor="middle" class="sub" fill="#08503a">"org.iso.18013.5.1"</text>
+<text x="160" y="462" text-anchor="middle" class="label" fill="#0f6e56">general mDL — NOT used here</text>
+
+<!-- ns2: eu.europa.ec.av.1 -->
+<rect x="340" y="422" width="320" height="56" rx="6" fill="#b8e8d0" stroke="#0f6e56" stroke-width="1.2"/>
+<text x="500" y="440" text-anchor="middle" class="sub" fill="#08503a">"eu.europa.ec.av.1"</text>
+<text x="500" y="458" text-anchor="middle" class="label" fill="#0f6e56">✓ EUDI compliant namespace</text>
+<text x="500" y="474" text-anchor="middle" class="label" fill="#c04040">ONLY age_over_18 / age_over_NN</text>
+
+<!-- protected -->
+<rect x="940" y="422" width="240" height="76" rx="6" fill="#f0f0f0" stroke="#666" stroke-width="0.8"/>
+<text x="1060" y="444" text-anchor="middle" class="title" fill="#333">protected headers</text>
+<line x1="946" y1="454" x2="1174" y2="454" stroke="#aaa" stroke-width="0.5"/>
+<text x="954" y="472" class="sub" fill="#555">alg: -7  (ES256)</text>
+<text x="954" y="490" class="label" fill="#777">✓ included in signature</text>
+
+<!-- unprotected -->
+<rect x="1200" y="422" width="240" height="76" rx="6" fill="#f0f0f0" stroke="#666" stroke-width="0.8"/>
+<text x="1320" y="444" text-anchor="middle" class="title" fill="#333">unprotected headers</text>
+<line x1="1206" y1="454" x2="1434" y2="454" stroke="#aaa" stroke-width="0.5"/>
+<text x="1210" y="472" class="sub" fill="#555">key 33: DS cert (x5chain)</text>
+<text x="1210" y="490" class="label" fill="#777">NOT in signature (hint only)</text>
+
+<!-- payload -->
+<rect x="1460" y="422" width="260" height="76" rx="6" fill="#fce8e8" stroke="#a03030" stroke-width="0.8"/>
+<text x="1590" y="444" text-anchor="middle" class="title" fill="#a03030">payload = MSO</text>
+<line x1="1466" y1="454" x2="1714" y2="454" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="1474" y="472" class="sub" fill="#c04040">hashes of all claims</text>
+<text x="1474" y="490" class="label" fill="#c04040">Tag-24 wrapped CBOR</text>
+
+<!-- ns2 → Item 0 -->
+<path d="M420 478 L420 508 L260 508 L260 528" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+<!-- ns2 → Item 1 -->
+<path d="M580 478 L580 508 L640 508 L640 528" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<line x1="1590" y1="498" x2="1590" y2="528" stroke="#a03030" stroke-width="1.5" marker-end="url(#arr-red)"/>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 5  example item | Item 0 | Item 1 | ........ MSO contents -->
+<!-- ══════════════════════════════════════════ -->
+
+<!-- grayed-out example item under org.iso, illustrative only -->
+<path d="M160 478 L160 506 L160 528" fill="none" stroke="#999" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+<rect x="20" y="530" width="200" height="230" rx="6" fill="#f2f2f2" stroke="#999" stroke-width="0.8" stroke-dasharray="4,3"/>
+<text x="120" y="552" text-anchor="middle" class="title" fill="#666">Item (example)</text>
+<line x1="26" y1="562" x2="214" y2="562" stroke="#bbb" stroke-width="0.5"/>
+<text x="32" y="582" class="label" fill="#777">digestID</text>
+<text x="208" y="582" text-anchor="end" class="label" fill="#777">0</text>
+<text x="32" y="602" class="label" fill="#777">random</text>
+<text x="208" y="602" text-anchor="end" class="label" fill="#777">h'A1B2C3..'</text>
+<text x="32" y="622" class="label" fill="#777">identifier</text>
+<text x="208" y="622" text-anchor="end" class="label" fill="#777">"family_name"</text>
+<text x="32" y="642" class="label" fill="#777">value</text>
+<text x="208" y="642" text-anchor="end" class="label" fill="#777">"Smith"</text>
+<line x1="26" y1="656" x2="214" y2="656" stroke="#bbb" stroke-width="0.5"/>
+<text x="32" y="676" class="tag" fill="#888">general mDL field —</text>
+<text x="32" y="692" class="tag" fill="#888">e.g. driver's license use</text>
+<text x="32" y="712" class="label" fill="#b04040" font-weight="700">✗ NOT valid for AV doc</text>
+
+<!-- Item 0: age_over_18 -->
+<rect x="260" y="530" width="200" height="230" rx="6" fill="#daedf8" stroke="#1862a8" stroke-width="0.8"/>
+<text x="360" y="552" text-anchor="middle" class="title" fill="#0c446c">Item 0</text>
+<line x1="266" y1="562" x2="454" y2="562" stroke="#86b6ef" stroke-width="0.5"/>
+<text x="272" y="582" class="label" fill="#1862a8">digestID</text>
+<text x="448" y="582" text-anchor="end" class="label" fill="#1862a8">0</text>
+<text x="272" y="602" class="label" fill="#1862a8">random</text>
+<text x="448" y="602" text-anchor="end" class="label" fill="#1862a8">h'FF3A91..'</text>
+<text x="272" y="622" class="label" fill="#1862a8">identifier</text>
+<text x="448" y="622" text-anchor="end" class="label" fill="#1862a8">"age_over_18"</text>
+<text x="272" y="642" class="label" fill="#1862a8">value</text>
+<text x="448" y="642" text-anchor="end" class="label" fill="#1862a8">true</text>
+<line x1="266" y1="656" x2="454" y2="656" stroke="#86b6ef" stroke-width="0.5"/>
+<text x="272" y="676" class="label" fill="#2a7a2a">→ digest[0] in MSO</text>
+<text x="272" y="694" class="tag" fill="#666">SHA-256(Tag24(this))</text>
+<line x1="266" y1="706" x2="454" y2="706" stroke="#86b6ef" stroke-width="0.5"/>
+<text x="272" y="724" class="tag" fill="#888">wrapped in Tag-24</text>
+<text x="272" y="740" class="label" fill="#1a7a3a" font-weight="700">✓ mandatory AV attribute</text>
+
+<!-- Item 1: age_over_16 -->
+<rect x="540" y="530" width="200" height="230" rx="6" fill="#daedf8" stroke="#1862a8" stroke-width="0.8"/>
+<text x="640" y="552" text-anchor="middle" class="title" fill="#0c446c">Item 1</text>
+<line x1="546" y1="562" x2="734" y2="562" stroke="#86b6ef" stroke-width="0.5"/>
+<text x="552" y="582" class="label" fill="#1862a8">digestID</text>
+<text x="728" y="582" text-anchor="end" class="label" fill="#1862a8">1</text>
+<text x="552" y="602" class="label" fill="#1862a8">random</text>
+<text x="728" y="602" text-anchor="end" class="label" fill="#1862a8">h'A1B2C3..'</text>
+<text x="552" y="622" class="label" fill="#1862a8">identifier</text>
+<text x="728" y="622" text-anchor="end" class="label" fill="#1862a8">"age_over_16"</text>
+<text x="552" y="642" class="label" fill="#1862a8">value</text>
+<text x="728" y="642" text-anchor="end" class="label" fill="#1862a8">true</text>
+<line x1="546" y1="656" x2="734" y2="656" stroke="#86b6ef" stroke-width="0.5"/>
+<text x="552" y="676" class="label" fill="#2a7a2a">→ digest[1] in MSO</text>
+<text x="552" y="694" class="tag" fill="#666">SHA-256(Tag24(this))</text>
+<line x1="546" y1="706" x2="734" y2="706" stroke="#86b6ef" stroke-width="0.5"/>
+<text x="552" y="724" class="tag" fill="#888">wrapped in Tag-24</text>
+<text x="552" y="740" class="label" fill="#1a7a3a" font-weight="700">✓ optional age_over_NN</text>
+
+<!-- MSO contents -->
+<rect x="1460" y="530" width="440" height="400" rx="8" fill="#fff5f5" stroke="#c04040" stroke-width="1.2"/>
+<text x="1680" y="556" text-anchor="middle" class="title" fill="#a03030">MSO contents</text>
+<line x1="1466" y1="566" x2="1894" y2="566" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="1474" y="588" class="sub" fill="#666">version</text>
+<text x="1894" y="588" text-anchor="end" class="sub" fill="#888">"1.0"</text>
+<text x="1474" y="612" class="sub" fill="#666">digestAlgorithm</text>
+<text x="1894" y="612" text-anchor="end" class="sub" fill="#888">"SHA-256"</text>
+<text x="1474" y="636" class="sub" fill="#666">docType</text>
+<text x="1894" y="636" text-anchor="end" class="sub" fill="#888">"eu.europa.ec.av.1"</text>
+<text x="1474" y="660" class="sub" fill="#666">validFrom</text>
+<text x="1894" y="660" text-anchor="end" class="sub" fill="#888">2025-06-20</text>
+<text x="1474" y="684" class="sub" fill="#666">validUntil</text>
+<text x="1894" y="684" text-anchor="end" class="sub" fill="#888">2025-09-18</text>
+<text x="1474" y="708" class="sub" fill="#666">signed</text>
+<text x="1894" y="708" text-anchor="end" class="sub" fill="#888">2025-06-20</text>
+<line x1="1466" y1="722" x2="1894" y2="722" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="1474" y="742" class="sub" fill="#c04040">valueDigests</text>
+<text x="1474" y="764" class="label" fill="#888">  digest[0]</text>
+<text x="1894" y="764" text-anchor="end" class="label" fill="#888">h'3f9a1c..'</text>
+<text x="1474" y="784" class="label" fill="#888">  digest[1]</text>
+<text x="1894" y="784" text-anchor="end" class="label" fill="#888">h'b7e291..'</text>
+<line x1="1466" y1="798" x2="1894" y2="798" stroke="#f0a0a0" stroke-width="0.5"/>
+<text x="1474" y="820" class="sub" fill="#c06010">deviceKeyInfo  ✗ not implemented</text>
+<text x="1474" y="840" class="label" fill="#a06020">  kty: EC2   crv: P-256</text>
+<text x="1474" y="858" class="label" fill="#a06020">  -2: x coordinate (32 bytes)</text>
+<text x="1474" y="876" class="label" fill="#a06020">  -3: y coordinate (32 bytes)</text>
+<text x="1474" y="896" class="tag" fill="#888">  holder public key — embedded at issuance</text>
+<text x="1474" y="914" class="tag" fill="#888">  deviceAuth must prove matching private key</text>
+
+<!-- digest arrows items → MSO -->
+<path d="M360 760 L360 970 L1460 970 L1460 764" fill="none" stroke="#1a7a3a" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr-green)"/>
+<path d="M640 760 L640 990 L1460 990 L1460 784" fill="none" stroke="#1a7a3a" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr-green)"/>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- deviceSig math note, sits below DeviceAuthentication box -->
+
+<!-- arrow from deviceAuth → 4 child boxes directly -->
+<path d="M2090 424 L2090 490 L2050 490 L2050 530" fill="none" stroke="#2f6b3a" stroke-width="1.2" marker-end="url(#arr-green)"/>
+<path d="M2090 424 L2090 490 L2286 490 L2286 530" fill="none" stroke="#2f6b3a" stroke-width="1.2" marker-end="url(#arr-green)"/>
+<path d="M2090 424 L2090 490 L2522 490 L2522 530" fill="none" stroke="#2f6b3a" stroke-width="1.2" marker-end="url(#arr-green)"/>
+<path d="M2090 424 L2090 490 L2758 490 L2758 530" fill="none" stroke="#2f6b3a" stroke-width="1.2" marker-end="url(#arr-green)"/>
+
+<!-- deviceAuth COSE_Sign1 child boxes — mirror of issuerAuth's row 4 boxes, green-tinted -->
+<!-- protected -->
+<rect x="1940" y="530" width="220" height="76" rx="6" fill="#eef6ef" stroke="#2f6b3a" stroke-width="0.8"/>
+<text x="2050" y="552" text-anchor="middle" class="title" fill="#1f5a2a">protected</text>
+<line x1="1948" y1="562" x2="2152" y2="562" stroke="#bcd9bf" stroke-width="0.5"/>
+<text x="1952" y="578" class="sub" fill="#2f6b3a">alg: -7  (ES256)</text>
+<text x="1952" y="594" class="label" fill="#2f6b3a">✓ in signature</text>
+
+<!-- unprotected -->
+<rect x="2176" y="530" width="220" height="76" rx="6" fill="#eef6ef" stroke="#2f6b3a" stroke-width="0.8"/>
+<text x="2286" y="552" text-anchor="middle" class="title" fill="#1f5a2a">unprotected</text>
+<line x1="2184" y1="562" x2="2388" y2="562" stroke="#bcd9bf" stroke-width="0.5"/>
+<text x="2188" y="578" class="sub" fill="#2f6b3a">{ }  empty</text>
+<text x="2188" y="594" class="label" fill="#888">no cert needed</text>
+
+<!-- payload — expanded to show DeviceAuthentication contents -->
+<rect x="2412" y="530" width="280" height="230" rx="6" fill="#eef6ef" stroke="#2f6b3a" stroke-width="0.8"/>
+<text x="2552" y="552" text-anchor="middle" class="title" fill="#1f5a2a">payload</text>
+<line x1="2420" y1="562" x2="2684" y2="562" stroke="#bcd9bf" stroke-width="0.5"/>
+<text x="2424" y="578" class="sub" fill="#2f6b3a">DeviceAuthentication [</text>
+<text x="2436" y="596" class="label" fill="#1f5a2a">[0] "DeviceAuthentication"</text>
+<text x="2436" y="612" class="tag" fill="#888">  fixed context string</text>
+<text x="2436" y="630" class="label" fill="#1f5a2a">[1] SessionTranscript</text>
+<text x="2436" y="646" class="tag" fill="#888">  DeviceEngagementBytes</text>
+<text x="2436" y="662" class="tag" fill="#888">  EReaderKeyBytes</text>
+<text x="2436" y="678" class="tag" fill="#888">  Handover</text>
+<text x="2436" y="694" class="tag" fill="#c04040">  ← fresh every session, defeats replay</text>
+<text x="2436" y="712" class="label" fill="#1f5a2a">[2] docType</text>
+<text x="2436" y="728" class="tag" fill="#888">  "eu.europa.ec.av.1"</text>
+<text x="2436" y="746" class="label" fill="#1f5a2a">[3] deviceNameSpaces</text>
+<text x="2436" y="740" class="tag" fill="#888"></text>
+<text x="2436" y="752" class="tag" fill="#888">  Tag24(empty map) for AV</text>
+<text x="2424" y="746" class="label" fill="#888">]</text>
+
+<!-- signature -->
+<rect x="2708" y="530" width="200" height="76" rx="6" fill="#eef6ef" stroke="#2f6b3a" stroke-width="0.8"/>
+<text x="2808" y="552" text-anchor="middle" class="title" fill="#1f5a2a">signature</text>
+<line x1="2716" y1="562" x2="2900" y2="562" stroke="#bcd9bf" stroke-width="0.5"/>
+<text x="2720" y="578" class="sub" fill="#2f6b3a">ECDSA(d,</text>
+<text x="2720" y="594" class="label" fill="#2f6b3a">SHA-256(Sig_structure))</text>
+
+<!-- compliance note band -->
+<rect x="260" y="1010" width="680" height="56" rx="6" fill="#fff5f5" stroke="#c04040" stroke-width="1"/>
+<text x="600" y="1032" text-anchor="middle" class="sub" fill="#a03030">Annex A §4.1.2 — "SHALL NOT include any other attribute"</text>
+<text x="600" y="1052" text-anchor="middle" class="label" fill="#c04040">family_name, birth_date etc. NOT permitted in eu.europa.ec.av.1</text>
+
+<!-- two signatures, two questions (NEW) -->
+<rect x="960" y="930" width="900" height="230" rx="8" fill="#fbfaf6" stroke="#8a5a2b" stroke-width="1.2"/>
+<text x="1410" y="954" text-anchor="middle" class="title" fill="#7a4a1a">Two signatures — two ECDSA operations, two key pairs</text>
+<line x1="968" y1="966" x2="1852" y2="966" stroke="#dcc7a0" stroke-width="0.5"/>
+
+<!-- header row -->
+<text x="980"  y="984" class="label" fill="#888">Auth</text>
+<text x="1080" y="984" class="label" fill="#888">Key pair</text>
+<text x="1260" y="984" class="label" fill="#888">Signs over</text>
+<text x="1560" y="984" class="label" fill="#888">Frequency</text>
+<line x1="968" y1="990" x2="1852" y2="990" stroke="#dcc7a0" stroke-width="0.3"/>
+
+<!-- issuerAuth row -->
+<text x="980"  y="1012" class="label" fill="#7a4a1a" font-weight="700">issuerAuth</text>
+<text x="1080" y="1012" class="label" fill="#333">Issuer DS key (P-256)</text>
+<text x="1260" y="1012" class="label" fill="#333">MSO (valueDigests)</text>
+<text x="1560" y="1012" class="label" fill="#333">Once, at issuance</text>
+<text x="980"  y="1028" class="tag"   fill="#a06a30">proves: "data is authentic, from a trusted issuer"</text>
+
+<!-- deviceAuth row -->
+<text x="980"  y="1054" class="label" fill="#1f5a2a" font-weight="700">deviceAuth</text>
+<text x="1080" y="1054" class="label" fill="#333">Holder device key (P-256)</text>
+<text x="1260" y="1054" class="label" fill="#333">DeviceAuthentication</text>
+<text x="1560" y="1054" class="label" fill="#333">Fresh, every session</text>
+<text x="980"  y="1070" class="tag"   fill="#2f6b3a">proves: "this device, right now, holds the bound private key"</text>
+
+<line x1="968" y1="1082" x2="1852" y2="1082" stroke="#dcc7a0" stroke-width="0.3"/>
+<text x="980" y="1100" class="tag" fill="#c04040">Both must pass — issuerAuth alone can be replayed by anyone who copied the credential.</text>
+<text x="980" y="1116" class="tag" fill="#c04040">deviceAuth ties the presentation to a live session on the original device.</text>
+
+<!-- device key ownership note (NEW) -->
+<rect x="60" y="1180" width="860" height="170" rx="8" fill="#fbfaf6" stroke="#8a5a2b" stroke-width="1.2"/>
+<text x="490" y="1204" text-anchor="middle" class="title" fill="#7a4a1a">Who generates the device key pair?</text>
+<line x1="68" y1="1216" x2="912" y2="1216" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="80" y="1238" class="label" fill="#1f5a2a">✓ the HOLDER generates it locally — ideally inside Secure Enclave / TEE</text>
+<text x="80" y="1258" class="label" fill="#1f5a2a">✓ only the PUBLIC key is sent to the issuer, embedded in MSO.deviceKeyInfo</text>
+<text x="80" y="1278" class="label" fill="#c04040">✗ issuer NEVER sees the private key — would defeat device binding entirely</text>
+<text x="80" y="1302" class="tag" fill="#888">privateKey stays on device forever, used fresh each presentation</text>
+<text x="80" y="1318" class="tag" fill="#888">publicKey locked into MSO once, signed by issuerAuth, trusted forever</text>
+<text x="80" y="1334" class="tag" fill="#888">recall: this is exactly the TrustZone/StrongBox boundary discussed earlier</text>
+
+
+
+
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 6  DeviceRequest | Session Encryption -->
+<!-- ══════════════════════════════════════════ -->
+
+<rect x="60" y="1372" width="900" height="220" rx="8" fill="#fff0e0" stroke="#c06010" stroke-width="1.5" stroke-dasharray="4,2"/>
+<text x="510" y="1398" text-anchor="middle" class="title" fill="#7a3a00">DeviceRequest  ✗ not implemented</text>
+<text x="510" y="1418" text-anchor="middle" class="sub" fill="#a05010">sent from verifier → holder  |  specifies which attributes to reveal</text>
+<line x1="66" y1="1430" x2="954" y2="1430" stroke="#e0a060" stroke-width="0.5"/>
+<text x="80" y="1452" class="sub" fill="#7a3a00">version: "1.0"</text>
+<text x="80" y="1476" class="sub" fill="#7a3a00">docRequests[0].itemsRequest = Tag24({</text>
+<text x="80" y="1498" class="label" fill="#7a3a00">    docType:    "eu.europa.ec.av.1"</text>
+<text x="80" y="1518" class="label" fill="#7a3a00">    nameSpaces: {</text>
+<text x="80" y="1538" class="label" fill="#7a3a00">        "eu.europa.ec.av.1": { "age_over_18": false }</text>
+<text x="80" y="1558" class="label" fill="#7a3a00">    }    ← false = intent NOT to retain data (privacy flag)</text>
+<text x="80" y="1578" class="label" fill="#888">})</text>
+
+<rect x="1000" y="1372" width="1140" height="220" rx="8" fill="#fff0e0" stroke="#c06010" stroke-width="1.5" stroke-dasharray="4,2"/>
+<text x="1570" y="1398" text-anchor="middle" class="title" fill="#7a3a00">Session Encryption  ✗ not implemented</text>
+<text x="1570" y="1418" text-anchor="middle" class="sub" fill="#a05010">BLE / NFC transport layer (ISO 18013-5 §9)</text>
+<line x1="1006" y1="1430" x2="2134" y2="1430" stroke="#e0a060" stroke-width="0.5"/>
+<text x="1020" y="1452" class="sub" fill="#7a3a00">Key exchange:</text>
+<text x="1020" y="1474" class="label" fill="#7a3a00">  QR code contains verifier ephemeral public key</text>
+<text x="1020" y="1494" class="label" fill="#7a3a00">  Wallet scans QR → ECDH(ephemeral keys) → shared secret</text>
+<text x="1020" y="1514" class="label" fill="#7a3a00">  HKDF(shared secret) → SessionEncryptionKey + SessionMACKey</text>
+<text x="1020" y="1538" class="sub" fill="#7a3a00">Encryption stack:</text>
+<text x="1020" y="1558" class="label" fill="#7a3a00">  [ mDoc session: AES-256-GCM ]  ← primary, wraps DeviceRequest/Response</text>
+<text x="1020" y="1578" class="label" fill="#7a3a00">  [ BLE link:    AES-128-CCM  ]  ← radio layer underneath</text>
+
+<!-- footer (old position text moved down, see below) -->
+
+<!-- ══════════════════════════════════════════ -->
+
+<!-- arrow from signature box → Sig_structure -->
+<line x1="2950" y1="606" x2="2950" y2="640" stroke="#8a5a2b" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#arr)"/>
+<!-- ROW 7  Sig_structure — what ECDSA actually signs -->
+<!-- ══════════════════════════════════════════ -->
+
+<rect x="2720" y="640" width="460" height="320" rx="8" fill="#fdf6ee" stroke="#8a5a2b" stroke-width="1.4"/>
+<text x="2950" y="668" text-anchor="middle" class="title" fill="#7a4a1a">Sig_structure — the bytes ECDSA actually signs</text>
+<text x="2950" y="686" text-anchor="middle" class="sub" fill="#a06a30">NOT the bare MSO payload — built fresh at sign/verify time</text>
+<line x1="2728" y1="698" x2="3172" y2="698" stroke="#dcc7a0" stroke-width="0.5"/>
+
+<text x="2734" y="722" class="label" fill="#7a4a1a">[</text>
+<text x="2754" y="722" class="label" fill="#7a4a1a">"Signature1"</text>
+<text x="2880" y="722" class="tag" fill="#a06a30">← fixed context string</text>
+
+<text x="2754" y="744" class="label" fill="#7a4a1a">protectedHeaders (bstr)</text>
+<text x="2920" y="744" class="tag" fill="#a06a30">← element [0] — A1 01 26</text>
+
+<text x="2754" y="766" class="label" fill="#7a4a1a">external_aad (bstr, empty)</text>
+<text x="2920" y="766" class="tag" fill="#a06a30">← empty byte string (0x40)</text>
+
+<text x="2754" y="788" class="label" fill="#7a4a1a">payload (bstr)</text>
+<text x="2920" y="788" class="tag" fill="#a06a30">← element [2] — Tag24(MSO)</text>
+
+<text x="2734" y="810" class="label" fill="#7a4a1a">]</text>
+
+<line x1="2728" y1="824" x2="3172" y2="824" stroke="#dcc7a0" stroke-width="0.5"/>
+<text x="2734" y="844" class="sub" fill="#a23b2e">verify = ECDSA-verify( DS_key, SHA-256(Sig_structure), sig )</text>
+<text x="2734" y="862" class="label" fill="#888">hashing bare MSO bytes alone → fails every time</text>
+<text x="2734" y="878" class="label" fill="#888">most common COSE implementation mistake</text>
+
+<text x="2734" y="896" class="label" fill="#c06010" font-weight="700">Multipaz: keys carry ESP256 internally, but writes ES256 (−7)</text>
+
+
+<!-- ══════════════════════════════════════════ -->
+<!-- ROW 8  Trust chain: IACA → DS → MSO → ValueDigests -->
+<!-- ══════════════════════════════════════════ -->
+
+<rect x="1180" y="1672" width="1140" height="320" rx="8" fill="#eef3ee" stroke="#2f6b3a" stroke-width="1.4"/>
+<text x="1750" y="1700" text-anchor="middle" class="title" fill="#1f5a2a">Issuer trust chain (full picture)</text>
+<text x="1750" y="1720" text-anchor="middle" class="sub" fill="#2f6b3a">Annex / IACA terminology — what we called "trusted CA list" earlier</text>
+<line x1="1186" y1="1732" x2="2314" y2="1732" stroke="#cfe0cf" stroke-width="0.5"/>
+
+<!-- chain nodes -->
+<rect x="1210" y="1752" width="180" height="64" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="1300" y="1774" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">IACA root cert</text>
+<text x="1300" y="1792" text-anchor="middle" class="tag" fill="#2f6b3a">trust anchor</text>
+<text x="1300" y="1806" text-anchor="middle" class="tag" fill="#2f6b3a">(pre-installed)</text>
+
+<path d="M 1392 1784 L 1430 1784" stroke="#2f6b3a" stroke-width="1.3" marker-end=""/>
+<text x="1396" y="1777" class="tag" fill="#2f6b3a">signs</text>
+
+<rect x="1432" y="1752" width="180" height="64" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="1522" y="1774" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">DS cert</text>
+<text x="1522" y="1792" text-anchor="middle" class="tag" fill="#2f6b3a">in x5chain, hdr 33</text>
+
+<path d="M 1614 1784 L 1652 1784" stroke="#2f6b3a" stroke-width="1.3" marker-end=""/>
+<text x="1600" y="1777" class="tag" fill="#2f6b3a">key signs</text>
+
+<rect x="1654" y="1752" width="180" height="64" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="1744" y="1774" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">MSO</text>
+<text x="1744" y="1792" text-anchor="middle" class="tag" fill="#2f6b3a">COSE_Sign1 payload</text>
+
+<path d="M 1836 1784 L 1874 1784" stroke="#2f6b3a" stroke-width="1.3" marker-end=""/>
+<text x="1842" y="1777" class="tag" fill="#2f6b3a">commits</text>
+
+<rect x="1876" y="1752" width="180" height="64" rx="6" fill="#fff" stroke="#2f6b3a" stroke-width="1"/>
+<text x="1966" y="1774" text-anchor="middle" class="label" fill="#1f5a2a" font-weight="700">ValueDigests</text>
+<text x="1966" y="1792" text-anchor="middle" class="tag" fill="#2f6b3a">per-element hashes</text>
+
+<line x1="1186" y1="1836" x2="2314" y2="1836" stroke="#cfe0cf" stroke-width="0.5"/>
+
+<!-- verification order, numbered -->
+<text x="1200" y="1860" class="sub" fill="#1f5a2a" font-weight="700">Verification order (all three required):</text>
+
+<text x="1200" y="1886" class="label" fill="#1f5a2a">①</text>
+<text x="1222" y="1886" class="label" fill="#333">COSE_Sign1 signature valid over Sig_structure, using DS public key</text>
+
+<text x="1200" y="1910" class="label" fill="#1f5a2a">②</text>
+<text x="1222" y="1910" class="label" fill="#333">DS cert in x5chain chains to a trusted IACA root</text>
+<text x="1222" y="1928" class="tag" fill="#a23b2e">✗ our Go test skips this — self-signed cert, no real chain</text>
+
+<text x="1200" y="1952" class="label" fill="#1f5a2a">③</text>
+<text x="1222" y="1952" class="label" fill="#333">Each disclosed item's Tag-24 digest matches ValueDigests entry</text>
+
+<rect x="1200" y="1968" width="1100" height="20" rx="4" fill="#f6e4e0"/>
+<text x="1750" y="1983" text-anchor="middle" class="tag" fill="#a23b2e">miss step ② and a self-signed credential sails through verification</text>
+
+<!-- footer -->
+<text x="1200" y="2032" text-anchor="middle" style="font-size:11px; font-family:ui-monospace,monospace;" fill="#aaa">Full ISO 18013-5 mDoc Structure — solid border = implemented in Go  |  dashed orange = spec only  |  amber = Sig_structure detail  |  green = trust chain (Lesson 2 additions)</text>
+
+</svg>
