@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -686,6 +687,66 @@ func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 
 	require.Len(t, mock.storedBatches, 2)
 	assert.Equal(t, mock.storedBatches[0].Hash, mock.storedBatches[1].Hash)
+}
+
+// TestVerifyAndStore_SeedsStatusReference pins that issuance persists the
+// credential's status_list reference onto every stored instance, so the
+// disclosure path and the background refresh sweep can run without
+// re-parsing the SD-JWT VC. Seeded LastKnownStatus is Valid because the
+// holder verifier has just confirmed the bit reads Valid at issuance.
+func TestVerifyAndStore_SeedsStatusReference(t *testing.T) {
+	mock := &mockCredentialStore{}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
+
+	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
+	vc.IssuerSignedJwtPayload.Status = &statuslist.StatusClaim{
+		StatusList: &statuslist.Reference{URI: "https://issuer.example.com/sl/1", Index: 42},
+	}
+
+	err := svc.VerifyAndStoreIssuedCredentials(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		"config-id",
+		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
+		false,
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, mock.storedBatches, 1)
+	require.Len(t, mock.storedBatches[0].Instances, 1)
+	inst := mock.storedBatches[0].Instances[0]
+	require.NotNil(t, inst.StatusListURI)
+	assert.Equal(t, "https://issuer.example.com/sl/1", *inst.StatusListURI)
+	require.NotNil(t, inst.StatusListIdx)
+	assert.Equal(t, uint64(42), *inst.StatusListIdx)
+	assert.Equal(t, uint8(statuslist.StatusValid), inst.LastKnownStatus)
+	require.NotNil(t, inst.LastStatusCheckAt)
+}
+
+func TestVerifyAndStore_NoStatusReference_LeavesStatusFieldsNil(t *testing.T) {
+	mock := &mockCredentialStore{}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	svc := newServiceWithMocks(mock, fileStorageMock)
+
+	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
+
+	err := svc.VerifyAndStoreIssuedCredentials(
+		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		"config-id",
+		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
+		false,
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, mock.storedBatches, 1)
+	require.Len(t, mock.storedBatches[0].Instances, 1)
+	inst := mock.storedBatches[0].Instances[0]
+	assert.Nil(t, inst.StatusListURI)
+	assert.Nil(t, inst.StatusListIdx)
+	assert.Equal(t, uint8(statuslist.StatusUnknown), inst.LastKnownStatus)
+	assert.Nil(t, inst.LastStatusCheckAt)
 }
 
 // ========== hashForSdJwtVc ==========

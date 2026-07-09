@@ -977,6 +977,30 @@ func Test_HolderVerificationProcessor_StatusCheck_InvalidList_Rejects(t *testing
 	require.ErrorContains(t, err, "credential status is invalid")
 }
 
+// Holder verification is the exact code path OpenID4VCI issuance runs, so this
+// asserts that a credential whose status is non-VALID at issuance time is
+// rejected — not only the revoked (Invalid, 0x01) case above but also
+// Suspended (0x02), which requires bits >= 2. The gate is fail-closed: only
+// StatusValid is accepted, every other value aborts the issuance.
+func Test_HolderVerificationProcessor_StatusCheck_SuspendedList_RejectsAtIssuance(t *testing.T) {
+	signer := statuslist.NewTestStatusListSigner(t)
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
+		Issuer:   "https://openid4vc.staging.yivi.app",
+		Bits:     2,
+		Statuses: map[uint64]uint8{7: 2}, // Suspended at idx 7
+	})
+
+	config := newWorkingSdJwtVcTestConfig().withStatusListReference(srv.URL(), 7)
+	sdjwtvc := createTestSdJwtVc(t, config)
+	context := CreateDefaultVerificationContext(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	context.StatusChecker = statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	_, err := NewHolderVerificationProcessor(context).ParseAndVerifySdJwtVc(SdJwtVcKb(sdjwtvc))
+	require.ErrorContains(t, err, "credential status is suspended")
+}
+
 func Test_HolderVerificationProcessor_StatusCheck_UnreachableURI_FailsClosed(t *testing.T) {
 	signer := statuslist.NewTestStatusListSigner(t)
 	config := newWorkingSdJwtVcTestConfig().withStatusListReference("http://127.0.0.1:0/nope", 0)

@@ -3,5 +3,12 @@
   "baseUrl": "https://localhost:8443/test-issuer",
   "adminToken": "test-admin-token",
   "did": "test-issuer-did",
-  "usesNonces": true
+  "usesNonces": true,
+  "statusLists": {
+    "StatusListCredentialSdJwt": {
+      "url": "http://statuslist-agent.localhost:9156/statuslist/api/index",
+      "revoke": "http://statuslist-agent.localhost:9156/statuslist/api/revoke",
+      "token": "statuslist-admin-token"
+    }
+  }
 }

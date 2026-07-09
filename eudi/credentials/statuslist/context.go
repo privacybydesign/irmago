@@ -31,6 +31,17 @@ type VerificationContext struct {
 	// permitting did:web resolution over plain HTTP (dev/test only).
 	AllowInsecureDidWeb bool
 
+	// RequireStatusListIssuerMatch, when true, additionally requires the Status
+	// List Token's `iss` to equal the issuer of the credential being
+	// checked (the expectedIss passed to Check/Refresh). This is
+	// STRICTER than the spec, which binds the token to the credential
+	// via `sub` == `uri` plus a trusted signature and leaves issuer
+	// alignment to the trust model (draft-ietf-oauth-status-list-15
+	// §11.3). Default false: a delegated Status Issuer (e.g. a separate
+	// status-list service signing with its own key) is accepted as
+	// long as the signature is trusted and `sub` matches.
+	RequireStatusListIssuerMatch bool
+
 	// HTTPClient is used by the fetcher (for the status list URI)
 	// and indirectly by the KidKeyProvider for did:web resolution.
 	// nil falls back to http.DefaultClient.

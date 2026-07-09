@@ -73,15 +73,13 @@ func (v *verifiedStatusList) ttlFromPayload() time.Duration {
 // verifyStatusListToken parses, signature-verifies, and time-checks a
 // Status List Token.
 //
-//   - expectedIss MUST equal the iss claim — the iss(StatusListToken)
-//     == iss(credential) binding required by this deployment's trust
-//     model. The spec leaves issuer alignment to the trust model
-//     (draft-ietf-oauth-status-list-15 §11.3); requiring equality is a
-//     permitted, spec-compliant choice, and here it is load-bearing —
-//     see the security note at the check below before relaxing it.
 //   - expectedURI MUST equal the sub claim — the spec's anti-substitution
 //     binding (§5.1, validation step §8.3): the fetched token's subject
 //     must be the very URI the credential pointed at.
+//   - expectedIss is only enforced when ctx.RequireStatusListIssuerMatch is set;
+//     it then MUST equal the iss claim (a stricter-than-spec
+//     iss(StatusListToken) == iss(credential) binding). Off by default
+//     so a delegated Status Issuer is accepted — see §11.3.
 func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss, expectedURI string, now time.Time) (*verifiedStatusList, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{StatusListTokenTyp}, ctx.AllowInsecureDidWeb)
 
@@ -114,26 +112,14 @@ func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss, 
 		}
 	}
 
-	// Issuer binding: iss(StatusListToken) MUST equal iss(credential).
-	//
-	// SECURITY — do not relax this without adding cert-identity binding.
-	// VerifyCertificate above is called with hostname=nil, so the x5c
-	// path only proves the signer chains to *some* trust anchor, not
-	// that it is the credential's issuer. The sub == uri check below
-	// only stops a token for a *different* list being substituted — it
-	// does NOT stop a different trusted issuer from minting a fresh
-	// all-valid token for the *correct* URI. In a multi-issuer trust
-	// store, dropping this check would let any trusted issuer suppress
-	// another issuer's revocations. This is the sole anti-cross-issuer
-	// control. Delegated status hosting (a distinct Status Issuer, which
-	// the spec permits) must be added via identity binding, not by
-	// weakening this equality.
-	iss, ok := token.Issuer()
-	if !ok || iss == "" {
-		return nil, fmt.Errorf("%w: missing iss claim", ErrUnauthorized)
-	}
-	if iss != expectedIss {
-		return nil, fmt.Errorf("%w: iss mismatch: got %q, expected %q", ErrUnauthorized, iss, expectedIss)
+	if ctx.RequireStatusListIssuerMatch {
+		iss, ok := token.Issuer()
+		if !ok || iss == "" {
+			return nil, fmt.Errorf("%w: missing iss claim", ErrUnauthorized)
+		}
+		if iss != expectedIss {
+			return nil, fmt.Errorf("%w: iss mismatch: got %q, expected %q", ErrUnauthorized, iss, expectedIss)
+		}
 	}
 
 	var payload statusListPayload

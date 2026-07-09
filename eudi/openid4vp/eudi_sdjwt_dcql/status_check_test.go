@@ -103,8 +103,10 @@ func Test_CheckInstanceStatus_IssMismatch_FailsClosed(t *testing.T) {
 		Statuses: map[uint64]uint8{0: 0},
 	})
 	h := &SdJwtVcDcqlHandler{
+		// Opt into the stricter iss-match binding for this test.
 		statusChecker: statuslist.NewChecker(statuslist.VerificationContext{
-			X509Context: signer.X509VerificationContext(),
+			X509Context:                  signer.X509VerificationContext(),
+			RequireStatusListIssuerMatch: true,
 		}, statuslist.NewInMemoryCache()),
 	}
 	uri := srv.URL()

@@ -35,10 +35,29 @@ func Test_VerifyStatusListToken_IssMismatch_Rejected(t *testing.T) {
 		Statuses: map[uint64]uint8{0: 0},
 	})
 
-	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	// iss-match is opt-in: only enforced when RequireStatusListIssuerMatch is set.
+	vc := VerificationContext{X509Context: signer.X509VerificationContext(), RequireStatusListIssuerMatch: true}
 	_, err := verifyStatusListToken(body, vc, "https://other-issuer.example", "https://issuer.example/sl/1", time.Now())
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Contains(t, err.Error(), "iss mismatch")
+}
+
+func Test_VerifyStatusListToken_IssMismatch_AllowedWhenNotRequired(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	// Token signed by a delegated Status Issuer: trusted signature, sub
+	// matches the uri, but iss differs from the credential issuer.
+	body := signer.SignToken(t, TestStatusListOpts{
+		Issuer:   "https://delegated-status-issuer.example",
+		Subject:  "https://issuer.example/sl/1",
+		IssuedAt: time.Now(),
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+
+	// Default context: RequireStatusListIssuerMatch off -> accepted (spec behavior).
+	vc := VerificationContext{X509Context: signer.X509VerificationContext()}
+	_, err := verifyStatusListToken(body, vc, "https://issuer.example", "https://issuer.example/sl/1", time.Now())
+	require.NoError(t, err)
 }
 
 func Test_VerifyStatusListToken_WrongTyp_Rejected(t *testing.T) {

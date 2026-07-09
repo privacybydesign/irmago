@@ -175,8 +175,13 @@ func Test_Checker_Check_FetchFailure_FailsClosed(t *testing.T) {
 	require.ErrorIs(t, err, ErrFetch)
 }
 
-func Test_Checker_Check_IssMismatch_FailsClosed(t *testing.T) {
-	signer, srv, checker := makeSignerServerChecker(t)
+func Test_Checker_Check_IssMismatch_FailsClosed_WhenRequireStatusListIssuerMatch(t *testing.T) {
+	signer := NewTestStatusListSigner(t)
+	srv := NewTestStatusListServer(t, nil)
+	checker := NewChecker(VerificationContext{
+		X509Context:                  signer.X509VerificationContext(),
+		RequireStatusListIssuerMatch: true,
+	}, NewInMemoryCache())
 	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://attacker.example",
 		Bits:     1,
@@ -185,6 +190,22 @@ func Test_Checker_Check_IssMismatch_FailsClosed(t *testing.T) {
 
 	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
 	require.ErrorIs(t, err, ErrUnauthorized)
+}
+
+func Test_Checker_Check_IssMismatch_AllowedByDefault(t *testing.T) {
+	signer, srv, checker := makeSignerServerChecker(t) // RequireStatusListIssuerMatch off
+	srv.Serve(t, signer, TestStatusListOpts{
+		Issuer:   "https://delegated-status-issuer.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 0},
+	})
+
+	// sub matches the fetch URI and the signature is trusted; the iss
+	// differs from the credential issuer but is accepted because
+	// RequireStatusListIssuerMatch is off (the spec binds via sub + signature).
+	s, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	require.NoError(t, err)
+	require.Equal(t, StatusValid, s)
 }
 
 func Test_Checker_Check_SubMismatch_FailsClosed(t *testing.T) {
