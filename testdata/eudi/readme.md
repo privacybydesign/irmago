@@ -13,7 +13,7 @@
 | `issuer_ec_pub.pem` | test holder ECDSA private key |
 
 
-Pem formatted ECDSA keys were generated using the following commands:
+PEM formatted ECDSA keys were generated using the following commands:
 
 ```bash
 # generate priv key
@@ -23,7 +23,7 @@ openssl ecparam -name prime256v1 -genkey -noout -out ec_private.pem
 openssl ec -in ec_private.pem -pubout -out ec_public.pem
 ```
 
-Pem formatted keys are converted to jwk formatted keys using [jwker](https://github.com/jphastings/jwker).
+PEM formatted keys are converted to jwk formatted keys using [jwker](https://github.com/jphastings/jwker).
 
 
 Self-signed certificates are generated using the `gen-cert.sh` script.

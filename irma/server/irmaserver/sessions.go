@@ -98,6 +98,12 @@ const (
 	maxLockRetryTime           = 2 * time.Second
 	requestorTokenLookupPrefix = "token:"
 	clientTokenLookupPrefix    = "session:"
+
+	// updateChannelBuffer is the buffer size of the channels handed out by
+	// subscribeUpdates. It is large enough to comfortably hold all status
+	// transitions of a session, so that updates are not dropped while a
+	// subscriber is reading them in its usual tight loop.
+	updateChannelBuffer = 16
 )
 
 var (
@@ -146,9 +152,10 @@ func (s *memorySessionStore) clientTransaction(ctx context.Context, t irma.Clien
 
 func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handler func(session *sessionData) (bool, error)) error {
 	// The session struct contains pointers to other structs, so we need to give the handler a deep copy to prevent side effects.
-	sesBefore := memSes.sessionData
+	// We read the current session pointer under the lock as well, since it may be replaced concurrently by another transaction.
 	ses := &sessionData{}
 	memSes.Lock()
+	sesBefore := memSes.sessionData
 	err := copyObject(sesBefore, ses)
 	memSes.Unlock()
 	if err != nil {
@@ -175,33 +182,76 @@ func (s *memorySessionStore) handleTransaction(memSes *memorySessionData, handle
 
 	// Check if the session has changed by another routine, and if not, update it in memory.
 	memSes.Lock()
-	defer memSes.Unlock()
 	if sesBefore != memSes.sessionData {
+		memSes.Unlock()
 		return errors.New("session changed by another routine")
 	}
 	memSes.sessionData = sesAfter
+	memSes.Unlock()
 
-	go func() {
-		for _, channel := range s.updateChannels[ses.RequestorToken] {
-			channel <- ses
+	// Notify any subscribers of the update. We take the read lock so that the set
+	// of update channels cannot be modified while we iterate it, and, crucially,
+	// so that none of these channels can be closed (which only happens under the
+	// write lock in deleteExpired and stop) while we are sending on them. This
+	// prevents a "send on closed channel" panic. The sends are non-blocking: a
+	// subscriber that is still around reads its buffered channel in a tight loop
+	// so updates are not dropped in practice, while a slow or already-departed
+	// subscriber can never block the store (and is cleaned up in unsubscribe).
+	s.RLock()
+	defer s.RUnlock()
+	for _, channel := range s.updateChannels[ses.RequestorToken] {
+		select {
+		case channel <- sesAfter:
+		default:
 		}
-	}()
+	}
 	return nil
 }
 
 func (s *memorySessionStore) subscribeUpdates(ctx context.Context, token irma.RequestorToken) (chan *sessionData, error) {
-	statusChan := make(chan *sessionData)
+	statusChan := make(chan *sessionData, updateChannelBuffer)
+	s.Lock()
+	s.updateChannels[token] = append(s.updateChannels[token], statusChan)
+	s.Unlock()
+
+	// When the subscriber's context is cancelled (i.e. it has stopped reading
+	// from the channel), remove the channel from the store so we no longer send
+	// updates to it. We deliberately do not close the channel here: the store
+	// remains the sole closer of subscription channels (in deleteExpired and
+	// stop), which preserves the close-once invariant and avoids a double close.
+	go func() {
+		<-ctx.Done()
+		s.unsubscribeUpdates(token, statusChan)
+	}()
+
+	return statusChan, nil
+}
+
+// unsubscribeUpdates removes statusChan from the set of update channels for the
+// given token, if it is still present. It does not close the channel.
+func (s *memorySessionStore) unsubscribeUpdates(token irma.RequestorToken, statusChan chan *sessionData) {
 	s.Lock()
 	defer s.Unlock()
-	s.updateChannels[token] = append(s.updateChannels[token], statusChan)
-	return statusChan, nil
+	channels := s.updateChannels[token]
+	for i, channel := range channels {
+		if channel == statusChan {
+			s.updateChannels[token] = append(channels[:i], channels[i+1:]...)
+			break
+		}
+	}
+	if len(s.updateChannels[token]) == 0 {
+		delete(s.updateChannels, token)
+	}
 }
 
 func (s *memorySessionStore) stop() {
 	s.Lock()
 	defer s.Unlock()
-	for _, session := range s.requestor {
-		for _, channel := range s.updateChannels[session.RequestorToken] {
+	// Iterate the update channels directly (keyed by requestor token) so we don't
+	// have to read through the per-session-locked sessionData while holding the
+	// store lock. Entries only exist while a session has subscribers.
+	for _, channels := range s.updateChannels {
+		for _, channel := range channels {
 			close(channel)
 		}
 	}
@@ -235,7 +285,17 @@ func (s *memorySessionStore) deleteExpired() {
 	defer s.Unlock()
 	for _, token := range expired {
 		session := s.requestor[token]
-		delete(s.client, session.ClientToken)
+		if session == nil {
+			// A concurrent deleteExpired run may already have removed this
+			// session between the ttl check above and acquiring the write lock.
+			continue
+		}
+		// The client token lives in the per-session-locked sessionData, which may
+		// be swapped concurrently by handleTransaction, so read it under that lock.
+		session.Lock()
+		clientToken := session.ClientToken
+		session.Unlock()
+		delete(s.client, clientToken)
 		delete(s.requestor, token)
 		for _, channel := range s.updateChannels[token] {
 			close(channel)

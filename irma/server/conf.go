@@ -231,11 +231,11 @@ func (conf *Configuration) verifyStaticSessions() error {
 		}
 		j, err := json.Marshal(r)
 		if err != nil {
-			return errors.WrapPrefix(err, "failed to parse static session request "+name, 0)
+			return fmt.Errorf("failed to parse static session request %s: %w", name, err)
 		}
 		rrequest, err := ParseSessionRequest(j)
 		if err != nil {
-			return errors.WrapPrefix(err, "failed to parse static session request "+name, 0)
+			return fmt.Errorf("failed to parse static session request %s: %w", name, err)
 		}
 		action := rrequest.SessionRequest().Action()
 		if action != irma.ActionDisclosing && action != irma.ActionSigning {
@@ -331,12 +331,12 @@ func (conf *Configuration) prepareRevocation(credid irma.CredentialTypeIdentifie
 		sk = isk
 		exists, err := conf.IrmaConfiguration.Revocation.Exists(credid, isk.Counter)
 		if err != nil {
-			return errors.WrapPrefix(err, fmt.Sprintf("failed to check if accumulator exists for %s-%d", credid, isk.Counter), 0)
+			return fmt.Errorf("failed to check if accumulator exists for %s-%d: %w", credid, isk.Counter, err)
 		}
 		if !exists {
 			conf.Logger.Warnf("Creating initial accumulator for %s-%d", credid, isk.Counter)
 			if err = conf.IrmaConfiguration.Revocation.EnableRevocation(credid, sk); err != nil {
-				return errors.WrapPrefix(err, fmt.Sprintf("failed create initial accumulator for %s-%d", credid, isk.Counter), 0)
+				return fmt.Errorf("failed create initial accumulator for %s-%d: %w", credid, isk.Counter, err)
 			}
 		}
 		return nil
@@ -378,7 +378,7 @@ func (conf *Configuration) verifyRevocation() error {
 			conf.Logger.Info("revocation server mode enabled for " + credid.String())
 		}
 		if settings.Server {
-			conf.Logger.Info("Being the revocation server for a credential type comes with special responsibilities. Failure can lead to all IRMA apps being unable to disclose credentials of this type. Read more at https://irma.app/docs/revocation/#issuer-responsibilities.")
+			conf.Logger.Info("Being the revocation server for a credential type comes with special responsibilities. Failure can lead to all IRMA apps being unable to disclose credentials of this type. Read more at https://docs.yivi.app/revocation#issuer-responsibilities.")
 		}
 	}
 
@@ -436,7 +436,7 @@ func (conf *Configuration) verifyJwtPrivateKey() error {
 
 	keybytes, err := common.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
 	if err != nil {
-		return errors.WrapPrefix(err, "failed to read private key", 0)
+		return fmt.Errorf("failed to read private key: %w", err)
 	}
 
 	conf.JwtRSAPrivateKey, err = jwt.ParseRSAPrivateKeyFromPEM(keybytes)
@@ -479,7 +479,7 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 		})
 	}
 	if err := cl.Ping(context.Background()).Err(); err != nil {
-		return nil, errors.WrapPrefix(err, "failed to connect to Redis", 0)
+		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
 	// Check whether Redis is in failover mode (either Redis Sentinel or Redis Cluster)
@@ -508,7 +508,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	if conf.RedisSettings.DisableTLS {
 		if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
 			err := errors.New("Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
-			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+			return nil, fmt.Errorf("redis TLS config failed: %w", err)
 		}
 		return nil, nil
 	}
@@ -516,7 +516,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	if conf.RedisSettings.TLSCertificate != "" || conf.RedisSettings.TLSCertificateFile != "" {
 		caCert, err := common.ReadKey(conf.RedisSettings.TLSCertificate, conf.RedisSettings.TLSCertificateFile)
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+			return nil, fmt.Errorf("redis TLS config failed: %w", err)
 		}
 
 		tlsConfig := &tls.Config{
@@ -531,7 +531,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 
 			cert, err := tls.LoadX509KeyPair(conf.RedisSettings.TLSClientCertificateFile, conf.RedisSettings.TLSClientKeyFile)
 			if err != nil {
-				return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+				return nil, fmt.Errorf("redis TLS config failed: %w", err)
 			}
 
 			tlsConfig.Certificates = []tls.Certificate{cert}
@@ -542,7 +542,7 @@ func (conf *Configuration) redisTLSConfig() (*tls.Config, error) {
 	// By default, the certificate pool of the system is used
 	systemCerts, err := x509.SystemCertPool()
 	if err != nil {
-		return nil, errors.WrapPrefix(err, "Redis TLS config failed", 0)
+		return nil, fmt.Errorf("redis TLS config failed: %w", err)
 	}
 	tlsConfig := &tls.Config{
 		RootCAs: systemCerts,

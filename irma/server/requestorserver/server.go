@@ -555,7 +555,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 func (s *Server) revoke(w http.ResponseWriter, requestor string, request *irma.RevocationRequest) {
 	allowed, reason := s.conf.CanRevoke(requestor, request.CredentialType)
 	if !allowed {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "message": reason}).
+		s.conf.Logger.WithFields(logrus.Fields{"requestor": common.SanitizeForLog(requestor), "message": common.SanitizeForLog(reason)}).
 			Warn("Requestor not authorized to revoke credential; full request: ", server.ToJson(request))
 		server.WriteError(w, server.ErrorUnauthorized, reason)
 		return
@@ -584,7 +584,7 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.Re
 	if !applies {
 		var ctype = r.Header.Get("Content-Type")
 		if !regexp.MustCompile("^application/json").MatchString(ctype) && !regexp.MustCompile("^text/plain").MatchString(ctype) {
-			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", ctype)
+			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", common.SanitizeForLog(ctype))
 			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
 			return false
 		}
