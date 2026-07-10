@@ -58,6 +58,15 @@ func (c *Checker) check(ctx context.Context, ref Reference, expectedIss string, 
 
 	now := c.nowFn()
 
+	// Cache and singleflight are keyed on ref.URI alone, not (URI, expectedIss).
+	// Safe because expectedIss is only enforced when
+	// ctx.RequireStatusListIssuerMatch is set (see verifier.go), and that flag is
+	// off in all production wiring, so a fetched+verified list does not depend on
+	// expectedIss. If that flag is ever wired on, this key MUST include
+	// expectedIss (status_refresh_service.go already groups by (uri, iss)),
+	// otherwise a concurrent caller with a different expectedIss could receive a
+	// list verified against the first caller's iss and skip the iss check.
+
 	// Cache fast-path.
 	if !bypassCache {
 		if raw, expires, ok := c.cache.Get(ref.URI); ok && now.Before(expires) {

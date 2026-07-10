@@ -183,8 +183,7 @@ services:
   veramo_openid4vci:
     # NOTE (status lists): bumped 1.4.1 -> 1.5.5 to get IETF Token Status
     # List support (it attaches `status.status_list {idx,uri}` to issued
-    # dc+sd-jwt creds and proxies revoke to the statuslist_agent). UNVERIFIED:
-    # 1.5.5 may change other behaviour relied on by existing OID4VCI/VP tests.
+    # dc+sd-jwt creds and proxies revoke to the statuslist_agent).
     build:
       context: https://github.com/eduwallet/veramo-agent.git#v1.5.5
     command: ["yarn", "start"]
@@ -226,9 +225,6 @@ services:
   # that veramo_openid4vci calls at issuance/revocation. It shares the
   # veramo_postgres server, isolated in its own `statuslist` schema
   # (created by veramo_postgres_init).
-  #
-  # !!! UNVERIFIED SCAFFOLDING — needs a running docker stack to validate. !!!
-  # Runtime unknowns: see testdata/statuslist-agent/README.md.
   # ---------------------------------------------------------------------------
   statuslist_agent:
     # The repo's docker/Dockerfile is a non-functional stub, so build inline
@@ -237,7 +233,7 @@ services:
     # local.key with our fixed did:web name — this avoids guessing the
     # @muisit/cryptokey hex format.
     build:
-      context: https://github.com/privacybydesign/statuslist-agent.git#main
+      context: https://github.com/privacybydesign/statuslist-agent.git#46d5c8cc3197cdf4a1e3299f5ac50b4b3f19eefa
       dockerfile_inline: |
         FROM node:20-bookworm
         WORKDIR /app

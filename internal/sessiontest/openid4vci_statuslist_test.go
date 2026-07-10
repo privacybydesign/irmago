@@ -2,9 +2,7 @@ package sessiontest
 
 // End-to-end Token Status List (draft-ietf-oauth-status-list-15) tests over
 // OpenID4VCI. These require the full docker-compose stack including the
-// statuslist_agent service and veramo bumped to v1.5.5. See
-// testdata/statuslist-agent/README.md for the runtime unknowns that must be
-// validated before these can be expected to pass.
+// statuslist_agent service and veramo bumped to v1.5.5.
 //
 // What they exercise:
 //   - issuance-time holder check: the wallet fetches + verifies the
@@ -20,7 +18,7 @@ package sessiontest
 // reads StatusInvalid; a batch's instances are revoked together). The
 // revocation effect below is still asserted via disclosure refusal, which is
 // the fail-closed guarantee; asserting Revoked on the model after
-// RefreshStatuses would be a valid additional check once this suite runs.
+// RefreshStatuses would be a valid additional check.
 
 import (
 	"context"
@@ -171,8 +169,10 @@ func testOpenID4VPStatusListRevokedRefusesDisclosure(t *testing.T) {
 	grantPermission(t, c, session.Id, makeDisclosureChoice(owned[0]))
 
 	session = awaitSessionState(t, sessionHandler)
-	require.NotEqual(t, clientmodels.Status_Success, session.Status,
-		"disclosure of a revoked credential must be refused (fail-closed status check)")
+	require.Equal(t, clientmodels.Status_Error, session.Status,
+		"disclosure of a revoked credential must fail closed")
+	require.Contains(t, fmt.Sprintf("%+v", session.Error), "not valid",
+		"refusal must come from the status check (handler.go checkInstanceStatus), not an unrelated error")
 }
 
 // revokeStatusListCredentialViaVeramo revokes every issued status-list
