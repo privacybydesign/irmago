@@ -1,7 +1,7 @@
 # Storage regression snapshot — v0.19.2
 
 Client storage generated at the `v0.19.2` tag, loaded and verified by
-`TestClientStorageRegression`. This snapshot predates the EUDI SQLCipher
+`TestClientStorageRegressionV0_19_2`. This snapshot predates the EUDI SQLCipher
 storage, so it contains only the IRMA client (bbolt) database.
 
 ## Files
@@ -36,3 +36,17 @@ No credentials are removed, so there are no removal logs.
   (2 consumed by OpenID4VP disclosure).
 - **Activity logs** (8 entries): 4 issuance, 1 IRMA disclosure, 1 signature and
   2 OpenID4VP disclosures — returned newest-first.
+
+## Verified by the regression test
+
+`TestClientStorageRegressionV0_19_2` asserts, through `client.Client`'s public interface
+(`GetCredentials` / `LoadNewestLogs`):
+
+- each credential's attribute names and values, and valid PNG logos on the credential +
+  issuer images;
+- the `test.test.email` SD-JWT instance count (8 of 10);
+- log count, types, newest-first ordering, and content — the signed message and every
+  disclosure's disclosed `email` attribute, with valid images on log credentials;
+- that the loaded client can still run fresh sessions: IRMA issuance, IRMA disclosure
+  (incl. keyshare) and signature, OpenID4VCI issuance, and OpenID4VP disclosure
+  (direct-post and veramo).
