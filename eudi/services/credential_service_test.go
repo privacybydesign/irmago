@@ -520,25 +520,31 @@ func storeBatch(t *testing.T, mock *mockCredentialStore, vcs ...*sdjwtvc.Verifie
 	)
 }
 
-func TestVerifyAndStoreIssuedCredentials_ConsistentStatusReferences_Stored(t *testing.T) {
+func TestVerifyAndStoreIssuedCredentials_DuplicateStatusReferences_Rejected(t *testing.T) {
+	// Two instances sharing the exact same (uri, idx) entry — double allocation,
+	// which draft-ietf-oauth-status-list §13.2/§13.3 forbids: each one-time-use
+	// copy MUST have its own dedicated entry. Must be rejected before storage.
 	mock := &mockCredentialStore{}
 	err := storeBatch(t, mock,
 		withStatusRef(newVc(), "https://sl.example/1", 5),
 		withStatusRef(newVc(), "https://sl.example/1", 5),
 	)
-	require.NoError(t, err)
-	require.Len(t, mock.storedBatches, 1)
+	require.Error(t, err)
+	assert.Empty(t, mock.storedBatches, "double-allocated batch must not be stored")
 }
 
-func TestVerifyAndStoreIssuedCredentials_DivergentStatusReferences_Rejected(t *testing.T) {
-	// Same list, different index — malformed batch.
+func TestVerifyAndStoreIssuedCredentials_DistinctStatusReferences_Stored(t *testing.T) {
+	// Same list, different index per instance — this is the spec-compliant
+	// one-time-use batch shape (draft-ietf-oauth-status-list §13.2: each copy
+	// MUST have its own dedicated entry for unlinkability), so it must be stored.
 	mock := &mockCredentialStore{}
 	err := storeBatch(t, mock,
 		withStatusRef(newVc(), "https://sl.example/1", 1),
 		withStatusRef(newVc(), "https://sl.example/1", 2),
 	)
-	require.Error(t, err)
-	assert.Empty(t, mock.storedBatches, "malformed batch must not be stored")
+	require.NoError(t, err)
+	require.Len(t, mock.storedBatches, 1)
+	require.Len(t, mock.storedBatches[0].Instances, 2)
 }
 
 func TestVerifyAndStoreIssuedCredentials_PartialStatusReference_Rejected(t *testing.T) {

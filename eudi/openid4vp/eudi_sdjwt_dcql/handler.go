@@ -57,9 +57,10 @@ type SdJwtVcDcqlHandler struct {
 	vctFetcher      typemetadata.VctFetcher
 	issuerFetcher   typemetadata.IssuerFetcher
 
-	// statusChecker, when non-nil, enforces an IETF OAuth Token
-	// Status List check immediately before the wallet hands a
-	// credential instance over for presentation. Nil disables the check.
+	// statusChecker, when non-nil, performs a live (cache-aware) Token Status
+	// List check while building the disclosure plan, so a candidate's Revoked
+	// flag reflects the current status. Nil falls back to the stored
+	// LastKnownStatus. The check never blocks disclosure — see FindCandidates.
 	statusChecker *statuslist.Checker
 }
 
@@ -83,9 +84,9 @@ func NewSdJwtVcDcqlHandler(
 	}
 }
 
-// WithStatusChecker installs a Token Status List checker. When set,
-// every disclosure path consults it for the selected instance and
-// refuses to disclose anything but StatusValid.
+// WithStatusChecker installs a Token Status List checker used to determine the
+// Revoked flag on disclosure candidates via a live (cache-aware) check. When
+// unset, the handler falls back to the stored LastKnownStatus.
 func (h *SdJwtVcDcqlHandler) WithStatusChecker(c *statuslist.Checker) *SdJwtVcDcqlHandler {
 	h.statusChecker = c
 	return h
@@ -127,6 +128,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	}
 
 	now := time.Now()
+
 	hasExhaustedBatch := false
 	for _, batch := range batches {
 		if !isBatchValid(batch, now) {
@@ -139,7 +141,11 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
-		rawSdJwt, _ := loadRawSdJwt(batch, h.credentialStore)
+		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
+		if err != nil {
+			continue
+		}
+		rawSdJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
 		attributes, err := parseBatchAttributes(batch, query, rawSdJwt)
 		if err != nil {
 			continue
@@ -160,6 +166,8 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Attributes:                  attributes,
 			ExpiryDate:                  expiryUnix(batch),
 			Image:                       image,
+			Revoked:                     h.liveRevoked(instance, batch.IssuerURL),
+			RevocationSupported:         instance.StatusListURI != nil,
 		}
 
 		if batch.IssuedAt.Valid {
@@ -189,6 +197,38 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	}
 
 	return result, nil
+}
+
+// liveRevoked reports whether the instance's credential is currently revoked.
+// It performs a live (cache-aware) Token Status List check on the instance so
+// the disclosure plan reflects the current status rather than the last
+// background sweep. If the check can't be run (no checker) or fails (list
+// unreachable) it falls back to the stored status, and never blocks disclosure:
+// revocation is surfaced as a flag for the frontend, with the verifier as the
+// backstop.
+func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstance, issuer string) bool {
+	if instance.StatusListURI == nil || instance.StatusListIdx == nil {
+		return false
+	}
+	if h.statusChecker == nil {
+		// No checker configured (status checking disabled): best-effort from the
+		// last stored status.
+		return statuslist.Status(instance.LastKnownStatus) == statuslist.StatusInvalid
+	}
+	ref := statuslist.Reference{URI: *instance.StatusListURI, Index: *instance.StatusListIdx}
+	// context.Background: the fetch is bounded by the checker's FetchTimeout, and
+	// the disclosure planning path carries no cancellable context.
+	status, err := h.statusChecker.Check(context.Background(), ref, issuer)
+	if err != nil {
+		// Check is cache-aware: it serves the cached status list token while it is
+		// within its OWN ttl (draft-ietf-oauth-status-list §8.2) and re-fetches
+		// once expired. An error therefore means no status is available within its
+		// validity window (the cached token is past its ttl and the re-fetch
+		// failed), so we cannot vouch for the credential — fail safe.
+		eudi.Logger.Warnf("statuslist: no in-ttl status for instance %s (live check failed), treating as revoked: %v", instance.ID, err)
+		return true
+	}
+	return status != statuslist.StatusValid
 }
 
 // composeUnobtainableDescriptor builds a CredentialDescriptor for a credential
@@ -405,11 +445,6 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get unused instance for batch %s: %w", batch.ID, err)
-		}
-
-		// Enforce Token Status List status before disclosure.
-		if err := h.checkInstanceStatus(instance, batch.IssuerURL); err != nil {
-			return nil, err
 		}
 
 		rawSdJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
@@ -1326,36 +1361,4 @@ func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
 		}
 	}
 	return true
-}
-
-// checkInstanceStatus runs the Token Status List check for an
-// instance the wallet is about to disclose. Returns nil when
-// the check is disabled, the instance has no status reference, or
-// the list reads StatusValid; returns an error otherwise so the
-// caller refuses the disclosure (fail-closed).
-//
-// expectedIssuer is the credential's iss URL (== the batch's
-// IssuerURL), used to enforce the iss(StatusListToken) ==
-// iss(credential) binding.
-func (h *SdJwtVcDcqlHandler) checkInstanceStatus(instance *models.IssuedCredentialInstance, expectedIssuer string) error {
-	if h.statusChecker == nil {
-		return nil
-	}
-	if instance.StatusListURI == nil || instance.StatusListIdx == nil {
-		return nil
-	}
-	ref := statuslist.Reference{Index: *instance.StatusListIdx, URI: *instance.StatusListURI}
-	// context.Background is deliberate: the fetch's bound is the checker's
-	// FetchTimeout (a hard ceiling — the fetch cannot hang), not a session
-	// context. The disclosure path (PrepareDisclosure and its callers) carries
-	// no request context, and this runs post-grant while the holder waits on the
-	// result, so cancel-on-dismiss would add little over the existing timeout.
-	status, err := h.statusChecker.Check(context.Background(), ref, expectedIssuer)
-	if err != nil {
-		return fmt.Errorf("status list check failed for instance %s: %w", instance.ID, err)
-	}
-	if status != statuslist.StatusValid {
-		return fmt.Errorf("credential instance %s status is %s, not valid", instance.ID, status)
-	}
-	return nil
 }

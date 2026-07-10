@@ -9,16 +9,17 @@ package sessiontest
 //     statuslist+jwt the agent serves (signed by its did:web, sub == uri) and
 //     accepts the credential because the freshly-allocated bit reads VALID;
 //   - RefreshStatuses: the background sweep re-fetches for the stored instance;
-//   - disclosure-time fail-closed: after the issuer revokes the credential,
-//     a subsequent OpenID4VP disclosure is refused.
+//   - disclosure-time revocation surfacing: after the issuer revokes the
+//     credential, a subsequent OpenID4VP disclosure still offers it in the
+//     plan, now carrying Revoked=true (IRMA parity — the frontend decides, the
+//     wallet does not fail closed).
 //
-// NOTE: revocation now surfaces on the credential model —
-// GetCredentialMetadataList sets Credential.Revoked from the stored
-// LastKnownStatus (revoked when any status-referenced instance of the batch
-// reads StatusInvalid; a batch's instances are revoked together). The
-// revocation effect below is still asserted via disclosure refusal, which is
-// the fail-closed guarantee; asserting Revoked on the model after
-// RefreshStatuses would be a valid additional check.
+// At disclosure the plan's Revoked flag comes from a live (cache-aware) Token
+// Status List check on the instance to be disclosed: the checker serves the
+// cached status list token while it is within its own ttl and re-fetches once
+// expired. If neither an in-ttl cached value nor a fresh fetch is available the
+// instance is treated as revoked (fail-safe). The wallet does not error the
+// session: it surfaces Revoked for the frontend, with the verifier as backstop.
 
 import (
 	"context"
@@ -39,7 +40,7 @@ import (
 //	t.Run("openid4vci/sdjwtvc/status-list", testSessionHandlerForOpenID4VCIStatusList)
 func testSessionHandlerForOpenID4VCIStatusList(t *testing.T) {
 	t.Run("issuance accepts a valid status and refresh runs", testOpenID4VCIStatusListIssuanceAcceptsValid)
-	t.Run("revoked credential is refused at disclosure", testOpenID4VPStatusListRevokedRefusesDisclosure)
+	t.Run("revoked credential is surfaced in the disclosure plan", testOpenID4VPStatusListRevokedSurfacedInPlan)
 }
 
 const statusListCredentialEmail = "statuslist@example.com"
@@ -117,7 +118,7 @@ func testOpenID4VCIStatusListIssuanceAcceptsValid(t *testing.T) {
 	require.NoError(t, c.RefreshStatuses(context.Background()))
 }
 
-func testOpenID4VPStatusListRevokedRefusesDisclosure(t *testing.T) {
+func testOpenID4VPStatusListRevokedSurfacedInPlan(t *testing.T) {
 	// Requires an IETF-compliant status source. The upstream eduwallet
 	// statuslist-agent packs bits MSB-first (W3C @digitalcredentials/bitstring),
 	// which the IETF wallet (LSB-first, draft §4.1) reads at the wrong position,
@@ -132,16 +133,15 @@ func testOpenID4VPStatusListRevokedRefusesDisclosure(t *testing.T) {
 	issueStatusListCredential(t, c, sessionHandler, 1)
 	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
 
-	// The wallet cached the (valid) status list token at issuance, so it must
-	// re-fetch before it can observe the revocation. This simulates the
-	// background refresh sweep learning of the revocation; without it the
-	// disclosure-time check would read the stale-but-fresh cached token.
+	// The wallet cached the (valid) status list token at issuance. RefreshStatuses
+	// bypasses that cache, re-fetches the now-revoked list, and updates the shared
+	// cache. The disclosure plan's live (cache-aware) status check then reads the
+	// refreshed (revoked) list; without this refresh it would hit the still-valid
+	// cached token.
 	require.NoError(t, c.RefreshStatuses(context.Background()))
 
 	// Start an OpenID4VP disclosure that requests the status-list credential by
-	// its vct. FindCandidates does not consult status (checkInstanceStatus runs
-	// in PrepareDisclosure, after permission is granted), so the revoked
-	// credential still appears as an owned option in the plan.
+	// its vct.
 	dcqlQuery := `{
 		"dcql": {
 			"credentials": [
@@ -160,19 +160,15 @@ func testOpenID4VPStatusListRevokedRefusesDisclosure(t *testing.T) {
 	session := awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
 
-	// The revoked instance still appears in the plan (status is checked on
-	// grant, not during planning). Granting must then fail closed: the session
-	// must NOT reach Success.
+	// IRMA parity: the wallet does not refuse a revoked credential outright. It
+	// offers it in the plan with Revoked=true so the frontend can decide what to
+	// do; the verifier's own status check is the backstop.
 	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview, "expected a disclosure choice")
 	owned := session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions
-	require.NotEmpty(t, owned, "revoked instance still expected in the plan (status checked on grant, not plan)")
-	grantPermission(t, c, session.Id, makeDisclosureChoice(owned[0]))
-
-	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_Error, session.Status,
-		"disclosure of a revoked credential must fail closed")
-	require.Contains(t, fmt.Sprintf("%+v", session.Error), "not valid",
-		"refusal must come from the status check (handler.go checkInstanceStatus), not an unrelated error")
+	require.NotEmpty(t, owned, "revoked instance still expected in the plan")
+	require.NotEmpty(t, owned[0].Credentials, "bundle must hold the credential instance")
+	require.True(t, owned[0].Credentials[0].Revoked,
+		"revoked instance must be surfaced to the frontend with Revoked=true")
 }
 
 // revokeStatusListCredentialViaVeramo revokes every issued status-list

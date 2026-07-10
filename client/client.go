@@ -140,8 +140,8 @@ func New(
 	}
 
 	// Token Status List checker, shared by the holder-side verifier
-	// (attached to sdJwtVcVerificationContext below), the OpenID4VP
-	// disclosure handler (set via WithStatusChecker further down),
+	// (attached to sdJwtVcVerificationContext below), the OpenID4VP disclosure
+	// handler (set via WithStatusChecker below, for the plan's Revoked flag),
 	// and the background refresh service.
 	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
 	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
@@ -149,8 +149,8 @@ func New(
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
 
-	// Wire the checker into the EUDI DCQL handler so the status check
-	// runs before the wallet hands over a credential.
+	// Wire the checker into the EUDI DCQL handler so the disclosure plan's
+	// Revoked flag reflects a live (cache-aware) status check.
 	eudiSdJwtDcqlHandler.WithStatusChecker(statusChecker)
 
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted

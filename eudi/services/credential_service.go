@@ -229,10 +229,11 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	}
 
 	// A batch's instances are the same logical credential and are revoked
-	// together, so they must all carry the identical Token Status List
-	// reference (or none). Reject a divergent batch here, before any side
-	// effects, so a malformed issuance can't delete the user's existing
-	// credential (computeHashAndDeleteExisting below is destructive).
+	// together. Per draft-ietf-oauth-status-list §13.2 each one-time-use copy
+	// MUST carry its OWN dedicated, distinct status entry (for unlinkability):
+	// require all-or-none presence and reject duplicate references. Reject here,
+	// before any side effects, so a malformed issuance can't delete the user's
+	// existing credential (computeHashAndDeleteExisting below is destructive).
 	if err := validateStatusReferences(verifiedSdJwtVcs); err != nil {
 		if requireCryptographicKeyBinding {
 			s.deleteOrphanedKeys(publicKeyIdentifiers)
@@ -337,19 +338,37 @@ func statusReferenceOf(v *sdjwtvc.VerifiedSdJwtVc) statuslist.Reference {
 	return *v.IssuerSignedJwtPayload.Status.StatusList
 }
 
-// validateStatusReferences requires every credential in the batch to carry the
-// identical status_list reference (same uri and idx), or for none to carry one.
-// A divergent or partially-present reference is malformed: it would make the
-// batch's single revocation state ambiguous.
+// validateStatusReferences enforces the batch's Token Status List invariants from
+// draft-ietf-oauth-status-list §13.2/§13.3:
+//   - all-or-none: either every instance carries a status_list reference or none
+//     does (a partially-referenced batch would leave some instances
+//     status-checkable and others not);
+//   - uniqueness: each reference MUST be distinct across the batch. Every
+//     one-time-use copy needs its own dedicated (uri, idx) entry so presentations
+//     can't be correlated and to avoid double allocation (§13.3). Copies may
+//     differ by idx on one list or be spread across multiple Status List Tokens.
 func validateStatusReferences(vcs []*sdjwtvc.VerifiedSdJwtVc) error {
-	want := statusReferenceOf(vcs[0])
+	firstHasRef := statusReferenceOf(vcs[0]) != (statuslist.Reference{})
+	seen := make(map[statuslist.Reference]int, len(vcs))
 	for i, v := range vcs {
-		if got := statusReferenceOf(v); got != want {
+		ref := statusReferenceOf(v)
+		hasRef := ref != (statuslist.Reference{})
+		if hasRef != firstHasRef {
 			return fmt.Errorf(
-				"inconsistent status_list reference in batch: instance 0 has %+v, instance %d has %+v",
-				want, i, got,
+				"partial status_list reference in batch: instance 0 hasRef=%t but instance %d hasRef=%t; either all instances carry a status_list reference or none do",
+				firstHasRef, i, hasRef,
 			)
 		}
+		if !hasRef {
+			continue
+		}
+		if prev, dup := seen[ref]; dup {
+			return fmt.Errorf(
+				"duplicate status_list reference in batch: instances %d and %d both use %+v; each one-time-use copy MUST have a dedicated entry (draft-ietf-oauth-status-list §13.2)",
+				prev, i, ref,
+			)
+		}
+		seen[ref] = i
 	}
 	return nil
 }
