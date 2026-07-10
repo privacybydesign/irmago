@@ -206,10 +206,10 @@ func TestGenerateClientStorageForRegressionTests(t *testing.T) {
 	// logs are an ordered run of removals. Keep the credentials the regression
 	// test asserts on: fullName, singleton, email, and one OpenID4VCI credential.
 	keep := map[string]bool{
-		"irma-demo.MijnOverheid.fullName":          true,
-		"irma-demo.MijnOverheid.singleton":         true,
-		"test.test.email":                          true,
-		"https://localhost:8443/vct/organization":  true, // keep the deeply nested credential
+		"irma-demo.MijnOverheid.fullName":         true,
+		"irma-demo.MijnOverheid.singleton":        true,
+		"test.test.email":                         true,
+		"https://localhost:8443/vct/organization": true, // keep the deeply nested credential
 	}
 	creds, err = c.GetCredentials()
 	require.NoError(t, err)
