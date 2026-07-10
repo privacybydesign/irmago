@@ -99,7 +99,7 @@ func TestClientStorageRegressionV1_0_0(t *testing.T) {
 
 	// The three credential removals were the final generator actions, so they are
 	// the newest log entries.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		require.Equal(t, clientmodels.LogType_CredentialRemoval, logs[i].Type,
 			"expected the 3 newest logs to be credential removals")
 	}
