@@ -1345,9 +1345,11 @@ func (h *SdJwtVcDcqlHandler) checkInstanceStatus(instance *models.IssuedCredenti
 		return nil
 	}
 	ref := statuslist.Reference{Index: *instance.StatusListIdx, URI: *instance.StatusListURI}
-	// context.Background: the disclosure path (PrepareDisclosure and its
-	// callers) is not request-context plumbed, so there is no session context
-	// to thread here. The fetch is bounded by the checker's FetchTimeout.
+	// context.Background is deliberate: the fetch's bound is the checker's
+	// FetchTimeout (a hard ceiling — the fetch cannot hang), not a session
+	// context. The disclosure path (PrepareDisclosure and its callers) carries
+	// no request context, and this runs post-grant while the holder waits on the
+	// result, so cancel-on-dismiss would add little over the existing timeout.
 	status, err := h.statusChecker.Check(context.Background(), ref, expectedIssuer)
 	if err != nil {
 		return fmt.Errorf("status list check failed for instance %s: %w", instance.ID, err)
