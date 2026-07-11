@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/hex"
+	"strings"
 	"testing"
 	"time"
 
@@ -499,6 +500,72 @@ func TestExpiredDSCertIsRejected(t *testing.T) {
 		t.Fatalf("expected DS cert to be rejected as expired when checked 400 days in the future, but it was accepted")
 	}
 	t.Logf("correctly rejected expired chain: %s", result.Error)
+}
+
+// TestExpiredMSOValidityIsRejected uses the verifier's clock to check the
+// MSO's OWN validUntil (90 days from issuance per Issuer.Issue), separately
+// from the X.509 DS cert's 365-day expiry. A clock ~100 days out is past the
+// MSO's window but still well within the DS cert's — this specifically
+// exercises the mso.ValidityInfo check, not the certificate chain check.
+func TestExpiredMSOValidityIsRejected(t *testing.T) {
+	issuer, err := NewIssuer()
+	if err != nil {
+		t.Fatalf("NewIssuer: %v", err)
+	}
+	holder, _ := NewHolder()
+	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
+		map[string]interface{}{"age_over_18": true}, &holder.devicekey.PublicKey)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
+	if err != nil {
+		t.Fatalf("SelectiveDisclose: %v", err)
+	}
+
+	futureClock := time.Now().Add(100 * 24 * time.Hour) // past MSO's 90-day validUntil, well within DS cert's 365-day window
+	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.iacacert}, futureClock)
+
+	result := verifier.Verify(presented, "eu.europa.ec.av.1")
+	if result.Valid {
+		t.Fatalf("expected credential to be rejected as expired per MSO validityInfo, but it was accepted")
+	}
+	if !strings.Contains(result.Error, "credential expired") {
+		t.Fatalf("expected a credential-expired error, got: %s", result.Error)
+	}
+	t.Logf("correctly rejected on MSO validityInfo: %s", result.Error)
+}
+
+// TestNotYetValidMSOIsRejected mirrors the above but checks the ValidFrom
+// side — pinning the clock before issuance should fail even though nothing
+// about the X.509 certs themselves is invalid yet at that point.
+func TestNotYetValidMSOIsRejected(t *testing.T) {
+	issuer, err := NewIssuer()
+	if err != nil {
+		t.Fatalf("NewIssuer: %v", err)
+	}
+	holder, _ := NewHolder()
+	mdoc, err := issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
+		map[string]interface{}{"age_over_18": true}, &holder.devicekey.PublicKey)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	presented, err := SelectiveDisclose(mdoc, "eu.europa.ec.av.1", []string{"age_over_18"})
+	if err != nil {
+		t.Fatalf("SelectiveDisclose: %v", err)
+	}
+
+	pastClock := time.Now().Add(-1 * time.Hour) // before MSO's validFrom (set to issuance time)
+	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.iacacert}, pastClock)
+
+	result := verifier.Verify(presented, "eu.europa.ec.av.1")
+	if result.Valid {
+		t.Fatalf("expected credential to be rejected as not-yet-valid per MSO validityInfo, but it was accepted")
+	}
+	if !strings.Contains(result.Error, "not yet valid") {
+		t.Fatalf("expected a not-yet-valid error, got: %s", result.Error)
+	}
+	t.Logf("correctly rejected on MSO validityInfo: %s", result.Error)
 }
 
 // TestNotYetValidCertIsRejected pins the verifier's clock to a point

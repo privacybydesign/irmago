@@ -22,7 +22,8 @@ certificate chains, device binding, and selective disclosure fit together.
 | COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert |
 | Two-level certificate chain | ✓ | IACA root CA → DS cert, real x509 chain walk |
 | Chain attack rejection | ✓ | untrusted root rejected before signature check |
-| Configurable verifier clock | ✓ | `NewVerifierWithClock` — tests expired / not-yet-valid certs deterministically |
+| Configurable verifier clock | ✓ | `NewVerifierWithClock` — tests expired / not-yet-valid certs and MSO validity deterministically |
+| MSO `validityInfo` check (validFrom/validUntil) | ✓ | checked separately from X.509 cert expiry — both are mandatory per ISO 18013-5 |
 | Selective disclosure | ✓ | holder filters items, issuerAuth reused unchanged |
 | Digest verification | ✓ | constant-time comparison via `crypto/subtle` |
 | Tamper detection | ✓ | digest mismatch on value tampering |
@@ -50,6 +51,8 @@ certificate chains, device binding, and selective disclosure fit together.
 | `TestUnknownDigestIDIsRejected` | A digestID absent from the MSO's `valueDigests` is rejected |
 | `TestFreshCertsVerifyUnderCurrentTime` | Sanity check — freshly issued certs verify under the real current time (no off-by-one in validity math) |
 | `TestExpiredDSCertIsRejected` | Verifier clock pinned ~400 days ahead (past the DS cert's 365-day window) — chain correctly rejected as expired |
+| `TestExpiredMSOValidityIsRejected` | Verifier clock pinned ~100 days ahead (past the MSO's 90-day `validUntil`, but still within the DS cert's 365-day window) — rejected on the MSO's own validity, distinct from the cert check |
+| `TestNotYetValidMSOIsRejected` | Verifier clock pinned before the MSO's `validFrom` — rejected as not-yet-valid |
 | `TestNotYetValidCertIsRejected` | Verifier clock pinned before the certs' `NotBefore` — chain correctly rejected as not-yet-valid |
 
 Run with:
@@ -92,6 +95,12 @@ The verifier pre-installs only the IACA root cert — DS cert arrives with each 
 Trust in the chain comes from the verifier independently walking and validating the
 X.509 chain (`x509.Verify`) — not from the COSE signature, since x5chain lives in the
 *unprotected* header.
+
+Two separate validity windows are checked, per ISO 18013-5: the X.509 certificates'
+own `NotBefore`/`NotAfter` (via the chain walk above), and the MSO's own
+`validityInfo.validFrom`/`validUntil` (checked independently in `Verify`, right after
+MSO decode). A cert being valid does not imply the specific credential's claimed
+window is — both must hold.
 
 ### Deployment phases
 

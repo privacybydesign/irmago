@@ -714,6 +714,25 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		return result
 	}
 
+	// Step 5b: check the MSO's own validityInfo window (validFrom/validUntil).
+	// This is separate from, and in addition to, the X.509 certificate expiry
+	// checked in Step 3 above — a cert can still be valid while the specific
+	// credential's own claimed validity window has expired (or not started
+	// yet), and ISO 18013-5 requires checking both. Uses the same v.currentTime()
+	// as the cert chain check, so tests can exercise this deterministically too.
+	now := v.currentTime()
+	if now.Before(mso.ValidityInfo.ValidFrom) {
+		result.Error = fmt.Sprintf("credential not yet valid: validFrom=%s, now=%s",
+			mso.ValidityInfo.ValidFrom.Format(time.RFC3339), now.Format(time.RFC3339))
+		return result
+	}
+	if now.After(mso.ValidityInfo.ValidUntil) {
+		result.Error = fmt.Sprintf("credential expired: validUntil=%s, now=%s",
+			mso.ValidityInfo.ValidUntil.Format(time.RFC3339), now.Format(time.RFC3339))
+		return result
+	}
+	fmt.Println("  MSO validityInfo: within window ✓")
+
 	nsDigests, ok := mso.ValueDigests[namespace]
 	if !ok {
 		result.Error = fmt.Sprintf("namespace %s not in MSO", namespace)
