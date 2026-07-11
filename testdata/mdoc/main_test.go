@@ -530,15 +530,19 @@ func TestExpiredMSOValidityIsRejected(t *testing.T) {
 	if result.Valid {
 		t.Fatalf("expected credential to be rejected as expired per MSO validityInfo, but it was accepted")
 	}
-	if !strings.Contains(result.Error, "credential expired") {
-		t.Fatalf("expected a credential-expired error, got: %s", result.Error)
+	if !strings.HasPrefix(result.Error, "credential expired") {
+		t.Fatalf("expected the MSO validityInfo check specifically to fail, got a different error: %s", result.Error)
 	}
 	t.Logf("correctly rejected on MSO validityInfo: %s", result.Error)
 }
 
 // TestNotYetValidMSOIsRejected mirrors the above but checks the ValidFrom
-// side — pinning the clock before issuance should fail even though nothing
-// about the X.509 certs themselves is invalid yet at that point.
+// side. The clock is pinned to 2 minutes before "now" — AFTER the certs'
+// backdated NotBefore (-5 minutes, see Issuer cert templates) so the X.509
+// chain check passes, but BEFORE the MSO's validFrom (~"now", set in
+// Issue()) so only the MSO validityInfo check can fail. Asserts on the
+// specific "credential not yet valid" prefix so this can't pass for the
+// wrong reason (e.g. coincidentally matching the cert-chain error text).
 func TestNotYetValidMSOIsRejected(t *testing.T) {
 	issuer, err := NewIssuer()
 	if err != nil {
@@ -555,15 +559,15 @@ func TestNotYetValidMSOIsRejected(t *testing.T) {
 		t.Fatalf("SelectiveDisclose: %v", err)
 	}
 
-	pastClock := time.Now().Add(-1 * time.Hour) // before MSO's validFrom (set to issuance time)
+	pastClock := time.Now().Add(-2 * time.Minute) // after cert NotBefore (-5min), before MSO validFrom (~now)
 	verifier := NewVerifierWithClock([]*x509.Certificate{issuer.iacacert}, pastClock)
 
 	result := verifier.Verify(presented, "eu.europa.ec.av.1")
 	if result.Valid {
 		t.Fatalf("expected credential to be rejected as not-yet-valid per MSO validityInfo, but it was accepted")
 	}
-	if !strings.Contains(result.Error, "not yet valid") {
-		t.Fatalf("expected a not-yet-valid error, got: %s", result.Error)
+	if !strings.HasPrefix(result.Error, "credential not yet valid") {
+		t.Fatalf("expected the MSO validityInfo check specifically to fail, got a different error (chain check probably fired first): %s", result.Error)
 	}
 	t.Logf("correctly rejected on MSO validityInfo: %s", result.Error)
 }

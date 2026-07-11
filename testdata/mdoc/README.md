@@ -52,7 +52,7 @@ certificate chains, device binding, and selective disclosure fit together.
 | `TestFreshCertsVerifyUnderCurrentTime` | Sanity check — freshly issued certs verify under the real current time (no off-by-one in validity math) |
 | `TestExpiredDSCertIsRejected` | Verifier clock pinned ~400 days ahead (past the DS cert's 365-day window) — chain correctly rejected as expired |
 | `TestExpiredMSOValidityIsRejected` | Verifier clock pinned ~100 days ahead (past the MSO's 90-day `validUntil`, but still within the DS cert's 365-day window) — rejected on the MSO's own validity, distinct from the cert check |
-| `TestNotYetValidMSOIsRejected` | Verifier clock pinned before the MSO's `validFrom` — rejected as not-yet-valid |
+| `TestNotYetValidMSOIsRejected` | Verifier clock pinned between the (backdated) cert `NotBefore` and the MSO's `validFrom` — isolates the MSO validityInfo check specifically, distinct from cert validity |
 | `TestNotYetValidCertIsRejected` | Verifier clock pinned before the certs' `NotBefore` — chain correctly rejected as not-yet-valid |
 
 Run with:
@@ -101,6 +101,10 @@ own `NotBefore`/`NotAfter` (via the chain walk above), and the MSO's own
 `validityInfo.validFrom`/`validUntil` (checked independently in `Verify`, right after
 MSO decode). A cert being valid does not imply the specific credential's claimed
 window is — both must hold.
+
+Both certs' `NotBefore` are backdated 5 minutes from issuance time — standard practice
+to absorb clock skew between issuer and verifier, and what makes it possible to test
+the MSO validity check in isolation from cert validity (see `TestNotYetValidMSOIsRejected`).
 
 ### Deployment phases
 

@@ -236,7 +236,12 @@ func NewIssuer() (*Issuer, error) {
 			CommonName:   "Test Age Verification IACA Root CA",
 			Organization: []string{"Yivi Test"},
 		},
-		NotBefore:             time.Now(),
+		// NotBefore is backdated 5 minutes: real CAs do this to absorb clock
+		// skew between issuer/verifier clocks, and it also means the cert's
+		// own validity window starts meaningfully before the MSO's validFrom
+		// (set later, in Issue()) — giving tests a real, deterministic gap to
+		// check the MSO validityInfo check independently of cert expiry.
+		NotBefore:             time.Now().Add(-5 * time.Minute),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 years
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
@@ -268,7 +273,8 @@ func NewIssuer() (*Issuer, error) {
 			CommonName:   "Test Age Verification DS - 001",
 			Organization: []string{"Yivi Test"},
 		},
-		NotBefore:             time.Now(),
+		// Backdated 5 minutes — see IACA NotBefore comment above.
+		NotBefore:             time.Now().Add(-5 * time.Minute),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour), // 1 year
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
