@@ -61,16 +61,30 @@ type SdJwtVcDcqlHandler struct {
 // used to describe credentials the wallet has never seen (the verifier requests
 // a VCT for which there is no stored batch). Pass nil to disable that path; the
 // handler will then return empty obtainable descriptors as before.
+//
+// An optional keyBinder may be supplied to override the default (storage-backed,
+// software-key) KB-JWT signer — e.g. to sign the Key Binding JWT in an external
+// WSCA/HSM. When omitted, the default software binder over the eudi storage is
+// used, preserving existing behavior.
 func NewSdJwtVcDcqlHandler(
 	eudiStorage storage.Storage,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
+	keyBinder ...sdjwtvc.KeyBinder,
 ) *SdJwtVcDcqlHandler {
-	keyService := services.NewHolderBindingKeyService(eudiStorage.Db())
+	var binder sdjwtvc.KeyBinder
+	switch len(keyBinder) {
+	case 0:
+		binder = sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db()))
+	case 1:
+		binder = keyBinder[0]
+	default:
+		panic("eudi_sdjwt_dcql: at most one keyBinder may be provided")
+	}
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
-		keyBinder:       sdjwtvc.NewDefaultKeyBinder(keyService),
+		keyBinder:       binder,
 		vctFetcher:      vctFetcher,
 		issuerFetcher:   issuerFetcher,
 	}

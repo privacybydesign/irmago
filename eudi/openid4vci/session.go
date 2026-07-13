@@ -39,6 +39,7 @@ type session struct {
 	handler                  Handler
 	storage                  storage.Storage
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
+	holderKeyBinder          HolderKeyBinder
 
 	// vctResolver provides cached raw bytes of fetched SD-JWT VC type
 	// metadata documents so the post-issuance integrity check (verifyVctIntegrity)
@@ -207,7 +208,7 @@ type fetchedCredential struct {
 	verifiedSdJwtVcs               []*sdjwtvc.VerifiedSdJwtVc
 	requireCryptographicKeyBinding bool
 	publicKeyIdentifiers           []models.PublicHolderBindingKey
-	keyBindingService              services.HolderBindingKeyService
+	keyBindingService              HolderKeyBinder
 }
 
 func (fc *fetchedCredential) cleanupKeys() {
@@ -630,7 +631,12 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	}
 
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
-	keyBindingService := services.NewHolderBindingKeyService(s.storage.Db())
+	// Use the injected holder key binder (e.g. WSCA-backed) when configured;
+	// otherwise fall back to the default software, storage-backed binder.
+	var keyBindingService HolderKeyBinder = s.holderKeyBinder
+	if keyBindingService == nil {
+		keyBindingService = services.NewHolderBindingKeyService(s.storage.Db())
+	}
 	if requireCryptographicKeyBinding {
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {
