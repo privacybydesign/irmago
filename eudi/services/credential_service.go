@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/datatypes"
 )
 
@@ -98,14 +99,14 @@ func (s *credentialService) RefreshStatuses(ctx context.Context) error {
 		// One Refresh per URI populates the cache; the per-idx Check calls
 		// below then read from the warm cache (no extra HTTP traffic).
 		if _, err := s.statusChecker.Refresh(ctx, statuslist.Reference{URI: k.uri}, k.iss); err != nil {
-			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", k.uri, err)
+			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(k.uri), err)
 			continue
 		}
 		now := time.Now()
 		for _, inst := range group {
 			st, err := s.statusChecker.Check(ctx, statuslist.Reference{URI: k.uri, Index: inst.StatusListIdx}, k.iss)
 			if err != nil {
-				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, k.uri, err)
+				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, common.SanitizeForLog(k.uri), err)
 				continue
 			}
 			if err := s.credentialStore.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {

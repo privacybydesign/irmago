@@ -635,7 +635,7 @@ func (client *Client) InitJobs(eudiRevocationListUpdateInterval, statusRefreshIn
 	// Periodically re-fetch every referenced Token Status List and update
 	// each stored credential instance's LastKnownStatus. Skipped when the
 	// interval is non-positive. The sweep is fail-soft: per-URI errors are
-	// logged inside RefreshAll and the previous status is kept.
+	// logged inside RefreshStatuses and the previous status is kept.
 	if statusRefreshInterval > 0 {
 		_, err = client.scheduler.NewJob(
 			gocron.DurationJob(statusRefreshInterval),

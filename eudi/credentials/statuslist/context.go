@@ -42,9 +42,10 @@ type VerificationContext struct {
 	// long as the signature is trusted and `sub` matches.
 	RequireStatusListIssuerMatch bool
 
-	// HTTPClient is used by the fetcher (for the status list URI)
-	// and indirectly by the KidKeyProvider for did:web resolution.
-	// nil falls back to http.DefaultClient.
+	// HTTPClient is used by the fetcher for the status list URI GET.
+	// nil falls back to http.DefaultClient. It is NOT threaded into
+	// signature-verification key resolution, so did:web lookups during
+	// verify always use http.DefaultClient regardless of this field.
 	HTTPClient *http.Client
 
 	// MaxBodyBytes caps the HTTP response body and the

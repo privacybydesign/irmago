@@ -63,7 +63,7 @@ func (c *Checker) check(ctx context.Context, ref Reference, expectedIss string, 
 	// ctx.RequireStatusListIssuerMatch is set (see verifier.go), and that flag is
 	// off in all production wiring, so a fetched+verified list does not depend on
 	// expectedIss. If that flag is ever wired on, this key MUST include
-	// expectedIss (status_refresh_service.go already groups by (uri, iss)),
+	// expectedIss (credentialService.RefreshStatuses already groups by (uri, iss)),
 	// otherwise a concurrent caller with a different expectedIss could receive a
 	// list verified against the first caller's iss and skip the iss check.
 

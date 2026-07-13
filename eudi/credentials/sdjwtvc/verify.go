@@ -191,13 +191,15 @@ func (v *sdJwtVcProcessor) runStatusListCheck(payload *IssuerSignedJwtPayload) e
 	if payload.Status == nil || payload.Status.StatusList == nil {
 		return nil
 	}
-	// context.Background is deliberate: the fetch's bound is the checker's
-	// FetchTimeout (a hard ceiling — the fetch cannot hang), not a session
-	// context. There is no session/request context to thread here anyway: every
-	// caller up to irmaclient manufactures its own Background, and this runs
-	// post-grant while the holder waits on the result. Threading a cancellable
-	// context down ~60 ParseAndVerifySdJwtVc call sites would buy only
-	// cancel-on-dismiss for a fetch already bounded — not worth it.
+	// context.Background is deliberate: there is no session/request context to
+	// thread here — every caller up to irmaclient manufactures its own
+	// Background, and this runs post-grant while the holder waits on the result.
+	// The status-list GET is bounded by the checker's FetchTimeout, but the
+	// signature-verification step resolves the signing key via did:web using an
+	// unbounded http.DefaultClient (pre-existing for all SD-JWT VC verification),
+	// so a slow DID host can still stall this call. Threading a cancellable
+	// context down ~60 ParseAndVerifySdJwtVc call sites would only buy
+	// cancel-on-dismiss and would not bound the did:web resolution.
 	ctx := context.Background()
 	status, err := v.verificationContext.StatusChecker.Check(ctx, *payload.Status.StatusList, payload.Issuer)
 	if err != nil {
