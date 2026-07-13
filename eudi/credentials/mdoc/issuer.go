@@ -6,11 +6,9 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/hex"
 	"fmt"
 	"math/big"
 	"regexp"
-	"sort"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -170,6 +168,21 @@ func validateAVClaims(claims map[string]any) error {
 	return nil
 }
 
+// shuffleIdentifiers randomizes identifiers in place using a
+// cryptographically secure Fisher-Yates shuffle. See the comment in
+// Issue() for why this must be random rather than sorted.
+func shuffleIdentifiers(identifiers []string) error {
+	for i := len(identifiers) - 1; i > 0; i-- {
+		jBig, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return fmt.Errorf("generate shuffle index: %w", err)
+		}
+		j := int(jBig.Int64())
+		identifiers[i], identifiers[j] = identifiers[j], identifiers[i]
+	}
+	return nil
+}
+
 // Issue builds and signs an mDoc for the given claims
 // holderPub is the holder's device public key — gets embedded in MSO.deviceKeyInfo
 // This locks the credential to the specific device that generated that key pair
@@ -178,20 +191,25 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 		return nil, fmt.Errorf("invalid claims: %w", err)
 	}
 
-	fmt.Println("\n--- ISSUER: Building mDoc ---")
-
 	// ── Build IssuerSignedItems ──────────────────────────────────
-	// FIX: iterate over claims in sorted key order. Go map iteration order
-	// is randomized, so the previous version assigned digestIDs
-	// non-deterministically between runs. That's not a security bug (each
-	// mDoc is still internally self-consistent), but it makes test output
-	// and golden-file comparisons non-reproducible. Sorting keys first
-	// fixes that with no behavioral downside.
+	// Claim order is randomized — deliberately NOT sorted — before
+	// digestID assignment. A deterministic order (e.g. alphabetical, which
+	// an earlier version of this code used) lets a verifier infer the
+	// relative order of UNDISCLOSED claims from a disclosed one's
+	// digestID: for a small, guessable vocabulary like this profile's
+	// age_over_NN thresholds, "digestID 1 = age_over_18 out of 3 total"
+	// reveals there's one undisclosed claim below 18 and one above it,
+	// even though neither was ever disclosed. A fresh cryptographically
+	// random permutation per issuance removes that correlation entirely.
+	// Multipaz's MdocUtil.generateIssuerNameSpaces shuffles digest IDs for
+	// this exact same reason.
 	identifiers := make([]string, 0, len(claims))
 	for identifier := range claims {
 		identifiers = append(identifiers, identifier)
 	}
-	sort.Strings(identifiers)
+	if err := shuffleIdentifiers(identifiers); err != nil {
+		return nil, fmt.Errorf("shuffle claim order: %w", err)
+	}
 
 	var items []IssuerSignedItem
 	digestID := uint64(0)
@@ -211,7 +229,6 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 			ElementValue:      value,
 		}
 		items = append(items, item)
-		fmt.Printf("  Item %d: %s = %v  (salt: %s)\n", digestID, identifier, value, hex.EncodeToString(salt))
 		digestID++
 	}
 
@@ -225,7 +242,6 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 			return nil, fmt.Errorf("hash item: %w", err)
 		}
 		valueDigests[item.DigestID] = digest
-		fmt.Printf("  Digest[%d]: %s\n", item.DigestID, hex.EncodeToString(digest))
 	}
 
 	// ── Embed holder's device public key into MSO ────────────────
@@ -287,10 +303,6 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 	if err != nil {
 		return nil, fmt.Errorf("marshal cose: %w", err)
 	}
-
-	fmt.Printf("  MSO signed by DS cert ✓  (%d bytes)\n", len(coseBytes))
-	fmt.Printf("  x5chain: DS cert + IACA cert\n")
-	fmt.Printf("  deviceKeyInfo: embedded holder public key ✓\n")
 
 	// ── Tag-24 wrap each item for NameSpaces ─────────────────────
 	tag24Items := make([]Tag24Item, len(items))

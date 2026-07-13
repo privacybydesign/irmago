@@ -94,8 +94,6 @@ type SessionTranscript struct {
 // issuerAuth is reused unchanged — the issuer's signature covers all digests regardless
 // of which subset the holder chooses to reveal at any given presentation
 func SelectiveDisclose(mdoc *MDoc, namespace string, reveal []string) (*MDoc, error) {
-	fmt.Println("\n--- HOLDER: Selective disclosure ---")
-
 	revealSet := make(map[string]bool)
 	for _, r := range reveal {
 		revealSet[r] = true
@@ -120,10 +118,7 @@ func SelectiveDisclose(mdoc *MDoc, namespace string, reveal []string) (*MDoc, er
 		}
 
 		if revealSet[item.ElementIdentifier] {
-			fmt.Printf("  Revealing:   %s\n", item.ElementIdentifier)
 			disclosed = append(disclosed, tag24item)
-		} else {
-			fmt.Printf("  Withholding: %s\n", item.ElementIdentifier)
 		}
 	}
 

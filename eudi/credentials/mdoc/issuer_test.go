@@ -1,6 +1,7 @@
 package mdoc
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -8,13 +9,19 @@ import (
 )
 
 // ============================================================
-// DETERMINISTIC DIGEST ORDERING
+// RANDOMIZED DIGEST ORDERING
 // ============================================================
 
-// TestClaimOrderingIsDeterministic issues the same claim set twice and
-// checks that ElementIdentifier→DigestID assignment is identical both
-// times. Regression test for the map-iteration-order fix.
-func TestClaimOrderingIsDeterministic(t *testing.T) {
+// TestClaimOrderingIsRandomized issues the same claim set many times and
+// checks two things: every claim is still reachable via its digestID
+// regardless of order (shuffling must never lose or duplicate an item),
+// and the order actually varies across issuances. The latter is a
+// regression guard against silently reverting to a deterministic (e.g.
+// alphabetical) order — see the comment on the shuffle in Issue() for why
+// a predictable order leaks which undisclosed claims exist relative to a
+// disclosed one, for a small/guessable vocabulary like this profile's
+// age_over_NN thresholds.
+func TestClaimOrderingIsRandomized(t *testing.T) {
 	issuer, err := NewIssuer()
 	if err != nil {
 		t.Fatalf("NewIssuer: %v", err)
@@ -27,8 +34,10 @@ func TestClaimOrderingIsDeterministic(t *testing.T) {
 		"age_over_21": false,
 		"age_over_65": false,
 	}
+	namespace := "eu.europa.ec.av.1"
+	want := []string{"age_over_16", "age_over_18", "age_over_21", "age_over_65"}
 
-	extractOrder := func(mdoc *MDoc, namespace string) []string {
+	extractOrder := func(mdoc *MDoc) []string {
 		items := mdoc.IssuerSigned.NameSpaces[namespace]
 		order := make([]string, len(items))
 		for _, tag24item := range items {
@@ -49,35 +58,32 @@ func TestClaimOrderingIsDeterministic(t *testing.T) {
 		return order
 	}
 
-	namespace := "eu.europa.ec.av.1"
-
-	mdoc1, err := issuer.Issue("eu.europa.ec.av.1", namespace, claims, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue #1: %v", err)
-	}
-	mdoc2, err := issuer.Issue("eu.europa.ec.av.1", namespace, claims, holder.PublicKey())
-	if err != nil {
-		t.Fatalf("Issue #2: %v", err)
-	}
-
-	order1 := extractOrder(mdoc1, namespace)
-	order2 := extractOrder(mdoc2, namespace)
-
-	if len(order1) != len(order2) {
-		t.Fatalf("order length mismatch: %v vs %v", order1, order2)
-	}
-	for i := range order1 {
-		if order1[i] != order2[i] {
-			t.Fatalf("digestID→identifier order not deterministic: run1=%v run2=%v", order1, order2)
+	const runs = 30
+	seenOrders := make(map[string]bool)
+	for i := 0; i < runs; i++ {
+		mdoc, err := issuer.Issue("eu.europa.ec.av.1", namespace, claims, holder.PublicKey())
+		if err != nil {
+			t.Fatalf("Issue #%d: %v", i, err)
 		}
+		order := extractOrder(mdoc)
+
+		// Round-trip correctness: same set of identifiers, regardless of order.
+		gotSet := slices.Clone(order)
+		slices.Sort(gotSet)
+		wantSet := slices.Clone(want)
+		slices.Sort(wantSet)
+		if !slices.Equal(gotSet, wantSet) {
+			t.Fatalf("run %d: digestID assignment lost/duplicated a claim: got %v, want set %v", i, order, wantSet)
+		}
+
+		seenOrders[strings.Join(order, ",")] = true
 	}
 
-	// Expect alphabetical: age_over_16, age_over_18, age_over_21, age_over_65
-	want := []string{"age_over_16", "age_over_18", "age_over_21", "age_over_65"}
-	for i, w := range want {
-		if order1[i] != w {
-			t.Fatalf("expected sorted order %v, got %v", want, order1)
-		}
+	// With 4 claims there are 4! = 24 possible orderings; seeing only one
+	// order across 30 random issuances would mean the shuffle isn't
+	// actually randomizing anything.
+	if len(seenOrders) < 2 {
+		t.Fatalf("expected digestID order to vary across issuances (randomized shuffle), but saw only %d distinct order(s) across %d issuances — looks deterministic", len(seenOrders), runs)
 	}
 }
 

@@ -16,7 +16,7 @@ certificate chains, device binding, and selective disclosure fit together.
 | CBOR encoding | ✓ | shortest-form deterministic, fxamacker/cbor |
 | Tag-24 wrapping | ✓ | freezes bytes before hashing |
 | SHA-256 valueDigests | ✓ | `hash(Tag24(CBOR(item)))` per item |
-| Deterministic claim ordering | ✓ | claims sorted before digestID assignment — reproducible across runs |
+| Randomized digest-ID assignment | ✓ | claim order is cryptographically shuffled before digestID assignment (not sorted) — prevents a verifier inferring undisclosed claims' relative order from a disclosed claim's digestID, matching Multipaz's `MdocUtil.generateIssuerNameSpaces` |
 | MSO construction | ✓ | version, digestAlgorithm, valueDigests, docType, validityInfo, deviceKeyInfo |
 | `deviceKeyInfo` in MSO | ✓ | holder's public key embedded at issuance, COSEKey uses `keyasint` (real CBOR int keys per RFC 9053) |
 | COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert |
@@ -47,7 +47,7 @@ monolithic test file:
 | `crypto_test.go` | `TestCOSEKeyUsesIntegerMapKeys` | Decodes the real MSO bytes generically and asserts `deviceKey`'s map keys are actual CBOR integers — regression test for the `keyasint` struct-tag fix |
 | `crypto_test.go` | `TestValidityInfoUsesRFC3339Tag` | Confirms `signed`/`validFrom`/`validUntil` are CBOR tag-0 RFC3339 strings, matching the AV Blueprint's own worked example, not a bare Unix epoch integer |
 | `holder_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
-| `issuer_test.go` | `TestClaimOrderingIsDeterministic` | Issues the same claims twice, confirms `digestID` assignment is identical both times |
+| `issuer_test.go` | `TestClaimOrderingIsRandomized` | Issues the same claims 30 times, confirms `digestID` assignment varies across issuances (not a fixed/predictable order) while every claim stays reachable via its digestID |
 | `issuer_test.go` | `TestIssueRejectsDisallowedAttribute` | Any attribute other than `age_over_18`/`age_over_NN` (e.g. `family_name`) is rejected per Annex A §4.1.2 |
 | `issuer_test.go` | `TestIssueRejectsNonBooleanValue` | A non-bool value (e.g. `"true"` as a string) is rejected |
 | `issuer_test.go` | `TestIssueRejectsMissingMandatoryAgeOver18` | Claim sets missing the mandatory `age_over_18` are rejected |
@@ -190,9 +190,11 @@ go mod tidy
 # and drives it purely through the exported API (NewIssuer, Issue, Verify, ...)
 go run ./cmd/demo
 
-# full test suite — same walkthrough plus all regression/negative cases,
-# with the same step-by-step output (the issuer/holder/verifier functions
-# print their own progress via fmt.Println regardless of caller)
+# full test suite — same walkthrough plus all regression/negative cases.
+# The library itself (Issue, SelectiveDisclose, Verify, VerifyWithDeviceAuth)
+# prints nothing — a real consumer importing mdoc shouldn't get unsolicited
+# stdout output — so this just shows pass/fail per test, plus a few
+# deliberate t.Logf calls (e.g. the CBOR/COSE hex dumps in mdoc_test.go)
 go test -v .
 
 # just the happy-path issuance → disclosure → verification walkthrough
@@ -225,11 +227,10 @@ DS cert generated (signed by IACA root)
 Device key generated (x: <16 hex chars>...)
 
 --- ISSUER: Building mDoc ---
-  Item 0: age_over_16 = true   (salt: <32 hex chars>)
-  Item 1: age_over_18 = true   (salt: <32 hex chars>)
-  Item 2: age_over_21 = false  (salt: <32 hex chars>)
-  Digest[0..2]: <64 hex chars each>
-  MSO signed by DS cert ✓
+  Claim: age_over_16 = true
+  Claim: age_over_18 = true
+  Claim: age_over_21 = false
+  MSO signed by DS cert ✓  (1402 bytes)
   x5chain: DS cert + IACA cert
   deviceKeyInfo: embedded holder public key ✓
 
@@ -242,9 +243,6 @@ deviceAuth signed ✓  (74 bytes)
   (fresh per session — binds presentation to this verifier + session)
 
 --- VERIFIER: Verifying mDoc ---
-  Certificate chain: valid ✓  (depth 2: DS → IACA root)
-  MSO signature: valid ✓
-  MSO validityInfo: within window ✓
   age_over_18 = true  digest: ✓
   Verification: PASSED ✓
   deviceAuth signature: valid ✓  (matches session transcript)
@@ -263,7 +261,11 @@ deviceAuth signed ✓  (74 bytes)
 ========================================
 
 --- ISSUER: Building mDoc ---
-  ...
+  Claim: age_over_18 = true
+  MSO signed by DS cert ✓  (1331 bytes)
+  x5chain: DS cert + IACA cert
+  deviceKeyInfo: embedded holder public key ✓
+
 --- HOLDER: Selective disclosure ---
   Revealing:   age_over_18
 
@@ -277,9 +279,6 @@ deviceAuth signed ✓  (74 bytes)
 ========================================
 
 --- VERIFIER: Verifying mDoc ---
-  Certificate chain: valid ✓  (depth 2: DS → IACA root)
-  MSO signature: valid ✓
-  MSO validityInfo: within window ✓
   age_over_18 = true  digest: ✓
   Verification: PASSED ✓
   Cloned mdoc deviceAuth valid: false
@@ -287,16 +286,25 @@ deviceAuth signed ✓  (74 bytes)
   (correctly rejected — deviceAuth signed by wrong key ✓)
 ```
 
+Note what changed from earlier drafts of this demo: the per-item `salt`/`Digest[N]` hex
+lines and the granular "Certificate chain: valid ✓" / "MSO signature: valid ✓" / "MSO
+validityInfo: within window ✓" sub-steps are gone. Those used to come from `fmt.Println`
+calls **inside** `Issue`/`Verify` themselves — but a real consumer importing `mdoc` as a
+dependency shouldn't get unsolicited console output on every call (this is the same
+convention `sdjwtvc` follows: zero `fmt.Println`/`fmt.Printf` in its non-test source).
+The library now returns values only; everything printed above is reconstructed here in
+`cmd/demo/main.go` purely from `mdoc`'s exported API (`credential.IssuerSigned.IssuerAuth`,
+`VerificationResult.Attributes`, etc.) — nothing the demo prints required new exports.
+
 The demo skips the tamper-detection scenario — constructing a tampered item requires
 the package's internal `tag24Wrap` helper, which isn't exported (deliberately: real
 external callers never need to hand-craft an `IssuerSignedItem`). That scenario, plus
 all of the above, are covered as proper tests instead — see `TestUntrustedRootIsRejected`,
 `TestTamperedDigestIsRejected`, and `TestDeviceAuthWrongSignerIsRejected` in the test
-table above. Running `go test -v .` reproduces the same step-by-step output (the
-issuer/holder/verifier functions print their own progress regardless of caller),
-additionally logging the raw CBOR/COSE hex of the presented mdoc, `issuerAuth`, and
-`deviceAuth` (`mdoc_test.go:28,32,36`) for external inspection, with a final `PASS`/`ok`
-summary per test.
+table above. Since the library is silent, `go test -v .` no longer reproduces this
+narrative output — it just shows `PASS`/`FAIL` per test plus the deliberate `t.Logf` hex
+dumps of the presented mdoc, `issuerAuth`, and `deviceAuth` (`mdoc_test.go:28,32,36`),
+with a final `PASS`/`ok` summary.
 
 ---
 
@@ -323,6 +331,11 @@ QR-code-carried verifier ephemeral key, then AES-GCM/AES-CCM encrypting the actu
 The full `issuerAuth` (all digests) travels with every presentation. The verifier can
 call `len(mso.ValueDigests[namespace])` to learn how many total claims exist, even for
 undisclosed ones. Values are hidden — count is not.
+
+(Digest*order* is a separate concern and is handled: `Issue()` assigns digestIDs via a
+cryptographically random shuffle, not a sorted/deterministic order — see the comment on
+`shuffleIdentifiers` in `issuer.go` — so a disclosed claim's digestID reveals nothing
+about undisclosed claims' relative position. Only the *count* remains visible.)
 
 ### No verifier-side certificate / relying-party authentication
 

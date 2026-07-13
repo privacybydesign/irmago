@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"sort"
 
 	"mdoc"
 )
@@ -13,9 +14,71 @@ import (
 // DEMO — issuer -> holder -> verifier walkthrough
 //
 // Exercises the mdoc package purely through its exported API, exactly as
-// an external consumer would. See main_test.go inside the mdoc package
-// itself for the same flows plus negative/regression cases.
+// an external consumer would. See mdoc_test.go (and the other _test.go
+// files) inside the mdoc package itself for the same flows plus
+// negative/regression cases.
+//
+// mdoc's library functions (Issue, SelectiveDisclose, Verify,
+// VerifyWithDeviceAuth) print nothing themselves — a real consumer
+// importing mdoc as a dependency shouldn't get unsolicited stdout output.
+// All the narration below is reconstructed here, in the demo, purely from
+// data the exported API already returns.
 // ============================================================
+
+// printIssuedMDoc narrates the issuer step using only the claims the demo
+// itself passed in, plus the exported IssuerAuth bytes on the result.
+func printIssuedMDoc(claims map[string]any, credential *mdoc.MDoc) {
+	fmt.Println("\n--- ISSUER: Building mDoc ---")
+	for _, k := range sortedKeys(claims) {
+		fmt.Printf("  Claim: %s = %v\n", k, claims[k])
+	}
+	fmt.Printf("  MSO signed by DS cert ✓  (%d bytes)\n", len(credential.IssuerSigned.IssuerAuth))
+	fmt.Println("  x5chain: DS cert + IACA cert")
+	fmt.Println("  deviceKeyInfo: embedded holder public key ✓")
+}
+
+// printSelectiveDisclosure narrates the holder step using only the claims
+// and reveal list the demo itself already knows.
+func printSelectiveDisclosure(claims map[string]any, reveal []string) {
+	fmt.Println("\n--- HOLDER: Selective disclosure ---")
+	revealSet := make(map[string]bool, len(reveal))
+	for _, r := range reveal {
+		revealSet[r] = true
+	}
+	for _, k := range sortedKeys(claims) {
+		if revealSet[k] {
+			fmt.Printf("  Revealing:   %s\n", k)
+		} else {
+			fmt.Printf("  Withholding: %s\n", k)
+		}
+	}
+}
+
+// printVerificationSteps narrates the verifier step using only
+// VerificationResult's exported fields. Attributes is only populated once
+// Verify() reaches its final digest-check loop, so a non-empty map here
+// means the chain/signature/validity/digest checks all passed — even if
+// VerifyWithDeviceAuth later marks the overall result invalid because
+// deviceAuth itself failed.
+func printVerificationSteps(result mdoc.VerificationResult) {
+	fmt.Println("\n--- VERIFIER: Verifying mDoc ---")
+	if len(result.Attributes) == 0 {
+		return
+	}
+	for _, k := range sortedKeys(result.Attributes) {
+		fmt.Printf("  %s = %v  digest: ✓\n", k, result.Attributes[k])
+	}
+	fmt.Println("  Verification: PASSED ✓")
+}
+
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 func main() {
 	fmt.Println("========================================")
@@ -62,12 +125,15 @@ func main() {
 	if err != nil {
 		log.Fatal("issue:", err)
 	}
+	printIssuedMDoc(claims, credential)
 
 	// ── Selective Disclosure ─────────────────────────────────────
-	presented, err := mdoc.SelectiveDisclose(credential, namespace, []string{"age_over_18"})
+	reveal := []string{"age_over_18"}
+	presented, err := mdoc.SelectiveDisclose(credential, namespace, reveal)
 	if err != nil {
 		log.Fatal("selective disclose:", err)
 	}
+	printSelectiveDisclosure(claims, reveal)
 
 	// ── DeviceAuth ───────────────────────────────────────────────
 	// Holder signs a fresh DeviceAuthentication for this session
@@ -90,6 +156,10 @@ func main() {
 	// DS cert arrives via x5chain at verification time — never pre-installed
 	verifier := mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
+	printVerificationSteps(result)
+	if result.DeviceAuthValid {
+		fmt.Println("  deviceAuth signature: valid ✓  (matches session transcript)")
+	}
 
 	fmt.Println("\n========================================")
 	fmt.Println("  RESULT")
@@ -116,13 +186,16 @@ func main() {
 
 	attackerIssuer, _ := mdoc.NewIssuer()
 	attackerHolder, _ := mdoc.NewHolder()
-	attackerMDoc, _ := attackerIssuer.Issue(docType, namespace,
-		map[string]any{"age_over_18": true},
-		attackerHolder.PublicKey(),
-	)
-	attackerPresented, _ := mdoc.SelectiveDisclose(attackerMDoc, namespace, []string{"age_over_18"})
+	attackerClaims := map[string]any{"age_over_18": true}
+	attackerMDoc, _ := attackerIssuer.Issue(docType, namespace, attackerClaims, attackerHolder.PublicKey())
+	printIssuedMDoc(attackerClaims, attackerMDoc)
+
+	attackerReveal := []string{"age_over_18"}
+	attackerPresented, _ := mdoc.SelectiveDisclose(attackerMDoc, namespace, attackerReveal)
+	printSelectiveDisclosure(attackerClaims, attackerReveal)
 
 	attackResult := verifier.Verify(attackerPresented, namespace)
+	printVerificationSteps(attackResult)
 	fmt.Printf("  Attacker's mDoc valid: %v\n", attackResult.Valid)
 	fmt.Printf("  Error: %s\n", attackResult.Error)
 	fmt.Println("  (correctly rejected — attacker's root not trusted ✓)")
@@ -140,6 +213,7 @@ func main() {
 	wrongDeviceAuthBytes, _ := otherHolder.SignDeviceAuth(docType, transcript)
 
 	cloneResult := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, wrongDeviceAuthBytes)
+	printVerificationSteps(cloneResult)
 	fmt.Printf("  Cloned mdoc deviceAuth valid: %v\n", cloneResult.DeviceAuthValid)
 	fmt.Printf("  Error: %s\n", cloneResult.Error)
 	fmt.Println("  (correctly rejected — deviceAuth signed by wrong key ✓)")

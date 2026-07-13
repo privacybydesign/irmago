@@ -234,13 +234,6 @@ func toByteSliceList(v any) [][]byte {
 	return nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // printGeneric decodes and pretty-prints arbitrary CBOR, unwrapping
 // Tag-24 (embedded CBOR) automatically since the mdoc format uses it
 // heavily for IssuerSignedItem framing.

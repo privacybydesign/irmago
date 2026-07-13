@@ -79,8 +79,6 @@ type VerificationResult struct {
 // presentation flow. Kept separate so issuer-only verification (e.g. just
 // checking the MSO/digests without a live session) still works standalone.
 func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
-	fmt.Println("\n--- VERIFIER: Verifying mDoc ---")
-
 	result := VerificationResult{
 		DocType:    mdoc.DocType,
 		Attributes: make(map[string]any),
@@ -155,11 +153,6 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		result.Error = fmt.Sprintf("chain verification failed: %v", err)
 		return result
 	}
-	fmt.Printf("  Certificate chain: valid ✓  (depth %d: %s → %s)\n",
-		len(certs),
-		dsCert.Subject.CommonName,
-		certs[len(certs)-1].Subject.CommonName,
-	)
 
 	// Step 4: verify COSE_Sign1 signature using DS cert's public key
 	// go-cose internally builds the Sig_structure and verifies ECDSA against it
@@ -173,7 +166,6 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		result.Error = fmt.Sprintf("MSO signature invalid: %v", err)
 		return result
 	}
-	fmt.Println("  MSO signature: valid ✓")
 
 	// Step 5: decode MSO from payload
 	var mso MSO
@@ -199,7 +191,6 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 			mso.ValidityInfo.ValidUntil.Format(time.RFC3339), now.Format(time.RFC3339))
 		return result
 	}
-	fmt.Println("  MSO validityInfo: within window ✓")
 
 	nsDigests, ok := mso.ValueDigests[namespace]
 	if !ok {
@@ -240,14 +231,12 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 			return result
 		}
 
-		fmt.Printf("  %s = %v  digest: ✓\n", item.ElementIdentifier, item.ElementValue)
 		result.Attributes[item.ElementIdentifier] = item.ElementValue
 	}
 
 	// stash decoded MSO on the result path isn't exposed publicly, so
 	// VerifyWithDeviceAuth re-derives what it needs (deviceKey) itself.
 	result.Valid = true
-	fmt.Println("  Verification: PASSED ✓")
 	return result
 }
 
@@ -340,7 +329,6 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	fmt.Println("  deviceAuth signature: valid ✓  (matches session transcript)")
 	result.DeviceAuthValid = true
 	return result
 }
