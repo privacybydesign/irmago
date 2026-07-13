@@ -74,18 +74,3 @@ func Test_StatusListCacheStore_Get_EmptyURI_ReturnsFalse(t *testing.T) {
 	_, _, ok := store.Get("")
 	require.False(t, ok)
 }
-
-func Test_StatusListCacheStore_DeleteExpired_RemovesOnlyExpired(t *testing.T) {
-	store, _ := newTestStatusListCacheStore(t)
-	past := time.Now().Add(-time.Hour)
-	future := time.Now().Add(time.Hour)
-	require.NoError(t, store.Put("expired", []byte("v"), past))
-	require.NoError(t, store.Put("fresh", []byte("v"), future))
-
-	require.NoError(t, store.DeleteExpired(time.Now()))
-
-	_, _, ok := store.Get("expired")
-	require.False(t, ok)
-	_, _, ok = store.Get("fresh")
-	require.True(t, ok)
-}

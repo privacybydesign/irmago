@@ -10,21 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// StatusListCacheStore implements statuslist.Cache against a gorm DB.
-//
-// Returning the statuslist.Cache interface from the constructor lets
-// callers (the wallet client) treat the persistent store and the
-// in-memory test cache interchangeably.
-type StatusListCacheStore interface {
-	statuslist.Cache
-}
-
 type statusListCacheStore struct {
 	db *gorm.DB
 }
 
 // NewStatusListCacheStore returns a statuslist.Cache backed by the
-// status_list_cache table.
+// status_list_cache table. Returning the interface (not the concrete
+// type) lets the wallet client treat the persistent store and the
+// in-memory test cache interchangeably.
 func NewStatusListCacheStore(db *gorm.DB) statuslist.Cache {
 	return &statusListCacheStore{db: db}
 }
@@ -69,11 +62,4 @@ func (s *statusListCacheStore) Delete(uri string) error {
 		return nil
 	}
 	return s.db.Delete(&models.StatusListCacheEntry{}, "uri = ?", uri).Error
-}
-
-// DeleteExpired purges entries whose ExpiresAt is in the past.
-// Useful for periodic vacuuming; not part of the statuslist.Cache
-// interface because the in-memory impl doesn't need it.
-func (s *statusListCacheStore) DeleteExpired(before time.Time) error {
-	return s.db.Where("expires_at < ?", before).Delete(&models.StatusListCacheEntry{}).Error
 }

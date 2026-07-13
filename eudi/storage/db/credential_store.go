@@ -219,35 +219,17 @@ func (s *credentialStore) DeleteBatch(batchID datatypes.UUID) error {
 }
 
 func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
-	type row struct {
-		ID            datatypes.UUID
-		StatusListURI string
-		StatusListIdx uint64
-		IssuerURL     string
-	}
-	var rows []row
+	var out []CredentialStatusInstance
 	err := s.db.
 		Model(&models.IssuedCredentialInstance{}).
-		Select("issued_credential_instances.id AS id, " +
+		Select("issued_credential_instances.id AS instance_id, " +
 			"issued_credential_instances.status_list_uri AS status_list_uri, " +
 			"issued_credential_instances.status_list_idx AS status_list_idx, " +
 			"credential_batches.issuer_url AS issuer_url").
 		Joins("JOIN credential_batches ON credential_batches.id = issued_credential_instances.credential_batch_id").
 		Where("issued_credential_instances.status_list_uri IS NOT NULL AND issued_credential_instances.status_list_idx IS NOT NULL").
-		Scan(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	out := make([]CredentialStatusInstance, len(rows))
-	for i, r := range rows {
-		out[i] = CredentialStatusInstance{
-			InstanceID:    r.ID,
-			StatusListURI: r.StatusListURI,
-			StatusListIdx: r.StatusListIdx,
-			IssuerURL:     r.IssuerURL,
-		}
-	}
-	return out, nil
+		Scan(&out).Error
+	return out, err
 }
 
 func (s *credentialStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {

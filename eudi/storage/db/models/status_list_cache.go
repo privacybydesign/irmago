@@ -9,8 +9,7 @@ import "time"
 // We store the raw signed JWT (not the decoded bit array): re-verify
 // happens against the current trust anchors on every cache hit, and
 // the entry remains compact. Decompression is performed by the
-// statuslist package in-process; an optional L1 cache there carries
-// the decoded form for the TTL window.
+// statuslist package in-process on each read.
 type StatusListCacheEntry struct {
 	// URI is the canonical status_list URI from the credential's
 	// `status.status_list.uri` claim; the table key.

@@ -202,10 +202,11 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 // liveRevoked reports whether the instance's credential is currently revoked.
 // It performs a live (cache-aware) Token Status List check on the instance so
 // the disclosure plan reflects the current status rather than the last
-// background sweep. If the check can't be run (no checker) or fails (list
-// unreachable) it falls back to the stored status, and never blocks disclosure:
-// revocation is surfaced as a flag for the frontend, with the verifier as the
-// backstop.
+// background sweep. When no checker is configured it falls back to the stored
+// status; when a checker is configured but the check fails (the cached token is
+// past its own ttl and the re-fetch failed) it fails safe to revoked. Either
+// way it never blocks disclosure: revocation is surfaced as a flag for the
+// frontend, with the verifier as the backstop.
 func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstance, issuer string) bool {
 	if instance.StatusListURI == nil || instance.StatusListIdx == nil {
 		return false
