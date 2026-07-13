@@ -44,8 +44,8 @@ type VerificationContext struct {
 
 	// HTTPClient is used by the fetcher for the status list URI GET.
 	// nil falls back to http.DefaultClient. It is NOT threaded into
-	// signature-verification key resolution, so did:web lookups during
-	// verify always use http.DefaultClient regardless of this field.
+	// signature-verification key resolution; did:web lookups during verify
+	// use the didweb resolver's own (timeout-bounded) default client instead.
 	HTTPClient *http.Client
 
 	// MaxBodyBytes caps the HTTP response body and the

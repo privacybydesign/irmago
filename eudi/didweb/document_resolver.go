@@ -7,16 +7,25 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/did"
 )
 
 const Prefix = "did:web:"
 
+// defaultResolveTimeout bounds a did:web fetch when the caller supplies no
+// HTTPClient. Without it the nil fallback is http.DefaultClient, which has no
+// timeout, so a slow/malicious DID host could hang key resolution (and thus
+// credential verification) indefinitely.
+const defaultResolveTimeout = 10 * time.Second
+
 // DocumentResolver resolves did:web DIDs to DID Documents by fetching them over HTTPS.
 // See: https://w3c-ccg.github.io/did-method-web/
 type DocumentResolver struct {
-	// HTTPClient is the HTTP client used to fetch DID documents. If nil, http.DefaultClient is used.
+	// HTTPClient is the HTTP client used to fetch DID documents. If nil, a client
+	// with a defaultResolveTimeout ceiling is used (never the timeout-less
+	// http.DefaultClient).
 	HTTPClient *http.Client
 	// AllowInsecure additionally allows resolving did:web DIDs over HTTP when
 	// the HTTPS request fails. This should only be enabled in developer mode.
@@ -50,7 +59,7 @@ func (r *DocumentResolver) Resolve(didWeb string) (*did.Document, error) {
 func (r *DocumentResolver) fetchDocument(docURL string) (*did.Document, error) {
 	client := r.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: defaultResolveTimeout}
 	}
 
 	resp, err := client.Get(docURL)

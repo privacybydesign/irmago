@@ -194,12 +194,10 @@ func (v *sdJwtVcProcessor) runStatusListCheck(payload *IssuerSignedJwtPayload) e
 	// context.Background is deliberate: there is no session/request context to
 	// thread here — every caller up to irmaclient manufactures its own
 	// Background, and this runs post-grant while the holder waits on the result.
-	// The status-list GET is bounded by the checker's FetchTimeout, but the
-	// signature-verification step resolves the signing key via did:web using an
-	// unbounded http.DefaultClient (pre-existing for all SD-JWT VC verification),
-	// so a slow DID host can still stall this call. Threading a cancellable
-	// context down ~60 ParseAndVerifySdJwtVc call sites would only buy
-	// cancel-on-dismiss and would not bound the did:web resolution.
+	// Both network steps are bounded without a caller context: the status-list
+	// GET by the checker's FetchTimeout, and did:web signing-key resolution by
+	// the didweb resolver's own timeout. Threading a cancellable context down
+	// ~60 ParseAndVerifySdJwtVc call sites would only buy cancel-on-dismiss.
 	ctx := context.Background()
 	status, err := v.verificationContext.StatusChecker.Check(ctx, *payload.Status.StatusList, payload.Issuer)
 	if err != nil {

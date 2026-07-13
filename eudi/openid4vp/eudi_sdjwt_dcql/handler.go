@@ -218,10 +218,9 @@ func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstan
 	}
 	ref := statuslist.Reference{URI: *instance.StatusListURI, Index: *instance.StatusListIdx}
 	// context.Background: the disclosure planning path carries no cancellable
-	// context. The status-list GET is bounded by the checker's FetchTimeout, but
-	// signing-key resolution via did:web uses an unbounded http.DefaultClient
-	// (pre-existing for all SD-JWT VC verification), so a slow DID host can stall
-	// this call — see the note in sdjwtvc/verify.go.
+	// context. Both network steps are still bounded — the status-list GET by the
+	// checker's FetchTimeout and did:web signing-key resolution by the didweb
+	// resolver's own timeout — so this call cannot hang indefinitely.
 	status, err := h.statusChecker.Check(context.Background(), ref, issuer)
 	if err != nil {
 		// Check is cache-aware: it serves the cached status list token while it is
