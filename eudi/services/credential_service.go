@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
@@ -36,28 +37,83 @@ type CredentialService interface {
 	// DeleteByHash deletes a stored CredentialBatch by its deterministic hash.
 	// Returns ErrNotFound if no batch exists with that hash.
 	DeleteByHash(hash string) error
+
+	// RefreshStatuses re-fetches every stored instance's Token Status List and
+	// writes back its LastKnownStatus. No-op when status checking is disabled.
+	RefreshStatuses(ctx context.Context) error
 }
 
 type credentialService struct {
 	credentialStore       db.CredentialStore
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
+	// statusChecker performs Token Status List fetches for RefreshStatuses.
+	// Nil disables status refresh; the read path still surfaces the stored
+	// LastKnownStatus.
+	statusChecker *statuslist.Checker
 }
 
 func NewCredentialService(
 	credentialStore db.CredentialStore,
 	holderBindingKeyStore db.HolderBindingKeyStore,
 	fileStorage filesystem.FileSystemStorage,
+	statusChecker *statuslist.Checker,
 ) CredentialService {
 	return &credentialService{
 		credentialStore:       credentialStore,
 		holderBindingKeyStore: holderBindingKeyStore,
 		fileStorage:           fileStorage,
+		statusChecker:         statusChecker,
 	}
 }
 
 func (s *credentialService) DeleteByHash(hash string) error {
 	return s.credentialStore.DeleteBatchByHash(hash)
+}
+
+// RefreshStatuses re-fetches every stored instance's Token Status List and
+// updates its LastKnownStatus. Instances are grouped by (uri, iss) so a status
+// list shared across many credentials is fetched once; iss is part of the key
+// so a cross-issuer URI re-use can't borrow another issuer's cache slot.
+//
+// Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
+// the previous LastKnownStatus in place. A nil statusChecker makes this a no-op.
+func (s *credentialService) RefreshStatuses(ctx context.Context) error {
+	if s.statusChecker == nil {
+		return nil
+	}
+	instances, err := s.credentialStore.ListInstancesWithStatusReference()
+	if err != nil {
+		return fmt.Errorf("load instances: %w", err)
+	}
+
+	type key struct{ uri, iss string }
+	groups := map[key][]db.CredentialStatusInstance{}
+	for _, inst := range instances {
+		k := key{uri: inst.StatusListURI, iss: inst.IssuerURL}
+		groups[k] = append(groups[k], inst)
+	}
+
+	for k, group := range groups {
+		// One Refresh per URI populates the cache; the per-idx Check calls
+		// below then read from the warm cache (no extra HTTP traffic).
+		if _, err := s.statusChecker.Refresh(ctx, statuslist.Reference{URI: k.uri}, k.iss); err != nil {
+			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", k.uri, err)
+			continue
+		}
+		now := time.Now()
+		for _, inst := range group {
+			st, err := s.statusChecker.Check(ctx, statuslist.Reference{URI: k.uri, Index: inst.StatusListIdx}, k.iss)
+			if err != nil {
+				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, k.uri, err)
+				continue
+			}
+			if err := s.credentialStore.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {
+				eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.InstanceID, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {

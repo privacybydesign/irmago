@@ -61,6 +61,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 		db.NewCredentialStore(s.Db()),
 		db.NewHolderBindingKeyStore(s.Db()),
 		s.FileSystem(),
+		nil,
 	)
 	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService)
 	require.NoError(t, err)

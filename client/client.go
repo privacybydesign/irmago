@@ -48,7 +48,6 @@ type Client struct {
 	didValidator      *openid4vp.DidVerifierValidator
 	scheduler         gocron.Scheduler
 	sessionManager    sessionManager
-	statusRefresh     services.StatusRefreshService
 	credentialService services.CredentialService
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
@@ -114,7 +113,18 @@ func New(
 
 	credStore := db.NewCredentialStore(eudiStorage.Db())
 	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
-	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem())
+
+	// Token Status List checker, shared by the credential service (background
+	// status refresh + revocation flags on the credential list), the holder-side
+	// verifier (sdJwtVcVerificationContext below), and the OpenID4VP disclosure
+	// handler (WithStatusChecker below, for the plan's Revoked flag).
+	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
+	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: &eudiConf.Issuers,
+		Clock:       eudi_jwt.NewSystemClock(),
+	}, statusListCache)
+
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), statusChecker)
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
@@ -138,16 +148,6 @@ func New(
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
-
-	// Token Status List checker, shared by the holder-side verifier
-	// (attached to sdJwtVcVerificationContext below), the OpenID4VP disclosure
-	// handler (set via WithStatusChecker below, for the plan's Revoked flag),
-	// and the background refresh service.
-	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
-	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
-		X509Context: &eudiConf.Issuers,
-		Clock:       eudi_jwt.NewSystemClock(),
-	}, statusListCache)
 
 	// Wire the checker into the EUDI DCQL handler so the disclosure plan's
 	// Revoked flag reflects a live (cache-aware) status check.
@@ -220,7 +220,6 @@ func New(
 		keyBinder:         irmaKeyBinder,
 		didValidator:      didValidator,
 		scheduler:         scheduler,
-		statusRefresh:     services.NewStatusRefreshService(credStore, statusChecker),
 		credentialService: credentialService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
@@ -245,7 +244,7 @@ func (client *Client) Close() error {
 // action. Errors during the sweep are logged; the previous
 // LastKnownStatus persists for any URI that fails to refresh.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
-	return client.statusRefresh.RefreshAll(ctx)
+	return client.credentialService.RefreshStatuses(ctx)
 }
 
 type SessionRequestData struct {
