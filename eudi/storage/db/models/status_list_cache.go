@@ -20,9 +20,9 @@ type StatusListCacheEntry struct {
 	RawJwt []byte `gorm:"type:bytea;not null"`
 
 	// ExpiresAt is the absolute time at which the cached value
-	// becomes stale and the entry must be re-fetched. Set to
-	// min(http_max_age, jwt_ttl) clamped to [60s, 24h] (see
-	// statuslist.ClampTTL).
+	// becomes stale and the entry must be re-fetched. Set from the
+	// token's own ttl/exp (or the HTTP max-age as fallback), clamped
+	// to [60s, 24h] (see statuslist.ClampTTL).
 	ExpiresAt time.Time `gorm:"not null;index"`
 
 	// FetchedAt records when the entry was written. Useful for

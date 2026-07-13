@@ -229,7 +229,10 @@ func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstan
 		eudi.Logger.Warnf("statuslist: no in-ttl status for instance %s (live check failed), treating as revoked: %v", instance.ID, err)
 		return true
 	}
-	return status != statuslist.StatusValid
+	// Revoked means definitively INVALID — matching GetCredentialMetadataList
+	// and the no-checker branch above. Suspended / application-specific statuses
+	// are not surfaced as revoked here.
+	return status == statuslist.StatusInvalid
 }
 
 // composeUnobtainableDescriptor builds a CredentialDescriptor for a credential

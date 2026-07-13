@@ -21,9 +21,9 @@ type Cache interface {
 	Delete(uri string) error
 }
 
-// TTL bounds applied to the min(http_max_age, jwt_ttl) value to defend
-// against pathological providers (ttl=1s would hammer us; ttl=10y
-// would make revocation effectively impossible).
+// TTL bounds applied to the lifetime signal (the token's own ttl/exp, or the
+// HTTP max-age as fallback) to defend against pathological providers (ttl=1s
+// would hammer us; ttl=10y would make revocation effectively impossible).
 const (
 	TTLMin              = 60 * time.Second
 	TTLMax              = 24 * time.Hour
