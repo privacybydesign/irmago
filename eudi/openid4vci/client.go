@@ -31,6 +31,10 @@ type Client struct {
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
+	// holderKeyBinder, when set, overrides the default software holder key
+	// binder used during issuance (e.g. a WSCA-backed binder).
+	holderKeyBinder HolderKeyBinder
+
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
 }
@@ -38,16 +42,21 @@ type Client struct {
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	opts ...ClientOption,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
 
-	return &Client{
+	c := &Client{
 		httpClient:     httpClient,
 		Configuration:  config,
 		holderVerifier: holderVerifier,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c, nil
 }
 
 func (client *Client) AllowInsecureHttpForTesting() {
@@ -137,6 +146,7 @@ func (client *Client) handleCredentialOffer(
 		handler:                    handler,
 		httpClient:                 client.httpClient,
 		holderVerifier:             client.holderVerifier,
+		holderKeyBinder:            client.holderKeyBinder,
 		storage:                    client.Configuration.Storage,
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,

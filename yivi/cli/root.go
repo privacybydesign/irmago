@@ -8,6 +8,7 @@ import (
 	"github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/yivi/cli/internal/clihelpers"
 	"github.com/privacybydesign/irmago/yivi/cli/irmacli"
+	"github.com/privacybydesign/irmago/yivi/cli/walletcli"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
@@ -44,9 +45,11 @@ func init() {
 	logger.Formatter = &prefixed.TextFormatter{FullTimestamp: true}
 
 	irmacli.Logger = logger
+	walletcli.Logger = logger
 
 	RootCmd.AddCommand(versionCmd)
 	RootCmd.AddCommand(irmacli.IrmaRootCmd)
+	RootCmd.AddCommand(walletcli.WalletRootCmd)
 
 	cobra.AddTemplateFunc("insertHeaders", clihelpers.InsertHeaders)
 }
