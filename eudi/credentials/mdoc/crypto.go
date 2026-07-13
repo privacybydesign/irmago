@@ -51,6 +51,27 @@ func mustMarshal(v any) []byte {
 	return b
 }
 
+// COSEKey is the CBOR-encoded public key format per RFC 9053 (COSE Key).
+//
+// FIX: struct tags now use ",keyasint" so fxamacker/cbor encodes these as
+// actual CBOR integer map keys (major type 0/1), not text-string keys like
+// "1" / "-1". Without keyasint, the previous version silently produced a
+// non-conformant COSE_Key — it round-tripped fine against *this* codebase
+// (since decoding used the same wrong mapping) but would fail against any
+// spec-compliant verifier, and worse, the bad encoding gets baked into the
+// signed MSO digest, so it can't be patched after issuance.
+//
+//	1  = kty  (key type:  2 = EC2)
+//	-1 = crv  (curve:    1 = P-256)
+//	-2 = x    (x coordinate, 32 bytes for P-256)
+//	-3 = y    (y coordinate, 32 bytes for P-256)
+type COSEKey struct {
+	Kty int64  `cbor:"1,keyasint"`
+	Crv int64  `cbor:"-1,keyasint"`
+	X   []byte `cbor:"-2,keyasint"`
+	Y   []byte `cbor:"-3,keyasint"`
+}
+
 // coseKeyFromECDSA converts an ECDSA public key into our COSEKey type.
 // Factored out so both the issuer (embedding) and verifier (deviceAuth
 // check) build the exact same structure from the exact same logic.

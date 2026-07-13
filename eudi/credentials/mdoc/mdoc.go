@@ -1,9 +1,14 @@
 package mdoc
 
-import "time"
+import (
+	"fmt"
+	"time"
+
+	"github.com/fxamacker/cbor/v2"
+)
 
 // ============================================================
-// DATA STRUCTURES
+// CORE WIRE FORMAT — the mdoc envelope itself
 // ============================================================
 
 // MDoc is the top-level credential container
@@ -20,27 +25,6 @@ type IssuerSignedItem struct {
 	Random            []byte `cbor:"random"`            // ≥16 byte salt — prevents brute force
 	ElementIdentifier string `cbor:"elementIdentifier"` // attribute name e.g. "age_over_18"
 	ElementValue      any    `cbor:"elementValue"`      // attribute value e.g. true
-}
-
-// COSEKey is the CBOR-encoded public key format per RFC 9053 (COSE Key).
-//
-// FIX: struct tags now use ",keyasint" so fxamacker/cbor encodes these as
-// actual CBOR integer map keys (major type 0/1), not text-string keys like
-// "1" / "-1". Without keyasint, the previous version silently produced a
-// non-conformant COSE_Key — it round-tripped fine against *this* codebase
-// (since decoding used the same wrong mapping) but would fail against any
-// spec-compliant verifier, and worse, the bad encoding gets baked into the
-// signed MSO digest, so it can't be patched after issuance.
-//
-//	1  = kty  (key type:  2 = EC2)
-//	-1 = crv  (curve:    1 = P-256)
-//	-2 = x    (x coordinate, 32 bytes for P-256)
-//	-3 = y    (y coordinate, 32 bytes for P-256)
-type COSEKey struct {
-	Kty int64  `cbor:"1,keyasint"`
-	Crv int64  `cbor:"-1,keyasint"`
-	X   []byte `cbor:"-2,keyasint"`
-	Y   []byte `cbor:"-3,keyasint"`
 }
 
 // DeviceKeyInfo wraps the holder's device public key inside the MSO
@@ -104,4 +88,50 @@ type SessionTranscript struct {
 	DeviceEngagementBytes []byte   // from QR code / NFC tap
 	EReaderKeyBytes       []byte   // verifier's ephemeral public key
 	Handover              any      // session-specific binding data
+}
+
+// SelectiveDisclose filters the credential to only include the requested attributes
+// issuerAuth is reused unchanged — the issuer's signature covers all digests regardless
+// of which subset the holder chooses to reveal at any given presentation
+func SelectiveDisclose(mdoc *MDoc, namespace string, reveal []string) (*MDoc, error) {
+	fmt.Println("\n--- HOLDER: Selective disclosure ---")
+
+	revealSet := make(map[string]bool)
+	for _, r := range reveal {
+		revealSet[r] = true
+	}
+
+	allItems := mdoc.IssuerSigned.NameSpaces[namespace]
+	var disclosed []Tag24Item
+
+	for _, tag24item := range allItems {
+		// decode Tag-24 wrapped item to peek at the elementIdentifier
+		var rawTag cbor.RawTag
+		if err := cbor.Unmarshal(tag24item.EncodedItem, &rawTag); err != nil {
+			return nil, fmt.Errorf("unwrap tag24: %w", err)
+		}
+		var innerBytes []byte
+		if err := cbor.Unmarshal(rawTag.Content, &innerBytes); err != nil {
+			return nil, fmt.Errorf("unwrap inner bytes: %w", err)
+		}
+		var item IssuerSignedItem
+		if err := cbor.Unmarshal(innerBytes, &item); err != nil {
+			return nil, fmt.Errorf("decode item: %w", err)
+		}
+
+		if revealSet[item.ElementIdentifier] {
+			fmt.Printf("  Revealing:   %s\n", item.ElementIdentifier)
+			disclosed = append(disclosed, tag24item)
+		} else {
+			fmt.Printf("  Withholding: %s\n", item.ElementIdentifier)
+		}
+	}
+
+	return &MDoc{
+		DocType: mdoc.DocType,
+		IssuerSigned: IssuerSigned{
+			NameSpaces: map[string][]Tag24Item{namespace: disclosed},
+			IssuerAuth: mdoc.IssuerSigned.IssuerAuth, // reused unchanged
+		},
+	}, nil
 }

@@ -37,23 +37,35 @@ certificate chains, device binding, and selective disclosure fit together.
 
 ## Test suite
 
-`mdoc_test.go` exercises the pipeline end to end plus targeted regression/negative cases:
+Tests are split one-per-source-file (`issuer.go` ↔ `issuer_test.go`, etc.), the same
+layout as this repo's other eudi credential packages (e.g. `sdjwtvc`), rather than one
+monolithic test file:
 
-| Test | What it checks |
-|---|---|
-| `TestFullIssuanceFlow_ProducesValidMDoc` | Full issuer → holder → verifier round trip; also logs the real CBOR/COSE hex of the presented mdoc, `issuerAuth`, and `deviceAuth` for external inspection (e.g. via [cbor.me](https://cbor.me)) |
-| `TestCOSEKeyUsesIntegerMapKeys` | Decodes the real MSO bytes generically and asserts `deviceKey`'s map keys are actual CBOR integers — regression test for the `keyasint` struct-tag fix |
-| `TestClaimOrderingIsDeterministic` | Issues the same claims twice, confirms `digestID` assignment is identical both times |
-| `TestUntrustedRootIsRejected` | Attacker's own valid IACA→DS chain, signed correctly, still rejected — root isn't in the verifier's trust pool |
-| `TestTamperedDigestIsRejected` | Flipped claim value fails the digest check |
-| `TestDeviceAuthWrongSignerIsRejected` | Cloned mdoc — deviceAuth signed by a different device's key — rejected |
-| `TestDeviceAuthWrongSessionIsRejected` | Correct device key, but signed over a different session transcript (replay) — rejected |
-| `TestUnknownDigestIDIsRejected` | A digestID absent from the MSO's `valueDigests` is rejected |
-| `TestFreshCertsVerifyUnderCurrentTime` | Sanity check — freshly issued certs verify under the real current time (no off-by-one in validity math) |
-| `TestExpiredDSCertIsRejected` | Verifier clock pinned ~400 days ahead (past the DS cert's 365-day window) — chain correctly rejected as expired |
-| `TestExpiredMSOValidityIsRejected` | Verifier clock pinned ~100 days ahead (past the MSO's 90-day `validUntil`, but still within the DS cert's 365-day window) — rejected on the MSO's own validity, distinct from the cert check |
-| `TestNotYetValidMSOIsRejected` | Verifier clock pinned between the (backdated) cert `NotBefore` and the MSO's `validFrom` — isolates the MSO validityInfo check specifically, distinct from cert validity |
-| `TestNotYetValidCertIsRejected` | Verifier clock pinned before the certs' `NotBefore` — chain correctly rejected as not-yet-valid |
+| File | Tests | What it checks |
+|---|---|---|
+| `mdoc_test.go` | `TestFullIssuanceFlow_ProducesValidMDoc` | Full issuer → holder → verifier round trip; also logs the real CBOR/COSE hex of the presented mdoc, `issuerAuth`, and `deviceAuth` for external inspection (e.g. via [cbor.me](https://cbor.me)) |
+| `crypto_test.go` | `TestCOSEKeyUsesIntegerMapKeys` | Decodes the real MSO bytes generically and asserts `deviceKey`'s map keys are actual CBOR integers — regression test for the `keyasint` struct-tag fix |
+| `crypto_test.go` | `TestValidityInfoUsesRFC3339Tag` | Confirms `signed`/`validFrom`/`validUntil` are CBOR tag-0 RFC3339 strings, matching the AV Blueprint's own worked example, not a bare Unix epoch integer |
+| `holder_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
+| `issuer_test.go` | `TestClaimOrderingIsDeterministic` | Issues the same claims twice, confirms `digestID` assignment is identical both times |
+| `issuer_test.go` | `TestIssueRejectsDisallowedAttribute` | Any attribute other than `age_over_18`/`age_over_NN` (e.g. `family_name`) is rejected per Annex A §4.1.2 |
+| `issuer_test.go` | `TestIssueRejectsNonBooleanValue` | A non-bool value (e.g. `"true"` as a string) is rejected |
+| `issuer_test.go` | `TestIssueRejectsMissingMandatoryAgeOver18` | Claim sets missing the mandatory `age_over_18` are rejected |
+| `issuer_test.go` | `TestIssueAcceptsValidAgeOverNNVariants` | Multiple valid `age_over_NN` variants alongside `age_over_18` issue cleanly |
+| `verifier_test.go` | `TestUntrustedRootIsRejected` | Attacker's own valid IACA→DS chain, signed correctly, still rejected — root isn't in the verifier's trust pool |
+| `verifier_test.go` | `TestTamperedDigestIsRejected` | Flipped claim value fails the digest check |
+| `verifier_test.go` | `TestDeviceAuthWrongSignerIsRejected` | Cloned mdoc — deviceAuth signed by a different device's key — rejected |
+| `verifier_test.go` | `TestDeviceAuthWrongSessionIsRejected` | Correct device key, but signed over a different session transcript (replay) — rejected |
+| `verifier_test.go` | `TestUnknownDigestIDIsRejected` | A digestID absent from the MSO's `valueDigests` is rejected |
+| `verifier_test.go` | `TestFreshCertsVerifyUnderCurrentTime` | Sanity check — freshly issued certs verify under the real current time (no off-by-one in validity math) |
+| `verifier_test.go` | `TestExpiredDSCertIsRejected` | Verifier clock pinned ~400 days ahead (past the DS cert's 365-day window) — chain correctly rejected as expired |
+| `verifier_test.go` | `TestExpiredMSOValidityIsRejected` | Verifier clock pinned ~100 days ahead (past the MSO's 90-day `validUntil`, but still within the DS cert's 365-day window) — rejected on the MSO's own validity, distinct from the cert check |
+| `verifier_test.go` | `TestNotYetValidMSOIsRejected` | Verifier clock pinned between the (backdated) cert `NotBefore` and the MSO's `validFrom` — isolates the MSO validityInfo check specifically, distinct from cert validity |
+| `verifier_test.go` | `TestNotYetValidCertIsRejected` | Verifier clock pinned before the certs' `NotBefore` — chain correctly rejected as not-yet-valid |
+| `verifier_test.go` | `TestDeviceAuthStillVerifiesWithDetachedPayload` | Detaching the deviceAuth payload doesn't break verification — the verifier reconstructs it itself |
+
+`testhelpers_test.go` holds `buildHappyPathMDoc` and `keysOf` — shared fixtures/helpers
+used across the files above, rather than duplicated per-file.
 
 Run with:
 
@@ -283,7 +295,7 @@ all of the above, are covered as proper tests instead — see `TestUntrustedRoot
 table above. Running `go test -v .` reproduces the same step-by-step output (the
 issuer/holder/verifier functions print their own progress regardless of caller),
 additionally logging the raw CBOR/COSE hex of the presented mdoc, `issuerAuth`, and
-`deviceAuth` (`mdoc_test.go:87,91,95`) for external inspection, with a final `PASS`/`ok`
+`deviceAuth` (`mdoc_test.go:28,32,36`) for external inspection, with a final `PASS`/`ok`
 summary per test.
 
 ---
