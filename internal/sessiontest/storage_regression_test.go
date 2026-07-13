@@ -325,7 +325,9 @@ func assertFreshOpenID4VCISessionsWork(t *testing.T, c *client.Client, sessionHa
 // assertStatusListSessionsWork issues a status-list SD-JWT (the issuance-time
 // holder status check passes on the freshly-allocated VALID bit) and then
 // discloses it twice over OpenID4VP: once while VALID (succeeds), and once after
-// revocation (must fail closed).
+// revocation. The wallet does not fail closed at disclosure (matching IRMA); it
+// surfaces the revocation on the plan, so the revoked run asserts the plan's
+// Revoked flag rather than the session outcome.
 func assertStatusListSessionsWork(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler) {
 	t.Helper()
 
@@ -348,15 +350,19 @@ func assertStatusListSessionsWork(t *testing.T, c *client.Client, sessionHandler
 	valid := discloseViaVeramoOpenID4VP(t, c, 8, sessionHandler, statusListDcql)
 	require.Equal(t, clientmodels.Status_Success, valid.Status)
 
-	// Revoked: revoke at the issuer, refresh to observe it, then disclosure must
-	// fail closed (the revoked instance still appears in the plan; the status
-	// check runs on grant).
+	// Revoked: revoke at the issuer and refresh so the wallet observes it. The
+	// wallet does not fail closed at disclosure — it surfaces the revocation on
+	// the disclosure plan and leaves the decision to the frontend and the
+	// verifier. Assert the plan marks the instance Revoked (a deterministic,
+	// wallet-owned guarantee) rather than the session outcome (which depends on
+	// the external verifier's own status check).
 	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
 	require.NoError(t, c.RefreshStatuses(context.Background()))
 
-	revoked := discloseViaVeramoOpenID4VP(t, c, 9, sessionHandler, statusListDcql)
-	require.NotEqual(t, clientmodels.Status_Success, revoked.Status,
-		"disclosure of a revoked status-list credential must be refused (fail-closed)")
+	revoked := awaitDisclosurePermission(t, c, 9, sessionHandler, statusListDcql)
+	revokedCred := revoked.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
+	require.True(t, revokedCred.Revoked,
+		"a revoked status-list credential must be surfaced as Revoked on the disclosure plan")
 }
 
 // discloseViaVeramoOpenID4VP runs a full OpenID4VP disclosure against the veramo
@@ -366,12 +372,23 @@ func assertStatusListSessionsWork(t *testing.T, c *client.Client, sessionHandler
 func discloseViaVeramoOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, dcql string) clientmodels.SessionState {
 	t.Helper()
 
+	session := awaitDisclosurePermission(t, c, sessionId, sessionHandler, dcql)
+	grantPermission(t, c, session.Id, makeDisclosureChoice(session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
+	return awaitSessionState(t, sessionHandler)
+}
+
+// awaitDisclosurePermission starts an OpenID4VP disclosure against the veramo
+// verifier for the given DCQL query and returns the session state once it
+// reaches RequestPermission, without granting — so callers can inspect the
+// disclosure plan (e.g. a candidate's Revoked flag) before deciding.
+func awaitDisclosurePermission(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, dcql string) clientmodels.SessionState {
+	t.Helper()
+
 	verifierSession := createVeramoVerifierDcqlSessionWithQuery(t, dcql)
 	startOpenID4VPDisclosureSession(t, c, sessionId, verifierSession.RequestUri)
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
-	grantPermission(t, c, session.Id, makeDisclosureChoice(session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
-	return awaitSessionState(t, sessionHandler)
+	return session
 }
 
 // assertLogsNewestFirst is a universal invariant across all fixtures: LoadNewestLogs
