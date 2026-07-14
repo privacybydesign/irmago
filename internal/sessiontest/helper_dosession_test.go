@@ -9,10 +9,11 @@ import (
 
 	"github.com/go-errors/errors"
 
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/irmaclient"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/requestorserver"
+	"github.com/privacybydesign/irmago/internal/testhelpers"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
+	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/requestorserver"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ type (
 
 	requestorSessionResult struct {
 		*server.SessionResult
-		clientResult *SessionResult
+		clientResult *testhelpers.SessionResult
 		Missing      [][]irmaclient.DisclosureCandidates
 		Dismisser    irmaclient.SessionDismisser
 	}
@@ -69,7 +70,7 @@ func (o option) enabled(opt option) bool {
 // by the parameters:
 // - If irmaServer is not nil or optionReuseServer is enabled, this function does nothing.
 // - Otherwise an IRMA server or library is started, depending on the type of conf.
-func startServer(t *testing.T, opts option, irmaServer *IrmaServer, requestorServer *requestorserver.Server, conf interface{}) (stopper, interface{}, bool) {
+func startServer(t *testing.T, opts option, irmaServer *IrmaServer, requestorServer *requestorserver.Server, conf any) (stopper, any, bool) {
 	if irmaServer != nil || requestorServer != nil {
 		if opts.enabled(optionReuseServer) {
 			require.FailNow(t, "either specify irmaServer/requestorserver or optionReuseServer, not both")
@@ -109,7 +110,7 @@ func startServer(t *testing.T, opts option, irmaServer *IrmaServer, requestorSer
 
 // startSessionAtServer starts an IRMA session using the specified session request, against an IRMA server
 // or library, as determined by the type of serv.
-func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request interface{}) *server.SessionPackage {
+func startSessionAtServer(t *testing.T, serv stopper, useJWTs bool, request any) *server.SessionPackage {
 	switch s := serv.(type) {
 	case *IrmaServer:
 		qr, requestorToken, frontendRequest, err := s.irma.StartSession(request, nil, "")
@@ -193,7 +194,7 @@ func getSessionResult(t *testing.T, sesPkg *server.SessionPackage, serv stopper,
 				jwt.RegisteredClaims
 				*server.SessionResult
 			}{}
-			_, err = jwt.ParseWithClaims(res, &claims, func(_ *jwt.Token) (interface{}, error) {
+			_, err = jwt.ParseWithClaims(res, &claims, func(_ *jwt.Token) (any, error) {
 				return &sk.PublicKey, nil
 			})
 			require.NoError(t, err)
@@ -215,28 +216,28 @@ func createSessionHandler(
 	opts option,
 	client *irmaclient.IrmaClient,
 	sesPkg *server.SessionPackage,
-	frontendOptionsHandler func(handler *TestHandler),
-	pairingHandler func(handler *TestHandler),
-) (sessionHandler, chan *SessionResult) {
-	clientChan := make(chan *SessionResult, 2)
+	frontendOptionsHandler func(handler *testhelpers.TestHandler),
+	pairingHandler func(handler *testhelpers.TestHandler),
+) (sessionHandler, chan *testhelpers.SessionResult) {
+	clientChan := make(chan *testhelpers.SessionResult, 2)
 	requestor := expectedRequestorInfo(t, client.Configuration)
-	handler := TestHandler{t: t, c: clientChan, client: client, expectedServerName: requestor}
+	handler := testhelpers.TestHandler{T: t, C: clientChan, Client: client, ExpectedServerName: requestor}
 	if opts.enabled(optionUnsatisfiableRequest) {
-		return &UnsatisfiableTestHandler{TestHandler: handler}, clientChan
+		return &testhelpers.UnsatisfiableTestHandler{TestHandler: handler}, clientChan
 	}
 
 	if frontendOptionsHandler != nil || pairingHandler != nil {
-		handler.pairingCodeChan = make(chan string)
-		handler.frontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
-		handler.frontendTransport.SetHeader(irma.AuthorizationHeader, string(sesPkg.FrontendRequest.Authorization))
+		handler.PairingCodeChan = make(chan string)
+		handler.FrontendTransport = irma.NewHTTPTransport(sesPkg.SessionPtr.URL, false)
+		handler.FrontendTransport.SetHeader(irma.AuthorizationHeader, string(sesPkg.FrontendRequest.Authorization))
 	}
 	if opts.enabled(optionClientWait) {
-		handler.wait = 2 * time.Second
+		handler.Wait = 2 * time.Second
 	}
 	return &handler, clientChan
 }
 
-func waitSessionFinished(t *testing.T, serv interface{}, token irma.RequestorToken, longRunning bool) {
+func waitSessionFinished(t *testing.T, serv any, token irma.RequestorToken, longRunning bool) {
 	if !longRunning {
 		// wait a bit so that server can finish processing the session
 		time.Sleep(100 * time.Millisecond)
@@ -271,18 +272,20 @@ func waitSessionFinished(t *testing.T, serv interface{}, token irma.RequestorTok
 //     parameter is of type func() *server.Configuration or func() *requestorserver.Configuration
 func doSession(
 	t *testing.T,
-	request interface{},
+	request any,
 	client *irmaclient.IrmaClient,
 	irmaServer *IrmaServer,
 	requestorServer *requestorserver.Server,
-	frontendOptionsHandler func(handler *TestHandler),
-	pairingHandler func(handler *TestHandler),
-	config interface{},
+	frontendOptionsHandler func(handler *testhelpers.TestHandler),
+	pairingHandler func(handler *testhelpers.TestHandler),
+	config any,
 	options ...option,
 ) *requestorSessionResult {
 	if client == nil {
-		client, _ = parseStorage(t, options...)
-		defer client.Close()
+		storage, c, _ := parseStorage(t, options...)
+		client = c
+		defer c.Close()
+		defer storage.Close()
 	}
 
 	opts := processOptions(options...)
@@ -303,7 +306,7 @@ func doSession(
 	sessionHandler, clientChan := createSessionHandler(t, opts, client, sesPkg, frontendOptionsHandler, pairingHandler)
 
 	if frontendOptionsHandler != nil {
-		frontendOptionsHandler(sessionHandler.(*TestHandler))
+		frontendOptionsHandler(sessionHandler.(*testhelpers.TestHandler))
 	}
 
 	if opts.enabled(optionPolling) {
@@ -315,7 +318,7 @@ func doSession(
 	clientTransport, dismisser := startSessionAtClient(t, sesPkg, client, sessionHandler)
 
 	if pairingHandler != nil {
-		pairingHandler(sessionHandler.(*TestHandler))
+		pairingHandler(sessionHandler.(*testhelpers.TestHandler))
 	}
 
 	clientResult := <-clientChan
@@ -333,7 +336,7 @@ func doSession(
 
 	if opts.enabled(optionRetryPost) {
 		var result string
-		err := clientTransport.Post("proofs", &result, sessionHandler.(*TestHandler).result)
+		err := clientTransport.Post("proofs", &result, sessionHandler.(*testhelpers.TestHandler).Result)
 		require.NoError(t, err)
 	}
 
@@ -341,10 +344,11 @@ func doSession(
 }
 
 func doChainedSessions(
-	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+	t *testing.T, conf any, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, _ := parseStorage(t, opts...)
+	storage, client, _ := parseStorage(t, opts...)
 	defer client.Close()
+	defer storage.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
 
@@ -375,10 +379,11 @@ func doChainedSessions(
 }
 
 func doUnauthorizedChainedSession(
-	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+	t *testing.T, conf any, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, _ := parseStorage(t, opts...)
+	storage, client, _ := parseStorage(t, opts...)
 	defer client.Close()
+	defer storage.Close()
 
 	buildConfig := conf.(func() *requestorserver.Configuration)()
 
@@ -412,10 +417,11 @@ func doUnauthorizedChainedSession(
 // Chained sessions are a requestor server feature, which is not supported by other types like keyshare.
 // They will never allow chained sessions to be authorized, which is why we need a different test function
 func doNonRequestorChainedSessions(
-	t *testing.T, conf interface{}, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
+	t *testing.T, conf any, id irma.AttributeTypeIdentifier, cred irma.CredentialTypeIdentifier, opts ...option,
 ) {
-	client, _ := parseStorage(t, opts...)
+	storage, client, _ := parseStorage(t, opts...)
 	defer client.Close()
+	defer storage.Close()
 
 	require.IsType(t, IrmaServerConfiguration, conf)
 	irmaServer := StartIrmaServer(t, conf.(func() *server.Configuration)())

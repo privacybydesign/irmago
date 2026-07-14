@@ -29,6 +29,14 @@ var Logger *logrus.Logger
 // Only for use in unit tests.
 var ForceHTTPS = true
 
+// logSanitizer replaces newline characters so user-controlled strings cannot inject fake log entries.
+var logSanitizer = strings.NewReplacer("\r\n", "\\r\\n", "\r", "\\r", "\n", "\\n")
+
+// SanitizeForLog replaces CR and LF characters in s to prevent log injection.
+func SanitizeForLog(s string) string {
+	return logSanitizer.Replace(s)
+}
+
 const (
 	AlphanumericChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	NumericChars      = "0123456789"
@@ -76,6 +84,11 @@ func PathExists(path string) (bool, error) {
 }
 
 func Stat(path string) (os.FileInfo, bool, error) {
+	// Clean normalizes the path (collapsing ., .. and repeated separators) before it
+	// reaches the filesystem. Note that Clean also strips a trailing slash, so a symlink
+	// referenced as "link/" is statted as the link itself rather than its target; this is
+	// intentional and harmless for the existence checks that use this helper.
+	path = filepath.Clean(path)
 	info, err := os.Lstat(path)
 	if err == nil {
 		return info, true, nil
@@ -96,6 +109,19 @@ func EnsureDirectoryExists(path string) error {
 	}
 	if !info.IsDir() {
 		return errors.Errorf("path %s exists but is not a directory", path)
+	}
+	return nil
+}
+
+func EnsureFileExists(path string) error {
+	if exists, err := PathExists(path); err != nil {
+		return err
+	} else if !exists {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		return f.Close()
 	}
 	return nil
 }
@@ -193,7 +219,7 @@ func ReadKey(key, path string) ([]byte, error) {
 	} else {
 		stat, err := os.Stat(path)
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "failed to stat key", 0)
+			return nil, fmt.Errorf("failed to stat key: %w", err)
 		}
 		if stat.IsDir() {
 			return nil, errors.New("cannot read key from a directory")
@@ -422,12 +448,12 @@ func SchemeInfo(filename string, bts []byte) (string, string, error) {
 		return "", "", errors.New("unsupported scheme type")
 	}
 	if err := ValidateSchemeID(temp.ID); err != nil {
-		return "", "", errors.WrapPrefix(err, fmt.Sprintf("invalid scheme id %s", temp.ID), 0)
+		return "", "", fmt.Errorf("invalid scheme id %s: %w", temp.ID, err)
 	}
 	return temp.ID, temp.Type, nil
 }
 
-func Unmarshal(filename string, bts []byte, dest interface{}) error {
+func Unmarshal(filename string, bts []byte, dest any) error {
 	switch filepath.Ext(filename) {
 	case ".xml":
 		return xml.Unmarshal(bts, dest)

@@ -2,15 +2,14 @@ package sdjwtvc
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"iter"
-	"slices"
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 // The format of an SD-JWT VC:
@@ -40,11 +39,26 @@ type DisclosureContent struct {
 	Salt string
 	Key  string
 	// This value can be any type that is allowed in JSON
-	Value          interface{}
+	Value any
+
+	// Processing related fields
 	isArrayElement bool
+	touched        bool
 }
 
 type DisclosureContents []DisclosureContent
+
+func (d *DisclosureContent) IsArrayElement() bool {
+	return d.isArrayElement
+}
+
+func (d *DisclosureContent) Touch() {
+	d.touched = true
+}
+
+func (d *DisclosureContent) IsTouched() bool {
+	return d.touched
+}
 
 func (d DisclosureContents) Keys() iter.Seq[string] {
 	return func(yield func(string) bool) {
@@ -75,6 +89,18 @@ func NewDisclosureContent(key string, value any) (DisclosureContent, error) {
 		Salt:  salt,
 		Key:   key,
 		Value: value,
+	}, nil
+}
+
+func NewArrayItemDisclosureContent(value any) (DisclosureContent, error) {
+	salt, err := generateSalt(16) // 128 bit salt
+	if err != nil {
+		return DisclosureContent{}, err
+	}
+	return DisclosureContent{
+		Salt:           salt,
+		Value:          value,
+		isArrayElement: true,
 	}, nil
 }
 
@@ -143,15 +169,15 @@ type EncodedDisclosure string
 type HashedDisclosure string
 
 type CnfField struct {
-	Jwk jwk.Key `json:"jwk"`
+	Jwk *jwk.Key `json:"jwk,omitempty"`
+	// Note: kid can be any value, but for now we only support the did:jwk method, so it should be a string did:jwk reference to a key in the database with keybinding keys
+	Kid *string `json:"kid,omitempty"`
 }
-
-type HashingAlgorithm string
 
 // IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
 // taking into account some sdjwtvc specific rules
 func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, error) {
-	jsonValues := make(map[string]interface{})
+	jsonValues := make(map[string]any)
 
 	if !strings.HasPrefix(payload.Issuer, "https://") {
 		return "", fmt.Errorf("issuer (`iss`) field is required to be an https link, but is %s", payload.Issuer)
@@ -165,7 +191,7 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 		jsonValues[Key_SdAlg] = payload.SdAlg
 	}
 
-	if payload.Confirm.Jwk != nil {
+	if payload.Confirm != nil && payload.Confirm.Jwk != nil {
 		jsonValues[Key_Confirmationkey] = payload.Confirm
 	}
 
@@ -179,51 +205,65 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 	return string(jsonBytes), err
 }
 
-// SelectDisclosures removes all disclosures at the end of the provided sdjwtvc,
-// except the ones specified.
-// Note that this expects an sdjwtvc without a kbjwt, as it would not make sense to
-// remove disclosures from an sdjwtvc with a kbjwt.
-func SelectDisclosures(fullSdjwt SdJwtVc, disclosureNames []string) (SdJwtVc, error) {
-	issuerSignedJwt, disclosures, _, err := SplitSdJwtVc(fullSdjwt)
-	if err != nil {
-		return "", fmt.Errorf("failed to split sdjwtvc: %v", err)
-	}
-
-	disclosuresToKeep := []EncodedDisclosure{}
-	for _, disclosure := range disclosures {
-		decoded, err := DecodeDisclosure(disclosure)
-		if err != nil {
-			return "", fmt.Errorf("failed to decode disclosure: %v", err)
-		}
-		if slices.Contains(disclosureNames, decoded.Key) {
-			disclosuresToKeep = append(disclosuresToKeep, disclosure)
-		}
-	}
-
-	return CreateSdJwtVc(issuerSignedJwt, disclosuresToKeep), nil
-}
-
 const (
-	HashAlg_Sha256 HashingAlgorithm = "sha-256"
-
-	Key_Subject                  string = "sub"
-	Key_VerifiableCredentialType string = "vct"
-	Key_ExpiryTime               string = "exp"
-	Key_IssuedAt                 string = "iat"
-	Key_Issuer                   string = "iss"
-	Key_Sd                       string = "_sd"
-	Key_SdAlg                    string = "_sd_alg"
-	Key_Confirmationkey          string = "cnf"
-	Key_Status                   string = "status"
-	Key_NotBefore                string = "nbf"
-	Key_Typ                      string = "typ"
-	Key_X5c                      string = "x5c"
-	Key_Ellipsis                 string = "..."
+	Key_Subject                           string = "sub"
+	Key_VerifiableCredentialType          string = "vct"
+	Key_VerifiableCredentialTypeIntegrity string = "vct#integrity"
+	Key_ExpiryTime                        string = "exp"
+	Key_IssuedAt                          string = "iat"
+	Key_Issuer                            string = "iss"
+	Key_Sd                                string = "_sd"
+	Key_SdAlg                             string = "_sd_alg"
+	Key_Confirmationkey                   string = "cnf"
+	Key_Status                            string = "status"
+	Key_NotBefore                         string = "nbf"
+	Key_Typ                               string = "typ"
+	Key_X5c                               string = "x5c"
+	Key_Kid                               string = "kid"
+	Key_Ellipsis                          string = "..."
+	Key_Federation                        string = "fed"
 
 	SdJwtVcTyp        string = "dc+sd-jwt"
 	SdJwtVcTyp_Legacy string = "vc+sd-jwt"
 	KbJwtTyp          string = "kb+jwt"
 )
+
+// LookupVctIntegrityClaim returns the vct#integrity claim string from the
+// processed SD-JWT payload if present and a non-empty string. A claim present
+// with a non-string (or empty) value is an error: the JWT shape for
+// vct#integrity is defined as a string, so a non-string here is either an
+// issuer bug or a downgrade attempt that shouldn't silently bypass integrity
+// verification.
+func LookupVctIntegrityClaim(payload ProcessedSdJwtPayload) (string, bool, error) {
+	raw, ok := payload[Key_VerifiableCredentialTypeIntegrity]
+	if !ok {
+		return "", false, nil
+	}
+	str, ok := raw.(string)
+	if !ok {
+		return "", false, fmt.Errorf("claim %q has non-string value", Key_VerifiableCredentialTypeIntegrity)
+	}
+	if str == "" {
+		return "", false, fmt.Errorf("claim %q is an empty string", Key_VerifiableCredentialTypeIntegrity)
+	}
+	return str, true, nil
+}
+
+// StandardClaims contains JWT-registered and SD-JWT-specific claims that are not user data.
+// Use this to distinguish issuer/protocol metadata from actual credential attributes.
+var StandardClaims = map[string]struct{}{
+	Key_Issuer:                   {},
+	Key_IssuedAt:                 {},
+	Key_ExpiryTime:               {},
+	Key_NotBefore:                {},
+	Key_Subject:                  {},
+	Key_VerifiableCredentialType: {},
+	Key_Confirmationkey:          {},
+	Key_Status:                   {},
+	Key_Sd:                       {},
+	Key_SdAlg:                    {},
+	Key_Federation:               {},
+}
 
 // IssuerSignedJwtPayload is a representation of the payload of the issuer signed jwt part of an SD-JWT VC
 type IssuerSignedJwtPayload struct {
@@ -234,12 +274,6 @@ type IssuerSignedJwtPayload struct {
 
 	// REQUIRED: the type of verifiable credential
 	VerifiableCredentialType string
-
-	// OPTIONAL: expiry time, must not be accepted after this moment
-	Expiry int64
-
-	// OPTIONAL: time of issuance
-	IssuedAt int64
 
 	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the Verifiable Credential
 	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
@@ -252,23 +286,32 @@ type IssuerSignedJwtPayload struct {
 
 	// OPTIONAL: hashing algorithm to be used for the disclosure hashes in `_sd` and the hash over
 	// the complete SD-JWT VC that can be found in the key binding JWT
-	SdAlg HashingAlgorithm
+	SdAlg iana.HashingAlgorithm
 
-	// OPTIONAL: Public key (JWK format) of the holder, which can be used to verify the key binding jwt
-	Confirm CnfField
+	// OPTIONAL: Public key (JWK or kid with did:jwk method) of the holder, which can be used to verify the key binding jwt
+	Confirm *CnfField
 
 	// OPTIONAL: The information on how to read the status of the verifiable credential
-	Status string
+	Status *string
+
+	// OPTIONAL: expiry time, must not be accepted after this moment
+	Expiry *int64
+
+	// OPTIONAL: time of issuance
+	IssuedAt *int64
 
 	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
-	NotBefore int64
+	NotBefore *int64
 }
 
 // IssuerSignedJwt is the issued signed jwt as a string (so only the section of the sd-jwt vc up to and NOT including the first ~)
 type IssuerSignedJwt string
 
-// SdJwtVc represents any full sd-jwt vc as a string, be it with or without disclosures or key binding jwt
+// SdJwtVc represents an encoded sd-jwt vc as a string, be it with or without disclosures, without a key binding jwt
 type SdJwtVc string
+
+// SdJwtVcKb represents an encoded sd-jwt vc as a string, be it with or without disclosures, potentially with a key binding jwt (which needs to be determined by processing)
+type SdJwtVcKb string
 
 // SdJwtVc_IssuerRepresentation is a representation of the SD-JWT VC that can be used by the issuer or holder to issue and disclose
 type SdJwtVc_IssuerRepresentation struct {
@@ -276,23 +319,23 @@ type SdJwtVc_IssuerRepresentation struct {
 	Disclosures     []DisclosureContent
 }
 
-func CreateHash(algorithm HashingAlgorithm, content string) (string, error) {
-	if algorithm != HashAlg_Sha256 {
-		return "", fmt.Errorf("%s is not a supported hashing algorithm, valid choice: %s", algorithm, HashAlg_Sha256)
+func CreateUrlEncodedHash(algorithm iana.HashingAlgorithm, content string) (string, error) {
+	hash, err := iana.Sum(algorithm, content)
+	if err != nil {
+		return "", err
 	}
-	hash := sha256.Sum256([]byte(content))
-	return base64.RawURLEncoding.EncodeToString(hash[:]), nil
+	return base64.RawURLEncoding.EncodeToString(hash), nil
 }
 
-func HashEncodedDisclosure(algorithm HashingAlgorithm, disclosure EncodedDisclosure) (HashedDisclosure, error) {
-	hash, err := CreateHash(algorithm, string(disclosure))
+func HashEncodedDisclosure(algorithm iana.HashingAlgorithm, disclosure EncodedDisclosure) (HashedDisclosure, error) {
+	hash, err := CreateUrlEncodedHash(algorithm, string(disclosure))
 	if err != nil {
 		return "", err
 	}
 	return HashedDisclosure(hash), nil
 }
 
-func HashEncodedDisclosures(algorithm HashingAlgorithm, disclosures []EncodedDisclosure) ([]HashedDisclosure, error) {
+func HashEncodedDisclosures(algorithm iana.HashingAlgorithm, disclosures []EncodedDisclosure) ([]HashedDisclosure, error) {
 	result := []HashedDisclosure{}
 	for _, d := range disclosures {
 		hash, err := HashEncodedDisclosure(algorithm, d)
@@ -304,7 +347,7 @@ func HashEncodedDisclosures(algorithm HashingAlgorithm, disclosures []EncodedDis
 	return result, nil
 }
 
-func HashDisclosure(algorithm HashingAlgorithm, claim DisclosureContent) (HashedDisclosure, error) {
+func HashDisclosure(algorithm iana.HashingAlgorithm, claim DisclosureContent) (HashedDisclosure, error) {
 	disclosure, err := EncodeDisclosure(claim)
 	if err != nil {
 		return "", err
@@ -312,7 +355,7 @@ func HashDisclosure(algorithm HashingAlgorithm, claim DisclosureContent) (Hashed
 	return HashEncodedDisclosure(algorithm, disclosure)
 }
 
-func HashDisclosures(algorithm HashingAlgorithm, disclosures []DisclosureContent) ([]HashedDisclosure, error) {
+func HashDisclosures(algorithm iana.HashingAlgorithm, disclosures []DisclosureContent) ([]HashedDisclosure, error) {
 	result := []HashedDisclosure{}
 	for _, d := range disclosures {
 		hash, err := HashDisclosure(algorithm, d)
@@ -325,7 +368,13 @@ func HashDisclosures(algorithm HashingAlgorithm, disclosures []DisclosureContent
 }
 
 func makeClaimDisclosureArrayJson(claim DisclosureContent) ([]byte, error) {
-	claimArray := []interface{}{claim.Salt, claim.Key, claim.Value}
+	var claimArray []any
+
+	if claim.isArrayElement {
+		claimArray = []any{claim.Salt, claim.Value}
+	} else {
+		claimArray = []any{claim.Salt, claim.Key, claim.Value}
+	}
 	jsonBytes, err := json.Marshal(claimArray)
 	if err != nil {
 		return []byte{}, err
@@ -380,8 +429,8 @@ func CreateSdJwtVcWithDisclosureContents(issJwt IssuerSignedJwt, disclosures []D
 	return SdJwtVc(fmt.Sprintf("%s~%s", issJwt, discs)), nil
 }
 
-func AddKeyBindingJwtToSdJwtVc(sdjwtvc SdJwtVc, kbjwt KeyBindingJwt) SdJwtVc {
-	return SdJwtVc(fmt.Sprintf("%s%s", sdjwtvc, kbjwt))
+func AddKeyBindingJwtToSdJwtVc(sdjwtvc SdJwtVc, kbjwt KeyBindingJwt) SdJwtVcKb {
+	return SdJwtVcKb(fmt.Sprintf("%s%s", sdjwtvc, kbjwt))
 }
 
 func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator) (IssuerSignedJwt, error) {
@@ -401,48 +450,26 @@ func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator
 }
 
 func CreateTestSdJwtVc() (SdJwtVc, error) {
-	sdClaims, err := MultipleNewDisclosureContents(map[string]string{
-		"family_name": "Yivi",
-		"location":    "Utrecht",
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	sdClaimHashes, err := HashDisclosures(HashAlg_Sha256, sdClaims)
-	if err != nil {
-		return "", err
-	}
-
 	holderKey, err := readHolderPublicJwk()
 	if err != nil {
 		return "", err
 	}
-
-	sdJwtClaims := IssuerSignedJwtPayload{
-		Subject:                  "6c5c0a49-b589-431d-bae7-219122a9ec2c",
-		Sd:                       sdClaimHashes,
-		SdAlg:                    HashAlg_Sha256,
-		Issuer:                   "https://openid4vc.staging.yivi.app",
-		Confirm:                  holderKey,
-		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   1835689661,
-		IssuedAt:                 1516239022,
-	}
-
-	signer := NewEcdsaJwtCreatorWithIssuerTestkey()
-	jwt, err := CreateIssuerSignedJwt(sdJwtClaims, signer)
-
+	holderKeyClaim, err := HolderKeyClaim(holderKey)
 	if err != nil {
 		return "", err
 	}
 
-	sdJwtVc, err := CreateSdJwtVcWithDisclosureContents(jwt, sdClaims)
-
-	if err != nil {
-		return "", err
-	}
-
-	return sdJwtVc, nil
+	return NewSdJwtBuilder().
+		WithPayload(
+			Claim(Key_Subject, "6c5c0a49-b589-431d-bae7-219122a9ec2c"),
+			Claim(Key_SdAlg, iana.SHA256),
+			Claim(Key_Issuer, "https://openid4vc.staging.yivi.app"),
+			holderKeyClaim,
+			Claim(Key_VerifiableCredentialType, "pbdf.sidn-pbdf.email"),
+			Claim(Key_ExpiryTime, 1835689661),
+			Claim(Key_IssuedAt, 1516239022),
+			SdClaim("family_name", "Yivi"),
+			SdClaim("location", "Utrecht"),
+		).
+		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
 }

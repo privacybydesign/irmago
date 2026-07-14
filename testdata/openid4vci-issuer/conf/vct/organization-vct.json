@@ -1,0 +1,118 @@
+{
+  "path": "/vct/organization",
+  "credentials": [
+    "OrganizationCredentialSdJwt"
+  ],
+  "document": {
+    "name": "Organization Credential (SD-JWT)",
+    "description": "VCT metadata for deeply nested organization credential with nested SD claims",
+    "language": "en",
+    "display": [
+      {
+        "locale": "en",
+        "name": "Organization Credential (SD-JWT)"
+      }
+    ],
+    "claims": [
+      {
+        "path": [
+          "university",
+          "name"
+        ],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "University Name" },
+          { "locale": "nl", "label": "Naam universiteit" }
+        ]
+      },
+      {
+        "path": [
+          "university",
+          "faculties"
+        ],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Faculties" },
+          { "locale": "nl", "label": "Faculteiten" }
+        ]
+      },
+      {
+        "path": [
+          "university",
+          "founded"
+        ],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Founded" },
+          { "locale": "nl", "label": "Opgericht" }
+        ]
+      },
+      {
+        "path": [
+          "university",
+          "faculties",
+          null,
+          "faculty_name"
+        ],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Faculty Name" },
+          { "locale": "nl", "label": "Faculteitsnaam" }
+        ]
+      },
+      {
+        "path": [
+          "university",
+          "faculties",
+          null,
+          "departments"
+        ],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Departments" },
+          { "locale": "nl", "label": "Afdelingen" }
+        ]
+      },
+      {
+        "path": [
+          "university",
+          "faculties",
+          null,
+          "departments",
+          null,
+          "dept_name"
+        ],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Department Name" },
+          { "locale": "nl", "label": "Afdelingsnaam" }
+        ]
+      },
+      {
+        "path": [
+          "university",
+          "faculties",
+          null,
+          "departments",
+          null,
+          "courses"
+        ],
+        "sd": "allowed",
+        "display": [
+          { "locale": "en", "label": "Courses" },
+          { "locale": "nl", "label": "Vakken" }
+        ]
+      },
+      {
+        "path": [
+          "university"
+        ],
+        "display": [
+          { "locale": "en", "label": "University" },
+          { "locale": "nl", "label": "Universiteit" }
+        ]
+      }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

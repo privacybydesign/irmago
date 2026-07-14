@@ -1,0 +1,7 @@
+{
+  "name": "test-issuer",
+  "baseUrl": "https://localhost:8443/test-issuer",
+  "adminToken": "test-admin-token",
+  "did": "test-issuer-did",
+  "usesNonces": true
+}

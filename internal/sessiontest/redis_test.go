@@ -22,9 +22,10 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	irma "github.com/privacybydesign/irmago"
-	"github.com/privacybydesign/irmago/server"
-	"github.com/privacybydesign/irmago/server/requestorserver"
+	"github.com/privacybydesign/irmago/internal/testhelpers"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/server"
+	"github.com/privacybydesign/irmago/irma/server/requestorserver"
 	"github.com/stretchr/testify/require"
 )
 
@@ -147,7 +148,7 @@ func TestRedisTLSConfig(t *testing.T) {
 	config := configFunc()
 	config.RedisSettings.DisableTLS = true
 	_, err := requestorserver.New(config)
-	require.EqualError(t, err, "Redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+	require.EqualError(t, err, "redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
 
 	// Check that specifying a path to a certificate for Redis is not allowed when Redis TLS is disabled
 	config = configFunc()
@@ -155,13 +156,13 @@ func TestRedisTLSConfig(t *testing.T) {
 	config.RedisSettings.TLSCertificate = ""
 	config.RedisSettings.TLSCertificateFile = "/path/to/cert"
 	_, err = requestorserver.New(config)
-	require.EqualError(t, err, "Redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
+	require.EqualError(t, err, "redis TLS config failed: Redis TLS cannot be disabled when a Redis TLS certificate is specified.")
 
 	// Check that specifying both a certificate and a path to a(nother) certificate is not allowed
 	config = configFunc()
 	config.RedisSettings.TLSCertificateFile = "/path/to/cert"
 	_, err = requestorserver.New(config)
-	require.EqualError(t, err, "Redis TLS config failed: provide either key or path to key")
+	require.EqualError(t, err, "redis TLS config failed: provide either key or path to key")
 }
 
 func TestRedisWithTLSCertFile(t *testing.T) {
@@ -236,8 +237,9 @@ func TestRedisSessionFailure(t *testing.T) {
 
 	irmaServer := StartIrmaServer(t, redisConfigDecorator(mr, cert, "", IrmaServerConfiguration)())
 	defer irmaServer.Stop()
-	client, _ := parseStorage(t)
+	storage, client, _ := parseStorage(t)
 	defer client.Close()
+	defer storage.Close()
 
 	qr, _, _, err := irmaServer.irma.StartSession(request, nil, "")
 	require.NoError(t, err)
@@ -247,10 +249,10 @@ func TestRedisSessionFailure(t *testing.T) {
 	// Stop the Redis server early to check whether the IRMA client fails correctly
 	mr.Close()
 
-	clientChan := make(chan *SessionResult)
-	h := &TestHandler{t, clientChan, client, nil, 0, "", nil, nil, nil}
+	clientChan := make(chan *testhelpers.SessionResult)
+	h := &testhelpers.TestHandler{T: t, C: clientChan, Client: client, ExpectedServerName: nil, Wait: 0, Result: "", PairingCodeChan: nil, ClientTransport: nil, FrontendTransport: nil}
 	client.NewSession(string(qrjson), h)
-	clientResult := <-h.c
+	clientResult := <-h.C
 
 	require.Error(t, clientResult.Err)
 	serr, ok := clientResult.Err.(*irma.SessionError)

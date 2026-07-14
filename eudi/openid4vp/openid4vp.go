@@ -2,13 +2,37 @@ package openid4vp
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
-type Jwk interface{}
+// validateNonce checks that the nonce is non-empty and contains only ASCII
+// URL-safe characters as required by OpenID4VP Section 5.2.
+func validateNonce(nonce string) error {
+	if nonce == "" {
+		return fmt.Errorf("nonce is required")
+	}
+	for _, c := range nonce {
+		if !isASCIIURLSafe(c) {
+			return fmt.Errorf("nonce contains invalid character: %q", c)
+		}
+	}
+	return nil
+}
+
+// isASCIIURLSafe returns true if the rune is an ASCII URL-safe character:
+// uppercase/lowercase letters, digits, hyphen, period, underscore, or tilde.
+func isASCIIURLSafe(c rune) bool {
+	return (c >= 'A' && c <= 'Z') ||
+		(c >= 'a' && c <= 'z') ||
+		(c >= '0' && c <= '9') ||
+		c == '-' || c == '.' || c == '_' || c == '~'
+}
+
+type Jwk any
 
 type SdJwtVcClientMetadataVpFormat struct {
 	KbJwtAlgorithms []string `json:"kb-jwt_alg_values"`
@@ -19,7 +43,7 @@ type MdocClientMedataVpFormat struct {
 	Algorithm []string `json:"alg"`
 }
 
-func GetMdocFromClientMetadataVpFormats(vpFormats map[string]interface{}) *MdocClientMedataVpFormat {
+func GetMdocFromClientMetadataVpFormats(vpFormats map[string]any) *MdocClientMedataVpFormat {
 	result, ok := vpFormats["mso_mdoc"].(MdocClientMedataVpFormat)
 	if ok {
 		return &result
@@ -27,7 +51,7 @@ func GetMdocFromClientMetadataVpFormats(vpFormats map[string]interface{}) *MdocC
 	return nil
 }
 
-func GetSdJwtVcFromClientMedataVpFormats(vpFormats map[string]interface{}) *SdJwtVcClientMetadataVpFormat {
+func GetSdJwtVcFromClientMedataVpFormats(vpFormats map[string]any) *SdJwtVcClientMetadataVpFormat {
 	result, ok := vpFormats["vc+sd-jwt"].(SdJwtVcClientMetadataVpFormat)
 	if ok {
 		return &result
@@ -58,6 +82,20 @@ func (s Jwks) MarshalJSON() ([]byte, error) {
 }
 
 type ClientMetadata struct {
+	// OPTIONAL. Human-readable name of the client (verifier).
+	// Defined in RFC 7591 but not part of the OpenID4VP client_metadata spec (which says
+	// unrecognized parameters MUST be ignored). Used as a fallback display name when
+	// response_uri is absent, to avoid showing a raw did:jwk to the user.
+	ClientName *string `json:"client_name,omitempty"`
+
+	// OPTIONAL. URI of a webpage from the client (verifier) providing information about the client.
+	// Defined in RFC 7591.
+	ClientUri *string `json:"client_uri,omitempty"`
+
+	// OPTIONAL. A URI to the logo of the client (verifier).
+	// Defined in RFC 7591.
+	LogoUri *string `json:"logo_uri,omitempty"`
+
 	// OPTIONAL. A JSON Web Key Set, as defined in [RFC7591], that contains one or more public keys,
 	// such as those used by the Wallet as an input to a key agreement that may be used for encryption
 	// of the Authorization Response (see Section 8.3), or where the Wallet will require the public key
@@ -98,6 +136,7 @@ type ClientMetadata struct {
 type ResponseMode string
 type RequestUriMethod string
 type ResponseType string
+type ClientIdentifierPrefix string
 
 const (
 	ResponseMode_DirectPost    ResponseMode = "direct_post"
@@ -123,6 +162,14 @@ const (
 	Key_RequestUriMethod string = "request_uri_method"
 	Key_Scope            string = "scope"
 	Key_State            string = "state"
+
+	ClientIdentifierPrefix_RedirectUri         ClientIdentifierPrefix = "redirect_uri:"
+	ClientIdentifierPrefix_OpenidFederation    ClientIdentifierPrefix = "openid_federation:"
+	ClientIdentifierPrefix_DecentralizedDid    ClientIdentifierPrefix = "decentralized_identifier:"
+	ClientIdentifierPrefix_VerifierAttestation ClientIdentifierPrefix = "verifier_attestation:"
+	ClientIdentifierPrefix_X509SanDns          ClientIdentifierPrefix = "x509_san_dns:"
+	ClientIdentifierPrefix_X509Hash            ClientIdentifierPrefix = "x509_hash:"
+	ClientIdentifierPrefix_Origin              ClientIdentifierPrefix = "origin:"
 )
 
 type AuthorizationRequest struct {
@@ -130,8 +177,8 @@ type AuthorizationRequest struct {
 	Type     string `json:"type"`
 
 	// REQUIRED:
-	ClientId       string         `json:"client_id"`
-	ClientMetadata ClientMetadata `json:"client_metadata"`
+	ClientId       string          `json:"client_id"`
+	ClientMetadata *ClientMetadata `json:"client_metadata"`
 
 	// OPTIONAL: A query for credentials using DCQL.
 	// MUST NOT exist if `scope` is set, MUST exist if there is no `scope`.

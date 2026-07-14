@@ -49,7 +49,7 @@ type CredentialQuery struct {
 	// OPTIONAL: An object defining additional properties requested by the verifier that apply to the
 	// metadata and validity data of the credential. The properties of this are defined per credential format.
 	// If omitted, no specific constraints are placed on the metadata or validity of the requested credential.
-	Meta Meta `json:"meta,omitempty"`
+	Meta *Meta `json:"meta,omitempty"`
 
 	// OPTIONAL: A non-empty array that specifies the expected authorities or trust frameworks that certify issuers,
 	// that the verifier will accept. Every credential returned by the wallet should match at least one of the conditions
@@ -68,7 +68,16 @@ type CredentialQuery struct {
 	// OPTIONAL. A boolean which indicates whether the Verifier requires a Cryptographic Holder Binding proof.
 	// The default value is true, i.e., a Verifiable Presentation with Cryptographic Holder Binding is required.
 	// If set to false, the Verifier accepts a Credential without Cryptographic Holder Binding proof.
-	RequireHolderBinding bool `json:"require_cryptographic_holder_binding,omitempty"`
+	RequireHolderBinding *bool `json:"require_cryptographic_holder_binding,omitempty"`
+}
+
+// NeedsHolderBinding returns true if the credential query requires a cryptographic
+// holder binding proof. Defaults to true per the OpenID4VP spec when the field is absent.
+func (c CredentialQuery) NeedsHolderBinding() bool {
+	if c.RequireHolderBinding == nil {
+		return true
+	}
+	return *c.RequireHolderBinding
 }
 
 // QueryResponse contains the values required for a response to a query.
@@ -82,29 +91,15 @@ type QueryResponse struct {
 	Credentials []string
 }
 
-// ClaimsPathPointer is a list of components that construct a full path to a claim.
-// Semantics of a claims path pointer when applied to a json-based credential:
-//
-// A string value indicates that the respective key is to be selected,
-// a null value indicates that all elements of the currently selected array(s) are to be selected;
-// and a non-negative integer indicates that the respective index in an array is to be selected.
-//
-// The path is formed as follows:
-//
-// Start with an empty array and repeat the following until the full path is formed.
-//   - To address a particular claim within an object, append the key (claim name) to the array.
-//   - To address an element within an array, append the index to the array (as a non-negative, 0-based integer).
-//   - To address all elements within an array, append a null value to the array.
-type ClaimsPathPointer []string
-
 type Claim struct {
 	// REQUIRED if claim_sets is present in the credential query, OPTIONAL otherwise.
 	// a string identifying the particular claim. The same id must not be presented more than once.
 	Id string `json:"id"`
 
 	// REQUIRED: A claims path pointer that specifies the path to a claim
-	// within the verifiable credential
-	Path ClaimsPathPointer `json:"path"`
+	// within the verifiable credential. Each component is a string (object key),
+	// int/float64 (array index), or nil (all array elements).
+	Path []any `json:"path"`
 
 	// OPTIONAL: A list of strings, integers or boolean values that specifies the expected values of the claim
 	Values []any `json:"values,omitempty"`
@@ -124,18 +119,31 @@ type TrustedAuthority struct {
 	Values []string             `json:"values"` // required
 }
 
-type QueryValidator interface {
-	ValidateQuery(query *DcqlQuery) error
-}
-
 func (c CredentialQuery) AllClaimPaths() iter.Seq[string] {
 	return func(yield func(string) bool) {
 		for _, claim := range c.Claims {
-			for _, path := range claim.Path {
+			for _, component := range claim.Path {
+				path, ok := component.(string)
+				if !ok {
+					continue
+				}
 				if !yield(path) {
 					return
 				}
 			}
 		}
 	}
+}
+
+// VctValues implements scheme.ValidatableCredentialQuery.
+func (c CredentialQuery) VctValues() []string {
+	if c.Meta == nil {
+		return nil
+	}
+	return c.Meta.VctValues
+}
+
+// ClaimPaths implements scheme.ValidatableCredentialQuery.
+func (c CredentialQuery) ClaimPaths() iter.Seq[string] {
+	return c.AllClaimPaths()
 }

@@ -1,0 +1,39 @@
+{
+  "path": "/vct/postissuancevcttest",
+  "credentials": ["PostIssuanceVctTestCredentialSdJwt"],
+  "document": {
+    "name": "Post-Issuance VCT Test (from VCT)",
+    "description": "VCT used by the regression test that exercises the wallet's post-issuance type-metadata resolution. Veramo serves vct:\"unknown\" in the issuer well-known document for this credential (because its extends target doesn't match any VCT entry), but signs the actual vct URL into the JWT — forcing the wallet to fetch the type metadata only after the credential is in hand.",
+    "display": [
+      { "locale": "en", "name": "Post-Issuance VCT Test (from VCT)" },
+      { "locale": "nl", "name": "Post-Issuance VCT Test (uit VCT)" }
+    ],
+    "claims": [
+      {
+        "path": ["given_name"],
+        "display": [
+          { "locale": "en", "label": "Given Name (from VCT post-issuance)" },
+          { "locale": "nl", "label": "Voornaam (uit VCT post-issuance)" }
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": ["family_name"],
+        "display": [
+          { "locale": "en", "label": "Family Name (from VCT post-issuance)" },
+          { "locale": "nl", "label": "Achternaam (uit VCT post-issuance)" }
+        ],
+        "sd": "allowed"
+      },
+      {
+        "path": ["email"],
+        "display": [
+          { "locale": "en", "label": "Email (from VCT post-issuance)" },
+          { "locale": "nl", "label": "E-mailadres (uit VCT post-issuance)" }
+        ],
+        "sd": "allowed"
+      }
+    ],
+    "issuer": "{{ here }}"
+  }
+}

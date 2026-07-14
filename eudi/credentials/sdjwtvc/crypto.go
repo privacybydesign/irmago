@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"maps"
 	"os"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -42,10 +43,7 @@ func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]a
 	}
 
 	sdjwt := jwt.NewWithClaims(jwt.SigningMethodES256, &claims)
-
-	for key, value := range customHeaderFields {
-		sdjwt.Header[key] = value
-	}
+	maps.Copy(sdjwt.Header, customHeaderFields)
 
 	jwt, err := sdjwt.SignedString(c.privateKey)
 	if err != nil {

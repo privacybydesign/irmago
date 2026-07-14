@@ -1,0 +1,7 @@
+{
+  "name": "test-verifier",
+  "path": "/test-verifier",
+  "did": "test-verifier-did",
+  "adminToken": "test-verifier-admin-token",
+  "presentations": ["test-sdjwt"]
+}

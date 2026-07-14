@@ -5,11 +5,102 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
-### Fix
-- Bug that keyshare regisration failed when users email domain had no MX records.
+### Internal
+- Add storage regression test for version 1.0.0
+
+### Fixed
+- Fix `200 serverResponse: context deadline exceeded (Client.Timeout or context cancellation while reading body)` on slow connections or large/slow response bodies: the outbound `http.Client` in `irma/transport.go` had a 5s `Timeout` that covered the whole request (including reading the response body) and silently overrode the intended 20s per-request context deadline. The 5s timeout is removed so the 20s deadline is the single source of truth.
+
+## [1.1.0] - 2026-07-08
+### Added
+- Added support for `x509_hash` client identifier prefix in OpenID4VP flow
+- Added support for Verifier Metadata in OpenID4VP flow
+
+### Security
+- Update Go toolchain 1.26.3 → 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
+- Update dependencies with security relevance:
+  - `github.com/go-chi/chi/v5` 5.2.5 → 5.3.0 (host header handling)
+  - `github.com/golang-jwt/jwt/v5` 5.2.2 → 5.3.1
+  - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
+- Sanitize user-controlled strings before writing them to log entries to prevent log injection
+- Filter sensitive HTTP headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`) from request logs
+- Fix email header injection by using the parsed recipient address in the SMTP `To:` header
+- Normalize file paths via `filepath.Clean` before filesystem operations
 
 ### Changed
-- Requests using irma.HTTPTransport have a doubled response timeout (20 seconds) to accommodate for slow and/or foreign connections
+- Replace `github.com/go-errors/errors` `WrapPrefix` calls with stdlib `fmt.Errorf` wrapping so `errors.Is`/`errors.As` traverse wrapped errors
+- Raise the minimum Go version to 1.26
+- Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
+- Update CI GitHub Action versions to Node 24 supported once
+- Update other dependencies to their latest releases: `github.com/lestrrat-go/jwx/v3`, `github.com/go-co-op/gocron` (v1 and v2), `github.com/spf13/{cast,cobra,pflag,viper}`, `go.etcd.io/bbolt`, `gorm.io/driver/{mysql,postgres,sqlserver}`, `github.com/alicebob/miniredis/v2`, `github.com/go-chi/cors` and `github.com/go-errors/errors`
+- Added DID First Candidate Recommendation backwards-compatibility for verification methods containing `publicKeyBase58` verification material.
+
+### Fixed
+- Treat email addresses with a non-resolvable (NXDOMAIN) domain as permanently invalid instead of a transient network error, so the keyshare email task no longer retries them indefinitely and crowds out delivery of valid emails
+- Fix `panic: send on closed channel` in the in-memory session store that could crash the server when an expired session was deleted while a status update for it was still being delivered to subscribers. Session-update notifications are now delivered synchronously under the read lock (mutually exclusive with channel closing) instead of from an unsynchronized goroutine, and subscription channels are cleaned up when their subscriber goes away. This also fixes two related data races on the session store detected under `-race`.
+- Fix disclosure returning the wrong credential instance after another instance of the same credential type was deleted, caused by the positional credential cache not being invalidated for the instances shifted by the deletion
+- Fixed a DidDocument deserialisation bug, where the `controller` attribute can be either a single string or a set of strings.
+
+## [1.0.0] - 2026-06-19
+### Added
+- Support for issuing SD-JWT VC credentials over the OpenID4VCI protocol to the new `client` package
+  - Supports the Pre-Authorized Code flow, including an optional `tx_code` (with retry on incorrect entry)
+  - Supports the Authorization Code flow, including Pushed Authorization Requests (PAR), in-app browser based authorization, and PKCE
+  - Supports DID-based holder binding: keys are bound to the credential at issuance, stored securely on the client, and removed together with the credential
+  - Supports `authorization_details` in Authorization and Token requests
+  - Supports encrypted credential request bodies
+  - Issuers are verified via `did:web`, `did:key` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
+- Support for disclosing SD-JWT VC credentials with nested selectively-disclosable claims and array claims over the OpenID4VP 1.0 protocol
+  - DCQL support extended with `claim_sets`, the `multiple` flag, predefined claim values (also for non-string values), and `require_cryptographic_holder_binding`
+  - Adds the `decentralized_identifier` client identifier prefix in addition to the existing `x509_san_dns`
+  - Stricter validation of presentation nonces and verifier metadata
+- New top-level Go package `client`, offering a unified `Client` that wraps the existing `irmaclient` (renamed to `IrmaClient`) together with an `OpenID4VCIClient` and an `OpenID4VPClient`
+  - New schemaless session implementation that no longer relies on `IrmaConfiguration` for OpenID4VCI/VP credential types
+  - New `common/clientmodels` package containing the serializable types shared between client integrations (sessions, logs, interactions)
+  - API to delete individual credentials, and the ability to mark batches of size 1 as infinitely reusable
+- Encrypted-at-rest EUDI storage using SQLCipher for sensitive data such as holder binding keys, key metadata, and SD-JWT VC credentials
+  - File names of stored images and logos (credential, issuer, requestor) are hashed and salted with an AES-derived key
+- New EUDI session log system covering both OpenID4VCI issuance and OpenID4VP disclosure sessions
+  - Logs include credential metadata, issuer/credential/requestor logos, revocation status and dates
+  - Logs are indexed by creation date and merged with `irmaclient` logs in chronological order using a two-pointer merge
+  - `DeleteAll` now also clears the EUDI storage and database contents
+- `yivi` top-level command line tool that wraps the existing `irma` command (container image published as `ghcr.io/privacybydesign/yivi`); the existing `irma` command remains available as `yivi irma ...`
+- Disclosure UI improvements: support for attribute group headers, credential images shown during disclosure, and a more reliable selection of the requestor's display name
+
+### Changed
+- Raise the minimum Go version to 1.26
+- Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
+- Requests using `irma.HTTPTransport` have a doubled response timeout (20 seconds) to accommodate for slow and/or foreign connections
+- `Attribute` no longer carries an `Id`; it now carries a `ClaimPath` (`[]any`) to address nested claims. The `Array` and `Object` value variants are removed from `AttributeValue`, and `TranslatedString` is no longer an `AttributeValue` variant
+- Public structs across the client packages now use snake_case JSON tags
+- `SessionState.Error` is now a serializable error type; `PinBlockedTimeSeconds` and `RemainingPinAttempts` are now optional; sessions can be dismissed from any state
+- Revocation attributes are filtered out of the user-facing attribute list; the wrongly-issued credential view only contains the relevant attribute and only the most recent wrongly-issued credential is shown
+- The repository layout has been reorganised: CLI sources moved under `yivi/cli/...`, the `irma/cmd` package now lives at `yivi/cli/irmacli`, and EUDI components live under the new `eudi/...` tree
+
+### Security
+- Update dependencies to resolve Dependabot security advisories:
+  - `golang.org/x/crypto` 0.40.0 → 0.53.0 (GHSA-f6x5-jh6r-wrfv, GHSA-j5w8-q4qc-rx2x)
+  - `github.com/sirupsen/logrus` 1.9.0 → 1.9.4 (GHSA-4f99-4q7p-p3gh)
+  - `github.com/jackc/pgx/v5` 5.5.5 → 5.10.0 (GHSA-9jj7-4m8r-rfcm, GHSA-j88v-2chj-qfwx)
+  - `filippo.io/edwards25519` 1.1.0 → 1.2.0 (GHSA-fw7p-63qq-7hpr)
+
+### Fix
+- Bug that keyshare registration failed when users email domain had no MX records.
+- Bug where an empty `con` in a `condiscon` request caused all attribute disclosures to be swallowed, even when other `con`s were satisfied (irmamobile #360)
+
+### Deprecated
+- `irma server` flags `--email` / `-e` and `--no-email`, and the `email` config key, are no longer used. They are still accepted for backwards compatibility but will emit a deprecation warning when set.
+
+### Removed
+- Outbound POST of admin email and version to `privacybydesign.foundation/serverinfo/` on `irma server` startup (endpoint no longer exists)
+- Production-mode requirement that `irma server` operators specify `--email` or `--no-email`; the admin email value is no longer used for anything
+
+### Internal
+- New `eudi/...` tree with packages for OpenID4VCI, OpenID4VP, DCQL, SD-JWT VC presentation/verification, DID resolution (`did:web`, `did:jwk`), JWT key providers, OAuth2/PKCE, and storage (SQLCipher + filesystem)
+- Test infrastructure for OpenID4VCI: local issuance server, mock authorization server, and a Veramo-compatible OpenID4VP verifier; integration tests for both the Pre-Authorized and Authorization Code flows
+- Significant expansion of the integration test suite (chained sessions, signature sessions, pairing code, optional credentials, multiple-credential issuance, schemaless disclosure, complex SD-JWT VC scenarios)
+- Docker Compose now runs integration tests with TLS; CGO is enabled via env var to support SQLCipher
+- SQLCipher build instructions for macOS, Debian/Ubuntu, Fedora/RHEL and Windows added to the README; CI installs the SQLCipher library. Pre-compiled release binaries are still built with `CGO_ENABLED=0` and do not include SQLCipher
 
 ## [0.19.2] - 2026-02-26
 ### Fix
@@ -596,6 +687,8 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.1.0]: https://github.com/privacybydesign/irmago/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0
 [0.19.2]: https://github.com/privacybydesign/irmago/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/privacybydesign/irmago/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/privacybydesign/irmago/compare/v0.18.1...v0.19.0

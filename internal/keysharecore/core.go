@@ -7,7 +7,7 @@ import (
 
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
-	irma "github.com/privacybydesign/irmago"
+	"github.com/privacybydesign/irmago/irma"
 )
 
 const (

@@ -14,10 +14,10 @@ import (
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/gabi/signed"
-	irma "github.com/privacybydesign/irmago"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
-	"github.com/privacybydesign/irmago/irmaclient"
+	"github.com/privacybydesign/irmago/irma"
+	"github.com/privacybydesign/irmago/irma/irmaclient"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
@@ -40,15 +40,22 @@ func TestPinFunctionality(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with correct pin
+		expiryLowerBound := time.Now().Unix() + JWTPinExpiryDefault
 		j, err := validateAuth(t, c, signer, secrets, pin)
 		require.NoError(t, err)
+		expiryUpperBound := time.Now().Unix() + JWTPinExpiryDefault
 		var claims jwt.StandardClaims
-		_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (interface{}, error) {
+		_, err = jwt.ParseWithClaims(j, &claims, func(_ *jwt.Token) (any, error) {
 			return &jwtTestKey.PublicKey, nil
 		})
 		assert.NoError(t, err)
 		assert.Equal(t, "auth_tok", claims.Subject)
-		assert.Equal(t, time.Now().Unix()+JWTPinExpiryDefault, claims.ExpiresAt)
+		// The JWT expiry is computed from time.Now() inside validateAuth, so it
+		// must fall within the window captured around that call. Asserting exact
+		// equality against a freshly read time.Now() is flaky when the second
+		// boundary is crossed between generating and checking the JWT.
+		assert.GreaterOrEqual(t, claims.ExpiresAt, expiryLowerBound)
+		assert.LessOrEqual(t, claims.ExpiresAt, expiryUpperBound)
 		assert.Equal(t, JWTIssuerDefault, claims.Issuer)
 
 		// test change pin
@@ -200,7 +207,7 @@ func TestProofFunctionality(t *testing.T) {
 			ProofP *gabi.ProofP
 		}{}
 		fmt.Println(Rjwt)
-		_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (interface{}, error) {
+		_, err = jwt.ParseWithClaims(Rjwt, claims, func(tok *jwt.Token) (any, error) {
 			return &c.jwtPrivateKey.PublicKey, nil
 		})
 		require.NoError(t, err)

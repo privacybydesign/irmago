@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,8 +14,9 @@ func TestNoIssuerLinkIsErr(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   0,
-		IssuedAt:                 0,
+		Expiry:                   nil,
+		IssuedAt:                 nil,
+		NotBefore:                nil,
 		Issuer:                   "",
 	}
 
@@ -27,8 +29,9 @@ func TestNoHttpsIssuerIsErr(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   0,
-		IssuedAt:                 0,
+		Expiry:                   nil,
+		IssuedAt:                 nil,
+		NotBefore:                nil,
 		Issuer:                   "http://invalid.com",
 	}
 
@@ -40,8 +43,9 @@ func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
 		Subject:                  "subject",
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   0,
-		IssuedAt:                 0,
+		Expiry:                   nil,
+		IssuedAt:                 nil,
+		NotBefore:                nil,
 		Issuer:                   "https://example.com",
 	}
 
@@ -72,30 +76,15 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 	}
 }
 
-func TestCreateMultipleDisclosures(t *testing.T) {
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{
-		"name":     "Yivi",
-		"location": "Utrecht",
-		"country":  "Netherlands",
-	})
-
-	require.NoError(t, err)
-	require.Len(t, disclosures, 3)
-}
-
 func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
-	issuer := "https://example.com"
-	disclosures, err := MultipleNewDisclosureContents(map[string]string{"family": "Yivi"})
-	require.NoError(t, err)
-
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
-
-	sdjwt, err := NewSdJwtVcBuilder().
-		WithIssuerUrl(issuer).
-		WithVerifiableCredentialType("pbdf.pbdf.email").
-		WithDisclosures(disclosures).
-		WithHashingAlgorithm(HashAlg_Sha256).
-		Build(jwtCreator)
+	sdjwt, err := NewSdJwtBuilder().
+		WithPayload(
+			Claim(Key_Issuer, "https://example.com"),
+			Claim(Key_VerifiableCredentialType, "pbdf.pbdf.email"),
+			Claim(Key_SdAlg, iana.SHA256),
+			SdClaim("family", "Yivi"),
+		).
+		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
 
 	require.NoError(t, err)
 
@@ -164,4 +153,17 @@ func TestArrayElementDecodeDisclosure(t *testing.T) {
 	require.Equal(t, "NL", decodedDisclosure.Value)
 	require.Empty(t, decodedDisclosure.Key)
 	require.True(t, decodedDisclosure.isArrayElement)
+}
+
+func Test_DecodingDisclosure_Succeeds(t *testing.T) {
+	content, err := NewDisclosureContent("name", "Yivi")
+	require.NoError(t, err)
+	d, err := EncodeDisclosure(content)
+	require.NoError(t, err)
+
+	decoded, err := DecodeDisclosure(d)
+	require.NoError(t, err)
+
+	require.Equal(t, "name", decoded.Key)
+	require.Equal(t, "Yivi", decoded.Value)
 }

@@ -29,3 +29,12 @@ func GetOptional[T any](token jwt.Token, key string) T {
 	}
 	return value
 }
+
+func GetOptionalWithDefault[T any](token jwt.Token, key string, defaultValue T) T {
+	var value T
+	err := token.Get(key, &value)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}

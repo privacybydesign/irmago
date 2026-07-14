@@ -16,7 +16,7 @@
 	</Description>
 
 	<Attributes>
-		<Attribute id="university">
+		<Attribute id="university" displayIndex="3">
 			<Name>
 				<en>University</en>
 				<nl>Universiteit</nl>
@@ -26,7 +26,7 @@
 				<nl>Naam van de universiteit</nl>
 			</Description>
 		</Attribute>
-		<Attribute id="studentCardNumber">
+		<Attribute id="studentCardNumber" displayIndex="2">
 			<Name>
 				<en>Student card number</en>
 				<nl>Studentenkaartnummer</nl>
@@ -36,7 +36,7 @@
 				<nl>Het unieke nummer op uw studentenkaart</nl>
 			</Description>
 		</Attribute>
-		<Attribute id="studentID">
+		<Attribute id="studentID" displayIndex="1">
 			<Name>
 				<en>Student number</en>
 				<nl>Studentnummer</nl>
@@ -46,7 +46,7 @@
 				<nl>Uw studentnummer</nl>
 			</Description>
 		</Attribute>
-		<Attribute id="level">
+		<Attribute id="level" displayIndex="0">
 			<Name>
 				<en>Type</en>
 				<nl>Soort</nl>
