@@ -116,7 +116,7 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri, expectedIss string,
 		// error (e.g. a locked/full DB), which would otherwise reject an
 		// otherwise-valid credential at issuance and disclosure.
 		if common.Logger != nil { // nil when this package is used without irma (e.g. unit tests)
-			common.Logger.Warnf("statuslist: cache write for %q failed, proceeding: %v", uri, err)
+			common.Logger.Warnf("statuslist: cache write for %q failed, proceeding: %v", common.SanitizeForLog(uri), err)
 		}
 	}
 	return v, nil
