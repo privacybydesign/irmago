@@ -5,10 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [1.1.1] - 2026-07-14
+### Security
+- The EUDI SQLCipher database was opened without its AES encryption key since v1.0.0, leaving `yivi-eudi.db` (holder binding keys, private keys, SD-JWT VC credentials and logs) unencrypted at rest despite the documented encryption-at-rest. The key is now passed to the connection so the database is encrypted.
+
 ### Internal
-- Add storage regression test for version 1.0.0
+- Add storage regression tests for versions 1.0.0 (intentionally plaintext EUDI database, exercises the plaintext→encrypted migration) and 1.1.1 (born-encrypted EUDI database)
 
 ### Fixed
+- On first launch after upgrading, an existing plaintext `yivi-eudi.db` written by v1.0.0/v1.1.0 is transparently and atomically re-encrypted in place with no data loss; already-encrypted databases are left untouched.
 - Fix `200 serverResponse: context deadline exceeded (Client.Timeout or context cancellation while reading body)` on slow connections or large/slow response bodies: the outbound `http.Client` in `irma/transport.go` had a 5s `Timeout` that covered the whole request (including reading the response body) and silently overrode the intended 20s per-request context deadline. The 5s timeout is removed so the 20s deadline is the single source of truth.
 
 ## [1.1.0] - 2026-07-08
@@ -687,6 +693,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.1.1]: https://github.com/privacybydesign/irmago/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/privacybydesign/irmago/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0
 [0.19.2]: https://github.com/privacybydesign/irmago/compare/v0.19.1...v0.19.2
