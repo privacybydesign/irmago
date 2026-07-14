@@ -422,8 +422,10 @@ disclosure → response wire format end-to-end, down to the real
 of it is wired into an actual HTTP client/server yet (no real Authorization Request
 parsing, no real HTTP POST over a socket). The demo and
 `TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth` use hardcoded
-`clientId`/`nonce`/`responseUri`/`state` values rather than ones parsed from a real
-Authorization Request.
+`clientId`/`nonce`/`responseUri` values rather than ones parsed from a real
+Authorization Request (`state` is generated fresh per demo run via `crypto/rand`, same
+as the device key and each item's digest salt — it just has nothing real to be parsed
+from either, since there's no real Authorization Request in play).
 
 ### Verifier sees total digest count
 

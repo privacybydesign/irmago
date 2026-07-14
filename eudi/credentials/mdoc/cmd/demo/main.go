@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
@@ -146,7 +147,14 @@ func main() {
 	// it never enters any hash or signature. It's carried alongside
 	// vp_token in the direct_post form body and must be echoed back
 	// unchanged; the verifier checks it matches before trusting anything.
-	state := "af0ifjsldkj"
+	// Generated fresh per session, same as the device key and each item's
+	// digest salt elsewhere in this demo — a real verifier's server would
+	// mint one of these per Authorization Request, never reuse it.
+	stateBytes := make([]byte, 16)
+	if _, err := rand.Read(stateBytes); err != nil {
+		log.Fatal("generate state:", err)
+	}
+	state := hex.EncodeToString(stateBytes)
 
 	// ── Verifier's Request (DCQL) ────────────────────────────────────
 	// The AV Blueprint's Annex A §A.6 mandates the OpenID4VP DCQL query
