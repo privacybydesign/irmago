@@ -100,7 +100,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		eudi.Logger.Infof("starting openid4vp session: %v", requestUri)
-		response, err := http.Get(requestUri)
+		response, err := common.HTTPClient.Get(requestUri)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to get authorization request: %v", err)
 			return
