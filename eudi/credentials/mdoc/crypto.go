@@ -22,11 +22,50 @@ func tag24Wrap(v any) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tag24 inner encode: %w", err)
 	}
+	return tag24WrapBytes(innerBytes)
+}
+
+// tag24WrapWithMode is like tag24Wrap but uses a custom EncMode for the
+// inner encode. Needed for values containing time.Time fields (e.g. MSO)
+// that must use avTimeEncMode's RFC3339 tag-0 encoding rather than the
+// default bare-epoch-integer encoding — plain tag24Wrap would silently
+// undo that fix by re-encoding with cbor.Marshal's default mode instead.
+func tag24WrapWithMode(v any, mode cbor.EncMode) ([]byte, error) {
+	innerBytes, err := mode.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("tag24 inner encode: %w", err)
+	}
+	return tag24WrapBytes(innerBytes)
+}
+
+// tag24WrapBytes wraps already-CBOR-encoded bytes in a Tag-24 container.
+func tag24WrapBytes(innerBytes []byte) ([]byte, error) {
 	tagged := cbor.RawTag{
 		Number:  24, // IANA registered tag: embedded CBOR
 		Content: cbor.RawMessage(mustMarshal(innerBytes)),
 	}
 	return cbor.Marshal(tagged)
+}
+
+// tag24Unwrap decodes Tag-24 wrapped CBOR bytes into T — the inverse of
+// tag24Wrap/tag24WrapWithMode. Tag 24 means "this byte string contains a
+// CBOR-encoded data item", so unwrapping takes two steps: decode the tag
+// to get the embedded byte string, then decode THAT into T.
+func tag24Unwrap[T any](data []byte) (T, error) {
+	var zero T
+	var rawTag cbor.RawTag
+	if err := cbor.Unmarshal(data, &rawTag); err != nil {
+		return zero, fmt.Errorf("unwrap tag24: %w", err)
+	}
+	var innerBytes []byte
+	if err := cbor.Unmarshal(rawTag.Content, &innerBytes); err != nil {
+		return zero, fmt.Errorf("unwrap tag24 inner bytes: %w", err)
+	}
+	var result T
+	if err := cbor.Unmarshal(innerBytes, &result); err != nil {
+		return zero, fmt.Errorf("decode tag24 content: %w", err)
+	}
+	return result, nil
 }
 
 // hashTag24Item computes SHA-256(Tag24(CBOR(item)))

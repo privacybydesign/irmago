@@ -12,9 +12,14 @@ import (
 // ============================================================
 
 // MDoc is the top-level credential container
+//
+// DeviceSigned is a pointer and omitted from CBOR when nil: it doesn't
+// exist right after issuance, only once a holder has signed deviceAuth
+// for a specific presentation and attached it via AttachDeviceSigned.
 type MDoc struct {
-	DocType      string       `cbor:"docType"`
-	IssuerSigned IssuerSigned `cbor:"issuerSigned"`
+	DocType      string        `cbor:"docType"`
+	IssuerSigned IssuerSigned  `cbor:"issuerSigned"`
+	DeviceSigned *DeviceSigned `cbor:"deviceSigned,omitempty"`
 }
 
 // IssuerSignedItem is the 4-field envelope for each claim
@@ -77,12 +82,12 @@ type DeviceAuthentication struct {
 // Contains the verifier's engagement bytes + ephemeral key + handover info
 // Also a CBOR array — toarray tag required
 //
-// NOTE: Handover is a bare string here for test purposes. In a real
-// OID4VP flow this would be a structured value (e.g. OID4VPHandover array
-// containing hashes of client_id, response_uri, nonce, etc. per ISO
-// 18013-7 / OpenID4VP Annex B). Left as-is since this is a local test
-// harness, but flagging so it isn't forgotten when wiring up real
-// verifier engagement.
+// Handover is `any` because its shape depends on the transport: a bare
+// string in most tests (via testhelpers_test.go's buildHappyPathMDoc
+// stub, where no real session exists), or a real structured value for an
+// actual OpenID4VP presentation — see NewOpenID4VPSessionTranscript, which
+// builds a spec-shaped SessionTranscript for that case and is what
+// cmd/demo/main.go actually uses throughout.
 type SessionTranscript struct {
 	_                     struct{} `cbor:",toarray"`
 	DeviceEngagementBytes []byte   // from QR code / NFC tap

@@ -19,6 +19,7 @@ certificate chains, device binding, and selective disclosure fit together.
 | Randomized digest-ID assignment | ✓ | claim order is cryptographically shuffled before digestID assignment (not sorted) — prevents a verifier inferring undisclosed claims' relative order from a disclosed claim's digestID, matching Multipaz's `MdocUtil.generateIssuerNameSpaces` |
 | MSO construction | ✓ | version, digestAlgorithm, valueDigests, docType, validityInfo, deviceKeyInfo |
 | `deviceKeyInfo` in MSO | ✓ | holder's public key embedded at issuance, COSEKey uses `keyasint` (real CBOR int keys per RFC 9053) |
+| `MobileSecurityObjectBytes`/`DeviceAuthenticationBytes` framing | ✓ | issuerAuth's and deviceAuth's payloads are each Tag24-wrapped as a whole (`24(<<{...}>>)`), not just the individual items inside them — confirmed against the AV Blueprint's own §A.11 worked example (MSO) and Multipaz's `MdocDocument.kt` signing code (DeviceAuthentication) |
 | COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert |
 | Two-level certificate chain | ✓ | IACA root CA → DS cert, real x509 chain walk |
 | Chain attack rejection | ✓ | untrusted root rejected before signature check |
@@ -29,9 +30,46 @@ certificate chains, device binding, and selective disclosure fit together.
 | Tamper detection | ✓ | digest mismatch on value tampering |
 | `deviceSigned` / `deviceAuth` | ✓ | `SignDeviceAuth` + `VerifyWithDeviceAuth` — fresh COSE_Sign1 per session, checked against `deviceKeyInfo` |
 | Device-binding replay/clone rejection | ✓ | wrong signer and wrong-session deviceAuth both rejected |
-| `DeviceSigned` wrapper struct | ✗ | deviceAuth exists as standalone bytes; not wired into a `DeviceSigned` field on `MDoc` |
-| `DeviceRequest` / `DeviceResponse` | ✗ | verifier request/response container format not built |
-| Session encryption (BLE/NFC) | ✗ | transport layer not built |
+| Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | `NewOpenID4VPSessionTranscript` — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, null, responseUri]))]`, matching Multipaz's `vpSessionTranscript` for the AV Blueprint's `response_mode=direct_post` case |
+| `DeviceSigned` wrapper struct | ✓ | `AttachDeviceSigned` populates an `MDoc.DeviceSigned` field (deviceAuth + empty deviceNameSpaces), matching ISO 18013-5's actual document shape instead of passing deviceAuth bytes around separately |
+| `DeviceResponse` container | ✓ | `NewDeviceResponse`/`VerifyDeviceResponse` — real response container, holds one or more documents; reader authentication deliberately omitted per Annex A §A.6 |
+| DCQL request (`dcql_query`) | ✓ | `NewDCQLQuery`/`RequestedAttributes`/`CredentialQueryId` — mirrors `eudi/openid4vp/dcql`'s `DcqlQuery`/`CredentialQuery`/`Claim` shape (`format: mso_mdoc`, `meta.doctype_value`, `claims[].path = [namespace, elementIdentifier]`), matching the AV Blueprint's own worked example byte-for-byte in JSON form |
+| `vp_token` encode/decode | ✓ | `NewVPTokenJSON`/`ParseVPTokenJSON` — base64url CBOR `DeviceResponse` wrapped in the `{queryId: [credential]}` JSON shape `response_mode=direct_post` actually POSTs, mirroring `eudi/openid4vp/response.go`'s `createDirectPostVpToken` |
+| `direct_post` form body + `state` | ✓ | `NewDirectPostForm`/`ParseDirectPostForm` — the real `application/x-www-form-urlencoded` body (`vp_token=...&state=...`), matching `eudi/openid4vp/response.go`'s `createAuthorizationResponseHttpRequest` exactly; `state` (`AuthorizationRequest.State`) is carried through opaque and unchanged — unlike `nonce`, it never enters any hash or signature, it's pure anti-CSRF/session-correlation bookkeeping |
+| Session encryption (BLE/NFC) | ✗ | transport layer not built; also explicitly out of scope for the AV Blueprint (proximity presentation is excluded — see Annex A §A.6) |
+| W3C Digital Credentials API path (`DeviceRequest`, HPKE `EncryptedResponse`) | ✗ | out of scope for this package by design — see "OpenID4VP only" below |
+
+---
+
+## Containment hierarchy — what actually wraps what
+
+`DeviceResponse` is the top-level *Go type* in this package — `MDoc` doesn't know or
+care whether it's traveling alone or bundled with other documents, `DeviceResponse` is
+what holds a list of them (`Documents []MDoc`, plural — see
+`TestNewDeviceResponseSupportsMultipleDocuments`). But `DeviceResponse` itself isn't the
+outermost thing on the wire. Over OpenID4VP, two more layers sit on top of it:
+
+```
+direct_post form body (application/x-www-form-urlencoded, the actual HTTP POST body)
+  └── "vp_token=...&state=..."                              ← NewDirectPostForm / ParseDirectPostForm
+        └── vp_token value (JSON)
+              └── {queryId: [ base64url( CBOR( DeviceResponse ) ) ]}   ← NewVPTokenJSON / ParseVPTokenJSON
+                    └── DeviceResponse                                  ← NewDeviceResponse / VerifyDeviceResponse
+                          └── Documents []MDoc                          ← one or more, per presentation
+                                ├── DocType
+                                ├── IssuerSigned{NameSpaces, IssuerAuth}  ← issuer's signature, fixed since issuance
+                                └── DeviceSigned{NameSpaces, DeviceAuth}  ← holder's signature, fresh per session
+```
+
+`state` rides alongside `vp_token` as a sibling form field, not nested inside it — it's
+opaque bookkeeping the verifier invents and the holder echoes back unchanged, and never
+touches the CBOR/JSON payload at all (see `NewDirectPostForm`).
+
+So "the topmost container" depends on which layer you mean: within this package's own
+Go types, `DeviceResponse` is outermost. On the actual OpenID4VP wire, the
+`application/x-www-form-urlencoded` HTTP body is outermost, `vp_token`'s JSON object is
+one layer inside that, and `DeviceResponse` is the (CBOR-encoded, base64url'd) payload
+sitting inside one of its array entries.
 
 ---
 
@@ -44,7 +82,10 @@ monolithic test file:
 | File | Tests | What it checks |
 |---|---|---|
 | `mdoc_test.go` | `TestFullIssuanceFlow_ProducesValidMDoc` | Full issuer → holder → verifier round trip; also logs the real CBOR/COSE hex of the presented mdoc, `issuerAuth`, and `deviceAuth` for external inspection (e.g. via [cbor.me](https://cbor.me)) |
+| `mdoc_test.go` | `TestDeviceSignedOmittedWhenNilPresentWhenAttached` | `deviceSigned,omitempty` actually omits the key pre-presentation and includes it only after `AttachDeviceSigned` |
 | `crypto_test.go` | `TestCOSEKeyUsesIntegerMapKeys` | Decodes the real MSO bytes generically and asserts `deviceKey`'s map keys are actual CBOR integers — regression test for the `keyasint` struct-tag fix |
+| `crypto_test.go` | `TestTag24WrapUnwrapRoundTrip` | `tag24Unwrap` is the exact inverse of `tag24Wrap` — wrapped bytes carry a real CBOR tag 24, and the round-tripped value matches the original |
+| `crypto_test.go` | `TestTag24WrapWithModeUsesGivenEncMode` | `tag24WrapWithMode`'s inner payload is encoded with the `EncMode` actually passed in (using `avTimeEncMode`'s RFC3339 tagging as the observable difference), not `cbor.Marshal`'s default mode |
 | `crypto_test.go` | `TestValidityInfoUsesRFC3339Tag` | Confirms `signed`/`validFrom`/`validUntil` are CBOR tag-0 RFC3339 strings, matching the AV Blueprint's own worked example, not a bare Unix epoch integer |
 | `holder_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
 | `issuer_test.go` | `TestClaimOrderingIsRandomized` | Issues the same claims 30 times, confirms `digestID` assignment varies across issuances (not a fixed/predictable order) while every claim stays reachable via its digestID |
@@ -63,9 +104,29 @@ monolithic test file:
 | `verifier_test.go` | `TestNotYetValidMSOIsRejected` | Verifier clock pinned between the (backdated) cert `NotBefore` and the MSO's `validFrom` — isolates the MSO validityInfo check specifically, distinct from cert validity |
 | `verifier_test.go` | `TestNotYetValidCertIsRejected` | Verifier clock pinned before the certs' `NotBefore` — chain correctly rejected as not-yet-valid |
 | `verifier_test.go` | `TestDeviceAuthStillVerifiesWithDetachedPayload` | Detaching the deviceAuth payload doesn't break verification — the verifier reconstructs it itself |
+| `sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape` | `NewOpenID4VPSessionTranscript` produces `[null, null, ["OpenID4VPHandover", digest]]`, and the digest matches an independently-computed `SHA-256(CBOR([clientId, nonce, null, responseUri]))` |
+| `sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptBindsAllInputs` | `clientId`, `nonce`, and `responseUri` each independently change the resulting digest — none of them can be silently ignored |
+| `sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth` | A real OpenID4VP-shaped transcript actually plugs into `SignDeviceAuth`/`VerifyWithDeviceAuth`; a verifier deriving the transcript from a mismatched nonce correctly rejects the signature |
+| `dcqlquery_test.go` | `TestNewDCQLQueryRoundTrips` | `NewDCQLQuery` + `RequestedAttributes` round-trips the exact namespace and attribute list requested |
+| `dcqlquery_test.go` | `TestDCQLQueryRejectsUnknownDocType` | `RequestedAttributes` errors for a docType that was never requested, instead of silently returning a zero result |
+| `dcqlquery_test.go` | `TestDCQLQueryRejectsMismatchedNamespaceClaims` | A (malformed, for this single-namespace profile) query whose claims span more than one namespace is rejected rather than silently returning just the first claim's namespace |
+| `dcqlquery_test.go` | `TestDCQLQueryMatchesBlueprintWorkedExample` | `NewDCQLQuery`'s JSON output matches the AV Blueprint's own worked example shape (`format`, `meta.doctype_value`, `claims[].path`) field-for-field |
+| `dcqlquery_test.go` | `TestCredentialQueryIdRoundTrips` | `CredentialQueryId` returns the exact id the query was built with, and errors for an unrequested docType |
+| `deviceresponse_test.go` | `TestAttachDeviceSignedRoundTrips` | `AttachDeviceSigned` populates `MDoc.DeviceSigned` with the exact deviceAuth bytes passed in, and returns a copy — the original mdoc is left untouched |
+| `deviceresponse_test.go` | `TestVerifyDeviceResponseSucceeds` | Full flow through the real `DeviceResponse` container (`AttachDeviceSigned` → `NewDeviceResponse` → `VerifyDeviceResponse`) produces the same result as calling `VerifyWithDeviceAuth` directly |
+| `deviceresponse_test.go` | `TestVerifyDeviceResponseRejectsMissingDeviceSigned` | A document without `DeviceSigned` attached is rejected with a descriptive error, not a nil-dereference panic |
+| `deviceresponse_test.go` | `TestNewDeviceResponseSupportsMultipleDocuments` | A `DeviceResponse` bundling two distinct holders' documents from the same issuer verifies each document independently and correctly |
+| `deviceresponse_test.go` | `TestDeviceAuthSignatureEncodesInline` | `DeviceAuth.DeviceSignature` embeds as structured CBOR (`cbor.RawMessage`), not as an opaque re-encoded byte string |
+| `vptoken_test.go` | `TestVPTokenRoundTrips` | `NewVPTokenJSON` + `ParseVPTokenJSON` is a faithful round trip — the `DeviceResponse` that comes back out verifies exactly like the original |
+| `vptoken_test.go` | `TestVPTokenShape` | The vp_token JSON is `{queryId: [base64url(no padding) CBOR credential]}`, matching `response_mode=direct_post`'s actual wire shape |
+| `vptoken_test.go` | `TestVPTokenRejectsUnknownQueryId` | `ParseVPTokenJSON` errors for a query id the vp_token has no credential for, instead of returning a zero-value `DeviceResponse` |
+| `directpost_test.go` | `TestDirectPostFormRoundTrips` | `NewDirectPostForm` + `ParseDirectPostForm` round-trips both the `DeviceResponse` and the `state` value; the response still verifies correctly |
+| `directpost_test.go` | `TestDirectPostFormShape` | The body is real `application/x-www-form-urlencoded` with `vp_token` and `state` as separate fields, matching `eudi/openid4vp/response.go`'s `createAuthorizationResponseHttpRequest` shape |
+| `directpost_test.go` | `TestDirectPostFormPreservesEmptyState` | An empty `state` round-trips as empty, rather than being conflated with "field absent" |
+| `directpost_test.go` | `TestDirectPostFormRejectsMissingVPToken` | A malformed body with no `vp_token` field errors out instead of returning a zero-value `DeviceResponse` |
 
-`testhelpers_test.go` holds `buildHappyPathMDoc` and `keysOf` — shared fixtures/helpers
-used across the files above, rather than duplicated per-file.
+`testhelpers_test.go` holds `buildHappyPathMDoc`, `keysOf`, and `unwrapTag24Generic` —
+shared fixtures/helpers used across the files above, rather than duplicated per-file.
 
 Run with:
 
@@ -206,6 +267,18 @@ go test -v -run TestFullIssuanceFlow_ProducesValidMDoc .
 `Holder.PublicKey()`, etc.), the same way any real external consumer of this
 package would.
 
+The demo also takes care not to let the verifier and holder implicitly share
+state that a real, separate wallet and verifier never would: the verifier's DCQL
+query is `json.Marshal`'d and the holder only ever works with a fresh
+`json.Unmarshal` of that JSON (`receivedQuery`), the same way a wallet would only
+ever see the query as it arrived over the wire. In particular, the holder
+recovers the vp_token response key via `receivedQuery.CredentialQueryId(docType)`
+rather than reusing the verifier's own `verifierQueryId` Go variable — the two
+values are computed independently and only match because the protocol works, not
+because they're the same variable. `clientId`/`nonce`/`responseUri` are still
+hardcoded on both sides, though (see "Known gaps" below) — there's no real
+Authorization Request being parsed for those.
+
 ---
 
 ## Expected output
@@ -230,9 +303,12 @@ Device key generated (x: <16 hex chars>...)
   Claim: age_over_16 = true
   Claim: age_over_18 = true
   Claim: age_over_21 = false
-  MSO signed by DS cert ✓  (1402 bytes)
+  MSO signed by DS cert ✓  (1406 bytes)
   x5chain: DS cert + IACA cert
   deviceKeyInfo: embedded holder public key ✓
+
+--- VERIFIER: Requesting attributes (DCQL over OpenID4VP) ---
+  dcql_query: format=mso_mdoc, doctype_value=eu.europa.ec.av.1, claims=[eu.europa.ec.av.1.age_over_18]
 
 --- HOLDER: Selective disclosure ---
   Withholding: age_over_16
@@ -241,6 +317,9 @@ Device key generated (x: <16 hex chars>...)
 
 deviceAuth signed ✓  (74 bytes)
   (fresh per session — binds presentation to this verifier + session)
+
+direct_post form built ✓  (2402 bytes, POSTed to response_uri as application/x-www-form-urlencoded)
+  state echoed back correctly ✓  (anti-CSRF check passed)
 
 --- VERIFIER: Verifying mDoc ---
   age_over_18 = true  digest: ✓
@@ -310,21 +389,41 @@ with a final `PASS`/`ok` summary.
 
 ## Known gaps vs real mDoc
 
-### No `DeviceRequest` / `DeviceResponse` wrapper
+### OpenID4VP only — the W3C Digital Credentials API path is out of scope by design
 
-The program builds and verifies an `MDoc` directly. Real ISO 18013-5 wraps this in a
-`DeviceResponse` (top-level container, potentially multiple documents) on the
-response side and a `DeviceRequest` (itemsRequest, requested docType/namespaces) on
-the verifier's request side. Neither container exists here — everything is exercised
-by calling the issuer/holder/verifier functions directly rather than through those
-message formats.
+The AV Blueprint's Annex A §A.6 states the W3C Digital Credentials API is the
+*default* presentation method, with OpenID4VP only as a *fallback*. This package
+deliberately models the OpenID4VP fallback path exclusively — everything here
+(`DCQLQuery`, `NewVPTokenJSON`/`ParseVPTokenJSON`, `NewOpenID4VPSessionTranscript`)
+is OpenID4VP-shaped. Concretely out of scope as a result:
+
+- ISO 18013-5's native `DeviceRequest` CBOR object (§8.3.2.1.2.1) — the blueprint
+  confirms this is used *exclusively* by the DC API path; OpenID4VP requests
+  attributes via a DCQL query instead (JSON, see `DCQLQuery`), which is what this
+  package implements.
+- The DC API's `EncryptedResponse = ["dcapi", {enc, cipherText}]` wrapper, where
+  `cipherText` is `DeviceResponse` encrypted with HPKE (RFC 9180). OpenID4VP's
+  `response_mode=direct_post` sends `DeviceResponse` unencrypted (as base64url CBOR
+  inside the vp_token JSON — see `NewVPTokenJSON`), so no HPKE layer is needed for
+  the path this package actually implements.
 
 ### No session encryption / transport layer
 
-Real presentations happen over BLE or NFC, with session keys derived via ECDH from a
-QR-code-carried verifier ephemeral key, then AES-GCM/AES-CCM encrypting the actual
-`DeviceRequest`/`DeviceResponse` exchange. None of that transport layer is modeled —
-`SessionTranscript` here is a hardcoded stub, not derived from a real engagement.
+Real ISO 18013-5 *proximity* presentations happen over BLE or NFC, with session keys
+derived via ECDH from a QR-code-carried verifier ephemeral key, then AES-GCM/AES-CCM
+encrypting the actual `DeviceRequest`/`DeviceResponse` exchange. None of that transport
+layer is modeled here — and per the AV Blueprint's own Annex A §A.6, it doesn't need to
+be: proximity presentation is explicitly out of scope for this profile.
+
+`NewOpenID4VPSessionTranscript`, `NewDCQLQuery`, `NewVPTokenJSON`/`ParseVPTokenJSON`, and
+`NewDirectPostForm`/`ParseDirectPostForm` together model the OpenID4VP-shaped request →
+disclosure → response wire format end-to-end, down to the real
+`application/x-www-form-urlencoded` HTTP body shape (see `cmd/demo/main.go`) — but none
+of it is wired into an actual HTTP client/server yet (no real Authorization Request
+parsing, no real HTTP POST over a socket). The demo and
+`TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth` use hardcoded
+`clientId`/`nonce`/`responseUri`/`state` values rather than ones parsed from a real
+Authorization Request.
 
 ### Verifier sees total digest count
 

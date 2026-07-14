@@ -167,9 +167,11 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		return result
 	}
 
-	// Step 5: decode MSO from payload
-	var mso MSO
-	if err := cbor.Unmarshal(msg.Payload, &mso); err != nil {
+	// Step 5: decode MSO from payload. Payload is Tag24-wrapped (see
+	// issuer.go's Issue) — must unwrap that layer before decoding the MSO
+	// map itself, not just cbor.Unmarshal it directly.
+	mso, err := tag24Unwrap[MSO](msg.Payload)
+	if err != nil {
 		result.Error = fmt.Sprintf("decode mso: %v", err)
 		return result
 	}
@@ -264,8 +266,8 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		result.Error = fmt.Sprintf("decode cose (deviceAuth phase): %v", err)
 		return result
 	}
-	var mso MSO
-	if err := cbor.Unmarshal(msg.Payload, &mso); err != nil {
+	mso, err := tag24Unwrap[MSO](msg.Payload)
+	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("decode mso (deviceAuth phase): %v", err)
 		return result
@@ -309,10 +311,10 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		DocType:           docType,
 		DeviceNameSpaces:  emptyNS,
 	}
-	expectedPayload, err := cbor.Marshal(expectedDeviceAuth)
+	expectedPayload, err := tag24Wrap(expectedDeviceAuth)
 	if err != nil {
 		result.Valid = false
-		result.Error = fmt.Sprintf("marshal expected deviceAuthentication: %v", err)
+		result.Error = fmt.Sprintf("wrap expected deviceAuthentication: %v", err)
 		return result
 	}
 	deviceMsg.Payload = expectedPayload
@@ -331,4 +333,23 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 
 	result.DeviceAuthValid = true
 	return result
+}
+
+// VerifyDeviceResponse verifies every document in a DeviceResponse via
+// VerifyWithDeviceAuth, extracting deviceAuth from each document's
+// DeviceSigned field instead of requiring it as a separate parameter —
+// this is the entry point a verifier that actually received a
+// DeviceResponse (rather than calling Issue/SelectiveDisclose directly,
+// as the tests/demo do) would use.
+func (v *Verifier) VerifyDeviceResponse(resp DeviceResponse, namespace string, docType string, transcript SessionTranscript) ([]VerificationResult, error) {
+	results := make([]VerificationResult, 0, len(resp.Documents))
+	for i := range resp.Documents {
+		doc := resp.Documents[i]
+		if doc.DeviceSigned == nil {
+			return nil, fmt.Errorf("document %d: missing deviceSigned", i)
+		}
+		deviceAuthBytes := []byte(doc.DeviceSigned.DeviceAuth.DeviceSignature)
+		results = append(results, v.VerifyWithDeviceAuth(&doc, namespace, docType, transcript, deviceAuthBytes))
+	}
+	return results, nil
 }

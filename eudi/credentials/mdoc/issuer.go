@@ -265,9 +265,14 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 		DeviceKeyInfo: DeviceKeyInfo{DeviceKey: deviceKey},
 	}
 
-	msoBytes, err := avTimeEncMode.Marshal(mso)
+	// MSO travels as Tag24(CBOR(MSO)) inside issuerAuth's payload — per ISO
+	// 18013-5's MobileSecurityObjectBytes = #6.24(bstr .cbor
+	// MobileSecurityObject), and directly confirmed by the AV Blueprint's
+	// own worked example (Annex A §A.11 shows "24(<<{...}>>)" for the MSO
+	// payload, not a bare map).
+	msoBytes, err := tag24WrapWithMode(mso, avTimeEncMode)
 	if err != nil {
-		return nil, fmt.Errorf("marshal mso: %w", err)
+		return nil, fmt.Errorf("wrap mso: %w", err)
 	}
 
 	// ── Sign MSO with DS key (NOT IACA key) ──────────────────────

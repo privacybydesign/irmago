@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 ### Internal
 - Add storage regression test for version 1.0.0
-- Add prototype mDoc (ISO 18013-5) implementation for the EU Age Verification Blueprint (`eu.europa.ec.av.1`) under `eudi/credentials/mdoc`, covering issuer/holder/verifier flows, two-level IACA→DS certificate chain verification, `deviceKeyInfo`/`deviceAuth` device binding, and selective disclosure. Not yet wired into any production issuance/verification path.
+- Add prototype mDoc (ISO 18013-5) implementation for the EU Age Verification Blueprint (`eu.europa.ec.av.1`) under `eudi/credentials/mdoc`, covering issuer/holder/verifier flows, two-level IACA→DS certificate chain verification, `deviceKeyInfo`/`deviceAuth` device binding, selective disclosure, and an OpenID4VP-only presentation wire format (DCQL request, vp_token, direct_post form body with state). Not yet wired into any production issuance/verification path.
 
 ### Fixed
 - Fix `200 serverResponse: context deadline exceeded (Client.Timeout or context cancellation while reading body)` on slow connections or large/slow response bodies: the outbound `http.Client` in `irma/transport.go` had a 5s `Timeout` that covered the whole request (including reading the response body) and silently overrode the intended 20s per-request context deadline. The 5s timeout is removed so the 20s deadline is the single source of truth.

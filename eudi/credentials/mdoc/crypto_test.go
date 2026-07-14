@@ -2,6 +2,7 @@ package mdoc
 
 import (
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 )
@@ -46,7 +47,11 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 		t.Fatalf("payload element wrong type: %T", coseGeneric[2])
 	}
 
-	if err := cbor.Unmarshal(msoPayload, &raw); err != nil {
+	// msoPayload is Tag24-wrapped (MobileSecurityObjectBytes = #6.24(bstr
+	// .cbor MobileSecurityObject)) — unwrap that layer before decoding the
+	// MSO map itself.
+	msoInner := unwrapTag24Generic(t, msoPayload)
+	if err := cbor.Unmarshal(msoInner, &raw); err != nil {
 		t.Fatalf("decode mso generic: %v", err)
 	}
 
@@ -108,6 +113,77 @@ func TestCOSEKeyUsesIntegerMapKeys(t *testing.T) {
 }
 
 // ============================================================
+// TAG-24 HELPERS — wrap/unwrap round trip
+// ============================================================
+
+// tag24TestPayload is a small fixture struct used only to exercise the
+// tag24Wrap/tag24Unwrap round trip in isolation, without needing a real
+// issuer/holder flow.
+type tag24TestPayload struct {
+	Foo string `cbor:"foo"`
+	Bar uint64 `cbor:"bar"`
+}
+
+// TestTag24WrapUnwrapRoundTrip confirms tag24Unwrap is the exact inverse
+// of tag24Wrap: wrapping a value then unwrapping it generically must
+// return the original fields unchanged, and the wire bytes in between
+// must actually carry a CBOR tag 24 (not just an opaque byte string).
+func TestTag24WrapUnwrapRoundTrip(t *testing.T) {
+	original := tag24TestPayload{Foo: "hello", Bar: 42}
+
+	wrapped, err := tag24Wrap(original)
+	if err != nil {
+		t.Fatalf("tag24Wrap: %v", err)
+	}
+
+	var rawTag cbor.RawTag
+	if err := cbor.Unmarshal(wrapped, &rawTag); err != nil {
+		t.Fatalf("expected wrapped bytes to decode as a CBOR tag: %v", err)
+	}
+	if rawTag.Number != 24 {
+		t.Fatalf("expected tag number 24, got %d", rawTag.Number)
+	}
+
+	got, err := tag24Unwrap[tag24TestPayload](wrapped)
+	if err != nil {
+		t.Fatalf("tag24Unwrap: %v", err)
+	}
+	if got != original {
+		t.Fatalf("round trip mismatch: got %+v, want %+v", got, original)
+	}
+}
+
+// TestTag24WrapWithModeUsesGivenEncMode confirms tag24WrapWithMode's inner
+// payload is actually encoded with the EncMode passed in, rather than
+// falling back to cbor.Marshal's default mode. Uses avTimeEncMode's
+// RFC3339 tag-0 encoding as the observable difference: the default mode
+// would encode time.Time as a bare epoch integer with no tag at all.
+func TestTag24WrapWithModeUsesGivenEncMode(t *testing.T) {
+	type withTime struct {
+		When time.Time `cbor:"when"`
+	}
+	payload := withTime{When: time.Date(2025, 6, 20, 8, 45, 29, 0, time.UTC)}
+
+	wrapped, err := tag24WrapWithMode(payload, avTimeEncMode)
+	if err != nil {
+		t.Fatalf("tag24WrapWithMode: %v", err)
+	}
+
+	inner := unwrapTag24Generic(t, wrapped)
+	var raw map[string]cbor.RawMessage
+	if err := cbor.Unmarshal(inner, &raw); err != nil {
+		t.Fatalf("decode inner generic: %v", err)
+	}
+	whenRaw, ok := raw["when"]
+	if !ok {
+		t.Fatalf("when field missing from decoded payload")
+	}
+	if len(whenRaw) == 0 || whenRaw[0] != 0xc0 {
+		t.Fatalf("expected tag-0 (RFC3339) encoding for when (first byte %#x) — avTimeEncMode was not applied", whenRaw[0])
+	}
+}
+
+// ============================================================
 // SPEC ALIGNMENT (AV Blueprint Annex A §A.11 worked example)
 // ============================================================
 
@@ -142,8 +218,11 @@ func TestValidityInfoUsesRFC3339Tag(t *testing.T) {
 		t.Fatalf("payload element wrong type: %T", coseGeneric[2])
 	}
 
+	// msoPayload is Tag24-wrapped — unwrap that layer before decoding the
+	// MSO map itself.
+	msoInner := unwrapTag24Generic(t, msoPayload)
 	var raw map[string]cbor.RawMessage
-	if err := cbor.Unmarshal(msoPayload, &raw); err != nil {
+	if err := cbor.Unmarshal(msoInner, &raw); err != nil {
 		t.Fatalf("decode mso generic: %v", err)
 	}
 	validityRaw, ok := raw["validityInfo"]

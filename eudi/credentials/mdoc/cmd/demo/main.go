@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -127,23 +128,77 @@ func main() {
 	}
 	printIssuedMDoc(claims, credential)
 
-	// ── Selective Disclosure ─────────────────────────────────────
-	reveal := []string{"age_over_18"}
-	presented, err := mdoc.SelectiveDisclose(credential, namespace, reveal)
+	// ── OpenID4VP session parameters ────────────────────────────────
+	// In production these come from the verifier's real Authorization
+	// Request (client_id/nonce/response_uri) — hardcoded here since this
+	// demo has no real HTTP exchange. Everything below models the
+	// OpenID4VP path only; the W3C Digital Credentials API path (the AV
+	// Blueprint's default, OpenID4VP being its fallback) isn't modeled.
+	clientId := "redirect_uri:https://verifier.example.com/response"
+	nonce := "n-0S6_WzA2Mj"
+	responseUri := "https://verifier.example.com/response"
+	transcript, err := mdoc.NewOpenID4VPSessionTranscript(clientId, nonce, responseUri)
+	if err != nil {
+		log.Fatal("session transcript:", err)
+	}
+	// state is the verifier's own opaque anti-CSRF / session-correlation
+	// value (AuthorizationRequest.State in eudi/openid4vp) — unlike nonce,
+	// it never enters any hash or signature. It's carried alongside
+	// vp_token in the direct_post form body and must be echoed back
+	// unchanged; the verifier checks it matches before trusting anything.
+	state := "af0ifjsldkj"
+
+	// ── Verifier's Request (DCQL) ────────────────────────────────────
+	// The AV Blueprint's Annex A §A.6 mandates the OpenID4VP DCQL query
+	// format here — not ISO 18013-5's native DeviceRequest CBOR object,
+	// which only applies to the W3C DC API path. Reader authentication is
+	// intentionally not modeled — out of scope for this profile. DCQL also
+	// has no intentToRetain concept, unlike DeviceRequest's itemsRequest.
+	// verifierQueryId is the verifier's own label for this query — it's
+	// never handed to the holder as a Go value, only embedded inside the
+	// dcql_query JSON below, the same way a real wallet would only ever
+	// see it.
+	verifierQueryId := "proof_of_age"
+	dcqlQuery := mdoc.NewDCQLQuery(verifierQueryId, docType, namespace, []string{"age_over_18"})
+	fmt.Println("\n--- VERIFIER: Requesting attributes (DCQL over OpenID4VP) ---")
+	fmt.Printf("  dcql_query: format=mso_mdoc, doctype_value=%s, claims=[%s.age_over_18]\n", docType, namespace)
+
+	// Simulate the query actually crossing the wire as the dcql_query
+	// Authorization Request parameter. Everything from here on the
+	// holder's side works only with receivedQuery, parsed fresh from
+	// that JSON — never verifierQueryId directly, since a real wallet
+	// never has that Go variable in scope.
+	dcqlQueryJSON, err := json.Marshal(dcqlQuery)
+	if err != nil {
+		log.Fatal("marshal dcql_query:", err)
+	}
+	var receivedQuery mdoc.DCQLQuery
+	if err := json.Unmarshal(dcqlQueryJSON, &receivedQuery); err != nil {
+		log.Fatal("parse dcql_query:", err)
+	}
+
+	// ── Holder reads the request ────────────────────────────────────
+	reqNamespace, reqAttrs, err := receivedQuery.RequestedAttributes(docType)
+	if err != nil {
+		log.Fatal("read dcql query:", err)
+	}
+	// The holder recovers the vp_token response key from the parsed query
+	// itself — it has no other way to know what label the verifier chose.
+	holderQueryId, err := receivedQuery.CredentialQueryId(docType)
+	if err != nil {
+		log.Fatal("read dcql query id:", err)
+	}
+
+	// ── Selective Disclosure ─────────────────────────────────────────
+	presented, err := mdoc.SelectiveDisclose(credential, reqNamespace, reqAttrs)
 	if err != nil {
 		log.Fatal("selective disclose:", err)
 	}
-	printSelectiveDisclosure(claims, reveal)
+	printSelectiveDisclosure(claims, reqAttrs)
 
-	// ── DeviceAuth ───────────────────────────────────────────────
-	// Holder signs a fresh DeviceAuthentication for this session
-	// SessionTranscript would normally come from the verifier's QR code / NFC engagement
-	// Here we use a minimal stub transcript for the demo
-	transcript := mdoc.SessionTranscript{
-		DeviceEngagementBytes: []byte("test-engagement"),
-		EReaderKeyBytes:       []byte("test-reader-key"),
-		Handover:              "test-handover",
-	}
+	// ── DeviceAuth ─────────────────────────────────────────────────────
+	// Signed over the real OpenID4VP SessionTranscript above — binds this
+	// presentation to this verifier's exact client_id/nonce/response_uri.
 	deviceAuthBytes, err := holder.SignDeviceAuth(docType, transcript)
 	if err != nil {
 		log.Fatal("deviceAuth:", err)
@@ -151,11 +206,47 @@ func main() {
 	fmt.Printf("\ndeviceAuth signed ✓  (%d bytes)\n", len(deviceAuthBytes))
 	fmt.Println("  (fresh per session — binds presentation to this verifier + session)")
 
-	// ── Verification ─────────────────────────────────────────────
-	// Verifier pre-installs ONLY the IACA root as trust anchor
-	// DS cert arrives via x5chain at verification time — never pre-installed
+	// ── Response (DeviceResponse -> direct_post form) ─────────────────
+	// Holder bundles the presented document + its own deviceAuth into a
+	// DeviceResponse, then serializes the actual HTTP body
+	// response_mode=direct_post sends: vp_token (base64url CBOR, keyed by
+	// the DCQL credential query id) and state, both as
+	// application/x-www-form-urlencoded fields — not vp_token alone as a
+	// bare JSON body. The holder only ever has state because it received
+	// it in the same Authorization Request as clientId/nonce/dcql_query;
+	// it just echoes it back unchanged.
+	attachedDoc, err := mdoc.AttachDeviceSigned(presented, deviceAuthBytes)
+	if err != nil {
+		log.Fatal("attach deviceSigned:", err)
+	}
+	deviceResponse := mdoc.NewDeviceResponse(*attachedDoc)
+	formBody, err := mdoc.NewDirectPostForm(holderQueryId, state, deviceResponse)
+	if err != nil {
+		log.Fatal("build direct_post form:", err)
+	}
+	fmt.Printf("\ndirect_post form built ✓  (%d bytes, POSTed to response_uri as application/x-www-form-urlencoded)\n", len(formBody))
+
+	// ── Verification ───────────────────────────────────────────────────
+	// Verifier receives the form body over HTTP and decodes it back into
+	// the DeviceResponse it needs to verify, plus the state value the
+	// holder echoed back. It checks that against the state it originally
+	// issued — this is the anti-CSRF check, not the deviceAuth signature
+	// check that follows. Trust anchor: ONLY the IACA root is
+	// pre-installed — the DS cert arrives via x5chain.
+	receivedResponse, receivedState, err := mdoc.ParseDirectPostForm(formBody, verifierQueryId)
+	if err != nil {
+		log.Fatal("parse direct_post form:", err)
+	}
+	if receivedState != state {
+		log.Fatal("state mismatch — possible CSRF, rejecting response before any crypto check")
+	}
+	fmt.Println("  state echoed back correctly ✓  (anti-CSRF check passed)")
 	verifier := mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
-	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
+	results, err := verifier.VerifyDeviceResponse(receivedResponse, reqNamespace, docType, transcript)
+	if err != nil {
+		log.Fatal("verify device response:", err)
+	}
+	result := results[0]
 	printVerificationSteps(result)
 	if result.DeviceAuthValid {
 		fmt.Println("  deviceAuth signature: valid ✓  (matches session transcript)")

@@ -59,9 +59,14 @@ func (h *Holder) SignDeviceAuth(docType string, transcript SessionTranscript) ([
 		DeviceNameSpaces:  emptyNS,
 	}
 
-	payload, err := cbor.Marshal(deviceAuth)
+	// DeviceAuthentication travels as Tag24(CBOR(DeviceAuthentication)) —
+	// the same "Bytes" pattern ISO 18013-5 uses for MSO. Confirmed against
+	// Multipaz's actual signing code (MdocDocument.kt): the whole array is
+	// wrapped in Tagged(ENCODED_CBOR, ...) — CBOR tag 24 — before signing,
+	// not just the deviceNameSpaces element inside it.
+	payload, err := tag24Wrap(deviceAuth)
 	if err != nil {
-		return nil, fmt.Errorf("marshal deviceAuthentication: %w", err)
+		return nil, fmt.Errorf("wrap deviceAuthentication: %w", err)
 	}
 
 	// Sign with device private key — uses same ES256 (ECDSA P-256 + SHA-256) as issuerAuth

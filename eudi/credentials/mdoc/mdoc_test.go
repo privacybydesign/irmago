@@ -64,3 +64,41 @@ func TestFullIssuanceFlow_ProducesValidMDoc(t *testing.T) {
 		t.Fatalf("age_over_21 should have been withheld, but was disclosed")
 	}
 }
+
+// TestDeviceSignedOmittedWhenNilPresentWhenAttached confirms the
+// `deviceSigned,omitempty` tag on MDoc actually does something: a
+// presented-but-not-yet-device-signed mdoc must encode with no
+// "deviceSigned" key at all (not a null placeholder), and gains one only
+// after AttachDeviceSigned — matching real ISO 18013-5, where deviceSigned
+// simply doesn't exist until presentation time.
+func TestDeviceSignedOmittedWhenNilPresentWhenAttached(t *testing.T) {
+	_, _, _, presented, _, deviceAuthBytes, _, _ := buildHappyPathMDoc(t)
+
+	beforeCBOR, err := cbor.Marshal(presented)
+	if err != nil {
+		t.Fatalf("marshal presented mdoc: %v", err)
+	}
+	var beforeGeneric map[string]cbor.RawMessage
+	if err := cbor.Unmarshal(beforeCBOR, &beforeGeneric); err != nil {
+		t.Fatalf("decode presented mdoc generic: %v", err)
+	}
+	if _, present := beforeGeneric["deviceSigned"]; present {
+		t.Fatalf("expected no deviceSigned key before AttachDeviceSigned, but found one")
+	}
+
+	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	if err != nil {
+		t.Fatalf("AttachDeviceSigned: %v", err)
+	}
+	afterCBOR, err := cbor.Marshal(attached)
+	if err != nil {
+		t.Fatalf("marshal attached mdoc: %v", err)
+	}
+	var afterGeneric map[string]cbor.RawMessage
+	if err := cbor.Unmarshal(afterCBOR, &afterGeneric); err != nil {
+		t.Fatalf("decode attached mdoc generic: %v", err)
+	}
+	if _, present := afterGeneric["deviceSigned"]; !present {
+		t.Fatalf("expected deviceSigned key after AttachDeviceSigned, found none")
+	}
+}
