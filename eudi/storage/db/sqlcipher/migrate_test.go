@@ -79,6 +79,11 @@ func TestEncryptInPlace(t *testing.T) {
 	_, err = gorm.Open(Dialector{Connector: NewConnector(dbPath, []byte("the-wrong-key"))}, &gorm.Config{})
 	require.Error(t, err, "opening the migrated database with the wrong key must fail")
 
+	// The migrated DB is owner-only (0600), not SQLite's default 0644.
+	info, err := os.Stat(dbPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
+
 	// The temp file and the stale plaintext sidecars are gone.
 	for _, suffix := range []string{".migrating", "-wal", "-shm"} {
 		_, statErr := os.Stat(dbPath + suffix)

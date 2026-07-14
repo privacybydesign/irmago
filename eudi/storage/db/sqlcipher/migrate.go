@@ -68,6 +68,12 @@ func EncryptInPlace(path string, key []byte) error {
 		return fmt.Errorf("verify re-encrypted database: %w", err)
 	}
 
+	// sqlcipher_export writes the temp with SQLite's default 0644; keep the DB
+	// owner-only like EnsureFileExists does for fresh files.
+	if err := os.Chmod(tmp, 0600); err != nil {
+		return fmt.Errorf("restrict database permissions: %w", err)
+	}
+
 	if err := os.Rename(tmp, path); err != nil {
 		return fmt.Errorf("replace database: %w", err)
 	}
