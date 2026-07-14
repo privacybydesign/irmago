@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -169,7 +168,7 @@ func New(
 
 	// Initiate the OpenID4VCI client
 	openid4vciClient, err := openid4vci.NewClient(
-		&http.Client{},
+		common.HTTPClient,
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
 	)
