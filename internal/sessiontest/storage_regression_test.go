@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -155,6 +156,49 @@ func TestClientStorageRegressionV1_0_0(t *testing.T) {
 		"https://localhost:8443/vct/test": 2,
 		"irma-demo.RU.studentCard":        1,
 	}, removed)
+
+	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
+}
+
+// TestClientStorageRegressionV1_1_1 validates the first snapshot written by code
+// that correctly encrypts the EUDI database (the v1.1.1 fix). Its eudi_client_db is
+// born encrypted, so loading it exercises the steady-state encrypted read path (no
+// plaintext migration). Content assertions are a representative subset on purpose —
+// the exhaustive per-attribute checks live in TestClientStorageRegressionV1_0_0,
+// which runs against the same generator output.
+func TestClientStorageRegressionV1_1_1(t *testing.T) {
+	// loadClientFromFixture asserts the loaded EUDI DB is encrypted at rest.
+	c, sessionHandler, irmaServer := setupStorageRegressionClient(t, "v1.1.1")
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.fullName")
+	requireCredentialPresent(t, creds, "irma-demo.MijnOverheid.singleton")
+	requireCredentialPresent(t, creds, "test.test.email")
+	requireSdJwtInstancesRemaining(t, creds, "test.test.email", 8)
+
+	// Both OpenID4VCI credentials read back through the encrypted connection.
+	testCred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	require.NotNil(t, testCred, "expected OpenID4VCI credential from the encrypted EUDI DB")
+	requireEudiCredentialMeta(t, testCred)
+	requireAttrsInOrder(t, testCred.Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Given Name"}, Value: strVal("Test")},
+		expectedAttr{Path: []any{"family_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Family Name"}, Value: strVal("User")},
+		expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("test@example.com")},
+	)
+	org := findCredentialById(creds, "https://localhost:8443/vct/organization")
+	require.NotNil(t, org, "expected the nested organization credential from the encrypted EUDI DB")
+	requireEudiCredentialMeta(t, org)
+
+	// Logs survived intact.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 21)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Issuance)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Disclosure)
+	requireLogTypePresent(t, logs, clientmodels.LogType_Signature)
+	requireLogTypePresent(t, logs, clientmodels.LogType_CredentialRemoval)
+	assertLogsNewestFirst(t, logs)
 
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
@@ -491,8 +535,11 @@ func loadClientFromFixture(t *testing.T, db2Path string) (*client.Client, *MockS
 	// Copy the saved EUDI (sqlcipher) DB in when the fixture has one (v1.0.0+).
 	// Older fixtures (pre-sqlcipher) don't, and load with an empty EUDI DB.
 	eudiDBSrc := filepath.Join(filepath.Dir(db2Path), "eudi_client_db")
+	eudiDBDest := filepath.Join(storagePath, "eudi", storage.DbFilename)
+	hasEudiDB := false
 	if _, err := os.Stat(eudiDBSrc); err == nil {
-		copyFile(t, eudiDBSrc, filepath.Join(storagePath, "eudi", storage.DbFilename))
+		copyFile(t, eudiDBSrc, eudiDBDest)
+		hasEudiDB = true
 	}
 
 	// Load the signer key from the fixture
@@ -506,6 +553,15 @@ func loadClientFromFixture(t *testing.T, db2Path string) (*client.Client, *MockS
 	}
 	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey)
 	require.NoError(t, err)
+
+	// Loading migrates a legacy plaintext EUDI database in place; whether it was
+	// migrated (v1.0.0) or born encrypted (v1.1.1+), the on-disk database must be
+	// encrypted at rest afterwards.
+	if hasEudiDB {
+		plaintext, err := sqlcipher.IsPlaintext(eudiDBDest)
+		require.NoError(t, err)
+		require.False(t, plaintext, "EUDI database must be encrypted at rest after loading")
+	}
 
 	c.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
 
