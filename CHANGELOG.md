@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Internal
+- Centralize ad-hoc `http.Client` instantiations into a single shared `common.HTTPClient`, giving one source of truth for outbound client configuration.
 
 ## [1.1.1] - 2026-07-14
 ### Security
