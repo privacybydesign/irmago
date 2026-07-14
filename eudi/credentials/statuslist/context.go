@@ -43,9 +43,10 @@ type VerificationContext struct {
 	RequireStatusListIssuerMatch bool
 
 	// HTTPClient is used by the fetcher for the status list URI GET.
-	// nil falls back to http.DefaultClient. It is NOT threaded into
-	// signature-verification key resolution; did:web lookups during verify
-	// use the didweb resolver's own (timeout-bounded) default client instead.
+	// nil falls back to http.DefaultClient (bounded by the fetcher's own
+	// context.WithTimeout). It is NOT threaded into signature-verification
+	// key resolution; did:web lookups during verify use their own
+	// timeout-bounded client (didweb.NewHTTPClient) instead.
 	HTTPClient *http.Client
 
 	// MaxBodyBytes caps the HTTP response body and the

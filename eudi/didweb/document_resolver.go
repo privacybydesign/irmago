@@ -14,22 +14,40 @@ import (
 
 const Prefix = "did:web:"
 
-// defaultResolveTimeout bounds a did:web fetch when the caller supplies no
-// HTTPClient. Without it the nil fallback is http.DefaultClient, which has no
-// timeout, so a slow/malicious DID host could hang key resolution (and thus
-// credential verification) indefinitely.
+// defaultResolveTimeout bounds a did:web fetch. It is applied by NewHTTPClient
+// (and therefore NewDocumentResolver): without it the client would be the
+// timeout-less http.DefaultClient, so a slow/malicious DID host could hang key
+// resolution (and thus credential verification) indefinitely.
 const defaultResolveTimeout = 10 * time.Second
+
+// NewHTTPClient returns the HTTP client used for did:web resolution: a client
+// bounded by defaultResolveTimeout so a slow/malicious DID host cannot hang
+// resolution indefinitely. Exposed for callers (e.g. the kid key provider) that
+// hold their own client; callers that need a resolver should use NewDocumentResolver.
+func NewHTTPClient() *http.Client {
+	return &http.Client{Timeout: defaultResolveTimeout}
+}
 
 // DocumentResolver resolves did:web DIDs to DID Documents by fetching them over HTTPS.
 // See: https://w3c-ccg.github.io/did-method-web/
 type DocumentResolver struct {
-	// HTTPClient is the HTTP client used to fetch DID documents. If nil, a client
-	// with a defaultResolveTimeout ceiling is used (never the timeout-less
-	// http.DefaultClient).
+	// HTTPClient is the HTTP client used to fetch DID documents. It must be
+	// non-nil; construct the resolver via NewDocumentResolver to get a client
+	// bounded by defaultResolveTimeout (never the timeout-less http.DefaultClient).
 	HTTPClient *http.Client
 	// AllowInsecure additionally allows resolving did:web DIDs over HTTP when
 	// the HTTPS request fails. This should only be enabled in developer mode.
 	AllowInsecure bool
+}
+
+// NewDocumentResolver returns a resolver whose HTTPClient is bounded by
+// defaultResolveTimeout. allowInsecure permits falling back to plain HTTP when
+// the HTTPS fetch fails (developer mode only).
+func NewDocumentResolver(allowInsecure bool) *DocumentResolver {
+	return &DocumentResolver{
+		HTTPClient:    NewHTTPClient(),
+		AllowInsecure: allowInsecure,
+	}
 }
 
 // Resolve fetches and parses the DID Document for the given did:web DID.
@@ -57,12 +75,7 @@ func (r *DocumentResolver) Resolve(didWeb string) (*did.Document, error) {
 }
 
 func (r *DocumentResolver) fetchDocument(docURL string) (*did.Document, error) {
-	client := r.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: defaultResolveTimeout}
-	}
-
-	resp, err := client.Get(docURL)
+	resp, err := r.HTTPClient.Get(docURL)
 	if err != nil {
 		return nil, fmt.Errorf("did:web: failed to fetch DID document from %s: %w", docURL, err)
 	}

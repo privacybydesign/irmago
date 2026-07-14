@@ -130,7 +130,9 @@ func (p *X509KeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *
 }
 
 type KidKeyProvider struct {
-	kidHeader     string
+	kidHeader string
+	// httpClient resolves did:web DID documents. NewKidKeyProvider sets it to a
+	// timeout-bounded client (didweb.NewHTTPClient); tests inject their own.
 	httpClient    *http.Client
 	allowInsecure bool
 }
@@ -138,6 +140,7 @@ type KidKeyProvider struct {
 func NewKidKeyProvider(kidHeader string, allowInsecure bool) *KidKeyProvider {
 	return &KidKeyProvider{
 		kidHeader:     kidHeader,
+		httpClient:    didweb.NewHTTPClient(),
 		allowInsecure: allowInsecure,
 	}
 }

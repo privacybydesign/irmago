@@ -219,8 +219,9 @@ func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstan
 	ref := statuslist.Reference{URI: *instance.StatusListURI, Index: *instance.StatusListIdx}
 	// context.Background: the disclosure planning path carries no cancellable
 	// context. Both network steps are still bounded — the status-list GET by the
-	// checker's FetchTimeout and did:web signing-key resolution by the didweb
-	// resolver's own timeout — so this call cannot hang indefinitely.
+	// checker's FetchTimeout and did:web signing-key resolution by the
+	// timeout-bounded HTTP client used for DID resolution (didweb.NewHTTPClient)
+	// — so this call cannot hang indefinitely.
 	status, err := h.statusChecker.Check(context.Background(), ref, issuer)
 	if err != nil {
 		// Check is cache-aware: it serves the cached status list token while it is

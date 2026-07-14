@@ -196,8 +196,9 @@ func (v *sdJwtVcProcessor) runStatusListCheck(payload *IssuerSignedJwtPayload) e
 	// Background, and this runs post-grant while the holder waits on the result.
 	// Both network steps are bounded without a caller context: the status-list
 	// GET by the checker's FetchTimeout, and did:web signing-key resolution by
-	// the didweb resolver's own timeout. Threading a cancellable context down
-	// ~60 ParseAndVerifySdJwtVc call sites would only buy cancel-on-dismiss.
+	// the timeout-bounded HTTP client used for DID resolution (didweb.NewHTTPClient).
+	// Threading a cancellable context down ~60 ParseAndVerifySdJwtVc call sites
+	// would only buy cancel-on-dismiss.
 	ctx := context.Background()
 	status, err := v.verificationContext.StatusChecker.Check(ctx, *payload.Status.StatusList, payload.Issuer)
 	if err != nil {

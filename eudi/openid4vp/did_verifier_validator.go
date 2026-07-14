@@ -28,9 +28,7 @@ type DidVerifierValidator struct {
 // NewDidVerifierValidator creates a new DID-based verifier validator.
 func NewDidVerifierValidator(allowInsecureDidWeb bool) *DidVerifierValidator {
 	return &DidVerifierValidator{
-		didWebResolver: &didweb.DocumentResolver{
-			AllowInsecure: allowInsecureDidWeb,
-		},
+		didWebResolver: didweb.NewDocumentResolver(allowInsecureDidWeb),
 	}
 }
 
