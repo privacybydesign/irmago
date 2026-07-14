@@ -1,15 +1,21 @@
 # Storage regression snapshot — v1.0.0
 
 Client storage generated at the `v1.0.0` tag, loaded and verified by
-`TestClientStorageRegressionV1_0_0`. Regenerate with
-`TestGenerateClientStorageForRegressionTests` (`GENERATE_STORAGE=1`).
+`TestClientStorageRegressionV1_0_0`.
+
+> **Do not regenerate or encrypt this snapshot.** v1.0.0/v1.1.0 shipped a bug that
+> opened the EUDI database without its AES key, so `eudi_client_db` here is genuinely
+> **plaintext** — exactly what those releases wrote to disk. It is the input for the
+> plaintext→encrypted migration regression test (fixed in v1.1.1): loading it must
+> trigger `sqlcipher.EncryptInPlace` and still read every credential back. The
+> born-encrypted steady state is covered separately by the `v1.1.1` snapshot.
 
 ## Files
 
 | File | Description |
 |------|-------------|
 | `bbolt_client_db` | IRMA client bbolt database (idemix credentials, IRMA-issued SD-JWTs, logs). Copied to `db2` on load. |
-| `eudi_client_db` | EUDI SQLCipher database (`yivi-eudi.db`): OpenID4VCI credentials. |
+| `eudi_client_db` | EUDI SQLCipher database (`yivi-eudi.db`): OpenID4VCI credentials. **Intentionally plaintext** (see note above); do not encrypt or regenerate. |
 | `ecdsa_sk.pem` | Client signer key. |
 | `keyshare_users.json` | Keyshare users preloaded into the test keyshare server. |
 | `metadata.json` | Human-readable dump of the stored credentials and logs. |
