@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [1.1.1] - 2026-07-14
 ### Security
 - The EUDI SQLCipher database was opened without its AES encryption key since v1.0.0, leaving `yivi-eudi.db` (holder binding keys, private keys, SD-JWT VC credentials and logs) unencrypted at rest despite the documented encryption-at-rest. The key is now passed to the connection so the database is encrypted.
 
@@ -691,6 +693,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.1.1]: https://github.com/privacybydesign/irmago/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/privacybydesign/irmago/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0
 [0.19.2]: https://github.com/privacybydesign/irmago/compare/v0.19.1...v0.19.2
