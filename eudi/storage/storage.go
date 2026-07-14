@@ -41,9 +41,22 @@ func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, er
 		if err := common.EnsureFileExists(dbPath); err != nil {
 			return nil, fmt.Errorf("failed to ensure database file exists: %w", err)
 		}
+
+		// Migrate legacy plaintext databases (written by v1.0.0/v1.1.0, which opened
+		// the database without its key) to an encrypted database before opening with
+		// the key. This is a no-op for already-encrypted and freshly-created files.
+		plaintext, err := sqlcipher.IsPlaintext(dbPath)
+		if err != nil {
+			return nil, fmt.Errorf("inspect database file: %w", err)
+		}
+		if plaintext {
+			if err := sqlcipher.EncryptInPlace(dbPath, aesKey[:]); err != nil {
+				return nil, fmt.Errorf("encrypt legacy plaintext database: %w", err)
+			}
+		}
 	}
 
-	connector := &sqlcipher.Connector{Path: dbPath}
+	connector := sqlcipher.NewConnector(dbPath, aesKey[:])
 	dbLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		logger.Config{
