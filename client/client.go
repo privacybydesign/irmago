@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/dnssec"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
@@ -584,6 +585,18 @@ func (client *Client) SetPreferences(prefs clientsettings.Preferences) {
 
 func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
+}
+
+// SetDidWebDnssecCheck enables or disables an optional DNSSEC check on the
+// domain of did:web verifiers. When enabled, a failed or missing DNSSEC chain
+// is reported to the app as a session warning on the requestor; it never
+// blocks the session. Disabled by default.
+func (client *Client) SetDidWebDnssecCheck(enabled bool) {
+	if enabled {
+		client.didValidator.SetDnssecVerifier(&dnssec.ChainVerifier{})
+	} else {
+		client.didValidator.SetDnssecVerifier(nil)
+	}
 }
 
 func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {

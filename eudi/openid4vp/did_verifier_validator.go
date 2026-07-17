@@ -8,9 +8,12 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/did"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didweb"
+	"github.com/privacybydesign/irmago/eudi/dnssec"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
@@ -39,26 +42,34 @@ func (v *DidVerifierValidator) SetAllowInsecureDidWeb(allow bool) {
 	v.didWebResolver.AllowInsecure = allow
 }
 
+// SetDnssecVerifier enables an optional DNSSEC check on the domain of did:web
+// verifiers. A failed or missing DNSSEC chain is reported as a warning to the
+// app and never blocks validation. Pass nil to disable the check.
+func (v *DidVerifierValidator) SetDnssecVerifier(verifier dnssec.Verifier) {
+	v.didWebResolver.DnssecVerifier = verifier
+}
+
 func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt string) (
 	*AuthorizationRequest,
 	*x509.Certificate,
 	*scheme.RelyingPartyRequestor,
+	[]clientmodels.SessionWarning,
 	error,
 ) {
 	// Pre-parse the claims to inspect client_id before signature verification
 	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
 	preToken, _, err := parser.ParseUnverified(requestJwt, &AuthorizationRequest{})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to pre-parse auth request jwt: %v", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to pre-parse auth request jwt: %v", err)
 	}
 
 	preClaims := preToken.Claims.(*AuthorizationRequest)
 	clientId := preClaims.ClientId
 
 	// Resolve the public key from the DID
-	pubKey, didString, err := v.resolvePublicKey(clientId, preToken.Header)
+	pubKey, didString, warnings, err := v.resolvePublicKey(clientId, preToken.Header)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to resolve verifier public key: %v", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to resolve verifier public key: %v", err)
 	}
 
 	// Parse and verify the JWT with the resolved key
@@ -74,7 +85,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 		return pubKey, nil
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to verify auth request jwt: %v", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to verify auth request jwt: %v", err)
 	}
 
 	// Determine a human-readable display name for the verifier. Priority:
@@ -96,7 +107,7 @@ func (v *DidVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJwt str
 
 	// We don't validate credential queries using queryValidator.ValidateCredentialQueries(..) on purpose here, because we have no external requestorInfo containing authorized attributes
 
-	return &authRequest, nil, requestorInfo, nil
+	return &authRequest, nil, requestorInfo, warnings, nil
 }
 
 // hostFromURL parses a URL and returns its hostname (without port), or "" on failure.
@@ -125,18 +136,19 @@ func didWebDomain(didStr string) (string, bool) {
 }
 
 // resolvePublicKey extracts the public key from the client_id DID.
-func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[string]any) (any, string, error) {
+func (v *DidVerifierValidator) resolvePublicKey(clientId string, header map[string]any) (any, string, []clientmodels.SessionWarning, error) {
 	switch {
 	case strings.HasPrefix(clientId, clientIdPrefixDidJwk):
 		didJwk := strings.TrimPrefix(clientId, "decentralized_identifier:")
-		return v.resolveDidJwk(didJwk, header)
+		key, didString, err := v.resolveDidJwk(didJwk, header)
+		return key, didString, nil, err
 
 	case strings.HasPrefix(clientId, clientIdPrefixDidWeb):
 		didWeb := strings.TrimPrefix(clientId, "decentralized_identifier:")
 		return v.resolveDidWeb(didWeb, header)
 
 	default:
-		return nil, "", fmt.Errorf("unsupported client_id scheme: %s", clientId)
+		return nil, "", nil, fmt.Errorf("unsupported client_id scheme: %s", clientId)
 	}
 }
 
@@ -156,18 +168,37 @@ func (v *DidVerifierValidator) resolveDidJwk(didJwk string, header map[string]an
 }
 
 // resolveDidWeb resolves a did:web DID document and extracts the verification key.
-func (v *DidVerifierValidator) resolveDidWeb(didWeb string, header map[string]any) (any, string, error) {
-	doc, err := v.didWebResolver.Resolve(didWeb)
+// When a DNSSEC verifier is configured, the DNSSEC status of the DID's domain is
+// reported as session warnings; it never blocks resolution.
+func (v *DidVerifierValidator) resolveDidWeb(didWeb string, header map[string]any) (any, string, []clientmodels.SessionWarning, error) {
+	doc, dnssecResult, err := v.didWebResolver.ResolveWithDnssec(didWeb)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to resolve did:web document: %v", err)
+		return nil, "", nil, fmt.Errorf("failed to resolve did:web document: %v", err)
 	}
 
 	key, err := findVerificationKey(doc, header)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
-	return key, didWeb, nil
+	return key, didWeb, dnssecWarnings(didWeb, dnssecResult), nil
+}
+
+// dnssecWarnings maps a DNSSEC check outcome to session warnings for the app.
+// An indeterminate outcome produces no warning: the check was not available.
+func dnssecWarnings(didWeb string, result *dnssec.Result) []clientmodels.SessionWarning {
+	if result == nil {
+		return nil
+	}
+	switch result.Status {
+	case dnssec.StatusBogus:
+		eudi.Logger.Warnf("DNSSEC validation for %s failed: %s", didWeb, result.Detail)
+		return []clientmodels.SessionWarning{clientmodels.SessionWarning_DidWebDnssecInvalid}
+	case dnssec.StatusInsecure:
+		return []clientmodels.SessionWarning{clientmodels.SessionWarning_DidWebDnssecMissing}
+	default:
+		return nil
+	}
 }
 
 // findVerificationKey finds the appropriate verification key from a DID document,

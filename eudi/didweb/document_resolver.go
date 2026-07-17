@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/eudi/did"
+	"github.com/privacybydesign/irmago/eudi/dnssec"
 )
 
 const Prefix = "did:web:"
@@ -21,13 +22,26 @@ type DocumentResolver struct {
 	// AllowInsecure additionally allows resolving did:web DIDs over HTTP when
 	// the HTTPS request fails. This should only be enabled in developer mode.
 	AllowInsecure bool
+	// DnssecVerifier optionally checks the DNSSEC chain of trust for the DID's
+	// domain during ResolveWithDnssec. If nil, no DNSSEC check is performed.
+	DnssecVerifier dnssec.Verifier
 }
 
 // Resolve fetches and parses the DID Document for the given did:web DID.
 func (r *DocumentResolver) Resolve(didWeb string) (*did.Document, error) {
+	doc, _, err := r.ResolveWithDnssec(didWeb)
+	return doc, err
+}
+
+// ResolveWithDnssec resolves the DID Document and, when a DnssecVerifier is
+// configured, additionally reports the DNSSEC status of the DID's domain.
+// The DNSSEC result never blocks resolution: a failed check is returned as a
+// result for the caller to surface as a warning. The result is nil when no
+// verifier is configured.
+func (r *DocumentResolver) ResolveWithDnssec(didWeb string) (*did.Document, *dnssec.Result, error) {
 	docURL, err := didWebToURL(didWeb)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	doc, err := r.fetchDocument(docURL)
@@ -36,15 +50,23 @@ func (r *DocumentResolver) Resolve(didWeb string) (*did.Document, error) {
 		doc, err = r.fetchDocument(httpURL)
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Verify the resolved document's ID matches the requested DID.
 	if doc.ID != didWeb {
-		return nil, fmt.Errorf("did:web: resolved document ID %q does not match requested DID %q", doc.ID, didWeb)
+		return nil, nil, fmt.Errorf("did:web: resolved document ID %q does not match requested DID %q", doc.ID, didWeb)
 	}
 
-	return doc, nil
+	var dnssecResult *dnssec.Result
+	if r.DnssecVerifier != nil {
+		if parsed, err := url.Parse(docURL); err == nil {
+			result := r.DnssecVerifier.Verify(parsed.Hostname())
+			dnssecResult = &result
+		}
+	}
+
+	return doc, dnssecResult, nil
 }
 
 func (r *DocumentResolver) fetchDocument(docURL string) (*did.Document, error) {

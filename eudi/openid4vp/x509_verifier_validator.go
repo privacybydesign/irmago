@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -36,17 +37,18 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 	*AuthorizationRequest,
 	*x509.Certificate,
 	*scheme.RelyingPartyRequestor,
+	[]clientmodels.SessionWarning,
 	error,
 ) {
 	var authRequest AuthorizationRequest
 	token, err := jwt.ParseWithClaims(requestJwt, &authRequest, v.createAuthRequestVerifier())
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
 	}
 
 	leafCert, err := getEndEntityCertFromX5cHeader(token)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 	}
 
 	// Try to get verifier metadata in order:
@@ -81,13 +83,13 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
 		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
 		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
 		}
 	} else {
 		requestorInfo.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}
 	}
 
-	return &authRequest, leafCert, requestorInfo, nil
+	return &authRequest, leafCert, requestorInfo, nil, nil
 }
 
 func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier() jwt.Keyfunc {

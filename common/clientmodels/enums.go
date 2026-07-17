@@ -19,6 +19,19 @@ const (
 	LogType_CredentialRemoval LogType = "removal"
 )
 
+// SessionWarning identifies a non-blocking warning about a session that the
+// app can surface to the user. The app decides the user-facing wording.
+type SessionWarning string
+
+const (
+	// The verifier's did:web domain is DNSSEC-signed, but validation failed:
+	// DNS answers for the domain may have been tampered with, so the
+	// connection to the verifier may not be trustworthy.
+	SessionWarning_DidWebDnssecInvalid SessionWarning = "did_web_dnssec_invalid"
+	// The verifier's did:web domain is not protected by DNSSEC.
+	SessionWarning_DidWebDnssecMissing SessionWarning = "did_web_dnssec_missing"
+)
+
 // CredentialFormat identifies the format of a credential.
 type CredentialFormat string
 
