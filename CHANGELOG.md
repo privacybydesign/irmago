@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Status checks run at every credential lifecycle site: holder-side at issuance (fail-closed), verifier-side after SD-JWT VC verification, and a background sweep (`Client.RefreshStatuses`) keeps stored credentials' `LastKnownStatus` up to date. The background sweep checks one representative instance per batch — a batch's copies are the same credential and are revoked together, so one status entry stands in for the whole batch. At disclosure the wallet does not fail closed — a revoked instance is surfaced on the OpenID4VP disclosure plan with `Revoked=true` (matching IRMA), leaving the decision to the frontend and the verifier's own status check
   - Persistent SQLCipher-backed cache (`status_list_cache` table) lets the wallet survive cold starts and brief offline periods within a list's TTL. TTL comes from the token's own `ttl`/`exp` (draft-15 §8.2), falling back to the HTTP `max-age` when the token advertises neither, clamped to `[60s, 24h]`. Fail-closed on fetch/verify/decode errors past TTL
   - The `Client` exposes a `RefreshStatuses(ctx)` method for UI-initiated refreshes
+- `storage.NewStorageWithDialector(dialector, fs)`: open the EUDI holder database on any GORM dialector (e.g. `gorm.io/driver/postgres`) rather than only sqlcipher, for server-side / multi-tenant deployments. `NewStorage` is unchanged (it builds the sqlcipher dialector and delegates). The caller owns the at-rest encryption posture of a non-sqlcipher driver.
+
+### Fixed
+- `AutoMigrate` of the EUDI holder models is now ordered parents-before-children, so it also runs on foreign-key-enforcing drivers (e.g. Postgres) and not only SQLite.
 
 ## [1.1.1] - 2026-07-14
 ### Security
