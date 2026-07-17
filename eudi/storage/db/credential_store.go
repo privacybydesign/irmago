@@ -13,9 +13,11 @@ import (
 // CredentialStatusInstance pairs an instance's status_list reference
 // with its issuing batch's IssuerURL. The IssuerURL is part of the
 // status list cache key so a malicious cross-issuer URI re-use cannot
-// borrow another issuer's cached status list.
+// borrow another issuer's cached status list. BatchID lets callers
+// select a single representative instance per batch.
 type CredentialStatusInstance struct {
 	InstanceID    datatypes.UUID
+	BatchID       datatypes.UUID
 	StatusListURI string
 	StatusListIdx uint64
 	IssuerURL     string
@@ -223,6 +225,7 @@ func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatus
 	err := s.db.
 		Model(&models.IssuedCredentialInstance{}).
 		Select("issued_credential_instances.id AS instance_id, " +
+			"issued_credential_instances.credential_batch_id AS batch_id, " +
 			"issued_credential_instances.status_list_uri AS status_list_uri, " +
 			"issued_credential_instances.status_list_idx AS status_list_idx, " +
 			"credential_batches.issuer_url AS issuer_url").

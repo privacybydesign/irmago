@@ -632,10 +632,11 @@ func (client *Client) InitJobs(eudiRevocationListUpdateInterval, statusRefreshIn
 		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
 	}
 
-	// Periodically re-fetch every referenced Token Status List and update
-	// each stored credential instance's LastKnownStatus. Skipped when the
-	// interval is non-positive. The sweep is fail-soft: per-URI errors are
-	// logged inside RefreshStatuses and the previous status is kept.
+	// Periodically re-fetch referenced Token Status Lists and update one
+	// representative instance's LastKnownStatus per credential batch (a batch is
+	// revoked all at once, so one entry stands in for the whole batch). Skipped
+	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
+	// are logged inside RefreshStatuses and the previous status is kept.
 	if statusRefreshInterval > 0 {
 		_, err = client.scheduler.NewJob(
 			gocron.DurationJob(statusRefreshInterval),

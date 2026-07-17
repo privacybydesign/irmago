@@ -72,10 +72,15 @@ func (s *credentialService) DeleteByHash(hash string) error {
 	return s.credentialStore.DeleteBatchByHash(hash)
 }
 
-// RefreshStatuses re-fetches every stored instance's Token Status List and
-// updates its LastKnownStatus. Instances are grouped by (uri, iss) so a status
-// list shared across many credentials is fetched once; iss is part of the key
-// so a cross-issuer URI re-use can't borrow another issuer's cache slot.
+// RefreshStatuses re-fetches Token Status Lists and updates stored statuses,
+// checking one representative instance per batch rather than every copy. A
+// batch's instances are the same logical credential and are revoked together
+// (draft-ietf-oauth-status-list §13.2), so one entry's bit determines the whole
+// batch's status; re-checking every copy would be redundant work.
+//
+// Representatives are grouped by (uri, iss) so a status list shared across many
+// batches is fetched once; iss is part of the key so a cross-issuer URI re-use
+// can't borrow another issuer's cache slot.
 //
 // Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
 // the previous LastKnownStatus in place. A nil statusChecker makes this a no-op.
@@ -88,9 +93,21 @@ func (s *credentialService) RefreshStatuses(ctx context.Context) error {
 		return fmt.Errorf("load instances: %w", err)
 	}
 
+	// Keep one representative instance per batch. Any copy gives the same
+	// answer under the whole-batch-revoked assumption, so the first seen wins.
+	seenBatch := make(map[datatypes.UUID]struct{}, len(instances))
+	representatives := make([]db.CredentialStatusInstance, 0, len(instances))
+	for _, inst := range instances {
+		if _, ok := seenBatch[inst.BatchID]; ok {
+			continue
+		}
+		seenBatch[inst.BatchID] = struct{}{}
+		representatives = append(representatives, inst)
+	}
+
 	type key struct{ uri, iss string }
 	groups := map[key][]db.CredentialStatusInstance{}
-	for _, inst := range instances {
+	for _, inst := range representatives {
 		k := key{uri: inst.StatusListURI, iss: inst.IssuerURL}
 		groups[k] = append(groups[k], inst)
 	}
@@ -129,7 +146,10 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	// unlinkability) and are revoked together by the issuer, and StatusInvalid
 	// is permanent — so the batch is revoked as soon as any status-referenced
 	// instance reads StatusInvalid, and supports revocation if it carries any
-	// status reference at all.
+	// status reference at all. The sweep refreshes only one representative
+	// instance per batch, so in practice that representative's bit drives the
+	// flag; the "any invalid" rule still holds because non-representatives keep
+	// their issuance-time Valid.
 	instanceStatuses, err := s.credentialStore.ListStatusReferencedInstanceStatuses()
 	if err != nil {
 		return nil, err
@@ -213,20 +233,39 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			iat = &x
 		}
 
-		// Try get the credential image from filesystem storage, if it exists.
+		// Resolve credential/issuer logos from the filesystem cache. Scan ALL
+		// display entries (not just Display[0]): multi-locale metadata may carry
+		// the logo on a later entry, and only one logo is cached. Break on the
+		// first entry that actually resolves, not the first non-empty URI, since a
+		// display's URI may not be the one that got cached. Mirrors the
+		// issuance/disclosure paths.
+		// TODO: pick the logo matching the client's language preference instead of
+		// the first that resolves.
 		credentialLogoManager := s.fileStorage.Credentials().LogoManager()
 		issuerLogoManager := s.fileStorage.Issuers().LogoManager()
 
-		var issuerImage *clientmodels.Image = nil
-		var credentialImage *clientmodels.Image = nil
-
-		// TODO: since we don't know which display is actually used by the client, we are currently just trying to get the logos for the first display. We should implement a more robust solution for this in the future, potentially by storing a separate logo for each display/language in the filesystem and retrieving the correct one based on the client's language preferences.
-		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI.Valid {
-			issuerImage = eudi.LoadLogoImage(issuerLogoManager, batch.IssuerDisplay[0].LogoURI.V)
+		var issuerImage *clientmodels.Image
+		for _, d := range batch.IssuerDisplay {
+			if !d.LogoURI.Valid || d.LogoURI.V == "" {
+				continue
+			}
+			if img := eudi.LoadLogoImage(issuerLogoManager, d.LogoURI.V); img != nil {
+				issuerImage = img
+				break
+			}
 		}
 
-		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
-			credentialImage = eudi.LoadLogoImage(credentialLogoManager, batch.CredentialMetadata.Display[0].LogoURI)
+		var credentialImage *clientmodels.Image
+		if batch.CredentialMetadata != nil {
+			for _, d := range batch.CredentialMetadata.Display {
+				if d.LogoURI == "" {
+					continue
+				}
+				if img := eudi.LoadLogoImage(credentialLogoManager, d.LogoURI); img != nil {
+					credentialImage = img
+					break
+				}
+			}
 		}
 
 		clientModels[i] = &clientmodels.Credential{

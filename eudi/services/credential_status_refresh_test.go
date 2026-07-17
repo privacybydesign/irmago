@@ -91,14 +91,76 @@ func Test_RefreshStatuses_NoInstancesWithStatus_NoOp(t *testing.T) {
 	require.NoError(t, svc.RefreshStatuses(context.Background()))
 }
 
-func Test_RefreshStatuses_GroupsByURI_OneFetchPerURI(t *testing.T) {
+func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *testing.T) {
 	db := newTestRefreshDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
-	// Single URI, multiple credentials at different idx values.
+	// One status list shared across batches, all copies Valid.
 	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
 		Bits:     1,
-		Statuses: map[uint64]uint8{0: 0, 1: 0, 2: 1},
+		Statuses: map[uint64]uint8{0: 0, 1: 0, 2: 0},
+	})
+	checker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	// Two batches sharing one status list URI: batch A has two instances
+	// (idx 0,1), batch B one (idx 2). The sweep must fetch the shared URI once
+	// and refresh exactly one representative per batch.
+	batchA := seedBatch(t, db, "hA", "https://issuer.example", []models.IssuedCredentialInstance{
+		instanceWithStatus(srv.URL(), 0),
+		instanceWithStatus(srv.URL(), 1),
+	})
+	seedBatch(t, db, "hB", "https://issuer.example", []models.IssuedCredentialInstance{
+		instanceWithStatus(srv.URL(), 2),
+	})
+
+	svc := newRefreshService(db, checker)
+	require.NoError(t, svc.RefreshStatuses(context.Background()))
+
+	// Shared URI fetched exactly once (Refresh warms the cache; each
+	// representative's Check reads from it).
+	require.Equal(t, int64(1), srv.Hits())
+
+	// Exactly one instance per batch was refreshed (LastStatusCheckAt set),
+	// i.e. two across the two batches, each reading Valid.
+	var all []models.IssuedCredentialInstance
+	require.NoError(t, db.Find(&all).Error)
+	checked := 0
+	for _, r := range all {
+		if r.LastStatusCheckAt != nil {
+			checked++
+			require.Equal(t, uint8(statuslist.StatusValid), r.LastKnownStatus)
+		}
+	}
+	require.Equal(t, 2, checked, "one representative per batch (2 batches)")
+
+	// The multi-instance batch A had only one of its two instances refreshed.
+	var batchARows []models.IssuedCredentialInstance
+	require.NoError(t, db.Where("credential_batch_id = ?", batchA.ID).Find(&batchARows).Error)
+	require.Len(t, batchARows, 2)
+	batchAChecked := 0
+	for _, r := range batchARows {
+		if r.LastStatusCheckAt != nil {
+			batchAChecked++
+		}
+	}
+	require.Equal(t, 1, batchAChecked, "only one representative refreshed in a multi-instance batch")
+}
+
+// Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation
+// verifies that for a batch with several instances the sweep refreshes only a
+// single representative, yet the batch is still reported revoked once that
+// representative's bit reads Invalid (the read path's "any invalid" rule).
+func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t *testing.T) {
+	db := newTestRefreshDB(t)
+	signer := statuslist.NewTestStatusListSigner(t)
+
+	// All three copies of the batch are revoked together by the issuer.
+	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{0: 1, 1: 1, 2: 1},
 	})
 	checker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: signer.X509VerificationContext(),
@@ -113,23 +175,33 @@ func Test_RefreshStatuses_GroupsByURI_OneFetchPerURI(t *testing.T) {
 	svc := newRefreshService(db, checker)
 	require.NoError(t, svc.RefreshStatuses(context.Background()))
 
-	// Exactly one HTTP hit per Refresh + per Check would be 1 + 3,
-	// but the Check calls read from cache populated by Refresh, so
-	// only 1 backend hit overall.
-	require.Equal(t, int64(1), srv.Hits())
-
-	// Status writeback: idx 0,1 → Valid; idx 2 → Invalid.
+	// Only one representative was checked and flipped to Invalid; the others
+	// keep their default status.
 	var rows []models.IssuedCredentialInstance
 	require.NoError(t, db.Find(&rows).Error)
-	statuses := map[uint64]uint8{}
+	checked, invalid := 0, 0
 	for _, r := range rows {
-		require.NotNil(t, r.StatusListIdx)
-		statuses[*r.StatusListIdx] = r.LastKnownStatus
-		require.NotNil(t, r.LastStatusCheckAt)
+		if r.LastStatusCheckAt != nil {
+			checked++
+		}
+		if statuslist.Status(r.LastKnownStatus) == statuslist.StatusInvalid {
+			invalid++
+		}
 	}
-	require.Equal(t, uint8(statuslist.StatusValid), statuses[0])
-	require.Equal(t, uint8(statuslist.StatusValid), statuses[1])
-	require.Equal(t, uint8(statuslist.StatusInvalid), statuses[2])
+	require.Equal(t, 1, checked, "exactly one representative refreshed")
+	require.Equal(t, 1, invalid, "only the representative flipped to Invalid")
+
+	// The batch's derived revocation ("any status-referenced instance Invalid")
+	// is still true from the single representative.
+	statuses, err := dbpkg.NewCredentialStore(db).ListStatusReferencedInstanceStatuses()
+	require.NoError(t, err)
+	revoked := false
+	for _, st := range statuses {
+		if st.Hash == "h1" && statuslist.Status(st.LastKnownStatus) == statuslist.StatusInvalid {
+			revoked = true
+		}
+	}
+	require.True(t, revoked, "batch revoked once its representative reads Invalid")
 }
 
 // Test_RefreshStatuses_DetectsRevocationTransition is the end-to-end guarantee
@@ -189,9 +261,14 @@ func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 		X509Context: signer.X509VerificationContext(),
 	}, statuslist.NewInMemoryCache())
 
-	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{
+	// One representative per batch is checked, so put the failing and the good
+	// URI in SEPARATE batches to prove one batch's failure doesn't abort the
+	// sweep for the other.
+	seedBatch(t, db, "hbad", "https://issuer.example", []models.IssuedCredentialInstance{
 		instanceWithStatus("http://127.0.0.1:0/nope", 0), // unreachable
-		instanceWithStatus(good.URL(), 0),                // good
+	})
+	seedBatch(t, db, "hgood", "https://issuer.example", []models.IssuedCredentialInstance{
+		instanceWithStatus(good.URL(), 0), // good
 	})
 
 	svc := newRefreshService(db, checker)

@@ -364,6 +364,54 @@ func TestGetCredentialMetadataList_MultipleCredentials(t *testing.T) {
 	assert.Len(t, result, 2)
 }
 
+// TestGetCredentialMetadataList_CredentialLogoOnNonFirstDisplay pins the bug
+// where the data tab only inspected Display[0] for a credential logo. When
+// multi-locale metadata carries the logo on a later display entry (and only that
+// logo is cached, keyed by its URL, as issuance caches it), the data tab must
+// still surface it — matching the issuance/disclosure/activity paths which scan
+// all displays.
+func TestGetCredentialMetadataList_CredentialLogoOnNonFirstDisplay(t *testing.T) {
+	const logoURL = "https://logo.example/cred.png"
+	batch := newStorageBatch()
+	batch.CredentialMetadata.Display = []models.CredentialDisplay{
+		{Name: "My Credential", Locale: datatypes.NullString{V: "en", Valid: true}},
+		{Name: "Mijn Credential", Locale: datatypes.NullString{V: "nl", Valid: true}, LogoURI: logoURL},
+	}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	require.NoError(t, fileStorageMock.Credentials().LogoManager().Save(logoURL, []byte("PNGDATA")))
+
+	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	svc := newServiceWithMocks(mock, fileStorageMock)
+
+	result, err := svc.GetCredentialMetadataList()
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.NotNil(t, result[0].Image, "credential logo must resolve even when it's not on the first display entry")
+	assert.NotEmpty(t, result[0].Image.Base64)
+}
+
+// TestGetCredentialMetadataList_IssuerLogoOnNonFirstDisplay is the issuer-logo
+// counterpart of the credential-logo bug above.
+func TestGetCredentialMetadataList_IssuerLogoOnNonFirstDisplay(t *testing.T) {
+	const logoURL = "https://logo.example/issuer.png"
+	batch := newStorageBatch()
+	batch.IssuerDisplay = []models.IssuerMetadataDisplay{
+		{Name: "Test Issuer", Locale: datatypes.NullString{V: "en", Valid: true}},
+		{Name: "Test Issuer NL", Locale: datatypes.NullString{V: "nl", Valid: true}, LogoURI: datatypes.NullString{V: logoURL, Valid: true}},
+	}
+	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
+	require.NoError(t, fileStorageMock.Issuers().LogoManager().Save(logoURL, []byte("ISSUERPNG")))
+
+	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
+	svc := newServiceWithMocks(mock, fileStorageMock)
+
+	result, err := svc.GetCredentialMetadataList()
+
+	require.NoError(t, err)
+	require.NotNil(t, result[0].Issuer.Image, "issuer logo must resolve even when it's not on the first display entry")
+}
+
 // ========== VerifyAndStoreIssuedCredentials ==========
 
 func TestVerifyAndStoreIssuedCredentials_EmptySlice(t *testing.T) {
