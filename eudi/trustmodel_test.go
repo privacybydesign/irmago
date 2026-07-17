@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/scheme"
-	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
+	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/testdata"
@@ -575,7 +575,7 @@ func testCacheLogoCachesLogoSuccessfully(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, ":memory:", eudiConfigPath)
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiConfigPath)
 	require.NoError(t, err)
 
 	conf, err := NewConfiguration(s)
@@ -605,7 +605,7 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, ":memory:", eudiConfigPath)
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiConfigPath)
 	require.NoError(t, err)
 
 	conf, err := NewConfiguration(s)
@@ -639,7 +639,7 @@ func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, ":memory:", eudiConfigPath)
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiConfigPath)
 	require.NoError(t, err)
 
 	conf, err := NewConfiguration(s)
@@ -661,7 +661,7 @@ func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 
 	aesKey := [32]byte{}
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
-	s, err := storage.NewStorage(aesKey, ":memory:", eudiConfigPath)
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiConfigPath)
 	require.NoError(t, err)
 
 	conf, err := NewConfiguration(s)

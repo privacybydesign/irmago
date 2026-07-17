@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `AutoMigrate` of the EUDI holder models is now ordered parents-before-children, so it also runs on foreign-key-enforcing drivers (e.g. Postgres) and not only SQLite.
+- `eudi/storage` no longer transitively pulls in the cgo `sqlcipher` package. The sqlcipher-only constructor moved from `storage.NewStorage` to a new `eudi/storage/sqlcipherstorage` package as `sqlcipherstorage.New`, so a pure-Go dialector consumer (e.g. `gorm.io/driver/postgres`) can import `eudi/storage` and build without compiling sqlcipher — including under `CGO_ENABLED=1` / `go test -race`, which the old layout still forced. **Breaking:** callers of `storage.NewStorage(...)` now call `sqlcipherstorage.New(...)` (identical signature); `storage.NewStorageWithDialector` is unchanged.
 
 ## [1.1.1] - 2026-07-14
 ### Security
