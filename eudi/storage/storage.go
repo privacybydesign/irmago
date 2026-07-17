@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
-	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
-	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -31,33 +29,30 @@ type storage struct {
 	fs filesystem.FileSystemStorage
 }
 
-// NewStorage opens (or creates) a SQLite database at path, then auto-migrates all registered models.
-// The dbPath can be ":memory:" to use an in-memory database (useful for testing) or a path to a file.
-// Note: the default transaction has been DISABLED, which means, any Create or Update operation should be wrapped in a transaction (either directly or using the UnitOfWork) to ensure data integrity.
-func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, error) {
-	// Ensure the database file exists before opening the connection (file does not always create automatically,
-	// depending on the SQLite version and OS)
-	if dbPath != ":memory:" {
-		if err := common.EnsureFileExists(dbPath); err != nil {
-			return nil, fmt.Errorf("failed to ensure database file exists: %w", err)
-		}
-
-		// Migrate legacy plaintext databases (written by v1.0.0/v1.1.0, which opened
-		// the database without its key) to an encrypted database before opening with
-		// the key. This is a no-op for already-encrypted and freshly-created files.
-		plaintext, err := sqlcipher.IsPlaintext(dbPath)
-		if err != nil {
-			return nil, fmt.Errorf("inspect database file: %w", err)
-		}
-		if plaintext {
-			if err := sqlcipher.EncryptInPlace(dbPath, aesKey[:]); err != nil {
-				return nil, fmt.Errorf("encrypt legacy plaintext database: %w", err)
-			}
-		}
+// NewStorageWithDialector opens the holder database on any GORM dialector and
+// auto-migrates the credential-holder models, pairing it with the given file
+// storage. The models are dialector-agnostic GORM structs, so a caller can back
+// the holder engine with its own database — e.g. sqlcipher (encrypted SQLite,
+// one wallet per file) via NewStorage, or gorm.io/driver/postgres for a
+// server-side, multi-tenant deployment. The caller owns the encryption posture
+// of the chosen dialector (sqlcipher encrypts at rest; a plain database does not).
+func NewStorageWithDialector(dialector gorm.Dialector, fs filesystem.FileSystemStorage) (Storage, error) {
+	db, err := gorm.Open(dialector, &gorm.Config{Logger: newDBLogger()})
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	connector := sqlcipher.NewConnector(dbPath, aesKey[:])
-	dbLogger := logger.New(
+	// TODO: separate the migration logic from the storage initialization logic, so that we can run migrations without needing to initialize the whole storage
+	// This will also save us from executing migrations every time we're creating UnitOfWork instances (which will create new repositories, which will otherwise auto-migrate their models if needed)
+	if err := autoMigrateHolderModels(db); err != nil {
+		return nil, err
+	}
+
+	return &storage{db: db, fs: fs}, nil
+}
+
+func newDBLogger() logger.Interface {
+	return logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		logger.Config{
 			SlowThreshold:             200 * time.Millisecond,
@@ -66,15 +61,16 @@ func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, er
 			Colorful:                  true,
 		},
 	)
-	db, err := gorm.Open(sqlcipher.Dialector{Connector: connector}, &gorm.Config{Logger: dbLogger})
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
-	}
+}
 
-	// TODO: separate the migration logic from the storage initialization logic, so that we can run migrations without needing to initialize the whole storage
-	// This will also save us from executing migrations every time we're creating UnitOfWork instances (which will create new repositories, which will otherwise auto-migrate their models if needed)
-
-	err = db.AutoMigrate(
+func autoMigrateHolderModels(db *gorm.DB) error {
+	// Dependency order (parents before children): a referenced table must exist
+	// before the table whose foreign key points at it. SQLite tolerates any order,
+	// but Postgres (and any FK-enforcing driver) rejects a CREATE TABLE whose
+	// inline REFERENCES target does not exist yet, so the order matters here.
+	if err := db.AutoMigrate(
+		&models.CredentialBatch{},
+		&models.IssuedCredentialInstance{},
 		&models.HolderBindingKey{},
 		&models.ECDSAKeyMetadata{},
 		&models.RSAKeyMetadata{},
@@ -83,21 +79,12 @@ func NewStorage(aesKey [32]byte, dbPath string, storagePath string) (Storage, er
 		&models.CredentialDisplay{},
 		&models.CredentialClaim{},
 		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("auto-migrate database failed: %w", err)
+	); err != nil {
+		return fmt.Errorf("auto-migrate database failed: %w", err)
 	}
-
-	// Initialize the repositories, which will auto-migrate their models if needed
-	return &storage{
-		db: db,
-		fs: filesystem.NewFileSystemStorage(aesKey, storagePath),
-	}, nil
+	return nil
 }
 
 // Db returns the underlying gorm.DB, for use by repositories in this package.

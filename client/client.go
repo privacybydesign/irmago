@@ -27,6 +27,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -87,7 +88,7 @@ func New(
 
 	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
 	dbPath := filepath.Join(eudiAppDataPath, storage.DbFilename)
-	eudiStorage, err := storage.NewStorage(aesKey, dbPath, eudiAppDataPath)
+	eudiStorage, err := sqlcipherstorage.New(aesKey, dbPath, eudiAppDataPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
 	}
