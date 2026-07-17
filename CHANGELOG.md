@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
+- Optional DNSSEC check on the domain of `did:web` verifiers in the OpenID4VP flow. When enabled via `client.SetDidWebDnssecCheck(true)`, the DNSSEC chain of trust for the verifier's domain is validated locally (anchored at the IANA root trust anchors) and a failed or missing chain is reported to the app as a `warnings` entry on the requestor (`did_web_dnssec_invalid` / `did_web_dnssec_missing`) without blocking the session. Disabled by default; existing `did:web` validation is unchanged when the check is off or unavailable.
 - `storage.NewStorageWithDialector(dialector, fs)`: open the EUDI holder database on any GORM dialector (e.g. `gorm.io/driver/postgres`) rather than only sqlcipher, for server-side / multi-tenant deployments. `NewStorage` is unchanged (it builds the sqlcipher dialector and delegates). The caller owns the at-rest encryption posture of a non-sqlcipher driver.
 
 ### Fixed

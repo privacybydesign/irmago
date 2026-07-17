@@ -118,7 +118,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			return
 		}
 
-		request, endEntityCert, requestorSchemeData, err := client.verifierValidator.
+		request, endEntityCert, requestorSchemeData, warnings, err := client.verifierValidator.
 			ParseAndVerifyAuthorizationRequest(string(authRequestJwt))
 
 		if err != nil {
@@ -146,6 +146,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		requestor := &clientmodels.TrustedParty{
 			Name:     clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
 			Verified: endEntityCert != nil,
+			Warnings: warnings,
 		}
 		if endEntityCert != nil {
 			requestor.Id = endEntityCert.SerialNumber.String()

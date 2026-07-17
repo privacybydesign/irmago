@@ -27,6 +27,8 @@ type TrustedParty struct {
 	Parent *TrustedParty `json:"parent"`
 	// Whether this party is verified by the scheme manager
 	Verified bool `json:"verified"`
+	// Non-blocking warnings about this party the app can surface to the user
+	Warnings []SessionWarning `json:"warnings,omitempty"`
 }
 
 type Image struct {

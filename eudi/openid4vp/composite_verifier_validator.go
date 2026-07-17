@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 )
 
@@ -30,13 +31,14 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 	*AuthorizationRequest,
 	*x509.Certificate,
 	*scheme.RelyingPartyRequestor,
+	[]clientmodels.SessionWarning,
 	error,
 ) {
 	// Pre-parse to inspect client_id without verifying signature
 	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
 	token, _, err := parser.ParseUnverified(requestJwt, &AuthorizationRequest{})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to pre-parse auth request: %v", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to pre-parse auth request: %v", err)
 	}
 
 	claims := token.Claims.(*AuthorizationRequest)
@@ -46,13 +48,13 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509SanDns)) ||
 		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_X509Hash)):
 		if v.x509Validator == nil {
-			return nil, nil, nil, fmt.Errorf("X.509 verifier validator not configured")
+			return nil, nil, nil, nil, fmt.Errorf("X.509 verifier validator not configured")
 		}
 		return v.x509Validator.ParseAndVerifyAuthorizationRequest(requestJwt)
 
 	case strings.HasPrefix(clientId, string(ClientIdentifierPrefix_DecentralizedDid)):
 		if v.didValidator == nil {
-			return nil, nil, nil, fmt.Errorf("DID verifier validator not configured")
+			return nil, nil, nil, nil, fmt.Errorf("DID verifier validator not configured")
 		}
 		return v.didValidator.ParseAndVerifyAuthorizationRequest(requestJwt)
 
@@ -60,13 +62,13 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_OpenidFederation)) ||
 		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_VerifierAttestation)) ||
 		strings.HasPrefix(clientId, string(ClientIdentifierPrefix_Origin)):
-		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
+		return nil, nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 
 	default:
 		// Fallback to pre-registered client_id validation for backward compatibility
 		// if v.clientRegistry != nil && v.clientRegistry.IsRegistered(clientId) {
-		// 	return nil, nil, nil, fmt.Errorf("pre-registered client_id %q is not supported", clientId)
+		// 	return nil, nil, nil, nil, fmt.Errorf("pre-registered client_id %q is not supported", clientId)
 		// }
-		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
+		return nil, nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 	}
 }

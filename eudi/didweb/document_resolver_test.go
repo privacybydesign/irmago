@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/did"
+	"github.com/privacybydesign/irmago/eudi/dnssec"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -176,6 +177,78 @@ func Test_Resolve_UnmarshalDocumentCorrectly(t *testing.T) {
 	require.Equal(t, did.VerificationMethodType_JsonWebKey2020, doc.VerificationMethod[0].Type)
 	require.Equal(t, "did:web:issuer.dev.eduid.nl", doc.VerificationMethod[0].Controller)
 	require.NotNil(t, doc.VerificationMethod[0].PublicKeyJwk)
+}
+
+// fakeDnssecVerifier records the hosts it was asked to verify and returns a fixed result.
+type fakeDnssecVerifier struct {
+	result dnssec.Result
+	hosts  []string
+}
+
+func (f *fakeDnssecVerifier) Verify(host string) dnssec.Result {
+	f.hosts = append(f.hosts, host)
+	return f.result
+}
+
+func Test_ResolveWithDnssec_ReportsResultForDidDomain(t *testing.T) {
+	doc := did.Document{
+		Context: []string{"https://www.w3.org/ns/did/v1"},
+		ID:      "did:web:example.com",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/did+json")
+		_ = json.NewEncoder(w).Encode(doc)
+	}))
+	defer server.Close()
+
+	verifier := &fakeDnssecVerifier{result: dnssec.Result{Status: dnssec.StatusBogus, Detail: "tampered"}}
+	resolver := &DocumentResolver{
+		HTTPClient: &http.Client{
+			Transport: &hostOverrideTransport{
+				base:       http.DefaultTransport,
+				targetHost: server.Listener.Addr().String(),
+				useHTTP:    true,
+			},
+		},
+		DnssecVerifier: verifier,
+	}
+
+	result, dnssecResult, err := resolver.ResolveWithDnssec("did:web:example.com")
+	require.NoError(t, err)
+	require.Equal(t, "did:web:example.com", result.ID)
+	require.NotNil(t, dnssecResult)
+	require.Equal(t, dnssec.StatusBogus, dnssecResult.Status)
+	// The check must run against the DID's domain, not the overridden test server.
+	require.Equal(t, []string{"example.com"}, verifier.hosts)
+}
+
+func Test_ResolveWithDnssec_WithoutVerifier_ReturnsNilResult(t *testing.T) {
+	doc := did.Document{
+		Context: []string{"https://www.w3.org/ns/did/v1"},
+		ID:      "did:web:example.com",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/did+json")
+		_ = json.NewEncoder(w).Encode(doc)
+	}))
+	defer server.Close()
+
+	resolver := &DocumentResolver{
+		HTTPClient: &http.Client{
+			Transport: &hostOverrideTransport{
+				base:       http.DefaultTransport,
+				targetHost: server.Listener.Addr().String(),
+				useHTTP:    true,
+			},
+		},
+	}
+
+	result, dnssecResult, err := resolver.ResolveWithDnssec("did:web:example.com")
+	require.NoError(t, err)
+	require.Equal(t, "did:web:example.com", result.ID)
+	require.Nil(t, dnssecResult)
 }
 
 // hostOverrideTransport redirects all requests to a test server.
