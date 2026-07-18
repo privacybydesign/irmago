@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
+- `eudi/holderkeys`: the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) moved out of `eudi/wallet` into this CGO-free package, so a WSCA adapter or a server-side (Postgres) holder can implement and wire it without pulling in `eudi/wallet`'s sqlcipher (cgo) dependency. `eudi/wallet` re-exports the types (aliases), so existing callers are unaffected.
 - `storage.NewStorageWithDialector(dialector, fs)`: open the EUDI holder database on any GORM dialector (e.g. `gorm.io/driver/postgres`) rather than only sqlcipher, for server-side / multi-tenant deployments. `NewStorage` is unchanged (it builds the sqlcipher dialector and delegates). The caller owns the at-rest encryption posture of a non-sqlcipher driver.
 
 ### Fixed

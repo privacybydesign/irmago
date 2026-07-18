@@ -1,4 +1,4 @@
-package wallet
+package holderkeys
 
 import (
 	"crypto"
@@ -48,7 +48,7 @@ type HolderSigner interface {
 func derToRawES256(der []byte) ([]byte, error) {
 	var sig struct{ R, S *big.Int }
 	if _, err := asn1.Unmarshal(der, &sig); err != nil {
-		return nil, fmt.Errorf("wallet: failed to parse DER ECDSA signature: %w", err)
+		return nil, fmt.Errorf("holderkeys: failed to parse DER ECDSA signature: %w", err)
 	}
 	const size = 32 // P-256 coordinate size
 	out := make([]byte, 2*size)
@@ -97,7 +97,7 @@ func (s *SoftwareHolderSigner) GenerateKeys(num uint) ([]string, []*ecdsa.Public
 	for i := uint(0); i < num; i++ {
 		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
-			return nil, nil, fmt.Errorf("wallet: failed to generate holder key: %w", err)
+			return nil, nil, fmt.Errorf("holderkeys: failed to generate holder key: %w", err)
 		}
 		ref, err := ecdsaJWKThumbprint(&priv.PublicKey)
 		if err != nil {
@@ -115,12 +115,12 @@ func (s *SoftwareHolderSigner) SignES256(ref string, signingInput []byte) ([]byt
 	priv, ok := s.keys[ref]
 	s.mu.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("wallet: no holder key for reference %q", ref)
+		return nil, fmt.Errorf("holderkeys: no holder key for reference %q", ref)
 	}
 	digest := sha256.Sum256(signingInput)
 	der, err := ecdsa.SignASN1(rand.Reader, priv, digest[:])
 	if err != nil {
-		return nil, fmt.Errorf("wallet: failed to sign: %w", err)
+		return nil, fmt.Errorf("holderkeys: failed to sign: %w", err)
 	}
 	// Convert to raw r||s so software and WSCA (DER) paths are identical downstream.
 	return derToRawES256(der)

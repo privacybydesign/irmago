@@ -1,4 +1,4 @@
-package wallet
+package holderkeys
 
 import (
 	"crypto/ecdsa"
@@ -20,7 +20,7 @@ import (
 // plugs into exactly this path.
 func TestSignerKeyBinder_ProducesVerifiableKbJwt(t *testing.T) {
 	signer := NewSoftwareHolderSigner()
-	binder := newSignerKeyBinder(signer)
+	binder := NewSignerKeyBinder(signer)
 
 	keys, err := binder.CreateKeyPairs(1)
 	require.NoError(t, err)

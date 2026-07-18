@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/holderkeys"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
@@ -114,7 +115,7 @@ func New(cfg Config) (*Wallet, error) {
 	// through it instead of software keys from storage.
 	var binders []sdjwtvc.KeyBinder
 	if cfg.HolderSigner != nil {
-		binders = append(binders, newSignerKeyBinder(cfg.HolderSigner))
+		binders = append(binders, holderkeys.NewSignerKeyBinder(cfg.HolderSigner))
 	}
 	dcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,

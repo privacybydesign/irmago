@@ -1,4 +1,4 @@
-package wallet
+package holderkeys
 
 import (
 	"encoding/base64"
@@ -26,7 +26,7 @@ type signerKeyBinder struct {
 }
 
 // newSignerKeyBinder returns a sdjwtvc.KeyBinder backed by the given HolderSigner.
-func newSignerKeyBinder(signer HolderSigner) sdjwtvc.KeyBinder {
+func NewSignerKeyBinder(signer HolderSigner) sdjwtvc.KeyBinder {
 	return &signerKeyBinder{signer: signer, clock: eudi_jwt.NewSystemClock()}
 }
 
@@ -39,11 +39,11 @@ func (b *signerKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 	for i, pub := range pubs {
 		k, err := jwk.Import(pub)
 		if err != nil {
-			return nil, fmt.Errorf("wallet: failed to import holder public key: %w", err)
+			return nil, fmt.Errorf("holderkeys: failed to import holder public key: %w", err)
 		}
 		pubJwk, err := k.PublicKey()
 		if err != nil {
-			return nil, fmt.Errorf("wallet: failed to derive public jwk: %w", err)
+			return nil, fmt.Errorf("holderkeys: failed to derive public jwk: %w", err)
 		}
 		keys[i] = pubJwk
 	}
@@ -53,7 +53,7 @@ func (b *signerKeyBinder) CreateKeyPairs(num uint) ([]jwk.Key, error) {
 func (b *signerKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, nonce string, audience string) (sdjwtvc.KeyBindingJwt, error) {
 	ref, err := b.signer.Reference(holderKey)
 	if err != nil {
-		return "", fmt.Errorf("wallet: failed to resolve holder key reference: %w", err)
+		return "", fmt.Errorf("holderkeys: failed to resolve holder key reference: %w", err)
 	}
 
 	header := map[string]any{
@@ -73,7 +73,7 @@ func (b *signerKeyBinder) CreateKeyBindingJwt(hash string, holderKey jwk.Key, no
 	}
 	sig, err := b.signer.SignES256(ref, signingInput)
 	if err != nil {
-		return "", fmt.Errorf("wallet: failed to sign key binding jwt: %w", err)
+		return "", fmt.Errorf("holderkeys: failed to sign key binding jwt: %w", err)
 	}
 	jws := append(signingInput, '.')
 	jws = append(jws, []byte(base64.RawURLEncoding.EncodeToString(sig))...)
@@ -105,11 +105,11 @@ var _ sdjwtvc.KeyBinder = (*signerKeyBinder)(nil)
 func jwsSigningInput(header map[string]any, payload any) ([]byte, error) {
 	hdrBytes, err := json.Marshal(header)
 	if err != nil {
-		return nil, fmt.Errorf("wallet: failed to marshal jws header: %w", err)
+		return nil, fmt.Errorf("holderkeys: failed to marshal jws header: %w", err)
 	}
 	plBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("wallet: failed to marshal jws payload: %w", err)
+		return nil, fmt.Errorf("holderkeys: failed to marshal jws payload: %w", err)
 	}
 	enc := base64.RawURLEncoding
 	out := make([]byte, 0, enc.EncodedLen(len(hdrBytes))+1+enc.EncodedLen(len(plBytes)))
