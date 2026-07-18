@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -91,7 +92,7 @@ func New(cfg Config) (*Wallet, error) {
 
 	// Encrypted storage: SQLCipher DB + AES-GCM filesystem.
 	dbPath := filepath.Join(cfg.DataDir, storage.DbFilename)
-	eudiStorage, err := storage.NewStorage(cfg.AesKey, dbPath, cfg.DataDir)
+	eudiStorage, err := sqlcipherstorage.New(cfg.AesKey, dbPath, cfg.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("wallet: failed to open storage: %w", err)
 	}
