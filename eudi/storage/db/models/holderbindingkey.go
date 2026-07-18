@@ -62,7 +62,7 @@ func (k *HolderBindingKey) BeforeCreate(tx *gorm.DB) error {
 // ECDSAKeyMetadata stores EC-specific metadata.
 // KeyID is both the PK and FK to holderbindingkeys.id.
 type ECDSAKeyMetadata struct {
-	HolderBindingKeyID datatypes.UUID `gorm:"uniqueIndex"`
+	HolderBindingKeyID datatypes.UUID `gorm:"primaryKey"`
 
 	// e.g. P-256, P-384, secp256k1
 	CurveName string
@@ -71,7 +71,7 @@ type ECDSAKeyMetadata struct {
 // RSAKeyMetadata stores RSA-specific metadata.
 // KeyID is both the PK and FK to holderbindingkeys.id.
 type RSAKeyMetadata struct {
-	HolderBindingKeyID datatypes.UUID `gorm:"uniqueIndex"`
+	HolderBindingKeyID datatypes.UUID `gorm:"primaryKey"`
 
 	// e.g. 2048, 3072, 4096
 	ModulusBits int
