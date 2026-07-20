@@ -16,7 +16,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -62,29 +61,20 @@ type SdJwtVcDcqlHandler struct {
 // a VCT for which there is no stored batch). Pass nil to disable that path; the
 // handler will then return empty obtainable descriptors as before.
 //
-// An optional keyBinder may be supplied to override the default (storage-backed,
-// software-key) KB-JWT signer — e.g. to sign the Key Binding JWT in an external
-// WSCA/HSM. When omitted, the default software binder over the eudi storage is
-// used, preserving existing behavior.
+// keyBinder is the KB-JWT signer used when a presentation requires holder
+// binding. Pass sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(
+// eudiStorage.Db())) for the default software, storage-backed signer, or a
+// WSCA/HSM-backed implementation to keep the holder private key out of process.
 func NewSdJwtVcDcqlHandler(
 	eudiStorage storage.Storage,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
-	keyBinder ...sdjwtvc.KeyBinder,
+	keyBinder sdjwtvc.KeyBinder,
 ) *SdJwtVcDcqlHandler {
-	var binder sdjwtvc.KeyBinder
-	switch len(keyBinder) {
-	case 0:
-		binder = sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db()))
-	case 1:
-		binder = keyBinder[0]
-	default:
-		panic("eudi_sdjwt_dcql: at most one keyBinder may be provided")
-	}
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
-		keyBinder:       binder,
+		keyBinder:       keyBinder,
 		vctFetcher:      vctFetcher,
 		issuerFetcher:   issuerFetcher,
 	}
