@@ -94,7 +94,7 @@ func (s *SoftwareHolderSigner) GenerateKeys(num uint) ([]string, []*ecdsa.Public
 	defer s.mu.Unlock()
 	refs := make([]string, 0, num)
 	pubs := make([]*ecdsa.PublicKey, 0, num)
-	for i := uint(0); i < num; i++ {
+	for range num {
 		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			return nil, nil, fmt.Errorf("holderkeys: failed to generate holder key: %w", err)
