@@ -31,32 +31,37 @@ type Client struct {
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
-	// holderKeyBinder, when set, overrides the default software holder key
-	// binder used during issuance (e.g. a WSCA-backed binder).
+	// holderKeyBinder creates the holder binding keys and OpenID4VCI proofs of
+	// possession during issuance. It is a required dependency (software or
+	// WSCA-backed); see NewClient.
 	holderKeyBinder HolderKeyBinder
 
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
 }
 
+// NewClient builds an OpenID4VCI client. holderKeyBinder is required: pass
+// services.NewHolderBindingKeyService(config.Storage.Db()) for the default
+// software, storage-backed binder, or a WSCA-backed implementation to keep the
+// holder private key out of this process.
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
-	opts ...ClientOption,
+	holderKeyBinder HolderKeyBinder,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
+	if holderKeyBinder == nil {
+		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
+	}
 
-	c := &Client{
-		httpClient:     httpClient,
-		Configuration:  config,
-		holderVerifier: holderVerifier,
-	}
-	for _, opt := range opts {
-		opt(c)
-	}
-	return c, nil
+	return &Client{
+		httpClient:      httpClient,
+		Configuration:   config,
+		holderVerifier:  holderVerifier,
+		holderKeyBinder: holderKeyBinder,
+	}, nil
 }
 
 func (client *Client) AllowInsecureHttpForTesting() {

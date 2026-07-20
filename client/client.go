@@ -173,6 +173,7 @@ func New(
 		&http.Client{},
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
+		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 	)
 
 	if err != nil {

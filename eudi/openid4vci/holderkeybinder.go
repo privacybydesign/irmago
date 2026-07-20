@@ -21,13 +21,3 @@ type HolderKeyBinder interface {
 	// roll back generated keys when an issuance session fails.
 	RemoveKeys(ids []datatypes.UUID) error
 }
-
-// ClientOption customizes a Client at construction time.
-type ClientOption func(*Client)
-
-// WithHolderKeyBinder overrides the default (software) holder key binder used
-// during OpenID4VCI issuance — e.g. to bind holder keys to a WSCA. When not
-// set, the session falls back to the storage-backed software binder.
-func WithHolderKeyBinder(b HolderKeyBinder) ClientOption {
-	return func(c *Client) { c.holderKeyBinder = b }
-}

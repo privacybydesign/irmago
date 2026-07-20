@@ -137,11 +137,15 @@ func New(cfg Config) (*Wallet, error) {
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
 	}
-	var vciOpts []openid4vci.ClientOption
+	// Bind holder keys via the WSCA-backed factory when configured, otherwise
+	// use the default software, storage-backed binder.
+	var issuanceKeyBinder openid4vci.HolderKeyBinder
 	if cfg.IssuanceKeyBinderFactory != nil {
-		vciOpts = append(vciOpts, openid4vci.WithHolderKeyBinder(cfg.IssuanceKeyBinderFactory(eudiStorage)))
+		issuanceKeyBinder = cfg.IssuanceKeyBinderFactory(eudiStorage)
+	} else {
+		issuanceKeyBinder = services.NewHolderBindingKeyService(eudiStorage.Db())
 	}
-	vciClient, err := openid4vci.NewClient(&http.Client{}, conf, sdjwtvc.NewHolderVerificationProcessor(verifyCtx), vciOpts...)
+	vciClient, err := openid4vci.NewClient(&http.Client{}, conf, sdjwtvc.NewHolderVerificationProcessor(verifyCtx), issuanceKeyBinder)
 	if err != nil {
 		eudiStorage.Close()
 		return nil, fmt.Errorf("wallet: failed to build openid4vci client: %w", err)
