@@ -633,7 +633,7 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
 	// Use the injected holder key binder (e.g. WSCA-backed) when configured;
 	// otherwise fall back to the default software, storage-backed binder.
-	var keyBindingService HolderKeyBinder = s.holderKeyBinder
+	var keyBindingService = s.holderKeyBinder
 	if keyBindingService == nil {
 		keyBindingService = services.NewHolderBindingKeyService(s.storage.Db())
 	}

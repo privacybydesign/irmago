@@ -25,7 +25,7 @@ type signerKeyBinder struct {
 	clock  jwt.Clock
 }
 
-// newSignerKeyBinder returns a sdjwtvc.KeyBinder backed by the given HolderSigner.
+// NewSignerKeyBinder returns a sdjwtvc.KeyBinder backed by the given HolderSigner.
 func NewSignerKeyBinder(signer HolderSigner) sdjwtvc.KeyBinder {
 	return &signerKeyBinder{signer: signer, clock: eudi_jwt.NewSystemClock()}
 }
