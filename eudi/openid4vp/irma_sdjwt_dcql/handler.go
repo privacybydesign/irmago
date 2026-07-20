@@ -445,14 +445,22 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		}
 
 		// Always set RequestedValue on obtainable descriptors (at minimum with just the type).
-		// When specific values are requested, include the value.
+		// When specific values are requested, RequestedValues carries all of
+		// them (DCQL allows several acceptable values per claim) and
+		// RequestedValue duplicates the first for backwards compatibility.
+		for _, value := range claim.Values {
+			if s, ok := value.(string); ok {
+				attr.RequestedValues = append(attr.RequestedValues, clientmodels.AttributeValue{
+					Type:   clientmodels.AttributeType_String,
+					String: &s,
+				})
+			}
+		}
 		requestedValue := &clientmodels.AttributeValue{
 			Type: clientmodels.AttributeType_String,
 		}
-		if len(claim.Values) != 0 {
-			if firstValue, ok := claim.Values[0].(string); ok {
-				requestedValue.String = &firstValue
-			}
+		if len(attr.RequestedValues) != 0 {
+			requestedValue.String = attr.RequestedValues[0].String
 		}
 		attr.RequestedValue = requestedValue
 
