@@ -6,7 +6,7 @@ import "github.com/privacybydesign/irmago/eudi/holderkeys"
 // CGO-free eudi/holderkeys package, so consumers — e.g. the WSCA adapter in the
 // wallet-provider module, or a server-side (Postgres) holder — can implement and
 // wire it without importing this package, which pulls in sqlcipher (cgo) via
-// wallet.New. These aliases preserve the eudi/wallet API for existing callers.
+// wallet.New. These aliases preserve the wallet API for existing callers.
 type (
 	HolderSigner         = holderkeys.HolderSigner
 	SoftwareHolderSigner = holderkeys.SoftwareHolderSigner

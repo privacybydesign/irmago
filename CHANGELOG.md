@@ -6,8 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
-- `eudi/holderkeys`: the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) moved out of `eudi/wallet` into this CGO-free package, so a WSCA adapter or a server-side (Postgres) holder can implement and wire it without pulling in `eudi/wallet`'s sqlcipher (cgo) dependency. `eudi/wallet` re-exports the types (aliases), so existing callers are unaffected.
+- `eudi/holderkeys`: the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) moved out of the `wallet` package into this CGO-free package, so a WSCA adapter or a server-side (Postgres) holder can implement and wire it without pulling in the `wallet` package's sqlcipher (cgo) dependency. The `wallet` package re-exports the types (aliases), so existing callers are unaffected.
 - `storage.NewStorageWithDialector(dialector, fs)`: open the EUDI holder database on any GORM dialector (e.g. `gorm.io/driver/postgres`) rather than only sqlcipher, for server-side / multi-tenant deployments. `NewStorage` is unchanged (it builds the sqlcipher dialector and delegates). The caller owns the at-rest encryption posture of a non-sqlcipher driver.
+
+### Changed
+- The standalone EUDI SD-JWT VC wallet moved from `eudi/wallet` to the top-level `wallet` package (alongside `client`), reflecting that it is a wallet facade over `eudi/*` rather than part of the `eudi` protocol libraries. The package name is unchanged; only the import path changes (`github.com/privacybydesign/irmago/eudi/wallet` → `github.com/privacybydesign/irmago/wallet`).
 
 ### Fixed
 - EUDI holder key-metadata models (`ECDSAKeyMetadata`, `RSAKeyMetadata`) tagged `HolderBindingKeyID` as a unique index rather than the primary key the doc comment intends, so the models had no primary key. When GORM upserts the key-metadata association while storing a holder binding key it builds the `ON CONFLICT` target from the primary key; with none defined it emitted `ON CONFLICT DO UPDATE` with no target, which Postgres rejects (SQLSTATE 42601) — breaking every OpenID4VCI credential redemption on a Postgres-backed holder storage. `HolderBindingKeyID` is now `primaryKey`. Backwards-compatible: `AutoMigrate` is additive and keeps the existing unique index, which still satisfies the new `ON CONFLICT (holder_binding_key_id)` on both SQLite and Postgres.

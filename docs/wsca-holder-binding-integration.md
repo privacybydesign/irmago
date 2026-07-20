@@ -10,7 +10,7 @@ Cryptographic Application) · Repos: `irmago` + `wallet-provider` (SECDSA)
 >   external signer); `proofs.BuildWithES256Signer` (issuance PoP via an external
 >   signer); both seams made injectable —
 >   `eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler` takes an optional `KeyBinder`, and
->   `openid4vci.NewClient` takes `WithHolderKeyBinder`; `eudi/wallet.Config`
+>   `openid4vci.NewClient` takes `WithHolderKeyBinder`; `wallet.Config`
 >   exposes `HolderSigner` + `IssuanceKeyBinderFactory`. Unit tests prove a
 >   KB-JWT and an OpenID4VCI proof signed through an external signer verify
 >   against the holder public key. Whole module builds; existing tests pass.
@@ -154,7 +154,7 @@ already depends on nothing exotic here — `crypto/ecdsa` + `math/big`, or
    signer-based proof builder. (~40 lines + the proof builder.)
 3. **Define `HolderSigner`** and the `signerKeyBinder` adapter + signer proof
    builder. (New file(s), no behavior change to existing callers.)
-4. **`eudi/wallet.Config`** (the POC): add a `HolderSigner` field; when set, wire
+4. **`wallet.Config`** (the POC): add a `HolderSigner` field; when set, wire
    it into both the OpenID4VP handler and the OpenID4VCI client. When nil, the
    wallet behaves exactly as today (software keys).
 
@@ -211,7 +211,7 @@ Every holder-key signature needs the PIN. This changes the wallet flow: the
 `HolderSigner` must be able to obtain the PIN at issuance and presentation time.
 Plumbing:
 
-- The POC `eudi/wallet` gains a PIN provider callback carried by the WSCA
+- The POC `wallet` gains a PIN provider callback carried by the WSCA
   `HolderSigner`.
 - In irmamobile the existing PIN-entry UI feeds the same callback; the possession
   key comes from the native `HardwareSigner` already built for the WSCA
@@ -246,7 +246,7 @@ Presentation:
   `wallet-provider/go.mod`.
 - A demo/E2E driver (in `wallet-provider`, importing both) wires:
   WSCA server URL + software enclave + PIN → `WscaHolderSigner` →
-  `eudi/wallet.New(Config{HolderSigner: ...})` → run `Receive` then `Present`.
+  `wallet.New(Config{HolderSigner: ...})` → run `Receive` then `Present`.
 
 ## 10. Testing / running E2E
 
@@ -266,7 +266,7 @@ stand-in), and a test PIN.
 ## 11. Phased plan
 
 1. **irmago**: `HolderSigner` + `signerKeyBinder` + signer proof builder +
-   software `HolderSigner`; make both seams injectable; `eudi/wallet.Config`
+   software `HolderSigner`; make both seams injectable; `wallet.Config`
    option. Unit-tested, no behavior change by default.
 2. **wallet-provider**: `secdsa/irmawsca.WscaHolderSigner` over `walletmobile`;
    gated integration test.

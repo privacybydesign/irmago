@@ -4,7 +4,7 @@ Status: **Scaffolded (POC implemented)** · Scope: EUDI (European Digital
 Identity) SD-JWT VC wallet · Target repo: `github.com/privacybydesign/irmago`
 
 > **Implemented in this branch**
-> - `eudi/wallet` — the `Wallet` facade (`New`/`Receive`/`Present`/`Credentials`/
+> - `wallet` — the `Wallet` facade (`New`/`Receive`/`Present`/`Credentials`/
 >   `Logs`/`Reset`/`Close`), the `Policy` interface with `AutoApprovePolicy` and
 >   `FuncPolicy`, and headless OpenID4VCI + OpenID4VP handlers (pre-authorized
 >   **and** authorization-code grants; `direct_post` + `direct_post.jwt`).
@@ -14,7 +14,7 @@ Identity) SD-JWT VC wallet · Target repo: `github.com/privacybydesign/irmago`
 > - Tests: unit tests for the plan→selection policy logic and the wallet
 >   lifecycle (real SQLCipher), plus an opt-in end-to-end test
 >   (`WALLET_POC_OFFER`/`WALLET_POC_PRESENT`).
-> - Verified: `go build ./...`, `go vet`, and `go test ./eudi/wallet/...` pass;
+> - Verified: `go build ./...`, `go vet`, and `go test ./wallet/...` pass;
 >   the CLI runs a create→list→reset cycle against real storage.
 > - **Finding**: the EUDI credential database is not actually encrypted at rest
 >   (see §7) — surfaced, not fixed.
@@ -122,7 +122,7 @@ promotes that idea from test-only to a reusable component.
 
 ## 4. Proposed architecture
 
-New package: **`eudi/wallet`** (library) + a thin CLI under **`yivi/cli`** (or
+New package: **`wallet`** (library) + a thin CLI under **`yivi/cli`** (or
 `cmd/sdjwtvc-wallet`). Nothing else in the repo changes.
 
 ```
@@ -132,7 +132,7 @@ New package: **`eudi/wallet`** (library) + a thin CLI under **`yivi/cli`** (or
                        └───────────────────────┬─────────────────────┘
                                                │ calls
                        ┌───────────────────────▼─────────────────────┐
-                       │            eudi/wallet.Wallet (NEW)          │
+                       │            wallet.Wallet (NEW)          │
                        │  - Receive(offerURI)  → OpenID4VCI issuance  │
                        │  - Present(requestURI)→ OpenID4VP disclosure │
                        │  - Credentials() / Logs() / Reset()          │
@@ -331,7 +331,7 @@ them:
 
 ## 8. Work breakdown (suggested)
 
-1. `eudi/wallet` package skeleton: `Config`, `New`, `Close`, `Credentials`,
+1. `wallet` package skeleton: `Config`, `New`, `Close`, `Credentials`,
    `Logs`, `Reset` (pure wiring, ~1 day).
 2. Headless handlers + `Policy` (`AutoApprove`, `Allowlist`) and the
    plan→selection helper lifted from `client/openid4vp_adapters.go` (~1–2 days).
@@ -344,20 +344,20 @@ Total: roughly one to two weeks for a polished POC, most of it glue and tests.
 
 ## 9. Alternative considered: build on `client.Client`
 
-Instead of a new `eudi/wallet` package, the POC could construct a `client.Client`
+Instead of a new `wallet` package, the POC could construct a `client.Client`
 and drive it via `NewSession` / `HandleUserInteraction` (as the integration tests
 do). **Rejected as the primary approach** because `client.Client` mandates an
 IRMA configuration, keyshare signer, and bbolt storage even when only EUDI
 features are used — that is precisely the coupling a "standalone SD-JWT VC wallet
 POC" should shed. The integration-test path remains valuable as a reference and
-for the live E2E tests, but the clean-room `eudi/wallet` facade is the better
+for the live E2E tests, but the clean-room `wallet` facade is the better
 demonstration of the EUDI stack standing on its own.
 
 ## 10. Decisions
 
 Locked in for the POC:
 
-- **Form factor**: **library core (`eudi/wallet`) + CLI (`sdjwtvc-wallet`) + E2E
+- **Form factor**: **library core (`wallet`) + CLI (`sdjwtvc-wallet`) + E2E
   test harness** — all three. The library is the reusable unit; the CLI is the
   interactive demo; the test harness proves the lifecycle offline in CI.
 - **Issuance flows**: **both** Pre-Authorized Code (headless happy path) **and**

@@ -22,7 +22,7 @@ import (
 //
 // The default implementation (SoftwareHolderSigner) keeps ECDSA keys in memory
 // and reproduces today's behavior. A WSCA-backed implementation lives outside
-// irmago (in the wallet-provider module) and plugs in via eudi/wallet.Config.
+// irmago (in the wallet-provider module) and plugs in via wallet.Config.
 type HolderSigner interface {
 	// GenerateKeys creates num P-256 holder keys and returns, for each, a stable
 	// opaque reference plus its public key.

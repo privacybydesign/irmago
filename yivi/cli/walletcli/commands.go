@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/wallet"
+	"github.com/privacybydesign/irmago/wallet"
 	"github.com/spf13/cobra"
 )
 

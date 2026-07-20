@@ -1,13 +1,13 @@
 // Package walletcli provides the `yivi sdjwtvc-wallet` command tree: a small
 // command-line driver for the standalone EUDI SD-JWT VC proof-of-concept wallet
-// in eudi/wallet.
+// in the top-level wallet package.
 package walletcli
 
 import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/privacybydesign/irmago/eudi/wallet"
+	"github.com/privacybydesign/irmago/wallet"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/pbkdf2"
