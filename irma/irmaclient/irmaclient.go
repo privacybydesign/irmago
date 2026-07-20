@@ -609,8 +609,10 @@ func (client *IrmaClient) addCredSuggestion(
 		return false
 	}
 
-	// Show option to add extra cards of non-singleton
-	if (credType.IssueURL != nil && len(*credType.IssueURL) != 0) && !credType.IsSingleton && !fixedAttrValue {
+	// Show option to add extra cards of non-singleton credential types with a known issuance URL,
+	// regardless of whether the request pins a fixed attribute value: even when the user already
+	// holds a matching credential, they may want to obtain a fresh/different one of that type.
+	if (credType.IssueURL != nil && len(*credType.IssueURL) != 0) && !credType.IsSingleton {
 		return true
 	}
 
