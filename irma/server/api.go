@@ -406,22 +406,42 @@ func LogWarning(err error, msg ...string) error {
 	return log(logrus.WarnLevel, err, msg...)
 }
 
-// sensitiveHeaders lists HTTP header names that must not appear in logs.
-var sensitiveHeaders = map[string]struct{}{
-	"authorization": {},
-	"cookie":        {},
-	"set-cookie":    {},
-	"x-auth-token":  {},
+// loggableHeaders is the allowlist of HTTP header names that may be reported as
+// present in logs. The header value is never logged: an allowlisted header is
+// recorded with the constant marker "<present>", any other header with
+// "[redacted]". Logging only constants (never a header value) is what clears the
+// CodeQL clear-text-logging finding (CWE-312) — sanitizing the value is not a
+// barrier, since stripping CR/LF does not make a value non-sensitive. An
+// allowlist still fails closed: credentials and PII in unanticipated or
+// deployment-specific headers (e.g. Proxy-Authorization, X-Api-Key,
+// X-Forwarded-For, X-IRMA-Keyshare-Username) never leak into logs, and the
+// protection does not silently degrade as new headers are introduced.
+var loggableHeaders = map[string]struct{}{
+	"accept":                    {},
+	"accept-encoding":           {},
+	"accept-language":           {},
+	"cache-control":             {},
+	"connection":                {},
+	"content-length":            {},
+	"content-type":              {},
+	"host":                      {},
+	"user-agent":                {},
+	"x-irma-minprotocolversion": {},
+	"x-irma-maxprotocolversion": {},
 }
 
-// filterHeaders returns a copy of headers with sensitive values redacted.
+// filterHeaders returns a copy of headers in which no header value is ever
+// retained: allowlisted headers are reported with the constant marker "<present>"
+// (their presence is safe to record), every other header with "[redacted]". By
+// logging only constant strings instead of header values, the data flow CodeQL
+// traces for clear-text logging (CWE-312) is broken at the source.
 func filterHeaders(headers http.Header) http.Header {
 	filtered := make(http.Header, len(headers))
-	for k, v := range headers {
-		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
-			filtered[k] = []string{"[redacted]"}
+	for k := range headers {
+		if _, ok := loggableHeaders[strings.ToLower(k)]; ok {
+			filtered[k] = []string{"<present>"}
 		} else {
-			filtered[k] = v
+			filtered[k] = []string{"[redacted]"}
 		}
 	}
 	return filtered
@@ -441,7 +461,7 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 		if headers.Get("Content-Type") == "application/octet-stream" {
 			fields["message"] = hex.EncodeToString(message)
 		} else {
-			fields["message"] = string(message)
+			fields["message"] = common.SanitizeForLog(string(message))
 		}
 	}
 	if from != "" {

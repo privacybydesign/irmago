@@ -34,10 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `github.com/go-chi/chi/v5` 5.2.5 → 5.3.0 (host header handling)
   - `github.com/golang-jwt/jwt/v5` 5.2.2 → 5.3.1
   - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
-- Sanitize user-controlled strings before writing them to log entries to prevent log injection
-- Filter sensitive HTTP headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`) from request logs
-- Fix email header injection by using the parsed recipient address in the SMTP `To:` header
+- Sanitize user-controlled strings before writing them to log entries to prevent log injection, including serialized session and revocation requests, request bodies and HTTP header values
+- Record only which HTTP headers were present in request logs (allowlisted headers as `<present>`, all others as `[redacted]`) without ever logging a header value, preventing credentials and PII from leaking into logs
+- Fix email header injection by neutralizing CR/LF in recipient addresses written to the SMTP `To:` header and using the parsed addresses as the SMTP envelope recipients
 - Normalize file paths via `filepath.Clean` before filesystem operations
+- Reject issuer identifiers that would escape the private key ring folder, preventing path traversal through the credential type in a session or revocation request
 
 ### Changed
 - Replace `github.com/go-errors/errors` `WrapPrefix` calls with stdlib `fmt.Errorf` wrapping so `errors.Is`/`errors.As` traverse wrapped errors
