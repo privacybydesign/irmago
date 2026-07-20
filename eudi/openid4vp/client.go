@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // Handler is the callback interface for the OpenID4VP client session lifecycle.
@@ -99,7 +100,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		eudi.Logger.Infof("starting openid4vp session: %v", requestUri)
-		response, err := http.Get(requestUri)
+		response, err := common.HTTPClient.Get(requestUri)
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to get authorization request: %v", err)
 			return
@@ -282,7 +283,6 @@ func (session *openid4vpSession) perform() error {
 		return err
 	}
 
-	httpClient := http.Client{}
 	responseConfig := authorizationResponseConfig{
 		State:          session.request.State,
 		QueryResponses: queryResponses,
@@ -304,7 +304,7 @@ func (session *openid4vpSession) perform() error {
 		return err
 	}
 
-	response, err := httpClient.Do(responseReq)
+	response, err := common.HTTPClient.Do(responseReq)
 	if err != nil {
 		return err
 	}

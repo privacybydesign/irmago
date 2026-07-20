@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
+	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -42,7 +43,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	err = common.CopyDirectory(filepath.Join(testStoragePath, "eudi"), eudiAppDataPath)
 	require.NoError(t, err)
 
-	s, err := storage.NewStorage(aesKey, ":memory:", eudiAppDataPath)
+	s, err := sqlcipherstorage.New(aesKey, ":memory:", eudiAppDataPath)
 	require.NoError(t, err)
 
 	conf, err := eudi.NewConfiguration(s)
@@ -63,7 +64,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 		s.FileSystem(),
 		nil,
 	)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()))
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 

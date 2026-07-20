@@ -17,7 +17,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
-	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -68,17 +67,22 @@ type SdJwtVcDcqlHandler struct {
 // used to describe credentials the wallet has never seen (the verifier requests
 // a VCT for which there is no stored batch). Pass nil to disable that path; the
 // handler will then return empty obtainable descriptors as before.
+//
+// keyBinder is the KB-JWT signer used when a presentation requires holder
+// binding. Pass sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(
+// eudiStorage.Db())) for the default software, storage-backed signer, or a
+// WSCA/HSM-backed implementation to keep the holder private key out of process.
 func NewSdJwtVcDcqlHandler(
 	eudiStorage storage.Storage,
 	credentialStore db.CredentialStore,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
+	keyBinder sdjwtvc.KeyBinder,
 ) *SdJwtVcDcqlHandler {
-	keyService := services.NewHolderBindingKeyService(eudiStorage.Db())
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: credentialStore,
-		keyBinder:       sdjwtvc.NewDefaultKeyBinder(keyService),
+		keyBinder:       keyBinder,
 		vctFetcher:      vctFetcher,
 		issuerFetcher:   issuerFetcher,
 	}

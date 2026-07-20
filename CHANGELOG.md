@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Internal
+- Centralize ad-hoc `http.Client` instantiations into a single shared `common.HTTPClient`, giving one source of truth for outbound client configuration.
+
 ### Added
 - Support for the IETF OAuth Token Status List (draft-ietf-oauth-status-list-15) on SD-JWT VC credentials
   - New `eudi/credentials/statuslist` package: fetches, verifies, and decodes Status List Tokens (`application/statuslist+jwt`) over HTTP, with singleflight dedup, body-size caps, and zlib decoding for all four bit-sizes (1, 2, 4, 8)
@@ -12,10 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Status checks run at every credential lifecycle site: holder-side at issuance (fail-closed), verifier-side after SD-JWT VC verification, and a background sweep (`Client.RefreshStatuses`) keeps stored credentials' `LastKnownStatus` up to date. The background sweep checks one representative instance per batch — a batch's copies are the same credential and are revoked together, so one status entry stands in for the whole batch. At disclosure the wallet does not fail closed — a revoked instance is surfaced on the OpenID4VP disclosure plan with `Revoked=true` (matching IRMA), leaving the decision to the frontend and the verifier's own status check
   - Persistent SQLCipher-backed cache (`status_list_cache` table) lets the wallet survive cold starts and brief offline periods within a list's TTL. TTL comes from the token's own `ttl`/`exp` (draft-15 §8.2), falling back to the HTTP `max-age` when the token advertises neither, clamped to `[60s, 24h]`. Fail-closed on fetch/verify/decode errors past TTL
   - The `Client` exposes a `RefreshStatuses(ctx)` method for UI-initiated refreshes
+- `eudi/holderkeys`: a CGO-free package providing the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) so a WSCA adapter or a server-side (Postgres) holder can implement external holder-key signing without pulling in a sqlcipher (cgo) dependency.
+- Pluggable holder-key binding seams for external secure devices (WSCA/HSM): `openid4vci.NewClient` takes a required `HolderKeyBinder` and `eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler` a required `sdjwtvc.KeyBinder`, and `proofs.BuildWithES256Signer` signs the OpenID4VCI proof of possession via an external signer. Callers pass the software, storage-backed binder for the existing behaviour, or a WSCA/HSM-backed implementation.
 - `storage.NewStorageWithDialector(dialector, fs)`: open the EUDI holder database on any GORM dialector (e.g. `gorm.io/driver/postgres`) rather than only sqlcipher, for server-side / multi-tenant deployments. `NewStorage` is unchanged (it builds the sqlcipher dialector and delegates). The caller owns the at-rest encryption posture of a non-sqlcipher driver.
 
 ### Fixed
+- EUDI holder key-metadata models (`ECDSAKeyMetadata`, `RSAKeyMetadata`) tagged `HolderBindingKeyID` as a unique index rather than the primary key the doc comment intends, so the models had no primary key. When GORM upserts the key-metadata association while storing a holder binding key it builds the `ON CONFLICT` target from the primary key; with none defined it emitted `ON CONFLICT DO UPDATE` with no target, which Postgres rejects (SQLSTATE 42601) — breaking every OpenID4VCI credential redemption on a Postgres-backed holder storage. `HolderBindingKeyID` is now `primaryKey`. Backwards-compatible: `AutoMigrate` is additive and keeps the existing unique index, which still satisfies the new `ON CONFLICT (holder_binding_key_id)` on both SQLite and Postgres.
 - `AutoMigrate` of the EUDI holder models is now ordered parents-before-children, so it also runs on foreign-key-enforcing drivers (e.g. Postgres) and not only SQLite.
+- `eudi/storage` no longer transitively pulls in the cgo `sqlcipher` package. The sqlcipher-only constructor moved from `storage.NewStorage` to a new `eudi/storage/sqlcipherstorage` package as `sqlcipherstorage.New`, so a pure-Go dialector consumer (e.g. `gorm.io/driver/postgres`) can import `eudi/storage` and build without compiling sqlcipher — including under `CGO_ENABLED=1` / `go test -race`, which the old layout still forced. **Breaking:** callers of `storage.NewStorage(...)` now call `sqlcipherstorage.New(...)` (identical signature); `storage.NewStorageWithDialector` is unchanged.
 
 ## [1.1.1] - 2026-07-14
 ### Security
