@@ -48,9 +48,5 @@ func init() {
 	RootCmd.AddCommand(versionCmd)
 	RootCmd.AddCommand(irmacli.IrmaRootCmd)
 
-	// The sdjwtvc-wallet command is SQLCipher-backed (cgo) and is only wired in
-	// for cgo builds; see walletcli_cgo.go / walletcli_nocgo.go.
-	registerWalletCmd(logger)
-
 	cobra.AddTemplateFunc("insertHeaders", clihelpers.InsertHeaders)
 }

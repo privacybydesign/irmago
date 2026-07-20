@@ -173,12 +173,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # The current-build yivi is a cgo binary that dynamically links
-      # libsqlcipher (both the irma server and keyshare server run from it), so
-      # the runtime shared library must be present. Mirrors the clientside job.
-      - name: Install sqlcipher
-        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
-
       - name: Run integration test
         uses: ./.github/actions/integration-test
         with:
