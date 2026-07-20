@@ -1,4 +1,4 @@
-package mdoc
+package openid4vp
 
 import "fmt"
 

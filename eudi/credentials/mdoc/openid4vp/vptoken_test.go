@@ -1,12 +1,68 @@
-package mdoc
+package openid4vp
 
 import (
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+
+	"mdoc"
 )
+
+// buildHappyPathMDoc runs the full issuer -> holder pipeline once via
+// mdoc's exported API and returns everything a test in this package
+// needs — the local equivalent of mdoc's own (unexported, package-private)
+// testhelpers_test.go helper, which can't be shared across packages.
+func buildHappyPathMDoc(t *testing.T) (*mdoc.Issuer, *mdoc.Holder, *mdoc.Verifier, *mdoc.MDoc, mdoc.SessionTranscript, []byte, string, string) {
+	t.Helper()
+
+	issuer, err := mdoc.NewIssuer()
+	if err != nil {
+		t.Fatalf("NewIssuer: %v", err)
+	}
+	holder, err := mdoc.NewHolder()
+	if err != nil {
+		t.Fatalf("NewHolder: %v", err)
+	}
+
+	docType := "eu.europa.ec.av.1"
+	namespace := "eu.europa.ec.av.1"
+	claims := map[string]any{
+		"age_over_18": true,
+		"age_over_16": true,
+		"age_over_21": false,
+	}
+
+	credential, err := issuer.Issue(docType, namespace, claims, holder.PublicKey())
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	presented, err := mdoc.SelectiveDisclose(credential, namespace, []string{"age_over_18"})
+	if err != nil {
+		t.Fatalf("SelectiveDisclose: %v", err)
+	}
+
+	transcript, err := NewOpenID4VPSessionTranscript(
+		"redirect_uri:https://verifier.example.com/response",
+		"n-0S6_WzA2Mj",
+		"https://verifier.example.com/response",
+	)
+	if err != nil {
+		t.Fatalf("NewOpenID4VPSessionTranscript: %v", err)
+	}
+
+	deviceAuthBytes, err := holder.SignDeviceAuth(docType, transcript)
+	if err != nil {
+		t.Fatalf("SignDeviceAuth: %v", err)
+	}
+
+	verifier := mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
+
+	return issuer, holder, verifier, presented, transcript, deviceAuthBytes, docType, namespace
+}
 
 // TestVPTokenRoundTrips confirms NewVPTokenJSON + ParseVPTokenJSON is a
 // faithful round trip: the DeviceResponse that comes back out verifies
@@ -14,11 +70,11 @@ import (
 func TestVPTokenRoundTrips(t *testing.T) {
 	_, _, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
 
-	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	attached, err := mdoc.AttachDeviceSigned(presented, deviceAuthBytes)
 	if err != nil {
 		t.Fatalf("AttachDeviceSigned: %v", err)
 	}
-	resp := NewDeviceResponse(*attached)
+	resp := mdoc.NewDeviceResponse(*attached)
 
 	queryId := "proof_of_age"
 	vpToken, err := NewVPTokenJSON(queryId, resp)
@@ -54,11 +110,11 @@ func TestVPTokenRoundTrips(t *testing.T) {
 func TestVPTokenShape(t *testing.T) {
 	_, _, _, presented, _, deviceAuthBytes, _, _ := buildHappyPathMDoc(t)
 
-	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	attached, err := mdoc.AttachDeviceSigned(presented, deviceAuthBytes)
 	if err != nil {
 		t.Fatalf("AttachDeviceSigned: %v", err)
 	}
-	resp := NewDeviceResponse(*attached)
+	resp := mdoc.NewDeviceResponse(*attached)
 
 	queryId := "proof_of_age"
 	vpToken, err := NewVPTokenJSON(queryId, resp)
@@ -79,7 +135,7 @@ func TestVPTokenShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("credential is not valid base64url (no padding): %v", err)
 	}
-	var decodedResp DeviceResponse
+	var decodedResp mdoc.DeviceResponse
 	if err := cbor.Unmarshal(decoded, &decodedResp); err != nil {
 		t.Fatalf("decoded credential is not valid CBOR DeviceResponse: %v", err)
 	}
@@ -93,11 +149,11 @@ func TestVPTokenShape(t *testing.T) {
 // than silently returning a zero-value DeviceResponse.
 func TestVPTokenRejectsUnknownQueryId(t *testing.T) {
 	_, _, _, presented, _, deviceAuthBytes, _, _ := buildHappyPathMDoc(t)
-	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	attached, err := mdoc.AttachDeviceSigned(presented, deviceAuthBytes)
 	if err != nil {
 		t.Fatalf("AttachDeviceSigned: %v", err)
 	}
-	resp := NewDeviceResponse(*attached)
+	resp := mdoc.NewDeviceResponse(*attached)
 
 	vpToken, err := NewVPTokenJSON("proof_of_age", resp)
 	if err != nil {

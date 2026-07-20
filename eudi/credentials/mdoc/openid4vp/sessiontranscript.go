@@ -1,10 +1,12 @@
-package mdoc
+package openid4vp
 
 import (
 	"crypto/sha256"
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
+
+	"mdoc"
 )
 
 // NewOpenID4VPSessionTranscript builds a real, spec-shaped SessionTranscript
@@ -24,25 +26,24 @@ import (
 //	SessionTranscript = [null, null, Handover]
 //
 // clientId, nonce, and responseUri must be the exact same values sent in
-// the OpenID4VP Authorization Request (see openid4vp.AuthorizationRequest's
-// ClientId/Nonce/ResponseUri fields in this repo's eudi/openid4vp package)
-// — the holder and verifier each derive this independently, so any
-// mismatch produces a different digest and deviceAuth's signature check
-// fails.
+// the OpenID4VP Authorization Request (see this package's own
+// AuthorizationRequest's ClientId/Nonce/ResponseUri fields) — the holder
+// and verifier each derive this independently, so any mismatch produces a
+// different digest and deviceAuth's signature check fails.
 //
 // If Yivi ever needs response_mode=direct_post.jwt (encrypted responses),
 // this function will need a jwkThumbprint parameter — the CBOR null below
 // would become the SHA-256 JWK thumbprint of the verifier's response
 // encryption public key instead.
-func NewOpenID4VPSessionTranscript(clientId, nonce, responseUri string) (SessionTranscript, error) {
+func NewOpenID4VPSessionTranscript(clientId, nonce, responseUri string) (mdoc.SessionTranscript, error) {
 	handoverInfo := []any{clientId, nonce, nil, responseUri}
 	handoverInfoBytes, err := cbor.Marshal(handoverInfo)
 	if err != nil {
-		return SessionTranscript{}, fmt.Errorf("marshal handoverInfo: %w", err)
+		return mdoc.SessionTranscript{}, fmt.Errorf("marshal handoverInfo: %w", err)
 	}
 	digest := sha256.Sum256(handoverInfoBytes)
 
-	return SessionTranscript{
+	return mdoc.SessionTranscript{
 		Handover: []any{"OpenID4VPHandover", digest[:]},
 	}, nil
 }

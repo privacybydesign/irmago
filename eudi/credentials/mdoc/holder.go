@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	"math/big"
 
 	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
@@ -36,6 +37,18 @@ func NewHolder() (*Holder, error) {
 // stays inside Holder and is never returned.
 func (h *Holder) PublicKey() *ecdsa.PublicKey {
 	return &h.devicekey.PublicKey
+}
+
+// SignRawDigest signs digest with the holder's device private key and
+// returns the raw ECDSA (r, s) signature components — never the key
+// itself. Exists so protocol-specific packages outside this one (e.g.
+// openid4vci's proof-of-possession JWT, which needs the JWS R||S
+// signature encoding rather than COSE_Sign1) can get a real signature
+// from the device key without this package needing to expose the
+// private key directly — the same "ask the Secure Enclave to sign,
+// never extract the key" model described on NewHolder.
+func (h *Holder) SignRawDigest(digest []byte) (r, s *big.Int, err error) {
+	return ecdsa.Sign(rand.Reader, h.devicekey, digest)
 }
 
 // SignDeviceAuth builds and signs a fresh DeviceAuthentication for this session

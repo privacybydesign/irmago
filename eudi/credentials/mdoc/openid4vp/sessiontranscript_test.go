@@ -1,4 +1,4 @@
-package mdoc
+package openid4vp
 
 import (
 	"crypto/sha256"
@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+
+	"mdoc"
 )
 
 // TestOpenID4VPSessionTranscriptShape confirms the produced SessionTranscript
@@ -84,7 +86,7 @@ func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
 	}
 	baseDigest := base.Handover.([]any)[1].([]byte)
 
-	variants := map[string]SessionTranscript{}
+	variants := map[string]mdoc.SessionTranscript{}
 	variants["clientId"], _ = NewOpenID4VPSessionTranscript("client-b", "nonce-a", "https://a.example.com/response")
 	variants["nonce"], _ = NewOpenID4VPSessionTranscript("client-a", "nonce-b", "https://a.example.com/response")
 	variants["responseUri"], _ = NewOpenID4VPSessionTranscript("client-a", "nonce-a", "https://b.example.com/response")
@@ -105,11 +107,11 @@ func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
 // wrong nonce) correctly fails deviceAuth verification, since the two
 // sides would land on different SHA-256 digests.
 func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
-	issuer, err := NewIssuer()
+	issuer, err := mdoc.NewIssuer()
 	if err != nil {
 		t.Fatalf("NewIssuer: %v", err)
 	}
-	holder, err := NewHolder()
+	holder, err := mdoc.NewHolder()
 	if err != nil {
 		t.Fatalf("NewHolder: %v", err)
 	}
@@ -120,7 +122,7 @@ func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	presented, err := SelectiveDisclose(credential, namespace, []string{"age_over_18"})
+	presented, err := mdoc.SelectiveDisclose(credential, namespace, []string{"age_over_18"})
 	if err != nil {
 		t.Fatalf("SelectiveDisclose: %v", err)
 	}
@@ -138,7 +140,7 @@ func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 		t.Fatalf("SignDeviceAuth: %v", err)
 	}
 
-	verifier := NewVerifier([]*x509.Certificate{issuer.IACACert()})
+	verifier := mdoc.NewVerifier([]*x509.Certificate{issuer.IACACert()})
 	result := verifier.VerifyWithDeviceAuth(presented, namespace, docType, transcript, deviceAuthBytes)
 	if !result.Valid {
 		t.Fatalf("expected valid result, got error: %s", result.Error)

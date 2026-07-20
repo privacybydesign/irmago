@@ -1,8 +1,10 @@
-package mdoc
+package openid4vp
 
 import (
 	"fmt"
 	"net/url"
+
+	"mdoc"
 )
 
 // ============================================================
@@ -17,7 +19,7 @@ import (
 //	values.Add("state", config.State)
 //
 // state is the verifier's own anti-CSRF / session-correlation value (see
-// AuthorizationRequest.State in openid4vp.go) — opaque to this package,
+// AuthorizationRequest.State in this package) — opaque to this package,
 // carried through completely unchanged. Unlike nonce, it never enters any
 // hash or signature; it exists purely so the verifier's web server can
 // tell which pending session an incoming POST answers.
@@ -26,7 +28,7 @@ import (
 // NewDirectPostForm builds the application/x-www-form-urlencoded body a
 // holder POSTs to response_uri: resp serialized via NewVPTokenJSON under
 // queryId, alongside the verifier's own state value echoed back unchanged.
-func NewDirectPostForm(queryId, state string, resp DeviceResponse) (string, error) {
+func NewDirectPostForm(queryId, state string, resp mdoc.DeviceResponse) (string, error) {
 	vpToken, err := NewVPTokenJSON(queryId, resp)
 	if err != nil {
 		return "", fmt.Errorf("build vp_token: %w", err)
@@ -44,18 +46,18 @@ func NewDirectPostForm(queryId, state string, resp DeviceResponse) (string, erro
 // is responsible for checking the returned state matches what it
 // originally issued before trusting the response; this function only
 // decodes, it has no notion of what the "correct" state is.
-func ParseDirectPostForm(body, queryId string) (resp DeviceResponse, state string, err error) {
+func ParseDirectPostForm(body, queryId string) (resp mdoc.DeviceResponse, state string, err error) {
 	values, err := url.ParseQuery(body)
 	if err != nil {
-		return DeviceResponse{}, "", fmt.Errorf("decode form body: %w", err)
+		return mdoc.DeviceResponse{}, "", fmt.Errorf("decode form body: %w", err)
 	}
 	vpToken := values.Get("vp_token")
 	if vpToken == "" {
-		return DeviceResponse{}, "", fmt.Errorf("form body has no vp_token field")
+		return mdoc.DeviceResponse{}, "", fmt.Errorf("form body has no vp_token field")
 	}
 	resp, err = ParseVPTokenJSON(vpToken, queryId)
 	if err != nil {
-		return DeviceResponse{}, "", fmt.Errorf("parse vp_token: %w", err)
+		return mdoc.DeviceResponse{}, "", fmt.Errorf("parse vp_token: %w", err)
 	}
 	return resp, values.Get("state"), nil
 }

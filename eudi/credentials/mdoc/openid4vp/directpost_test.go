@@ -1,8 +1,10 @@
-package mdoc
+package openid4vp
 
 import (
 	"net/url"
 	"testing"
+
+	"mdoc"
 )
 
 // TestDirectPostFormRoundTrips confirms NewDirectPostForm + ParseDirectPostForm
@@ -12,11 +14,11 @@ import (
 func TestDirectPostFormRoundTrips(t *testing.T) {
 	_, _, verifier, presented, transcript, deviceAuthBytes, docType, namespace := buildHappyPathMDoc(t)
 
-	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	attached, err := mdoc.AttachDeviceSigned(presented, deviceAuthBytes)
 	if err != nil {
 		t.Fatalf("AttachDeviceSigned: %v", err)
 	}
-	resp := NewDeviceResponse(*attached)
+	resp := mdoc.NewDeviceResponse(*attached)
 
 	queryId := "proof_of_age"
 	wantState := "af0ifjsldkj"
@@ -48,11 +50,11 @@ func TestDirectPostFormRoundTrips(t *testing.T) {
 // eudi/openid4vp/response.go's createAuthorizationResponseHttpRequest shape.
 func TestDirectPostFormShape(t *testing.T) {
 	_, _, _, presented, _, deviceAuthBytes, _, _ := buildHappyPathMDoc(t)
-	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	attached, err := mdoc.AttachDeviceSigned(presented, deviceAuthBytes)
 	if err != nil {
 		t.Fatalf("AttachDeviceSigned: %v", err)
 	}
-	resp := NewDeviceResponse(*attached)
+	resp := mdoc.NewDeviceResponse(*attached)
 
 	body, err := NewDirectPostForm("proof_of_age", "af0ifjsldkj", resp)
 	if err != nil {
@@ -75,11 +77,11 @@ func TestDirectPostFormShape(t *testing.T) {
 // as empty, rather than being conflated with "field absent" or erroring.
 func TestDirectPostFormPreservesEmptyState(t *testing.T) {
 	_, _, _, presented, _, deviceAuthBytes, _, _ := buildHappyPathMDoc(t)
-	attached, err := AttachDeviceSigned(presented, deviceAuthBytes)
+	attached, err := mdoc.AttachDeviceSigned(presented, deviceAuthBytes)
 	if err != nil {
 		t.Fatalf("AttachDeviceSigned: %v", err)
 	}
-	resp := NewDeviceResponse(*attached)
+	resp := mdoc.NewDeviceResponse(*attached)
 
 	body, err := NewDirectPostForm("proof_of_age", "", resp)
 	if err != nil {
