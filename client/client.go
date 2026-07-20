@@ -122,6 +122,7 @@ func New(
 		eudiStorage,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
+		sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
 
@@ -172,6 +173,7 @@ func New(
 		common.HTTPClient,
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
+		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 	)
 
 	if err != nil {
