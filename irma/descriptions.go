@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -788,6 +789,28 @@ func (ct *CredentialType) IssuerIdentifier() IssuerIdentifier {
 
 func (ct *CredentialType) SchemeManagerIdentifier() SchemeManagerIdentifier {
 	return NewSchemeManagerIdentifier(ct.SchemeManagerID)
+}
+
+// ClientFaq returns the credential type's FAQ texts in the client-facing
+// model, for embedding in the CredentialDescriptors handed to frontends.
+// Returns nil when the scheme provides no FAQ content at all.
+func (ct *CredentialType) ClientFaq() *clientmodels.Faq {
+	if ct.FAQIntro == nil && ct.FAQPurpose == nil && ct.FAQContent == nil && ct.FAQHowto == nil {
+		return nil
+	}
+	convert := func(s *TranslatedString) *clientmodels.TranslatedString {
+		if s == nil {
+			return nil
+		}
+		t := clientmodels.TranslatedString(*s)
+		return &t
+	}
+	return &clientmodels.Faq{
+		Intro:   convert(ct.FAQIntro),
+		Purpose: convert(ct.FAQPurpose),
+		Content: convert(ct.FAQContent),
+		HowTo:   convert(ct.FAQHowto),
+	}
 }
 
 func (ct *CredentialType) Logo(conf *Configuration) string {
