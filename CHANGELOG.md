@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Internal
+- Centralize ad-hoc `http.Client` instantiations into a single shared `common.HTTPClient`, giving one source of truth for outbound client configuration.
+
 ### Added
 - `eudi/holderkeys`: a CGO-free package providing the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) so a WSCA adapter or a server-side (Postgres) holder can implement external holder-key signing without pulling in a sqlcipher (cgo) dependency.
 - Pluggable holder-key binding seams for external secure devices (WSCA/HSM): `openid4vci.NewClient` takes a `HolderKeyBinder`, `eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler` accepts an optional `sdjwtvc.KeyBinder`, and `proofs.BuildWithES256Signer` signs the OpenID4VCI proof of possession via an external signer. Defaults preserve the existing software-key behaviour.
