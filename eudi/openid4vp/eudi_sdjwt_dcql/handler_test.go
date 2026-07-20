@@ -683,6 +683,33 @@ func TestComposeUnobtainableDescriptor_VctFetchFails_UrlOnlyFallback(t *testing.
 	assert.Equal(t, []any{"email"}, desc.Attributes[0].ClaimPath)
 }
 
+func TestComposeUnobtainableDescriptor_ValueConstraints(t *testing.T) {
+	vctFetcher := &stubVctFetcher{errs: map[string]error{
+		"https://example.com/vct/email": errors.New("404"),
+	}}
+	h := newHandlerWithFetchers(vctFetcher, nil)
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://example.com/vct/email"]},
+		"claims": [{"path": ["email"], "values": ["a@example.com", "b@example.com"]}]
+	}`)
+
+	desc := h.composeUnobtainableDescriptor(query)
+	require.NotNil(t, desc)
+	require.Len(t, desc.Attributes, 1)
+	attr := desc.Attributes[0]
+
+	// The accepted values are surfaced so the user sees which values the
+	// verifier asked for, with RequestedValue duplicating the first for
+	// backwards compatibility.
+	require.Len(t, attr.RequestedValues, 2)
+	assert.Equal(t, "a@example.com", *attr.RequestedValues[0].String)
+	assert.Equal(t, "b@example.com", *attr.RequestedValues[1].String)
+	require.NotNil(t, attr.RequestedValue)
+	assert.Equal(t, "a@example.com", *attr.RequestedValue.String)
+}
+
 func TestComposeUnobtainableDescriptor_VctOk_NoIssuerField(t *testing.T) {
 	vctFetcher := &stubVctFetcher{docs: map[string]*typemetadata.VctTypeMetadata{
 		"https://example.com/vct/email": {

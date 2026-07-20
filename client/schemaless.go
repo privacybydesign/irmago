@@ -172,18 +172,25 @@ func createCredentialDescriptor(
 				requestedValue := &clientmodels.AttributeValue{
 					Type: clientmodels.AttributeType_String,
 				}
+				var requestedValues []clientmodels.AttributeValue
 				if at.Value != nil {
 					s := at.Value["en"]
 					if s == "" {
 						s = at.Value[""]
 					}
 					requestedValue.String = &s
+					// The IRMA protocol allows a single required value per
+					// attribute; expose it on RequestedValues too so
+					// frontends can read one canonical field regardless of
+					// the session protocol.
+					requestedValues = []clientmodels.AttributeValue{*requestedValue}
 				}
 				dn := clientmodels.TranslatedString(a.Name)
 				attributes = append(attributes, clientmodels.Attribute{
-					ClaimPath:      []any{a.ID},
-					DisplayName:    &dn,
-					RequestedValue: requestedValue,
+					ClaimPath:       []any{a.ID},
+					DisplayName:     &dn,
+					RequestedValue:  requestedValue,
+					RequestedValues: requestedValues,
 				})
 			}
 		}

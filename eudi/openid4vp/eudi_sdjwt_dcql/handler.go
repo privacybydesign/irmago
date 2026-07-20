@@ -293,7 +293,10 @@ func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata) clientmodels.Tr
 // queryAttributes maps each top-level DCQL claim path to a placeholder
 // Attribute (no Value), enriched with a display name from the VCT type
 // metadata when one is available. Used so the user sees which claims the
-// verifier was asking for, even though no credential is held.
+// verifier was asking for, even though no credential is held. When the claim
+// constrains the acceptable values, those are exposed on RequestedValues
+// (with RequestedValue duplicating the first for backwards compatibility) so
+// the user also sees which values the verifier accepts.
 func queryAttributes(query dcql.CredentialQuery, vctMeta *typemetadata.VctTypeMetadata) []clientmodels.Attribute {
 	if len(query.Claims) == 0 {
 		return nil
@@ -308,10 +311,23 @@ func queryAttributes(query dcql.CredentialQuery, vctMeta *typemetadata.VctTypeMe
 		if len(display) > 0 {
 			dn = &display
 		}
-		attrs = append(attrs, clientmodels.Attribute{
+		attr := clientmodels.Attribute{
 			ClaimPath:   append([]any{}, claim.Path...),
 			DisplayName: dn,
-		})
+		}
+		for _, value := range claim.Values {
+			if s, ok := value.(string); ok {
+				attr.RequestedValues = append(attr.RequestedValues, clientmodels.AttributeValue{
+					Type:   clientmodels.AttributeType_String,
+					String: &s,
+				})
+			}
+		}
+		if len(attr.RequestedValues) != 0 {
+			first := attr.RequestedValues[0]
+			attr.RequestedValue = &first
+		}
+		attrs = append(attrs, attr)
 	}
 	return attrs
 }
