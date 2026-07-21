@@ -570,20 +570,10 @@ func (client *IrmaClient) credCandidates(request irma.SessionRequest, con irma.A
 			// then the entire conjunction is unsatisfiable
 			satisfiable = false
 		}
-		// Determine whether the session request forces an attribute value for any attribute requested from this credential.
-		fixedAttrValue := false
-		for _, attr := range con {
-			if attr.Type.CredentialTypeIdentifier() != credTypeID {
-				continue
-			}
-			if attr.Value != nil {
-				fixedAttrValue = true
-			}
-		}
 		if len(c) == 0 {
 			satisfiable = false
 		}
-		if client.addCredSuggestion(request, credTypeID, fixedAttrValue, len(c) != 0) {
+		if client.addCredSuggestion(request, credTypeID, len(c) != 0) {
 			// When there are no candidates or when the credential is non-singleton, excluding some nonsensical cases,
 			// add an "empty" credential (i.e. without hash) as a suggestion to the user
 			c = append(c, &credCandidate{Type: credTypeID})
@@ -597,7 +587,7 @@ func (client *IrmaClient) credCandidates(request irma.SessionRequest, con irma.A
 // (i.e. without hash) with the disclosure candidates to the user as a suggestion.
 func (client *IrmaClient) addCredSuggestion(
 	request irma.SessionRequest, credTypeID irma.CredentialTypeIdentifier,
-	fixedAttrValue, haveCandidates bool,
+	haveCandidates bool,
 ) bool {
 	credType := client.Configuration.CredentialTypes[credTypeID]
 	credDeprecatedSince := credType.DeprecatedSince
