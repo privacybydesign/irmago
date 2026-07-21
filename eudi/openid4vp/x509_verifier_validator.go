@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
@@ -8,10 +9,13 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // RequestorCertificateStoreVerifierValidator validates OpenID4VP authorization
@@ -40,23 +44,50 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		return nil, nil, nil, fmt.Errorf("failed to parse auth request jwt: %v", err)
 	}
 
-	endEntityCert, err := getEndEntityCertFromX5cHeader(token)
+	leafCert, err := getEndEntityCertFromX5cHeader(token)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 	}
 
-	requestorInfo, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](endEntityCert)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get requestor info from certificate: %v", err)
+	// Try to get verifier metadata in order:
+	// 1. From the verifier metadata in the authorization request (if present)
+	// 2. From the certificate OID (if it's a Yivi issued certificate)
+	// 3. Use the CN from the certificate, without a logo, as a fallback (if all else fails)
+
+	requestorInfo := &scheme.RelyingPartyRequestor{}
+
+	// TODO: we'll need to figure out if/how we want to authorize on attribute level when we're dealing with a non-Yivi issued certificate. For now, we only support that functionality for Yivi issued certificates, and we authorize all attribute for certificates issued by third parties.
+
+	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
+		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
+
+		if authRequest.ClientMetadata.LogoUri != nil {
+			logoData, mimeType, err := helpers.DownloadRemoteImage(common.HTTPClient, *authRequest.ClientMetadata.LogoUri)
+			if err != nil {
+				// If the logo download fails, we log a warning but continue without the logo
+				eudi.Logger.Warnf("failed to download verifier logo from %q: %v", *authRequest.ClientMetadata.LogoUri, err)
+			} else {
+				requestorInfo.Organization.Logo = &scheme.Logo{
+					Data:     logoData,
+					MimeType: mimeType,
+				}
+			}
+		}
+	} else if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert); err == nil {
+		// Try to get the requestor info from the certificate. If this fails, most likely the certificate is not a Yivi issued certificate, and we'll fall back to the CN in the certificate
+		requestorInfo = info
+
+		// If the certificate is a Yivi issued certificate, we also validate the credential queries in the authorization request against the requestor's allowed queries in the certificate. This ensures that the verifier is only requesting credentials that it is authorized to request.
+		queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
+		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
+		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
+		}
+	} else {
+		requestorInfo.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}
 	}
 
-	queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
-	credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
-	if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
-	}
-
-	return &authRequest, endEntityCert, requestorInfo, nil
+	return &authRequest, leafCert, requestorInfo, nil
 }
 
 func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier() jwt.Keyfunc {
@@ -70,20 +101,35 @@ func (v *RequestorCertificateStoreVerifierValidator) createAuthRequestVerifier()
 		}
 
 		request := token.Claims.(*AuthorizationRequest)
-		prefix := "x509_san_dns:"
-
-		if !strings.HasPrefix(request.ClientId, prefix) {
-			return nil, fmt.Errorf("client_id expected to start with 'x509_san_dns:' but doesn't (%s)", request.ClientId)
-		}
-
-		hostname := strings.TrimPrefix(request.ClientId, prefix)
 
 		parsedCert, err := getEndEntityCertFromX5cHeader(token)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 		}
 
-		if err := eudi_jwt.VerifyCertificate(v.verificationContext, parsedCert, &hostname); err != nil {
+		var hostname *string = nil
+
+		switch {
+		case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns)):
+			h := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509SanDns))
+			hostname = &h
+
+		case strings.HasPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash)):
+			// x509_hash authenticates via the certificate hash rather than a DNS name,
+			// so the chain/revocation check is done without a hostname/SAN check and we leave `hostname` as nil.
+			expectedHash := strings.TrimPrefix(request.ClientId, string(ClientIdentifierPrefix_X509Hash))
+			hash := sha256.Sum256(parsedCert.Raw)
+			actualHash := base64.RawURLEncoding.EncodeToString(hash[:])
+			if actualHash != expectedHash {
+				return nil, fmt.Errorf("client_id certificate hash %q does not match leaf certificate hash %q", expectedHash, actualHash)
+			}
+
+		default:
+			return nil, fmt.Errorf("client_id expected to start with '%s' or '%s' but doesn't (%s)", ClientIdentifierPrefix_X509SanDns, ClientIdentifierPrefix_X509Hash, request.ClientId)
+		}
+
+		// Verify the certificate against the trusted chains and revocation lists, using the hostname if applicable.
+		if err := eudi_jwt.VerifyCertificate(v.verificationContext, parsedCert, hostname); err != nil {
 			return nil, fmt.Errorf("failed to verify relying party certificate: %v", err)
 		}
 
