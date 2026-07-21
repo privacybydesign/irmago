@@ -62,8 +62,7 @@ type CredentialStore interface {
 	DeleteBatchByHash(hash string) error
 
 	// ListInstancesWithStatusReference returns every IssuedCredentialInstance
-	// with a (status_list.uri, status_list.idx) pair, joined with its batch's
-	// IssuerURL.
+	// with a (status_list.uri, status_list.idx) pair.
 	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
 
 	// ListStatusReferencedInstanceStatuses returns the (batch hash,
