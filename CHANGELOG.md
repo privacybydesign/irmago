@@ -24,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The EUDI SQLCipher database was opened without its AES encryption key since v1.0.0, leaving `yivi-eudi.db` (holder binding keys, private keys, SD-JWT VC credentials and logs) unencrypted at rest despite the documented encryption-at-rest. The key is now passed to the connection so the database is encrypted.
 
 ### Internal
-- Add storage regression tests for versions 1.0.0 (intentionally plaintext EUDI database, exercises the plaintext→encrypted migration) and 1.1.1 (born-encrypted EUDI database)
+- Add storage regression test for version 1.0.0
+- Add prototype mDoc (ISO 18013-5) implementation for the EU Age Verification Blueprint (`eu.europa.ec.av.1`) under `eudi/credentials/mdoc`, covering issuer/holder/verifier flows, two-level IACA→DS certificate chain verification, `deviceKeyInfo`/`deviceAuth` device binding, selective disclosure, and an OpenID4VP-only presentation wire format (DCQL request, vp_token, direct_post form body with state). Not yet wired into any production issuance/verification path.
 
 ### Fixed
 - On first launch after upgrading, an existing plaintext `yivi-eudi.db` written by v1.0.0/v1.1.0 is transparently and atomically re-encrypted in place with no data loss; already-encrypted databases are left untouched.
