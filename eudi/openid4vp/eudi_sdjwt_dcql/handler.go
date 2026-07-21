@@ -170,7 +170,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Attributes:                  attributes,
 			ExpiryDate:                  expiryUnix(batch),
 			Image:                       image,
-			Revoked:                     h.liveRevoked(instance, batch.IssuerURL),
+			Revoked:                     h.liveRevoked(instance),
 			RevocationSupported:         instance.StatusListURI != nil,
 		}
 
@@ -211,7 +211,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 // past its own ttl and the re-fetch failed) it fails safe to revoked. Either
 // way it never blocks disclosure: revocation is surfaced as a flag for the
 // frontend, with the verifier as the backstop.
-func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstance, issuer string) bool {
+func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstance) bool {
 	if instance.StatusListURI == nil || instance.StatusListIdx == nil {
 		return false
 	}
@@ -226,7 +226,7 @@ func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstan
 	// checker's FetchTimeout and did:web signing-key resolution by the
 	// timeout-bounded HTTP client used for DID resolution (didweb.NewHTTPClient)
 	// — so this call cannot hang indefinitely.
-	status, err := h.statusChecker.Check(context.Background(), ref, issuer)
+	status, err := h.statusChecker.Check(context.Background(), ref)
 	if err != nil {
 		// Check is cache-aware: it serves the cached status list token while it is
 		// within its OWN ttl (draft-ietf-oauth-status-list §8.2) and re-fetches

@@ -78,9 +78,8 @@ func (s *credentialService) DeleteByHash(hash string) error {
 // (draft-ietf-oauth-status-list §13.2), so one entry's bit determines the whole
 // batch's status; re-checking every copy would be redundant work.
 //
-// Representatives are grouped by (uri, iss) so a status list shared across many
-// batches is fetched once; iss is part of the key so a cross-issuer URI re-use
-// can't borrow another issuer's cache slot.
+// Representatives are grouped by status list URI so a list shared across many
+// batches is fetched once.
 //
 // Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
 // the previous LastKnownStatus in place. A nil statusChecker makes this a no-op.
@@ -105,25 +104,23 @@ func (s *credentialService) RefreshStatuses(ctx context.Context) error {
 		representatives = append(representatives, inst)
 	}
 
-	type key struct{ uri, iss string }
-	groups := map[key][]db.CredentialStatusInstance{}
+	groups := map[string][]db.CredentialStatusInstance{}
 	for _, inst := range representatives {
-		k := key{uri: inst.StatusListURI, iss: inst.IssuerURL}
-		groups[k] = append(groups[k], inst)
+		groups[inst.StatusListURI] = append(groups[inst.StatusListURI], inst)
 	}
 
-	for k, group := range groups {
+	for uri, group := range groups {
 		// One Refresh per URI populates the cache; the per-idx Check calls
 		// below then read from the warm cache (no extra HTTP traffic).
-		if _, err := s.statusChecker.Refresh(ctx, statuslist.Reference{URI: k.uri}, k.iss); err != nil {
-			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(k.uri), err)
+		if _, err := s.statusChecker.Refresh(ctx, statuslist.Reference{URI: uri}); err != nil {
+			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(uri), err)
 			continue
 		}
 		now := time.Now()
 		for _, inst := range group {
-			st, err := s.statusChecker.Check(ctx, statuslist.Reference{URI: k.uri, Index: inst.StatusListIdx}, k.iss)
+			st, err := s.statusChecker.Check(ctx, statuslist.Reference{URI: uri, Index: inst.StatusListIdx})
 			if err != nil {
-				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, common.SanitizeForLog(k.uri), err)
+				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, common.SanitizeForLog(uri), err)
 				continue
 			}
 			if err := s.credentialStore.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {

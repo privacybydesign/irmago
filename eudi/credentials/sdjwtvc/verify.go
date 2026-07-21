@@ -200,7 +200,7 @@ func (v *sdJwtVcProcessor) runStatusListCheck(payload *IssuerSignedJwtPayload) e
 	// Threading a cancellable context down ~60 ParseAndVerifySdJwtVc call sites
 	// would only buy cancel-on-dismiss.
 	ctx := context.Background()
-	status, err := v.verificationContext.StatusChecker.Check(ctx, *payload.Status.StatusList, payload.Issuer)
+	status, err := v.verificationContext.StatusChecker.Check(ctx, *payload.Status.StatusList)
 	if err != nil {
 		return fmt.Errorf("status list check failed: %w", err)
 	}

@@ -36,47 +36,37 @@ func NewChecker(ctx VerificationContext, cache Cache) *Checker {
 
 // Check fetches/verifies the status list for ref (using the cache
 // when fresh) and returns the status at ref.Index.
-//
-// expectedIss MUST equal the iss claim of the Status List Token,
-// which by trust-model rule equals the iss of the credential being
-// checked.
-func (c *Checker) Check(ctx context.Context, ref Reference, expectedIss string) (Status, error) {
-	return c.check(ctx, ref, expectedIss, false)
+func (c *Checker) Check(ctx context.Context, ref Reference) (Status, error) {
+	return c.check(ctx, ref, false)
 }
 
 // Refresh ignores any cached entry and re-fetches the list. Used by
 // the background sweep to bring stored credential statuses up to
 // date independent of the Check-side TTL.
-func (c *Checker) Refresh(ctx context.Context, ref Reference, expectedIss string) (Status, error) {
-	return c.check(ctx, ref, expectedIss, true)
+func (c *Checker) Refresh(ctx context.Context, ref Reference) (Status, error) {
+	return c.check(ctx, ref, true)
 }
 
-func (c *Checker) check(ctx context.Context, ref Reference, expectedIss string, bypassCache bool) (Status, error) {
+func (c *Checker) check(ctx context.Context, ref Reference, bypassCache bool) (Status, error) {
 	if ref.URI == "" {
 		return StatusUnknown, fmt.Errorf("%w: empty URI", ErrUnauthorized)
 	}
 
 	now := c.nowFn()
 
-	// Cache and singleflight are keyed on ref.URI alone, not (URI, expectedIss).
-	// Safe because expectedIss is only enforced when
-	// ctx.RequireStatusListIssuerMatch is set (see verifier.go), and that flag is
-	// off in all production wiring, so a fetched+verified list does not depend on
-	// expectedIss. If that flag is ever wired on, this key MUST include
-	// expectedIss (credentialService.RefreshStatuses already groups by (uri, iss)),
-	// otherwise a concurrent caller with a different expectedIss could receive a
-	// list verified against the first caller's iss and skip the iss check.
+	// Cache and singleflight are keyed on ref.URI alone; the verified list
+	// content does not depend on the caller.
 
 	// Cache fast-path.
 	if !bypassCache {
 		if raw, expires, ok := c.cache.Get(ref.URI); ok && now.Before(expires) {
-			return c.verifyAndDecode(raw, ref, expectedIss, now)
+			return c.verifyAndDecode(raw, ref, now)
 		}
 	}
 
 	// Singleflight: collapse concurrent fetches for the same URI.
 	resAny, err, _ := c.sf.Do(ref.URI, func() (any, error) {
-		return c.fetchVerifyStore(ctx, ref.URI, expectedIss, now)
+		return c.fetchVerifyStore(ctx, ref.URI, now)
 	})
 	if err != nil {
 		return StatusUnknown, err
@@ -88,13 +78,13 @@ func (c *Checker) check(ctx context.Context, ref Reference, expectedIss string, 
 
 // fetchVerifyStore runs one fetch+verify cycle and writes the raw
 // JWT into the cache with the computed expiry.
-func (c *Checker) fetchVerifyStore(ctx context.Context, uri, expectedIss string, now time.Time) (*verifiedStatusList, error) {
+func (c *Checker) fetchVerifyStore(ctx context.Context, uri string, now time.Time) (*verifiedStatusList, error) {
 	res, err := fetchStatusListToken(ctx, c.ctx, uri)
 	if err != nil {
 		return nil, err
 	}
 
-	v, err := verifyStatusListToken(res.rawJwt, c.ctx, expectedIss, uri, now)
+	v, err := verifyStatusListToken(res.rawJwt, c.ctx, uri, now)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +114,8 @@ func (c *Checker) fetchVerifyStore(ctx context.Context, uri, expectedIss string,
 
 // verifyAndDecode runs the verify+decode path against an already
 // cached raw JWT.
-func (c *Checker) verifyAndDecode(raw []byte, ref Reference, expectedIss string, now time.Time) (Status, error) {
-	v, err := verifyStatusListToken(raw, c.ctx, expectedIss, ref.URI, now)
+func (c *Checker) verifyAndDecode(raw []byte, ref Reference, now time.Time) (Status, error) {
+	v, err := verifyStatusListToken(raw, c.ctx, ref.URI, now)
 	if err != nil {
 		// Cached value failed re-verification — drop it so the
 		// next call re-fetches.

@@ -31,7 +31,7 @@ func Test_Checker_Check_1Bit_AllValid(t *testing.T) {
 		Statuses: map[uint64]uint8{0: 0, 1: 0, 2: 0, 3: 0},
 	})
 
-	s, err := checker.Check(context.Background(), Reference{Index: 2, URI: srv.URL()}, "https://issuer.example")
+	s, err := checker.Check(context.Background(), Reference{Index: 2, URI: srv.URL()})
 	require.NoError(t, err)
 	require.Equal(t, StatusValid, s)
 }
@@ -44,7 +44,7 @@ func Test_Checker_Check_1Bit_Invalid(t *testing.T) {
 		Statuses: map[uint64]uint8{5: 1},
 	})
 
-	s, err := checker.Check(context.Background(), Reference{Index: 5, URI: srv.URL()}, "https://issuer.example")
+	s, err := checker.Check(context.Background(), Reference{Index: 5, URI: srv.URL()})
 	require.NoError(t, err)
 	require.Equal(t, StatusInvalid, s)
 }
@@ -57,7 +57,7 @@ func Test_Checker_Check_2Bit_Suspended(t *testing.T) {
 		Statuses: map[uint64]uint8{3: 2},
 	})
 
-	s, err := checker.Check(context.Background(), Reference{Index: 3, URI: srv.URL()}, "https://issuer.example")
+	s, err := checker.Check(context.Background(), Reference{Index: 3, URI: srv.URL()})
 	require.NoError(t, err)
 	require.Equal(t, StatusSuspended, s)
 }
@@ -70,7 +70,7 @@ func Test_Checker_Check_4Bit_ApplicationSpecific(t *testing.T) {
 		Statuses: map[uint64]uint8{0: 7},
 	})
 
-	s, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()}, "https://issuer.example")
+	s, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()})
 	require.NoError(t, err)
 	require.Equal(t, StatusApplicationSpecific, s)
 }
@@ -98,7 +98,7 @@ func Test_Checker_Check_CacheWriteFailure_NotFatal(t *testing.T) {
 		Statuses: map[uint64]uint8{2: 0},
 	})
 
-	s, err := checker.Check(context.Background(), Reference{Index: 2, URI: srv.URL()}, "https://issuer.example")
+	s, err := checker.Check(context.Background(), Reference{Index: 2, URI: srv.URL()})
 	require.NoError(t, err)
 	require.Equal(t, StatusValid, s)
 }
@@ -112,7 +112,7 @@ func Test_Checker_Check_8Bit_FullRange(t *testing.T) {
 	})
 
 	for idx, want := range map[uint64]Status{0: StatusValid, 1: StatusInvalid, 2: StatusSuspended, 3: StatusApplicationSpecific} {
-		s, err := checker.Check(context.Background(), Reference{Index: idx, URI: srv.URL()}, "https://issuer.example")
+		s, err := checker.Check(context.Background(), Reference{Index: idx, URI: srv.URL()})
 		require.NoError(t, err)
 		require.Equalf(t, want, s, "idx %d", idx)
 	}
@@ -128,7 +128,7 @@ func Test_Checker_Check_CachesAcrossCalls(t *testing.T) {
 	})
 
 	for range 5 {
-		_, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()}, "https://issuer.example")
+		_, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()})
 		require.NoError(t, err)
 	}
 	require.Equal(t, int64(1), srv.Hits(), "checker should hit backend once and cache subsequent reads")
@@ -143,11 +143,11 @@ func Test_Checker_Refresh_BypassesCache(t *testing.T) {
 		TTLSeconds: 3600,
 	})
 
-	_, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{Index: 0, URI: srv.URL()})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), srv.Hits())
 
-	_, err = checker.Refresh(context.Background(), Reference{Index: 0, URI: srv.URL()}, "https://issuer.example")
+	_, err = checker.Refresh(context.Background(), Reference{Index: 0, URI: srv.URL()})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), srv.Hits())
 }
@@ -183,7 +183,7 @@ func Test_Checker_Check_Singleflight_CollapsesConcurrentFetches(t *testing.T) {
 	for range n {
 		go func() {
 			defer wg.Done()
-			_, err := checker.Check(context.Background(), Reference{URI: srv.URL}, "https://issuer.example")
+			_, err := checker.Check(context.Background(), Reference{URI: srv.URL})
 			require.NoError(t, err)
 		}()
 	}
@@ -200,29 +200,12 @@ func Test_Checker_Check_FetchFailure_FailsClosed(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
 	checker := NewChecker(VerificationContext{X509Context: signer.X509VerificationContext()}, NewInMemoryCache())
 
-	_, err := checker.Check(context.Background(), Reference{URI: "http://127.0.0.1:0/nope"}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{URI: "http://127.0.0.1:0/nope"})
 	require.ErrorIs(t, err, ErrFetch)
 }
 
-func Test_Checker_Check_IssMismatch_FailsClosed_WhenRequireStatusListIssuerMatch(t *testing.T) {
-	signer := NewTestStatusListSigner(t)
-	srv := NewTestStatusListServer(t, nil)
-	checker := NewChecker(VerificationContext{
-		X509Context:                  signer.X509VerificationContext(),
-		RequireStatusListIssuerMatch: true,
-	}, NewInMemoryCache())
-	srv.Serve(t, signer, TestStatusListOpts{
-		Issuer:   "https://attacker.example",
-		Bits:     1,
-		Statuses: map[uint64]uint8{0: 0},
-	})
-
-	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
-	require.ErrorIs(t, err, ErrUnauthorized)
-}
-
-func Test_Checker_Check_IssMismatch_AllowedByDefault(t *testing.T) {
-	signer, srv, checker := makeSignerServerChecker(t) // RequireStatusListIssuerMatch off
+func Test_Checker_Check_DelegatedIssuer_Accepted(t *testing.T) {
+	signer, srv, checker := makeSignerServerChecker(t)
 	srv.Serve(t, signer, TestStatusListOpts{
 		Issuer:   "https://delegated-status-issuer.example",
 		Bits:     1,
@@ -230,9 +213,9 @@ func Test_Checker_Check_IssMismatch_AllowedByDefault(t *testing.T) {
 	})
 
 	// sub matches the fetch URI and the signature is trusted; the iss
-	// differs from the credential issuer but is accepted because
-	// RequireStatusListIssuerMatch is off (the spec binds via sub + signature).
-	s, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	// differs from the credential issuer but is accepted because the spec
+	// binds the token via sub + signature (§11.3).
+	s, err := checker.Check(context.Background(), Reference{URI: srv.URL()})
 	require.NoError(t, err)
 	require.Equal(t, StatusValid, s)
 }
@@ -249,7 +232,7 @@ func Test_Checker_Check_SubMismatch_FailsClosed(t *testing.T) {
 		Statuses: map[uint64]uint8{0: 0},
 	}))
 
-	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()})
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Contains(t, err.Error(), "sub")
 }
@@ -264,7 +247,7 @@ func Test_Checker_Check_IndexOutOfBounds_FailsClosed(t *testing.T) {
 
 	// Status array has 3 entries (= 1 byte at 1 bit each = 8 entries
 	// total). idx 999 must be rejected.
-	_, err := checker.Check(context.Background(), Reference{Index: 999, URI: srv.URL()}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{Index: 999, URI: srv.URL()})
 	require.ErrorIs(t, err, ErrIndexBounds)
 }
 
@@ -277,7 +260,7 @@ func Test_Checker_Check_TTLClampedToMinimum(t *testing.T) {
 		TTLSeconds: 1, // below TTLMin (60s)
 	})
 
-	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()})
 	require.NoError(t, err)
 	_, expires, ok := checker.cache.Get(srv.URL())
 	require.True(t, ok)
@@ -294,7 +277,7 @@ func Test_Checker_Check_TTLClampedToMaximum(t *testing.T) {
 		TTLSeconds: 7 * 24 * 3600, // above TTLMax (24h)
 	})
 
-	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()})
 	require.NoError(t, err)
 	_, expires, ok := checker.cache.Get(srv.URL())
 	require.True(t, ok)
@@ -313,7 +296,7 @@ func Test_Checker_Check_PrioritizesJwtTtlOverHttpMaxAge(t *testing.T) {
 	})
 
 	before := checker.nowFn()
-	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()})
 	require.NoError(t, err)
 	_, expires, ok := checker.cache.Get(srv.URL())
 	require.True(t, ok)
@@ -334,7 +317,7 @@ func Test_Checker_Check_FallsBackToHttpMaxAgeWhenNoJwtTtl(t *testing.T) {
 	})
 
 	before := checker.nowFn()
-	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{URI: srv.URL()})
 	require.NoError(t, err)
 	_, expires, ok := checker.cache.Get(srv.URL())
 	require.True(t, ok)
@@ -344,6 +327,6 @@ func Test_Checker_Check_FallsBackToHttpMaxAgeWhenNoJwtTtl(t *testing.T) {
 func Test_Checker_Check_EmptyURI_FailsClosed(t *testing.T) {
 	signer := NewTestStatusListSigner(t)
 	checker := NewChecker(VerificationContext{X509Context: signer.X509VerificationContext()}, NewInMemoryCache())
-	_, err := checker.Check(context.Background(), Reference{Index: 0}, "https://issuer.example")
+	_, err := checker.Check(context.Background(), Reference{Index: 0})
 	require.ErrorIs(t, err, ErrUnauthorized)
 }

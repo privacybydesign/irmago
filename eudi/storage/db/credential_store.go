@@ -10,17 +10,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// CredentialStatusInstance pairs an instance's status_list reference
-// with its issuing batch's IssuerURL. The IssuerURL is part of the
-// status list cache key so a malicious cross-issuer URI re-use cannot
-// borrow another issuer's cached status list. BatchID lets callers
-// select a single representative instance per batch.
+// CredentialStatusInstance is an instance's status_list reference.
+// BatchID lets callers select a single representative instance per batch.
 type CredentialStatusInstance struct {
 	InstanceID    datatypes.UUID
 	BatchID       datatypes.UUID
 	StatusListURI string
 	StatusListIdx uint64
-	IssuerURL     string
 }
 
 // BatchInstanceStatus pairs a batch's deterministic hash with one of its
@@ -224,13 +220,11 @@ func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatus
 	var out []CredentialStatusInstance
 	err := s.db.
 		Model(&models.IssuedCredentialInstance{}).
-		Select("issued_credential_instances.id AS instance_id, " +
-			"issued_credential_instances.credential_batch_id AS batch_id, " +
-			"issued_credential_instances.status_list_uri AS status_list_uri, " +
-			"issued_credential_instances.status_list_idx AS status_list_idx, " +
-			"credential_batches.issuer_url AS issuer_url").
-		Joins("JOIN credential_batches ON credential_batches.id = issued_credential_instances.credential_batch_id").
-		Where("issued_credential_instances.status_list_uri IS NOT NULL AND issued_credential_instances.status_list_idx IS NOT NULL").
+		Select("id AS instance_id, " +
+			"credential_batch_id AS batch_id, " +
+			"status_list_uri AS status_list_uri, " +
+			"status_list_idx AS status_list_idx").
+		Where("status_list_uri IS NOT NULL AND status_list_idx IS NOT NULL").
 		Scan(&out).Error
 	return out, err
 }

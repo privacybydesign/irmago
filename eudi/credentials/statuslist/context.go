@@ -1,6 +1,7 @@
 package statuslist
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -31,17 +32,6 @@ type VerificationContext struct {
 	// permitting did:web resolution over plain HTTP (dev/test only).
 	AllowInsecureDidWeb bool
 
-	// RequireStatusListIssuerMatch, when true, additionally requires the Status
-	// List Token's `iss` to equal the issuer of the credential being
-	// checked (the expectedIss passed to Check/Refresh). This is
-	// STRICTER than the spec, which binds the token to the credential
-	// via `sub` == `uri` plus a trusted signature and leaves issuer
-	// alignment to the trust model (draft-ietf-oauth-status-list-15
-	// §11.3). Default false: a delegated Status Issuer (e.g. a separate
-	// status-list service signing with its own key) is accepted as
-	// long as the signature is trusted and `sub` matches.
-	RequireStatusListIssuerMatch bool
-
 	// HTTPClient is used by the fetcher for the status list URI GET.
 	// nil falls back to http.DefaultClient (bounded by the fetcher's own
 	// context.WithTimeout). It is NOT threaded into signature-verification
@@ -60,60 +50,22 @@ type VerificationContext struct {
 }
 
 // payloadFromToken extracts the Status List Token's claims from a
-// signature-verified jwt.Token into our statusListPayload struct.
-// Returns an error if the mandatory status_list claim is missing or
-// shaped wrong.
-func payloadFromToken(token jwt.Token, out *statusListPayload) error {
-	if iss, ok := token.Issuer(); ok {
-		out.Issuer = iss
-	}
-	if sub, ok := token.Subject(); ok {
-		out.Subject = sub
-	}
-	if iat, ok := token.IssuedAt(); ok && !iat.IsZero() {
-		out.IssuedAt = iat.Unix()
-	}
-	if exp, ok := token.Expiration(); ok && !exp.IsZero() {
-		out.Expiry = exp.Unix()
-	}
-
-	if token.Has("ttl") {
-		var ttl float64
-		if err := token.Get("ttl", &ttl); err != nil {
-			return fmt.Errorf("ttl claim is not a number: %v", err)
-		}
-		out.TTLSeconds = int64(ttl)
-	}
-
+// signature-verified jwt.Token into our statusListPayload struct via a
+// JSON round-trip — the struct's json tags mirror the spec's claim
+// names (iat/exp marshal as Unix seconds, status_list as a nested
+// object). Returns an error if the mandatory status_list claim is
+// missing or a claim is shaped wrong for its struct field.
+func payloadFromToken(token jwt.Token) (statusListPayload, error) {
+	var out statusListPayload
 	if !token.Has("status_list") {
-		return fmt.Errorf("missing status_list claim")
+		return out, fmt.Errorf("missing status_list claim")
 	}
-	var slRaw map[string]any
-	if err := token.Get("status_list", &slRaw); err != nil {
-		return fmt.Errorf("status_list claim malformed: %v", err)
+	raw, err := json.Marshal(token)
+	if err != nil {
+		return out, fmt.Errorf("serialize token claims: %v", err)
 	}
-	bitsRaw, ok := slRaw["bits"]
-	if !ok {
-		return fmt.Errorf("status_list.bits missing")
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return out, fmt.Errorf("decode token claims: %v", err)
 	}
-	switch b := bitsRaw.(type) {
-	case float64:
-		out.StatusList.Bits = int(b)
-	case int:
-		out.StatusList.Bits = b
-	case int64:
-		out.StatusList.Bits = int(b)
-	default:
-		return fmt.Errorf("status_list.bits is not a number: %T", bitsRaw)
-	}
-	lstRaw, ok := slRaw["lst"]
-	if !ok {
-		return fmt.Errorf("status_list.lst missing")
-	}
-	lstStr, ok := lstRaw.(string)
-	if !ok {
-		return fmt.Errorf("status_list.lst is not a string: %T", lstRaw)
-	}
-	out.StatusList.Lst = lstStr
-	return nil
+	return out, nil
 }

@@ -62,14 +62,13 @@ func (v *verifiedStatusList) payloadTTLSignal() (time.Duration, bool) {
 // verifyStatusListToken parses, signature-verifies, and time-checks a
 // Status List Token.
 //
-//   - expectedURI MUST equal the sub claim — the spec's anti-substitution
-//     binding (§5.1, validation step §8.3): the fetched token's subject
-//     must be the very URI the credential pointed at.
-//   - expectedIss is only enforced when ctx.RequireStatusListIssuerMatch is set;
-//     it then MUST equal the iss claim (a stricter-than-spec
-//     iss(StatusListToken) == iss(credential) binding). Off by default
-//     so a delegated Status Issuer is accepted — see §11.3.
-func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss, expectedURI string, now time.Time) (*verifiedStatusList, error) {
+// expectedURI MUST equal the sub claim — the spec's anti-substitution
+// binding (§5.1, validation step §8.3): the fetched token's subject
+// must be the very URI the credential pointed at. The spec leaves
+// issuer alignment to the trust model (§11.3), so a delegated Status
+// Issuer signing with its own key is accepted as long as the signature
+// is trusted and sub matches.
+func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedURI string, now time.Time) (*verifiedStatusList, error) {
 	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{StatusListTokenTyp}, ctx.AllowInsecureDidWeb)
 
 	clock := ctx.Clock
@@ -101,18 +100,8 @@ func verifyStatusListToken(rawJwt []byte, ctx VerificationContext, expectedIss, 
 		}
 	}
 
-	if ctx.RequireStatusListIssuerMatch {
-		iss, ok := token.Issuer()
-		if !ok || iss == "" {
-			return nil, fmt.Errorf("%w: missing iss claim", ErrUnauthorized)
-		}
-		if iss != expectedIss {
-			return nil, fmt.Errorf("%w: iss mismatch: got %q, expected %q", ErrUnauthorized, iss, expectedIss)
-		}
-	}
-
-	var payload statusListPayload
-	if err := payloadFromToken(token, &payload); err != nil {
+	payload, err := payloadFromToken(token)
+	if err != nil {
 		return nil, fmt.Errorf("%w: invalid payload: %v", ErrUnauthorized, err)
 	}
 
