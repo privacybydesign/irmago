@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,7 +18,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
-	"github.com/privacybydesign/irmago/internal/common"
 	"gorm.io/datatypes"
 )
 
@@ -38,97 +36,33 @@ type CredentialService interface {
 	// DeleteByHash deletes a stored CredentialBatch by its deterministic hash.
 	// Returns ErrNotFound if no batch exists with that hash.
 	DeleteByHash(hash string) error
-
-	// RefreshStatuses re-fetches every stored instance's Token Status List and
-	// writes back its LastKnownStatus. No-op when status checking is disabled.
-	RefreshStatuses(ctx context.Context) error
 }
 
 type credentialService struct {
 	credentialStore       db.CredentialStore
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
-	// statusChecker performs Token Status List fetches for RefreshStatuses.
-	// Nil disables status refresh; the read path still surfaces the stored
-	// LastKnownStatus.
-	statusChecker *statuslist.Checker
+	// revocation supplies the per-batch revocation flags for the credential
+	// list view (see GetCredentialMetadataList).
+	revocation *RevocationService
 }
 
 func NewCredentialService(
 	credentialStore db.CredentialStore,
 	holderBindingKeyStore db.HolderBindingKeyStore,
 	fileStorage filesystem.FileSystemStorage,
-	statusChecker *statuslist.Checker,
+	revocation *RevocationService,
 ) CredentialService {
 	return &credentialService{
 		credentialStore:       credentialStore,
 		holderBindingKeyStore: holderBindingKeyStore,
 		fileStorage:           fileStorage,
-		statusChecker:         statusChecker,
+		revocation:            revocation,
 	}
 }
 
 func (s *credentialService) DeleteByHash(hash string) error {
 	return s.credentialStore.DeleteBatchByHash(hash)
-}
-
-// RefreshStatuses re-fetches Token Status Lists and updates stored statuses,
-// checking one representative instance per batch rather than every copy. A
-// batch's instances are the same logical credential and are revoked together
-// (draft-ietf-oauth-status-list §13.2), so one entry's bit determines the whole
-// batch's status; re-checking every copy would be redundant work.
-//
-// Representatives are grouped by status list URI so a list shared across many
-// batches is fetched once.
-//
-// Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
-// the previous LastKnownStatus in place. A nil statusChecker makes this a no-op.
-func (s *credentialService) RefreshStatuses(ctx context.Context) error {
-	if s.statusChecker == nil {
-		return nil
-	}
-	instances, err := s.credentialStore.ListInstancesWithStatusReference()
-	if err != nil {
-		return fmt.Errorf("load instances: %w", err)
-	}
-
-	// Keep one representative instance per batch. Any copy gives the same
-	// answer under the whole-batch-revoked assumption, so the first seen wins.
-	seenBatch := make(map[datatypes.UUID]struct{}, len(instances))
-	representatives := make([]db.CredentialStatusInstance, 0, len(instances))
-	for _, inst := range instances {
-		if _, ok := seenBatch[inst.BatchID]; ok {
-			continue
-		}
-		seenBatch[inst.BatchID] = struct{}{}
-		representatives = append(representatives, inst)
-	}
-
-	groups := map[string][]db.CredentialStatusInstance{}
-	for _, inst := range representatives {
-		groups[inst.StatusListURI] = append(groups[inst.StatusListURI], inst)
-	}
-
-	for uri, group := range groups {
-		// One Refresh per URI populates the cache; the per-idx Check calls
-		// below then read from the warm cache (no extra HTTP traffic).
-		if _, err := s.statusChecker.Refresh(ctx, statuslist.Reference{URI: uri}); err != nil {
-			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(uri), err)
-			continue
-		}
-		now := time.Now()
-		for _, inst := range group {
-			st, err := s.statusChecker.Check(ctx, statuslist.Reference{URI: uri, Index: inst.StatusListIdx})
-			if err != nil {
-				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, common.SanitizeForLog(uri), err)
-				continue
-			}
-			if err := s.credentialStore.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {
-				eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.InstanceID, err)
-			}
-		}
-	}
-	return nil
 }
 
 func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
@@ -137,27 +71,11 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		return nil, err
 	}
 
-	// Derive per-credential revocation from the stored Token Status List
-	// statuses (updated by the background sweep / RefreshStatuses). A batch's
-	// instances are the same credential (distinct status bits only for
-	// unlinkability) and are revoked together by the issuer, and StatusInvalid
-	// is permanent — so the batch is revoked as soon as any status-referenced
-	// instance reads StatusInvalid, and supports revocation if it carries any
-	// status reference at all. The sweep refreshes only one representative
-	// instance per batch, so in practice that representative's bit drives the
-	// flag; the "any invalid" rule still holds because non-representatives keep
-	// their issuance-time Valid.
-	instanceStatuses, err := s.credentialStore.ListStatusReferencedInstanceStatuses()
+	// Per-credential revocation flags are derived from stored Token Status List
+	// statuses (maintained by RevocationService.RefreshStatuses).
+	revoked, revocable, err := s.revocation.BatchRevocation()
 	if err != nil {
 		return nil, err
-	}
-	revocable := map[string]bool{}
-	revoked := map[string]bool{}
-	for _, st := range instanceStatuses {
-		revocable[st.Hash] = true
-		if statuslist.Status(st.LastKnownStatus) == statuslist.StatusInvalid {
-			revoked[st.Hash] = true
-		}
 	}
 
 	// Convert storage models to client models

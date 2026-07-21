@@ -3,15 +3,7 @@ package sdjwtvc
 import (
 	"fmt"
 	"strings"
-
-	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 )
-
-// NewSdJwtVcKeyProvider returns a JwtKeyProvider configured for the SD-JWT VC
-// 'typ' values defined by the spec (current and legacy).
-func NewSdJwtVcKeyProvider(allowInsecure bool) *eudi_jwt.JwtKeyProvider {
-	return eudi_jwt.NewJwtKeyProvider([]string{SdJwtVcTyp, SdJwtVcTyp_Legacy}, allowInsecure)
-}
 
 // splitSdJwtVc splits the sdjwt at the ~ characters and returns the individual components.
 // The IssuerSignedJwt is guaranteed to contain a value (if there's no error).

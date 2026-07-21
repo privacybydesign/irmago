@@ -9,7 +9,6 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -156,34 +155,28 @@ func TestFindCandidates_ValidCredentialIncluded(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1, "valid credential should appear as candidate")
 }
 
-// TestFindCandidates_RevokedViaLiveCheck pins the IRMA-parity contract using a
-// live Token Status List check: a revoked SD-JWT VC is NOT dropped or refused
-// during planning. It still appears as an owned candidate carrying Revoked=true
-// (read live from the status list), so the frontend can decide — the verifier's
-// own status check is the backstop.
-func TestFindCandidates_RevokedViaLiveCheck(t *testing.T) {
-	h, store := newTestHandler(t)
+// stubRevocation is an injectable RevocationChecker for handler tests: it lets
+// them exercise the disclosure planner's use of the flag without any Token
+// Status List machinery (that lives with services.RevocationService).
+type stubRevocation struct{ revoked bool }
 
-	signer := statuslist.NewTestStatusListSigner(t)
-	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
-		Issuer:   "https://issuer.example.com", // matches newTestBatch IssuerURL
-		Bits:     1,
-		Statuses: map[uint64]uint8{3: 1}, // idx 3 -> invalid (revoked)
-	})
-	h.statusChecker = statuslist.NewChecker(statuslist.VerificationContext{
-		X509Context: signer.X509VerificationContext(),
-	}, statuslist.NewInMemoryCache())
+func (s stubRevocation) IsRevoked(*models.IssuedCredentialInstance) bool { return s.revoked }
+
+// TestFindCandidates_RevokedSurfaced pins the IRMA-parity contract: a revoked
+// SD-JWT VC is NOT dropped or refused during planning. It still appears as an
+// owned candidate carrying Revoked=true (from the injected RevocationChecker),
+// so the frontend can decide — the verifier's own status check is the backstop.
+func TestFindCandidates_RevokedSurfaced(t *testing.T) {
+	h, store := newTestHandler(t)
+	h.revocation = stubRevocation{revoked: true}
 
 	batch := newTestBatch("hash-revoked", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
 	})
-	uri := srv.URL()
+	uri := "https://issuer.example.com/statuslist"
 	idx := uint64(3)
 	batch.Instances[0].StatusListURI = &uri
 	batch.Instances[0].StatusListIdx = &idx
-	// Stored status is deliberately left Valid so a green assertion proves the
-	// live check (not the stored value) drove Revoked=true.
-	batch.Instances[0].LastKnownStatus = uint8(statuslist.StatusValid)
 	require.NoError(t, store.StoreBatch(batch))
 
 	query := parseDcqlQuery(t, `{
@@ -196,102 +189,24 @@ func TestFindCandidates_RevokedViaLiveCheck(t *testing.T) {
 	result, err := h.FindCandidates(query)
 	require.NoError(t, err)
 	require.Len(t, result.OwnedCandidates, 1, "revoked credential must still be offered, not dropped")
-	assert.True(t, result.OwnedCandidates[0].Revoked, "live check reads the bit as invalid -> Revoked")
+	assert.True(t, result.OwnedCandidates[0].Revoked, "checker reports revoked -> Revoked")
 	assert.True(t, result.OwnedCandidates[0].RevocationSupported)
 }
 
-// TestFindCandidates_ValidViaLiveCheck: a live check reading StatusValid leaves
-// the candidate not revoked, even though the stored status is Invalid — proving
-// the live value (respecting the token's own ttl) overrides the stored one.
-func TestFindCandidates_ValidViaLiveCheck(t *testing.T) {
+// TestFindCandidates_NotRevoked: an instance the checker reports as not revoked
+// is offered with Revoked=false but RevocationSupported=true (it carries a
+// status_list reference).
+func TestFindCandidates_NotRevoked(t *testing.T) {
 	h, store := newTestHandler(t)
+	h.revocation = stubRevocation{revoked: false}
 
-	signer := statuslist.NewTestStatusListSigner(t)
-	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
-		Issuer:   "https://issuer.example.com",
-		Bits:     1,
-		Statuses: map[uint64]uint8{3: 0}, // idx 3 -> valid
-	})
-	h.statusChecker = statuslist.NewChecker(statuslist.VerificationContext{
-		X509Context: signer.X509VerificationContext(),
-	}, statuslist.NewInMemoryCache())
-
-	batch := newTestBatch("hash-valid-live", "https://example.com/EmailCredential", map[string]any{
-		"email": "test@example.com",
-	})
-	uri := srv.URL()
-	idx := uint64(3)
-	batch.Instances[0].StatusListURI = &uri
-	batch.Instances[0].StatusListIdx = &idx
-	batch.Instances[0].LastKnownStatus = uint8(statuslist.StatusInvalid) // overridden by live check
-	require.NoError(t, store.StoreBatch(batch))
-
-	result, err := h.FindCandidates(parseDcqlQuery(t, `{
-		"id": "q1",
-		"format": "dc+sd-jwt",
-		"meta": {"vct_values": ["https://example.com/EmailCredential"]},
-		"claims": [{"path": ["email"]}]
-	}`))
-	require.NoError(t, err)
-	require.Len(t, result.OwnedCandidates, 1)
-	assert.False(t, result.OwnedCandidates[0].Revoked, "live StatusValid -> not revoked")
-	assert.True(t, result.OwnedCandidates[0].RevocationSupported)
-}
-
-// TestFindCandidates_LiveCheckFails_FailsSafeRevoked: when the status list can't
-// be checked and no in-ttl cached value remains, the candidate is treated as
-// revoked. A stored status is NOT trusted past the token's own ttl (we do not
-// use a blanket TTLMax).
-func TestFindCandidates_LiveCheckFails_FailsSafeRevoked(t *testing.T) {
-	h, store := newTestHandler(t)
-
-	signer := statuslist.NewTestStatusListSigner(t)
-	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
-		Issuer: "https://issuer.example.com", Bits: 1, Statuses: map[uint64]uint8{3: 0},
-	})
-	srv.SetBody([]byte("not-a-status-list-jwt")) // fetch succeeds, verify fails -> Check errors
-	h.statusChecker = statuslist.NewChecker(statuslist.VerificationContext{
-		X509Context: signer.X509VerificationContext(),
-	}, statuslist.NewInMemoryCache()) // empty cache -> Check must fetch
-
-	batch := newTestBatch("hash-live-fail", "https://example.com/EmailCredential", map[string]any{
-		"email": "test@example.com",
-	})
-	uri := srv.URL()
-	idx := uint64(3)
-	batch.Instances[0].StatusListURI = &uri
-	batch.Instances[0].StatusListIdx = &idx
-	// Stored status Valid and freshly checked: must NOT be trusted, because the
-	// live check failed and there is no in-ttl cached token to fall back to.
-	now := time.Now()
-	batch.Instances[0].LastKnownStatus = uint8(statuslist.StatusValid)
-	batch.Instances[0].LastStatusCheckAt = &now
-	require.NoError(t, store.StoreBatch(batch))
-
-	result, err := h.FindCandidates(parseDcqlQuery(t, `{
-		"id": "q1",
-		"format": "dc+sd-jwt",
-		"meta": {"vct_values": ["https://example.com/EmailCredential"]},
-		"claims": [{"path": ["email"]}]
-	}`))
-	require.NoError(t, err)
-	require.Len(t, result.OwnedCandidates, 1)
-	assert.True(t, result.OwnedCandidates[0].Revoked, "no in-ttl status -> fail-safe revoked")
-}
-
-// TestFindCandidates_NoChecker_UsesStoredStatus: with no checker wired, the flag
-// reflects the last stored status (best effort).
-func TestFindCandidates_NoChecker_UsesStoredStatus(t *testing.T) {
-	h, store := newTestHandler(t) // no statusChecker
-
-	batch := newTestBatch("hash-nochecker", "https://example.com/EmailCredential", map[string]any{
+	batch := newTestBatch("hash-valid-stored", "https://example.com/EmailCredential", map[string]any{
 		"email": "test@example.com",
 	})
 	uri := "https://issuer.example.com/statuslist"
-	idx := uint64(7)
+	idx := uint64(3)
 	batch.Instances[0].StatusListURI = &uri
 	batch.Instances[0].StatusListIdx = &idx
-	batch.Instances[0].LastKnownStatus = uint8(statuslist.StatusInvalid)
 	require.NoError(t, store.StoreBatch(batch))
 
 	result, err := h.FindCandidates(parseDcqlQuery(t, `{
@@ -302,7 +217,8 @@ func TestFindCandidates_NoChecker_UsesStoredStatus(t *testing.T) {
 	}`))
 	require.NoError(t, err)
 	require.Len(t, result.OwnedCandidates, 1)
-	assert.True(t, result.OwnedCandidates[0].Revoked, "stored StatusInvalid surfaces when no checker")
+	assert.False(t, result.OwnedCandidates[0].Revoked, "checker reports not revoked -> not Revoked")
+	assert.True(t, result.OwnedCandidates[0].RevocationSupported)
 }
 
 // TestFindCandidates_RegionalLocale_KeyedByBaseLanguage pins the contract

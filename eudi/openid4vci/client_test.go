@@ -58,11 +58,12 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
+	credStore := db.NewCredentialStore(s.Db())
 	credentialService := services.NewCredentialService(
-		db.NewCredentialStore(s.Db()),
+		credStore,
 		db.NewHolderBindingKeyStore(s.Db()),
 		s.FileSystem(),
-		nil,
+		services.NewRevocationService(nil, credStore),
 	)
 	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()))
 	require.NoError(t, err)

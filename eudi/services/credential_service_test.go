@@ -1319,6 +1319,8 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 		credentialStore:       storeMock,
 		holderBindingKeyStore: &mockHolderBindingKeyStore{},
 		fileStorage:           fileStorageMock,
+		// BatchRevocation reads the same mock store; no live checker needed.
+		revocation: NewRevocationService(nil, storeMock),
 	}
 }
 

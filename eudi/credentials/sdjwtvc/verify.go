@@ -717,7 +717,7 @@ func extractClaimsAndDisclosuresDigestsFromToken(token jwt.Token) (map[string]an
 func (v *sdJwtVcProcessor) decodeJwtAndVerifyFromX5cHeader(
 	signedJwt []byte,
 ) (jwt.Token, *scheme.AttestationProviderRequestor, error) {
-	keyProvider := NewSdJwtVcKeyProvider(v.allowInsecureDidWeb)
+	keyProvider := eudi_jwt.NewJwtKeyProvider([]string{SdJwtVcTyp, SdJwtVcTyp_Legacy}, v.allowInsecureDidWeb)
 
 	// Create a context for the verification where we can retrieve the requestor info back
 	token, err := jwt.Parse(signedJwt,

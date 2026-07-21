@@ -8,18 +8,20 @@ package sessiontest
 //   - issuance-time holder check: the wallet fetches + verifies the
 //     statuslist+jwt the agent serves (signed by its did:web, sub == uri) and
 //     accepts the credential because the freshly-allocated bit reads VALID;
-//   - RefreshStatuses: the background sweep re-fetches for the stored instance;
+//   - RefreshStatuses: the background sweep re-fetches for the stored instance
+//     and writes back its LastKnownStatus;
 //   - disclosure-time revocation surfacing: after the issuer revokes the
 //     credential, a subsequent OpenID4VP disclosure still offers it in the
 //     plan, now carrying Revoked=true (IRMA parity — the frontend decides, the
 //     wallet does not fail closed).
 //
 // At disclosure the plan's Revoked flag comes from a live (cache-aware) Token
-// Status List check on the instance to be disclosed: the checker serves the
-// cached status list token while it is within its own ttl and re-fetches once
-// expired. If neither an in-ttl cached value nor a fresh fetch is available the
-// instance is treated as revoked (fail-safe). The wallet does not error the
-// session: it surfaces Revoked for the frontend, with the verifier as backstop.
+// Status List check on the instance, performed by services.RevocationService
+// (kept out of the disclosure planner itself). The checker serves the cached
+// token while it is within its own ttl and re-fetches once expired; if no
+// verifiable status is available it fails safe to revoked. The wallet does not
+// error the session — it surfaces Revoked for the frontend, with the verifier
+// as backstop.
 
 import (
 	"context"

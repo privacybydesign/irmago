@@ -49,6 +49,7 @@ type Client struct {
 	scheduler         gocron.Scheduler
 	sessionManager    sessionManager
 	credentialService services.CredentialService
+	revocationService *services.RevocationService
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -114,17 +115,19 @@ func New(
 	credStore := db.NewCredentialStore(eudiStorage.Db())
 	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
 
-	// Token Status List checker, shared by the credential service (background
-	// status refresh + revocation flags on the credential list), the holder-side
-	// verifier (sdJwtVcVerificationContext below), and the OpenID4VP disclosure
-	// handler (WithStatusChecker below, for the plan's Revoked flag).
+	// Token Status List checker + the single revocation service built on it.
+	// The checker is also shared with the holder-side verifier
+	// (sdJwtVcVerificationContext below). The revocation service is the one home
+	// for revocation: the background sweep, the credential list's flags, and the
+	// OpenID4VP disclosure planner's live Revoked flag all go through it.
 	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
 	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: &eudiConf.Issuers,
 		Clock:       eudi_jwt.NewSystemClock(),
 	}, statusListCache)
+	revocationService := services.NewRevocationService(statusChecker, credStore)
 
-	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), statusChecker)
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService)
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
@@ -142,6 +145,7 @@ func New(
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
 		sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
+		revocationService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
 
@@ -149,10 +153,6 @@ func New(
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
-
-	// Wire the checker into the EUDI DCQL handler so the disclosure plan's
-	// Revoked flag reflects a live (cache-aware) status check.
-	eudiSdJwtDcqlHandler.WithStatusChecker(statusChecker)
 
 	// SD-JWT verification checks if the SD-JWT (and the issuing party) can be trusted
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
@@ -223,6 +223,7 @@ func New(
 		didValidator:      didValidator,
 		scheduler:         scheduler,
 		credentialService: credentialService,
+		revocationService: revocationService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -246,7 +247,7 @@ func (client *Client) Close() error {
 // action. Errors during the sweep are logged; the previous
 // LastKnownStatus persists for any URI that fails to refresh.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
-	return client.credentialService.RefreshStatuses(ctx)
+	return client.revocationService.RefreshStatuses(ctx)
 }
 
 type SessionRequestData struct {

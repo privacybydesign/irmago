@@ -15,11 +15,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// newRefreshService builds a CredentialService for the status-refresh tests.
-// Only credentialStore + statusChecker are exercised by RefreshStatuses, so
-// the holder-binding and file storage deps are left nil.
-func newRefreshService(db *gorm.DB, checker *statuslist.Checker) CredentialService {
-	return NewCredentialService(dbpkg.NewCredentialStore(db), nil, nil, checker)
+// newRefreshService builds a RevocationService for the status-refresh tests.
+func newRefreshService(db *gorm.DB, checker *statuslist.Checker) *RevocationService {
+	return NewRevocationService(checker, dbpkg.NewCredentialStore(db))
 }
 
 func newTestRefreshDB(t *testing.T) *gorm.DB {

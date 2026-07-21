@@ -14,7 +14,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
-	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -47,6 +46,13 @@ func isHttpVct(vct string) bool {
 	return strings.HasPrefix(vct, "https://") || strings.HasPrefix(vct, "http://")
 }
 
+// RevocationChecker reports whether a stored credential instance is currently
+// revoked. The disclosure planner depends only on this narrow verb, keeping the
+// Token Status List mechanics out of this package (see services.RevocationService).
+type RevocationChecker interface {
+	IsRevoked(instance *models.IssuedCredentialInstance) bool
+}
+
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
 // credentials stored in the eudi storage (SQLite).
 type SdJwtVcDcqlHandler struct {
@@ -56,11 +62,9 @@ type SdJwtVcDcqlHandler struct {
 	vctFetcher      typemetadata.VctFetcher
 	issuerFetcher   typemetadata.IssuerFetcher
 
-	// statusChecker, when non-nil, performs a live (cache-aware) Token Status
-	// List check while building the disclosure plan, so a candidate's Revoked
-	// flag reflects the current status. Nil falls back to the stored
-	// LastKnownStatus. The check never blocks disclosure — see FindCandidates.
-	statusChecker *statuslist.Checker
+	// revocation determines a candidate's Revoked flag. Nil disables the check
+	// (candidates are then never flagged revoked).
+	revocation RevocationChecker
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
@@ -78,6 +82,7 @@ func NewSdJwtVcDcqlHandler(
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
 	keyBinder sdjwtvc.KeyBinder,
+	revocation RevocationChecker,
 ) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
@@ -85,15 +90,8 @@ func NewSdJwtVcDcqlHandler(
 		keyBinder:       keyBinder,
 		vctFetcher:      vctFetcher,
 		issuerFetcher:   issuerFetcher,
+		revocation:      revocation,
 	}
-}
-
-// WithStatusChecker installs a Token Status List checker used to determine the
-// Revoked flag on disclosure candidates via a live (cache-aware) check. When
-// unset, the handler falls back to the stored LastKnownStatus.
-func (h *SdJwtVcDcqlHandler) WithStatusChecker(c *statuslist.Checker) *SdJwtVcDcqlHandler {
-	h.statusChecker = c
-	return h
 }
 
 var _ dcql.DcqlCredentialQueryHandler = (*SdJwtVcDcqlHandler)(nil)
@@ -170,7 +168,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Attributes:                  attributes,
 			ExpiryDate:                  expiryUnix(batch),
 			Image:                       image,
-			Revoked:                     h.liveRevoked(instance),
+			Revoked:                     h.revocation != nil && h.revocation.IsRevoked(instance),
 			RevocationSupported:         instance.StatusListURI != nil,
 		}
 
@@ -201,45 +199,6 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	}
 
 	return result, nil
-}
-
-// liveRevoked reports whether the instance's credential is currently revoked.
-// It performs a live (cache-aware) Token Status List check on the instance so
-// the disclosure plan reflects the current status rather than the last
-// background sweep. When no checker is configured it falls back to the stored
-// status; when a checker is configured but the check fails (the cached token is
-// past its own ttl and the re-fetch failed) it fails safe to revoked. Either
-// way it never blocks disclosure: revocation is surfaced as a flag for the
-// frontend, with the verifier as the backstop.
-func (h *SdJwtVcDcqlHandler) liveRevoked(instance *models.IssuedCredentialInstance) bool {
-	if instance.StatusListURI == nil || instance.StatusListIdx == nil {
-		return false
-	}
-	if h.statusChecker == nil {
-		// No checker configured (status checking disabled): best-effort from the
-		// last stored status.
-		return statuslist.Status(instance.LastKnownStatus) == statuslist.StatusInvalid
-	}
-	ref := statuslist.Reference{URI: *instance.StatusListURI, Index: *instance.StatusListIdx}
-	// context.Background: the disclosure planning path carries no cancellable
-	// context. Both network steps are still bounded — the status-list GET by the
-	// checker's FetchTimeout and did:web signing-key resolution by the
-	// timeout-bounded HTTP client used for DID resolution (didweb.NewHTTPClient)
-	// — so this call cannot hang indefinitely.
-	status, err := h.statusChecker.Check(context.Background(), ref)
-	if err != nil {
-		// Check is cache-aware: it serves the cached status list token while it is
-		// within its OWN ttl (draft-ietf-oauth-status-list §8.2) and re-fetches
-		// once expired. An error therefore means no status is available within its
-		// validity window (the cached token is past its ttl and the re-fetch
-		// failed), so we cannot vouch for the credential — fail safe.
-		eudi.Logger.Warnf("statuslist: no in-ttl status for instance %s (live check failed), treating as revoked: %v", instance.ID, err)
-		return true
-	}
-	// Revoked means definitively INVALID — matching GetCredentialMetadataList
-	// and the no-checker branch above. Suspended / application-specific statuses
-	// are not surfaced as revoked here.
-	return status == statuslist.StatusInvalid
 }
 
 // composeUnobtainableDescriptor builds a CredentialDescriptor for a credential
