@@ -73,6 +73,7 @@ func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
 	t.Run("veramo verifier multi-vct first missing second matched", testVeramoVerifierMultiVctFirstMissingSecondMatched)
 	t.Run("veramo verifier requesting unsupported claim on owned credential surfaces it", testVeramoVerifierRequestingUnsupportedClaimOnOwnedCredentialSurfacesIt)
 	t.Run("disclosure in dutch locale", testDutchOpenID4VPEudiDisclosure)
+	t.Run("disclosure after locale switch", testOpenID4VPEudiDisclosureAfterLocaleSwitch)
 }
 
 func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
@@ -4947,4 +4948,64 @@ func testDutchOpenID4VPEudiDisclosure(t *testing.T) {
 	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOne.OwnedOptions[0]))
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+}
+
+// testOpenID4VPEudiDisclosureAfterLocaleSwitch pins that a locale switch
+// between issuance and disclosure carries through to OpenID4VP disclosure of
+// an EUDI credential: issued under "en", disclosed under "nl". The disclosure
+// log written by the post-switch session snapshots the Dutch text.
+func testOpenID4VPEudiDisclosureAfterLocaleSwitch(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Issuance runs under the English locale.
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Jan",
+		"family_name": "Jansen",
+		"email": "jan@voorbeeld.nl"
+	}`)
+
+	c.SetLocale("nl")
+
+	veramoSession := createVeramoVerifierDcqlSession(t)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOne.OwnedOptions)
+	owned := pickOne.OwnedOptions[0].Credentials[0]
+	require.Equal(t, "Test Credential (SD-JWT)", owned.Name,
+		"no Dutch credential display exists, so the name falls back to English")
+	require.Equal(t, "Test Uitgever", owned.Issuer.Name,
+		"the candidate must resolve through the locale active at session time, not at issuance time")
+	requireAttrsInOrder(t, owned.Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Voornaam"), Value: strVal("Jan")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("jan@voorbeeld.nl")},
+	)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOne.OwnedOptions[0]))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// The disclosure log was written under the Dutch locale and snapshots the
+	// Dutch text.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	var disclosure *clientmodels.LogInfo
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			disclosure = &logs[i]
+			break
+		}
+	}
+	require.NotNil(t, disclosure)
+	logCred := disclosure.DisclosureLog.Credentials[0]
+	require.Equal(t, "Test Uitgever", logCred.Issuer.Name)
+	requireAttrsInOrder(t, logCred.Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Voornaam"), Value: strVal("Jan")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("jan@voorbeeld.nl")},
+	)
 }

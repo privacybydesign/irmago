@@ -22,6 +22,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 		testDutchIrmaDisclosure,
 	)
 
+	runEudiSessionTest(t,
+		"disclosure after locale switch",
+		testIrmaDisclosureAfterLocaleSwitch,
+	)
+
 	runSessionTest(t,
 		"multi-singleton inner con produces single bundle",
 		testMultiSingletonInnerConProducesBundle,
@@ -2285,4 +2290,62 @@ func testDutchIrmaDisclosure(
 	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOne.OwnedOptions[0]))
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+}
+
+// testIrmaDisclosureAfterLocaleSwitch pins that a locale switch between
+// issuance and disclosure carries through to the classic IRMA disclosure
+// plan: the credential was issued under "en", but the candidates are built at
+// session time and must resolve through the now-active Dutch translations.
+func testIrmaDisclosureAfterLocaleSwitch(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Issuance runs under the English locale.
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	c.SetLocale("nl")
+
+	req := irma.NewDisclosureRequest()
+	req.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+		},
+	}
+	c.NewSession(2, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOne.OwnedOptions)
+	owned := pickOne.OwnedOptions[0].Credentials[0]
+	require.Equal(t, "Demo E-mailadres", owned.Name,
+		"the disclosure plan must resolve through the locale active at session time, not at issuance time")
+	requireAttrsInOrder(t, owned.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOne.OwnedOptions[0]))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+
+	// The classic disclosure log is rebuilt from the scheme at read time and
+	// follows the active locale as well.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	disclosure := findLog(logs, clientmodels.LogType_Disclosure)
+	require.NotNil(t, disclosure)
+	require.Equal(t, "Demo E-mailadres", disclosure.DisclosureLog.Credentials[0].Name)
 }

@@ -65,6 +65,11 @@ func testSessionHandlerForOpenID4VPWithIrmaSdJwts(t *testing.T) {
 		"single credential in dutch locale",
 		testDutchOpenID4VPIrmaSdJwtDisclosure,
 	)
+
+	runEudiSessionTest(t,
+		"disclosure after locale switch",
+		testDutchOpenID4VPIrmaSdJwtDisclosureAfterLocaleSwitch,
+	)
 }
 
 func testOpenID4VP_YiviScheme_SingleCredential(
@@ -1455,6 +1460,47 @@ func testDutchOpenID4VPIrmaSdJwtDisclosure(
 	owned := pickOne.OwnedOptions[0].Credentials[0]
 	require.Equal(t, "Demo E-mailadres", owned.Name)
 	require.Equal(t, "Demo test issuer", owned.Issuer.Name)
+	requireAttrsInOrder(t, owned.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOne.OwnedOptions[0]))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
+}
+
+// testDutchOpenID4VPIrmaSdJwtDisclosureAfterLocaleSwitch pins that a locale
+// switch between issuance and disclosure carries through to OpenID4VP
+// disclosure of an IRMA-issued SD-JWT: issued under "en", disclosed under
+// "nl".
+func testDutchOpenID4VPIrmaSdJwtDisclosureAfterLocaleSwitch(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Issuance runs under the English locale.
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	c.SetLocale("nl")
+
+	testSession := startOpenID4VPSessionWithAuthRequest(t, c, 2, sessionHandler, createEmailAuthRequestRequest())
+	session = testSession.ClientSession
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOne.OwnedOptions)
+	owned := pickOne.OwnedOptions[0].Credentials[0]
+	require.Equal(t, "Demo E-mailadres", owned.Name,
+		"the disclosure plan must resolve through the locale active at session time, not at issuance time")
 	requireAttrsInOrder(t, owned.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
