@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -438,6 +439,61 @@ func TestNonExistingCommit(t *testing.T) {
 		_, err = c.GenerateResponse(secrets, jwtt, 2364, big.NewInt(12345), irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1})
 		assert.Error(t, err, "GenerateResponse failed to detect non-existing commit")
 	}
+}
+
+// TestTrustedKeysConcurrentAccess is a regression test for the data race on the
+// unsynchronized Core.trustedKeys map (issue #594). DangerousAddTrustedPublicKey
+// is registered as a Configuration UpdateListener, so it runs on the request path
+// (on every scheme update), while the Generate* readers iterate the same map
+// concurrently. Before the fix this is a "concurrent map read and map write"
+// fatal panic. Run with the race detector to guard against a regression:
+//
+//	go test -race -run TestTrustedKeysConcurrentAccess ./internal/keysharecore/
+func TestTrustedKeysConcurrentAccess(t *testing.T) {
+	var key AESKey
+	_, err := rand.Read(key[:])
+	require.NoError(t, err)
+	c := NewKeyshareCore(&Configuration{DecryptionKeyID: 1, DecryptionKey: key, JWTPrivateKeyID: 1, JWTPrivateKey: jwtTestKey})
+	trustedKeyID := irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: 1}
+	c.DangerousAddTrustedPublicKey(trustedKeyID, testPubK1)
+
+	// Build valid user secrets and an auth JWT so the readers exercise their full
+	// path (they call verifyAccess after reading trustedKeys).
+	pin := generatePin()
+	secrets, err := c.NewUserSecrets(pin, nil)
+	require.NoError(t, err)
+	jwtt, err := validateAuth(t, c, nil, secrets, pin)
+	require.NoError(t, err)
+
+	const iterations = 200
+	var wg sync.WaitGroup
+
+	// Writer: keeps adding new trusted keys, mimicking the config UpdateListener
+	// that fires DangerousAddTrustedPublicKey on every scheme update.
+	wg.Go(func() {
+		for i := range iterations {
+			c.DangerousAddTrustedPublicKey(
+				irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: uint(i + 2)},
+				testPubK1,
+			)
+		}
+	})
+
+	// Readers: GeneratePs and GenerateCommitments both iterate trustedKeys, which
+	// is exactly the read that races with the writer above on the live map.
+	keyIDs := []irma.PublicKeyIdentifier{trustedKeyID}
+	for range 4 {
+		wg.Go(func() {
+			for range iterations {
+				_, err := c.GeneratePs(secrets, jwtt, keyIDs)
+				assert.NoError(t, err)
+				_, _, err = c.GenerateCommitments(secrets, jwtt, keyIDs)
+				assert.NoError(t, err)
+			}
+		})
+	}
+
+	wg.Wait()
 }
 
 // Test data
