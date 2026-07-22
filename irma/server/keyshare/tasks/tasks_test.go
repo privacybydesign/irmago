@@ -1,5 +1,4 @@
 //go:build !local_tests
-// +build !local_tests
 
 package tasks
 
@@ -127,7 +126,7 @@ func TestCleanupAccounts(t *testing.T) {
 }
 
 func xTimesEntry(x int, template string) (result string) {
-	for i := 0; i < x; i++ {
+	for i := range x {
 		nr := strconv.Itoa(i)
 		result += fmt.Sprintf(template, nr, nr)
 	}

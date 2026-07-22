@@ -242,7 +242,7 @@ func TestRelation_NullableFieldsRoundTrip(t *testing.T) {
 	// Update to non-nil values.
 	now := time.Now().Truncate(time.Second)
 	cover := []byte{0x89, 0x50, 0x4E, 0x47} // PNG magic bytes
-	require.NoError(t, db.Model(&got).Updates(map[string]interface{}{
+	require.NoError(t, db.Model(&got).Updates(map[string]any{
 		"published_at": now,
 		"cover_image":  cover,
 	}).Error)

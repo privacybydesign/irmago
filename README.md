@@ -2,14 +2,14 @@
 
 `irmago` is an IRMA implementation in Go. It contains multiple libraries and applications:
 
-* The commandline tool [`yivi`](https://yivi.app/docs/yivi-cli/), which contains an [IRMA server](https://yivi.app/docs/irma-server/); subcommands for manipulating [IRMA schemes](https://yivi.app/docs/schemes/), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
-* The Go library [`irmaserver`](https://yivi.app/docs/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
-* The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://yivi.app/docs/schemes/), parsing [IRMA metadata attributes](https://irma.app/docs/overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
+* The commandline tool [`yivi`](https://docs.yivi.app/irma-cli/), which contains an [IRMA server](https://docs.yivi.app/irma-server/); subcommands for manipulating [IRMA schemes](https://docs.yivi.app/schemes/), generating IRMA issuer public/private keypairs, performing test IRMA sessions on the command line; and more.
+* The Go library [`irmaserver`](https://docs.yivi.app/irma-server-lib/) providing a HTTP server that handles IRMA session with the [IRMA mobile app](https://github.com/privacybydesign/irma_mobile), and functions for starting and managing IRMA sessions.
+* The root package `irma` contains generic IRMA functionality used by all other components below, such as parsing [IRMA schemes](https://docs.yivi.app/schemes/), parsing [IRMA metadata attributes](https://docs.yivi.app/technical-overview#the-metadata-attribute), and structs representing messages of the IRMA protocol.
 * The Go package `irmaclient` is a library that serves as the client in the IRMA protocol; it can receive and disclose IRMA attributes and store and read them from storage. It also implements the [keyshare protocol](https://github.com/privacybydesign/irma_keyshare_server) and handles registering to keyshare servers. The [IRMA mobile app](https://github.com/privacybydesign/irma_mobile) uses `irmaclient`.
 
 ## Documentation
 
-Technical documentation of all components of `irmago` and more can be found at https://yivi.app/docs.
+Technical documentation of all components of `irmago` and more can be found at https://docs.yivi.app.
 
 ## Running (development)
 
@@ -22,7 +22,7 @@ For example, to start a simple IRMA session:
     IP=192.168.1.2 # Replace with your local IP address.
     docker-compose run -p 48680:48680 yivi irma session --disclose pbdf.sidn-pbdf.email.email --url "http://$IP:48680"
 
-You can run the `irma keyshare` services locally using the test configuration in `testdata/configurations`.
+You can run the `yivi irma keyshare` services locally using the test configuration in `testdata/configurations`.
 
     # To run the IRMA keyshare server
     docker-compose run -p 8080:8080 yivi irma keyshare server -c ./testdata/configurations/keyshareserver.yml
@@ -72,11 +72,11 @@ To install the latest released version of the `yivi` command line tool using Go,
 
     go install github.com/privacybydesign/irmago/yivi@latest
 
-You can also specify an exact version, from version v0.20.0 or newer. You should replace `v0.0.0` with the desired version number.
+You can also specify an exact version, from version v1.0.0 or newer. You should replace `v0.0.0` with the desired version number.
   
     go install github.com/privacybydesign/irmago/yivi@v0.0.0
 
-The `yivi` command is only available from v0.20.0 and newer. If you want to use an older version of IRMA, use the command below.
+The `yivi` command is only available from v1.0.0 and newer. If you want to use an older version of IRMA, use the command below.
 
     go install github.com/privacybydesign/irmago/irma@v0.0.0
 
@@ -146,7 +146,7 @@ docker pull redis
 docker run --name redis-test-instance -p 6379:6379 -d redis
 ```
 
-You can then start `irma` with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
+You can then start `yivi irma` with the store-type flag set to Redis and the [default configuration file](testdata/configurations/redis.yml).
 
 ```
 yivi irma server -vv --store-type redis --redis-addr "localhost:6379" --redis-allow-empty-password --redis-no-tls

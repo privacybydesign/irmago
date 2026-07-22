@@ -11,7 +11,7 @@ type DB struct {
 	*sql.DB
 }
 
-func (db *DB) ExecCountContext(ctx context.Context, query string, args ...interface{}) (int64, error) {
+func (db *DB) ExecCountContext(ctx context.Context, query string, args ...any) (int64, error) {
 	res, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
@@ -19,7 +19,7 @@ func (db *DB) ExecCountContext(ctx context.Context, query string, args ...interf
 	return res.RowsAffected()
 }
 
-func (db *DB) ExecUserContext(ctx context.Context, query string, args ...interface{}) error {
+func (db *DB) ExecUserContext(ctx context.Context, query string, args ...any) error {
 	c, err := db.ExecCountContext(ctx, query, args...)
 	if err != nil {
 		return err
@@ -30,7 +30,7 @@ func (db *DB) ExecUserContext(ctx context.Context, query string, args ...interfa
 	return nil
 }
 
-func (db *DB) QueryScanContext(ctx context.Context, query string, results []interface{}, args ...interface{}) error {
+func (db *DB) QueryScanContext(ctx context.Context, query string, results []any, args ...any) error {
 	res, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func (db *DB) QueryScanContext(ctx context.Context, query string, results []inte
 	return nil
 }
 
-func (db *DB) QueryUserContext(ctx context.Context, query string, results []interface{}, args ...interface{}) error {
+func (db *DB) QueryUserContext(ctx context.Context, query string, results []any, args ...any) error {
 	err := db.QueryScanContext(ctx, query, results, args...)
 	if err == sql.ErrNoRows {
 		return ErrUserNotFound
@@ -60,7 +60,7 @@ func (db *DB) QueryUserContext(ctx context.Context, query string, results []inte
 	return err
 }
 
-func (db *DB) QueryIterateContext(ctx context.Context, query string, f func(rows *sql.Rows) error, args ...interface{}) error {
+func (db *DB) QueryIterateContext(ctx context.Context, query string, f func(rows *sql.Rows) error, args ...any) error {
 	res, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err

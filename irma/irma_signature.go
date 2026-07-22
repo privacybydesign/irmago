@@ -59,7 +59,7 @@ func ASN1ConvertSignatureNonce(message string, nonce *big.Int, timestamp *atum.T
 	if n == nil {
 		n = gobig.NewInt(0)
 	}
-	tohash := []interface{}{n, new(gobig.Int).SetBytes(msgHash[:])}
+	tohash := []any{n, new(gobig.Int).SetBytes(msgHash[:])}
 	if timestamp != nil {
 		tohash = append(tohash, timestamp.Sig.Data)
 	}

@@ -138,7 +138,7 @@ func libraryRequest(
 		resultchan <- r
 	}, "")
 	if err != nil {
-		return nil, errors.WrapPrefix(err, "IRMA session failed", 0)
+		return nil, fmt.Errorf("IRMA session failed: %w", err)
 	}
 
 	// Enable pairing if necessary
@@ -147,27 +147,27 @@ func libraryRequest(
 		optionsRequest := irma.NewFrontendOptionsRequest()
 		optionsRequest.PairingMethod = irma.PairingMethodPin
 		if sessionOptions, err = irmaServer.SetFrontendOptions(requestorToken, &optionsRequest); err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to enable pairing", 0)
+			return nil, fmt.Errorf("failed to enable pairing: %w", err)
 		}
 	}
 
 	// Print QR code
 	if err := printQr(qr, noqr); err != nil {
-		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
+		return nil, fmt.Errorf("failed to print QR: %w", err)
 	}
 
 	if pairing {
 		// Listen for session status
 		statuschan, err := irmaServer.SessionStatus(requestorToken)
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to start listening for session statuses", 0)
+			return nil, fmt.Errorf("failed to start listening for session statuses: %w", err)
 		}
 
 		err = handlePairing(sessionOptions, statuschan, func() error {
 			return irmaServer.PairingCompleted(requestorToken)
 		})
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to handle pairing", 0)
+			return nil, fmt.Errorf("failed to handle pairing: %w", err)
 		}
 	}
 
@@ -194,14 +194,14 @@ func serverRequest(
 		optionsRequest.PairingMethod = irma.PairingMethodPin
 		err = transport.Post("frontend/options", sessionOptions, optionsRequest)
 		if err != nil {
-			return nil, errors.WrapPrefix(err, "Failed to enable pairing", 0)
+			return nil, fmt.Errorf("failed to enable pairing: %w", err)
 		}
 	}
 
 	// Print session QR
 	Logger.Debug("QR: ", prettyprint(qr))
 	if err := printQr(qr, noqr); err != nil {
-		return nil, errors.WrapPrefix(err, "Failed to print QR", 0)
+		return nil, fmt.Errorf("failed to print QR: %w", err)
 	}
 
 	statuschan := make(chan irma.ServerStatus)
@@ -216,20 +216,18 @@ func serverRequest(
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 
 		if pairing {
 			err = handlePairing(sessionOptions, statuschan, func() error {
 				err = transport.Post("frontend/pairingcompleted", nil, nil)
 				if err != nil {
-					return errors.WrapPrefix(err, "Failed to complete pairing", 0)
+					return fmt.Errorf("failed to complete pairing: %w", err)
 				}
 				return nil
 			})
 			if err != nil {
-				err = errors.WrapPrefix(err, "Failed to handle pairing", 0)
+				err = fmt.Errorf("failed to handle pairing: %w", err)
 				return
 			}
 		} else {
@@ -247,7 +245,7 @@ func serverRequest(
 			err = errors.Errorf("Unexpected status: %s", status)
 			return
 		}
-	}()
+	})
 
 	wg.Wait()
 

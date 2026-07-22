@@ -179,7 +179,7 @@ func (s sqlRevStorage) Close() error {
 // Exists implements revocationRecordStorage interface.
 func (s sqlRevStorage) Exists(id CredentialTypeIdentifier, pkCounter uint) (bool, error) {
 	var c int64
-	err := s.gorm.Model((*AccumulatorRecord)(nil)).Where(map[string]interface{}{"cred_type": id, "pk_counter": pkCounter}).Count(&c).Error
+	err := s.gorm.Model((*AccumulatorRecord)(nil)).Where(map[string]any{"cred_type": id, "pk_counter": pkCounter}).Count(&c).Error
 	if err != nil {
 		Logger.WithError(err).Error("Failed to check if accumulator exists in database")
 		return false, errRevocationDB
@@ -216,7 +216,7 @@ func (s sqlRevStorage) LatestAccumulatorUpdates(id CredentialTypeIdentifier, pkC
 	if err := s.gorm.Transaction(func(tx *gorm.DB) error {
 		// Find all accumulators for the given credential type.
 		var accs []*AccumulatorRecord
-		where := map[string]interface{}{"cred_type": id}
+		where := map[string]any{"cred_type": id}
 		// pkCounter is optional, so if it is specified we add it to the query.
 		if pkCounter != nil {
 			where["pk_counter"] = *pkCounter
@@ -289,7 +289,7 @@ func (s sqlRevStorage) AppendAccumulatorUpdate(
 				return err
 			}
 		} else {
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&accs, map[string]interface{}{"cred_type": id}).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&accs, map[string]any{"cred_type": id}).Error; err != nil {
 				return err
 			}
 		}
@@ -298,7 +298,7 @@ func (s sqlRevStorage) AppendAccumulatorUpdate(
 		heads := make(map[uint]revocationUpdateHead, len(accs))
 		for _, acc := range accs {
 			var event *EventRecord
-			if err := tx.Last(&event, map[string]interface{}{"cred_type": id, "pk_counter": *acc.PKCounter}).Error; err != nil {
+			if err := tx.Last(&event, map[string]any{"cred_type": id, "pk_counter": *acc.PKCounter}).Error; err != nil {
 				return err
 			}
 			heads[*acc.PKCounter] = revocationUpdateHead{acc.SignedAccumulator(), event.Event()}
@@ -381,7 +381,7 @@ func (s sqlRevStorage) DeleteExpiredIssuanceRecords() error {
 // txIssuanceRecords returns all issuance records matching the given credential type, revocation key and issuance time within
 // the given GORM database transaction. If the given issuance time is zero, then the issuance time is being ignored as condition.
 func txIssuanceRecords(tx *gorm.DB, id CredentialTypeIdentifier, key string, issued time.Time) ([]*IssuanceRecord, error) {
-	where := map[string]interface{}{"cred_type": id, "revocationkey": key, "revoked_at": 0}
+	where := map[string]any{"cred_type": id, "revocationkey": key, "revoked_at": 0}
 	if !issued.IsZero() {
 		where["issued"] = issued.UnixNano()
 	}
@@ -398,7 +398,7 @@ func txIssuanceRecords(tx *gorm.DB, id CredentialTypeIdentifier, key string, iss
 }
 
 // Printf implements the gorm.io/gorm/logger Writer interface.
-func (l sqlTraceLogger) Printf(format string, args ...interface{}) {
+func (l sqlTraceLogger) Printf(format string, args ...any) {
 	Logger.Tracef(format, args...)
 }
 
@@ -635,7 +635,7 @@ func (a *AccumulatorRecord) Convert(id CredentialTypeIdentifier, sacc *revocatio
 }
 
 // Scan implements sql/driver Scanner interface.
-func (hash *eventHash) Scan(src interface{}) error {
+func (hash *eventHash) Scan(src any) error {
 	s, ok := src.([]byte)
 	if !ok {
 		return errors.New("cannot convert source: not a []byte")
@@ -679,7 +679,7 @@ func (signedMessage) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
 }
 
 // Scan implements sql/driver Scanner interface.
-func (s *signedMessage) Scan(value interface{}) error {
+func (s *signedMessage) Scan(value any) error {
 	b, ok := value.([]byte)
 	if !ok {
 		return errors.New("cannot convert source: not a byte slice")
@@ -693,7 +693,7 @@ func (s signedMessage) Value() (driver.Value, error) {
 }
 
 // Scan implements sql.Scanner, for SQL unmarshaling (from a []byte).
-func (i *RevocationAttribute) Scan(src interface{}) error {
+func (i *RevocationAttribute) Scan(src any) error {
 	b, ok := src.([]byte)
 	if !ok {
 		return errors.New("cannot convert source: not a byte slice")

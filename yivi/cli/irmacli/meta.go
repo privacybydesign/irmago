@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-errors/errors"
 	"github.com/privacybydesign/gabi/big"
 	"github.com/privacybydesign/gabi/gabikeys"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -39,7 +38,7 @@ var metaCmd = &cobra.Command{
 			// that a base64'd metadata attribute consists of only digits.
 			bts, err := base64.StdEncoding.DecodeString(args[0])
 			if err != nil {
-				return errors.WrapPrefix(err, "Could not parse argument as decimal or base64 integer", 0)
+				return fmt.Errorf("could not parse argument as decimal or base64 integer: %w", err)
 			}
 			metaint.SetBytes(bts)
 		}
@@ -53,15 +52,15 @@ var metaCmd = &cobra.Command{
 
 func printMetadataAttr(metaint *big.Int, confPath string, confAssetsPath string) error {
 	if err := common.AssertPathExists(confPath); err != nil {
-		return errors.WrapPrefix(err, "Cannot read irma_configuration", 0)
+		return fmt.Errorf("cannot read irma_configuration: %w", err)
 	}
 	conf, err := irma.NewConfiguration(confPath, irma.ConfigurationOptions{ReadOnly: true, Assets: confAssetsPath})
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to parse irma_configuration", 0)
+		return fmt.Errorf("failed to parse irma_configuration: %w", err)
 	}
 	err = conf.ParseFolder()
 	if err != nil {
-		return errors.WrapPrefix(err, "Failed to parse irma_configuration", 0)
+		return fmt.Errorf("failed to parse irma_configuration: %w", err)
 	}
 
 	meta := irma.MetadataFromInt(metaint, conf)
@@ -93,7 +92,7 @@ func printMetadataAttr(metaint *big.Int, confPath string, confAssetsPath string)
 	return nil
 }
 
-func prettyprint(ob interface{}) string {
+func prettyprint(ob any) string {
 	b, err := json.MarshalIndent(ob, "", "  ")
 	if err != nil {
 		fmt.Println("error:", err)

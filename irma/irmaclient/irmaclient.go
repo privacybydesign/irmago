@@ -384,8 +384,21 @@ func (client *IrmaClient) remove(id irma.CredentialTypeIdentifier, index int) er
 		return err
 	}
 
-	// Remove credential from cache
-	client.credentialsCache.Delete(credLookup{id: id, counter: index})
+	// Remove credential from cache. Deleting the credential at `index` shifts
+	// every later credential of this type down by one position. The cache is
+	// keyed by positional counter, so the entries for the deleted credential
+	// AND for every credential after it are now stale and must all be
+	// invalidated; they are rebuilt lazily under their new counter on next
+	// access. Only invalidating {id, index} (as before) left the shifted
+	// credentials' stale entries in place, so a later credentialByHash lookup
+	// (whose counter had been decremented) returned the wrong instance — the
+	// root cause of disclosing the wrong credential after a deletion.
+	// `list` still has its original length
+	// here because append() reused its backing array without changing the
+	// `list` header.
+	for i := index; i < len(list); i++ {
+		client.credentialsCache.Delete(credLookup{id: id, counter: i})
+	}
 	delete(client.lookup, attrs.Hash())
 	for i, attrs := range client.attributes[id] {
 		client.lookup[attrs.Hash()].counter = i
@@ -557,20 +570,10 @@ func (client *IrmaClient) credCandidates(request irma.SessionRequest, con irma.A
 			// then the entire conjunction is unsatisfiable
 			satisfiable = false
 		}
-		// Determine whether the session request forces an attribute value for any attribute requested from this credential.
-		fixedAttrValue := false
-		for _, attr := range con {
-			if attr.Type.CredentialTypeIdentifier() != credTypeID {
-				continue
-			}
-			if attr.Value != nil {
-				fixedAttrValue = true
-			}
-		}
 		if len(c) == 0 {
 			satisfiable = false
 		}
-		if client.addCredSuggestion(request, credTypeID, fixedAttrValue, len(c) != 0) {
+		if client.addCredSuggestion(request, credTypeID, len(c) != 0) {
 			// When there are no candidates or when the credential is non-singleton, excluding some nonsensical cases,
 			// add an "empty" credential (i.e. without hash) as a suggestion to the user
 			c = append(c, &credCandidate{Type: credTypeID})
@@ -584,7 +587,7 @@ func (client *IrmaClient) credCandidates(request irma.SessionRequest, con irma.A
 // (i.e. without hash) with the disclosure candidates to the user as a suggestion.
 func (client *IrmaClient) addCredSuggestion(
 	request irma.SessionRequest, credTypeID irma.CredentialTypeIdentifier,
-	fixedAttrValue, haveCandidates bool,
+	haveCandidates bool,
 ) bool {
 	credType := client.Configuration.CredentialTypes[credTypeID]
 	credDeprecatedSince := credType.DeprecatedSince
@@ -596,8 +599,10 @@ func (client *IrmaClient) addCredSuggestion(
 		return false
 	}
 
-	// Show option to add extra cards of non-singleton
-	if (credType.IssueURL != nil && len(*credType.IssueURL) != 0) && !credType.IsSingleton && !fixedAttrValue {
+	// Show option to add extra cards of non-singleton credential types with a known issuance URL,
+	// regardless of whether the request pins a fixed attribute value: even when the user already
+	// holds a matching credential, they may want to obtain a fresh/different one of that type.
+	if (credType.IssueURL != nil && len(*credType.IssueURL) != 0) && !credType.IsSingleton {
 		return true
 	}
 

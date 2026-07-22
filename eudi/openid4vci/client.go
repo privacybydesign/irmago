@@ -2,7 +2,6 @@ package openid4vci
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 )
 
@@ -31,22 +31,36 @@ type Client struct {
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
+	// holderKeyBinder creates the holder binding keys and OpenID4VCI proofs of
+	// possession during issuance. It is a required dependency (software or
+	// WSCA-backed); see NewClient.
+	holderKeyBinder HolderKeyBinder
+
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
 }
 
+// NewClient builds an OpenID4VCI client. holderKeyBinder is required: pass
+// services.NewHolderBindingKeyService(config.Storage.Db()) for the default
+// software, storage-backed binder, or a WSCA-backed implementation to keep the
+// holder private key out of this process.
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	holderKeyBinder HolderKeyBinder,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
+	if holderKeyBinder == nil {
+		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
+	}
 
 	return &Client{
-		httpClient:     httpClient,
-		Configuration:  config,
-		holderVerifier: holderVerifier,
+		httpClient:      httpClient,
+		Configuration:   config,
+		holderVerifier:  holderVerifier,
+		holderKeyBinder: holderKeyBinder,
 	}, nil
 }
 
@@ -137,6 +151,7 @@ func (client *Client) handleCredentialOffer(
 		handler:                    handler,
 		httpClient:                 client.httpClient,
 		holderVerifier:             client.holderVerifier,
+		holderKeyBinder:            client.holderKeyBinder,
 		storage:                    client.Configuration.Storage,
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
@@ -302,7 +317,7 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	for _, display := range credentialIssuerMetadata.Display {
 		if display.Logo != nil {
 			// TODO: check if logo is already in cache first
-			logoData, _, err := client.downloadRemoteImage(*display.Logo)
+			logoData, _, err := helpers.DownloadRemoteImage(client.httpClient, display.Logo.Uri)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download issuer logo from %q: %v", display.Logo.Uri, err)
 				continue
@@ -324,57 +339,6 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	}
 
 	return &credentialIssuerMetadata, nil
-}
-
-func (client *Client) downloadRemoteImage(remoteImage metadata.RemoteImage) ([]byte, string, error) {
-	return downloadRemoteImage(client.httpClient, remoteImage)
-}
-
-func downloadRemoteImage(httpClient *http.Client, remoteImage metadata.RemoteImage) ([]byte, string, error) {
-	// data URIs (e.g. "data:image/png;base64,...") carry the image inline — no HTTP request needed.
-	if strings.HasPrefix(remoteImage.Uri, "data:") {
-		// Expected format: data:<mediatype>[;base64],<data>
-		rest := remoteImage.Uri[len("data:"):]
-		commaIdx := strings.IndexByte(rest, ',')
-		if commaIdx < 0 {
-			return nil, "", fmt.Errorf("invalid data URI: missing comma in %q", remoteImage.Uri)
-		}
-		meta := rest[:commaIdx]
-		payload := rest[commaIdx+1:]
-		var imageBytes []byte
-		if strings.HasSuffix(meta, ";base64") {
-			decoded, err := base64.StdEncoding.DecodeString(payload)
-			if err != nil {
-				return nil, "", fmt.Errorf("invalid data URI: base64 decode failed: %v", err)
-			}
-			imageBytes = decoded
-		} else {
-			imageBytes = []byte(payload)
-		}
-		mediaType := strings.TrimSuffix(meta, ";base64")
-		return imageBytes, mediaType, nil
-	}
-
-	response, err := httpClient.Get(remoteImage.Uri)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to download image %s: %v", remoteImage.Uri, err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf(
-			"failed to download logo %s: server returned status code %d",
-			remoteImage.Uri,
-			response.StatusCode,
-		)
-	}
-
-	bytes, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to read logo %s: %v", remoteImage.Uri, err)
-	}
-
-	return bytes, response.Header.Get("Content-Type"), nil
 }
 
 func (client *Client) Dismiss() {
@@ -558,7 +522,7 @@ func (client *Client) downloadCredentialLogos(
 				continue
 			}
 			// TODO: check if logo is already in cache first
-			logoData, _, err := client.downloadRemoteImage(*display.Logo)
+			logoData, _, err := helpers.DownloadRemoteImage(client.httpClient, display.Logo.Uri)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
 				continue

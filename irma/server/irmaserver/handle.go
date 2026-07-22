@@ -36,7 +36,7 @@ func (session *sessionData) handleDelete(conf *server.Configuration) {
 }
 
 func (session *sessionData) handleGetClientRequest(min, max *irma.ProtocolVersion, clientAuth irma.ClientAuthorization, conf *server.Configuration) (
-	interface{}, *irma.RemoteError) {
+	any, *irma.RemoteError) {
 
 	if session.Status != irma.ServerStatusInitialized {
 		return nil, server.RemoteError(server.ErrorUnexpectedRequest, "Session already started")
@@ -72,7 +72,7 @@ func (session *sessionData) handleGetClientRequest(min, max *irma.ProtocolVersio
 		logger.Info("Using condiscon: backwards compatibility with legacy IRMA apps is disabled")
 	}
 
-	logger.WithFields(logrus.Fields{"version": session.Version.String()}).Debugf("Protocol version negotiated")
+	logger.WithFields(logrus.Fields{"version": common.SanitizeForLog(session.Version.String())}).Debugf("Protocol version negotiated")
 	sessionRequest.Base().ProtocolVersion = session.Version
 
 	if session.Options.PairingMethod != irma.PairingMethodNone && session.Version.Above(2, 7) {
@@ -270,7 +270,7 @@ func (session *sessionData) nextSession(conf *server.Configuration) (irma.Reques
 		return nil, nil, errors.New("session in invalid state")
 	}
 
-	var res interface{}
+	var res any
 	var err error
 	if conf.JwtRSAPrivateKey != nil {
 		res, err = server.ResultJwt(

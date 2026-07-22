@@ -6,7 +6,9 @@ import (
 	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"reflect"
@@ -98,7 +100,7 @@ func RemoteError(err Error, message string) *irma.RemoteError {
 		"status":      err.Status,
 		"description": err.Description,
 		"error":       err.Type,
-		"message":     message,
+		"message":     common.SanitizeForLog(message),
 	}).Warnf("Sending session error")
 	if Logger.IsLevelEnabled(logrus.DebugLevel) {
 		stack = string(debug.Stack())
@@ -162,7 +164,7 @@ func WriteResponse(w http.ResponseWriter, object any, rerr *irma.RemoteError) {
 	w.WriteHeader(status)
 	_, err := w.Write(bts)
 	if err != nil {
-		_ = LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+		_ = LogWarning(fmt.Errorf("failed to write response: %w", err))
 	}
 }
 
@@ -172,7 +174,7 @@ func WriteString(w http.ResponseWriter, str string) {
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(str))
 	if err != nil {
-		_ = LogWarning(errors.WrapPrefix(err, "failed to write response", 0))
+		_ = LogWarning(fmt.Errorf("failed to write response: %w", err))
 	}
 }
 
@@ -362,7 +364,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 		var err error
 		res, err = ResultJwt(result, issuer, validity, privatekey)
 		if err != nil {
-			_ = LogError(errors.WrapPrefix(err, "Failed to create JWT for result callback", 0))
+			_ = LogError(fmt.Errorf("failed to create JWT for result callback: %w", err))
 			return
 		}
 	} else {
@@ -371,7 +373,7 @@ func DoResultCallback(callbackUrl string, result *SessionResult, issuer string, 
 
 	if err := irma.NewHTTPTransport(callbackUrl, false).Post("", nil, res); err != nil {
 		// not our problem, log it and go on
-		logger.Warn(errors.WrapPrefix(err, "Failed to POST session result to callback URL", 0))
+		logger.Warn(fmt.Errorf("failed to POST session result to callback URL: %w", err))
 	}
 }
 
@@ -404,15 +406,36 @@ func LogWarning(err error, msg ...string) error {
 	return log(logrus.WarnLevel, err, msg...)
 }
 
+// sensitiveHeaders lists HTTP header names that must not appear in logs.
+var sensitiveHeaders = map[string]struct{}{
+	"authorization": {},
+	"cookie":        {},
+	"set-cookie":    {},
+	"x-auth-token":  {},
+}
+
+// filterHeaders returns a copy of headers with sensitive values redacted.
+func filterHeaders(headers http.Header) http.Header {
+	filtered := make(http.Header, len(headers))
+	for k, v := range headers {
+		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
+			filtered[k] = []string{"[redacted]"}
+		} else {
+			filtered[k] = v
+		}
+	}
+	return filtered
+}
+
 func LogRequest(typ, proto, method, url, from string, headers http.Header, message []byte) {
 	fields := logrus.Fields{
 		"type":   typ,
 		"proto":  proto,
 		"method": method,
-		"url":    url,
+		"url":    common.SanitizeForLog(url),
 	}
 	if len(headers) > 0 {
-		fields["headers"] = headers
+		fields["headers"] = filterHeaders(headers)
 	}
 	if len(message) > 0 {
 		if headers.Get("Content-Type") == "application/octet-stream" {
@@ -422,7 +445,7 @@ func LogRequest(typ, proto, method, url, from string, headers http.Header, messa
 		}
 	}
 	if from != "" {
-		fields["from"] = from
+		fields["from"] = common.SanitizeForLog(from)
 	}
 	Logger.WithFields(fields).Tracef("=> request")
 }
@@ -443,7 +466,7 @@ func LogResponse(url string, status int, duration time.Duration, binary bool, re
 	if status < 400 {
 		l.Trace("<= response")
 	} else {
-		l.WithField("url", url).Warn("<= response")
+		l.WithField("url", common.SanitizeForLog(url)).Warn("<= response")
 	}
 }
 
@@ -642,9 +665,7 @@ func (r *HTTPResponseRecorder) WriteHeader(statusCode int) {
 // Flush implements http.Flusher.
 func (r *HTTPResponseRecorder) Flush() {
 	if !r.Flushed {
-		for k, v := range r.Header() {
-			r.wrapped.Header()[k] = v
-		}
+		maps.Copy(r.wrapped.Header(), r.Header())
 		if r.statusCode > 0 {
 			r.wrapped.WriteHeader(r.statusCode)
 		}

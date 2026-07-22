@@ -2,6 +2,7 @@ package keyshareserver
 
 import (
 	"encoding/binary"
+	"fmt"
 	"html/template"
 	"os"
 	"path"
@@ -157,19 +158,19 @@ func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 	}
 	keybytes, err := common.ReadKey(conf.JwtPrivateKey, conf.JwtPrivateKeyFile)
 	if err != nil {
-		return nil, server.LogError(errors.WrapPrefix(err, "failed to read keyshare server jwt key", 0))
+		return nil, server.LogError(fmt.Errorf("failed to read keyshare server jwt key: %w", err))
 	}
 	jwtPrivateKey, err := jwt.ParseRSAPrivateKeyFromPEM(keybytes)
 	if err != nil {
-		return nil, server.LogError(errors.WrapPrefix(err, "failed to read keyshare server jwt key", 0))
+		return nil, server.LogError(fmt.Errorf("failed to read keyshare server jwt key: %w", err))
 	}
 	storagePrimaryKeyFilePath, err := filepath.Abs(conf.StoragePrimaryKeyFile)
 	if err != nil {
-		return nil, server.LogError(errors.WrapPrefix(err, "failed to get absolute path of primary storage key", 0))
+		return nil, server.LogError(fmt.Errorf("failed to get absolute path of primary storage key: %w", err))
 	}
 	decKeyID, decKey, err := readAESKey(storagePrimaryKeyFilePath)
 	if err != nil {
-		return nil, server.LogError(errors.WrapPrefix(err, "failed to load primary storage key", 0))
+		return nil, server.LogError(fmt.Errorf("failed to load primary storage key: %w", err))
 	}
 
 	core := keysharecore.NewKeyshareCore(&keysharecore.Configuration{
@@ -183,7 +184,7 @@ func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 	if conf.StorageFallbackKeysDir != "" {
 		dirEntries, err := os.ReadDir(conf.StorageFallbackKeysDir)
 		if err != nil {
-			return nil, server.LogError(errors.WrapPrefix(err, "failed to read fallback keys directory", 0))
+			return nil, server.LogError(fmt.Errorf("failed to read fallback keys directory: %w", err))
 		}
 		for _, dirEntry := range dirEntries {
 			if dirEntry.IsDir() || !strings.HasSuffix(dirEntry.Name(), ".key") || strings.HasPrefix(dirEntry.Name(), ".") {
@@ -193,7 +194,7 @@ func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 
 			pth, err := filepath.Abs(path.Join(conf.StorageFallbackKeysDir, dirEntry.Name()))
 			if err != nil {
-				return nil, server.LogError(errors.WrapPrefix(err, "failed to get absolute path of fallback key "+dirEntry.Name(), 0))
+				return nil, server.LogError(fmt.Errorf("failed to get absolute path of fallback key %s: %w", dirEntry.Name(), err))
 			}
 			if pth == storagePrimaryKeyFilePath {
 				conf.Logger.Debugf("Skipping primary storage key %s as fallback key", dirEntry.Name())
@@ -202,7 +203,7 @@ func setupCore(conf *Configuration) (*keysharecore.Core, error) {
 
 			id, key, err := readAESKey(pth)
 			if err != nil {
-				return nil, server.LogError(errors.WrapPrefix(err, "failed to load fallback key "+dirEntry.Name(), 0))
+				return nil, server.LogError(fmt.Errorf("failed to load fallback key %s: %w", dirEntry.Name(), err))
 			}
 			core.DangerousAddDecryptionKey(id, key)
 		}

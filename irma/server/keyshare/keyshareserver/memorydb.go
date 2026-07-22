@@ -93,7 +93,7 @@ func (db *MemoryDB) setSeen(_ context.Context, _ *User) error {
 	return nil
 }
 
-func (db *MemoryDB) addLog(_ context.Context, _ *User, _ eventType, _ interface{}) error {
+func (db *MemoryDB) addLog(_ context.Context, _ *User, _ eventType, _ any) error {
 	// We don't need to do anything here, as this information cannot be extracted locally
 	return nil
 }

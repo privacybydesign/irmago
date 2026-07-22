@@ -137,7 +137,7 @@ func (l *LegacyDisjunction) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	var tmp interface{}
+	var tmp any
 	if hasvalues {
 		m := map[AttributeTypeIdentifier]*string{}
 		for _, r := range *l {

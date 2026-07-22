@@ -458,7 +458,7 @@ func ParseApiServerJwt(inputJwt string, signingKey *rsa.PublicKey) (map[Attribut
 		jwt.StandardClaims
 		Attributes map[AttributeTypeIdentifier]string `json:"attributes"`
 	}{}
-	_, err := jwt.ParseWithClaims(inputJwt, claims, func(token *jwt.Token) (interface{}, error) {
+	_, err := jwt.ParseWithClaims(inputJwt, claims, func(token *jwt.Token) (any, error) {
 		return signingKey, nil
 	})
 	if err != nil {

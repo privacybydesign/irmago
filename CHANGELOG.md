@@ -5,10 +5,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Internal
+- Centralize ad-hoc `http.Client` instantiations into a single shared `common.HTTPClient`, giving one source of truth for outbound client configuration.
+
+### Added
+- `eudi/holderkeys`: a CGO-free package providing the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) so a WSCA adapter or a server-side (Postgres) holder can implement external holder-key signing without pulling in a sqlcipher (cgo) dependency.
+- Pluggable holder-key binding seams for external secure devices (WSCA/HSM): `openid4vci.NewClient` takes a required `HolderKeyBinder` and `eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler` a required `sdjwtvc.KeyBinder`, and `proofs.BuildWithES256Signer` signs the OpenID4VCI proof of possession via an external signer. Callers pass the software, storage-backed binder for the existing behaviour, or a WSCA/HSM-backed implementation.
+- `storage.NewStorageWithDialector(dialector, fs)`: open the EUDI holder database on any GORM dialector (e.g. `gorm.io/driver/postgres`) rather than only sqlcipher, for server-side / multi-tenant deployments. `NewStorage` is unchanged (it builds the sqlcipher dialector and delegates). The caller owns the at-rest encryption posture of a non-sqlcipher driver.
+
 ### Fixed
 - The keyshare `tasks` command no longer logs a confusing `mode=development` line on startup; the tasks command has no development/production distinction, so no mode is reported
+- Disclosure requests that pin a fixed attribute value now still offer an issuance suggestion for the requested credential type, when that type is non-singleton and publishes an `IssueURL`. Previously, if the user already held a matching credential, no option to obtain a fresh credential of that type was offered.
+- EUDI holder key-metadata models (`ECDSAKeyMetadata`, `RSAKeyMetadata`) tagged `HolderBindingKeyID` as a unique index rather than the primary key the doc comment intends, so the models had no primary key. When GORM upserts the key-metadata association while storing a holder binding key it builds the `ON CONFLICT` target from the primary key; with none defined it emitted `ON CONFLICT DO UPDATE` with no target, which Postgres rejects (SQLSTATE 42601) — breaking every OpenID4VCI credential redemption on a Postgres-backed holder storage. `HolderBindingKeyID` is now `primaryKey`. Backwards-compatible: `AutoMigrate` is additive and keeps the existing unique index, which still satisfies the new `ON CONFLICT (holder_binding_key_id)` on both SQLite and Postgres.
+- `AutoMigrate` of the EUDI holder models is now ordered parents-before-children, so it also runs on foreign-key-enforcing drivers (e.g. Postgres) and not only SQLite.
+- `eudi/storage` no longer transitively pulls in the cgo `sqlcipher` package. The sqlcipher-only constructor moved from `storage.NewStorage` to a new `eudi/storage/sqlcipherstorage` package as `sqlcipherstorage.New`, so a pure-Go dialector consumer (e.g. `gorm.io/driver/postgres`) can import `eudi/storage` and build without compiling sqlcipher — including under `CGO_ENABLED=1` / `go test -race`, which the old layout still forced. **Breaking:** callers of `storage.NewStorage(...)` now call `sqlcipherstorage.New(...)` (identical signature); `storage.NewStorageWithDialector` is unchanged.
 
-## [1.0.0-beta.1] - 2026-06-15
+## [1.1.1] - 2026-07-14
+### Security
+- The EUDI SQLCipher database was opened without its AES encryption key since v1.0.0, leaving `yivi-eudi.db` (holder binding keys, private keys, SD-JWT VC credentials and logs) unencrypted at rest despite the documented encryption-at-rest. The key is now passed to the connection so the database is encrypted.
+
+### Internal
+- Add storage regression tests for versions 1.0.0 (intentionally plaintext EUDI database, exercises the plaintext→encrypted migration) and 1.1.1 (born-encrypted EUDI database)
+
+### Fixed
+- On first launch after upgrading, an existing plaintext `yivi-eudi.db` written by v1.0.0/v1.1.0 is transparently and atomically re-encrypted in place with no data loss; already-encrypted databases are left untouched.
+- Fix `200 serverResponse: context deadline exceeded (Client.Timeout or context cancellation while reading body)` on slow connections or large/slow response bodies: the outbound `http.Client` in `irma/transport.go` had a 5s `Timeout` that covered the whole request (including reading the response body) and silently overrode the intended 20s per-request context deadline. The 5s timeout is removed so the 20s deadline is the single source of truth.
+
+## [1.1.0] - 2026-07-08
+### Added
+- Added support for `x509_hash` client identifier prefix in OpenID4VP flow
+- Added support for Verifier Metadata in OpenID4VP flow
+
+### Security
+- Update Go toolchain 1.26.3 → 1.26.4 to fix vulnerabilities in `net/textproto` (GO-2026-5039) and `crypto/x509` (GO-2026-5037)
+- Update dependencies with security relevance:
+  - `github.com/go-chi/chi/v5` 5.2.5 → 5.3.0 (host header handling)
+  - `github.com/golang-jwt/jwt/v5` 5.2.2 → 5.3.1
+  - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
+- Sanitize user-controlled strings before writing them to log entries to prevent log injection
+- Filter sensitive HTTP headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`) from request logs
+- Fix email header injection by using the parsed recipient address in the SMTP `To:` header
+- Normalize file paths via `filepath.Clean` before filesystem operations
+
+### Changed
+- Replace `github.com/go-errors/errors` `WrapPrefix` calls with stdlib `fmt.Errorf` wrapping so `errors.Is`/`errors.As` traverse wrapped errors
+- Raise the minimum Go version to 1.26
+- Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
+- Update CI GitHub Action versions to Node 24 supported once
+- Update other dependencies to their latest releases: `github.com/lestrrat-go/jwx/v3`, `github.com/go-co-op/gocron` (v1 and v2), `github.com/spf13/{cast,cobra,pflag,viper}`, `go.etcd.io/bbolt`, `gorm.io/driver/{mysql,postgres,sqlserver}`, `github.com/alicebob/miniredis/v2`, `github.com/go-chi/cors` and `github.com/go-errors/errors`
+- Added DID First Candidate Recommendation backwards-compatibility for verification methods containing `publicKeyBase58` verification material.
+
+### Fixed
+- Treat email addresses with a non-resolvable (NXDOMAIN) domain as permanently invalid instead of a transient network error, so the keyshare email task no longer retries them indefinitely and crowds out delivery of valid emails
+- Fix `panic: send on closed channel` in the in-memory session store that could crash the server when an expired session was deleted while a status update for it was still being delivered to subscribers. Session-update notifications are now delivered synchronously under the read lock (mutually exclusive with channel closing) instead of from an unsynchronized goroutine, and subscription channels are cleaned up when their subscriber goes away. This also fixes two related data races on the session store detected under `-race`.
+- Fix disclosure returning the wrong credential instance after another instance of the same credential type was deleted, caused by the positional credential cache not being invalidated for the instances shifted by the deletion
+- Fixed a DidDocument deserialisation bug, where the `controller` attribute can be either a single string or a set of strings.
+
+## [1.0.0] - 2026-06-19
 ### Added
 - Support for issuing SD-JWT VC credentials over the OpenID4VCI protocol to the new `client` package
   - Supports the Pre-Authorized Code flow, including an optional `tx_code` (with retry on incorrect entry)
@@ -19,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Issuers are verified via `did:web`, `did:key` and `did:jwk`; the `did:web` resolver can be configured to accept insecure HTTP for development
 - Support for disclosing SD-JWT VC credentials with nested selectively-disclosable claims and array claims over the OpenID4VP 1.0 protocol
   - DCQL support extended with `claim_sets`, the `multiple` flag, predefined claim values (also for non-string values), and `require_cryptographic_holder_binding`
-  - Adds the `did` verifier identifier prefix in addition to the existing `x509_san_dns`
+  - Adds the `decentralized_identifier` client identifier prefix in addition to the existing `x509_san_dns`
   - Stricter validation of presentation nonces and verifier metadata
 - New top-level Go package `client`, offering a unified `Client` that wraps the existing `irmaclient` (renamed to `IrmaClient`) together with an `OpenID4VCIClient` and an `OpenID4VPClient`
   - New schemaless session implementation that no longer relies on `IrmaConfiguration` for OpenID4VCI/VP credential types
@@ -35,12 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Disclosure UI improvements: support for attribute group headers, credential images shown during disclosure, and a more reliable selection of the requestor's display name
 
 ### Changed
+- Raise the minimum Go version to 1.26
+- Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
 - Requests using `irma.HTTPTransport` have a doubled response timeout (20 seconds) to accommodate for slow and/or foreign connections
 - `Attribute` no longer carries an `Id`; it now carries a `ClaimPath` (`[]any`) to address nested claims. The `Array` and `Object` value variants are removed from `AttributeValue`, and `TranslatedString` is no longer an `AttributeValue` variant
 - Public structs across the client packages now use snake_case JSON tags
 - `SessionState.Error` is now a serializable error type; `PinBlockedTimeSeconds` and `RemainingPinAttempts` are now optional; sessions can be dismissed from any state
 - Revocation attributes are filtered out of the user-facing attribute list; the wrongly-issued credential view only contains the relevant attribute and only the most recent wrongly-issued credential is shown
 - The repository layout has been reorganised: CLI sources moved under `yivi/cli/...`, the `irma/cmd` package now lives at `yivi/cli/irmacli`, and EUDI components live under the new `eudi/...` tree
+
+### Security
+- Update dependencies to resolve Dependabot security advisories:
+  - `golang.org/x/crypto` 0.40.0 → 0.53.0 (GHSA-f6x5-jh6r-wrfv, GHSA-j5w8-q4qc-rx2x)
+  - `github.com/sirupsen/logrus` 1.9.0 → 1.9.4 (GHSA-4f99-4q7p-p3gh)
+  - `github.com/jackc/pgx/v5` 5.5.5 → 5.10.0 (GHSA-9jj7-4m8r-rfcm, GHSA-j88v-2chj-qfwx)
+  - `filippo.io/edwards25519` 1.1.0 → 1.2.0 (GHSA-fw7p-63qq-7hpr)
 
 ### Fix
 - Bug that keyshare registration failed when users email domain had no MX records.
@@ -645,7 +707,9 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
-[1.0.0-beta.1]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0-beta.1
+[1.1.1]: https://github.com/privacybydesign/irmago/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/privacybydesign/irmago/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0
 [0.19.2]: https://github.com/privacybydesign/irmago/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/privacybydesign/irmago/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/privacybydesign/irmago/compare/v0.18.1...v0.19.0

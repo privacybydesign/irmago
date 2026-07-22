@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -196,6 +197,34 @@ func TestHTTPTransportCookieJar(t *testing.T) {
 	transport := NewHTTPTransport("http://localhost:48682", false)
 	require.NoError(t, transport.Get("/setcookie", nil))
 	require.NoError(t, transport.Get("/checkcookie", nil))
+}
+
+// TestHTTPTransportSlowBody is a regression test for issue #606: a server that
+// sends the response status and headers quickly but streams the body slowly
+// (slow connection / slow or large server body) must not be aborted by a short
+// http.Client.Timeout. The body read is bounded only by the per-request context
+// deadline (responseDeadline, 20s), so a 6s body delay must succeed.
+func TestHTTPTransportSlowBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush() // send status 200 + headers before stalling
+		time.Sleep(6 * time.Second)
+		_, _ = w.Write([]byte("hello")) // a *string result receives the raw body verbatim
+	}))
+	defer server.Close()
+
+	transport := NewHTTPTransport(server.URL, false)
+
+	var result string
+	start := time.Now()
+	err := transport.Get("", &result)
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	require.Equal(t, "hello", result)
+	require.GreaterOrEqual(t, elapsed, 6*time.Second) // the body really was delayed past the old 5s timeout
+	require.Less(t, elapsed, responseDeadline)
 }
 
 func TestInvalidIrmaConfigurationRestoreFromRemote(t *testing.T) {
@@ -806,7 +835,7 @@ func revokeMultiple(t *testing.T, sk *gabikeys.PrivateKey, update *revocation.Up
 	acc := update.SignedAccumulator.Accumulator
 	event := update.Events[len(update.Events)-1]
 	events := update.Events
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		acc, event = revoke(t, acc, event, sk)
 		events = append(events, event)
 	}
@@ -1580,16 +1609,14 @@ func TestParseKeysFolderConcurrency(t *testing.T) {
 	conf := parseConfiguration(t)
 	grp := sync.WaitGroup{}
 
-	for j := 0; j < 1000; j++ {
+	for range 1000 {
 		// Clear map for next iteration
 		conf.publicKeys = concmap.New[PublicKeyIdentifier, *gabikeys.PublicKey]()
 
-		for i := 0; i < 10; i++ {
-			grp.Add(1)
-			go func() {
+		for range 10 {
+			grp.Go(func() {
 				require.NoError(t, conf.parseKeysFolder(NewIssuerIdentifier("irma-demo.MijnOverheid")))
-				grp.Done()
-			}()
+			})
 		}
 
 		grp.Wait()
