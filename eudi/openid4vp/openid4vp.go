@@ -86,7 +86,15 @@ type ClientMetadata struct {
 	// Defined in RFC 7591 but not part of the OpenID4VP client_metadata spec (which says
 	// unrecognized parameters MUST be ignored). Used as a fallback display name when
 	// response_uri is absent, to avoid showing a raw did:jwk to the user.
-	ClientName string `json:"client_name,omitempty"`
+	ClientName *string `json:"client_name,omitempty"`
+
+	// OPTIONAL. URI of a webpage from the client (verifier) providing information about the client.
+	// Defined in RFC 7591.
+	ClientUri *string `json:"client_uri,omitempty"`
+
+	// OPTIONAL. A URI to the logo of the client (verifier).
+	// Defined in RFC 7591.
+	LogoUri *string `json:"logo_uri,omitempty"`
 
 	// OPTIONAL. A JSON Web Key Set, as defined in [RFC7591], that contains one or more public keys,
 	// such as those used by the Wallet as an input to a key agreement that may be used for encryption
@@ -169,8 +177,8 @@ type AuthorizationRequest struct {
 	Type     string `json:"type"`
 
 	// REQUIRED:
-	ClientId       string         `json:"client_id"`
-	ClientMetadata ClientMetadata `json:"client_metadata"`
+	ClientId       string          `json:"client_id"`
+	ClientMetadata *ClientMetadata `json:"client_metadata"`
 
 	// OPTIONAL: A query for credentials using DCQL.
 	// MUST NOT exist if `scope` is set, MUST exist if there is no `scope`.

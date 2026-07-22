@@ -207,19 +207,27 @@ func TestCandidates(t *testing.T) {
 	require.Empty(t, attrs[1][0].Value)
 
 	// If the disjunction requires our attribute to have 456 as value, which it does,
-	// then our attribute is a candidate
+	// then our attribute is a candidate. studentCard is non-singleton and its scheme entry
+	// has a known IssueURL, so we also get the option to obtain a fresh credential of that
+	// type even though the request pins a fixed value.
 	reqval := "456"
 	disjunction[0][0].Value = &reqval
 	attrs, satisfiable, err = client.candidatesDisCon(request, disjunction)
 	require.NoError(t, err)
 	require.True(t, satisfiable)
 	require.NotNil(t, attrs)
-	require.Len(t, attrs, 1)
+	require.Len(t, attrs, 2)
 	require.NotNil(t, attrs[0])
 	require.Equal(t, attrs[0][0].Type, attrtype)
 	require.True(t, attrs[0][0].Present())
 	require.NotNil(t, attrs[0][0].Value)
 	require.Equal(t, reqval, attrs[0][0].Value[""])
+	// The second candidate is the issuance suggestion: not present, carrying the requested value.
+	require.NotNil(t, attrs[1])
+	require.Equal(t, attrs[1][0].Type, attrtype)
+	require.False(t, attrs[1][0].Present())
+	require.NotNil(t, attrs[1][0].Value)
+	require.Equal(t, reqval, attrs[1][0].Value[""])
 
 	// If the disjunction requires our attribute to have a different value than it does,
 	// then it is NOT a match.
@@ -277,6 +285,58 @@ func TestCandidates(t *testing.T) {
 	require.True(t, satisfiable)
 	// we don't have irma-demo.MijnOverheid.root, the empty conjunction gives the only candidate
 	require.Len(t, attrs, 1)
+}
+
+// TestCandidatesFixedValueOffersIssuance locks in the guarantee that, when a disclosure request
+// pins a fixed attribute value and the user already holds a matching credential, an issuance
+// suggestion is still offered for non-singleton credential types that publish an IssueURL.
+func TestCandidatesFixedValueOffersIssuance(t *testing.T) {
+	storage, client, _ := parseStorage(t)
+	defer client.Close()
+	defer storage.Close()
+
+	// The seeded client holds one studentCard whose studentID attribute is 456.
+	attrtype := irma.NewAttributeTypeIdentifier("irma-demo.RU.studentCard.studentID")
+	credType := attrtype.CredentialTypeIdentifier()
+
+	// Sanity-check the fixture: the type must be non-singleton with a known IssueURL for the
+	// suggestion to be offered.
+	require.False(t, client.Configuration.CredentialTypes[credType].IsSingleton)
+	require.NotNil(t, client.Configuration.CredentialTypes[credType].IssueURL)
+	require.NotEmpty(t, *client.Configuration.CredentialTypes[credType].IssueURL)
+
+	reqval := "456"
+	request := irma.NewDisclosureRequest(attrtype)
+	request.ProtocolVersion = &irma.ProtocolVersion{Major: 2, Minor: 8}
+	request.Disclose[0][0][0].Value = &reqval
+
+	attrs, satisfiable, err := client.candidatesDisCon(request, request.Disclose[0])
+	require.NoError(t, err)
+	require.True(t, satisfiable)
+	require.Len(t, attrs, 2)
+
+	// The held credential is a present candidate carrying the requested value.
+	require.True(t, attrs[0][0].Present())
+	require.Equal(t, attrtype, attrs[0][0].Type)
+	require.Equal(t, reqval, attrs[0][0].Value[""])
+
+	// The issuance suggestion is a non-present candidate that also carries the requested value.
+	require.False(t, attrs[1][0].Present())
+	require.Equal(t, attrtype, attrs[1][0].Type)
+	require.Equal(t, reqval, attrs[1][0].Value[""])
+
+	// Sibling case: a singleton credential type in the same fixed-value situation gets no
+	// issuance suggestion. The test scheme has no singleton type with an IssueURL, so flip the
+	// flag on the in-memory config for this type to exercise the !IsSingleton guard directly.
+	client.Configuration.CredentialTypes[credType].IsSingleton = true
+	defer func() { client.Configuration.CredentialTypes[credType].IsSingleton = false }()
+
+	attrs, satisfiable, err = client.candidatesDisCon(request, request.Disclose[0])
+	require.NoError(t, err)
+	require.True(t, satisfiable)
+	require.Len(t, attrs, 1)
+	require.True(t, attrs[0][0].Present())
+	require.Equal(t, reqval, attrs[0][0].Value[""])
 }
 
 func TestCandidateConjunctionOrder(t *testing.T) {
