@@ -26,6 +26,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("duplicate credential removal leaves none and creates log", testDuplicateCredentialRemovalCreatesLog)
 	t.Run("irma and eudi logs merged chronologically", testIrmaAndEudiLogsMergedChronologically)
 	t.Run("load logs before includes both irma and eudi logs", testLoadLogsBeforeIncludesBothSources)
+	t.Run("logs written under dutch locale snapshot dutch text", testDutchEudiLogs)
 }
 
 func testOpenID4VCIPreAuthFlowCreatesIssuanceLog(t *testing.T) {
@@ -960,4 +961,44 @@ func testLoadLogsBeforeIncludesBothSources(t *testing.T) {
 		require.True(t, l.Time.Before(firstPage[1].Time),
 			"secondPage[%d].Time (%v) should be before cursor (%v)", i, l.Time, firstPage[1].Time)
 	}
+}
+
+// testDutchEudiLogs pins the Dutch-locale resolution for the EUDI (SQLCipher)
+// log layer: logs written under a Dutch locale snapshot Dutch text, for
+// issuance and removal alike.
+func testDutchEudiLogs(t *testing.T) {
+	c, sessionHandler := createDutchClientWithoutKeyshareEnrollment(t)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "log@voorbeeld.nl",
+		"domain": "voorbeeld.nl"
+	}`)
+
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.NotNil(t, logs[0].IssuanceLog)
+	require.Equal(t, "Test Uitgever", logs[0].IssuanceLog.Issuer.Name)
+
+	logCred := logs[0].IssuanceLog.Credentials[0]
+	require.Equal(t, "E-mail Credential (SD-JWT)", logCred.Name)
+	require.Equal(t, "Test Uitgever", logCred.Issuer.Name)
+	requireAttrsInOrder(t, logCred.Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("log@voorbeeld.nl")},
+		expectedAttr{Path: []any{"domain"}, DisplayName: new("Domein"), Value: strVal("voorbeeld.nl")},
+	)
+
+	// Removal logs snapshot the Dutch text too.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialByName(t, creds, "E-mail Credential (SD-JWT)")
+	require.NotNil(t, cred)
+	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
+
+	logs, err = c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	removal := findLog(logs, clientmodels.LogType_CredentialRemoval)
+	require.NotNil(t, removal)
+	require.Equal(t, "E-mail Credential (SD-JWT)", removal.RemovalLog.Credentials[0].Name)
 }

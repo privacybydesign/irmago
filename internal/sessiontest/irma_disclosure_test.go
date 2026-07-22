@@ -17,6 +17,11 @@ func testSessionHandlerForIrmaDisclosures(t *testing.T) {
 		testDisclosureWithPredefinedValues,
 	)
 
+	runDutchSessionTest(t,
+		"disclosure in dutch locale",
+		testDutchIrmaDisclosure,
+	)
+
 	runSessionTest(t,
 		"multi-singleton inner con produces single bundle",
 		testMultiSingletonInnerConProducesBundle,
@@ -2234,4 +2239,50 @@ func testDisclosureAttributeOrderFollowsSchema(
 			},
 		},
 	})
+}
+
+// testDutchIrmaDisclosure pins the Dutch-locale resolution for the classic
+// IRMA disclosure layer: the disclosure plan's owned option renders the
+// scheme's Dutch translations.
+func testDutchIrmaDisclosure(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	req := irma.NewDisclosureRequest()
+	req.Disclose = irma.AttributeConDisCon{
+		irma.AttributeDisCon{
+			irma.AttributeCon{
+				irma.NewAttributeRequest("test.test.email.email"),
+			},
+		},
+	}
+	c.NewSession(2, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOne.OwnedOptions)
+	owned := pickOne.OwnedOptions[0].Credentials[0]
+	require.Equal(t, "Demo E-mailadres", owned.Name)
+	require.Equal(t, "Demo test issuer", owned.Issuer.Name)
+	requireAttrsInOrder(t, owned.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOne.OwnedOptions[0]))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 }

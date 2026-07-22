@@ -26,6 +26,7 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("prefers VCT type metadata over issuer credential_metadata", testOpenID4VCIPreAuthFlowPrefersVctMetadataOverCredentialMetadata)
 	t.Run("resolves VCT type metadata from issued JWT when issuer metadata vct is unknown", testOpenID4VCIPreAuthFlowResolvesVctFromIssuedJwt)
 	t.Run("issues credential with nested claims", testOpenID4VCIPreAuthFlowNestedClaims)
+	t.Run("issuance and data tab in dutch locale", testDutchOpenID4VCIIssuanceAndDataTab)
 	t.Run("issues multiple credential types", testOpenID4VCIPreAuthFlowMultipleCredentialTypes)
 	t.Run("issues credential with array claims", testOpenID4VCIPreAuthFlowArrayClaims)
 	t.Run("issues credential with mixed sd and non-sd claims", testOpenID4VCIPreAuthFlowMixedSdNonSd)
@@ -1611,4 +1612,70 @@ func issueCredentialViaOpenID4VCIAuthCode(
 
 	status := checkOfferStatus(t, authcodeIssuerURL, authcodeAdminToken, offer.ID)
 	require.Equal(t, "CREDENTIAL_ISSUED", status)
+}
+
+// testDutchOpenID4VCIIssuanceAndDataTab pins the Dutch-locale resolution for
+// the OpenID4VCI protocol and the EUDI data-tab layer. EmailCredentialSdJwt
+// carries full Dutch displays (credential name, claim names); the issuer
+// display carries a Dutch name but only the English display has a logo — so
+// this also pins the two fallback rules: Dutch text everywhere, and the logo
+// borrowed cross-language.
+func testDutchOpenID4VCIIssuanceAndDataTab(t *testing.T) {
+	c, sessionHandler := createDutchClientWithoutKeyshareEnrollment(t)
+	defer c.Close()
+
+	offerBody := fmt.Sprintf(`{
+		"credentials": ["EmailCredentialSdJwt"],
+		"grants": {
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+				"pre-authorized_code": "generate"
+			}
+		},
+		"credentialDataSupplierInput": %s
+	}`, `{"email": "jansen@voorbeeld.nl", "domain": "voorbeeld.nl"}`)
+
+	offer := postOffer(t, preAuthIssuerURL, preAuthAdminToken, offerBody)
+	startOpenID4VCISession(t, c, 1, offer.URI)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPreAuthorizedCode)
+	require.Equal(t, "Test Uitgever", session.Requestor.Name,
+		"the issuance requestor resolves through the Dutch issuer display")
+
+	userInteraction(t, c, clientmodels.SessionUserInteraction{
+		SessionId: session.Id,
+		Type:      clientmodels.UI_PreAuthorizedCode,
+		Payload:   clientmodels.SessionPreAuthorizedCodeInteractionPayload{Proceed: true},
+	})
+
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "E-mail Credential (SD-JWT)", offered.Name)
+	require.Equal(t, "Test Uitgever", offered.Issuer.Name)
+	require.NotNil(t, offered.Issuer.Image,
+		"only the English issuer display carries a logo; under nl the logo must be borrowed cross-language")
+	requireAttrsInOrder(t, offered.Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("jansen@voorbeeld.nl")},
+		expectedAttr{Path: []any{"domain"}, DisplayName: new("Domein"), Value: strVal("voorbeeld.nl")},
+	)
+
+	grantPermission(t, c, session.Id)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	// Data tab: the stored EUDI credential resolves through the Dutch
+	// metadata displays, and the issuer logo still shows.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialByName(t, creds, "E-mail Credential (SD-JWT)")
+	require.NotNil(t, cred, "expected the issued credential under its Dutch name")
+	require.Equal(t, "Test Uitgever", cred.Issuer.Name)
+	require.NotNil(t, cred.Issuer.Image, "issuer logo borrowed from the English display")
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("jansen@voorbeeld.nl")},
+		expectedAttr{Path: []any{"domain"}, DisplayName: new("Domein"), Value: strVal("voorbeeld.nl")},
+	)
 }

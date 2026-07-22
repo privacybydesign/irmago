@@ -63,6 +63,11 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 		testAttributesOrderedByDisplayIndex,
 	)
 
+	runDutchSessionTest(t,
+		"issuance and data tab in dutch locale",
+		testDutchIrmaIssuanceAndDataTab,
+	)
+
 	t.Run("revocation attributes excluded from credentials", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, "postgres")
 		defer revServer.Stop()
@@ -605,4 +610,72 @@ func testRevocationAttributesExcludedFromCredentials(
 	}
 	require.NotNil(t, rootCred, "revoked credential should still be in GetCredentials")
 	require.True(t, rootCred.Revoked, "credential should be marked as revoked")
+}
+
+// testDutchIrmaIssuanceAndDataTab pins the Dutch-locale resolution for the
+// classic IRMA protocol and the data-tab layer: the issuance permission
+// prompt, the stored credential list, and the bbolt activity log all render
+// the scheme's Dutch translations. The English path is pinned by the other
+// tests in this file.
+func testDutchIrmaIssuanceAndDataTab(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	req := createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "Demo E-mailadres", offered.Name)
+	require.Equal(t, "Demo test issuer", offered.Issuer.Name)
+	requireAttrsInOrder(t, offered.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	grantPermission(t, c, session.Id)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	// Data tab: the stored credential resolves through the Dutch scheme texts.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
+	require.Equal(t, "Demo E-mailadres", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	// Classic (bbolt) activity log: rebuilt from the scheme at read time, so
+	// it follows the client's locale too.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	issuance := findLog(logs, clientmodels.LogType_Issuance)
+	require.NotNil(t, issuance)
+	var logCred *clientmodels.LogCredential
+	for i := range issuance.IssuanceLog.Credentials {
+		if issuance.IssuanceLog.Credentials[i].CredentialId == "test.test.email" {
+			logCred = &issuance.IssuanceLog.Credentials[i]
+			break
+		}
+	}
+	require.NotNil(t, logCred, "expected an issuance log entry for test.test.email")
+	require.Equal(t, "Demo E-mailadres", logCred.Name)
+	require.Equal(t, "Demo test issuer", logCred.Issuer.Name)
 }

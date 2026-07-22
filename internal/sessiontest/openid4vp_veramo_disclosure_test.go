@@ -72,6 +72,7 @@ func testSessionHandlerForOpenID4VPWithSdJwtVcs(t *testing.T) {
 	t.Run("veramo verifier requesting unknown vct uses url-only fallback", testVeramoVerifierRequestingUnknownVctUsesUrlOnlyFallback)
 	t.Run("veramo verifier multi-vct first missing second matched", testVeramoVerifierMultiVctFirstMissingSecondMatched)
 	t.Run("veramo verifier requesting unsupported claim on owned credential surfaces it", testVeramoVerifierRequestingUnsupportedClaimOnOwnedCredentialSurfacesIt)
+	t.Run("disclosure in dutch locale", testDutchOpenID4VPEudiDisclosure)
 }
 
 func testIssueViaOpenID4VCIAndDiscloseViaOpenID4VP(t *testing.T) {
@@ -4908,4 +4909,42 @@ func startOpenID4VPDisclosureSession(t *testing.T, c *client.Client, sessionId i
 	})
 	require.NoError(t, err)
 	c.NewSession(sessionId, string(sessionReq))
+}
+
+// testDutchOpenID4VPEudiDisclosure pins the Dutch-locale resolution for
+// OpenID4VP disclosure of an EUDI credential. TestCredentialSdJwt has an
+// English-only credential display but Dutch claim displays, pinning the mixed
+// case: the name falls back to English while the claim labels and issuer name
+// are Dutch.
+func testDutchOpenID4VPEudiDisclosure(t *testing.T) {
+	c, sessionHandler := createDutchClientWithoutKeyshareEnrollment(t)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "TestCredentialSdJwt", `{
+		"given_name": "Jan",
+		"family_name": "Jansen",
+		"email": "jan@voorbeeld.nl"
+	}`)
+
+	veramoSession := createVeramoVerifierDcqlSession(t)
+	startOpenID4VPDisclosureSession(t, c, 2, veramoSession.RequestUri)
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOne.OwnedOptions)
+	owned := pickOne.OwnedOptions[0].Credentials[0]
+	require.Equal(t, "Test Credential (SD-JWT)", owned.Name,
+		"no Dutch credential display exists, so the name falls back to English")
+	require.Equal(t, "Test Uitgever", owned.Issuer.Name)
+	requireAttrsInOrder(t, owned.Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Voornaam"), Value: strVal("Jan")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("jan@voorbeeld.nl")},
+	)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOne.OwnedOptions[0]))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 }

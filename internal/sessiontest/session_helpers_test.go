@@ -136,6 +136,23 @@ func runSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
 	})
 }
 
+// runDutchSessionTest mirrors runEudiSessionTest with a Dutch-locale client,
+// for tests that pin the "nl" resolution of app-facing text per protocol.
+func runDutchSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
+	t.Run(name, func(t *testing.T) {
+		irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+		defer irmaServer.Stop()
+
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+		defer keyshareServer.Stop()
+
+		c, sessionHandler := createDutchClient(t)
+		defer c.Close()
+
+		test(t, irmaServer, c, sessionHandler)
+	})
+}
+
 func issue(
 	t *testing.T,
 	irmaServer *IrmaServer,

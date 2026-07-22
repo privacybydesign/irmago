@@ -60,6 +60,11 @@ func testSessionHandlerForOpenID4VPWithIrmaSdJwts(t *testing.T) {
 		"unknown credential type results in error",
 		testOpenID4VP_YiviScheme_UnknownCredentialError,
 	)
+
+	runDutchSessionTest(t,
+		"single credential in dutch locale",
+		testDutchOpenID4VPIrmaSdJwtDisclosure,
+	)
 }
 
 func testOpenID4VP_YiviScheme_SingleCredential(
@@ -1425,4 +1430,41 @@ func extractDisclosedClaims(t *testing.T, sdJwt string) map[string]string {
 	}
 
 	return claims
+}
+
+// testDutchOpenID4VPIrmaSdJwtDisclosure pins the Dutch-locale resolution for
+// OpenID4VP disclosure of an IRMA-issued SD-JWT (served from bbolt): the
+// disclosure plan renders the scheme's Dutch translations.
+func testDutchOpenID4VPIrmaSdJwtDisclosure(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	testSession := startOpenID4VPSessionWithAuthRequest(t, c, 2, sessionHandler, createEmailAuthRequestRequest())
+	session = testSession.ClientSession
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_RequestPermission)
+
+	require.NotEmpty(t, session.DisclosurePlan.DisclosureChoicesOverview)
+	pickOne := session.DisclosurePlan.DisclosureChoicesOverview[0]
+	require.NotEmpty(t, pickOne.OwnedOptions)
+	owned := pickOne.OwnedOptions[0].Credentials[0]
+	require.Equal(t, "Demo E-mailadres", owned.Name)
+	require.Equal(t, "Demo test issuer", owned.Issuer.Name)
+	requireAttrsInOrder(t, owned.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	grantPermission(t, c, session.Id, makeDisclosureChoice(pickOne.OwnedOptions[0]))
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 2, clientmodels.Type_Disclosure, clientmodels.Status_Success)
 }

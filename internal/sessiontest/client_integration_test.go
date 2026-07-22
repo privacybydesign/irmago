@@ -1202,17 +1202,35 @@ func (mh *MockSessionHandler) UpdateSession(s clientmodels.SessionState) {
 }
 
 func createClientWithoutKeyshareEnrollment(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
-	client, _, sessionHandler := instantiateClient(t, issuerChain)
+	client, _, sessionHandler := instantiateClient(t, issuerChain, "en")
 	return client, sessionHandler
 }
 
 func createClientWithIssuerChain(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
-	client, clientHandler, sessionHandler := instantiateClient(t, issuerChain)
+	client, clientHandler, sessionHandler := instantiateClient(t, issuerChain, "en")
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	return client, sessionHandler
+}
+
+// createDutchClient creates a keyshare-enrolled client whose UI locale is
+// Dutch, so all app-facing text resolves through the "nl" translations.
+func createDutchClient(t *testing.T) (*client.Client, *MockSessionHandler) {
+	c, clientHandler, sessionHandler := instantiateClient(t, nil, "nl")
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "nl")
+
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
+
+	return c, sessionHandler
+}
+
+// createDutchClientWithoutKeyshareEnrollment creates a Dutch-locale client for
+// EUDI-only flows that don't need the keyshare server.
+func createDutchClientWithoutKeyshareEnrollment(t *testing.T) (*client.Client, *MockSessionHandler) {
+	c, _, sessionHandler := instantiateClient(t, nil, "nl")
+	return c, sessionHandler
 }
 
 func createClientWithCustomIssuerTrustChain(
@@ -1229,7 +1247,7 @@ func createClientWithCustomIssuerTrustChain(
 	return createClientWithIssuerChain(t, issuerChainBytes)
 }
 
-func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -1271,7 +1289,7 @@ func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmac
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey, "en")
+	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey, locale)
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
