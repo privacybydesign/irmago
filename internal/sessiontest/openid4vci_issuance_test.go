@@ -27,6 +27,7 @@ func testSessionHandlerForOpenID4VCIPreAuth(t *testing.T) {
 	t.Run("resolves VCT type metadata from issued JWT when issuer metadata vct is unknown", testOpenID4VCIPreAuthFlowResolvesVctFromIssuedJwt)
 	t.Run("issues credential with nested claims", testOpenID4VCIPreAuthFlowNestedClaims)
 	t.Run("issuance and data tab in dutch locale", testDutchOpenID4VCIIssuanceAndDataTab)
+	t.Run("data tab and logs follow locale switch", testOpenID4VCILocaleSwitchDataTabAndLogs)
 	t.Run("issues multiple credential types", testOpenID4VCIPreAuthFlowMultipleCredentialTypes)
 	t.Run("issues credential with array claims", testOpenID4VCIPreAuthFlowArrayClaims)
 	t.Run("issues credential with mixed sd and non-sd claims", testOpenID4VCIPreAuthFlowMixedSdNonSd)
@@ -1678,4 +1679,81 @@ func testDutchOpenID4VCIIssuanceAndDataTab(t *testing.T) {
 		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("jansen@voorbeeld.nl")},
 		expectedAttr{Path: []any{"domain"}, DisplayName: new("Domein"), Value: strVal("voorbeeld.nl")},
 	)
+}
+
+// testOpenID4VCILocaleSwitchDataTabAndLogs pins what happens when the locale
+// changes AFTER a session ran: the data tab and the EUDI activity log are
+// read-time surfaces, so a client that issued under "en" and then switches to
+// "nl" (and back) re-resolves everything from the stored metadata on the next
+// pull. Only the log's requestor party is a pure creation-time snapshot.
+func testOpenID4VCILocaleSwitchDataTabAndLogs(t *testing.T) {
+	c, sessionHandler := createClientWithoutKeyshareEnrollment(t, nil)
+	defer c.Close()
+
+	// Session runs under the English locale.
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "switch@example.com",
+		"domain": "example.com"
+	}`)
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialByName(t, creds, "Email Credential (SD-JWT)")
+	require.NotNil(t, cred)
+	require.Equal(t, "Test Issuer", cred.Issuer.Name)
+	require.NotNil(t, cred.Issuer.Image)
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("switch@example.com")},
+		expectedAttr{Path: []any{"domain"}, DisplayName: new("Domain"), Value: strVal("example.com")},
+	)
+
+	// Switch to Dutch: the next pull resolves through the Dutch displays.
+	c.SetLocale("nl")
+
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	require.Nil(t, findCredentialByName(t, creds, "Email Credential (SD-JWT)"),
+		"the English name must no longer appear after the locale switch")
+	cred = findCredentialByName(t, creds, "E-mail Credential (SD-JWT)")
+	require.NotNil(t, cred, "the credential resolves under its Dutch name after the switch")
+	require.Equal(t, "Test Uitgever", cred.Issuer.Name)
+	require.NotNil(t, cred.Issuer.Image,
+		"the issuer logo exists only on the English display and must still show under nl")
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("switch@example.com")},
+		expectedAttr{Path: []any{"domain"}, DisplayName: new("Domein"), Value: strVal("example.com")},
+	)
+
+	// The issuance log was snapshotted under "en", but the credential is still
+	// in the wallet, so its text re-resolves from live metadata on read.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	logCred := logs[0].IssuanceLog.Credentials[0]
+	require.Equal(t, cred.CredentialId, logCred.CredentialId,
+		"the issuance log must carry the stored credential's real vct, not the issuer metadata's placeholder")
+	require.Equal(t, "E-mail Credential (SD-JWT)", logCred.Name,
+		"the log credential name follows the active locale via live metadata")
+	require.Equal(t, "Test Uitgever", logCred.Issuer.Name)
+	requireAttrsInOrder(t, logCred.Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("switch@example.com")},
+		expectedAttr{Path: []any{"domain"}, DisplayName: new("Domein"), Value: strVal("example.com")},
+	)
+	// The requestor party on the log entry has no stored metadata to consult
+	// and remains the creation-time snapshot.
+	require.Equal(t, "Test Issuer", logs[0].IssuanceLog.Issuer.Name,
+		"the log requestor is a creation-time snapshot")
+
+	// Switching back restores the English resolution everywhere.
+	c.SetLocale("en")
+
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	cred = findCredentialByName(t, creds, "Email Credential (SD-JWT)")
+	require.NotNil(t, cred, "the English name returns after switching back")
+	require.Equal(t, "Test Issuer", cred.Issuer.Name)
+
+	logs, err = c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Equal(t, "Email Credential (SD-JWT)", logs[0].IssuanceLog.Credentials[0].Name)
 }

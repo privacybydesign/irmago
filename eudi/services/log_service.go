@@ -280,10 +280,7 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 					name = n
 				}
 			}
-			// Guard on issuer id: the same credential type could later be
-			// issued by a different issuer, whose translations must not be
-			// borrowed for this log entry's issuer.
-			if c.IssuerId == batch.CredentialIssuer {
+			if canReResolveIssuerName(c.IssuerId, issuerName, batch) {
 				if n := clientmodels.Resolve(IssuerNamesByLanguage(batch.IssuerDisplay), locale); n != "" {
 					issuerName = n
 				}
@@ -306,6 +303,29 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		}
 	}
 	return result, nil
+}
+
+// canReResolveIssuerName reports whether the batch's issuer displays belong
+// to this log entry's issuer, guarding against relabeling a log with a
+// different issuer's name when the same credential type was later issued by
+// someone else. Either the ids match, or the snapshot name is one of the
+// batch's issuer display names — the latter covers the OpenID4VCI issuance
+// flow, which records the issuer's well-known URL while the batch stores the
+// JWT's iss claim, so the ids may legitimately use different identifier
+// schemes for the same issuer.
+func canReResolveIssuerName(issuerId, snapshotName string, batch *models.CredentialBatch) bool {
+	if issuerId == batch.CredentialIssuer {
+		return true
+	}
+	if snapshotName == "" {
+		return false
+	}
+	for _, name := range IssuerNamesByLanguage(batch.IssuerDisplay) {
+		if name == snapshotName {
+			return true
+		}
+	}
+	return false
 }
 
 // reResolveAttributeNames overrides attribute display names with the

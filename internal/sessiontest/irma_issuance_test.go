@@ -68,6 +68,11 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 		testDutchIrmaIssuanceAndDataTab,
 	)
 
+	runEudiSessionTest(t,
+		"data tab and logs follow locale switch",
+		testIrmaLocaleSwitchDataTabAndLogs,
+	)
+
 	t.Run("revocation attributes excluded from credentials", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, "postgres")
 		defer revServer.Stop()
@@ -678,4 +683,76 @@ func testDutchIrmaIssuanceAndDataTab(
 	require.NotNil(t, logCred, "expected an issuance log entry for test.test.email")
 	require.Equal(t, "Demo E-mailadres", logCred.Name)
 	require.Equal(t, "Demo test issuer", logCred.Issuer.Name)
+}
+
+// testIrmaLocaleSwitchDataTabAndLogs pins the classic-IRMA counterpart of the
+// locale-switch behavior: credentials and logs are rebuilt from the scheme at
+// read time, so a client that issued under "en" and then switches to "nl"
+// (and back) sees the scheme's translations for the active locale everywhere.
+func testIrmaLocaleSwitchDataTabAndLogs(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Session runs under the English locale.
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
+	require.Equal(t, "Demo Email address", cred.Name)
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	// Switch to Dutch: the next pull resolves through the Dutch scheme texts.
+	c.SetLocale("nl")
+
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	cred = findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
+	require.Equal(t, "Demo E-mailadres", cred.Name)
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	// Classic logs are rebuilt from the scheme at read time, so they follow
+	// the locale switch too.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	issuance := findLog(logs, clientmodels.LogType_Issuance)
+	require.NotNil(t, issuance)
+	var logCred *clientmodels.LogCredential
+	for i := range issuance.IssuanceLog.Credentials {
+		if issuance.IssuanceLog.Credentials[i].CredentialId == "test.test.email" {
+			logCred = &issuance.IssuanceLog.Credentials[i]
+			break
+		}
+	}
+	require.NotNil(t, logCred)
+	require.Equal(t, "Demo E-mailadres", logCred.Name)
+
+	// Switching back restores the English resolution.
+	c.SetLocale("en")
+
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	cred = findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
+	require.Equal(t, "Demo Email address", cred.Name)
 }

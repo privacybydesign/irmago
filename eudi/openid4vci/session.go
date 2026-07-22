@@ -424,8 +424,19 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			expiryDate = jwt.Expiry
 		}
 
+		// The issued JWT's vct claim is authoritative for the credential id —
+		// it is what was signed and what the stored batch is keyed by. The
+		// issuer's well-known document may carry a placeholder (e.g. veramo's
+		// "unknown"), which would leave the issuance log pointing at nothing.
+		credentialId := config.VerifiableCredentialType
+		if len(fc.verifiedSdJwtVcs) > 0 {
+			if vct := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType; vct != "" {
+				credentialId = vct
+			}
+		}
+
 		cred := clientmodels.Credential{
-			CredentialId: config.VerifiableCredentialType,
+			CredentialId: credentialId,
 			Name:         name,
 			Issuer: clientmodels.TrustedParty{
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
