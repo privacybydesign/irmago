@@ -470,31 +470,27 @@ func TestTrustedKeysConcurrentAccess(t *testing.T) {
 
 	// Writer: keeps adding new trusted keys, mimicking the config UpdateListener
 	// that fires DangerousAddTrustedPublicKey on every scheme update.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+	wg.Go(func() {
+		for i := range iterations {
 			c.DangerousAddTrustedPublicKey(
 				irma.PublicKeyIdentifier{Issuer: irma.NewIssuerIdentifier("test"), Counter: uint(i + 2)},
 				testPubK1,
 			)
 		}
-	}()
+	})
 
 	// Readers: GeneratePs and GenerateCommitments both iterate trustedKeys, which
 	// is exactly the read that races with the writer above on the live map.
 	keyIDs := []irma.PublicKeyIdentifier{trustedKeyID}
-	for r := 0; r < 4; r++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < iterations; i++ {
+	for range 4 {
+		wg.Go(func() {
+			for range iterations {
 				_, err := c.GeneratePs(secrets, jwtt, keyIDs)
 				assert.NoError(t, err)
 				_, _, err = c.GenerateCommitments(secrets, jwtt, keyIDs)
 				assert.NoError(t, err)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

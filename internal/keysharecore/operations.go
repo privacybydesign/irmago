@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
+	"maps"
 	"strconv"
 	"time"
 
@@ -331,9 +332,7 @@ func (c *Core) GenerateResponseV2(
 	c.trustedKeysMutex.RLock()
 	key, ok := c.trustedKeys[keyID]
 	trustedKeys := make(map[irma.PublicKeyIdentifier]*gabikeys.PublicKey, len(c.trustedKeys))
-	for id, k := range c.trustedKeys {
-		trustedKeys[id] = k
-	}
+	maps.Copy(trustedKeys, c.trustedKeys)
 	c.trustedKeysMutex.RUnlock()
 	if !ok {
 		return "", ErrKeyNotFound
