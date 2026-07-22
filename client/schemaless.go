@@ -52,8 +52,8 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 		name, category, issueURL := resolveCredTypeTexts(cred, locale)
 
 		// The FAQ is its own text bundle: one language for all four fields.
-		introTS, purposeTS := tsOf(cred.FAQIntro), tsOf(cred.FAQPurpose)
-		contentTS, howtoTS := tsOf(cred.FAQContent), tsOf(cred.FAQHowto)
+		introTS, purposeTS := cred.FAQIntro.ToClientmodels(), cred.FAQPurpose.ToClientmodels()
+		contentTS, howtoTS := cred.FAQContent.ToClientmodels(), cred.FAQHowto.ToClientmodels()
 		faqLang := clientmodels.BundleLanguage(locale, introTS, purposeTS, contentTS, howtoTS)
 
 		result = append(result, &clientmodels.CredentialStoreItem{
@@ -67,10 +67,10 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 				Attributes:   attributes,
 			},
 			Faq: clientmodels.Faq{
-				Intro:   ptrIfNonEmpty(introTS[faqLang]),
-				Purpose: ptrIfNonEmpty(purposeTS[faqLang]),
-				Content: ptrIfNonEmpty(contentTS[faqLang]),
-				HowTo:   ptrIfNonEmpty(howtoTS[faqLang]),
+				Intro:   clientmodels.PtrIfNonEmpty(introTS[faqLang]),
+				Purpose: clientmodels.PtrIfNonEmpty(purposeTS[faqLang]),
+				Content: clientmodels.PtrIfNonEmpty(contentTS[faqLang]),
+				HowTo:   clientmodels.PtrIfNonEmpty(howtoTS[faqLang]),
 			},
 		})
 	}
@@ -78,30 +78,14 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 	return result, nil
 }
 
-// tsOf converts an optional irma.TranslatedString to a nil-safe clientmodels map.
-func tsOf(ts *irma.TranslatedString) clientmodels.TranslatedString {
-	if ts == nil {
-		return nil
-	}
-	return clientmodels.TranslatedString(*ts)
-}
-
-// ptrIfNonEmpty returns a pointer to s, or nil when s is empty.
-func ptrIfNonEmpty(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 // resolveCredTypeTexts resolves a credential type's name, category and issue
 // URL as one text bundle: a single language for all three fields.
 func resolveCredTypeTexts(credType *irma.CredentialType, locale string) (name string, category *string, issueURL *string) {
 	nameTS := clientmodels.TranslatedString(credType.Name)
-	categoryTS := tsOf(credType.Category)
-	issueURLTS := tsOf(credType.IssueURL)
+	categoryTS := credType.Category.ToClientmodels()
+	issueURLTS := credType.IssueURL.ToClientmodels()
 	lang := clientmodels.BundleLanguage(locale, nameTS, categoryTS, issueURLTS)
-	return nameTS[lang], ptrIfNonEmpty(categoryTS[lang]), ptrIfNonEmpty(issueURLTS[lang])
+	return nameTS[lang], clientmodels.PtrIfNonEmpty(categoryTS[lang]), clientmodels.PtrIfNonEmpty(issueURLTS[lang])
 }
 
 // resolveAttrTexts resolves an attribute type's display name and description
@@ -110,7 +94,7 @@ func resolveAttrTexts(atType *irma.AttributeType, locale string) (displayName *s
 	nameTS := clientmodels.TranslatedString(atType.Name)
 	descTS := clientmodels.TranslatedString(atType.Description)
 	lang := clientmodels.BundleLanguage(locale, nameTS, descTS)
-	return ptrIfNonEmpty(nameTS[lang]), ptrIfNonEmpty(descTS[lang])
+	return clientmodels.PtrIfNonEmpty(nameTS[lang]), clientmodels.PtrIfNonEmpty(descTS[lang])
 }
 
 // buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo

@@ -276,7 +276,7 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 	// Resolve the credential's text fields as one bundle: one language for the
 	// whole object, never mixed-language text.
 	nameTS := clientmodels.TranslatedString(credType.Name)
-	issueURLTS := tsOf(credType.IssueURL)
+	issueURLTS := credType.IssueURL.ToClientmodels()
 	lang := clientmodels.BundleLanguage(locale, nameTS, issueURLTS)
 
 	remainingCount := metadata.RemainingInstanceCount
@@ -289,7 +289,7 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 		Format:                      clientmodels.Format_SdJwtVc,
 		BatchInstanceCountRemaining: &remainingCount,
 		Attributes:                  attributes,
-		IssueURL:                    ptrIfNonEmpty(issueURLTS[lang]),
+		IssueURL:                    clientmodels.PtrIfNonEmpty(issueURLTS[lang]),
 	}
 
 	if metadata.SignedOn != nil {
@@ -343,8 +343,8 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 		lang := clientmodels.BundleLanguage(locale, nameTS, descTS)
 		attr := clientmodels.Attribute{
 			ClaimPath:   []any{at.ID},
-			DisplayName: ptrIfNonEmpty(nameTS[lang]),
-			Description: ptrIfNonEmpty(descTS[lang]),
+			DisplayName: clientmodels.PtrIfNonEmpty(nameTS[lang]),
+			Description: clientmodels.PtrIfNonEmpty(descTS[lang]),
 		}
 
 		// Set the actual value from the credential's stored attributes
@@ -483,18 +483,18 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 
 	// One language for the descriptor's text fields together.
 	nameTS := clientmodels.TranslatedString(credType.Name)
-	categoryTS := tsOf(credType.Category)
-	issueURLTS := tsOf(credType.IssueURL)
+	categoryTS := credType.Category.ToClientmodels()
+	issueURLTS := credType.IssueURL.ToClientmodels()
 	lang := clientmodels.BundleLanguage(locale, nameTS, categoryTS, issueURLTS)
 
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: credTypeId.String(),
 		Name:         nameTS[lang],
 		Issuer:       buildIssuerTrustedParty(h.config, issuer, locale),
-		Category:     ptrIfNonEmpty(categoryTS[lang]),
+		Category:     clientmodels.PtrIfNonEmpty(categoryTS[lang]),
 		Image:        clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Attributes:   attributes,
-		IssueURL:     ptrIfNonEmpty(issueURLTS[lang]),
+		IssueURL:     clientmodels.PtrIfNonEmpty(issueURLTS[lang]),
 	}, nil
 }
 
@@ -520,7 +520,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 	// Enrich with display metadata if available
 	if credType, ok := h.config.CredentialTypes[credTypeId]; ok {
 		nameTS := clientmodels.TranslatedString(credType.Name)
-		issueURLTS := tsOf(credType.IssueURL)
+		issueURLTS := credType.IssueURL.ToClientmodels()
 		lang := clientmodels.BundleLanguage(locale, nameTS, issueURLTS)
 		logCred.Name = nameTS[lang]
 		logCred.Image = clientmodels.ImageFromFile(credType.Logo(h.config))
@@ -529,7 +529,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 			logCred.Issuer = buildIssuerTrustedParty(h.config, issuer, locale)
 		}
 
-		logCred.IssueURL = ptrIfNonEmpty(issueURLTS[lang])
+		logCred.IssueURL = clientmodels.PtrIfNonEmpty(issueURLTS[lang])
 	}
 
 	// Build disclosed attributes
@@ -554,7 +554,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 					if name := nameTS[lang]; name != "" {
 						attr.DisplayName = &name
 					}
-					attr.Description = ptrIfNonEmpty(descTS[lang])
+					attr.Description = clientmodels.PtrIfNonEmpty(descTS[lang])
 					matchedAtType = at
 					break
 				}
@@ -597,22 +597,6 @@ func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer
 		Verified: scheme.Status == irma.SchemeManagerStatusValid,
 		Parent:   &parent,
 	}
-}
-
-// tsOf converts an optional irma.TranslatedString to a nil-safe clientmodels map.
-func tsOf(ts *irma.TranslatedString) clientmodels.TranslatedString {
-	if ts == nil {
-		return nil
-	}
-	return clientmodels.TranslatedString(*ts)
-}
-
-// ptrIfNonEmpty returns a pointer to s, or nil when s is empty.
-func ptrIfNonEmpty(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 // displayHintToAttributeType converts an irma display hint to a clientmodels.AttributeType.

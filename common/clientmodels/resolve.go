@@ -91,14 +91,9 @@ func Resolve(ts TranslatedString, locale string) string {
 	return ts[BundleLanguage(locale, ts)]
 }
 
-// ResolveOptional resolves an optional TranslatedString to an optional
-// string: nil stays nil, and a map without any usable translation also
-// yields nil.
-func ResolveOptional(ts *TranslatedString, locale string) *string {
-	if ts == nil {
-		return nil
-	}
-	s := Resolve(*ts, locale)
+// PtrIfNonEmpty returns a pointer to s, or nil when s is empty. Used to fill
+// the optional (*string) DTO fields from a resolved translation.
+func PtrIfNonEmpty(s string) *string {
 	if s == "" {
 		return nil
 	}

@@ -79,22 +79,11 @@ func TestBundleLanguage_TextBundle(t *testing.T) {
 	})
 }
 
-func TestResolveOptional(t *testing.T) {
-	t.Run("nil stays nil", func(t *testing.T) {
-		assert.Nil(t, ResolveOptional(nil, "en"))
-	})
-
-	t.Run("unresolvable map yields nil", func(t *testing.T) {
-		ts := TranslatedString{}
-		assert.Nil(t, ResolveOptional(&ts, "en"))
-	})
-
-	t.Run("resolvable map yields pointer", func(t *testing.T) {
-		ts := TranslatedString{"en": "value"}
-		got := ResolveOptional(&ts, "nl")
-		assert.NotNil(t, got)
-		assert.Equal(t, "value", *got)
-	})
+func TestPtrIfNonEmpty(t *testing.T) {
+	assert.Nil(t, PtrIfNonEmpty(""))
+	got := PtrIfNonEmpty("value")
+	assert.NotNil(t, got)
+	assert.Equal(t, "value", *got)
 }
 
 func TestCurrentLocale(t *testing.T) {
