@@ -26,17 +26,21 @@ type EudiLogService interface {
 
 type eudiLogService struct {
 	store               db.EudiLogStore
+	credentialStore     db.CredentialStore
 	credLogoManager     filesystem.LogoManager
 	issuerLogoManager   filesystem.LogoManager
 	verifierLogoManager filesystem.LogoManager
+	locale              string
 }
 
-func NewEudiLogService(s storage.Storage) EudiLogService {
+func NewEudiLogService(s storage.Storage, locale string) EudiLogService {
 	return &eudiLogService{
 		store:               db.NewEudiLogStore(s.Db()),
+		credentialStore:     db.NewCredentialStore(s.Db()),
 		credLogoManager:     s.FileSystem().Credentials().LogoManager(),
 		issuerLogoManager:   s.FileSystem().Issuers().LogoManager(),
 		verifierLogoManager: s.FileSystem().Verifiers().LogoManager(),
+		locale:              locale,
 	}
 }
 
@@ -159,9 +163,10 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 }
 
 func (s *eudiLogService) entriesToLogInfos(entries []*models.EudiLogEntry) ([]clientmodels.LogInfo, error) {
+	batchByVct := s.batchesByVct()
 	result := make([]clientmodels.LogInfo, 0, len(entries))
 	for _, e := range entries {
-		info, err := s.entryToLogInfo(e)
+		info, err := s.entryToLogInfo(e, batchByVct)
 		if err != nil {
 			eudi.Logger.Warnf("failed to convert log entry %s: %v", e.ID, err)
 			continue
@@ -171,8 +176,29 @@ func (s *eudiLogService) entriesToLogInfos(entries []*models.EudiLogEntry) ([]cl
 	return result, nil
 }
 
-func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.LogInfo, error) {
-	logCreds, err := modelCredentialsToLogCredentials(e.Credentials, s.credLogoManager, s.issuerLogoManager)
+// batchesByVct indexes the stored credential batches by their VCT so log
+// entries can re-resolve display text against live metadata for the current
+// locale. Best-effort: on a storage error the index is empty and logs fall
+// back to their creation-time snapshots. When multiple batches share a VCT,
+// one carrying credential metadata is preferred.
+func (s *eudiLogService) batchesByVct() map[string]*models.CredentialBatch {
+	result := map[string]*models.CredentialBatch{}
+	batches, err := s.credentialStore.GetCredentialBatchList()
+	if err != nil {
+		eudi.Logger.Warnf("failed to load credential batches for log text re-resolution: %v", err)
+		return result
+	}
+	for _, batch := range batches {
+		if existing, ok := result[batch.VerifiableCredentialType]; ok && existing.CredentialMetadata != nil {
+			continue
+		}
+		result[batch.VerifiableCredentialType] = batch
+	}
+	return result
+}
+
+func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry, batchByVct map[string]*models.CredentialBatch) (clientmodels.LogInfo, error) {
+	logCreds, err := modelCredentialsToLogCredentials(e.Credentials, s.credLogoManager, s.issuerLogoManager, s.locale, batchByVct)
 	if err != nil {
 		return clientmodels.LogInfo{}, err
 	}
@@ -182,12 +208,7 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.Lo
 		Time: e.CreatedAt,
 	}
 
-	var requestorName clientmodels.TranslatedString
-	if e.RequestorName != nil {
-		if err := json.Unmarshal(e.RequestorName, &requestorName); err != nil {
-			eudi.Logger.Warnf("failed to unmarshal requestor name for log %s: %v", e.ID, err)
-		}
-	}
+	requestorName := decodeStoredText(e.RequestorName, s.locale)
 	requestorImage := eudi.LoadLogoImage(s.verifierLogoManager, e.RequestorId)
 	requestor := &clientmodels.TrustedParty{
 		Id:    e.RequestorId,
@@ -217,30 +238,12 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry) (clientmodels.Lo
 	return info, nil
 }
 
-func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogoManager filesystem.LogoManager, issuerLogoManager filesystem.LogoManager) ([]clientmodels.LogCredential, error) {
+func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogoManager filesystem.LogoManager, issuerLogoManager filesystem.LogoManager, locale string, batchByVct map[string]*models.CredentialBatch) ([]clientmodels.LogCredential, error) {
 	result := make([]clientmodels.LogCredential, len(creds))
 	for i, c := range creds {
-		var name clientmodels.TranslatedString
-		if c.Name != nil {
-			if err := json.Unmarshal(c.Name, &name); err != nil {
-				eudi.Logger.Warnf("failed to unmarshal credential name for %q: %v", c.CredentialId, err)
-			}
-		}
-		var issuerName clientmodels.TranslatedString
-		if c.IssuerName != nil {
-			if err := json.Unmarshal(c.IssuerName, &issuerName); err != nil {
-				eudi.Logger.Warnf("failed to unmarshal issuer name for %q: %v", c.CredentialId, err)
-			}
-		}
-		var attrs []clientmodels.Attribute
-		if c.Attributes != nil {
-			if err := json.Unmarshal(c.Attributes, &attrs); err != nil {
-				eudi.Logger.Warnf("failed to unmarshal attributes for %q: %v", c.CredentialId, err)
-			}
-		}
-		if attrs == nil {
-			attrs = []clientmodels.Attribute{}
-		}
+		name := decodeStoredText(c.Name, locale)
+		issuerName := decodeStoredText(c.IssuerName, locale)
+		attrs := decodeStoredAttributes(c.CredentialId, c.Attributes, locale)
 		var formats []clientmodels.CredentialFormat
 		if c.Formats != nil {
 			if err := json.Unmarshal(c.Formats, &formats); err != nil {
@@ -252,13 +255,9 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		}
 		credImage := eudi.LoadLogoImage(credLogoManager, c.CredentialId)
 		issuerImage := eudi.LoadLogoImage(issuerLogoManager, c.IssuerId)
-		var issueURL *clientmodels.TranslatedString
-		if c.IssueURL != nil {
-			issueURL = &clientmodels.TranslatedString{}
-			if err := json.Unmarshal(c.IssueURL, issueURL); err != nil {
-				eudi.Logger.Warnf("failed to unmarshal issue URL for %q: %v", c.CredentialId, err)
-				issueURL = nil
-			}
+		var issueURL *string
+		if s := decodeStoredText(c.IssueURL, locale); s != "" {
+			issueURL = &s
 		}
 		var issuanceDate, expiryDate *int64
 		if c.IssuanceDate.Valid {
@@ -269,6 +268,26 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 			y := c.ExpiryDate.V.Unix()
 			expiryDate = &y
 		}
+
+		// Re-resolve display text against live credential metadata when the
+		// credential is still in the wallet, so the activity log follows the
+		// active locale. The persisted snapshot remains the fallback for
+		// deleted credentials, untranslated fields, and verifier names (which
+		// have no stored metadata to consult).
+		if batch := batchByVct[c.CredentialId]; batch != nil {
+			if batch.CredentialMetadata != nil {
+				if n := clientmodels.Resolve(CredentialNamesByLanguage(batch.CredentialMetadata.Display), locale); n != "" {
+					name = n
+				}
+			}
+			if canReResolveIssuerName(c.IssuerId, issuerName, batch) {
+				if n := clientmodels.Resolve(IssuerNamesByLanguage(batch.IssuerDisplay), locale); n != "" {
+					issuerName = n
+				}
+			}
+			reResolveAttributeNames(attrs, batch, locale)
+		}
+
 		result[i] = clientmodels.LogCredential{
 			CredentialId:        c.CredentialId,
 			Formats:             formats,
@@ -284,6 +303,129 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		}
 	}
 	return result, nil
+}
+
+// canReResolveIssuerName reports whether the batch's issuer displays belong
+// to this log entry's issuer, guarding against relabeling a log with a
+// different issuer's name when the same credential type was later issued by
+// someone else. Either the ids match, or the snapshot name is one of the
+// batch's issuer display names — the latter covers the OpenID4VCI issuance
+// flow, which records the issuer's well-known URL while the batch stores the
+// JWT's iss claim, so the ids may legitimately use different identifier
+// schemes for the same issuer.
+func canReResolveIssuerName(issuerId, snapshotName string, batch *models.CredentialBatch) bool {
+	if issuerId == batch.CredentialIssuer {
+		return true
+	}
+	if snapshotName == "" {
+		return false
+	}
+	for _, name := range IssuerNamesByLanguage(batch.IssuerDisplay) {
+		if name == snapshotName {
+			return true
+		}
+	}
+	return false
+}
+
+// reResolveAttributeNames overrides attribute display names with the
+// translation the batch's live claim metadata resolves for the locale.
+// Attributes whose path has no metadata entry (exact or null-wildcard match)
+// keep their snapshot.
+func reResolveAttributeNames(attrs []clientmodels.Attribute, batch *models.CredentialBatch, locale string) {
+	if batch.CredentialMetadata == nil {
+		return
+	}
+	lookup := map[string]string{}
+	for _, claim := range batch.CredentialMetadata.Claims {
+		if len(claim.Display) == 0 {
+			continue
+		}
+		var path []any
+		if err := json.Unmarshal(claim.Path, &path); err != nil {
+			continue
+		}
+		if n := clientmodels.Resolve(ClaimNamesByLanguage(claim.Display), locale); n != "" {
+			lookup[clientmodels.ClaimPathKey(path)] = n
+		}
+	}
+	if len(lookup) == 0 {
+		return
+	}
+	for i := range attrs {
+		if d, ok := lookupDisplayName(lookup, attrs[i].ClaimPath); ok {
+			attrs[i].DisplayName = &d
+		}
+	}
+}
+
+// storedLogAttribute mirrors clientmodels.Attribute but keeps the display
+// name and description raw, so both the current string form and the legacy
+// TranslatedString-map form (entries written before the wallet became
+// locale-aware) decode without data loss.
+type storedLogAttribute struct {
+	ClaimPath      []any                        `json:"claim_path"`
+	DisplayName    json.RawMessage              `json:"display_name,omitempty"`
+	Description    json.RawMessage              `json:"description,omitempty"`
+	Value          *clientmodels.AttributeValue `json:"value,omitempty"`
+	RequestedValue *clientmodels.AttributeValue `json:"requested_value,omitempty"`
+}
+
+// decodeStoredAttributes decodes a stored log credential's attribute list,
+// resolving legacy map-form display names and descriptions with the given
+// locale. Never returns nil.
+func decodeStoredAttributes(credentialId string, raw []byte, locale string) []clientmodels.Attribute {
+	if len(raw) == 0 {
+		return []clientmodels.Attribute{}
+	}
+	var stored []storedLogAttribute
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		eudi.Logger.Warnf("failed to unmarshal attributes for %q: %v", credentialId, err)
+		return []clientmodels.Attribute{}
+	}
+	attrs := make([]clientmodels.Attribute, len(stored))
+	for i, s := range stored {
+		attrs[i] = clientmodels.Attribute{
+			ClaimPath:      s.ClaimPath,
+			DisplayName:    decodeOptionalStoredText(s.DisplayName, locale),
+			Description:    decodeOptionalStoredText(s.Description, locale),
+			Value:          s.Value,
+			RequestedValue: s.RequestedValue,
+		}
+	}
+	return attrs
+}
+
+// decodeOptionalStoredText decodes an optional stored log text field to an
+// optional string: absent, null, and unresolvable inputs all yield nil.
+func decodeOptionalStoredText(raw json.RawMessage, locale string) *string {
+	if len(raw) == 0 {
+		return nil
+	}
+	if s := decodeStoredText(raw, locale); s != "" {
+		return &s
+	}
+	return nil
+}
+
+// decodeStoredText decodes a stored log text field. New entries store a plain
+// JSON string (the text resolved at log-creation time); entries written before
+// the wallet became locale-aware store a TranslatedString map, which is
+// resolved with the given locale on read. Returns "" for empty or null input.
+func decodeStoredText(raw []byte, locale string) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var ts clientmodels.TranslatedString
+	if err := json.Unmarshal(raw, &ts); err == nil {
+		return clientmodels.Resolve(ts, locale)
+	}
+	eudi.Logger.Warnf("failed to decode stored log text %q", string(raw))
+	return ""
 }
 
 // saveLogoFromBase64 persists a base64-encoded image to the given logo manager

@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -36,6 +37,11 @@ type Client struct {
 	// WSCA-backed); see NewClient.
 	holderKeyBinder HolderKeyBinder
 
+	// currentLocale drives which translations are resolved into DTOs and
+	// which logo is downloaded during issuance. Sessions snapshot it at flow
+	// start, so a mid-flow locale change does not affect a running session.
+	currentLocale *clientmodels.CurrentLocale
+
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
 }
@@ -48,6 +54,7 @@ func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	holderKeyBinder HolderKeyBinder,
+	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
@@ -55,12 +62,16 @@ func NewClient(httpClient *http.Client,
 	if holderKeyBinder == nil {
 		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
 	}
+	if currentLocale == nil {
+		currentLocale = clientmodels.NewCurrentLocale("")
+	}
 
 	return &Client{
 		httpClient:      httpClient,
 		Configuration:   config,
 		holderVerifier:  holderVerifier,
 		holderKeyBinder: holderKeyBinder,
+		currentLocale:   currentLocale,
 	}, nil
 }
 
@@ -156,6 +167,7 @@ func (client *Client) handleCredentialOffer(
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,
+		locale:                     client.currentLocale.Get(),
 		redirectUri:                redirectUri,
 	}
 	defer func() {
@@ -308,37 +320,33 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 		return nil, fmt.Errorf("failed to validate credential issuer metadata against credential offer: %v", err)
 	}
 
-	// TODO: parallelize the download of logos for the Credential Issuer and the offered credentials
-
-	// Valid metadata; download any issuer logos, if present
-	// TODO: check which language we are using first, so we have to download only one logo (if it is not already cached), or..
-	// TODO: initiate parallel downloads of logos; but check for unique URLs first
+	// Valid metadata; download the issuer logo that resolves for the current
+	// locale, if present and not already cached. Logos for other languages
+	// are fetched lazily by the backfill sweep when the locale changes.
 	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
-	for _, display := range credentialIssuerMetadata.Display {
-		if display.Logo != nil {
-			// TODO: check if logo is already in cache first
-			logoData, _, err := helpers.DownloadRemoteImage(client.httpClient, display.Logo.Uri)
-			if err != nil {
-				eudi.Logger.Warnf("failed to download issuer logo from %q: %v", display.Logo.Uri, err)
-				continue
-			}
-			err = issuerLogoManager.Save(display.Logo.Uri, logoData)
-
-			if err != nil {
-				eudi.Logger.Warnf("failed to cache issuer logo from %q: %v", display.Logo.Uri, err)
-			}
-
-			break
-
-			// TODO: how to handle this error ? Proceed without logo ?
-			// if err != nil {
-			// 	// handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
-			// 	// return
-			// }
-		}
-	}
+	issuerLogoURI := clientmodels.Resolve(metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), client.currentLocale.Get())
+	downloadLogoIfMissing(issuerLogoManager, client.httpClient, issuerLogoURI)
 
 	return &credentialIssuerMetadata, nil
+}
+
+// downloadLogoIfMissing fetches and caches a logo unless the URI is empty or
+// the logo is already cached.
+func downloadLogoIfMissing(manager filesystem.LogoManager, httpClient *http.Client, uri string) {
+	if uri == "" {
+		return
+	}
+	if exists, err := manager.Exists(uri); err == nil && exists {
+		return
+	}
+	logoData, _, err := helpers.DownloadRemoteImage(httpClient, uri)
+	if err != nil {
+		eudi.Logger.Warnf("failed to download logo from %q: %v", uri, err)
+		return
+	}
+	if err := manager.Save(uri, logoData); err != nil {
+		eudi.Logger.Warnf("failed to cache logo from %q: %v", uri, err)
+	}
 }
 
 func (client *Client) Dismiss() {
@@ -357,8 +365,9 @@ func constructCredentialIssuerMetadataUrl(credentialIssuer url.URL) string {
 func (client *Client) convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
-	issuerName clientmodels.TranslatedString,
+	issuerName string,
 ) ([]*clientmodels.CredentialDescriptor, error) {
+	locale := client.currentLocale.Get()
 	result := make([]*clientmodels.CredentialDescriptor, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
@@ -374,17 +383,11 @@ func (client *Client) convertToCredentialInfoList(
 			}
 
 			displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
-			name := metadata.ConvertDisplayToTranslatedString(displays)
-			var image *clientmodels.Image
+			name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale)
 
 			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
-			for _, display := range config.CredentialMetadata.Display {
-				if display.Logo != nil {
-					image = eudi.LoadLogoImage(credentialLogoManager, display.Logo.Uri)
-					// TODO: for now, we pick the first logo in a display we can find, but this needs to be based on the locale being used in the app
-					break
-				}
-			}
+			image := eudi.LoadLogoImage(credentialLogoManager,
+				clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale))
 
 			result = append(result, &clientmodels.CredentialDescriptor{
 				CredentialId: config.VerifiableCredentialType,
@@ -392,7 +395,7 @@ func (client *Client) convertToCredentialInfoList(
 				Issuer: clientmodels.TrustedParty{
 					Name: issuerName,
 				},
-				Attributes: convertClaimsToAttributes(config.CredentialMetadata.Claims),
+				Attributes: convertClaimsToAttributes(config.CredentialMetadata.Claims, locale),
 				Image:      image,
 			})
 		}
@@ -400,14 +403,15 @@ func (client *Client) convertToCredentialInfoList(
 	return result, nil
 }
 
-func convertClaimsToAttributes(claims []metadata.ClaimsDescription) []clientmodels.Attribute {
+func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale string) []clientmodels.Attribute {
 	var attrs []clientmodels.Attribute
 	for _, claim := range claims {
-		var displayName *clientmodels.TranslatedString
+		var displayName *string
 		if len(claim.Display) > 0 {
 			displays := metadata.ToTranslateableList(claim.Display)
-			dn := metadata.ConvertDisplayToTranslatedString(displays)
-			displayName = &dn
+			if dn := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale); dn != "" {
+				displayName = &dn
+			}
 		}
 
 		attrs = append(attrs, clientmodels.Attribute{
@@ -420,21 +424,16 @@ func convertClaimsToAttributes(claims []metadata.ClaimsDescription) []clientmode
 
 func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata) *clientmodels.TrustedParty {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
-	// TODO: we need to know which language to use, in order to get the correct logo
+	locale := client.currentLocale.Get()
 	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
-	var issuerImage *clientmodels.Image
 	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
-	for _, display := range credentialIssuerMetadata.Display {
-		if display.Logo != nil {
-			issuerImage = eudi.LoadLogoImage(issuerLogoManager, display.Logo.Uri)
-			break
-		}
-	}
+	issuerImage := eudi.LoadLogoImage(issuerLogoManager,
+		clientmodels.Resolve(metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale))
 
 	return &clientmodels.TrustedParty{
 		Id:       credentialIssuerMetadata.CredentialIssuer,
-		Name:     metadata.ConvertDisplayToTranslatedString(displays),
+		Name:     clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
 		Image:    issuerImage,
 		Verified: false,
 	}
@@ -503,35 +502,24 @@ func (client *Client) resolveCredentialMetadataFromVct(
 	}
 }
 
-// downloadCredentialLogos caches the first available logo for each offered
-// credential configuration into the credential logo store. Called after
+// downloadCredentialLogos caches, for each offered credential configuration,
+// the logo that resolves for the current locale. Called after
 // resolveCredentialMetadataFromVct so VCT-derived logos (e.g. from
-// rendering.simple.logo) are picked up too.
+// rendering.simple.logo) are picked up too. Logos for other languages are
+// fetched lazily by the backfill sweep when the locale changes.
 func (client *Client) downloadCredentialLogos(
 	offer *CredentialOffer,
 	issuerMetadata *metadata.CredentialIssuerMetadata,
 ) {
 	credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
+	locale := client.currentLocale.Get()
 	for _, configID := range offer.CredentialConfigurationIds {
 		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
 		if !ok || config.CredentialMetadata == nil {
 			continue
 		}
-		for _, display := range config.CredentialMetadata.Display {
-			if display.Logo == nil {
-				continue
-			}
-			// TODO: check if logo is already in cache first
-			logoData, _, err := helpers.DownloadRemoteImage(client.httpClient, display.Logo.Uri)
-			if err != nil {
-				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
-				continue
-			}
-			if err := credentialLogoManager.Save(display.Logo.Uri, logoData); err != nil {
-				eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
-			}
-			break
-		}
+		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale)
+		downloadLogoIfMissing(credentialLogoManager, client.httpClient, uri)
 	}
 }
 

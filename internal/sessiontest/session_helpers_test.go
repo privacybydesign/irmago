@@ -136,6 +136,23 @@ func runSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
 	})
 }
 
+// runDutchSessionTest mirrors runEudiSessionTest with a Dutch-locale client,
+// for tests that pin the "nl" resolution of app-facing text per protocol.
+func runDutchSessionTest(t *testing.T, name string, test SessionIntegrationTest) {
+	t.Run(name, func(t *testing.T) {
+		irmaServer := StartIrmaServer(t, irmaServerConfWithSdJwtEnabled(t))
+		defer irmaServer.Stop()
+
+		keyshareServer := testkeyshare.StartKeyshareServer(t, logger, irma.NewSchemeManagerIdentifier("test"), 0)
+		defer keyshareServer.Stop()
+
+		c, sessionHandler := createDutchClient(t)
+		defer c.Close()
+
+		test(t, irmaServer, c, sessionHandler)
+	})
+}
+
 func issue(
 	t *testing.T,
 	irmaServer *IrmaServer,
@@ -208,7 +225,7 @@ func requireSessionState(
 func requireRequestorInfo(t *testing.T, session clientmodels.SessionState) {
 	t.Helper()
 	require.Equal(t, "test-requestors.test-requestor", session.Requestor.Id)
-	require.Equal(t, clientmodels.TranslatedString{"nl": "Lokale IRMA server", "en": "Local IRMA server"}, session.Requestor.Name)
+	require.Equal(t, "Local IRMA server", session.Requestor.Name)
 	require.True(t, session.Requestor.Verified)
 }
 
@@ -273,13 +290,14 @@ func attributeMap(attrs []clientmodels.Attribute) map[string]clientmodels.Attrib
 }
 
 // expectedAttr describes an expected attribute with its full claim path,
-// display name, optional description, and typed value.
+// display name (resolved to the client's locale), optional description, and
+// typed value.
 type expectedAttr struct {
 	Path           []any
-	DisplayName    *clientmodels.TranslatedString
-	Description    *clientmodels.TranslatedString // nil to skip description check
-	Value          *clientmodels.AttributeValue   // nil means section header (asserts actual is nil)
-	RequestedValue *clientmodels.AttributeValue   // nil to skip check
+	DisplayName    *string
+	Description    *string                      // nil to skip description check
+	Value          *clientmodels.AttributeValue // nil means section header (asserts actual is nil)
+	RequestedValue *clientmodels.AttributeValue // nil to skip check
 }
 
 // strVal creates a string AttributeValue.
@@ -298,7 +316,7 @@ func intVal(i int64) *clientmodels.AttributeValue {
 }
 
 // header creates an expectedAttr for a section header (Value == nil).
-func header(path []any, displayName clientmodels.TranslatedString) expectedAttr {
+func header(path []any, displayName string) expectedAttr {
 	return expectedAttr{
 		Path:        path,
 		DisplayName: &displayName,
@@ -329,13 +347,8 @@ func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ..
 		if exp.DisplayName != nil {
 			require.NotNil(t, actual.DisplayName,
 				"attribute %d (%s) should have a display name", i, pathKey)
-			for locale, expectedName := range *exp.DisplayName {
-				actualName, ok := (*actual.DisplayName)[locale]
-				require.True(t, ok, "attribute %d (%s) should have display name for locale %q",
-					i, pathKey, locale)
-				require.Equal(t, expectedName, actualName,
-					"attribute %d (%s) display name [%s] mismatch", i, pathKey, locale)
-			}
+			require.Equal(t, *exp.DisplayName, *actual.DisplayName,
+				"attribute %d (%s) display name mismatch", i, pathKey)
 		} else {
 			require.Nil(t, actual.DisplayName,
 				"attribute %d (%s) should have nil display name (array item)", i, pathKey)
@@ -343,13 +356,8 @@ func requireAttrsInOrder(t testingT, attrs []clientmodels.Attribute, expected ..
 		if exp.Description != nil {
 			require.NotNil(t, actual.Description,
 				"attribute %d (%s) should have a description", i, pathKey)
-			for locale, expectedDesc := range *exp.Description {
-				actualDesc, ok := (*actual.Description)[locale]
-				require.True(t, ok, "attribute %d (%s) should have description for locale %q",
-					i, pathKey, locale)
-				require.Equal(t, expectedDesc, actualDesc,
-					"attribute %d (%s) description [%s] mismatch", i, pathKey, locale)
-			}
+			require.Equal(t, *exp.Description, *actual.Description,
+				"attribute %d (%s) description mismatch", i, pathKey)
 		}
 		if exp.RequestedValue != nil {
 			require.NotNil(t, actual.RequestedValue,

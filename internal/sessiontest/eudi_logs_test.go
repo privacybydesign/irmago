@@ -26,6 +26,7 @@ func testSessionHandlerForEudiLogs(t *testing.T) {
 	t.Run("duplicate credential removal leaves none and creates log", testDuplicateCredentialRemovalCreatesLog)
 	t.Run("irma and eudi logs merged chronologically", testIrmaAndEudiLogsMergedChronologically)
 	t.Run("load logs before includes both irma and eudi logs", testLoadLogsBeforeIncludesBothSources)
+	t.Run("logs written under dutch locale snapshot dutch text", testDutchEudiLogs)
 }
 
 func testOpenID4VCIPreAuthFlowCreatesIssuanceLog(t *testing.T) {
@@ -50,7 +51,7 @@ func testOpenID4VCIPreAuthFlowCreatesIssuanceLog(t *testing.T) {
 
 	cred := log.IssuanceLog.Credentials[0]
 	require.NotEmpty(t, cred.CredentialId)
-	require.Equal(t, "Test Credential (SD-JWT)", cred.Name["en"])
+	require.Equal(t, "Test Credential (SD-JWT)", cred.Name)
 	require.Contains(t, cred.Formats, clientmodels.Format_SdJwtVc,
 		"issuance log credential should include the sd-jwt format")
 	// The test issuer has no logo configured, so Image should be nil.
@@ -61,17 +62,17 @@ func testOpenID4VCIPreAuthFlowCreatesIssuanceLog(t *testing.T) {
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"given_name"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			DisplayName: new("Given Name"),
 			Value:       strVal("LogTest"),
 		},
 		expectedAttr{
 			Path:        []any{"family_name"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			DisplayName: new("Family Name"),
 			Value:       strVal("User"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			DisplayName: new("Email"),
 			Value:       strVal("logtest@example.com"),
 		},
 	)
@@ -96,7 +97,7 @@ func testOpenID4VCIAuthCodeFlowCreatesIssuanceLog(t *testing.T) {
 	require.NotNil(t, log.IssuanceLog)
 	require.Equal(t, clientmodels.Protocol_OpenID4VCI, log.IssuanceLog.Protocol)
 	require.Len(t, log.IssuanceLog.Credentials, 1)
-	require.Equal(t, "Test Credential (SD-JWT)", log.IssuanceLog.Credentials[0].Name["en"])
+	require.Equal(t, "Test Credential (SD-JWT)", log.IssuanceLog.Credentials[0].Name)
 }
 
 func testOpenID4VCIDeniedPermissionCreatesNoLog(t *testing.T) {
@@ -192,7 +193,7 @@ func testOpenID4VPDisclosureLogHasIssuerNameAndImage(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 	issuanceCred := logs[0].IssuanceLog.Credentials[0]
-	require.Equal(t, "Test Issuer", issuanceCred.Issuer.Name["en"],
+	require.Equal(t, "Test Issuer", issuanceCred.Issuer.Name,
 		"issuance log should have issuer name (baseline)")
 
 	// Disclose it via OpenID4VP.
@@ -224,11 +225,26 @@ func testOpenID4VPDisclosureLogHasIssuerNameAndImage(t *testing.T) {
 
 	disclosureCred := disclosureLog.DisclosureLog.Credentials[0]
 
-	// The disclosure log credential should have the same issuer name as the issuance log.
-	require.Equal(t, "Test Issuer", disclosureCred.Issuer.Name["en"],
+	// The disclosure log credential should have the same issuer name as the
+	// issuance log, resolved to the client's locale at log-creation time.
+	require.Equal(t, "Test Issuer", disclosureCred.Issuer.Name,
 		"disclosure log credential should contain the issuer display name")
-	require.Equal(t, "Test Uitgever", disclosureCred.Issuer.Name["nl"],
-		"disclosure log credential should contain the issuer display name in all locales")
+
+	// After a locale switch, the log re-resolves its text on the fly from the
+	// stored credential's metadata (the credential is still in the wallet).
+	c.SetLocale("nl")
+	logs, err = c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	disclosureLog = nil
+	for i := range logs {
+		if logs[i].Type == clientmodels.LogType_Disclosure {
+			disclosureLog = &logs[i]
+			break
+		}
+	}
+	require.NotNil(t, disclosureLog)
+	require.Equal(t, "Test Uitgever", disclosureLog.DisclosureLog.Credentials[0].Issuer.Name,
+		"after a locale switch the log issuer name follows the active locale via live metadata")
 }
 
 // testOpenID4VPEmptyDisclosureCreatesLog covers the case where the verifier
@@ -319,7 +335,7 @@ func requireEmptyDisclosureLog(t *testing.T, c *client.Client) {
 	require.Empty(t, disclosureLog.DisclosureLog.Credentials,
 		"disclosure log should contain no credentials when the user skipped all optional sets")
 	require.NotNil(t, disclosureLog.DisclosureLog.Verifier)
-	require.Equal(t, "test-verifier", disclosureLog.DisclosureLog.Verifier.Name["en"],
+	require.Equal(t, "test-verifier", disclosureLog.DisclosureLog.Verifier.Name,
 		"disclosure log should identify which verifier the session was with")
 }
 
@@ -347,7 +363,7 @@ func testEudiCredentialRemovalCreatesLog(t *testing.T) {
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
 
-	cred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
 	require.NotNil(t, cred)
 
 	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
@@ -368,7 +384,7 @@ func testEudiCredentialRemovalCreatesLog(t *testing.T) {
 	require.NotNil(t, removalLog, "should have a removal log")
 	require.NotNil(t, removalLog.RemovalLog)
 	require.Len(t, removalLog.RemovalLog.Credentials, 1)
-	require.Equal(t, "Test Credential (SD-JWT)", removalLog.RemovalLog.Credentials[0].Name["en"])
+	require.Equal(t, "Test Credential (SD-JWT)", removalLog.RemovalLog.Credentials[0].Name)
 	require.NotNil(t, removalLog.RemovalLog.Credentials[0].Issuer.Image,
 		"removal log should carry the issuer logo")
 	require.Equal(t, issuerLogo, removalLog.RemovalLog.Credentials[0].Issuer.Image.Base64)
@@ -393,7 +409,7 @@ func testEudiCredentialRemovalLogHasAttributes(t *testing.T) {
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
 
-	cred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	cred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
 	require.NotNil(t, cred)
 
 	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
@@ -414,17 +430,17 @@ func testEudiCredentialRemovalLogHasAttributes(t *testing.T) {
 	requireAttrsInOrder(t, removalCred.Attributes,
 		expectedAttr{
 			Path:        []any{"given_name"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			DisplayName: new("Given Name"),
 			Value:       strVal("AttrRemove"),
 		},
 		expectedAttr{
 			Path:        []any{"family_name"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family Name", "nl": "Achternaam"},
+			DisplayName: new("Family Name"),
 			Value:       strVal("Test"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			DisplayName: new("Email"),
 			Value:       strVal("attrremove@example.com"),
 		},
 	)
@@ -465,19 +481,19 @@ const organizationClaimsJSON = `{
 // expectedOrganizationAttrs returns the expected attribute list for the organization
 // credential after flattening. Reused by both issuance and removal log tests.
 func expectedOrganizationAttrs() []expectedAttr {
-	deptName := &clientmodels.TranslatedString{"en": "Department Name", "nl": "Afdelingsnaam"}
-	facName := &clientmodels.TranslatedString{"en": "Faculty Name", "nl": "Faculteitsnaam"}
-	departments := clientmodels.TranslatedString{"en": "Departments", "nl": "Afdelingen"}
-	courses := clientmodels.TranslatedString{"en": "Courses", "nl": "Vakken"}
+	deptName := new("Department Name")
+	facName := new("Faculty Name")
+	departments := "Departments"
+	courses := "Courses"
 
 	return []expectedAttr{
-		header([]any{"university"}, clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"}),
+		header([]any{"university"}, "University"),
 		{
 			Path:        []any{"university", "name"},
-			DisplayName: &clientmodels.TranslatedString{"en": "University Name", "nl": "Naam universiteit"},
+			DisplayName: new("University Name"),
 			Value:       strVal("TU Delft"),
 		},
-		header([]any{"university", "faculties"}, clientmodels.TranslatedString{"en": "Faculties", "nl": "Faculteiten"}),
+		header([]any{"university", "faculties"}, "Faculties"),
 		{Path: []any{"university", "faculties", 0, "faculty_name"}, DisplayName: facName, Value: strVal("EEMCS")},
 		header([]any{"university", "faculties", 0, "departments"}, departments),
 		{Path: []any{"university", "faculties", 0, "departments", 0, "dept_name"}, DisplayName: deptName, Value: strVal("Software Technology")},
@@ -494,7 +510,7 @@ func expectedOrganizationAttrs() []expectedAttr {
 		{Path: []any{"university", "faculties", 1, "departments", 0, "courses", 0}, Value: strVal("City Planning")},
 		{
 			Path:        []any{"university", "founded"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Founded", "nl": "Opgericht"},
+			DisplayName: new("Founded"),
 			Value:       intVal(1842),
 		},
 	}
@@ -516,7 +532,7 @@ func testDeeplyNestedIssuanceLog(t *testing.T) {
 	require.Len(t, log.IssuanceLog.Credentials, 1)
 
 	cred := log.IssuanceLog.Credentials[0]
-	require.Equal(t, "Organization Credential (SD-JWT)", cred.Name["en"])
+	require.Equal(t, "Organization Credential (SD-JWT)", cred.Name)
 	requireAttrsInOrder(t, cred.Attributes, expectedOrganizationAttrs()...)
 }
 
@@ -529,7 +545,7 @@ func testDeeplyNestedRemovalLog(t *testing.T) {
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
 
-	cred := findCredentialByName(t, creds, "en", "Organization Credential (SD-JWT)")
+	cred := findCredentialByName(t, creds, "Organization Credential (SD-JWT)")
 	require.NotNil(t, cred)
 
 	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
@@ -548,7 +564,7 @@ func testDeeplyNestedRemovalLog(t *testing.T) {
 	require.Len(t, removalLog.RemovalLog.Credentials, 1)
 
 	removalCred := removalLog.RemovalLog.Credentials[0]
-	require.Equal(t, "Organization Credential (SD-JWT)", removalCred.Name["en"])
+	require.Equal(t, "Organization Credential (SD-JWT)", removalCred.Name)
 	requireAttrsInOrder(t, removalCred.Attributes, expectedOrganizationAttrs()...)
 }
 
@@ -651,7 +667,7 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 	var testCredLog, houseCredLog *clientmodels.LogCredential
 	for i := range disclosureLog.DisclosureLog.Credentials {
 		cred := &disclosureLog.DisclosureLog.Credentials[i]
-		switch cred.Name["en"] {
+		switch cred.Name {
 		case "Test Credential (SD-JWT)":
 			testCredLog = cred
 		case "House Possession Credential (SD-JWT)":
@@ -665,12 +681,12 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 	requireAttrsInOrder(t, testCredLog.Attributes,
 		expectedAttr{
 			Path:        []any{"given_name"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Given Name", "nl": "Voornaam"},
+			DisplayName: new("Given Name"),
 			Value:       strVal("Selective"),
 		},
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
+			DisplayName: new("Email"),
 			Value:       strVal("selective@example.com"),
 		},
 	)
@@ -683,13 +699,13 @@ func testComplexDisclosureLogOnlyContainsSharedSubset(t *testing.T) {
 	requireAttrsInOrder(t, houseCredLog.Attributes,
 		expectedAttr{
 			Path:        []any{"owner_name"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Owner Name", "nl": "Eigenaar"},
+			DisplayName: new("Owner Name"),
 			Value:       strVal("Selective Owner"),
 		},
-		header([]any{"address"}, clientmodels.TranslatedString{"en": "Address", "nl": "Adres"}),
+		header([]any{"address"}, "Address"),
 		expectedAttr{
 			Path:        []any{"address", "city"},
-			DisplayName: &clientmodels.TranslatedString{"en": "City", "nl": "Stad"},
+			DisplayName: new("City"),
 			Value:       strVal("Amsterdam"),
 		},
 	)
@@ -718,14 +734,14 @@ func testDuplicateCredentialRemovalCreatesLog(t *testing.T) {
 
 	count := 0
 	for _, cr := range creds {
-		if name, ok := cr.Name["en"]; ok && name == "Test Credential (SD-JWT)" {
+		if cr.Name == "Test Credential (SD-JWT)" {
 			count++
 		}
 	}
 	require.Equal(t, 1, count, "duplicate issuances should be deduplicated into one credential")
 
 	// Delete the credential.
-	target := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	target := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
 	require.NotNil(t, target)
 
 	require.NoError(t, c.RemoveCredentialsByHash(target.CredentialInstanceIds))
@@ -734,10 +750,8 @@ func testDuplicateCredentialRemovalCreatesLog(t *testing.T) {
 	creds, err = c.GetCredentials()
 	require.NoError(t, err)
 	for _, cr := range creds {
-		if name, ok := cr.Name["en"]; ok {
-			require.NotEqual(t, "Test Credential (SD-JWT)", name,
-				"deleted credential should no longer appear in GetCredentials")
-		}
+		require.NotEqual(t, "Test Credential (SD-JWT)", cr.Name,
+			"deleted credential should no longer appear in GetCredentials")
 	}
 
 	// Verify a removal log was created.
@@ -754,7 +768,7 @@ func testDuplicateCredentialRemovalCreatesLog(t *testing.T) {
 	require.NotNil(t, removalLog, "should have a removal log")
 	require.NotNil(t, removalLog.RemovalLog)
 	require.Len(t, removalLog.RemovalLog.Credentials, 1)
-	require.Equal(t, "Test Credential (SD-JWT)", removalLog.RemovalLog.Credentials[0].Name["en"])
+	require.Equal(t, "Test Credential (SD-JWT)", removalLog.RemovalLog.Credentials[0].Name)
 }
 
 // testIrmaAndEudiLogsMergedChronologically performs a mix of IRMA and EUDI
@@ -835,7 +849,7 @@ func testIrmaAndEudiLogsMergedChronologically(t *testing.T) {
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
 
-	eudiCred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	eudiCred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
 	require.NotNil(t, eudiCred)
 	require.NoError(t, c.RemoveCredentialsByHash(eudiCred.CredentialInstanceIds))
 
@@ -947,4 +961,44 @@ func testLoadLogsBeforeIncludesBothSources(t *testing.T) {
 		require.True(t, l.Time.Before(firstPage[1].Time),
 			"secondPage[%d].Time (%v) should be before cursor (%v)", i, l.Time, firstPage[1].Time)
 	}
+}
+
+// testDutchEudiLogs pins the Dutch-locale resolution for the EUDI (SQLCipher)
+// log layer: logs written under a Dutch locale snapshot Dutch text, for
+// issuance and removal alike.
+func testDutchEudiLogs(t *testing.T) {
+	c, sessionHandler := createDutchClientWithoutKeyshareEnrollment(t)
+	defer c.Close()
+
+	issueCredentialViaOpenID4VCI(t, c, 1, sessionHandler, "EmailCredentialSdJwt", `{
+		"email": "log@voorbeeld.nl",
+		"domain": "voorbeeld.nl"
+	}`)
+
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	require.NotNil(t, logs[0].IssuanceLog)
+	require.Equal(t, "Test Uitgever", logs[0].IssuanceLog.Issuer.Name)
+
+	logCred := logs[0].IssuanceLog.Credentials[0]
+	require.Equal(t, "E-mail Credential (SD-JWT)", logCred.Name)
+	require.Equal(t, "Test Uitgever", logCred.Issuer.Name)
+	requireAttrsInOrder(t, logCred.Attributes,
+		expectedAttr{Path: []any{"email"}, DisplayName: new("E-mailadres"), Value: strVal("log@voorbeeld.nl")},
+		expectedAttr{Path: []any{"domain"}, DisplayName: new("Domein"), Value: strVal("voorbeeld.nl")},
+	)
+
+	// Removal logs snapshot the Dutch text too.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialByName(t, creds, "E-mail Credential (SD-JWT)")
+	require.NotNil(t, cred)
+	require.NoError(t, c.RemoveCredentialsByHash(cred.CredentialInstanceIds))
+
+	logs, err = c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	removal := findLog(logs, clientmodels.LogType_CredentialRemoval)
+	require.NotNil(t, removal)
+	require.Equal(t, "E-mail Credential (SD-JWT)", removal.RemovalLog.Credentials[0].Name)
 }

@@ -34,7 +34,7 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 	tp := client.convertToTrustedParty(m)
 
 	require.NotNil(t, tp)
-	require.Equal(t, "Test Issuer", tp.Name[""], "name carried through from display")
+	require.Equal(t, "Test Issuer", tp.Name, "name carried through from display")
 	require.Equal(t, "https://issuer.example.com/tenant", tp.Id,
 		"Id must mirror CredentialIssuer — the log service uses it as the LogoManager key when persisting the issuer logo")
 	require.NotNil(t, tp.Image, "issuer logo should be populated when cached for display.logo.uri")

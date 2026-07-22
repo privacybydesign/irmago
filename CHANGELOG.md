@@ -5,6 +5,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Added
+- Locale-aware client: `client.New` takes an initial UI locale and `Client.SetLocale` changes it at runtime. All app-facing text resolves inside irmago through a fixed fallback chain (exact locale → base language → English → any); text of one object never mixes languages, while logos fall back across languages independently so a logo shows whenever any display carries one.
+- Background logo backfill on startup and locale change: fetches logos missing for the current locale and signals `ClientHandler.UpdateAttributes()` on completion. Listing calls never block on the network.
+
+### Changed
+- **Breaking:** `clientmodels` DTOs ship resolved strings instead of translation maps (17 `TranslatedString` fields). The gomobile app must update in lockstep: pass the locale to `client.New`, call `SetLocale` on language changes, and drop client-side language picking.
+- Issuance downloads only the logo that resolves for the current locale, skipping cached ones, instead of the first available display's logo.
+- EUDI activity logs persist text resolved at creation time; on read, entries re-resolve against the stored credential's metadata for the active locale, falling back to the snapshot for deleted credentials and verifier names. Entries written by earlier versions (translation-map format) are decoded transparently.
+
+### Fixed
+- The data tab resolved credential and issuer logos from the first display entry only, so a logo attached to another language's display did not show.
+- OpenID4VCI issuance logs recorded the issuer metadata's `vct` (possibly a placeholder like `"unknown"`) as the credential id; the issued JWT's `vct` claim now takes precedence.
+
+### Internal
+- Dutch-locale and locale-switch integration tests for every protocol and integration layer.
+- The storage regression tests now assert EUDI activity-log content, pinning the legacy translation-map decoding. Regenerate the regression fixture at the next release: this version changes the stored log text format and the issuance-log credential id.
 
 ## [1.2.0] - 2026-07-22
 ### Added

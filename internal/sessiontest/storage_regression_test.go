@@ -48,16 +48,16 @@ func TestClientStorageRegressionV1_0_0(t *testing.T) {
 	requireValidImage(t, fullName.Image, "fullName credential")
 	requireValidImage(t, fullName.Issuer.Image, "fullName issuer")
 	requireAttrsInOrder(t, fullName.Attributes,
-		expectedAttr{Path: []any{"firstnames"}, DisplayName: &clientmodels.TranslatedString{"en": "First names"}, Value: strVal("Barry")},
-		expectedAttr{Path: []any{"firstname"}, DisplayName: &clientmodels.TranslatedString{"en": "First name"}, Value: strVal("Bar")},
-		expectedAttr{Path: []any{"familyname"}, DisplayName: &clientmodels.TranslatedString{"en": "Family name"}, Value: strVal("Batsbak")},
-		expectedAttr{Path: []any{"prefix"}, DisplayName: &clientmodels.TranslatedString{"en": "Prefix"}, Value: strVal("Sir")},
+		expectedAttr{Path: []any{"firstnames"}, DisplayName: new("First names"), Value: strVal("Barry")},
+		expectedAttr{Path: []any{"firstname"}, DisplayName: new("First name"), Value: strVal("Bar")},
+		expectedAttr{Path: []any{"familyname"}, DisplayName: new("Family name"), Value: strVal("Batsbak")},
+		expectedAttr{Path: []any{"prefix"}, DisplayName: new("Prefix"), Value: strVal("Sir")},
 	)
 
 	singleton := findCredentialById(creds, "irma-demo.MijnOverheid.singleton")
 	require.NotNil(t, singleton)
 	requireAttrsInOrder(t, singleton.Attributes,
-		expectedAttr{Path: []any{"BSN"}, DisplayName: &clientmodels.TranslatedString{"en": "BSN"}, Value: strVal("12345")},
+		expectedAttr{Path: []any{"BSN"}, DisplayName: new("BSN"), Value: strVal("12345")},
 	)
 
 	email := findCredentialById(creds, "test.test.email")
@@ -65,19 +65,19 @@ func TestClientStorageRegressionV1_0_0(t *testing.T) {
 	requireValidImage(t, email.Image, "email credential")
 	requireValidImage(t, email.Issuer.Image, "email issuer")
 	requireAttrsInOrder(t, email.Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address"}, Value: strVal("test@gmail.com")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email address"), Value: strVal("test@gmail.com")},
 	)
 
 	// OpenID4VCI credential from the EUDI DB: attribute names and values correct.
 	// (EUDI issuer logos live in the eudi filesystem, which isn't part of the DB
 	// snapshot, so no image is expected here.)
-	testCred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	testCred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
 	require.NotNil(t, testCred, "expected OpenID4VCI credential from the EUDI DB")
 	requireEudiCredentialMeta(t, testCred)
 	requireAttrsInOrder(t, testCred.Attributes,
-		expectedAttr{Path: []any{"given_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Given Name"}, Value: strVal("Test")},
-		expectedAttr{Path: []any{"family_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Family Name"}, Value: strVal("User")},
-		expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("test@example.com")},
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Given Name"), Value: strVal("Test")},
+		expectedAttr{Path: []any{"family_name"}, DisplayName: new("Family Name"), Value: strVal("User")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("test@example.com")},
 	)
 
 	// The deeply nested organization credential loads with every nested attribute
@@ -123,13 +123,13 @@ func TestClientStorageRegressionV1_0_0(t *testing.T) {
 	}
 	requireValidImage(t, discByID["irma-demo.MijnOverheid.fullName"].Image, "disclosure log fullName")
 	requireAttrsInOrder(t, discByID["irma-demo.MijnOverheid.fullName"].Attributes,
-		expectedAttr{Path: []any{"familyname"}, DisplayName: &clientmodels.TranslatedString{"en": "Family name"}, Value: strVal("Batsbak")})
+		expectedAttr{Path: []any{"familyname"}, DisplayName: new("Family name"), Value: strVal("Batsbak")})
 	requireValidImage(t, discByID["irma-demo.MijnOverheid.singleton"].Image, "disclosure log singleton")
 	requireAttrsInOrder(t, discByID["irma-demo.MijnOverheid.singleton"].Attributes,
-		expectedAttr{Path: []any{"BSN"}, DisplayName: &clientmodels.TranslatedString{"en": "BSN"}, Value: strVal("12345")})
+		expectedAttr{Path: []any{"BSN"}, DisplayName: new("BSN"), Value: strVal("12345")})
 	requireValidImage(t, discByID["irma-demo.RU.studentCard"].Image, "disclosure log studentCard")
 	requireAttrsInOrder(t, discByID["irma-demo.RU.studentCard"].Attributes,
-		expectedAttr{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University"}, Value: strVal("University of the Arts")})
+		expectedAttr{Path: []any{"university"}, DisplayName: new("University"), Value: strVal("University of the Arts")})
 
 	// The signature log records the signed message, the disclosed attribute, and
 	// a valid credential image.
@@ -141,21 +141,49 @@ func TestClientStorageRegressionV1_0_0(t *testing.T) {
 	require.Equal(t, "test.test.email", sig.SignedMessageLog.Credentials[0].CredentialId)
 	requireValidImage(t, sig.SignedMessageLog.Credentials[0].Image, "signature log email")
 	requireAttrsInOrder(t, sig.SignedMessageLog.Credentials[0].Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address"}, Value: strVal("test@gmail.com")})
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email address"), Value: strVal("test@gmail.com")})
 
-	// The removal logs reference exactly the removed credentials.
+	// The removal logs reference exactly the removed credentials, and the EUDI
+	// removal entries (stored in the legacy TranslatedString-map format) read
+	// back with their credential name intact.
 	removed := map[string]int{}
 	for _, log := range logs {
 		if log.Type == clientmodels.LogType_CredentialRemoval {
 			require.NotNil(t, log.RemovalLog)
 			require.Len(t, log.RemovalLog.Credentials, 1)
 			removed[log.RemovalLog.Credentials[0].CredentialId]++
+			if log.RemovalLog.Credentials[0].CredentialId == "https://localhost:8443/vct/test" {
+				require.Equal(t, "Test Credential (SD-JWT)", log.RemovalLog.Credentials[0].Name,
+					"legacy-format EUDI removal log must decode its credential name")
+			}
 		}
 	}
 	require.Equal(t, map[string]int{
 		"https://localhost:8443/vct/test": 2,
 		"irma-demo.RU.studentCard":        1,
 	}, removed)
+
+	// EUDI (SQLCipher) log content: the OpenID4VP disclosure of the
+	// OpenID4VCI-issued credential reads back with all its text intact. These
+	// rows were written in the legacy TranslatedString-map format — including
+	// the display names inside the attributes blob — so this pins the legacy
+	// decode path against a real pre-locale-aware database.
+	var eudiDisc *clientmodels.DisclosureLog
+	for _, log := range logs {
+		if log.Type == clientmodels.LogType_Disclosure && log.DisclosureLog != nil &&
+			len(log.DisclosureLog.Credentials) == 1 &&
+			log.DisclosureLog.Credentials[0].CredentialId == "https://localhost:8443/vct/test" {
+			eudiDisc = log.DisclosureLog
+			break
+		}
+	}
+	require.NotNil(t, eudiDisc, "expected an OpenID4VP disclosure log of the EUDI credential")
+	require.Equal(t, "Test Credential (SD-JWT)", eudiDisc.Credentials[0].Name)
+	require.Equal(t, "Test Issuer", eudiDisc.Credentials[0].Issuer.Name)
+	requireAttrsInOrder(t, eudiDisc.Credentials[0].Attributes,
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Given Name"), Value: strVal("Test")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("test@example.com")},
+	)
 
 	assertLoadedClientUsable(t, c, sessionHandler, irmaServer)
 }
@@ -178,13 +206,13 @@ func TestClientStorageRegressionV1_1_1(t *testing.T) {
 	requireSdJwtInstancesRemaining(t, creds, "test.test.email", 8)
 
 	// Both OpenID4VCI credentials read back through the encrypted connection.
-	testCred := findCredentialByName(t, creds, "en", "Test Credential (SD-JWT)")
+	testCred := findCredentialByName(t, creds, "Test Credential (SD-JWT)")
 	require.NotNil(t, testCred, "expected OpenID4VCI credential from the encrypted EUDI DB")
 	requireEudiCredentialMeta(t, testCred)
 	requireAttrsInOrder(t, testCred.Attributes,
-		expectedAttr{Path: []any{"given_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Given Name"}, Value: strVal("Test")},
-		expectedAttr{Path: []any{"family_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Family Name"}, Value: strVal("User")},
-		expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("test@example.com")},
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Given Name"), Value: strVal("Test")},
+		expectedAttr{Path: []any{"family_name"}, DisplayName: new("Family Name"), Value: strVal("User")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("test@example.com")},
 	)
 	org := findCredentialById(creds, "https://localhost:8443/vct/organization")
 	require.NotNil(t, org, "expected the nested organization credential from the encrypted EUDI DB")
@@ -222,16 +250,16 @@ func TestClientStorageRegressionV0_19_2(t *testing.T) {
 	requireValidImage(t, fullName.Image, "fullName credential")
 	requireValidImage(t, fullName.Issuer.Image, "fullName issuer")
 	requireAttrsInOrder(t, fullName.Attributes,
-		expectedAttr{Path: []any{"firstnames"}, DisplayName: &clientmodels.TranslatedString{"en": "First names"}, Value: strVal("Barry")},
-		expectedAttr{Path: []any{"firstname"}, DisplayName: &clientmodels.TranslatedString{"en": "First name"}, Value: strVal("")},
-		expectedAttr{Path: []any{"familyname"}, DisplayName: &clientmodels.TranslatedString{"en": "Family name"}, Value: strVal("Batsbak")},
-		expectedAttr{Path: []any{"prefix"}, DisplayName: &clientmodels.TranslatedString{"en": "Prefix"}, Value: strVal("Sir")},
+		expectedAttr{Path: []any{"firstnames"}, DisplayName: new("First names"), Value: strVal("Barry")},
+		expectedAttr{Path: []any{"firstname"}, DisplayName: new("First name"), Value: strVal("")},
+		expectedAttr{Path: []any{"familyname"}, DisplayName: new("Family name"), Value: strVal("Batsbak")},
+		expectedAttr{Path: []any{"prefix"}, DisplayName: new("Prefix"), Value: strVal("Sir")},
 	)
 
 	singleton := findCredentialById(creds, "irma-demo.MijnOverheid.singleton")
 	require.NotNil(t, singleton)
 	requireAttrsInOrder(t, singleton.Attributes,
-		expectedAttr{Path: []any{"BSN"}, DisplayName: &clientmodels.TranslatedString{"en": "BSN"}, Value: strVal("12345")},
+		expectedAttr{Path: []any{"BSN"}, DisplayName: new("BSN"), Value: strVal("12345")},
 	)
 
 	email := findCredentialById(creds, "test.test.email")
@@ -239,7 +267,7 @@ func TestClientStorageRegressionV0_19_2(t *testing.T) {
 	requireValidImage(t, email.Image, "email credential")
 	requireValidImage(t, email.Issuer.Image, "email issuer")
 	requireAttrsInOrder(t, email.Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address"}, Value: strVal("test@gmail.com")},
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email address"), Value: strVal("test@gmail.com")},
 	)
 
 	logs, err := c.LoadNewestLogs(100)
@@ -262,7 +290,7 @@ func TestClientStorageRegressionV0_19_2(t *testing.T) {
 	require.Equal(t, "test.test.email", sig.SignedMessageLog.Credentials[0].CredentialId)
 	requireValidImage(t, sig.SignedMessageLog.Credentials[0].Image, "signature log email")
 	requireAttrsInOrder(t, sig.SignedMessageLog.Credentials[0].Attributes,
-		expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address"}, Value: strVal("test@gmail.com")})
+		expectedAttr{Path: []any{"email"}, DisplayName: new("Email address"), Value: strVal("test@gmail.com")})
 
 	// Every disclosure log discloses the email credential's email attribute, with
 	// a valid credential image.
@@ -276,7 +304,7 @@ func TestClientStorageRegressionV0_19_2(t *testing.T) {
 		require.Equal(t, "test.test.email", log.DisclosureLog.Credentials[0].CredentialId)
 		requireValidImage(t, log.DisclosureLog.Credentials[0].Image, "disclosure log email")
 		requireAttrsInOrder(t, log.DisclosureLog.Credentials[0].Attributes,
-			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email address"}, Value: strVal("test@gmail.com")})
+			expectedAttr{Path: []any{"email"}, DisplayName: new("Email address"), Value: strVal("test@gmail.com")})
 		discCount++
 	}
 	require.Equal(t, 3, discCount)
@@ -396,7 +424,7 @@ func requireSdJwtInstancesRemaining(t *testing.T, creds []*clientmodels.Credenti
 func requireEudiCredentialMeta(t *testing.T, cred *clientmodels.Credential) {
 	t.Helper()
 	require.Equal(t, "did:web:localhost%3A8443:test-issuer:.well-known", cred.Issuer.Id)
-	require.Equal(t, "Test Issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Test Issuer", cred.Issuer.Name)
 	require.Contains(t, cred.CredentialInstanceIds, clientmodels.CredentialFormat(clientmodels.Format_SdJwtVc),
 		"EUDI credential should have an SD-JWT instance")
 	require.NotNil(t, cred.IssuanceDate, "EUDI credential should have an issuance date")
@@ -475,7 +503,7 @@ func loadClientFromFixture(t *testing.T, db2Path string) (*client.Client, *MockS
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey)
+	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey, "en")
 	require.NoError(t, err)
 
 	// Loading migrates a legacy plaintext EUDI database in place; whether it was

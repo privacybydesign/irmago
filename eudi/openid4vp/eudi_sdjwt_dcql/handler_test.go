@@ -58,6 +58,7 @@ func newTestHandler(t *testing.T) (*SdJwtVcDcqlHandler, db.CredentialStore) {
 	handler := &SdJwtVcDcqlHandler{
 		storage:         ts,
 		credentialStore: credStore,
+		currentLocale:   clientmodels.NewCurrentLocale("en"),
 	}
 	return handler, credStore
 }
@@ -200,11 +201,11 @@ func TestFindCandidates_RegionalLocale_KeyedByBaseLanguage(t *testing.T) {
 	require.Len(t, result.OwnedCandidates, 1)
 
 	cand := result.OwnedCandidates[0]
-	assert.Equal(t, "Example Issuer", cand.Issuer.Name["en"], "issuer name must collapse en-US to en")
-	assert.Equal(t, "Email Credential", cand.Name["en"], "credential name must collapse en-US to en")
+	assert.Equal(t, "Example Issuer", cand.Issuer.Name, "issuer name must collapse en-US to en")
+	assert.Equal(t, "Email Credential", cand.Name, "credential name must collapse en-US to en")
 	require.NotEmpty(t, cand.Attributes)
 	require.NotNil(t, cand.Attributes[0].DisplayName)
-	assert.Equal(t, "Email", (*cand.Attributes[0].DisplayName)["en"], "claim display must collapse en-US to en")
+	assert.Equal(t, "Email", *cand.Attributes[0].DisplayName, "claim display must collapse en-US to en")
 }
 
 func TestFindCandidates_NoExpiryOrNotBefore_Included(t *testing.T) {
@@ -658,7 +659,7 @@ func (s *stubIssuerFetcher) Fetch(_ context.Context, issuerURL string) (*typemet
 }
 
 func newHandlerWithFetchers(vct typemetadata.VctFetcher, issuer typemetadata.IssuerFetcher) *SdJwtVcDcqlHandler {
-	return &SdJwtVcDcqlHandler{vctFetcher: vct, issuerFetcher: issuer}
+	return &SdJwtVcDcqlHandler{vctFetcher: vct, issuerFetcher: issuer, currentLocale: clientmodels.NewCurrentLocale("en")}
 }
 
 func TestComposeUnobtainableDescriptor_VctFetchFails_UrlOnlyFallback(t *testing.T) {
@@ -704,11 +705,11 @@ func TestComposeUnobtainableDescriptor_VctOk_NoIssuerField(t *testing.T) {
 	desc := h.composeUnobtainableDescriptor(query)
 	require.NotNil(t, desc)
 	assert.Equal(t, "https://example.com/vct/email", desc.CredentialId)
-	assert.Equal(t, "Email Credential", desc.Name["en"])
+	assert.Equal(t, "Email Credential", desc.Name)
 	assert.Empty(t, desc.Issuer.Id, "no issuer URL means no TrustedParty")
 	assert.Nil(t, desc.IssueURL)
 	require.Len(t, desc.Attributes, 1)
-	assert.Equal(t, "Email", (*desc.Attributes[0].DisplayName)["en"], "claim display from VCT metadata")
+	assert.Equal(t, "Email", *desc.Attributes[0].DisplayName, "claim display from VCT metadata")
 }
 
 func TestComposeUnobtainableDescriptor_VctOk_IssuerFetchFails(t *testing.T) {
@@ -763,9 +764,9 @@ func TestComposeUnobtainableDescriptor_VctAndIssuerOk(t *testing.T) {
 
 	desc := h.composeUnobtainableDescriptor(query)
 	require.NotNil(t, desc)
-	assert.Equal(t, "Email Credential", desc.Name["en"])
+	assert.Equal(t, "Email Credential", desc.Name)
 	assert.Equal(t, "https://issuer.example.com", desc.Issuer.Id)
-	assert.Equal(t, "Example Issuer", desc.Issuer.Name["en"])
+	assert.Equal(t, "Example Issuer", desc.Issuer.Name)
 	assert.Nil(t, desc.IssueURL)
 }
 
@@ -792,7 +793,7 @@ func TestComposeUnobtainableDescriptor_MultiVct_FirstFailsSecondSucceeds(t *test
 	desc := h.composeUnobtainableDescriptor(query)
 	require.NotNil(t, desc)
 	assert.Equal(t, "https://example.com/vct/good", desc.CredentialId, "should pick the first VCT whose fetch succeeded")
-	assert.Equal(t, "Good Credential", desc.Name["en"])
+	assert.Equal(t, "Good Credential", desc.Name)
 }
 
 func TestComposeUnobtainableDescriptor_MultiVct_AllFail_UrlOnlyForFirst(t *testing.T) {
@@ -891,7 +892,7 @@ func TestIsIrmaStyleVct(t *testing.T) {
 }
 
 func TestCanHandleCredentialQuery(t *testing.T) {
-	h := &SdJwtVcDcqlHandler{}
+	h := &SdJwtVcDcqlHandler{currentLocale: clientmodels.NewCurrentLocale("en")}
 
 	mkQuery := func(format string, vcts ...string) dcql.CredentialQuery {
 		q := dcql.CredentialQuery{Format: format}

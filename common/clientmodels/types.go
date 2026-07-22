@@ -17,10 +17,10 @@ type TranslatedString map[string]string
 // TrustedParty represents an issuer, verifier, or scheme manager.
 type TrustedParty struct {
 	Id string `json:"id"`
-	// Display name for the party
-	Name TranslatedString `json:"name"`
-	// Url for the party (which can be different per language)
-	Url *TranslatedString `json:"url"`
+	// Display name for the party, resolved to the current locale.
+	Name string `json:"name"`
+	// Url for the party, resolved to the current locale.
+	Url *string `json:"url"`
 	// The image data for this party.
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
@@ -119,12 +119,12 @@ type Attribute struct {
 	// when the user grants disclosure permission.
 	ClaimPath []any `json:"claim_path"`
 
-	// Human-readable name for this attribute, localized.
+	// Human-readable name for this attribute, resolved to the current locale.
 	// Nil for array item attributes where the parent's name serves as the label.
-	DisplayName *TranslatedString `json:"display_name,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
 
-	// Optional longer description for this attribute, localized.
-	Description *TranslatedString `json:"description,omitempty"`
+	// Optional longer description for this attribute, resolved to the current locale.
+	Description *string `json:"description,omitempty"`
 
 	// The actual value of this attribute as provided by the issuer.
 	// Nil for section header attributes and unfilled requested attributes.
@@ -183,8 +183,8 @@ type Credential struct {
 	Hash string `json:"hash"`
 	// Base64-encoded image for this credential.
 	Image *Image `json:"image,omitempty"`
-	// The display name for this credential, localized.
-	Name TranslatedString `json:"name"`
+	// The display name for this credential, resolved to the current locale.
+	Name string `json:"name"`
 	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
 	// The IDs for all instances of this credential in all different formats.
@@ -203,8 +203,8 @@ type Credential struct {
 	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential.
 	RevocationSupported bool `json:"revocation_supported"`
-	// URL at which this credential can be issued (if any).
-	IssueURL *TranslatedString `json:"issue_url"`
+	// URL at which this credential can be issued (if any), resolved to the current locale.
+	IssueURL *string `json:"issue_url"`
 }
 
 // CredentialToLogCredential converts a Credential to a LogCredential, extracting formats
@@ -235,14 +235,15 @@ func CredentialToLogCredential(c *Credential) LogCredential {
 }
 
 // CredentialDescriptor describes a credential type without any instance-specific values.
+// All text fields are resolved to the current locale.
 type CredentialDescriptor struct {
-	CredentialId string            `json:"credential_id"`
-	Name         TranslatedString  `json:"name"`
-	Issuer       TrustedParty      `json:"issuer"`
-	Category     *TranslatedString `json:"category,omitempty"`
-	Image        *Image            `json:"image,omitempty"`
-	Attributes   []Attribute       `json:"attributes"`
-	IssueURL     *TranslatedString `json:"issue_url,omitempty"`
+	CredentialId string       `json:"credential_id"`
+	Name         string       `json:"name"`
+	Issuer       TrustedParty `json:"issuer"`
+	Category     *string      `json:"category,omitempty"`
+	Image        *Image       `json:"image,omitempty"`
+	Attributes   []Attribute  `json:"attributes"`
+	IssueURL     *string      `json:"issue_url,omitempty"`
 }
 
 // CredentialStoreItem is a credential descriptor with FAQ information.
@@ -251,12 +252,12 @@ type CredentialStoreItem struct {
 	Faq        Faq                  `json:"faq"`
 }
 
-// Faq contains FAQ information for a credential type.
+// Faq contains FAQ information for a credential type, resolved to the current locale.
 type Faq struct {
-	Intro   *TranslatedString `json:"intro"`
-	Purpose *TranslatedString `json:"purpose"`
-	Content *TranslatedString `json:"content"`
-	HowTo   *TranslatedString `json:"how_to"`
+	Intro   *string `json:"intro"`
+	Purpose *string `json:"purpose"`
+	Content *string `json:"content"`
+	HowTo   *string `json:"how_to"`
 }
 
 // SelectableCredentialInstance represents a single credential instance that
@@ -269,8 +270,8 @@ type SelectableCredentialInstance struct {
 	Hash string `json:"hash"`
 	// Base64-encoded image for this credential.
 	Image *Image `json:"image,omitempty"`
-	// The display name for this credential, localized.
-	Name TranslatedString `json:"name"`
+	// The display name for this credential, resolved to the current locale.
+	Name string `json:"name"`
 	// All information about the credential issuer.
 	Issuer TrustedParty `json:"issuer"`
 	// The credential format for this instance.
@@ -292,8 +293,8 @@ type SelectableCredentialInstance struct {
 	Revoked bool `json:"revoked"`
 	// Whether or not revocation is supported for this credential.
 	RevocationSupported bool `json:"revocation_supported"`
-	// URL at which this credential can be issued (if any).
-	IssueURL *TranslatedString `json:"issue_url"`
+	// URL at which this credential can be issued (if any), resolved to the current locale.
+	IssueURL *string `json:"issue_url"`
 }
 
 // NewTranslatedString returns a TranslatedString containing the specified string for each supported language,

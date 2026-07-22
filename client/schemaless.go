@@ -14,6 +14,7 @@ import (
 
 func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem, error) {
 	irmaConfig := client.irmaClient.Configuration
+	locale := client.locale()
 	result := []*clientmodels.CredentialStoreItem{}
 
 	for _, cred := range irmaConfig.CredentialTypes {
@@ -38,31 +39,38 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 			if attr.RevocationAttribute {
 				continue
 			}
-			dn := clientmodels.TranslatedString(attr.Name)
+			dn, _ := resolveAttrTexts(attr, locale)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{attr.ID},
-				DisplayName: &dn,
+				DisplayName: dn,
 				Value: &clientmodels.AttributeValue{
 					Type: displayHintToAttributeType(attr.DisplayHint),
 				},
 			})
 		}
 
+		name, category, issueURL := resolveCredTypeTexts(cred, locale)
+
+		// The FAQ is its own text bundle: one language for all four fields.
+		introTS, purposeTS := cred.FAQIntro.ToClientmodels(), cred.FAQPurpose.ToClientmodels()
+		contentTS, howtoTS := cred.FAQContent.ToClientmodels(), cred.FAQHowto.ToClientmodels()
+		faqLang := clientmodels.BundleLanguage(locale, introTS, purposeTS, contentTS, howtoTS)
+
 		result = append(result, &clientmodels.CredentialStoreItem{
 			Credential: clientmodels.CredentialDescriptor{
 				CredentialId: cred.Identifier().String(),
-				Name:         clientmodels.TranslatedString(cred.Name),
-				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
-				IssueURL:     convertOptionalTranslatedString(cred.IssueURL),
-				Category:     convertOptionalTranslatedString(cred.Category),
+				Name:         name,
+				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+				IssueURL:     issueURL,
+				Category:     category,
 				Image:        clientmodels.ImageFromFile(cred.Logo(irmaConfig)),
 				Attributes:   attributes,
 			},
 			Faq: clientmodels.Faq{
-				Intro:   convertOptionalTranslatedString(cred.FAQIntro),
-				Purpose: convertOptionalTranslatedString(cred.FAQPurpose),
-				Content: convertOptionalTranslatedString(cred.FAQContent),
-				HowTo:   convertOptionalTranslatedString(cred.FAQHowto),
+				Intro:   clientmodels.PtrIfNonEmpty(introTS[faqLang]),
+				Purpose: clientmodels.PtrIfNonEmpty(purposeTS[faqLang]),
+				Content: clientmodels.PtrIfNonEmpty(contentTS[faqLang]),
+				HowTo:   clientmodels.PtrIfNonEmpty(howtoTS[faqLang]),
 			},
 		})
 	}
@@ -70,27 +78,38 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 	return result, nil
 }
 
-func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.TranslatedString {
-	if s == nil {
-		return nil
-	}
-	t := clientmodels.TranslatedString(*s)
-	return &t
+// resolveCredTypeTexts resolves a credential type's name, category and issue
+// URL as one text bundle: a single language for all three fields.
+func resolveCredTypeTexts(credType *irma.CredentialType, locale string) (name string, category *string, issueURL *string) {
+	nameTS := clientmodels.TranslatedString(credType.Name)
+	categoryTS := credType.Category.ToClientmodels()
+	issueURLTS := credType.IssueURL.ToClientmodels()
+	lang := clientmodels.BundleLanguage(locale, nameTS, categoryTS, issueURLTS)
+	return nameTS[lang], clientmodels.PtrIfNonEmpty(categoryTS[lang]), clientmodels.PtrIfNonEmpty(issueURLTS[lang])
+}
+
+// resolveAttrTexts resolves an attribute type's display name and description
+// as one text bundle: a single language for both fields.
+func resolveAttrTexts(atType *irma.AttributeType, locale string) (displayName *string, description *string) {
+	nameTS := clientmodels.TranslatedString(atType.Name)
+	descTS := clientmodels.TranslatedString(atType.Description)
+	lang := clientmodels.BundleLanguage(locale, nameTS, descTS)
+	return clientmodels.PtrIfNonEmpty(nameTS[lang]), clientmodels.PtrIfNonEmpty(descTS[lang])
 }
 
 // buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo
-// and the scheme manager as parent.
-func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer) clientmodels.TrustedParty {
+// and the scheme manager as parent. Each party resolves its own text bundle.
+func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer, locale string) clientmodels.TrustedParty {
 	scheme := irmaConfig.SchemeManagers[issuer.SchemeManagerIdentifier()]
 	parent := clientmodels.TrustedParty{
 		Id:       scheme.Identifier().String(),
-		Name:     clientmodels.TranslatedString(scheme.Name),
+		Name:     clientmodels.Resolve(clientmodels.TranslatedString(scheme.Name), locale),
 		Verified: scheme.Status == irma.SchemeManagerStatusValid,
 	}
 	logoPath := issuer.Logo(irmaConfig)
 	return clientmodels.TrustedParty{
 		Id:       issuer.Identifier().String(),
-		Name:     clientmodels.TranslatedString(issuer.Name),
+		Name:     clientmodels.Resolve(clientmodels.TranslatedString(issuer.Name), locale),
 		Image:    clientmodels.ImageFromFile(logoPath),
 		Verified: scheme.Status == irma.SchemeManagerStatusValid,
 		Parent:   &parent,
@@ -107,6 +126,7 @@ func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer
 func createIssuanceBundle(
 	irmaConfig *irma.Configuration,
 	attrs []*irmaclient.DisclosureCandidate,
+	locale string,
 ) (*clientmodels.IssuanceBundle, error) {
 	// Group attrs by credential type identifier, preserving first-seen order.
 	byType := map[string][]*irmaclient.DisclosureCandidate{}
@@ -137,7 +157,7 @@ func createIssuanceBundle(
 			continue
 		}
 
-		desc, err := createCredentialDescriptor(irmaConfig, attrsForType)
+		desc, err := createCredentialDescriptor(irmaConfig, attrsForType, locale)
 		if err != nil {
 			return nil, err
 		}
@@ -153,6 +173,7 @@ func createIssuanceBundle(
 func createCredentialDescriptor(
 	irmaConfig *irma.Configuration,
 	attrs []*irmaclient.DisclosureCandidate,
+	locale string,
 ) (*clientmodels.CredentialDescriptor, error) {
 	id := attrs[0].Type.CredentialTypeIdentifier()
 	info, ok := irmaConfig.CredentialTypes[id]
@@ -179,10 +200,10 @@ func createCredentialDescriptor(
 					}
 					requestedValue.String = &s
 				}
-				dn := clientmodels.TranslatedString(a.Name)
+				dn, _ := resolveAttrTexts(a, locale)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:      []any{a.ID},
-					DisplayName:    &dn,
+					DisplayName:    dn,
 					RequestedValue: requestedValue,
 				})
 			}
@@ -192,18 +213,19 @@ func createCredentialDescriptor(
 	// Display in schema order rather than the verifier's request order.
 	attributes = sortAttributesBySchema(attributes, info)
 
+	name, category, issueURL := resolveCredTypeTexts(info, locale)
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
-		Name:         clientmodels.TranslatedString(info.Name),
-		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
-		Category:     convertOptionalTranslatedString(info.Category),
+		Name:         name,
+		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+		Category:     category,
 		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
-		IssueURL:     convertOptionalTranslatedString(info.IssueURL),
+		IssueURL:     issueURL,
 	}, nil
 }
 
-func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialTypeIdentifier) (*clientmodels.CredentialDescriptor, error) {
+func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialTypeIdentifier, locale string) (*clientmodels.CredentialDescriptor, error) {
 	info, ok := irmaConfig.CredentialTypes[id]
 
 	if !ok {
@@ -218,28 +240,29 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		if at.RevocationAttribute {
 			continue
 		}
-		dn := clientmodels.TranslatedString(at.Name)
+		dn, _ := resolveAttrTexts(at, locale)
 		attributes = append(attributes, clientmodels.Attribute{
 			ClaimPath:   []any{at.ID},
-			DisplayName: &dn,
+			DisplayName: dn,
 			Value: &clientmodels.AttributeValue{
 				Type: clientmodels.AttributeType_String,
 			},
 		})
 	}
 
+	name, category, issueURL := resolveCredTypeTexts(info, locale)
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
-		Name:         clientmodels.TranslatedString(info.Name),
-		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
-		Category:     convertOptionalTranslatedString(info.Category),
+		Name:         name,
+		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+		Category:     category,
 		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
-		IssueURL:     convertOptionalTranslatedString(info.IssueURL),
+		IssueURL:     issueURL,
 	}, nil
 }
 
-func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.CredentialInfoList) ([]*clientmodels.Credential, error) {
+func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.CredentialInfoList, locale string) ([]*clientmodels.Credential, error) {
 	result := []*clientmodels.Credential{}
 	intermediateResult := map[string]*clientmodels.Credential{}
 
@@ -279,25 +302,25 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 					continue
 				}
 				attrValue := cred.Attributes[at.GetAttributeTypeIdentifier()]
-				description := clientmodels.TranslatedString(at.Description)
 				if at.IsOptional() && len(attrValue) == 0 {
 					continue
 				}
-				dn := clientmodels.TranslatedString(at.Name)
+				dn, description := resolveAttrTexts(at, locale)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:   []any{at.ID},
-					DisplayName: &dn,
-					Description: &description,
+					DisplayName: dn,
+					Description: description,
 					Value:       buildAttributeValue(at.DisplayHint, &attrValue),
 				})
 			}
 
+			name, _, issueURL := resolveCredTypeTexts(info, locale)
 			newCred := clientmodels.Credential{
 				CredentialId: cred.Identifier().String(),
 				Hash:         instanceHash,
 				Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
-				Name:         clientmodels.TranslatedString(info.Name),
-				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer),
+				Name:         name,
+				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
 				CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 					format: cred.Hash,
 				},
@@ -307,7 +330,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				Attributes:          attributes,
 				Revoked:             cred.Revoked,
 				RevocationSupported: cred.RevocationSupported,
-				IssueURL:            convertOptionalTranslatedString(info.IssueURL),
+				IssueURL:            issueURL,
 			}
 
 			issuanceDate := time.Time(cred.SignedOn).Unix()
@@ -332,13 +355,13 @@ func (client *Client) GetCredentials() ([]*clientmodels.Credential, error) {
 	creds := client.getIrmaCredentialInfoList()
 	creds = filterOutKeyshareCredentials(client.irmaClient.Configuration, creds)
 
-	irmaCreds, err := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds)
+	irmaCreds, err := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds, client.locale())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert IRMA credentials to schemaless format: %v", err)
 	}
 
 	// Get EUDI credentials and convert to the same format, then combine with IRMA credentials.
-	credentialService := services.NewCredentialService(client.eudiStorage)
+	credentialService := services.NewCredentialService(client.eudiStorage, client.locale())
 	oidCreds, err := credentialService.GetCredentialMetadataList()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)
@@ -353,12 +376,12 @@ func (client *Client) GetCredentials() ([]*clientmodels.Credential, error) {
 func (client *Client) getCredentialsIncludingKeyshare() ([]*clientmodels.Credential, error) {
 	creds := client.getIrmaCredentialInfoList()
 
-	irmaCreds, err := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds)
+	irmaCreds, err := credentialInfoListToSchemaless(client.irmaClient.Configuration, creds, client.locale())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert IRMA credentials to schemaless format: %v", err)
 	}
 
-	credentialService := services.NewCredentialService(client.eudiStorage)
+	credentialService := services.NewCredentialService(client.eudiStorage, client.locale())
 	oidCreds, err := credentialService.GetCredentialMetadataList()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get OID4VCI credentials from storage: %v", err)

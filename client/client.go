@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -46,6 +47,14 @@ type Client struct {
 	didValidator     *openid4vp.DidVerifierValidator
 	scheduler        gocron.Scheduler
 	sessionManager   sessionManager
+	clientHandler    irmaclient.ClientHandler
+
+	// currentLocale is the locale used to resolve all app-facing text and
+	// logos. The app owns it: it supplies the initial value via New and
+	// updates it through SetLocale; irmago does not persist it.
+	currentLocale *clientmodels.CurrentLocale
+	// logoBackfillMutex serializes background logo-backfill sweeps.
+	logoBackfillMutex sync.Mutex
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -58,6 +67,7 @@ func New(
 	sessionHandler clientmodels.SessionHandler,
 	signer irmaclient.Signer,
 	aesKey [32]byte,
+	locale string,
 ) (*Client, error) {
 	if err := common.AssertPathExists(storagePath); err != nil {
 		return nil, err
@@ -79,6 +89,8 @@ func New(
 	}
 
 	eudi.Logger = irma.Logger
+
+	currentLocale := clientmodels.NewCurrentLocale(locale)
 
 	// Create the encryption middleware, used by the IRMA classic clientstorage so all data is encrypted at rest.
 	// The EUDI storage layer derives its own AES middleware (and a separate filename-MAC sub-key) directly from the aesKey.
@@ -123,10 +135,11 @@ func New(
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
 		sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
+		currentLocale,
 	)
-	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
+	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -174,6 +187,7 @@ func New(
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
+		currentLocale,
 	)
 
 	if err != nil {
@@ -196,6 +210,8 @@ func New(
 		keyBinder:        irmaKeyBinder,
 		didValidator:     didValidator,
 		scheduler:        scheduler,
+		clientHandler:    handler,
+		currentLocale:    currentLocale,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -203,7 +219,43 @@ func New(
 	}
 
 	client.sessionManager.Client = client
+
+	// Startup backfill: fetch logos that resolve for the current locale but
+	// are missing from the cache (credentials issued before the wallet became
+	// locale-aware, or whose issuance-time download failed).
+	client.requestLogoBackfill()
+
 	return client, nil
+}
+
+// SetLocale changes the locale used to resolve all app-facing text and logos.
+// Non-blocking: text resolves offline from stored metadata on the next pull;
+// logos missing for the new locale are fetched by a background backfill that
+// signals ClientHandler.UpdateAttributes on completion.
+func (client *Client) SetLocale(locale string) {
+	client.currentLocale.Set(locale)
+	client.requestLogoBackfill()
+}
+
+// locale returns the current locale for resolving app-facing text and logos.
+func (client *Client) locale() string {
+	return client.currentLocale.Get()
+}
+
+// requestLogoBackfill runs a background sweep fetching the logos that resolve
+// for the current locale but are not cached. Sweeps serialize on a mutex; each
+// sweep re-reads the locale at start, so a sweep queued behind another picks
+// up the newest locale. Repeat sweeps with a warm cache only perform Exists
+// checks, so redundant requests are cheap.
+func (client *Client) requestLogoBackfill() {
+	go func() {
+		client.logoBackfillMutex.Lock()
+		defer client.logoBackfillMutex.Unlock()
+		added := services.BackfillLogos(client.eudiStorage, common.HTTPClient, client.currentLocale.Get())
+		if added > 0 && client.clientHandler != nil {
+			client.clientHandler.UpdateAttributes()
+		}
+	}()
 }
 
 func (client *Client) Close() error {
@@ -397,7 +449,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 
 	// Delete EUDI credentials (read metadata first for the removal log).
 	if len(eudiHashes) > 0 {
-		credentialService := services.NewCredentialService(client.eudiStorage)
+		credentialService := services.NewCredentialService(client.eudiStorage, client.locale())
 		allEudiCreds, err := credentialService.GetCredentialMetadataList()
 		if err != nil {
 			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
@@ -418,7 +470,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 		// Create removal log before deleting, so the log service can still
 		// look up batch metadata to resolve the credential logo filename.
 		if len(removedCreds) > 0 {
-			logService := services.NewEudiLogService(client.eudiStorage)
+			logService := services.NewEudiLogService(client.eudiStorage, client.locale())
 			if err := logService.AddRemovalLog(removedCreds); err != nil {
 				return fmt.Errorf("failed to create eudi removal log: %v", err)
 			}
@@ -513,7 +565,7 @@ func (client *Client) LoadNewestLogs(max int) ([]clientmodels.LogInfo, error) {
 	}
 
 	// Load EUDI logs from SQLCipher.
-	logService := services.NewEudiLogService(client.eudiStorage)
+	logService := services.NewEudiLogService(client.eudiStorage, client.locale())
 	eudiLogs, err := logService.GetNewestLogs(max)
 	if err != nil {
 		return nil, err
@@ -534,7 +586,7 @@ func (client *Client) LoadLogsBefore(before time.Time, max int) ([]clientmodels.
 	}
 
 	// Load EUDI logs from SQLCipher.
-	logService := services.NewEudiLogService(client.eudiStorage)
+	logService := services.NewEudiLogService(client.eudiStorage, client.locale())
 	eudiLogs, err := logService.GetLogsBefore(before, max)
 	if err != nil {
 		return nil, err

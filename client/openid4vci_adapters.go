@@ -35,7 +35,7 @@ func (a *openid4vciSessionAdapter) Success(result string, issuedCredentials []*c
 		for i, c := range issuedCredentials {
 			logCreds[i] = clientmodels.CredentialToLogCredential(c)
 		}
-		logService := services.NewEudiLogService(a.session.client.eudiStorage)
+		logService := services.NewEudiLogService(a.session.client.eudiStorage, a.session.client.locale())
 		if err := logService.AddIssuanceLog(
 			clientmodels.Protocol_OpenID4VCI,
 			a.session.State.Requestor,

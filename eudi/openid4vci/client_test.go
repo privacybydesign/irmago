@@ -57,7 +57,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, services.NewHolderBindingKeyService(conf.Storage.Db()))
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 

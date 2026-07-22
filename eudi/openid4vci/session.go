@@ -18,7 +18,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
-	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/internal/httpext"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -58,6 +57,11 @@ type session struct {
 	// immutable VCI baseline rather than against the pre-issuance pass's
 	// output — that pass may have used a different (or stale) VCT.
 	originalCredentialMetadata map[string]*metadata.CredentialMetadata
+
+	// locale is the wallet locale snapshotted at flow start; an in-flight
+	// session keeps resolving text and logos with it even when the app
+	// changes language mid-flow.
+	locale string
 
 	redirectUri string
 
@@ -306,20 +310,8 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 		config.CredentialMetadata = &merged
 		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
 
-		for _, display := range merged.Display {
-			if display.Logo == nil {
-				continue
-			}
-			logoData, _, err := helpers.DownloadRemoteImage(s.httpClient, display.Logo.Uri)
-			if err != nil {
-				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
-				continue
-			}
-			if err := logoManager.Save(display.Logo.Uri, logoData); err != nil {
-				eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
-			}
-			break
-		}
+		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(merged.Display), s.locale)
+		downloadLogoIfMissing(logoManager, s.httpClient, uri)
 	}
 	return nil
 }
@@ -367,7 +359,7 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 }
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
-	credentialService := services.NewCredentialService(s.storage)
+	credentialService := services.NewCredentialService(s.storage, s.locale)
 	for _, fc := range fetched {
 		err := credentialService.VerifyAndStoreIssuedCredentials(
 			fc.verifiedSdJwtVcs,
@@ -404,30 +396,20 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
-		name := metadata.ConvertDisplayToTranslatedString(displays)
+		name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), s.locale)
 
 		issuerDisplays := metadata.ToTranslateableList(s.credentialIssuerMetadata.Display)
-		issuerName := metadata.ConvertDisplayToTranslatedString(issuerDisplays)
+		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
 
-		var image *clientmodels.Image
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
-		for _, display := range config.CredentialMetadata.Display {
-			if display.Logo != nil {
-				image = eudi.LoadLogoImage(credentialLogoManager, display.Logo.Uri)
-				break
-			}
-		}
+		image := eudi.LoadLogoImage(credentialLogoManager,
+			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), s.locale))
 
-		var issuerImage *clientmodels.Image
 		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
-		for _, display := range s.credentialIssuerMetadata.Display {
-			if display.Logo != nil {
-				issuerImage = eudi.LoadLogoImage(issuerLogoManager, display.Logo.Uri)
-				break
-			}
-		}
+		issuerImage := eudi.LoadLogoImage(issuerLogoManager,
+			clientmodels.Resolve(metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale))
 
-		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload)
+		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload, s.locale)
 
 		var batchSize *uint
 		if batch != nil {
@@ -442,8 +424,19 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			expiryDate = jwt.Expiry
 		}
 
+		// The issued JWT's vct claim is authoritative for the credential id —
+		// it is what was signed and what the stored batch is keyed by. The
+		// issuer's well-known document may carry a placeholder (e.g. veramo's
+		// "unknown"), which would leave the issuance log pointing at nothing.
+		credentialId := config.VerifiableCredentialType
+		if len(fc.verifiedSdJwtVcs) > 0 {
+			if vct := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType; vct != "" {
+				credentialId = vct
+			}
+		}
+
 		cred := clientmodels.Credential{
-			CredentialId: config.VerifiableCredentialType,
+			CredentialId: credentialId,
 			Name:         name,
 			Issuer: clientmodels.TrustedParty{
 				Id:    s.credentialIssuerMetadata.CredentialIssuer,
@@ -466,12 +459,12 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 }
 
 // buildAttributesWithValues builds an attribute list directly from the credential
-// payload. The claim metadata is consulted only for display-name translations and
-// for ordering: claims declared in metadata appear in declared order, payload-only
-// claims are appended alphabetically. Claims without a metadata display entry
-// produce attributes with DisplayName: nil.
-func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwtvc.ProcessedSdJwtPayload) []clientmodels.Attribute {
-	displayLookup := map[string]clientmodels.TranslatedString{}
+// payload. The claim metadata is consulted only for display-name translations
+// (resolved to the given locale) and for ordering: claims declared in metadata
+// appear in declared order, payload-only claims are appended alphabetically.
+// Claims without a metadata display entry produce attributes with DisplayName: nil.
+func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwtvc.ProcessedSdJwtPayload, locale string) []clientmodels.Attribute {
+	displayLookup := map[string]string{}
 	metadataOrder := map[string]int{}
 	for i, c := range claims {
 		key := clientmodels.ClaimPathKey(c.Path)
@@ -479,7 +472,7 @@ func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjw
 		if len(c.Display) == 0 {
 			continue
 		}
-		displayLookup[key] = claimDisplayToTranslatedString(c.Display)
+		displayLookup[key] = clientmodels.Resolve(claimDisplayToTranslatedString(c.Display), locale)
 	}
 
 	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)

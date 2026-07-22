@@ -71,8 +71,8 @@ func shouldFail(t *testing.T, name string, fn func(t testingT)) {
 
 func testRequireAttrsInOrder(t *testing.T) {
 	t.Run("single attribute with all fields", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"}
-		desc := clientmodels.TranslatedString{"en": "Your email address"}
+		dn := "Email"
+		desc := "Your email address"
 		attrs := []clientmodels.Attribute{
 			{
 				ClaimPath:   []any{"email"},
@@ -83,26 +83,26 @@ func testRequireAttrsInOrder(t *testing.T) {
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your email address"},
+			DisplayName: new("Email"),
+			Description: new("Your email address"),
 			Value:       strVal("test@example.com"),
 		})
 	})
 
 	t.Run("section header with nil value", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Address"}
+		dn := "Address"
 		attrs := []clientmodels.Attribute{
 			{ClaimPath: []any{"address"}, DisplayName: &dn, Value: nil},
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:        []any{"address"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Address"},
+			DisplayName: new("Address"),
 			Value:       nil, // asserts actual Value is nil
 		})
 	})
 
 	t.Run("value with string", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		attrs := []clientmodels.Attribute{
 			{
 				ClaimPath:   []any{"email"},
@@ -112,13 +112,13 @@ func testRequireAttrsInOrder(t *testing.T) {
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+			DisplayName: new("Email"),
 			Value:       strVal("foo@bar.com"),
 		})
 	})
 
 	t.Run("requested value checked", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "University"}
+		dn := "University"
 		reqVal := &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("TU Delft")}
 		attrs := []clientmodels.Attribute{
 			{
@@ -129,7 +129,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 		}
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:           []any{"university"},
-			DisplayName:    &clientmodels.TranslatedString{"en": "University"},
+			DisplayName:    new("University"),
 			RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("TU Delft")},
 		})
 	})
@@ -150,8 +150,8 @@ func testRequireAttrsInOrder(t *testing.T) {
 	})
 
 	t.Run("nil description skips check", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
-		desc := clientmodels.TranslatedString{"en": "Your email"}
+		dn := "Email"
+		desc := "Your email"
 		attrs := []clientmodels.Attribute{
 			{
 				ClaimPath:   []any{"email"},
@@ -163,15 +163,15 @@ func testRequireAttrsInOrder(t *testing.T) {
 		// Expected Description is nil → skip the check (don't assert nil).
 		requireAttrsInOrder(t, attrs, expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+			DisplayName: new("Email"),
 			Value:       strVal("a@b.com"),
 			// Description: nil → skips check
 		})
 	})
 
 	t.Run("multiple attributes in order", func(t *testing.T) {
-		dn1 := clientmodels.TranslatedString{"en": "Given Name"}
-		dn2 := clientmodels.TranslatedString{"en": "Email"}
+		dn1 := "Given Name"
+		dn2 := "Email"
 		attrs := []clientmodels.Attribute{
 			{
 				ClaimPath:   []any{"given_name"},
@@ -187,20 +187,20 @@ func testRequireAttrsInOrder(t *testing.T) {
 		requireAttrsInOrder(t, attrs,
 			expectedAttr{
 				Path:        []any{"given_name"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Given Name"},
+				DisplayName: new("Given Name"),
 				Value:       strVal("Jan"),
 			},
 			expectedAttr{
 				Path:        []any{"email"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Email"},
+				DisplayName: new("Email"),
 				Value:       strVal("jan@example.com"),
 			},
 		)
 	})
 
 	t.Run("bool and int values", func(t *testing.T) {
-		dn1 := clientmodels.TranslatedString{"en": "Student"}
-		dn2 := clientmodels.TranslatedString{"en": "Age"}
+		dn1 := "Student"
+		dn2 := "Age"
 		b := true
 		var age int64 = 25
 		attrs := []clientmodels.Attribute{
@@ -218,12 +218,12 @@ func testRequireAttrsInOrder(t *testing.T) {
 		requireAttrsInOrder(t, attrs,
 			expectedAttr{
 				Path:        []any{"is_student"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Student"},
+				DisplayName: new("Student"),
 				Value:       boolVal(true),
 			},
 			expectedAttr{
 				Path:        []any{"age"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Age"},
+				DisplayName: new("Age"),
 				Value:       intVal(25),
 			},
 		)
@@ -235,7 +235,7 @@ func testRequireAttrsInOrder(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func testCredMatchesExpected(t *testing.T) {
-	makeCred := func(id string, name clientmodels.TranslatedString, attrs ...clientmodels.Attribute) *clientmodels.SelectableCredentialInstance {
+	makeCred := func(id string, name string, attrs ...clientmodels.Attribute) *clientmodels.SelectableCredentialInstance {
 		return &clientmodels.SelectableCredentialInstance{
 			CredentialId: id,
 			Name:         name,
@@ -249,7 +249,7 @@ func testCredMatchesExpected(t *testing.T) {
 	}
 
 	t.Run("matches by id and attributes", func(t *testing.T) {
-		name := clientmodels.TranslatedString{"en": "Email"}
+		name := "Email"
 		cred := makeCred("test.email", name, emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
@@ -260,7 +260,7 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("false when expected id empty but actual has id", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
+		cred := makeCred("test.email", "Email", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
@@ -269,7 +269,7 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("matches when both id empty", func(t *testing.T) {
-		cred := makeCred("", nil, emailAttr)
+		cred := makeCred("", "", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
@@ -278,7 +278,7 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("false when expected name empty but actual has name", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
+		cred := makeCred("test.email", "Email", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
@@ -287,27 +287,27 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("matches when both name empty", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
+		cred := makeCred("test.email", "", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         clientmodels.TranslatedString{},
+			Name:         "",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
 	})
 
 	t.Run("matches by name", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email", "nl": "E-mail"}, emailAttr)
+		cred := makeCred("test.email", "Email", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         clientmodels.TranslatedString{"en": "Email", "nl": "E-mail"},
+			Name:         "Email",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.True(t, result)
 	})
 
 	t.Run("false on id mismatch", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
+		cred := makeCred("test.email", "", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.phone",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
@@ -316,17 +316,17 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("false on name mismatch", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{"en": "Email"}, emailAttr)
+		cred := makeCred("test.email", "Email", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
-			Name:         clientmodels.TranslatedString{"en": "Phone"},
+			Name:         "Phone",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("test@example.com")}},
 		})
 		require.False(t, result)
 	})
 
 	t.Run("false on attribute count mismatch", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
+		cred := makeCred("test.email", "", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
 			Attributes: []expectedAttr{
@@ -338,7 +338,7 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("false on path mismatch", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
+		cred := makeCred("test.email", "", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
 			Attributes:   []expectedAttr{{Path: []any{"phone"}, Value: strVal("test@example.com")}},
@@ -347,7 +347,7 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("false on value mismatch", func(t *testing.T) {
-		cred := makeCred("test.email", clientmodels.TranslatedString{}, emailAttr)
+		cred := makeCred("test.email", "", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: strVal("wrong@example.com")}},
@@ -356,7 +356,7 @@ func testCredMatchesExpected(t *testing.T) {
 	})
 
 	t.Run("skips value comparison when expected nil", func(t *testing.T) {
-		cred := makeCred("test.email", nil, emailAttr)
+		cred := makeCred("test.email", "", emailAttr)
 		result := credMatchesExpected(cred, expectedPlanCredential{
 			CredentialId: "test.email",
 			Attributes:   []expectedAttr{{Path: []any{"email"}, Value: nil}},
@@ -380,7 +380,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	})
 
 	t.Run("issuance steps", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
 			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				Steps: []clientmodels.IssuanceStep{
@@ -388,7 +388,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 						{Credentials: []*clientmodels.CredentialDescriptor{
 							{
 								CredentialId: "test.email",
-								Name:         clientmodels.TranslatedString{"en": "Email Cred"},
+								Name:         "Email Cred",
 								Attributes: []clientmodels.Attribute{
 									{
 										ClaimPath:      []any{"email"},
@@ -407,11 +407,11 @@ func testRequireDisclosurePlan(t *testing.T) {
 				{Options: []expectedCredentialDescriptor{
 					{
 						CredentialId: "test.email",
-						Name:         &clientmodels.TranslatedString{"en": "Email Cred"},
+						Name:         new("Email Cred"),
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"email"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
+								DisplayName:    new("Email"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
@@ -447,7 +447,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	})
 
 	t.Run("wrong credential issued", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "University"}
+		dn := "University"
 		plan := &clientmodels.DisclosurePlan{
 			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				WrongCredentialIssued: &clientmodels.Credential{
@@ -468,7 +468,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 				Attributes: []expectedAttr{
 					{
 						Path:        []any{"university"},
-						DisplayName: &clientmodels.TranslatedString{"en": "University"},
+						DisplayName: new("University"),
 						Value:       strVal("Wrong Uni"),
 					},
 				},
@@ -478,14 +478,14 @@ func testRequireDisclosurePlan(t *testing.T) {
 	})
 
 	t.Run("owned options matched", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
 					OwnedOptions: singleCredBundles(
 						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "test.email",
-							Name:         clientmodels.TranslatedString{"en": "Email Cred"},
+							Name:         "Email Cred",
 							Attributes: []clientmodels.Attribute{
 								{
 									ClaimPath:   []any{"email"},
@@ -504,9 +504,9 @@ func testRequireDisclosurePlan(t *testing.T) {
 					Owned: []expectedPlanCredential{
 						{
 							CredentialId: "test.email",
-							Name:         clientmodels.TranslatedString{"en": "Email Cred"},
+							Name:         "Email Cred",
 							Attributes: []expectedAttr{
-								{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("a@b.com")},
+								{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("a@b.com")},
 							},
 						},
 					},
@@ -516,14 +516,14 @@ func testRequireDisclosurePlan(t *testing.T) {
 	})
 
 	t.Run("obtainable options matched", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
 					ObtainableOptions: []*clientmodels.CredentialDescriptor{
 						{
 							CredentialId: "test.email",
-							Name:         clientmodels.TranslatedString{"en": "Email Cred"},
+							Name:         "Email Cred",
 							Attributes: []clientmodels.Attribute{
 								{
 									ClaimPath:      []any{"email"},
@@ -542,11 +542,11 @@ func testRequireDisclosurePlan(t *testing.T) {
 					Obtainable: []expectedCredentialDescriptor{
 						{
 							CredentialId: "test.email",
-							Name:         &clientmodels.TranslatedString{"en": "Email Cred"},
+							Name:         new("Email Cred"),
 							Attributes: []expectedAttr{
 								{
 									Path:           []any{"email"},
-									DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
+									DisplayName:    new("Email"),
 									RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								},
 							},
@@ -571,21 +571,21 @@ func testRequireDisclosurePlan(t *testing.T) {
 	})
 
 	t.Run("multiple owned options finds correct match", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "University"}
+		dn := "University"
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
 					OwnedOptions: singleCredBundles(
 						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "sc",
-							Name:         clientmodels.TranslatedString{"en": "Student Card"},
+							Name:         "Student Card",
 							Attributes: []clientmodels.Attribute{
 								{ClaimPath: []any{"university"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Amsterdam")}},
 							},
 						},
 						&clientmodels.SelectableCredentialInstance{
 							CredentialId: "sc",
-							Name:         clientmodels.TranslatedString{"en": "Student Card"},
+							Name:         "Student Card",
 							Attributes: []clientmodels.Attribute{
 								{ClaimPath: []any{"university"}, DisplayName: &dn, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Delft")}},
 							},
@@ -601,16 +601,16 @@ func testRequireDisclosurePlan(t *testing.T) {
 					Owned: []expectedPlanCredential{
 						{
 							CredentialId: "sc",
-							Name:         clientmodels.TranslatedString{"en": "Student Card"},
+							Name:         "Student Card",
 							Attributes: []expectedAttr{
-								{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University"}, Value: strVal("Amsterdam")},
+								{Path: []any{"university"}, DisplayName: new("University"), Value: strVal("Amsterdam")},
 							},
 						},
 						{
 							CredentialId: "sc",
-							Name:         clientmodels.TranslatedString{"en": "Student Card"},
+							Name:         "Student Card",
 							Attributes: []expectedAttr{
-								{Path: []any{"university"}, DisplayName: &clientmodels.TranslatedString{"en": "University"}, Value: strVal("Delft")},
+								{Path: []any{"university"}, DisplayName: new("University"), Value: strVal("Delft")},
 							},
 						},
 					},
@@ -620,7 +620,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 	})
 
 	t.Run("full plan with issuance and choices", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
 			IssueDuringDisclosure: &clientmodels.IssueDuringDisclosure{
 				Steps: []clientmodels.IssuanceStep{
@@ -659,7 +659,7 @@ func testRequireDisclosurePlan(t *testing.T) {
 						{
 							CredentialId: "test.email",
 							Attributes: []expectedAttr{
-								{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("x@y.com")},
+								{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("x@y.com")},
 							},
 						},
 					},
@@ -680,29 +680,29 @@ func testRequireCredentialDescriptor(t *testing.T) {
 	t.Run("matches id and name", func(t *testing.T) {
 		desc := &clientmodels.CredentialDescriptor{
 			CredentialId: "test.email",
-			Name:         clientmodels.TranslatedString{"en": "Email"},
+			Name:         "Email",
 		}
 		requireCredentialDescriptor(t, desc, expectedCredentialDescriptor{
 			CredentialId: "test.email",
-			Name:         &clientmodels.TranslatedString{"en": "Email"},
+			Name:         new("Email"),
 		}, "test")
 	})
 
 	t.Run("skips id when empty", func(t *testing.T) {
 		desc := &clientmodels.CredentialDescriptor{
 			CredentialId: "anything",
-			Name:         clientmodels.TranslatedString{"en": "Email"},
+			Name:         "Email",
 		}
 		requireCredentialDescriptor(t, desc, expectedCredentialDescriptor{
 			CredentialId: "", // skip
-			Name:         &clientmodels.TranslatedString{"en": "Email"},
+			Name:         new("Email"),
 		}, "test")
 	})
 
 	t.Run("skips name when nil", func(t *testing.T) {
 		desc := &clientmodels.CredentialDescriptor{
 			CredentialId: "test.email",
-			Name:         clientmodels.TranslatedString{"en": "Whatever"},
+			Name:         "Whatever",
 		}
 		requireCredentialDescriptor(t, desc, expectedCredentialDescriptor{
 			CredentialId: "test.email",
@@ -711,7 +711,7 @@ func testRequireCredentialDescriptor(t *testing.T) {
 	})
 
 	t.Run("checks attributes", func(t *testing.T) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		desc := &clientmodels.CredentialDescriptor{
 			CredentialId: "test.email",
 			Attributes: []clientmodels.Attribute{
@@ -728,7 +728,7 @@ func testRequireCredentialDescriptor(t *testing.T) {
 			Attributes: []expectedAttr{
 				{
 					Path:           []any{"email"},
-					DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
+					DisplayName:    new("Email"),
 					RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 					Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 				},
@@ -742,8 +742,8 @@ func testRequireCredentialDescriptor(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func testFindAttr(t *testing.T) {
-	dn1 := clientmodels.TranslatedString{"en": "Email"}
-	dn2 := clientmodels.TranslatedString{"en": "Street"}
+	dn1 := "Email"
+	dn2 := "Street"
 	attrs := []clientmodels.Attribute{
 		{ClaimPath: []any{"email"}, DisplayName: &dn1, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")}},
 		{ClaimPath: []any{"address", "street"}, DisplayName: &dn2, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("Main St")}},
@@ -772,7 +772,7 @@ func testFindAttr(t *testing.T) {
 // ===========================================================================
 
 func testRequireAttrsInOrder_Failures(t *testing.T) {
-	dn := clientmodels.TranslatedString{"en": "Email"}
+	dn := "Email"
 	emailAttr := clientmodels.Attribute{
 		ClaimPath:   []any{"email"},
 		DisplayName: &dn,
@@ -781,39 +781,39 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 
 	shouldFail(t, "wrong attribute count", func(t testingT) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{emailAttr},
-			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("a@b.com")},
-			expectedAttr{Path: []any{"domain"}, DisplayName: &clientmodels.TranslatedString{"en": "Domain"}, Value: strVal("b.com")},
+			expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("a@b.com")},
+			expectedAttr{Path: []any{"domain"}, DisplayName: new("Domain"), Value: strVal("b.com")},
 		)
 	})
 
 	shouldFail(t, "path mismatch", func(t testingT) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{emailAttr},
-			expectedAttr{Path: []any{"phone"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("a@b.com")},
+			expectedAttr{Path: []any{"phone"}, DisplayName: new("Email"), Value: strVal("a@b.com")},
 		)
 	})
 
 	shouldFail(t, "value mismatch", func(t testingT) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{emailAttr},
-			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("wrong@b.com")},
+			expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("wrong@b.com")},
 		)
 	})
 
 	shouldFail(t, "value type mismatch", func(t testingT) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{emailAttr},
-			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: boolVal(true)},
+			expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: boolVal(true)},
 		)
 	})
 
 	shouldFail(t, "expected value but actual is nil", func(t testingT) {
 		noValue := clientmodels.Attribute{ClaimPath: []any{"email"}, DisplayName: &dn, Value: nil}
 		requireAttrsInOrder(t, []clientmodels.Attribute{noValue},
-			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("a@b.com")},
+			expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("a@b.com")},
 		)
 	})
 
 	shouldFail(t, "expected nil value (header) but actual has value", func(t testingT) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{emailAttr},
-			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: nil},
+			expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: nil},
 		)
 	})
 
@@ -823,7 +823,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 			Value:     &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("a@b.com")},
 		}
 		requireAttrsInOrder(t, []clientmodels.Attribute{noDisplayName},
-			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("a@b.com")},
+			expectedAttr{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("a@b.com")},
 		)
 	})
 
@@ -835,12 +835,12 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 
 	shouldFail(t, "display name locale mismatch", func(t testingT) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{emailAttr},
-			expectedAttr{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Wrong Name"}, Value: strVal("a@b.com")},
+			expectedAttr{Path: []any{"email"}, DisplayName: new("Wrong Name"), Value: strVal("a@b.com")},
 		)
 	})
 
 	shouldFail(t, "description mismatch", func(t testingT) {
-		desc := clientmodels.TranslatedString{"en": "Actual description"}
+		desc := "Actual description"
 		attrWithDesc := clientmodels.Attribute{
 			ClaimPath:   []any{"email"},
 			DisplayName: &dn,
@@ -850,8 +850,8 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{attrWithDesc},
 			expectedAttr{
 				Path:        []any{"email"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Email"},
-				Description: &clientmodels.TranslatedString{"en": "Wrong description"},
+				DisplayName: new("Email"),
+				Description: new("Wrong description"),
 				Value:       strVal("a@b.com"),
 			},
 		)
@@ -868,7 +868,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{attrWithReq},
 			expectedAttr{
 				Path:           []any{"email"},
-				DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
+				DisplayName:    new("Email"),
 				Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 				RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: new("expected")},
 			},
@@ -884,7 +884,7 @@ func testRequireAttrsInOrder_Failures(t *testing.T) {
 		requireAttrsInOrder(t, []clientmodels.Attribute{attrNoReq},
 			expectedAttr{
 				Path:           []any{"email"},
-				DisplayName:    &clientmodels.TranslatedString{"en": "Email"},
+				DisplayName:    new("Email"),
 				Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 				RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 			},
@@ -923,7 +923,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 	})
 
 	shouldFail(t, "owned option count mismatch", func(t testingT) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
@@ -942,8 +942,8 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 			Choices: []expectedPickOneChoice{
 				{
 					Owned: []expectedPlanCredential{
-						{Attributes: []expectedAttr{{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("a@b.com")}}},
-						{Attributes: []expectedAttr{{Path: []any{"phone"}, DisplayName: &clientmodels.TranslatedString{"en": "Phone"}, Value: strVal("123")}}},
+						{Attributes: []expectedAttr{{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("a@b.com")}}},
+						{Attributes: []expectedAttr{{Path: []any{"phone"}, DisplayName: new("Phone"), Value: strVal("123")}}},
 					},
 				},
 			},
@@ -951,7 +951,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 	})
 
 	shouldFail(t, "no owned option matches expected", func(t testingT) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		plan := &clientmodels.DisclosurePlan{
 			DisclosureChoicesOverview: []clientmodels.DisclosurePickOne{
 				{
@@ -970,7 +970,7 @@ func testRequireDisclosurePlan_Failures(t *testing.T) {
 			Choices: []expectedPickOneChoice{
 				{
 					Owned: []expectedPlanCredential{
-						{Attributes: []expectedAttr{{Path: []any{"email"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: strVal("wrong@b.com")}}},
+						{Attributes: []expectedAttr{{Path: []any{"email"}, DisplayName: new("Email"), Value: strVal("wrong@b.com")}}},
 					},
 				},
 			},
@@ -1093,16 +1093,16 @@ func testRequireCredentialDescriptor_Failures(t *testing.T) {
 	shouldFail(t, "name mismatch", func(t testingT) {
 		desc := &clientmodels.CredentialDescriptor{
 			CredentialId: "test.email",
-			Name:         clientmodels.TranslatedString{"en": "Email"},
+			Name:         "Email",
 		}
 		requireCredentialDescriptor(t, desc, expectedCredentialDescriptor{
 			CredentialId: "test.email",
-			Name:         &clientmodels.TranslatedString{"en": "Phone"},
+			Name:         new("Phone"),
 		}, "test")
 	})
 
 	shouldFail(t, "attribute mismatch", func(t testingT) {
-		dn := clientmodels.TranslatedString{"en": "Email"}
+		dn := "Email"
 		desc := &clientmodels.CredentialDescriptor{
 			CredentialId: "test.email",
 			Attributes: []clientmodels.Attribute{
@@ -1112,7 +1112,7 @@ func testRequireCredentialDescriptor_Failures(t *testing.T) {
 		requireCredentialDescriptor(t, desc, expectedCredentialDescriptor{
 			CredentialId: "test.email",
 			Attributes: []expectedAttr{
-				{Path: []any{"phone"}, DisplayName: &clientmodels.TranslatedString{"en": "Email"}, Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}},
+				{Path: []any{"phone"}, DisplayName: new("Email"), Value: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String}},
 			},
 		}, "test")
 	})
