@@ -30,7 +30,7 @@ func (a *openid4vpSessionAdapter) Success(result string, credentialLogs []client
 	// Store the disclosure log in the EUDI SQLCipher database. We log even when
 	// no credentials were shared (all-optional sets skipped by the user) so the
 	// user can still see which verifier they had a session with.
-	logService := services.NewEudiLogService(a.session.client.eudiStorage)
+	logService := services.NewEudiLogService(a.session.client.eudiStorage, a.session.client.locale())
 	if err := logService.AddDisclosureLog(a.session.State.Requestor, credentialLogs); err != nil {
 		eudi.Logger.Errorf("failed to store openid4vp disclosure log: %v", err)
 	}

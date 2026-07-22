@@ -161,12 +161,12 @@ func testDisclosureWithPredefinedValues(
 				{Attributes: []expectedAttr{
 					{
 						Path:           []any{"studentID"},
-						DisplayName:    &clientmodels.TranslatedString{"nl": "Studentnummer", "en": "Student number"},
+						DisplayName:    new("Student number"),
 						RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 					},
 					{
 						Path:           []any{"university"},
-						DisplayName:    &clientmodels.TranslatedString{"nl": "Universiteit", "en": "University"},
+						DisplayName:    new("University"),
 						RequestedValue: strVal("Universiteit Utrecht"),
 					},
 				}},
@@ -190,12 +190,12 @@ func testDisclosureWithPredefinedValues(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"studentID"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Studentnummer", "en": "Student number"},
+							DisplayName:    new("Student number"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Universiteit", "en": "University"},
+							DisplayName:    new("University"),
 							RequestedValue: strVal("Universiteit Utrecht"),
 						},
 					},
@@ -208,7 +208,7 @@ func testDisclosureWithPredefinedValues(
 			Attributes: []expectedAttr{
 				{
 					Path:           []any{"university"},
-					DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+					DisplayName:    new("University"),
 					Value:          strVal("University of the Arts"),
 					RequestedValue: strVal("Universiteit Utrecht"),
 				},
@@ -248,12 +248,12 @@ func testDisclosureWithPredefinedValues(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"studentID"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Studentnummer", "en": "Student number"},
+							DisplayName:    new("Student number"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Universiteit", "en": "University"},
+							DisplayName:    new("University"),
 							RequestedValue: strVal("Universiteit Utrecht"),
 						},
 					},
@@ -267,19 +267,19 @@ func testDisclosureWithPredefinedValues(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         "Demo Student Card",
+						IssuerName:   "Demo Radboud University Nijmegen",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"studentID"},
-								DisplayName: &clientmodels.TranslatedString{"nl": "Studentnummer", "en": "Student number"},
-								Description: &clientmodels.TranslatedString{"en": "Your student number", "nl": "Uw studentnummer"},
+								DisplayName: new("Student number"),
+								Description: new("Your student number"),
 								Value:       strVal("67890"),
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"nl": "Universiteit", "en": "University"},
-								Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								DisplayName:    new("University"),
+								Description:    new("The name of the university"),
 								Value:          strVal("Universiteit Utrecht"),
 								RequestedValue: strVal("Universiteit Utrecht"),
 							},
@@ -289,28 +289,28 @@ func testDisclosureWithPredefinedValues(
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   &clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         new("Demo Student Card"),
+						IssuerName:   new("Demo Radboud University Nijmegen"),
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"level"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								DisplayName: new("Type"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"studentID"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								DisplayName:    new("Student number"),
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentCardNumber"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								DisplayName: new("Student card number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								DisplayName:    new("University"),
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: strVal("Universiteit Utrecht"),
 							},
@@ -371,7 +371,7 @@ func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							DisplayName:    new("University"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -396,13 +396,13 @@ func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         "Demo Student Card",
+						IssuerName:   "Demo Radboud University Nijmegen",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								DisplayName: new("University"),
+								Description: new("The name of the university"),
 								Value:       strVal("University of the Arts"),
 							},
 						},
@@ -417,13 +417,13 @@ func testDisclosureWithOptionalAttributesFromSameCredential_CredentialNotPresent
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         "Demo Student Card",
+						IssuerName:   "Demo Radboud University Nijmegen",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"level"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								DisplayName: new("Type"),
+								Description: new("Whether you are a regular or PhD student"),
 								Value:       strVal("high"),
 							},
 						},
@@ -537,12 +537,12 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstnames"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+							DisplayName:    new("First names"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -569,12 +569,12 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstnames"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+							DisplayName:    new("First names"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -592,23 +592,23 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								DisplayName:    new("Type"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentID"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								DisplayName: new("Student number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentCardNumber"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								DisplayName: new("Student card number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								DisplayName:    new("University"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
@@ -620,19 +620,19 @@ func testSingleCredentialDisclosureWithOptionalCredential_ShouldMoveToDisclosure
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
+						Name:         "Demo Name",
+						IssuerName:   "Demo MijnOverheid.nl",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstnames"},
-								DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-								Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+								DisplayName: new("First names"),
+								Description: new("All of your first names"),
 								Value:       strVal("Barry"),
 							},
 							{
 								Path:        []any{"familyname"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								DisplayName: new("Family name"),
+								Description: new("Your family name"),
 								Value:       strVal("Batsbak"),
 							},
 						},
@@ -709,7 +709,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"email"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+							DisplayName:    new("Email address"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -721,12 +721,12 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							DisplayName:    new("Type"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							DisplayName:    new("University"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -736,12 +736,12 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstnames"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+							DisplayName:    new("First names"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -767,7 +767,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"email"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+							DisplayName:    new("Email address"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -779,12 +779,12 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							DisplayName:    new("Type"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							DisplayName:    new("University"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -794,12 +794,12 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstnames"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+							DisplayName:    new("First names"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -828,7 +828,7 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"email"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+							DisplayName:    new("Email address"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -840,12 +840,12 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							DisplayName:    new("Type"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							DisplayName:    new("University"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -855,12 +855,12 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstnames"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+							DisplayName:    new("First names"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -873,13 +873,13 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "test.test.email",
-						Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo test issuer", "nl": "Demo test issuer"},
+						Name:         "Demo Email address",
+						IssuerName:   "Demo test issuer",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-								Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+								DisplayName: new("Email address"),
+								Description: new("Your verified email address"),
 								Value:       strVal("test@gmail.com"),
 							},
 						},
@@ -893,19 +893,19 @@ func testMultipleStepsOfIssuanceDuringDisclosure(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
+						Name:         "Demo Name",
+						IssuerName:   "Demo MijnOverheid.nl",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstnames"},
-								DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-								Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+								DisplayName: new("First names"),
+								Description: new("All of your first names"),
 								Value:       strVal("Barry"),
 							},
 							{
 								Path:        []any{"familyname"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								DisplayName: new("Family name"),
+								Description: new("Your family name"),
 								Value:       strVal("Batsbak"),
 							},
 						},
@@ -979,12 +979,12 @@ func testWrongCredentialIssuedDuringDisclosure(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							DisplayName:    new("Type"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							DisplayName:    new("University"),
 							RequestedValue: strVal("Radboud University"),
 						},
 					},
@@ -1021,7 +1021,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 			Attributes: []expectedAttr{
 				{
 					Path:           []any{"university"},
-					DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+					DisplayName:    new("University"),
 					Value:          strVal("University of the Arts"),
 					RequestedValue: strVal("Radboud University"),
 				},
@@ -1061,7 +1061,7 @@ func testWrongCredentialIssuedDuringDisclosure(
 			Attributes: []expectedAttr{
 				{
 					Path:        []any{"university"},
-					DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+					DisplayName: new("University"),
 					Value:       strVal("Open University"),
 				},
 			},
@@ -1100,19 +1100,19 @@ func testWrongCredentialIssuedDuringDisclosure(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         "Demo Student Card",
+						IssuerName:   "Demo Radboud University Nijmegen",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"level"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								DisplayName: new("Type"),
+								Description: new("Whether you are a regular or PhD student"),
 								Value:       strVal("high"),
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								DisplayName:    new("University"),
+								Description:    new("The name of the university"),
 								Value:          strVal("Radboud University"),
 								RequestedValue: strVal("Radboud University"),
 							},
@@ -1122,28 +1122,28 @@ func testWrongCredentialIssuedDuringDisclosure(
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   &clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         new("Demo Student Card"),
+						IssuerName:   new("Demo Radboud University Nijmegen"),
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								DisplayName:    new("Type"),
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentID"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								DisplayName: new("Student number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentCardNumber"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								DisplayName: new("Student card number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								DisplayName:    new("University"),
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: strVal("Radboud University"),
 							},
@@ -1228,12 +1228,12 @@ func testPreExistingWrongCredentialNotReported(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							DisplayName:    new("Type"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							DisplayName:    new("University"),
 							RequestedValue: strVal("Radboud University"),
 						},
 					},
@@ -1271,7 +1271,7 @@ func testPreExistingWrongCredentialNotReported(
 			Attributes: []expectedAttr{
 				{
 					Path:        []any{"university"},
-					DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+					DisplayName: new("University"),
 					Value:       strVal("Open University"),
 				},
 			},
@@ -1309,19 +1309,19 @@ func testPreExistingWrongCredentialNotReported(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         "Demo Student Card",
+						IssuerName:   "Demo Radboud University Nijmegen",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"level"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								DisplayName: new("Type"),
+								Description: new("Whether you are a regular or PhD student"),
 								Value:       strVal("high"),
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								DisplayName:    new("University"),
+								Description:    new("The name of the university"),
 								Value:          strVal("Radboud University"),
 								RequestedValue: strVal("Radboud University"),
 							},
@@ -1331,28 +1331,28 @@ func testPreExistingWrongCredentialNotReported(
 				Obtainable: []expectedCredentialDescriptor{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   &clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         new("Demo Student Card"),
+						IssuerName:   new("Demo Radboud University Nijmegen"),
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								DisplayName:    new("Type"),
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentID"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								DisplayName: new("Student number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentCardNumber"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								DisplayName: new("Student card number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								DisplayName:    new("University"),
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: strVal("Radboud University"),
 							},
@@ -1418,32 +1418,32 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         "Demo Student Card",
+						IssuerName:   "Demo Radboud University Nijmegen",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"level"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								DisplayName: new("Type"),
+								Description: new("Whether you are a regular or PhD student"),
 								Value:       strVal("high"),
 							},
 							{
 								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								DisplayName: new("University"),
+								Description: new("The name of the university"),
 								Value:       strVal("University of the Arts"),
 							},
 						},
 					},
 					{
 						CredentialId: "test.test.email",
-						Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo test issuer", "nl": "Demo test issuer"},
+						Name:         "Demo Email address",
+						IssuerName:   "Demo test issuer",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-								Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+								DisplayName: new("Email address"),
+								Description: new("Your verified email address"),
 								Value:       strVal("test@gmail.com"),
 							},
 						},
@@ -1455,23 +1455,23 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								DisplayName:    new("Type"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentID"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								DisplayName: new("Student number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentCardNumber"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								DisplayName: new("Student card number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								DisplayName:    new("University"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
@@ -1482,7 +1482,7 @@ func testChoiceBetweenTwoNonSingletonCredentialsBothPresent(
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"email"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+								DisplayName:    new("Email address"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
@@ -1548,26 +1548,26 @@ func testChoiceBetweenEmailAndStudentCardBothPresent(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "test.test.email",
-						Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo test issuer", "nl": "Demo test issuer"},
+						Name:         "Demo Email address",
+						IssuerName:   "Demo test issuer",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-								Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+								DisplayName: new("Email address"),
+								Description: new("Your verified email address"),
 								Value:       strVal("test@gmail.com"),
 							},
 						},
 					},
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         "Demo Student Card",
+						IssuerName:   "Demo Radboud University Nijmegen",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								DisplayName: new("University"),
+								Description: new("The name of the university"),
 								Value:       strVal("University of the Arts"),
 							},
 						},
@@ -1627,12 +1627,12 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							DisplayName:    new("Type"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							DisplayName:    new("University"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -1642,12 +1642,12 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstnames"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+							DisplayName:    new("First names"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -1674,12 +1674,12 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"level"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+							DisplayName:    new("Type"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"university"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+							DisplayName:    new("University"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -1689,12 +1689,12 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstnames"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+							DisplayName:    new("First names"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -1709,19 +1709,19 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.RU.studentCard",
-						Name:         clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Name:         "Demo Student Card",
+						IssuerName:   "Demo Radboud University Nijmegen",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"level"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
-								Description: &clientmodels.TranslatedString{"en": "Whether you are a regular or PhD student", "nl": "Of u een gewone of PhD student bent"},
+								DisplayName: new("Type"),
+								Description: new("Whether you are a regular or PhD student"),
 								Value:       strVal("high"),
 							},
 							{
 								Path:        []any{"university"},
-								DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
-								Description: &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
+								DisplayName: new("University"),
+								Description: new("The name of the university"),
 								Value:       strVal("University of the Arts"),
 							},
 						},
@@ -1733,23 +1733,23 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"level"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								DisplayName:    new("Type"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentID"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								DisplayName: new("Student number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"studentCardNumber"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								DisplayName: new("Student card number"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"university"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								DisplayName:    new("University"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
@@ -1760,24 +1760,24 @@ func testChoiceBetweenSingletonAndNonSingletonCredentialsNonePresent(
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"firstnames"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+								DisplayName:    new("First names"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"firstname"},
-								DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+								DisplayName: new("First name"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:           []any{"familyname"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+								DisplayName:    new("Family name"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 							{
 								Path:        []any{"prefix"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
+								DisplayName: new("Prefix"),
 								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
 						},
@@ -1828,12 +1828,12 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstname"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
+							DisplayName:    new("First name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -1878,12 +1878,12 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 					Attributes: []expectedAttr{
 						{
 							Path:           []any{"firstname"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
+							DisplayName:    new("First name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 						{
 							Path:           []any{"familyname"},
-							DisplayName:    &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
+							DisplayName:    new("Family name"),
 							RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 						},
 					},
@@ -1898,19 +1898,19 @@ func testSingleCredentialDisclosureWithUnavailableSingletonCredential_RefreshAft
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
+						Name:         "Demo Name",
+						IssuerName:   "Demo MijnOverheid.nl",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstname"},
-								DisplayName: &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
-								Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+								DisplayName: new("First name"),
+								Description: new("Your first name"),
 								Value:       strVal("Bar"),
 							},
 							{
 								Path:        []any{"familyname"},
-								DisplayName: &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
-								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								DisplayName: new("Family name"),
+								Description: new("Your family name"),
 								Value:       strVal("Batsbak"),
 							},
 						},
@@ -1956,19 +1956,19 @@ func testSingleCredentialDisclosureWithAvailableSingletonCredential(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
+						Name:         "Demo Name",
+						IssuerName:   "Demo MijnOverheid.nl",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstname"},
-								DisplayName: &clientmodels.TranslatedString{"nl": "Voornaam", "en": "First name"},
-								Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+								DisplayName: new("First name"),
+								Description: new("Your first name"),
 								Value:       strVal("Bar"),
 							},
 							{
 								Path:        []any{"familyname"},
-								DisplayName: &clientmodels.TranslatedString{"nl": "Achternaam", "en": "Family name"},
-								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								DisplayName: new("Family name"),
+								Description: new("Your family name"),
 								Value:       strVal("Batsbak"),
 							},
 						},
@@ -2008,7 +2008,7 @@ func testSingleCredentialDisclosureWithUnavailableCredential(
 			{Options: []expectedCredentialDescriptor{
 				{
 					CredentialId: "test.test.email",
-					Name:         &clientmodels.TranslatedString{"nl": "Demo E-mailadres", "en": "Demo Email address"},
+					Name:         new("Demo Email address"),
 				},
 			}},
 		},
@@ -2052,13 +2052,13 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "test.test.email",
-						Name:         clientmodels.TranslatedString{"en": "Demo Email address", "nl": "Demo E-mailadres"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo test issuer", "nl": "Demo test issuer"},
+						Name:         "Demo Email address",
+						IssuerName:   "Demo test issuer",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"email"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-								Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+								DisplayName: new("Email address"),
+								Description: new("Your verified email address"),
 								Value:       strVal("test@gmail.com"),
 							},
 						},
@@ -2070,7 +2070,7 @@ func testSingleCredentialDisclosureWithAvailableCredential(
 						Attributes: []expectedAttr{
 							{
 								Path:           []any{"email"},
-								DisplayName:    &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
+								DisplayName:    new("Email address"),
 								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 							},
@@ -2201,31 +2201,31 @@ func testDisclosureAttributeOrderFollowsSchema(
 				Owned: []expectedPlanCredential{
 					{
 						CredentialId: "irma-demo.MijnOverheid.fullName",
-						Name:         clientmodels.TranslatedString{"en": "Demo Name", "nl": "Demo Naam"},
-						IssuerName:   clientmodels.TranslatedString{"en": "Demo MijnOverheid.nl", "nl": "Demo MijnOverheid.nl"},
+						Name:         "Demo Name",
+						IssuerName:   "Demo MijnOverheid.nl",
 						Attributes: []expectedAttr{
 							{
 								Path:        []any{"firstnames"},
-								DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-								Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+								DisplayName: new("First names"),
+								Description: new("All of your first names"),
 								Value:       strVal("Barry"),
 							},
 							{
 								Path:        []any{"firstname"},
-								DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-								Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+								DisplayName: new("First name"),
+								Description: new("Your first name"),
 								Value:       strVal("Bar"),
 							},
 							{
 								Path:        []any{"familyname"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-								Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+								DisplayName: new("Family name"),
+								Description: new("Your family name"),
 								Value:       strVal("Batsbak"),
 							},
 							{
 								Path:        []any{"prefix"},
-								DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
-								Description: &clientmodels.TranslatedString{"en": "Family name prefix", "nl": "Tussenvoegsel van uw achternaam"},
+								DisplayName: new("Prefix"),
+								Description: new("Family name prefix"),
 								Value:       strVal("Sir"),
 							},
 						},

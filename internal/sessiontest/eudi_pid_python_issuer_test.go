@@ -67,7 +67,7 @@ func testEudiPidPythonIssuerIssuesPidWithNonUrlVct(t *testing.T) {
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
 
-	cred := findCredentialByName(t, creds, "en", eudiPidIssuerPyDisplayNameEN)
+	cred := findCredentialByName(t, creds, eudiPidIssuerPyDisplayNameEN)
 	require.NotNil(t, cred, "issued PID credential should appear in GetCredentials")
 
 	// The stored credential's id must be exactly the non-URL vct emitted
@@ -92,13 +92,13 @@ func testEudiPidPythonIssuerIssuesPidWithNonUrlVct(t *testing.T) {
 	// etc.). Payload-driven build drops absent claims, so only the seven claims the
 	// issuer actually populates remain. Order matches the metadata claim ordering.
 	requireAttrsInOrder(t, cred.Attributes,
-		expectedAttr{Path: []any{"family_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Family Name(s)"}, Value: strVal("Doe")},
-		expectedAttr{Path: []any{"given_name"}, DisplayName: &clientmodels.TranslatedString{"en": "Given Name(s)"}, Value: strVal("Jane")},
-		expectedAttr{Path: []any{"birthdate"}, DisplayName: &clientmodels.TranslatedString{"en": "Birth Date"}, Value: strVal("1990-05-19")},
-		expectedAttr{Path: []any{"date_of_issuance"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuance Date"}, Value: strVal(today)},
-		expectedAttr{Path: []any{"date_of_expiry"}, DisplayName: &clientmodels.TranslatedString{"en": "Expiry Date"}, Value: strVal(expiry)},
-		expectedAttr{Path: []any{"issuing_authority"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuance Authority"}, Value: strVal("Test PID issuer")},
-		expectedAttr{Path: []any{"issuing_country"}, DisplayName: &clientmodels.TranslatedString{"en": "Issuing Country"}, Value: strVal("FC")},
+		expectedAttr{Path: []any{"family_name"}, DisplayName: new("Family Name(s)"), Value: strVal("Doe")},
+		expectedAttr{Path: []any{"given_name"}, DisplayName: new("Given Name(s)"), Value: strVal("Jane")},
+		expectedAttr{Path: []any{"birthdate"}, DisplayName: new("Birth Date"), Value: strVal("1990-05-19")},
+		expectedAttr{Path: []any{"date_of_issuance"}, DisplayName: new("Issuance Date"), Value: strVal(today)},
+		expectedAttr{Path: []any{"date_of_expiry"}, DisplayName: new("Expiry Date"), Value: strVal(expiry)},
+		expectedAttr{Path: []any{"issuing_authority"}, DisplayName: new("Issuance Authority"), Value: strVal("Test PID issuer")},
+		expectedAttr{Path: []any{"issuing_country"}, DisplayName: new("Issuing Country"), Value: strVal("FC")},
 	)
 }
 
@@ -211,7 +211,7 @@ func issuePidViaPythonIssuer(
 	session = awaitSessionState(t, sessionHandler)
 	requireSessionState(t, session, sessionId, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
 	require.Len(t, session.OfferedCredentials, 1)
-	require.Equal(t, eudiPidIssuerPyDisplayNameEN, session.OfferedCredentials[0].Name["en"])
+	require.Equal(t, eudiPidIssuerPyDisplayNameEN, session.OfferedCredentials[0].Name)
 
 	grantPermission(t, c, session.Id)
 

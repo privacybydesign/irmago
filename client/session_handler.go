@@ -149,25 +149,25 @@ func (m *sessionManager) NewSession(id int) *session {
 	return s
 }
 
-func requestorInfoToTrustedParty(info *irma.RequestorInfo) clientmodels.TrustedParty {
+func requestorInfoToTrustedParty(info *irma.RequestorInfo, locale string) clientmodels.TrustedParty {
 	var image *clientmodels.Image
 	if info.LogoPath != nil {
 		image = clientmodels.ImageFromFile(*info.LogoPath)
 	}
 	return clientmodels.TrustedParty{
 		Id:       info.ID.String(),
-		Name:     clientmodels.TranslatedString(info.Name),
+		Name:     clientmodels.Resolve(clientmodels.TranslatedString(info.Name), locale),
 		Image:    image,
 		Parent:   nil,
 		Verified: !info.Unverified,
 	}
 }
 
-func requestorInfoToTrustedPartyPtr(info *irma.RequestorInfo) *clientmodels.TrustedParty {
+func requestorInfoToTrustedPartyPtr(info *irma.RequestorInfo, locale string) *clientmodels.TrustedParty {
 	if info == nil {
 		return nil
 	}
-	tp := requestorInfoToTrustedParty(info)
+	tp := requestorInfoToTrustedParty(info, locale)
 	return &tp
 }
 
@@ -230,6 +230,7 @@ func createIssuanceSteps(
 	irmaConfig *irma.Configuration,
 	credentials []*clientmodels.Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
+	locale string,
 ) ([]clientmodels.IssuanceStep, error) {
 	// for each disjunction that is not satisfiable we need to give the user the option to select
 	// from any of the options (inner cons) beloning to that disjunction
@@ -258,7 +259,7 @@ func createIssuanceSteps(
 		discon := candidates[i]
 		options := []*clientmodels.IssuanceBundle{}
 		for _, con := range discon {
-			bundle, err := createIssuanceBundle(irmaConfig, con)
+			bundle, err := createIssuanceBundle(irmaConfig, con, locale)
 			if err != nil {
 				return nil, err
 			}
@@ -284,6 +285,7 @@ func createDisclosureChoicesOverview(
 	irmaConfig *irma.Configuration,
 	credentials []*clientmodels.Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
+	locale string,
 ) ([]clientmodels.DisclosurePickOne, error) {
 	result := []clientmodels.DisclosurePickOne{}
 
@@ -315,7 +317,7 @@ func createDisclosureChoicesOverview(
 					id := t.String()
 
 					if _, ok := choiceTemplates[id]; !ok {
-						descriptor, err := getCredentialDescriptor(irmaConfig, t)
+						descriptor, err := getCredentialDescriptor(irmaConfig, t, locale)
 						if err != nil {
 							return nil, err
 						}
@@ -567,11 +569,12 @@ func createDisclosurePlan(
 	credentials []*clientmodels.Credential,
 	candidates [][]irmaclient.DisclosureCandidates,
 	preExistingCredentialHashes map[string]struct{},
+	locale string,
 ) (*clientmodels.DisclosurePlan, error) {
 	newPlan := &clientmodels.DisclosurePlan{}
 	// there's no plan yet, so make a new one
 	if oldDisclosurePlan == nil {
-		issuanceSteps, err := createIssuanceSteps(irmaConfig, credentials, candidates)
+		issuanceSteps, err := createIssuanceSteps(irmaConfig, credentials, candidates, locale)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create issuance steps: %w", err)
 		}
@@ -611,7 +614,7 @@ func createDisclosurePlan(
 	}
 
 	// if the request is satisfiable we can continue to the next stage: picking disclosure choices
-	disclosureChoices, err := createDisclosureChoicesOverview(irmaConfig, credentials, candidates)
+	disclosureChoices, err := createDisclosureChoicesOverview(irmaConfig, credentials, candidates, locale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create disclosure choices overview: %w", err)
 	}

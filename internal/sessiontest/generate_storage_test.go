@@ -317,7 +317,7 @@ func createClientWithStoragePath(t *testing.T) (*client.Client, string, *MockSes
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey)
+	c, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, signer, aesKey, "en")
 	require.NoError(t, err)
 
 	c.SetPreferences(clientsettings.Preferences{DeveloperMode: true})

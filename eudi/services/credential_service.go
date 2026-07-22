@@ -38,13 +38,15 @@ type credentialService struct {
 	credentialStore       db.CredentialStore
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
+	locale                string
 }
 
-func NewCredentialService(s storage.Storage) CredentialService {
+func NewCredentialService(s storage.Storage, locale string) CredentialService {
 	return &credentialService{
 		credentialStore:       db.NewCredentialStore(s.Db()),
 		holderBindingKeyStore: db.NewHolderBindingKeyStore(s.Db()),
 		fileStorage:           s.FileSystem(),
+		locale:                locale,
 	}
 }
 
@@ -62,31 +64,14 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
 		}
 
-		issuerDisplays := clientmodels.TranslatedString{}
-		for _, d := range batch.IssuerDisplay {
-			locale := clientmodels.DefaultFallbackLanguage
-			if d.Locale.Valid {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-					locale = base
-				}
-			}
-			issuerDisplays[locale] = d.Name
-		}
+		issuerName := clientmodels.Resolve(IssuerNamesByLanguage(batch.IssuerDisplay), s.locale)
 
-		credentialDisplays := clientmodels.TranslatedString{}
-		claimDisplayLookup := map[string]clientmodels.TranslatedString{}
+		credentialName := ""
+		claimDisplayLookup := map[string]string{}
 		metadataOrder := map[string]int{}
 
 		if batch.CredentialMetadata != nil {
-			for _, d := range batch.CredentialMetadata.Display {
-				locale := clientmodels.DefaultFallbackLanguage
-				if d.Locale.Valid {
-					if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-						locale = base
-					}
-				}
-				credentialDisplays[locale] = d.Name
-			}
+			credentialName = clientmodels.Resolve(CredentialNamesByLanguage(batch.CredentialMetadata.Display), s.locale)
 
 			for i, claim := range batch.CredentialMetadata.Claims {
 				var path []any
@@ -98,17 +83,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 				if len(claim.Display) == 0 {
 					continue
 				}
-				display := clientmodels.TranslatedString{}
-				for _, d := range claim.Display {
-					locale := clientmodels.DefaultFallbackLanguage
-					if d.Locale.Valid {
-						if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-							locale = base
-						}
-					}
-					display[locale] = d.Name
-				}
-				claimDisplayLookup[key] = display
+				claimDisplayLookup[key] = clientmodels.Resolve(ClaimNamesByLanguage(claim.Display), s.locale)
 			}
 		}
 
@@ -124,30 +99,27 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			iat = &x
 		}
 
-		// Try get the credential image from filesystem storage, if it exists.
+		// Load the logo that resolves for the current locale from filesystem
+		// storage. The logo falls back across languages independently of the
+		// text, so a logo shows whenever any display carries one.
 		credentialLogoManager := s.fileStorage.Credentials().LogoManager()
 		issuerLogoManager := s.fileStorage.Issuers().LogoManager()
 
-		var issuerImage *clientmodels.Image = nil
-		var credentialImage *clientmodels.Image = nil
+		issuerImage := LoadResolvedLogo(issuerLogoManager, IssuerLogoURIsByLanguage(batch.IssuerDisplay), s.locale)
 
-		// TODO: since we don't know which display is actually used by the client, we are currently just trying to get the logos for the first display. We should implement a more robust solution for this in the future, potentially by storing a separate logo for each display/language in the filesystem and retrieving the correct one based on the client's language preferences.
-		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI.Valid {
-			issuerImage = eudi.LoadLogoImage(issuerLogoManager, batch.IssuerDisplay[0].LogoURI.V)
-		}
-
-		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
-			credentialImage = eudi.LoadLogoImage(credentialLogoManager, batch.CredentialMetadata.Display[0].LogoURI)
+		var credentialImage *clientmodels.Image
+		if batch.CredentialMetadata != nil {
+			credentialImage = LoadResolvedLogo(credentialLogoManager, CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), s.locale)
 		}
 
 		clientModels[i] = &clientmodels.Credential{
 			CredentialId: batch.VerifiableCredentialType,
 			Hash:         batch.Hash,
 			Image:        credentialImage,
-			Name:         credentialDisplays,
+			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
 				Id:       batch.CredentialIssuer,
-				Name:     issuerDisplays,
+				Name:     issuerName,
 				Image:    issuerImage,
 				Url:      nil,
 				Parent:   nil,
@@ -415,13 +387,13 @@ func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]dat
 
 // BuildAttributesFromPayload walks the credential payload top-down and emits an
 // Attribute for every claim it finds. Standard JWT/SD-JWT claims are filtered
-// out at the top level. The lookup map (built from issuer metadata) supplies
-// display names; claims without a metadata entry produce attributes with
-// DisplayName: nil. Top-level keys are ordered by metadata position, then
-// alphabetically for keys absent from the metadata.
+// out at the top level. The lookup map (built from issuer metadata, resolved
+// to the current locale) supplies display names; claims without a metadata
+// entry produce attributes with DisplayName: nil. Top-level keys are ordered
+// by metadata position, then alphabetically for keys absent from the metadata.
 func BuildAttributesFromPayload(
 	payload *sdjwtvc.ProcessedSdJwtPayload,
-	lookup map[string]clientmodels.TranslatedString,
+	lookup map[string]string,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
 	attrs := []clientmodels.Attribute{}
@@ -443,7 +415,7 @@ func BuildAttributesFromPayload(
 
 func buildAttributesFromPayload(
 	payload *sdjwtvc.ProcessedSdJwtPayload,
-	lookup map[string]clientmodels.TranslatedString,
+	lookup map[string]string,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
 	return BuildAttributesFromPayload(payload, lookup, metadataOrder)
@@ -459,7 +431,7 @@ func FlattenClaimValue(
 	attrs []clientmodels.Attribute,
 	path []any,
 	value any,
-	lookup map[string]clientmodels.TranslatedString,
+	lookup map[string]string,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
 	switch v := value.(type) {
@@ -489,7 +461,7 @@ func FlattenClaimValue(
 			attrs = FlattenClaimValue(attrs, childPath, v[key], lookup, metadataOrder)
 		}
 	default:
-		var dn *clientmodels.TranslatedString
+		var dn *string
 		if d, ok := lookupDisplayName(lookup, path); ok {
 			dnCopy := d
 			dn = &dnCopy
@@ -560,9 +532,9 @@ func isArrayIndex(component any) bool {
 // lookupDisplayName checks the lookup map for the given path, first by exact match,
 // then by replacing integer indices with nil (null wildcard) to match metadata paths
 // like ["faculties", null, "faculty_name"].
-func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []any) (clientmodels.TranslatedString, bool) {
+func lookupDisplayName(lookup map[string]string, path []any) (string, bool) {
 	// Exact match.
-	if d, ok := lookup[clientmodels.ClaimPathKey(path)]; ok && len(d) > 0 {
+	if d, ok := lookup[clientmodels.ClaimPathKey(path)]; ok && d != "" {
 		return d, true
 	}
 	// Wildcard match: replace integer indices with nil.
@@ -577,11 +549,11 @@ func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []a
 		}
 	}
 	if hasIndex {
-		if d, ok := lookup[clientmodels.ClaimPathKey(wildcard)]; ok && len(d) > 0 {
+		if d, ok := lookup[clientmodels.ClaimPathKey(wildcard)]; ok && d != "" {
 			return d, true
 		}
 	}
-	return nil, false
+	return "", false
 }
 
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.

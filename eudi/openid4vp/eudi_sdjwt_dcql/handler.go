@@ -14,8 +14,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
-	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -54,6 +54,7 @@ type SdJwtVcDcqlHandler struct {
 	keyBinder       sdjwtvc.KeyBinder
 	vctFetcher      typemetadata.VctFetcher
 	issuerFetcher   typemetadata.IssuerFetcher
+	currentLocale   *clientmodels.CurrentLocale
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
@@ -70,13 +71,18 @@ func NewSdJwtVcDcqlHandler(
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
 	keyBinder sdjwtvc.KeyBinder,
+	currentLocale *clientmodels.CurrentLocale,
 ) *SdJwtVcDcqlHandler {
+	if currentLocale == nil {
+		currentLocale = clientmodels.NewCurrentLocale("")
+	}
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
 		keyBinder:       keyBinder,
 		vctFetcher:      vctFetcher,
 		issuerFetcher:   issuerFetcher,
+		currentLocale:   currentLocale,
 	}
 }
 
@@ -115,6 +121,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		return nil, err
 	}
 
+	locale := h.currentLocale.Get()
 	now := time.Now()
 	hasExhaustedBatch := false
 	for _, batch := range batches {
@@ -129,7 +136,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 		}
 
 		rawSdJwt, _ := loadRawSdJwt(batch, h.credentialStore)
-		attributes, err := parseBatchAttributes(batch, query, rawSdJwt)
+		attributes, err := parseBatchAttributes(batch, query, rawSdJwt, locale)
 		if err != nil {
 			continue
 		}
@@ -137,13 +144,13 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
-		image := h.credentialImage(batch)
+		image := h.credentialImage(batch, locale)
 
 		candidate := clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
-			Name:                        credentialDisplayName(batch),
-			Issuer:                      h.issuerTrustedParty(batch),
+			Name:                        clientmodels.Resolve(credentialDisplayName(batch), locale),
+			Issuer:                      h.issuerTrustedParty(batch, locale),
 			Format:                      clientmodels.Format_SdJwtVc,
 			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
@@ -212,12 +219,12 @@ func (h *SdJwtVcDcqlHandler) composeUnobtainableDescriptor(query dcql.Credential
 			eudi.Logger.Warnf("failed to fetch VCT type metadata from %q: %v", vct, err)
 			continue
 		}
-		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query)
+		return buildUnobtainableDescriptor(vct, vctMeta, h.fetchIssuerMetadata(ctx, vctMeta.IssuerURL), query, h.currentLocale.Get())
 	}
 
 	// All VCT fetches failed: emit a URL-only descriptor for the first VCT so
 	// the user still sees what was asked for.
-	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query)
+	return buildUnobtainableDescriptor(vctValues[0], nil, nil, query, h.currentLocale.Get())
 }
 
 func (h *SdJwtVcDcqlHandler) fetchIssuerMetadata(ctx context.Context, issuerURL string) *typemetadata.IssuerMetadata {
@@ -242,12 +249,13 @@ func buildUnobtainableDescriptor(
 	vctMeta *typemetadata.VctTypeMetadata,
 	issuerMeta *typemetadata.IssuerMetadata,
 	query dcql.CredentialQuery,
+	locale string,
 ) *clientmodels.CredentialDescriptor {
 	desc := &clientmodels.CredentialDescriptor{
 		CredentialId: vctURL,
-		Name:         vctName(vctMeta),
-		Issuer:       issuerTrustedParty(issuerMeta),
-		Attributes:   queryAttributes(query, vctMeta),
+		Name:         clientmodels.Resolve(vctName(vctMeta), locale),
+		Issuer:       issuerTrustedParty(issuerMeta, locale),
+		Attributes:   queryAttributes(query, vctMeta, locale),
 	}
 	return desc
 }
@@ -280,13 +288,13 @@ func vctName(vctMeta *typemetadata.VctTypeMetadata) clientmodels.TranslatedStrin
 // when the metadata is nil. Logo is intentionally not fetched (the unobtainable
 // path stays inside the user's permission-prompt budget); frontend can resolve
 // the logo URL itself if it wants.
-func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata) clientmodels.TrustedParty {
+func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata, locale string) clientmodels.TrustedParty {
 	if issuerMeta == nil {
 		return clientmodels.TrustedParty{}
 	}
 	return clientmodels.TrustedParty{
 		Id:   issuerMeta.Id,
-		Name: issuerMeta.Name,
+		Name: clientmodels.Resolve(issuerMeta.Name, locale),
 	}
 }
 
@@ -294,7 +302,7 @@ func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata) clientmodels.Tr
 // Attribute (no Value), enriched with a display name from the VCT type
 // metadata when one is available. Used so the user sees which claims the
 // verifier was asking for, even though no credential is held.
-func queryAttributes(query dcql.CredentialQuery, vctMeta *typemetadata.VctTypeMetadata) []clientmodels.Attribute {
+func queryAttributes(query dcql.CredentialQuery, vctMeta *typemetadata.VctTypeMetadata, locale string) []clientmodels.Attribute {
 	if len(query.Claims) == 0 {
 		return nil
 	}
@@ -303,9 +311,8 @@ func queryAttributes(query dcql.CredentialQuery, vctMeta *typemetadata.VctTypeMe
 		if len(claim.Path) == 0 {
 			continue
 		}
-		display := claimDisplayFromVct(vctMeta, claim.Path)
-		var dn *clientmodels.TranslatedString
-		if len(display) > 0 {
+		var dn *string
+		if display := clientmodels.Resolve(claimDisplayFromVct(vctMeta, claim.Path), locale); display != "" {
 			dn = &display
 		}
 		attrs = append(attrs, clientmodels.Attribute{
@@ -443,7 +450,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 // Returns nil if the credential doesn't satisfy the query's value
 // constraints. When claim_sets is present, each set is tried in order and the
 // first fully satisfiable set determines which claims are included.
-func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, rawSdJwt sdjwtvc.SdJwtVc) ([]clientmodels.Attribute, error) {
+func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, rawSdJwt sdjwtvc.SdJwtVc, locale string) ([]clientmodels.Attribute, error) {
 	var resolved sdjwtvc.ProcessedSdJwtPayload
 	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
 		return nil, err
@@ -474,7 +481,7 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 	metadataOrder := buildMetadataOrder(batch)
 	attributes := make([]clientmodels.Attribute, 0)
 	requestedKeys := make(map[string]struct{})
-	attributes = flattenPathsForDisplay(attributes, requestedKeys, batch, &resolved, pairs, metadataOrder)
+	attributes = flattenPathsForDisplay(attributes, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
 
 	return attributes, nil
 }
@@ -685,6 +692,7 @@ func flattenPathsForDisplay(
 	payload *sdjwtvc.ProcessedSdJwtPayload,
 	pairs []pathToFlatten,
 	metadataOrder map[string]int,
+	locale string,
 ) []clientmodels.Attribute {
 	sort.SliceStable(pairs, func(i, j int) bool {
 		return pathLess(pairs[i].path, pairs[j].path, metadataOrder)
@@ -705,8 +713,8 @@ func flattenPathsForDisplay(
 				continue
 			}
 			requestedKeys[key] = struct{}{}
-			d := claimDisplayName(batch, ancestor)
-			if len(d) == 0 {
+			d := clientmodels.Resolve(claimDisplayName(batch, ancestor), locale)
+			if d == "" {
 				continue
 			}
 			dn := d
@@ -717,7 +725,7 @@ func flattenPathsForDisplay(
 		}
 
 		val, _ := payload.GetClaimValue(p.path)
-		attrs = flattenForDisclosure(attrs, requestedKeys, batch, p.path, val, metadataOrder)
+		attrs = flattenForDisclosure(attrs, requestedKeys, batch, p.path, val, metadataOrder, locale)
 
 		if p.hasConstraint {
 			for i := prevLen; i < len(attrs); i++ {
@@ -894,16 +902,17 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	leafPaths := collectViewLeafPaths(view)
 	pairs := buildPairsFromLeaves(leafPaths, nil)
 
+	locale := h.currentLocale.Get()
 	metadataOrder := buildMetadataOrder(batch)
 	requestedKeys := make(map[string]struct{})
-	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder)
+	attrs = flattenPathsForDisplay(attrs, requestedKeys, batch, &resolved, pairs, metadataOrder, locale)
 
 	log := clientmodels.LogCredential{
 		CredentialId: batch.VerifiableCredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
-		Name:         credentialDisplayName(batch),
-		Image:        h.credentialImage(batch),
-		Issuer:       h.issuerTrustedParty(batch),
+		Name:         clientmodels.Resolve(credentialDisplayName(batch), locale),
+		Image:        h.credentialImage(batch, locale),
+		Issuer:       h.issuerTrustedParty(batch, locale),
 		Attributes:   attrs,
 		ExpiryDate:   expiryUnix(batch),
 	}
@@ -953,13 +962,14 @@ func flattenForDisclosure(
 	path []any,
 	value any,
 	metadataOrder map[string]int,
+	locale string,
 ) []clientmodels.Attribute {
 	switch v := value.(type) {
 	case []any:
 		pk := clientmodels.ClaimPathKey(path)
 		if _, seen := requestedKeys[pk]; !seen {
 			requestedKeys[pk] = struct{}{}
-			if d := claimDisplayName(batch, path); len(d) > 0 {
+			if d := clientmodels.Resolve(claimDisplayName(batch, path), locale); d != "" {
 				dn := d
 				attrs = append(attrs, clientmodels.Attribute{
 					ClaimPath:   path,
@@ -969,13 +979,13 @@ func flattenForDisclosure(
 		}
 		for i, elem := range v {
 			elemPath := append(append([]any{}, path...), i)
-			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, elem, metadataOrder)
+			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, elem, metadataOrder, locale)
 		}
 	case map[string]any:
 		pk := clientmodels.ClaimPathKey(path)
 		if _, seen := requestedKeys[pk]; !seen {
 			requestedKeys[pk] = struct{}{}
-			if d := claimDisplayName(batch, path); len(d) > 0 {
+			if d := clientmodels.Resolve(claimDisplayName(batch, path), locale); d != "" {
 				dn := d
 				attrs = append(attrs, clientmodels.Attribute{
 					ClaimPath:   path,
@@ -986,13 +996,13 @@ func flattenForDisclosure(
 		keys := sortObjectKeysByMetadata(v, path, metadataOrder)
 		for _, key := range keys {
 			elemPath := append(append([]any{}, path...), key)
-			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, v[key], metadataOrder)
+			attrs = flattenForDisclosure(attrs, requestedKeys, batch, elemPath, v[key], metadataOrder, locale)
 		}
 	default:
 		pk := clientmodels.ClaimPathKey(path)
 		requestedKeys[pk] = struct{}{}
-		var dn *clientmodels.TranslatedString
-		if d := claimDisplayName(batch, path); len(d) > 0 {
+		var dn *string
+		if d := clientmodels.Resolve(claimDisplayName(batch, path), locale); d != "" {
 			dnCopy := d
 			dn = &dnCopy
 		}
@@ -1181,83 +1191,52 @@ func batchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
 	return &batch.RemainingCount
 }
 
-// credentialImage resolves the credential logo from the batch's display metadata.
-// Returns nil if no logo is configured or the logo cannot be loaded.
-func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch) *clientmodels.Image {
+// credentialImage loads the credential logo that resolves for the locale from
+// the batch's display metadata (falling back to any cached display logo while
+// the backfill fetches the preferred one). Returns nil when no logo is
+// configured or none is cached.
+func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch, locale string) *clientmodels.Image {
 	if batch.CredentialMetadata == nil {
 		return nil
 	}
 	logoManager := h.storage.FileSystem().Credentials().LogoManager()
-	for _, display := range batch.CredentialMetadata.Display {
-		if display.LogoURI == "" {
-			continue
-		}
-		if img := eudi.LoadLogoImage(logoManager, display.LogoURI); img != nil {
-			return img
-		}
-	}
-	return nil
+	return services.LoadResolvedLogo(logoManager, services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
 }
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
 // including the issuer logo if available on disk.
-func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty {
-	name := clientmodels.TranslatedString{}
-	for _, d := range batch.IssuerDisplay {
-		locale := clientmodels.DefaultFallbackLanguage
-		if d.Locale.Valid {
-			if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-				locale = base
-			}
-		}
-		name[locale] = d.Name
-	}
+func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
 		Id:    batch.CredentialIssuer,
-		Name:  name,
-		Image: h.issuerImage(batch),
+		Name:  clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
+		Image: h.issuerImage(batch, locale),
 	}
 }
 
-// issuerImage resolves the issuer logo from the batch's issuer display metadata.
-// Returns nil if no logo is configured or the logo cannot be loaded.
-func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientmodels.Image {
+// issuerImage loads the issuer logo that resolves for the locale from the
+// batch's issuer display metadata (falling back to any cached display logo
+// while the backfill fetches the preferred one).
+func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch, locale string) *clientmodels.Image {
 	logoManager := h.storage.FileSystem().Issuers().LogoManager()
-	for _, d := range batch.IssuerDisplay {
-		if !d.LogoURI.Valid || d.LogoURI.V == "" {
-			continue
-		}
-		if img := eudi.LoadLogoImage(logoManager, d.LogoURI.V); img != nil {
-			return img
-		}
-	}
-	return nil
+	return services.LoadResolvedLogo(logoManager, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
 }
 
-// credentialDisplayName returns the display name for a credential from its stored metadata.
-// Falls back to the VCT if no display metadata is available.
+// credentialDisplayName returns the display name translations for a credential
+// from its stored metadata. Falls back to the VCT if no display metadata is
+// available.
 func credentialDisplayName(batch *models.CredentialBatch) clientmodels.TranslatedString {
 	if batch.CredentialMetadata != nil {
-		ts := clientmodels.TranslatedString{}
-		for _, d := range batch.CredentialMetadata.Display {
-			locale := clientmodels.DefaultFallbackLanguage
-			if d.Locale.Valid {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-					locale = base
-				}
-			}
-			ts[locale] = d.Name
-		}
-		if len(ts) > 0 {
+		if ts := services.CredentialNamesByLanguage(batch.CredentialMetadata.Display); len(ts) > 0 {
 			return ts
 		}
 	}
 	return clientmodels.TranslatedString{clientmodels.DefaultFallbackLanguage: batch.VerifiableCredentialType}
 }
 
-// claimDisplayName looks up the display name for a claim from the stored credential
-// metadata. Returns an empty TranslatedString when no metadata display entry exists
-// for the path — callers treat that as "no display name".
+// claimDisplayName looks up the display name translations for a claim from the
+// stored credential metadata. Returns an empty TranslatedString when no
+// metadata display entry exists for the path — callers treat that as "no
+// display name".
 func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmodels.TranslatedString {
 	if batch.CredentialMetadata == nil {
 		return clientmodels.TranslatedString{}
@@ -1273,17 +1252,7 @@ func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmode
 		if !claimPathMatchesMetadataPath(claimPath, path) {
 			continue
 		}
-		ts := clientmodels.TranslatedString{}
-		for _, d := range claim.Display {
-			locale := clientmodels.DefaultFallbackLanguage
-			if d.Locale.Valid {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-					locale = base
-				}
-			}
-			ts[locale] = d.Name
-		}
-		if len(ts) > 0 {
+		if ts := services.ClaimNamesByLanguage(claim.Display); len(ts) > 0 {
 			return ts
 		}
 	}
