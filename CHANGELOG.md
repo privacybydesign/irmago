@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-07-22
 ### Added
+- `server.Configuration` now accepts an optional `LoggerEntry *logrus.Entry`, allowing callers to attach persistent fields (e.g. `LoggerEntry.WithField("lib", "irma")`) that are then included on every log line emitted by the `server`, `irmaserver` and `requestorserver` packages. Logging in those packages now flows through a `*logrus.Entry`, and a matching package-level `server.LoggerEntry` is exported. The existing `Logger *logrus.Logger` field keeps working (an entry is derived from it automatically), so this is a backward-compatible addition (closes #232)
 - `eudi/holderkeys`: a CGO-free package providing the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) so a WSCA adapter or a server-side (Postgres) holder can implement external holder-key signing without pulling in a sqlcipher (cgo) dependency.
 - Pluggable holder-key binding seams for external secure devices (WSCA/HSM): `openid4vci.NewClient` takes a required `HolderKeyBinder` and `eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler` a required `sdjwtvc.KeyBinder`, and `proofs.BuildWithES256Signer` signs the OpenID4VCI proof of possession via an external signer. Callers pass the software, storage-backed binder for the existing behaviour, or a WSCA/HSM-backed implementation.
 - `storage.NewStorageWithDialector(dialector, fs)`: open the EUDI holder database on any GORM dialector (e.g. `gorm.io/driver/postgres`) rather than only sqlcipher, for server-side / multi-tenant deployments. `NewStorage` is unchanged (it builds the sqlcipher dialector and delegates). The caller owns the at-rest encryption posture of a non-sqlcipher driver.
@@ -44,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `github.com/golang-jwt/jwt/v5` 5.2.2 → 5.3.1
   - `github.com/hashicorp/go-retryablehttp` 0.7.7 → 0.7.8 (avoids leaking credentials embedded in request URLs)
 - Sanitize user-controlled strings before writing them to log entries to prevent log injection
-- Filter sensitive HTTP headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-Auth-Token`) from request logs
+- Restrict request-log headers to a constant allowlist of known-safe header names and redact their values, so no credential-, session- or otherwise sensitive header value is ever written to the logs
 - Fix email header injection by using the parsed recipient address in the SMTP `To:` header
 - Normalize file paths via `filepath.Clean` before filesystem operations
 

@@ -48,10 +48,10 @@ func (s *Server) GetSessionResult(requestorToken irma.RequestorToken) (res *serv
 // Start the server. If successful then it will not return until Stop() is called.
 func (s *Server) Start(config *Configuration) error {
 	if s.conf.LogJSON {
-		s.conf.Logger.WithField("configuration", s.conf).Debug("Configuration")
+		s.conf.LoggerEntry.WithField("configuration", s.conf).Debug("Configuration")
 	} else {
 		bts, _ := json.MarshalIndent(s.conf, "", "   ")
-		s.conf.Logger.Debug("Configuration: ", string(bts), "\n")
+		s.conf.LoggerEntry.Debug("Configuration: ", string(bts), "\n")
 	}
 
 	// We start either one or two servers, depending on whether a separate client server is enabled, such that:
@@ -102,7 +102,7 @@ func (s *Server) startClientServer() error {
 
 func (s *Server) startServer(handler http.Handler, name, addr string, port int, tlsConf *tls.Config) error {
 	fulladdr := fmt.Sprintf("%s:%d", addr, port)
-	s.conf.Logger.Info(name, " listening at ", fulladdr, s.conf.ApiPrefix)
+	s.conf.LoggerEntry.Info(name, " listening at ", fulladdr, s.conf.ApiPrefix)
 
 	serv := &http.Server{
 		Addr:      fulladdr,
@@ -124,7 +124,7 @@ func (s *Server) startServer(handler http.Handler, name, addr string, port int, 
 	}()
 
 	if tlsConf != nil {
-		s.conf.Logger.Info(name, " TLS enabled")
+		s.conf.LoggerEntry.Info(name, " TLS enabled")
 		return server.FilterStopError(serv.ListenAndServeTLS("", ""))
 	} else {
 		return server.FilterStopError(serv.ListenAndServe())
@@ -245,9 +245,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) StaticFilesHandler() http.Handler {
 	if len(s.conf.URL) > 6 {
 		url := s.conf.URL[:len(s.conf.URL)-6] + s.conf.StaticPrefix
-		s.conf.Logger.Infof("Hosting files at %s under %s", s.conf.StaticPath, url)
+		s.conf.LoggerEntry.Infof("Hosting files at %s under %s", s.conf.StaticPath, url)
 	} else { // URL not known, don't log it but otherwise continue
-		s.conf.Logger.Infof("Hosting files at %s", s.conf.StaticPath)
+		s.conf.LoggerEntry.Infof("Hosting files at %s", s.conf.StaticPath)
 	}
 	opts := server.LogOptions{Response: false, Headers: false, From: false}
 	return http.StripPrefix(s.conf.StaticPrefix, server.LogMiddleware("static", opts)(
@@ -259,7 +259,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	defer common.Close(r.Body)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		s.conf.Logger.Error("Could not read session request HTTP POST body")
+		s.conf.LoggerEntry.Error("Could not read session request HTTP POST body")
 		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -303,7 +303,7 @@ func (s *Server) handleRevocation(w http.ResponseWriter, r *http.Request) {
 	defer common.Close(r.Body)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		s.conf.Logger.Error("Could not read revocation request HTTP POST body")
+		s.conf.LoggerEntry.Error("Could not read revocation request HTTP POST body")
 		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorInvalidRequest, err.Error())
 		return
@@ -343,7 +343,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatusEvents(w http.ResponseWriter, r *http.Request) {
 	requestorToken := r.Context().Value("requestorToken").(irma.RequestorToken)
 
-	s.conf.Logger.WithFields(logrus.Fields{"session": requestorToken}).Debug("new client subscribed to server sent events")
+	s.conf.LoggerEntry.WithFields(logrus.Fields{"session": requestorToken}).Debug("new client subscribed to server sent events")
 	r = r.WithContext(context.WithValue(r.Context(), "sse", common.SSECtx{
 		Component: server.ComponentSession,
 		Arg:       string(requestorToken),
@@ -384,7 +384,7 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 	if s.conf.JwtRSAPrivateKey == nil {
-		s.conf.Logger.Warn("Session result JWT requested but no JWT private key is configured")
+		s.conf.LoggerEntry.Warn("Session result JWT requested but no JWT private key is configured")
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
 	}
@@ -409,7 +409,7 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 		s.conf.JwtRSAPrivateKey,
 	)
 	if err != nil {
-		s.conf.Logger.Error("Failed to sign session result JWT")
+		s.conf.LoggerEntry.Error("Failed to sign session result JWT")
 		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
@@ -419,7 +419,7 @@ func (s *Server) handleJwtResult(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	if s.conf.JwtRSAPrivateKey == nil {
-		s.conf.Logger.Warn("Session result JWT requested but no JWT private key is configured")
+		s.conf.LoggerEntry.Warn("Session result JWT requested but no JWT private key is configured")
 		server.WriteError(w, server.ErrorUnknown, "JWT signing not supported")
 		return
 	}
@@ -477,7 +477,7 @@ func (s *Server) handleJwtProofs(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	resultJwt, err := token.SignedString(s.conf.JwtRSAPrivateKey)
 	if err != nil {
-		s.conf.Logger.Error("Failed to sign session result JWT")
+		s.conf.LoggerEntry.Error("Failed to sign session result JWT")
 		_ = server.LogError(err)
 		server.WriteError(w, server.ErrorUnknown, err.Error())
 		return
@@ -508,14 +508,14 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	// the requested attributes or credentials
 	request := rrequest.SessionRequest()
 	if allowed, reason := s.conf.CanRequest(requestor, request); !allowed {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
+		s.conf.LoggerEntry.WithFields(logrus.Fields{"requestor": requestor, "id": reason}).
 			Warn("Requestor not authorized to do session; full request: ", server.ToJson(request))
 		server.WriteError(w, server.ErrorUnauthorized, reason)
 		return
 	}
 
 	if rrequest.Base().NextSession != nil && rrequest.Base().NextSession.URL == "" {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn("nextSession provided with empty URL")
+		s.conf.LoggerEntry.WithFields(logrus.Fields{"requestor": requestor}).Warn("nextSession provided with empty URL")
 		server.WriteError(w, server.ErrorInvalidRequest, "nextSession provided with empty URL")
 	}
 	if s.conf.JwtRSAPrivateKey == nil && !s.conf.AllowUnsignedCallbacks {
@@ -527,7 +527,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 		}
 		if field != "" {
 			errormsg := field + " provided but no JWT private key is installed: either install JWT or enable allow_unsigned_callbacks in configuration"
-			s.conf.Logger.WithFields(logrus.Fields{"requestor": requestor}).Warn(errormsg)
+			s.conf.LoggerEntry.WithFields(logrus.Fields{"requestor": requestor}).Warn(errormsg)
 			server.WriteError(w, server.ErrorUnsupported, errormsg)
 			return
 		}
@@ -537,7 +537,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 	qr, requestorToken, frontendRequest, err := s.irmaserv.StartSession(rrequest, nil, requestor)
 	if err != nil {
 		if _, ok := err.(*irmaserver.RedisError); ok {
-			s.conf.Logger.WithError(err).Error("Failed to start session")
+			s.conf.LoggerEntry.WithError(err).Error("Failed to start session")
 			server.WriteError(w, server.ErrorInternal, "")
 		} else {
 			server.WriteError(w, server.ErrorInvalidRequest, err.Error())
@@ -555,7 +555,7 @@ func (s *Server) createSession(w http.ResponseWriter, requestor string, rrequest
 func (s *Server) revoke(w http.ResponseWriter, requestor string, request *irma.RevocationRequest) {
 	allowed, reason := s.conf.CanRevoke(requestor, request.CredentialType)
 	if !allowed {
-		s.conf.Logger.WithFields(logrus.Fields{"requestor": common.SanitizeForLog(requestor), "message": common.SanitizeForLog(reason)}).
+		s.conf.LoggerEntry.WithFields(logrus.Fields{"requestor": common.SanitizeForLog(requestor), "message": common.SanitizeForLog(reason)}).
 			Warn("Requestor not authorized to revoke credential; full request: ", server.ToJson(request))
 		server.WriteError(w, server.ErrorUnauthorized, reason)
 		return
@@ -584,11 +584,11 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, rerr *irma.Re
 	if !applies {
 		var ctype = r.Header.Get("Content-Type")
 		if !regexp.MustCompile("^application/json").MatchString(ctype) && !regexp.MustCompile("^text/plain").MatchString(ctype) {
-			s.conf.Logger.Warnf("Session request uses unsupported Content-Type: %s", common.SanitizeForLog(ctype))
+			s.conf.LoggerEntry.Warnf("Session request uses unsupported Content-Type: %s", common.SanitizeForLog(ctype))
 			server.WriteError(w, server.ErrorInvalidRequest, "Unsupported Content-Type: "+ctype)
 			return false
 		}
-		s.conf.Logger.Warnf("Session request uses unknown authentication method")
+		s.conf.LoggerEntry.Warnf("Session request uses unknown authentication method")
 		server.WriteError(w, server.ErrorInvalidRequest, "request could not be authenticated")
 		return false
 	}
