@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/internal/httpext"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -38,6 +39,7 @@ type session struct {
 	handler                  Handler
 	storage                  storage.Storage
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
+	holderKeyBinder          HolderKeyBinder
 
 	// vctResolver provides cached raw bytes of fetched SD-JWT VC type
 	// metadata documents so the post-issuance integrity check (verifyVctIntegrity)
@@ -206,7 +208,7 @@ type fetchedCredential struct {
 	verifiedSdJwtVcs               []*sdjwtvc.VerifiedSdJwtVc
 	requireCryptographicKeyBinding bool
 	publicKeyIdentifiers           []models.PublicHolderBindingKey
-	keyBindingService              services.HolderBindingKeyService
+	keyBindingService              HolderKeyBinder
 }
 
 func (fc *fetchedCredential) cleanupKeys() {
@@ -308,7 +310,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 			if display.Logo == nil {
 				continue
 			}
-			logoData, _, err := downloadRemoteImage(s.httpClient, *display.Logo)
+			logoData, _, err := helpers.DownloadRemoteImage(s.httpClient, display.Logo.Uri)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
 				continue
@@ -629,7 +631,8 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	}
 
 	var publicKeyIdentifiers []models.PublicHolderBindingKey
-	keyBindingService := services.NewHolderBindingKeyService(s.storage.Db())
+	// The holder key binder (software or WSCA-backed) is injected via NewClient.
+	keyBindingService := s.holderKeyBinder
 	if requireCryptographicKeyBinding {
 		num := uint(1)
 		if s.credentialIssuerMetadata.BatchCredentialIssuance != nil {

@@ -27,7 +27,7 @@ type Requestor struct {
 }
 
 type Organization struct {
-	Logo      Logo              `json:"logo"`
+	Logo      *Logo             `json:"logo"`
 	LegalName map[string]string `json:"legalName"`
 }
 

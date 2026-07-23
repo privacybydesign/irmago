@@ -17,7 +17,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
@@ -233,7 +233,7 @@ func setupTestEnvironment(t *testing.T, opts CredentialRequestTestOptions, credE
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	eudiStorage, err := storage.NewStorage(aesKey, ":memory:", tempDir)
+	eudiStorage, err := sqlcipherstorage.New(aesKey, ":memory:", tempDir)
 	require.NoError(t, err)
 
 	session := &session{

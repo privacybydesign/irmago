@@ -10,13 +10,6 @@ import (
 	"github.com/mr-tron/base58/base58"
 )
 
-type MultiKeyVerificationMethod struct {
-	VerificationMethod
-
-	PublicKeyMultibase *string `json:"publicKeyMultibase,omitempty"`
-	SecretKeyMultibase *string `json:"secretKeyMultibase,omitempty"`
-}
-
 type MultibaseHeader byte
 
 const (
@@ -45,16 +38,14 @@ func (e Base64UrlNoPadEncoder) Encode(data []byte) string {
 	return string(MultibaseHeader_Base64UrlNoPad) + encoded
 }
 
-func createMultikeyVerificationMethod[T ecdsa.PublicKey | ed25519.PublicKey](publicKey T, encoder Encoder) (*MultiKeyVerificationMethod, error) {
+func createMultibaseVerificationMethod[T ecdsa.PublicKey | ed25519.PublicKey](publicKey T, encoder Encoder) (*VerificationMethod, error) {
 	multibase, err := CreateMultibaseFromPublicKey(publicKey, encoder)
 	if err != nil {
 		return nil, err
 	}
 
-	return &MultiKeyVerificationMethod{
-		VerificationMethod: VerificationMethod{
-			Type: VerificationMethodType_Multikey,
-		},
+	return &VerificationMethod{
+		Type:               VerificationMethodType_Multikey,
 		PublicKeyMultibase: &multibase,
 	}, nil
 }

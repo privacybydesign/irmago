@@ -23,9 +23,8 @@ CN 	= $URI
 
 [ v3_req ]
 subjectAltName = @alt_names
-basicConstraints = critical,CA:false
-keyUsage = digitalSignature,keyEncipherment
-extendedKeyUsage = clientAuth
+basicConstraints = critical,CA:false,pathlen:0
+keyUsage = digitalSignature
 2.1.123.1 = ASN1:UTF8String:{\\\"registration\\\":\\\"https://portal.dev/organizations/yivi/\\\",\\\"organization\\\":{\\\"legalName\\\":{\\\"en\\\":\\\"Yivi B.V.\\\",\\\"nl\\\":\\\"Yivi B.V.\\\"}},\\\"ap\\\":{\\\"authorized\\\":[{\\\"credential\\\":\\\"test.test.email\\\",\\\"attributes\\\":[\\\"email\\\", \\\"domain\\\"]}]}}
 
 [ alt_names ]

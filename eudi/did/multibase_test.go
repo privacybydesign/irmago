@@ -109,20 +109,19 @@ func TestCreateMultibaseFromPublicKey_UnsupportedCurve_Base58BTC(t *testing.T) {
 	require.EqualError(t, err, "unsupported elliptic curve: P-521")
 }
 
-// Tests for createMultikeyVerificationMethod
+// Tests for createMultibaseVerificationMethod
 
-func TestCreateMultikeyVerificationMethod_SetsTypeAndPublicKeyMultibase(t *testing.T) {
-	vm, err := createMultikeyVerificationMethod(testEd25519PubKey, Base58Encoder{})
+func TestCreateMultibaseVerificationMethod_SetsTypeAndPublicKeyMultibase(t *testing.T) {
+	vm, err := createMultibaseVerificationMethod(testEd25519PubKey, Base58Encoder{})
 	require.NoError(t, err)
 	require.NotNil(t, vm)
 	require.Equal(t, VerificationMethodType_Multikey, vm.Type)
 	require.NotNil(t, vm.PublicKeyMultibase)
 	require.Equal(t, "z6MkeXCES4onVW4up9Qgz1KRnZsKmGufcaZxF6Zpv2w5QwUK", *vm.PublicKeyMultibase)
-	require.Nil(t, vm.SecretKeyMultibase)
 }
 
-func TestCreateMultikeyVerificationMethod_PropagatesError(t *testing.T) {
-	vm, err := createMultikeyVerificationMethod(testP521PubKey, Base58Encoder{})
+func TestCreateMultibaseVerificationMethod_PropagatesError(t *testing.T) {
+	vm, err := createMultibaseVerificationMethod(testP521PubKey, Base58Encoder{})
 	require.EqualError(t, err, "unsupported elliptic curve: P-521")
 	require.Nil(t, vm)
 }

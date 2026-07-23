@@ -286,6 +286,37 @@ func testDisclosureWithPredefinedValues(
 						},
 					},
 				},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   &clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Attributes: []expectedAttr{
+							{
+								Path:        []any{"level"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:           []any{"studentID"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:        []any{"studentCardNumber"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								RequestedValue: strVal("Universiteit Utrecht"),
+							},
+						},
+					},
+				},
 			},
 		},
 	})
@@ -1088,6 +1119,37 @@ func testWrongCredentialIssuedDuringDisclosure(
 						},
 					},
 				},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   &clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"level"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:        []any{"studentID"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:        []any{"studentCardNumber"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								RequestedValue: strVal("Radboud University"),
+							},
+						},
+					},
+				},
 			},
 		},
 	})
@@ -1261,6 +1323,37 @@ func testPreExistingWrongCredentialNotReported(
 								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
 								Description:    &clientmodels.TranslatedString{"en": "The name of the university", "nl": "Naam van de universiteit"},
 								Value:          strVal("Radboud University"),
+								RequestedValue: strVal("Radboud University"),
+							},
+						},
+					},
+				},
+				Obtainable: []expectedCredentialDescriptor{
+					{
+						CredentialId: "irma-demo.RU.studentCard",
+						Name:         &clientmodels.TranslatedString{"en": "Demo Student Card", "nl": "Demo Studentenkaart"},
+						IssuerName:   &clientmodels.TranslatedString{"en": "Demo Radboud University Nijmegen", "nl": "Demo Radboud Universiteit Nijmegen"},
+						Attributes: []expectedAttr{
+							{
+								Path:           []any{"level"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+								RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:        []any{"studentID"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:        []any{"studentCardNumber"},
+								DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+								Value:       &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
+							},
+							{
+								Path:           []any{"university"},
+								DisplayName:    &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+								Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String},
 								RequestedValue: strVal("Radboud University"),
 							},
 						},

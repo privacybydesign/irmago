@@ -5,3 +5,4 @@
 *.sig binary
 *.png binary
 testdata/storage_regression/**/bbolt_client_db binary
+testdata/storage_regression/**/eudi_client_db binary
