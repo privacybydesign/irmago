@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- Log a warning at session-request validation time when a request asks for an attribute whose credential type or issuer is deprecated, so operators can diagnose disclosure sessions that clients are generally unable to complete
 
 ## [1.2.0] - 2026-07-22
 ### Added

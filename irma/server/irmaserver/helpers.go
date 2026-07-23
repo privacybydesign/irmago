@@ -430,7 +430,18 @@ func (s *Server) validateRequest(request irma.SessionRequest) error {
 			return errors.New("cannot augment empty client return url")
 		}
 	}
-	return request.Disclosure().Disclose.Validate(s.conf.IrmaConfiguration)
+	disclose := request.Disclosure().Disclose
+	if deprecated := disclose.DeprecatedAttributes(s.conf.IrmaConfiguration); len(deprecated) > 0 {
+		ids := make([]string, len(deprecated))
+		for i, id := range deprecated {
+			ids[i] = id.String()
+		}
+		s.conf.Logger.Warnf(
+			"Session request contains deprecated attribute(s) which clients are generally unable to disclose: %s",
+			strings.Join(ids, ", "),
+		)
+	}
+	return disclose.Validate(s.conf.IrmaConfiguration)
 }
 
 func copyObject[T any](object T, copy T) error {
