@@ -1,6 +1,7 @@
 package statuslist
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -17,7 +18,10 @@ const ClockSkewSeconds = 180
 type statusListClaim struct {
 	Bits int    `json:"bits"`
 	Lst  string `json:"lst"`
-	// AggregationURI is intentionally not parsed — v1 ignores aggregation.
+	// AggregationURI is intentionally not parsed. Aggregation lets a *relying
+	// party* prefetch every status list an issuer publishes; a wallet only ever
+	// needs the lists its own credentials reference, so v1 ignores it (fetching
+	// aggregated lists would pull in lists we hold no credentials for).
 }
 
 // statusListPayload mirrors the verified Status List Token payload
@@ -146,3 +150,24 @@ func validBitSize(b int) bool {
 type staticClock struct{ t time.Time }
 
 func (s staticClock) Now() time.Time { return s.t }
+
+// payloadFromToken extracts the Status List Token's claims from a
+// signature-verified jwt.Token into our statusListPayload struct via a
+// JSON round-trip — the struct's json tags mirror the spec's claim
+// names (iat/exp marshal as Unix seconds, status_list as a nested
+// object). Returns an error if the mandatory status_list claim is
+// missing or a claim is shaped wrong for its struct field.
+func payloadFromToken(token jwt.Token) (statusListPayload, error) {
+	var out statusListPayload
+	if !token.Has("status_list") {
+		return out, fmt.Errorf("missing status_list claim")
+	}
+	raw, err := json.Marshal(token)
+	if err != nil {
+		return out, fmt.Errorf("serialize token claims: %v", err)
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return out, fmt.Errorf("decode token claims: %v", err)
+	}
+	return out, nil
+}

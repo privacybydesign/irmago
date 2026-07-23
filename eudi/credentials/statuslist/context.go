@@ -1,8 +1,6 @@
 package statuslist
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -47,25 +45,4 @@ type VerificationContext struct {
 	// FetchTimeout bounds each HTTP request. <= 0 falls back to
 	// FetchTimeoutDefault (10 s).
 	FetchTimeout time.Duration
-}
-
-// payloadFromToken extracts the Status List Token's claims from a
-// signature-verified jwt.Token into our statusListPayload struct via a
-// JSON round-trip — the struct's json tags mirror the spec's claim
-// names (iat/exp marshal as Unix seconds, status_list as a nested
-// object). Returns an error if the mandatory status_list claim is
-// missing or a claim is shaped wrong for its struct field.
-func payloadFromToken(token jwt.Token) (statusListPayload, error) {
-	var out statusListPayload
-	if !token.Has("status_list") {
-		return out, fmt.Errorf("missing status_list claim")
-	}
-	raw, err := json.Marshal(token)
-	if err != nil {
-		return out, fmt.Errorf("serialize token claims: %v", err)
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return out, fmt.Errorf("decode token claims: %v", err)
-	}
-	return out, nil
 }

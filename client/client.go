@@ -623,16 +623,16 @@ func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
-func (client *Client) InitJobs(eudiRevocationListUpdateInterval, statusRefreshInterval time.Duration) {
+func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(
-		gocron.DurationJob(eudiRevocationListUpdateInterval),
+		gocron.DurationJob(eudiCrlUpdateInterval),
 		gocron.NewTask(client.openid4vpClient.Configuration.UpdateCertificateRevocationLists),
 		gocron.WithStartAt(gocron.WithStartImmediately()),
 	)
 
 	if err != nil {
-		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
+		common.Logger.Warnf("failed to create new cron job for updating CRLs: %v", err)
 	}
 
 	// Periodically re-fetch referenced Token Status Lists and update one
@@ -640,9 +640,9 @@ func (client *Client) InitJobs(eudiRevocationListUpdateInterval, statusRefreshIn
 	// revoked all at once, so one entry stands in for the whole batch). Skipped
 	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
 	// are logged inside RefreshStatuses and the previous status is kept.
-	if statusRefreshInterval > 0 {
+	if statusTokenListRefreshInterval > 0 {
 		_, err = client.scheduler.NewJob(
-			gocron.DurationJob(statusRefreshInterval),
+			gocron.DurationJob(statusTokenListRefreshInterval),
 			gocron.NewTask(func() {
 				if err := client.RefreshStatuses(context.Background()); err != nil {
 					common.Logger.Warnf("scheduled status refresh failed: %v", err)
