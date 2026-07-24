@@ -317,12 +317,12 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	for _, display := range credentialIssuerMetadata.Display {
 		if display.Logo != nil {
 			// TODO: check if logo is already in cache first
-			logoData, _, err := helpers.DownloadRemoteImage(client.httpClient, display.Logo.Uri)
+			logoData, logoMimeType, err := helpers.DownloadRemoteImage(client.httpClient, display.Logo.Uri)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download issuer logo from %q: %v", display.Logo.Uri, err)
 				continue
 			}
-			err = issuerLogoManager.Save(display.Logo.Uri, logoData)
+			err = issuerLogoManager.Save(display.Logo.Uri, logoData, logoMimeType)
 
 			if err != nil {
 				eudi.Logger.Warnf("failed to cache issuer logo from %q: %v", display.Logo.Uri, err)
@@ -522,12 +522,12 @@ func (client *Client) downloadCredentialLogos(
 				continue
 			}
 			// TODO: check if logo is already in cache first
-			logoData, _, err := helpers.DownloadRemoteImage(client.httpClient, display.Logo.Uri)
+			logoData, logoMimeType, err := helpers.DownloadRemoteImage(client.httpClient, display.Logo.Uri)
 			if err != nil {
 				eudi.Logger.Warnf("failed to download credential logo from %q: %v", display.Logo.Uri, err)
 				continue
 			}
-			if err := credentialLogoManager.Save(display.Logo.Uri, logoData); err != nil {
+			if err := credentialLogoManager.Save(display.Logo.Uri, logoData, logoMimeType); err != nil {
 				eudi.Logger.Warnf("failed to cache credential logo from %q: %v", display.Logo.Uri, err)
 			}
 			break
