@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The data tab resolved credential and issuer logos from the first display entry only, so a logo attached to another language's display did not show.
 - OpenID4VCI issuance logs recorded the issuer metadata's `vct` (possibly a placeholder like `"unknown"`) as the credential id; the issued JWT's `vct` claim now takes precedence.
+- Credential, issuer and verifier logos now keep their MIME type: the EUDI `LogoManager` stores the Content-Type reported on download (or by the verifier's scheme data) alongside the image bytes, and `LoadLogoImage` returns it in `clientmodels.Image.MimeType`. Previously the MIME type was discarded, so wallets could not tell SVG logos apart from bitmaps and SD-JWT VC credential logos in SVG format rendered blank ([irmamobile#674](https://github.com/privacybydesign/irmamobile/issues/674)). **Breaking (internal API):** `filesystem.LogoManager.Save` takes an extra `mimeType` parameter and `Get` returns it.
 
 ### Internal
 - Dutch-locale and locale-switch integration tests for every protocol and integration layer.

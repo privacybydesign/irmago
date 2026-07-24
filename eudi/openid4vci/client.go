@@ -339,12 +339,12 @@ func downloadLogoIfMissing(manager filesystem.LogoManager, httpClient *http.Clie
 	if exists, err := manager.Exists(uri); err == nil && exists {
 		return
 	}
-	logoData, _, err := helpers.DownloadRemoteImage(httpClient, uri)
+	logoData, logoMimeType, err := helpers.DownloadRemoteImage(httpClient, uri)
 	if err != nil {
 		eudi.Logger.Warnf("failed to download logo from %q: %v", uri, err)
 		return
 	}
-	if err := manager.Save(uri, logoData); err != nil {
+	if err := manager.Save(uri, logoData, logoMimeType); err != nil {
 		eudi.Logger.Warnf("failed to cache logo from %q: %v", uri, err)
 	}
 }

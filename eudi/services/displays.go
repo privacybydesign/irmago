@@ -138,12 +138,12 @@ func fetchLogoIfMissing(manager filesystem.LogoManager, httpClient *http.Client,
 	if exists, err := manager.Exists(uri); err != nil || exists {
 		return 0
 	}
-	data, _, err := helpers.DownloadRemoteImage(httpClient, uri)
+	data, mimeType, err := helpers.DownloadRemoteImage(httpClient, uri)
 	if err != nil {
 		eudi.Logger.Warnf("logo backfill: failed to download logo from %q: %v", uri, err)
 		return 0
 	}
-	if err := manager.Save(uri, data); err != nil {
+	if err := manager.Save(uri, data, mimeType); err != nil {
 		eudi.Logger.Warnf("logo backfill: failed to cache logo from %q: %v", uri, err)
 		return 0
 	}

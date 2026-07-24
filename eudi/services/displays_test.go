@@ -52,7 +52,7 @@ func TestResolveLogoIndependentOfText(t *testing.T) {
 func TestLoadResolvedLogo_FallsBackToCachedLogoWhilePreferredIsMissing(t *testing.T) {
 	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	manager := fs.Credentials().LogoManager()
-	require.NoError(t, manager.Save("https://logos.example.com/en.png", []byte("en-logo")))
+	require.NoError(t, manager.Save("https://logos.example.com/en.png", []byte("en-logo"), ""))
 
 	uris := clientmodels.TranslatedString{
 		"en": "https://logos.example.com/en.png",
@@ -63,7 +63,7 @@ func TestLoadResolvedLogo_FallsBackToCachedLogoWhilePreferredIsMissing(t *testin
 
 	require.NotNil(t, img, "a cached logo should show while the backfill fetches the preferred one")
 
-	require.NoError(t, manager.Save("https://logos.example.com/nl.png", []byte("nl-logo")))
+	require.NoError(t, manager.Save("https://logos.example.com/nl.png", []byte("nl-logo"), ""))
 	img = LoadResolvedLogo(manager, uris, "nl")
 	require.NotNil(t, img)
 }
@@ -141,7 +141,7 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(batch))
 
 	// Pre-cache the nl issuer logo: the sweep must not re-download it.
-	require.NoError(t, s.FileSystem().Issuers().LogoManager().Save(server.URL+"/issuer-nl.png", []byte("cached")))
+	require.NoError(t, s.FileSystem().Issuers().LogoManager().Save(server.URL+"/issuer-nl.png", []byte("cached"), ""))
 
 	added := BackfillLogos(s, server.Client(), "nl")
 
