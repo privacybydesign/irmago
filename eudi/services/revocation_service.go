@@ -24,8 +24,9 @@ import (
 //   - BatchRevocation: per-batch flags derived from stored status, for the
 //     credential list view.
 //
-// All three share one revocation policy (see statusRevoked): INVALID and
-// SUSPENDED both count as revoked; application-specific statuses do not.
+// All three share one revocation policy (see statusRevoked): anything other
+// than VALID counts as revoked (INVALID, SUSPENDED, application-specific),
+// except UNKNOWN (no status information yet), which stays advisory not-revoked.
 type RevocationService struct {
 	checker *statuslist.Checker
 	store   db.CredentialStore
@@ -39,13 +40,17 @@ func NewRevocationService(checker *statuslist.Checker, store db.CredentialStore)
 	return &RevocationService{checker: checker, store: store}
 }
 
-// statusRevoked is the one revocation policy shared by every path. Both INVALID
-// and SUSPENDED count: a suspended credential is not a usable disclosure
-// candidate either. TODO: the client model has no separate suspended state, so
-// suspension is surfaced as "revoked" for now — add a distinct suspended state
-// (clientmodels + frontend) to show it as temporary rather than permanent.
+// statusRevoked is the one revocation policy shared by every path: a credential
+// is usable only when it reads VALID. INVALID, SUSPENDED, and any
+// application-specific status all count as revoked (fail-closed on anything the
+// issuer flags). UNKNOWN is the sole exception — it means "no status
+// information" (cold cache / not yet checked), not a bad status, so it stays
+// advisory not-revoked (see IsRevoked and the cold-cache behaviour).
+// TODO: the client model has no separate suspended state, so suspension is
+// surfaced as "revoked" for now — add a distinct suspended state (clientmodels
+// + frontend) to show it as temporary rather than permanent.
 func statusRevoked(s statuslist.Status) bool {
-	return s == statuslist.StatusInvalid || s == statuslist.StatusSuspended
+	return s != statuslist.StatusValid && s != statuslist.StatusUnknown
 }
 
 // IsRevoked reports whether the instance's credential reads INVALID according
@@ -133,7 +138,7 @@ func (s *RevocationService) RefreshStatuses(ctx context.Context) error {
 // (carry any status reference) and which are currently revoked, derived from the
 // stored LastKnownStatus that RefreshStatuses maintains. A batch's instances are
 // the same credential and are revoked together, so a batch is revoked as soon as
-// any status-referenced instance reads INVALID or SUSPENDED (see statusRevoked),
+// any status-referenced instance reads a non-VALID status (see statusRevoked),
 // and supports revocation if it carries any status reference at all. A lifted
 // suspension is reflected on the next RefreshStatuses sweep.
 func (s *RevocationService) BatchRevocation() (revoked, revocable map[string]bool, err error) {

@@ -59,6 +59,12 @@ func Test_RevocationService_IsRevoked_Suspended(t *testing.T) {
 	assert.True(t, rc.IsRevoked(inst), "suspended is not a usable candidate")
 }
 
+func Test_RevocationService_IsRevoked_ApplicationSpecific(t *testing.T) {
+	rc, _, inst := newIsRevokedFixture(t, 2, 3) // idx 3 -> application-specific
+	warmCache(t, rc, inst)
+	assert.True(t, rc.IsRevoked(inst), "anything other than valid is revoked")
+}
+
 // IsRevoked reads the cache only: once warm, a broken/unreachable server does
 // not change the answer and triggers no further fetch.
 func Test_RevocationService_IsRevoked_NoLiveFetch(t *testing.T) {
