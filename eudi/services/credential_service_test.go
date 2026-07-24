@@ -378,7 +378,7 @@ func TestGetCredentialMetadataList_CredentialLogoOnNonFirstDisplay(t *testing.T)
 		{Name: "Mijn Credential", Locale: datatypes.NullString{V: "nl", Valid: true}, LogoURI: logoURL},
 	}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	require.NoError(t, fileStorageMock.Credentials().LogoManager().Save(logoURL, []byte("PNGDATA")))
+	require.NoError(t, fileStorageMock.Credentials().LogoManager().Save(logoURL, []byte("PNGDATA"), "image/png"))
 
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -401,7 +401,7 @@ func TestGetCredentialMetadataList_IssuerLogoOnNonFirstDisplay(t *testing.T) {
 		{Name: "Test Issuer NL", Locale: datatypes.NullString{V: "nl", Valid: true}, LogoURI: datatypes.NullString{V: logoURL, Valid: true}},
 	}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	require.NoError(t, fileStorageMock.Issuers().LogoManager().Save(logoURL, []byte("ISSUERPNG")))
+	require.NoError(t, fileStorageMock.Issuers().LogoManager().Save(logoURL, []byte("ISSUERPNG"), "image/png"))
 
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
 	svc := newServiceWithMocks(mock, fileStorageMock)
