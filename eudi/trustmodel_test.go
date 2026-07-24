@@ -588,11 +588,12 @@ func testCacheLogoCachesLogoSuccessfully(t *testing.T) {
 	}
 
 	mgr := conf.Storage.FileSystem().Verifiers().LogoManager()
-	require.NoError(t, mgr.Save("test_logo", logo.Data))
+	require.NoError(t, mgr.Save("test_logo", logo.Data, logo.MimeType))
 
-	got, err := mgr.Get("test_logo")
+	got, gotMimeType, err := mgr.Get("test_logo")
 	require.NoError(t, err)
 	require.Equal(t, logo.Data, got)
+	require.Equal(t, logo.MimeType, gotMimeType)
 }
 
 func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
@@ -618,15 +619,16 @@ func testCacheVerifierLogoCachesLogoMultipleTimesSuccessfully(t *testing.T) {
 		Data:     []byte("test logo data"),
 		MimeType: "image/png",
 	}
-	require.NoError(t, mgr.Save("test_logo", logo.Data))
+	require.NoError(t, mgr.Save("test_logo", logo.Data, logo.MimeType))
 
 	// A second Save with the same key should overwrite.
 	logo.Data = []byte("updated logo data")
-	require.NoError(t, mgr.Save("test_logo", logo.Data))
+	require.NoError(t, mgr.Save("test_logo", logo.Data, logo.MimeType))
 
-	got, err := mgr.Get("test_logo")
+	got, gotMimeType, err := mgr.Get("test_logo")
 	require.NoError(t, err)
 	require.Equal(t, logo.Data, got)
+	require.Equal(t, logo.MimeType, gotMimeType)
 }
 
 func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
@@ -646,7 +648,7 @@ func testCacheVerifierLogoReturnsErrorOnNilLogo(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conf.Reload())
 
-	err = conf.Storage.FileSystem().Verifiers().LogoManager().Save("test_logo", nil)
+	err = conf.Storage.FileSystem().Verifiers().LogoManager().Save("test_logo", nil, "")
 	require.Error(t, err)
 	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 }
@@ -670,11 +672,11 @@ func testCacheVerifierLogoReturnsErrorOnEmptyLogoData(t *testing.T) {
 
 	mgr := conf.Storage.FileSystem().Verifiers().LogoManager()
 
-	err = mgr.Save("test_logo", []byte(""))
+	err = mgr.Save("test_logo", []byte(""), "")
 	require.Error(t, err)
 	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 
-	err = mgr.Save("test_logo", nil)
+	err = mgr.Save("test_logo", nil, "")
 	require.Error(t, err)
 	require.EqualError(t, err, "invalid logo: data cannot be nil or empty")
 }

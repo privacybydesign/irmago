@@ -297,7 +297,11 @@ func saveLogoFromBase64(manager filesystem.LogoManager, key string, image *clien
 	if err != nil {
 		return
 	}
-	if err := manager.Save(key, rawBytes); err != nil {
+	mimeType := ""
+	if image.MimeType != nil {
+		mimeType = *image.MimeType
+	}
+	if err := manager.Save(key, rawBytes, mimeType); err != nil {
 		eudi.Logger.Warnf("failed to cache logo for key %q: %v", key, err)
 	}
 }

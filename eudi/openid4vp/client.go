@@ -137,6 +137,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 			err = client.Configuration.Storage.FileSystem().Verifiers().LogoManager().Save(
 				endEntityCert.SerialNumber.String(),
 				requestorSchemeData.Organization.Logo.Data,
+				requestorSchemeData.Organization.Logo.MimeType,
 			)
 			if err != nil {
 				handleFailure(handler, "openid4vp: failed to store verifier logo: %v", err)
