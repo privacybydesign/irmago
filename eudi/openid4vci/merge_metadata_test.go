@@ -136,11 +136,12 @@ func TestMerge_VctOrderPreserved(t *testing.T) {
 	require.Equal(t, metadata.ClaimsPathPointer{"D"}, out.Claims[3].Path)
 }
 
-// TestMerge_CredentialLevelDisplayPerLocaleEntry verifies that the per-
-// locale-entry rule applies at the credential-display level too: a VCT
-// locale wins as a complete entry (no field-level mixing with VCI's
-// richer entry for the same locale).
-func TestMerge_CredentialLevelDisplayPerLocaleEntry(t *testing.T) {
+// TestMerge_CredentialLevelDisplayFieldLevelFallback verifies the field-level
+// fallback at the credential-display level: for a locale present in both
+// sources, VCT wins each field it specifies (Name, BackgroundColor) while any
+// field VCT leaves empty (Description, BackgroundImage) is inherited from the
+// VCI entry for that locale.
+func TestMerge_CredentialLevelDisplayFieldLevelFallback(t *testing.T) {
 	en, es := "en", "es"
 	vct := &typemetadata.VctTypeMetadata{
 		Display: []typemetadata.DisplayEntry{
@@ -149,8 +150,9 @@ func TestMerge_CredentialLevelDisplayPerLocaleEntry(t *testing.T) {
 	}
 	vci := &metadata.CredentialMetadata{
 		Display: metadata.CredentialDisplays{
-			// Same locale as VCT — must be dropped wholesale even though it
-			// carries fields (Description, BackgroundImage) that VCT lacks.
+			// Same locale as VCT — VCT wins Name/BackgroundColor, but the
+			// fields VCT leaves empty (Description, BackgroundImage) are
+			// inherited from this VCI entry.
 			{
 				Display:         metadata.Display{Name: "Card (VCI)", Locale: &en},
 				Description:     "Description (VCI)",
@@ -168,14 +170,78 @@ func TestMerge_CredentialLevelDisplayPerLocaleEntry(t *testing.T) {
 	out := Merge(vct, vci)
 
 	require.Len(t, out.Display, 2)
-	require.Equal(t, "Card (VCT)", out.Display[0].Name)
+	require.Equal(t, "Card (VCT)", out.Display[0].Name, "VCT wins the fields it specifies")
 	require.Equal(t, "#000000", out.Display[0].BackgroundColor)
-	require.Empty(t, out.Display[0].Description, "VCI Description must not leak across the per-locale boundary")
-	require.Nil(t, out.Display[0].BackgroundImage, "VCI BackgroundImage must not leak across the per-locale boundary")
+	require.Equal(t, "Description (VCI)", out.Display[0].Description, "VCI fills the Description field VCT leaves empty")
+	require.NotNil(t, out.Display[0].BackgroundImage, "VCI fills the BackgroundImage field VCT leaves empty")
+	require.Equal(t, "https://example/bg.png", out.Display[0].BackgroundImage.Uri)
 
 	require.Equal(t, "Tarjeta", out.Display[1].Name)
 	require.Equal(t, "Descripción (VCI)", out.Display[1].Description, "VCI-only locale survives intact")
 	require.NotNil(t, out.Display[1].BackgroundImage)
+}
+
+// TestMerge_VciLogoInheritedWhenVctOmitsIt is the regression case for the
+// dropped credential logo: the VCT display entry for a locale carries a name
+// but no logo, while the VCI entry for the same locale carries the logo. The
+// merged entry must keep VCT's name and inherit VCI's logo instead of dropping
+// it wholesale.
+func TestMerge_VciLogoInheritedWhenVctOmitsIt(t *testing.T) {
+	en, nl := "en", "nl"
+	vct := &typemetadata.VctTypeMetadata{
+		Display: []typemetadata.DisplayEntry{
+			{Locale: en, Name: "Employee (VCT)"}, // name only, no logo
+			{Locale: nl, Name: "Werknemer (VCT)"},
+		},
+	}
+	vci := &metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{
+				Display: metadata.Display{Name: "Employee (VCI)", Locale: &en},
+				Logo:    &metadata.RemoteImage{Uri: "data:image/svg+xml;base64,AAAA", AltText: "logo"},
+			},
+			{
+				Display: metadata.Display{Name: "Werknemer (VCI)", Locale: &nl},
+				Logo:    &metadata.RemoteImage{Uri: "data:image/svg+xml;base64,BBBB"},
+			},
+		},
+	}
+
+	out := Merge(vct, vci)
+
+	require.Len(t, out.Display, 2)
+	require.Equal(t, "Employee (VCT)", out.Display[0].Name, "VCT name still wins")
+	require.NotNil(t, out.Display[0].Logo, "VCI logo must be inherited when VCT omits it")
+	require.Equal(t, "data:image/svg+xml;base64,AAAA", out.Display[0].Logo.Uri)
+	require.Equal(t, "logo", out.Display[0].Logo.AltText)
+	require.Equal(t, "Werknemer (VCT)", out.Display[1].Name)
+	require.NotNil(t, out.Display[1].Logo)
+	require.Equal(t, "data:image/svg+xml;base64,BBBB", out.Display[1].Logo.Uri)
+}
+
+// TestMerge_VctLogoWinsOverVciLogo verifies the field stays VCT-authoritative:
+// when VCT supplies its own logo, VCI's logo for the same locale is ignored.
+func TestMerge_VctLogoWinsOverVciLogo(t *testing.T) {
+	en := "en"
+	vct := &typemetadata.VctTypeMetadata{
+		Display: []typemetadata.DisplayEntry{
+			{Locale: en, Name: "Card", Logo: &typemetadata.RemoteImage{URI: "https://vct/logo.png"}},
+		},
+	}
+	vci := &metadata.CredentialMetadata{
+		Display: metadata.CredentialDisplays{
+			{
+				Display: metadata.Display{Name: "Card (VCI)", Locale: &en},
+				Logo:    &metadata.RemoteImage{Uri: "https://vci/logo.png"},
+			},
+		},
+	}
+
+	out := Merge(vct, vci)
+
+	require.Len(t, out.Display, 1)
+	require.NotNil(t, out.Display[0].Logo)
+	require.Equal(t, "https://vct/logo.png", out.Display[0].Logo.Uri, "VCT logo wins the field it specifies")
 }
 
 // TestMerge_NilLocaleConflation verifies that VCI's nil-locale entries
