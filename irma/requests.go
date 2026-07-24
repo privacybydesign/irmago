@@ -703,9 +703,9 @@ func (cr *CredentialRequest) Validate(conf *Configuration) error {
 		}
 	}
 
-	// Note: the random blind attribute identifiers sent by the server are checked in
-	// IssuanceRequest.checkRandomBlindConsistency, which has access to the negotiated protocol
-	// version needed to interpret them (see RandomBlindAttributeNames[Legacy]).
+	// Note: the random blind attribute identifiers sent by the server are checked by the client on
+	// the live session path via IssuanceRequest.CheckRandomBlindConsistency, which has the negotiated
+	// protocol version needed to interpret them (see RandomBlindAttributeNames[Legacy]).
 
 	return nil
 }
@@ -807,9 +807,6 @@ func (ir *IssuanceRequest) GetCredentialInfoList(
 	version *ProtocolVersion,
 	issuedAt time.Time,
 ) (CredentialInfoList, error) {
-	if err := ir.checkRandomBlindConsistency(conf, version); err != nil {
-		return nil, err
-	}
 	if ir.CredentialInfoList == nil {
 		for _, credreq := range ir.Credentials {
 			info, err := credreq.Info(conf, GetMetadataVersion(version), issuedAt)
@@ -823,23 +820,27 @@ func (ir *IssuanceRequest) GetCredentialInfoList(
 	return ir.CredentialInfoList, nil
 }
 
-// checkRandomBlindConsistency verifies that the random blind attribute identifiers the server
+// CheckRandomBlindConsistency verifies that the random blind attribute identifiers the server
 // included in each credential request match those in this client's configuration. This lets the
 // client abort before the session if the two disagree on which attributes are random blind.
 //
 // The comparison is gated on the negotiated protocol version: peers on 2.9 and up exchange the
 // corrected identifiers (RandomBlindAttributeNames), while older peers exchange the historical,
 // off-by-one identifiers (RandomBlindAttributeNamesLegacy). Gating this way keeps a patched client
-// interoperable with an unpatched server and vice versa.
-func (ir *IssuanceRequest) checkRandomBlindConsistency(conf *Configuration, version *ProtocolVersion) error {
+// interoperable with an unpatched server and vice versa. A nil version (unknown) is treated as
+// pre-2.9.
+//
+// This must only be called on the live session path, not on the log-render path, since a
+// configuration change between issuance and viewing could otherwise make a stored log fail to render.
+func (ir *IssuanceRequest) CheckRandomBlindConsistency(conf *Configuration, version *ProtocolVersion) error {
 	for _, credreq := range ir.Credentials {
 		credtype := conf.CredentialTypes[credreq.CredentialTypeID]
 		if credtype == nil {
 			continue // unknown credential types are rejected elsewhere
 		}
-		expected := credtype.RandomBlindAttributeNames()
-		if version.Below(2, 9) {
-			expected = credtype.RandomBlindAttributeNamesLegacy()
+		expected := credtype.RandomBlindAttributeNamesLegacy()
+		if version != nil && !version.Below(2, 9) {
+			expected = credtype.RandomBlindAttributeNames()
 		}
 		if !stringSliceEqual(expected, credreq.RandomBlindAttributeTypeIDs) {
 			return &SessionError{ErrorType: ErrorRandomBlind, Err: errors.New("mismatch in randomblind attributes between server/client")}
