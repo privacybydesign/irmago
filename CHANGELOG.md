@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- `CredentialType.RandomBlindAttributeNames`, which tells the client which random blind attributes an issuance credential request expects, returned attribute identifiers that were off by one: the underlying index helper counted the metadata attribute at position 0, so the names reported in server logs pointed at the wrong attribute (or none). Verification still matched because the client and server shared the same bug. The method now reads each attribute's `RandomBlind` flag directly. Note that a server with this fix and an app built on an irmago version without it (and vice versa) will no longer agree on random blind issuance.
 
 ## [1.2.0] - 2026-07-22
 ### Added
