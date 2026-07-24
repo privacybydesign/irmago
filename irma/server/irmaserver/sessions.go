@@ -111,6 +111,11 @@ var (
 	// It is set to false by default, but can be set to true for backwards compatibility with older apps. This is not recommended.
 	AcceptInsecureProtocolVersions = false
 
+	// MaxProtocolVersionOverride, when non-nil, replaces the maximum protocol version the server
+	// negotiates. It exists so tests can exercise protocol versions that are not yet enabled by
+	// default (currently 2.9). It must remain nil in production.
+	MaxProtocolVersionOverride *irma.ProtocolVersion
+
 	minProtocolVersion       = irma.NewVersion(2, 4)
 	minSecureProtocolVersion = irma.NewVersion(2, 8)
 	maxProtocolVersion       = irma.NewVersion(2, 8)
