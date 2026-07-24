@@ -13,8 +13,8 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -32,24 +32,48 @@ type CredentialService interface {
 		requireCryptographicKeyBinding bool,
 		publicKeyIdentifiers []models.PublicHolderBindingKey,
 	) error
+
+	// DeleteByHash deletes a stored CredentialBatch by its deterministic hash.
+	// Returns ErrNotFound if no batch exists with that hash.
+	DeleteByHash(hash string) error
 }
 
 type credentialService struct {
 	credentialStore       db.CredentialStore
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
+	// revocation supplies the per-batch revocation flags for the credential
+	// list view (see GetCredentialMetadataList).
+	revocation *RevocationService
 }
 
-func NewCredentialService(s storage.Storage) CredentialService {
+func NewCredentialService(
+	credentialStore db.CredentialStore,
+	holderBindingKeyStore db.HolderBindingKeyStore,
+	fileStorage filesystem.FileSystemStorage,
+	revocation *RevocationService,
+) CredentialService {
 	return &credentialService{
-		credentialStore:       db.NewCredentialStore(s.Db()),
-		holderBindingKeyStore: db.NewHolderBindingKeyStore(s.Db()),
-		fileStorage:           s.FileSystem(),
+		credentialStore:       credentialStore,
+		holderBindingKeyStore: holderBindingKeyStore,
+		fileStorage:           fileStorage,
+		revocation:            revocation,
 	}
+}
+
+func (s *credentialService) DeleteByHash(hash string) error {
+	return s.credentialStore.DeleteBatchByHash(hash)
 }
 
 func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
 	m, err := s.credentialStore.GetCredentialBatchList()
+	if err != nil {
+		return nil, err
+	}
+
+	// Per-credential revocation flags are derived from stored Token Status List
+	// statuses (maintained by RevocationService.RefreshStatuses).
+	revoked, revocable, err := s.revocation.BatchRevocation()
 	if err != nil {
 		return nil, err
 	}
@@ -124,20 +148,39 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			iat = &x
 		}
 
-		// Try get the credential image from filesystem storage, if it exists.
+		// Resolve credential/issuer logos from the filesystem cache. Scan ALL
+		// display entries (not just Display[0]): multi-locale metadata may carry
+		// the logo on a later entry, and only one logo is cached. Break on the
+		// first entry that actually resolves, not the first non-empty URI, since a
+		// display's URI may not be the one that got cached. Mirrors the
+		// issuance/disclosure paths.
+		// TODO: pick the logo matching the client's language preference instead of
+		// the first that resolves.
 		credentialLogoManager := s.fileStorage.Credentials().LogoManager()
 		issuerLogoManager := s.fileStorage.Issuers().LogoManager()
 
-		var issuerImage *clientmodels.Image = nil
-		var credentialImage *clientmodels.Image = nil
-
-		// TODO: since we don't know which display is actually used by the client, we are currently just trying to get the logos for the first display. We should implement a more robust solution for this in the future, potentially by storing a separate logo for each display/language in the filesystem and retrieving the correct one based on the client's language preferences.
-		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI.Valid {
-			issuerImage = eudi.LoadLogoImage(issuerLogoManager, batch.IssuerDisplay[0].LogoURI.V)
+		var issuerImage *clientmodels.Image
+		for _, d := range batch.IssuerDisplay {
+			if !d.LogoURI.Valid || d.LogoURI.V == "" {
+				continue
+			}
+			if img := eudi.LoadLogoImage(issuerLogoManager, d.LogoURI.V); img != nil {
+				issuerImage = img
+				break
+			}
 		}
 
-		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
-			credentialImage = eudi.LoadLogoImage(credentialLogoManager, batch.CredentialMetadata.Display[0].LogoURI)
+		var credentialImage *clientmodels.Image
+		if batch.CredentialMetadata != nil {
+			for _, d := range batch.CredentialMetadata.Display {
+				if d.LogoURI == "" {
+					continue
+				}
+				if img := eudi.LoadLogoImage(credentialLogoManager, d.LogoURI); img != nil {
+					credentialImage = img
+					break
+				}
+			}
 		}
 
 		clientModels[i] = &clientmodels.Credential{
@@ -160,8 +203,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Attributes:                   attrs,
 			ExpiryDate:                   exp,
 			IssuanceDate:                 iat,
-			Revoked:                      false, // revocation is not yet implemented, so default to false for now
-			RevocationSupported:          false,
+			Revoked:                      revoked[batch.Hash],
+			RevocationSupported:          revocable[batch.Hash],
 			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
 		}
 	}
@@ -194,6 +237,19 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 ) error {
 	if len(verifiedSdJwtVcs) == 0 {
 		return nil // nothing to store
+	}
+
+	// A batch's instances are the same logical credential and are revoked
+	// together. Per draft-ietf-oauth-status-list §13.2 each one-time-use copy
+	// MUST carry its OWN dedicated, distinct status entry (for unlinkability):
+	// require all-or-none presence and reject duplicate references. Reject here,
+	// before any side effects, so a malformed issuance can't delete the user's
+	// existing credential (computeHashAndDeleteExisting below is destructive).
+	if err := validateStatusReferences(verifiedSdJwtVcs); err != nil {
+		if requireCryptographicKeyBinding {
+			s.deleteOrphanedKeys(publicKeyIdentifiers)
+		}
+		return err
 	}
 
 	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(verifiedSdJwtVcs) {
@@ -283,12 +339,74 @@ func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJ
 	return hash, processedPayload, nil
 }
 
+// statusReferenceOf returns the credential's Token Status List reference, or
+// the zero Reference when it carries none. The zero value (empty URI) is a
+// safe "absent" sentinel because a real reference always has a non-empty URI.
+func statusReferenceOf(v *sdjwtvc.VerifiedSdJwtVc) statuslist.Reference {
+	if v.IssuerSignedJwtPayload.Status == nil || v.IssuerSignedJwtPayload.Status.StatusList == nil {
+		return statuslist.Reference{}
+	}
+	return *v.IssuerSignedJwtPayload.Status.StatusList
+}
+
+// validateStatusReferences enforces the batch's Token Status List invariants from
+// draft-ietf-oauth-status-list §13.2/§13.3:
+//   - all-or-none: either every instance carries a status_list reference or none
+//     does (a partially-referenced batch would leave some instances
+//     status-checkable and others not);
+//   - uniqueness: each reference MUST be distinct across the batch. Every
+//     one-time-use copy needs its own dedicated (uri, idx) entry so presentations
+//     can't be correlated and to avoid double allocation (§13.3). Copies may
+//     differ by idx on one list or be spread across multiple Status List Tokens.
+func validateStatusReferences(vcs []*sdjwtvc.VerifiedSdJwtVc) error {
+	firstHasRef := statusReferenceOf(vcs[0]) != (statuslist.Reference{})
+	seen := make(map[statuslist.Reference]int, len(vcs))
+	for i, v := range vcs {
+		ref := statusReferenceOf(v)
+		hasRef := ref != (statuslist.Reference{})
+		if hasRef != firstHasRef {
+			return fmt.Errorf(
+				"partial status_list reference in batch: instance 0 hasRef=%t but instance %d hasRef=%t; either all instances carry a status_list reference or none do",
+				firstHasRef, i, hasRef,
+			)
+		}
+		if !hasRef {
+			continue
+		}
+		if prev, dup := seen[ref]; dup {
+			return fmt.Errorf(
+				"duplicate status_list reference in batch: instances %d and %d both use %+v; each one-time-use copy MUST have a dedicated entry (draft-ietf-oauth-status-list §13.2)",
+				prev, i, ref,
+			)
+		}
+		seen[ref] = i
+	}
+	return nil
+}
+
 func buildInstances(vcs []*sdjwtvc.VerifiedSdJwtVc) []models.IssuedCredentialInstance {
 	instances := make([]models.IssuedCredentialInstance, len(vcs))
+	now := time.Now()
 	for i, v := range vcs {
-		instances[i] = models.IssuedCredentialInstance{
+		inst := models.IssuedCredentialInstance{
 			RawCredential: []byte(v.GetRawSdJwtVc()),
 		}
+		// Persist the status_list reference so the disclosure path and
+		// the refresh sweep can run without re-parsing the SD-JWT VC.
+		// At issuance time the holder verifier has just confirmed the
+		// bit reads StatusValid (or the credential has no status
+		// reference), so seed LastKnownStatus accordingly.
+		if v.IssuerSignedJwtPayload.Status != nil && v.IssuerSignedJwtPayload.Status.StatusList != nil {
+			ref := v.IssuerSignedJwtPayload.Status.StatusList
+			uri := ref.URI
+			idx := ref.Index
+			t := now
+			inst.StatusListURI = &uri
+			inst.StatusListIdx = &idx
+			inst.LastKnownStatus = uint8(statuslist.StatusValid)
+			inst.LastStatusCheckAt = &t
+		}
+		instances[i] = inst
 	}
 	return instances
 }

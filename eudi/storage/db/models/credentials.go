@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"time"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -135,6 +136,26 @@ type IssuedCredentialInstance struct {
 	// Used marks this instance as consumed after it has been presented.
 	// Single-use batch wallets must not reuse an instance once Used is true.
 	Used bool `gorm:"default:false"`
+
+	// StatusListURI is the canonical URI from the credential's
+	// `status.status_list.uri` claim, when present. Nil for credentials
+	// that don't carry a Token Status List reference.
+	StatusListURI *string
+
+	// StatusListIdx is the bit-position into the referenced status
+	// list. Nil iff StatusListURI is nil.
+	StatusListIdx *uint64
+
+	// LastKnownStatus is the most recently observed
+	// statuslist.Status for this instance. 0 (StatusUnknown) is the
+	// default for credentials that have not yet been checked, and
+	// for credentials without a status_list reference.
+	LastKnownStatus uint8 `gorm:"default:0"`
+
+	// LastStatusCheckAt records the wall-clock time of the most
+	// recent successful status check. Nil iff the instance has
+	// never been checked.
+	LastStatusCheckAt *time.Time
 }
 
 func (i *IssuedCredentialInstance) BeforeCreate(tx *gorm.DB) error {

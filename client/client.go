@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
@@ -35,17 +37,19 @@ import (
 )
 
 type Client struct {
-	storage          *clientstorage.Storage
-	eudiStorage      storage.Storage
-	sdjwtvcStorage   irmaclient.SdJwtVcStorage
-	openid4vpClient  *openid4vp.Client
-	openid4vciClient *openid4vci.Client
-	irmaClient       *irmaclient.IrmaClient
-	logsStorage      irmaclient.LogsStorage
-	keyBinder        sdjwtvc.KeyBinder
-	didValidator     *openid4vp.DidVerifierValidator
-	scheduler        gocron.Scheduler
-	sessionManager   sessionManager
+	storage           *clientstorage.Storage
+	eudiStorage       storage.Storage
+	sdjwtvcStorage    irmaclient.SdJwtVcStorage
+	openid4vpClient   *openid4vp.Client
+	openid4vciClient  *openid4vci.Client
+	irmaClient        *irmaclient.IrmaClient
+	logsStorage       irmaclient.LogsStorage
+	keyBinder         sdjwtvc.KeyBinder
+	didValidator      *openid4vp.DidVerifierValidator
+	scheduler         gocron.Scheduler
+	sessionManager    sessionManager
+	credentialService services.CredentialService
+	revocationService *services.RevocationService
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -108,6 +112,23 @@ func New(
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
 	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
 
+	credStore := db.NewCredentialStore(eudiStorage.Db())
+	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
+
+	// Token Status List checker + the single revocation service built on it.
+	// The checker is also shared with the holder-side verifier
+	// (sdJwtVcVerificationContext below). The revocation service is the one home
+	// for revocation: the background sweep, the credential list's flags, and the
+	// OpenID4VP disclosure planner's live Revoked flag all go through it.
+	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
+	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: &eudiConf.Issuers,
+		Clock:       eudi_jwt.NewSystemClock(),
+	}, statusListCache)
+	revocationService := services.NewRevocationService(statusChecker, credStore)
+
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService)
+
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	didValidator := openid4vp.NewDidVerifierValidator(false)
@@ -120,9 +141,11 @@ func New(
 	// blank permission prompt.
 	eudiSdJwtDcqlHandler := eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler(
 		eudiStorage,
+		credStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
 		sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
+		revocationService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
 
@@ -137,6 +160,7 @@ func New(
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: true,
+		StatusChecker: statusChecker,
 	}
 
 	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, handler, signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
@@ -166,6 +190,7 @@ func New(
 		Clock:                   eudi_jwt.NewSystemClock(),
 		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
+		StatusChecker: statusChecker,
 	}
 
 	// Initiate the OpenID4VCI client
@@ -173,6 +198,7 @@ func New(
 		common.HTTPClient,
 		eudiConf,
 		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
+		credentialService,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 	)
 
@@ -186,16 +212,18 @@ func New(
 	irmaClient.SetOnSessionDoneCallback(openid4vpClient.RefreshPendingPermissionRequest)
 
 	client := &Client{
-		storage:          s,
-		sdjwtvcStorage:   sdjwtvcStorage,
-		eudiStorage:      eudiStorage,
-		openid4vpClient:  openid4vpClient,
-		openid4vciClient: openid4vciClient,
-		irmaClient:       irmaClient,
-		logsStorage:      irmaStorage,
-		keyBinder:        irmaKeyBinder,
-		didValidator:     didValidator,
-		scheduler:        scheduler,
+		storage:           s,
+		sdjwtvcStorage:    sdjwtvcStorage,
+		eudiStorage:       eudiStorage,
+		openid4vpClient:   openid4vpClient,
+		openid4vciClient:  openid4vciClient,
+		irmaClient:        irmaClient,
+		logsStorage:       irmaStorage,
+		keyBinder:         irmaKeyBinder,
+		didValidator:      didValidator,
+		scheduler:         scheduler,
+		credentialService: credentialService,
+		revocationService: revocationService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -211,6 +239,15 @@ func (client *Client) Close() error {
 	client.irmaClient.Close()
 	client.eudiStorage.Close()
 	return client.storage.Close()
+}
+
+// RefreshStatuses re-fetches the Token Status List for every stored
+// SD-JWT VC instance and updates its LastKnownStatus column. Use
+// this on app resume or when the UI exposes an explicit refresh
+// action. Errors during the sweep are logged; the previous
+// LastKnownStatus persists for any URI that fails to refresh.
+func (client *Client) RefreshStatuses(ctx context.Context) error {
+	return client.revocationService.RefreshStatuses(ctx)
 }
 
 type SessionRequestData struct {
@@ -397,8 +434,7 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 
 	// Delete EUDI credentials (read metadata first for the removal log).
 	if len(eudiHashes) > 0 {
-		credentialService := services.NewCredentialService(client.eudiStorage)
-		allEudiCreds, err := credentialService.GetCredentialMetadataList()
+		allEudiCreds, err := client.credentialService.GetCredentialMetadataList()
 		if err != nil {
 			return fmt.Errorf("failed to read eudi credentials for removal log: %v", err)
 		}
@@ -424,9 +460,8 @@ func (client *Client) RemoveCredentialsByHash(hashByFormat map[clientmodels.Cred
 			}
 		}
 
-		credentialStore := db.NewCredentialStore(client.eudiStorage.Db())
 		for _, hash := range eudiHashes {
-			if err := credentialStore.DeleteBatchByHash(hash); err != nil {
+			if err := client.credentialService.DeleteByHash(hash); err != nil {
 				return fmt.Errorf("error while deleting eudi credential: %v", err)
 			}
 		}
@@ -588,15 +623,35 @@ func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
-func (client *Client) InitJobs(eudiRevocationListUpdateInterval time.Duration) {
+func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(
-		gocron.DurationJob(eudiRevocationListUpdateInterval),
+		gocron.DurationJob(eudiCrlUpdateInterval),
 		gocron.NewTask(client.openid4vpClient.Configuration.UpdateCertificateRevocationLists),
 		gocron.WithStartAt(gocron.WithStartImmediately()),
 	)
 
 	if err != nil {
-		common.Logger.Warnf("failed to create new cron job for updating CLRs: %v", err)
+		common.Logger.Warnf("failed to create new cron job for updating CRLs: %v", err)
+	}
+
+	// Periodically re-fetch referenced Token Status Lists and update one
+	// representative instance's LastKnownStatus per credential batch (a batch is
+	// revoked all at once, so one entry stands in for the whole batch). Skipped
+	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
+	// are logged inside RefreshStatuses and the previous status is kept.
+	if statusTokenListRefreshInterval > 0 {
+		_, err = client.scheduler.NewJob(
+			gocron.DurationJob(statusTokenListRefreshInterval),
+			gocron.NewTask(func() {
+				if err := client.RefreshStatuses(context.Background()); err != nil {
+					common.Logger.Warnf("scheduled status refresh failed: %v", err)
+				}
+			}),
+			gocron.WithStartAt(gocron.WithStartImmediately()),
+		)
+		if err != nil {
+			common.Logger.Warnf("failed to create new cron job for refreshing credential statuses: %v", err)
+		}
 	}
 }

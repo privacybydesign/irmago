@@ -1,0 +1,8 @@
+{
+  "name": "statuslist",
+  "tokens": ["statuslist-admin-token"],
+  "size": 131072,
+  "bitSize": 1,
+  "purpose": "revocation",
+  "type": "statuslist+jwt"
+}
