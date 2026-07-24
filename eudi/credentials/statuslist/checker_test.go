@@ -49,6 +49,61 @@ func Test_Checker_Check_1Bit_Invalid(t *testing.T) {
 	require.Equal(t, StatusInvalid, s)
 }
 
+// CheckCached serves from the local cache only and never fetches: a cold cache
+// reads Unknown with no HTTP hit.
+func Test_Checker_CheckCached_MissReturnsUnknownNoFetch(t *testing.T) {
+	_, srv, checker := makeSignerServerChecker(t)
+	s, err := checker.CheckCached(Reference{Index: 3, URI: srv.URL()})
+	require.NoError(t, err)
+	require.Equal(t, StatusUnknown, s)
+	require.Zero(t, srv.Hits(), "CheckCached must not fetch")
+}
+
+// Once warmed (as the background refresh would), CheckCached returns the
+// per-index status without any further HTTP hit.
+func Test_Checker_CheckCached_ServesFromWarmCache(t *testing.T) {
+	signer, srv, checker := makeSignerServerChecker(t)
+	srv.Serve(t, signer, TestStatusListOpts{
+		Issuer:   "https://issuer.example",
+		Bits:     1,
+		Statuses: map[uint64]uint8{3: 1, 4: 0},
+	})
+	_, err := checker.Refresh(context.Background(), Reference{URI: srv.URL()})
+	require.NoError(t, err)
+	hits := srv.Hits()
+
+	invalid, err := checker.CheckCached(Reference{Index: 3, URI: srv.URL()})
+	require.NoError(t, err)
+	require.Equal(t, StatusInvalid, invalid)
+
+	valid, err := checker.CheckCached(Reference{Index: 4, URI: srv.URL()})
+	require.NoError(t, err)
+	require.Equal(t, StatusValid, valid)
+
+	require.Equal(t, hits, srv.Hits(), "CheckCached must not fetch after warm")
+}
+
+// An expired cache entry is not served: CheckCached respects freshness and
+// returns Unknown rather than a stale status.
+func Test_Checker_CheckCached_ExpiredEntryReturnsUnknown(t *testing.T) {
+	signer, srv, checker := makeSignerServerChecker(t)
+	srv.Serve(t, signer, TestStatusListOpts{
+		Issuer:     "https://issuer.example",
+		Bits:       1,
+		Statuses:   map[uint64]uint8{0: 1},
+		TTLSeconds: 1, // clamped to TTLMin (60s)
+	})
+	_, err := checker.Refresh(context.Background(), Reference{URI: srv.URL()})
+	require.NoError(t, err)
+
+	// Advance past the cached entry's expiry; the stale entry must not be served.
+	checker.nowFn = func() time.Time { return time.Now().Add(TTLMax + time.Hour) }
+
+	s, err := checker.CheckCached(Reference{URI: srv.URL()})
+	require.NoError(t, err)
+	require.Equal(t, StatusUnknown, s)
+}
+
 func Test_Checker_Check_2Bit_Suspended(t *testing.T) {
 	signer, srv, checker := makeSignerServerChecker(t)
 	srv.Serve(t, signer, TestStatusListOpts{

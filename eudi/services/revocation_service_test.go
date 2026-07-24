@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
@@ -10,8 +11,9 @@ import (
 )
 
 // newIsRevokedFixture wires a RevocationService to a status list served by a
-// freshly-signed test token, and returns an instance pointing at index 3.
-// IsRevoked does not touch the store, so it is left nil.
+// freshly-signed test token, and returns an instance pointing at index 3. The
+// cache starts cold; call warmCache to populate it. IsRevoked reads the cache
+// only (never the network), and does not touch the store, so it is left nil.
 func newIsRevokedFixture(t *testing.T, bit uint8) (*RevocationService, *statuslist.TestStatusListServer, *models.IssuedCredentialInstance) {
 	t.Helper()
 	signer := statuslist.NewTestStatusListSigner(t)
@@ -30,20 +32,42 @@ func newIsRevokedFixture(t *testing.T, bit uint8) (*RevocationService, *statusli
 	return NewRevocationService(checker, nil), srv, inst
 }
 
+// warmCache populates rc's status-list cache from the test server, the way the
+// background RefreshStatuses sweep would.
+func warmCache(t *testing.T, rc *RevocationService, inst *models.IssuedCredentialInstance) {
+	t.Helper()
+	_, err := rc.checker.Refresh(context.Background(), statuslist.Reference{URI: *inst.StatusListURI})
+	require.NoError(t, err)
+}
+
 func Test_RevocationService_IsRevoked_InvalidBit(t *testing.T) {
 	rc, _, inst := newIsRevokedFixture(t, 1) // idx 3 -> invalid
+	warmCache(t, rc, inst)
 	assert.True(t, rc.IsRevoked(inst))
 }
 
 func Test_RevocationService_IsRevoked_ValidBit(t *testing.T) {
 	rc, _, inst := newIsRevokedFixture(t, 0) // idx 3 -> valid
+	warmCache(t, rc, inst)
 	assert.False(t, rc.IsRevoked(inst))
 }
 
-func Test_RevocationService_IsRevoked_CheckFails_FailsSafe(t *testing.T) {
-	rc, srv, inst := newIsRevokedFixture(t, 0)
-	srv.SetBody([]byte("not-a-status-list-jwt")) // fetch succeeds, verify fails -> Check errors
-	assert.True(t, rc.IsRevoked(inst), "no verifiable status -> fail-safe revoked")
+// IsRevoked reads the cache only: once warm, a broken/unreachable server does
+// not change the answer and triggers no further fetch.
+func Test_RevocationService_IsRevoked_NoLiveFetch(t *testing.T) {
+	rc, srv, inst := newIsRevokedFixture(t, 1) // idx 3 -> invalid
+	warmCache(t, rc, inst)
+	hitsAfterWarm := srv.Hits()
+	srv.SetBody([]byte("not-a-status-list-jwt")) // any live fetch would now fail
+	assert.True(t, rc.IsRevoked(inst), "served from warm cache")
+	assert.Equal(t, hitsAfterWarm, srv.Hits(), "IsRevoked must not fetch")
+}
+
+// Cold cache (never refreshed) -> advisory not-revoked, and no fetch attempted.
+func Test_RevocationService_IsRevoked_ColdCache_NotRevoked(t *testing.T) {
+	rc, srv, inst := newIsRevokedFixture(t, 1) // would read invalid if fetched
+	assert.False(t, rc.IsRevoked(inst), "cold cache -> advisory not revoked")
+	assert.Zero(t, srv.Hits(), "IsRevoked must not fetch")
 }
 
 func Test_RevocationService_IsRevoked_NoStatusReference(t *testing.T) {

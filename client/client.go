@@ -119,7 +119,7 @@ func New(
 	// The checker is also shared with the holder-side verifier
 	// (sdJwtVcVerificationContext below). The revocation service is the one home
 	// for revocation: the background sweep, the credential list's flags, and the
-	// OpenID4VP disclosure planner's live Revoked flag all go through it.
+	// OpenID4VP disclosure planner's cached Revoked flag all go through it.
 	statusListCache := db.NewStatusListCacheStore(eudiStorage.Db())
 	statusChecker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: &eudiConf.Issuers,

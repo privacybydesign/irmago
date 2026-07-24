@@ -17,10 +17,10 @@ import (
 // owns the status-list Checker and the credential store, and exposes the three
 // ways the wallet consults revocation:
 //
-//   - IsRevoked: a live (cache-aware) check for one instance, used by the
+//   - IsRevoked: a cached (no-fetch) check for one instance, used by the
 //     OpenID4VP disclosure planner;
 //   - RefreshStatuses: the background sweep that re-fetches and writes back each
-//     stored instance's LastKnownStatus;
+//     stored instance's LastKnownStatus, and keeps the status-list cache warm;
 //   - BatchRevocation: per-batch flags derived from stored status, for the
 //     credential list view.
 //
@@ -32,9 +32,9 @@ type RevocationService struct {
 }
 
 // NewRevocationService returns a service backed by the given Token Status List
-// Checker and credential store. A nil checker disables the live and refresh
-// paths (IsRevoked returns false, RefreshStatuses is a no-op); the stored-status
-// path (BatchRevocation) still works.
+// Checker and credential store. A nil checker disables the cached-read and
+// refresh paths (IsRevoked returns false, RefreshStatuses is a no-op); the
+// stored-status path (BatchRevocation) still works.
 func NewRevocationService(checker *statuslist.Checker, store db.CredentialStore) *RevocationService {
 	return &RevocationService{checker: checker, store: store}
 }
@@ -44,11 +44,12 @@ func statusRevoked(s statuslist.Status) bool {
 	return s == statuslist.StatusInvalid
 }
 
-// IsRevoked reports whether the instance's credential currently reads INVALID
-// via a live (cache-aware) check. An instance without a status_list reference
-// is never revoked. On a failed live check it fails safe to revoked: the check
-// is cache-aware, so an error means no status is available within the token's
-// own ttl, and we cannot vouch for the credential.
+// IsRevoked reports whether the instance's credential reads INVALID according
+// to the locally cached Token Status List — no network fetch. An instance
+// without a status_list reference is never revoked. A missing or
+// undeterminable cached status reads as NOT revoked: the flag is advisory, the
+// cache is kept warm by RefreshStatuses, and the verifier's own status check is
+// the backstop.
 //
 // The check never blocks disclosure — revocation is surfaced as a flag for the
 // frontend, with the verifier as the backstop.
@@ -57,14 +58,10 @@ func (s *RevocationService) IsRevoked(instance *models.IssuedCredentialInstance)
 		return false
 	}
 	ref := statuslist.Reference{URI: *instance.StatusListURI, Index: *instance.StatusListIdx}
-	// context.Background: the disclosure planning path carries no cancellable
-	// context. Both network steps are bounded — the status-list GET by the
-	// checker's FetchTimeout and did:web signing-key resolution by its
-	// timeout-bounded HTTP client — so this cannot hang indefinitely.
-	status, err := s.checker.Check(context.Background(), ref)
+	status, err := s.checker.CheckCached(ref)
 	if err != nil {
-		eudi.Logger.Warnf("revocation: live status check failed for instance %s, treating as revoked: %v", instance.ID, err)
-		return true
+		eudi.Logger.Warnf("revocation: cached status read for instance %s: %v", instance.ID, err)
+		return false // advisory: undeterminable status -> not flagged
 	}
 	return statusRevoked(status)
 }
