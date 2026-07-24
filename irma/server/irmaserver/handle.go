@@ -64,6 +64,19 @@ func (session *sessionData) handleGetClientRequest(min, max *irma.ProtocolVersio
 		return nil, session.fail(server.ErrorRevocation, err.Error(), conf)
 	}
 
+	// The credential requests are stamped with the corrected random blind attribute identifiers at
+	// session creation. Clients that negotiate a protocol version below 2.9 expect the historical,
+	// off-by-one identifiers, so downgrade the identifiers we send them to keep the pre-session
+	// consistency check matching. See irma.CredentialType.RandomBlindAttributeNames[Legacy].
+	if issuanceRequest, ok := sessionRequest.(*irma.IssuanceRequest); ok && session.Version.Below(2, 9) {
+		for _, cred := range issuanceRequest.Credentials {
+			credtype := conf.IrmaConfiguration.CredentialTypes[cred.CredentialTypeID]
+			if credtype != nil {
+				cred.RandomBlindAttributeTypeIDs = credtype.RandomBlindAttributeNamesLegacy()
+			}
+		}
+	}
+
 	// Handle legacy clients that do not support condiscon, by attempting to convert the condiscon
 	// session request to the legacy session request format
 	legacy, legacyErr := sessionRequest.Legacy()
