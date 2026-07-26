@@ -243,6 +243,12 @@ type CredentialDescriptor struct {
 	Image        *Image            `json:"image,omitempty"`
 	Attributes   []Attribute       `json:"attributes"`
 	IssueURL     *TranslatedString `json:"issue_url,omitempty"`
+
+	// The credential type's FAQ texts from the scheme, so frontends can show
+	// the explanation content in flows that only receive a descriptor (e.g.
+	// obtaining a missing credential during disclosure). Nil for credentials
+	// without a scheme entry, such as generic EUDI credentials.
+	Faq *Faq `json:"faq,omitempty"`
 }
 
 // CredentialStoreItem is a credential descriptor with FAQ information.
