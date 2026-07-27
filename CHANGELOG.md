@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `clientmodels` DTOs ship resolved strings instead of translation maps (17 `TranslatedString` fields). The gomobile app must update in lockstep: pass the locale to `client.New`, call `SetLocale` on language changes, and drop client-side language picking.
 - Issuance downloads only the logo that resolves for the current locale, skipping cached ones, instead of the first available display's logo.
 - EUDI activity logs persist text resolved at creation time; on read, entries re-resolve against the stored credential's metadata for the active locale, falling back to the snapshot for deleted credentials and verifier names. Entries written by earlier versions (translation-map format) are decoded transparently.
+- Support for the IETF OAuth Token Status List (draft-ietf-oauth-status-list-15) on SD-JWT VC credentials: the wallet fetches, verifies, and caches Status List Tokens (`application/statuslist+jwt`), checks credential status at issuance, at disclosure, and on a background sweep, and exposes `Client.RefreshStatuses(ctx)` for UI-initiated refreshes.
 
 ### Fixed
 - EUDI storage writes are now atomic: `writeFile` writes to a temp file and renames it into place, so a crash or a concurrent write can no longer leave a partially written file behind. Previously a truncated ciphertext read back as a decryption error rather than as a missing file — the worse of the two failure modes, since it looks like corruption rather than absence.
@@ -27,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-07-22
 ### Added
-- Support for the IETF OAuth Token Status List (draft-ietf-oauth-status-list-15) on SD-JWT VC credentials: the wallet fetches, verifies, and caches Status List Tokens (`application/statuslist+jwt`), checks credential status at issuance, at disclosure, and on a background sweep, and exposes `Client.RefreshStatuses(ctx)` for UI-initiated refreshes.
 - `eudi/holderkeys`: a CGO-free package providing the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) so a WSCA adapter or a server-side (Postgres) holder can implement external holder-key signing without pulling in a sqlcipher (cgo) dependency.
 - Pluggable holder-key binding seams for external secure devices (WSCA/HSM): `openid4vci.NewClient` takes a required `HolderKeyBinder` and `eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler` a required `sdjwtvc.KeyBinder`, and `proofs.BuildWithES256Signer` signs the OpenID4VCI proof of possession via an external signer. Callers pass the software, storage-backed binder for the existing behaviour, or a WSCA/HSM-backed implementation.
 - `storage.NewStorageWithDialector(dialector, fs)`: open the EUDI holder database on any GORM dialector (e.g. `gorm.io/driver/postgres`) rather than only sqlcipher, for server-side / multi-tenant deployments. `NewStorage` is unchanged (it builds the sqlcipher dialector and delegates). The caller owns the at-rest encryption posture of a non-sqlcipher driver.
