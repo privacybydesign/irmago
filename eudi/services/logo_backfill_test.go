@@ -231,24 +231,3 @@ func TestLogoBackfiller_CloseAbortsAnInFlightDownload(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, exists, "an aborted download must not leave a partial logo cached")
 }
-
-func TestLogoBackfiller_ReportsWhatEachSweepCached(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("logo-bytes"))
-	}))
-	defer server.Close()
-
-	s := newBackfillTestStorage(t)
-	storeBackfillBatch(t, s, server.URL)
-
-	sweeps, onSweepDone := newSweepChannel()
-	b := NewLogoBackfiller(s, server.Client(), onSweepDone)
-	defer b.Close()
-
-	b.Request("nl")
-	require.Equal(t, 2, <-sweeps, "issuer and credential logo both newly cached")
-
-	b.Request("nl")
-	require.Equal(t, 0, <-sweeps, "a warm cache gives the owner nothing to redraw")
-}

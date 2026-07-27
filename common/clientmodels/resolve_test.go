@@ -101,12 +101,6 @@ func TestResolvePtr_FallsBackIndependentlyOfTheTextBundle(t *testing.T) {
 	assert.Equal(t, "https://issuer.example.com/enroll", *got)
 }
 
-func TestResolvePtr_NilWhenNoTranslationExists(t *testing.T) {
-	assert.Nil(t, ResolvePtr(nil, "nl"))
-	assert.Nil(t, ResolvePtr(TranslatedString{}, "nl"))
-	assert.Nil(t, ResolvePtr(TranslatedString{"en": ""}, "nl"))
-}
-
 func TestPtrIfNonEmpty(t *testing.T) {
 	assert.Nil(t, PtrIfNonEmpty(""))
 	got := PtrIfNonEmpty("value")

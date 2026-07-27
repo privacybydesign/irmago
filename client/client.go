@@ -248,7 +248,13 @@ func New(
 	}
 
 	client.sessionManager.Client = client
-	client.logoBackfill = services.NewLogoBackfiller(eudiStorage, common.HTTPClient, client.onLogosBackfilled)
+	client.logoBackfill = services.NewLogoBackfiller(eudiStorage, common.HTTPClient, func(cached int) {
+		// Re-read the credentials the app has already rendered, but only when
+		// the sweep put new logos on disk — nothing new, nothing to redraw.
+		if cached > 0 && handler != nil {
+			handler.UpdateAttributes()
+		}
+	})
 
 	// Startup backfill: fetch logos that resolve for the current locale but
 	// are missing from the cache (credentials issued before the wallet became
@@ -256,15 +262,6 @@ func New(
 	client.logoBackfill.Request(currentLocale.Get())
 
 	return client, nil
-}
-
-// onLogosBackfilled asks the app to re-read the credentials it has already
-// rendered, but only when a sweep actually put new logos on disk — a sweep that
-// found everything cached has nothing for the UI to redraw.
-func (client *Client) onLogosBackfilled(cached int) {
-	if cached > 0 && client.clientHandler != nil {
-		client.clientHandler.UpdateAttributes()
-	}
 }
 
 // SetLocale changes the locale used to resolve all app-facing text and logos.

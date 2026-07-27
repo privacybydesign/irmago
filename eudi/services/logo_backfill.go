@@ -33,10 +33,10 @@ type LogoBackfiller struct {
 	stopped chan struct{}
 }
 
-// NewLogoBackfiller starts the backfill worker. onSweepDone reports how many
-// logos a completed sweep cached, so the owner can decide whether that is worth
-// waking the UI for; it runs on the worker goroutine, and not at all for a sweep
-// cut short by Close. Call Close to stop the worker.
+// NewLogoBackfiller starts the worker. onSweepDone reports how many logos a
+// sweep cached, so the owner can decide whether that is worth waking the UI
+// for; it runs on the worker goroutine, and not at all for a sweep cut short
+// by Close.
 func NewLogoBackfiller(s storage.Storage, httpClient *http.Client, onSweepDone func(cached int)) *LogoBackfiller {
 	ctx, cancel := context.WithCancel(context.Background())
 	b := &LogoBackfiller{
@@ -84,10 +84,6 @@ func NewLogoBackfiller(s storage.Storage, httpClient *http.Client, onSweepDone f
 // immediately — no caller of this may block on the network — and supersedes any
 // sweep not yet started. Requests after Close are ignored.
 func (b *LogoBackfiller) Request(locale string) {
-	if locale == "" {
-		return
-	}
-
 	b.mu.Lock()
 	b.requested = locale
 	b.mu.Unlock()

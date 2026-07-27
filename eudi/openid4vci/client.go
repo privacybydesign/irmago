@@ -17,7 +17,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
-	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -497,17 +496,16 @@ func (client *Client) downloadLogos(
 	locale string,
 ) {
 	fs := client.Configuration.Storage.FileSystem()
-	fetch := func(manager filesystem.LogoManager, uris clientmodels.TranslatedString) {
-		services.FetchLogoIfMissing(ctx, manager, client.httpClient, clientmodels.Resolve(uris, locale))
-	}
+	services.FetchLogoIfMissing(ctx, fs.Issuers().LogoManager(), client.httpClient,
+		clientmodels.Resolve(metadata.LogoURIsByLanguage(issuerMetadata.Display), locale))
 
-	fetch(fs.Issuers().LogoManager(), metadata.LogoURIsByLanguage(issuerMetadata.Display))
 	for _, configID := range offer.CredentialConfigurationIds {
 		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
 		if !ok || config.CredentialMetadata == nil {
 			continue
 		}
-		fetch(fs.Credentials().LogoManager(), metadata.LogoURIsByLanguage(config.CredentialMetadata.Display))
+		services.FetchLogoIfMissing(ctx, fs.Credentials().LogoManager(), client.httpClient,
+			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale))
 	}
 }
 
