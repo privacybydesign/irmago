@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -89,7 +90,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*clientstorage.St
 	sdjwtStorage, err := NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
-	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 
 	x509Options, err := utils.CreateX509VerifyOptionsFromCertChain(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes)
 
@@ -100,7 +101,7 @@ func parseExistingStorage(t *testing.T, storageFolder string) (*clientstorage.St
 			VerifyOpts: *x509Options,
 		},
 		Clock:       eudi_jwt.NewSystemClock(),
-		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 
 	client, _ := NewIrmaClient(
@@ -605,7 +606,7 @@ func TestVerifyAndStoreSdJwtVc_GivenValidSdJwt_Succeeds(t *testing.T) {
 		panic(err)
 	}
 
-	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, _ := CreateTestSdJwtVc(keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
 		map[string]string{
 			"mobilephone": "+31612345678",
@@ -652,7 +653,7 @@ func TestVerifyAndStoreSdJwtVc_GivenInvalidSdJwt_Fails(t *testing.T) {
 		panic(err)
 	}
 
-	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	sdjwt, _ := CreateTestSdJwtVc(
 		keyBinder,
 		"test.test.mobilephone",

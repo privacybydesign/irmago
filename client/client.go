@@ -24,6 +24,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -44,7 +45,7 @@ type Client struct {
 	openid4vciClient  *openid4vci.Client
 	irmaClient        *irmaclient.IrmaClient
 	logsStorage       irmaclient.LogsStorage
-	keyBinder         sdjwtvc.KeyBinder
+	keyBinder         sdjwt.KeyBinder
 	didValidator      *openid4vp.DidVerifierValidator
 	scheduler         gocron.Scheduler
 	sessionManager    sessionManager
@@ -110,7 +111,7 @@ func New(
 	}
 
 	keyBindingStorage := irmaclient.NewBboltKeyBindingStorage(s)
-	irmaKeyBinder := sdjwtvc.NewDefaultKeyBinder(keyBindingStorage)
+	irmaKeyBinder := sdjwt.NewDefaultKeyBinder(keyBindingStorage)
 
 	credStore := db.NewCredentialStore(eudiStorage.Db())
 	hbkStore := db.NewHolderBindingKeyStore(eudiStorage.Db())
@@ -144,7 +145,7 @@ func New(
 		credStore,
 		typemetadata.NewDefaultVctFetcher(nil),
 		typemetadata.NewDefaultIssuerFetcher(nil),
-		sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
+		sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
 		revocationService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder)
@@ -158,7 +159,7 @@ func New(
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
-		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: true,
 		StatusChecker: statusChecker,
 	}
@@ -188,7 +189,7 @@ func New(
 	sdJwtVcVerificationContextOpenID4VCI := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &eudiConf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
-		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 		VerifyVerifiableCredentialTypeInRequestorInfo: false,
 		StatusChecker: statusChecker,
 	}
@@ -320,8 +321,8 @@ func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {
 
 	result := irma.CredentialInfoList{}
 
-	for _, sdjwt := range sdjwtvcs {
-		result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwt))
+	for _, sdjwtvcMeta := range sdjwtvcs {
+		result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwtvcMeta))
 	}
 
 	result = append(result, idemix...)
@@ -362,7 +363,7 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
 		hashContent.WriteString(key + string(valueStr))
 	}
 
-	return sdjwtvc.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
+	return sdjwt.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
 }
 
 func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error) {

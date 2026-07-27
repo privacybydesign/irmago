@@ -7,12 +7,12 @@ import (
 	"fmt"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"go.etcd.io/bbolt"
 )
 
-func NewBboltKeyBindingStorage(storage *clientstorage.Storage) sdjwtvc.KeyBindingStorage {
+func NewBboltKeyBindingStorage(storage *clientstorage.Storage) sdjwt.KeyBindingStorage {
 	return &BboltKeyBindingStorage{
 		storage: storage,
 	}

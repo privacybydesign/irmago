@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -81,7 +82,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, len(m))
 	for i, batch := range m {
-		var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
+		var processedSdJwtPayload *sdjwt.ProcessedPayload
 		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &processedSdJwtPayload); err != nil {
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
 		}
@@ -508,7 +509,7 @@ func (s *credentialService) linkHolderBindingKeys(keyIDs []datatypes.UUID, insta
 
 // matchHolderBindingKey resolves the holder binding key ID from the credential's cnf claim
 // by matching against the known thumbprints and DID URLs.
-func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]datatypes.UUID, keyByDidUrl map[string]datatypes.UUID) (datatypes.UUID, error) {
+func matchHolderBindingKey(cnf *sdjwt.CnfField, keyByThumbprint map[string]datatypes.UUID, keyByDidUrl map[string]datatypes.UUID) (datatypes.UUID, error) {
 	// Try DID URL (kid) first.
 	if cnf.Kid != nil {
 		if keyID, ok := keyByDidUrl[*cnf.Kid]; ok {
@@ -538,7 +539,7 @@ func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]dat
 // DisplayName: nil. Top-level keys are ordered by metadata position, then
 // alphabetically for keys absent from the metadata.
 func BuildAttributesFromPayload(
-	payload *sdjwtvc.ProcessedSdJwtPayload,
+	payload *sdjwt.ProcessedPayload,
 	lookup map[string]clientmodels.TranslatedString,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
@@ -560,7 +561,7 @@ func BuildAttributesFromPayload(
 }
 
 func buildAttributesFromPayload(
-	payload *sdjwtvc.ProcessedSdJwtPayload,
+	payload *sdjwt.ProcessedPayload,
 	lookup map[string]clientmodels.TranslatedString,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {

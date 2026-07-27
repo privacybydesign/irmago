@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	clientstorage "github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/concmap"
 	"github.com/privacybydesign/irmago/irma"
@@ -63,7 +64,7 @@ type IrmaClient struct {
 
 	// Where we store/load SD-JWT-VC related data to/from
 	sdJwtVcStorage SdJwtVcStorage
-	keyBinder      sdjwtvc.KeyBinder
+	keyBinder      sdjwt.KeyBinder
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
 
 	// Versions the client supports
@@ -126,7 +127,7 @@ func NewIrmaClient(
 	storage *storage,
 	sdJwtVerificationContext sdjwtvc.SdJwtVcVerificationContext,
 	sdJwtVcStorage SdJwtVcStorage,
-	keyBinder sdjwtvc.KeyBinder,
+	keyBinder sdjwt.KeyBinder,
 ) (*IrmaClient, error) {
 	var err error
 

@@ -25,6 +25,7 @@ import (
 	"github.com/privacybydesign/gabi/revocation"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/internal/common"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/irma"
@@ -865,29 +866,29 @@ func (session *sessionData) generateSdJwts(
 		}
 		credentialType := cred.CredentialTypeID.String()
 
-		creator := sdjwtvc.NewJwtCreator(sdJwtIssuer.PrivKey)
+		creator := sdjwt.NewJwtCreator(sdJwtIssuer.PrivKey)
 
 		// Calculate how many SD-JWTs to issue for this credential
 		// TODO: this will change when we change the client to send pub-keys in stead of specifying a batch size
 		validUntil := time.Time(*cred.Validity).Unix()
 
 		for range cred.SdJwtBatchSize {
-			holderKeyClaim, err := sdjwtvc.HolderKeyClaim(kbPubKeys[index])
+			holderKeyClaim, err := sdjwt.HolderKeyClaim(kbPubKeys[index])
 			if err != nil {
 				return nil, err
 			}
-			claims := []*sdjwtvc.ClaimElement{
-				sdjwtvc.Claim(sdjwtvc.Key_SdAlg, iana.SHA256),
-				sdjwtvc.Claim(sdjwtvc.Key_Issuer, sdJwtIssuer.IssuerUrl),
-				sdjwtvc.Claim(sdjwtvc.Key_VerifiableCredentialType, credentialType),
-				sdjwtvc.Claim(sdjwtvc.Key_ExpiryTime, validUntil),
-				sdjwtvc.Claim(sdjwtvc.Key_IssuedAt, issuanceTime),
+			claims := []*sdjwt.ClaimElement{
+				sdjwt.Claim(sdjwt.Key_SdAlg, iana.SHA256),
+				sdjwt.Claim(sdjwt.Key_Issuer, sdJwtIssuer.IssuerUrl),
+				sdjwt.Claim(sdjwtvc.Key_VerifiableCredentialType, credentialType),
+				sdjwt.Claim(sdjwt.Key_ExpiryTime, validUntil),
+				sdjwt.Claim(sdjwt.Key_IssuedAt, issuanceTime),
 				holderKeyClaim,
 			}
 
 			// add all attributes as sd claims
 			for key, value := range cred.Attributes {
-				claims = append(claims, sdjwtvc.SdClaim(key, value))
+				claims = append(claims, sdjwt.SdClaim(key, value))
 			}
 
 			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().

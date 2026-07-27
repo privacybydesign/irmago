@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -349,7 +350,7 @@ func makeFetchedCredential(configID, vct string, payload map[string]any) *fetche
 				IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 					VerifiableCredentialType: vct,
 				},
-				ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload(payload),
+				ProcessedSdJwtPayload: sdjwt.ProcessedPayload(payload),
 			},
 		},
 	}

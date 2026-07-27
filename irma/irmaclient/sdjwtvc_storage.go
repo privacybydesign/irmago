@@ -7,6 +7,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	sdjwtpkg "github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/irma"
 	"go.etcd.io/bbolt"
@@ -130,7 +131,7 @@ func (s *BboltSdJwtVcStorage) RemoveCredentialByHash(hash string) (holderKeys []
 				return fmt.Errorf("failed to decrypt sdjwt while extracting holder key: %v", err)
 			}
 			sdjwt := sdjwtvc.SdJwtVc(sdjwtBytes)
-			_, holderKey, err := sdjwtvc.ExtractHashingAlgorithmAndHolderPubKey(sdjwt)
+			_, holderKey, err := sdjwtpkg.ExtractHashingAlgorithmAndHolderPubKey(sdjwtpkg.SdJwt(sdjwt))
 			if err != nil {
 				return err
 			}
