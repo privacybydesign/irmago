@@ -285,9 +285,7 @@ func TestScopedFS_ConcurrentWritesNeverExposeAPartialFile(t *testing.T) {
 	stop := make(chan struct{})
 
 	for i := range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			payload := small
 			if i%2 == 1 {
 				payload = large
@@ -300,7 +298,7 @@ func TestScopedFS_ConcurrentWritesNeverExposeAPartialFile(t *testing.T) {
 				}
 				require.NoError(t, scope.Write("k", "", payload))
 			}
-		}()
+		})
 	}
 
 	for range 300 {
