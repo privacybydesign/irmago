@@ -31,6 +31,10 @@ type VerifiedSdJwtVc struct {
 	rawSdJwtVc SdJwtVc
 }
 
+// ClockSkewInSeconds matches statuslist.ClockSkewSeconds. Kept separate:
+// the two are independently specified skew windows (SD-JWT VC time-field
+// validation vs. Status List Token time-field validation) that happen to
+// coincide at 180s — do not deduplicate them into a shared constant.
 const ClockSkewInSeconds = 180
 
 // timeToUnixOrZero returns 0 if t is the zero time (i.e. the claim was missing),
