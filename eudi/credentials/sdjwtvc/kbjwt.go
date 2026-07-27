@@ -35,6 +35,12 @@ type KeyBindingJwtPayload struct {
 	Audience string `json:"aud"`
 }
 
+type CnfField struct {
+	Jwk *jwk.Key `json:"jwk,omitempty"`
+	// Note: kid can be any value, but for now we only support the did:jwk method, so it should be a string did:jwk reference to a key in the database with keybinding keys
+	Kid *string `json:"kid,omitempty"`
+}
+
 type KeyBindingStorage interface {
 	StorePrivateKeys(keys []*ecdsa.PrivateKey) error
 	GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error)

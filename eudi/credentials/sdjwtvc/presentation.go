@@ -1,10 +1,7 @@
 package sdjwtvc
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"strings"
 
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
@@ -335,30 +332,4 @@ func resolveArrayIndex(currentValue any, idx int, addFn func(string), byHash map
 	}
 
 	return elem
-}
-
-// DecodeJwtPayload extracts and decodes the payload of the issuer-signed JWT
-// from an SD-JWT VC. The disclosures and KB-JWT suffix are stripped first.
-func DecodeJwtPayload(sdJwt SdJwtVc) (map[string]any, error) {
-	issJwt, _, err := splitSdJwtVc(sdJwt)
-	if err != nil {
-		return nil, err
-	}
-	return decodeJwtPayloadFromJwt(issJwt)
-}
-
-func decodeJwtPayloadFromJwt(jwt IssuerSignedJwt) (map[string]any, error) {
-	parts := strings.Split(string(jwt), ".")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid JWT: expected 3 parts, got %d", len(parts))
-	}
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to base64url-decode JWT payload: %v", err)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return nil, fmt.Errorf("failed to parse JWT payload JSON: %v", err)
-	}
-	return payload, nil
 }

@@ -3,6 +3,7 @@ package sdjwtvc
 import (
 	"crypto/ecdsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -10,6 +11,9 @@ import (
 	"os"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jws"
+	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
 )
 
@@ -70,4 +74,26 @@ func ReadEcdsaPrivateKey(path string) (*ecdsa.PrivateKey, error) {
 	}
 
 	return DecodeEcdsaPrivateKey(keyBytes)
+}
+
+func CreateUrlEncodedHash(algorithm iana.HashingAlgorithm, content string) (string, error) {
+	hash, err := iana.Sum(algorithm, content)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(hash), nil
+}
+
+type JwtVerifier interface {
+	Verify(jwt string, key any, sigAlg jwa.SignatureAlgorithm) (payload []byte, err error)
+}
+
+type JwxJwtVerifier struct{}
+
+func NewJwxJwtVerifier() *JwxJwtVerifier {
+	return &JwxJwtVerifier{}
+}
+
+func (v *JwxJwtVerifier) Verify(jwtString string, keyAny any, sigAlg jwa.SignatureAlgorithm) (payload []byte, err error) {
+	return jws.Verify([]byte(jwtString), jws.WithKey(sigAlg, keyAny))
 }
