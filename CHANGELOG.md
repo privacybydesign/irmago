@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SD-JWT VC credential displays now merge per field instead of per whole locale entry: when the VCT type-metadata document defines a `display` entry for a locale, `openid4vci.Merge` keeps VCT's value for every field it specifies but inherits any field VCT leaves empty (`logo`, `description`, `background_color`, `text_color`, `background_image`) from the OpenID4VCI `credential_metadata` entry for the same locale. Previously the whole VCI entry was dropped for that locale, so issuers that put the credential logo on the VCI side while the VCT `display` omitted it ended up with a blank credential logo in the wallet ([#635](https://github.com/privacybydesign/irmago/issues/635)).
 - Credential, issuer and verifier logos now keep their MIME type: the EUDI `LogoManager` stores the Content-Type reported on download (or by the verifier's scheme data) alongside the image bytes, and `LoadLogoImage` returns it in `clientmodels.Image.MimeType`. Previously the MIME type was discarded, so wallets could not tell SVG logos apart from bitmaps and SD-JWT VC credential logos in SVG format rendered blank ([irmamobile#674](https://github.com/privacybydesign/irmamobile/issues/674)). **Breaking (internal API):** `filesystem.LogoManager.Save` takes an extra `mimeType` parameter and `Get` returns it.
 
+## Internal
+- Refactor the SD-JWT implementation to correctly split the SD-JWT and SD-JWT VC specification details into seperate packages.
+
 ## [1.2.0] - 2026-07-22
 ### Added
 - Support for the IETF OAuth Token Status List (draft-ietf-oauth-status-list-15) on SD-JWT VC credentials: the wallet fetches, verifies, and caches Status List Tokens (`application/statuslist+jwt`), checks credential status at issuance, at disclosure, and on a background sweep, and exposes `Client.RefreshStatuses(ctx)` for UI-initiated refreshes.
