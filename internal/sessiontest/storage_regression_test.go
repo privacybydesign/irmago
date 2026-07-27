@@ -322,24 +322,36 @@ func setupStorageRegressionClient(t *testing.T, version string) (*client.Client,
 // is version-agnostic and shared by every per-version test.
 func assertLoadedClientUsable(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
 	t.Helper()
+	assertFreshIrmaSessionsWork(t, c, sessionHandler, irmaServer)
+	assertFreshOpenID4VCISessionsWork(t, c, sessionHandler)
+	assertStatusListSessionsWork(t, c, sessionHandler)
+}
 
-	// A fresh IRMA issuance into the loaded client.
+// assertFreshIrmaSessionsWork runs a fresh IRMA issuance, non-keyshare and
+// keyshare disclosures, and an OpenID4VP disclosure of an IRMA-issued SD-JWT
+// (served from bbolt) into the reloaded client.
+func assertFreshIrmaSessionsWork(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler, irmaServer *IrmaServer) {
+	t.Helper()
+
 	issue(t, irmaServer, c, sessionHandler, 1, createMijnOverheidIssuanceRequest())
 	issued := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_Success, issued.Status)
 
-	// IRMA disclosures (non-keyshare + keyshare) and an OpenID4VP disclosure of an
-	// IRMA-issued SD-JWT (served from bbolt).
 	performDisclosureSessionForAttribute(t, c, 2, sessionHandler, irmaServer, "irma-demo.MijnOverheid.fullName.familyname")
 	performKeyshareDisclosureSession(t, c, 3, sessionHandler, irmaServer, "test.test.email.email")
 	discloseOverOpenID4VP(t, c, 4, sessionHandler, testdata.OpenID4VP_DirectPost_Host)
+}
 
-	// A fresh OpenID4VCI issuance into the loaded client (veramo issuer), then an
-	// OpenID4VP disclosure of that EUDI credential (veramo verifier).
+// assertFreshOpenID4VCISessionsWork runs a fresh OpenID4VCI issuance (veramo
+// issuer) and then an OpenID4VP disclosure of that EUDI credential (veramo
+// verifier) into the reloaded client.
+func assertFreshOpenID4VCISessionsWork(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler) {
+	t.Helper()
+
 	issueCredentialViaOpenID4VCI(t, c, 5, sessionHandler, "TestCredentialSdJwt",
 		`{"given_name": "Reload", "family_name": "Check", "email": "reload@example.com"}`)
 
-	veramoSession := createVeramoVerifierDcqlSessionWithQuery(t, `{
+	session := discloseViaVeramoOpenID4VP(t, c, 6, sessionHandler, `{
 		"dcql": {
 			"credentials": [
 				{
@@ -351,12 +363,76 @@ func assertLoadedClientUsable(t *testing.T, c *client.Client, sessionHandler *Mo
 			]
 		}
 	}`)
-	startOpenID4VPDisclosureSession(t, c, 6, veramoSession.RequestUri)
+	require.Equal(t, clientmodels.Status_Success, session.Status)
+}
+
+// assertStatusListSessionsWork issues a status-list SD-JWT (the issuance-time
+// holder status check passes on the freshly-allocated VALID bit) and then
+// discloses it twice over OpenID4VP: once while VALID (succeeds), and once after
+// revocation. The wallet does not fail closed at disclosure (matching IRMA); it
+// surfaces the revocation on the plan, so the revoked run asserts the plan's
+// Revoked flag rather than the session outcome.
+func assertStatusListSessionsWork(t *testing.T, c *client.Client, sessionHandler *MockSessionHandler) {
+	t.Helper()
+
+	issueStatusListCredential(t, c, sessionHandler, 7)
+
+	statusListDcql := `{
+		"dcql": {
+			"credentials": [
+				{
+					"id": "statuslist-cred",
+					"format": "dc+sd-jwt",
+					"meta": { "vct_values": ["https://localhost:8443/vct/statuslist"] },
+					"claims": [ { "path": ["email"] } ]
+				}
+			]
+		}
+	}`
+
+	// Not revoked: disclosure-time status check reads the cached VALID token and succeeds.
+	valid := discloseViaVeramoOpenID4VP(t, c, 8, sessionHandler, statusListDcql)
+	require.Equal(t, clientmodels.Status_Success, valid.Status)
+
+	// Revoked: revoke at the issuer and refresh so the wallet observes it. The
+	// wallet does not fail closed at disclosure — it surfaces the revocation on
+	// the disclosure plan and leaves the decision to the frontend and the
+	// verifier. Assert the plan marks the instance Revoked (a deterministic,
+	// wallet-owned guarantee) rather than the session outcome (which depends on
+	// the external verifier's own status check).
+	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
+	require.NoError(t, c.RefreshStatuses(context.Background()))
+
+	revoked := awaitDisclosurePermission(t, c, 9, sessionHandler, statusListDcql)
+	revokedCred := revoked.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0].Credentials[0]
+	require.True(t, revokedCred.Revoked,
+		"a revoked status-list credential must be surfaced as Revoked on the disclosure plan")
+}
+
+// discloseViaVeramoOpenID4VP runs a full OpenID4VP disclosure against the veramo
+// verifier for the given DCQL query: it awaits the permission request, grants
+// the first owned option, and returns the final session state for the caller to
+// assert on.
+func discloseViaVeramoOpenID4VP(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, dcql string) clientmodels.SessionState {
+	t.Helper()
+
+	session := awaitDisclosurePermission(t, c, sessionId, sessionHandler, dcql)
+	grantPermission(t, c, session.Id, makeDisclosureChoice(session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
+	return awaitSessionState(t, sessionHandler)
+}
+
+// awaitDisclosurePermission starts an OpenID4VP disclosure against the veramo
+// verifier for the given DCQL query and returns the session state once it
+// reaches RequestPermission, without granting — so callers can inspect the
+// disclosure plan (e.g. a candidate's Revoked flag) before deciding.
+func awaitDisclosurePermission(t *testing.T, c *client.Client, sessionId int, sessionHandler *MockSessionHandler, dcql string) clientmodels.SessionState {
+	t.Helper()
+
+	verifierSession := createVeramoVerifierDcqlSessionWithQuery(t, dcql)
+	startOpenID4VPDisclosureSession(t, c, sessionId, verifierSession.RequestUri)
 	session := awaitSessionState(t, sessionHandler)
 	require.Equal(t, clientmodels.Status_RequestPermission, session.Status)
-	grantPermission(t, c, session.Id, makeDisclosureChoice(session.DisclosurePlan.DisclosureChoicesOverview[0].OwnedOptions[0]))
-	session = awaitSessionState(t, sessionHandler)
-	require.Equal(t, clientmodels.Status_Success, session.Status)
+	return session
 }
 
 // assertLogsNewestFirst is a universal invariant across all fixtures: LoadNewestLogs

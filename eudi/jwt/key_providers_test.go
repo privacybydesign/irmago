@@ -636,3 +636,120 @@ func Test_KidKeyProvider_FetchKeys_UnsupportedDidMethod_ReturnsError(t *testing.
 	err := p.FetchKeys(context.Background(), &testKeySink{}, msg.Signatures()[0], msg)
 	require.ErrorContains(t, err, "unsupported DID method")
 }
+
+// ─── JwtKeyProvider ──────────────────────────────────────────────────────────
+
+// newSignedJWSMessageWithTyp signs a JWT with the given key and writes the
+// requested 'typ' value into the JWS protected header.
+func newSignedJWSMessageWithTyp(t *testing.T, issuer string, privKey any, alg jwa.SignatureAlgorithm, typ string, headerExtra map[string]any) *jws.Message {
+	t.Helper()
+	tok, err := jwt.NewBuilder().Issuer(issuer).Build()
+	require.NoError(t, err)
+	headers := jws.NewHeaders()
+	require.NoError(t, headers.Set(jws.TypeKey, typ))
+	for k, v := range headerExtra {
+		require.NoError(t, headers.Set(k, v))
+	}
+	tokenBytes, err := jwt.Sign(tok, jwt.WithKey(alg, privKey, jws.WithProtectedHeaders(headers)))
+	require.NoError(t, err)
+	msg, err := jws.Parse(tokenBytes)
+	require.NoError(t, err)
+	return msg
+}
+
+func Test_JwtKeyProvider_FetchKeys_NilSignature_ReturnsError(t *testing.T) {
+	p := NewJwtKeyProvider([]string{"any+jwt"}, false)
+	err := p.FetchKeys(context.Background(), &testKeySink{}, nil, nil)
+	require.ErrorContains(t, err, "missing JWS signature")
+}
+
+func Test_JwtKeyProvider_FetchKeys_MissingTypHeader_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	// Plain message — no typ header set.
+	msg := newTestJWSMessageSigned(t, "test", privKey, jwa.ES256())
+	sig := msg.Signatures()[0]
+
+	p := NewJwtKeyProvider([]string{"statuslist+jwt"}, false)
+	err = p.FetchKeys(context.Background(), &testKeySink{}, sig, msg)
+	require.ErrorContains(t, err, "invalid 'typ' header")
+}
+
+func Test_JwtKeyProvider_FetchKeys_DisallowedTyp_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	msg := newSignedJWSMessageWithTyp(t, "test", privKey, jwa.ES256(), "dc+sd-jwt", nil)
+	sig := msg.Signatures()[0]
+
+	p := NewJwtKeyProvider([]string{"statuslist+jwt"}, false)
+	err = p.FetchKeys(context.Background(), &testKeySink{}, sig, msg)
+	require.ErrorContains(t, err, "invalid 'typ' header")
+}
+
+func Test_JwtKeyProvider_FetchKeys_AllowedTyp_NoKeyReference_ReturnsError(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	msg := newSignedJWSMessageWithTyp(t, "test", privKey, jwa.ES256(), "statuslist+jwt", nil)
+	sig := msg.Signatures()[0]
+
+	p := NewJwtKeyProvider([]string{"statuslist+jwt"}, false)
+	err = p.FetchKeys(context.Background(), &testKeySink{}, sig, msg)
+	require.ErrorContains(t, err, "no supported key reference header")
+}
+
+func Test_JwtKeyProvider_FetchKeys_AllowedTyp_WithX5c_DispatchesToX509Provider(t *testing.T) {
+	derBytes, privKey, _ := newTestECDSACert(t)
+	chain := newTestCertChain(t, derBytes)
+
+	msg := newSignedJWSMessageWithTyp(t, "test", privKey, jwa.ES256(), "statuslist+jwt", map[string]any{
+		jws.X509CertChainKey: chain,
+	})
+	sig := msg.Signatures()[0]
+
+	p := NewJwtKeyProvider([]string{"statuslist+jwt"}, false)
+	sink := &testKeySink{}
+	err := p.FetchKeys(context.Background(), sink, sig, msg)
+	require.NoError(t, err)
+	require.Equal(t, jwa.ES256(), sink.alg)
+	require.NotNil(t, sink.key)
+
+	_, isX509 := p.InnerKeyProvider.(*X509KeyProvider)
+	require.True(t, isX509, "InnerKeyProvider should be *X509KeyProvider after x5c dispatch")
+}
+
+func Test_JwtKeyProvider_FetchKeys_AllowedTyp_WithKid_DispatchesToKidProvider(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	didJwk := newTestDidJwk(t, privKey)
+
+	msg := newSignedJWSMessageWithTyp(t, didJwk, privKey, jwa.ES256(), "statuslist+jwt", map[string]any{
+		jws.KeyIDKey: "#0",
+	})
+	sig := msg.Signatures()[0]
+
+	p := NewJwtKeyProvider([]string{"statuslist+jwt"}, false)
+	sink := &testKeySink{}
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
+	require.NoError(t, err)
+	require.Equal(t, jwa.ES256(), sink.alg)
+	require.NotNil(t, sink.key)
+
+	_, ok := p.InnerKeyProvider.(*KidKeyProvider)
+	require.True(t, ok, "InnerKeyProvider should be *KidKeyProvider after kid dispatch")
+}
+
+func Test_JwtKeyProvider_FetchKeys_MultipleAllowedTyps_AcceptsAny(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	didJwk := newTestDidJwk(t, privKey)
+
+	for _, typ := range []string{"dc+sd-jwt", "vc+sd-jwt"} {
+		msg := newSignedJWSMessageWithTyp(t, didJwk, privKey, jwa.ES256(), typ, map[string]any{
+			jws.KeyIDKey: "#0",
+		})
+		sig := msg.Signatures()[0]
+		p := NewJwtKeyProvider([]string{"dc+sd-jwt", "vc+sd-jwt"}, false)
+		err = p.FetchKeys(context.Background(), &testKeySink{}, sig, msg)
+		require.NoError(t, err, "typ %s should be accepted", typ)
+	}
+}

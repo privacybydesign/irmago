@@ -46,6 +46,13 @@ func isHttpVct(vct string) bool {
 	return strings.HasPrefix(vct, "https://") || strings.HasPrefix(vct, "http://")
 }
 
+// RevocationChecker reports whether a stored credential instance is currently
+// revoked. The disclosure planner depends only on this narrow verb, keeping the
+// Token Status List mechanics out of this package (see services.RevocationService).
+type RevocationChecker interface {
+	IsRevoked(instance *models.IssuedCredentialInstance) bool
+}
+
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC
 // credentials stored in the eudi storage (SQLite).
 type SdJwtVcDcqlHandler struct {
@@ -54,6 +61,10 @@ type SdJwtVcDcqlHandler struct {
 	keyBinder       sdjwtvc.KeyBinder
 	vctFetcher      typemetadata.VctFetcher
 	issuerFetcher   typemetadata.IssuerFetcher
+
+	// revocation determines a candidate's Revoked flag. Nil disables the check
+	// (candidates are then never flagged revoked).
+	revocation RevocationChecker
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
@@ -67,16 +78,19 @@ type SdJwtVcDcqlHandler struct {
 // WSCA/HSM-backed implementation to keep the holder private key out of process.
 func NewSdJwtVcDcqlHandler(
 	eudiStorage storage.Storage,
+	credentialStore db.CredentialStore,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
 	keyBinder sdjwtvc.KeyBinder,
+	revocation RevocationChecker,
 ) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
-		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
+		credentialStore: credentialStore,
 		keyBinder:       keyBinder,
 		vctFetcher:      vctFetcher,
 		issuerFetcher:   issuerFetcher,
+		revocation:      revocation,
 	}
 }
 
@@ -116,6 +130,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	}
 
 	now := time.Now()
+
 	hasExhaustedBatch := false
 	for _, batch := range batches {
 		if !isBatchValid(batch, now) {
@@ -128,7 +143,11 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			continue
 		}
 
-		rawSdJwt, _ := loadRawSdJwt(batch, h.credentialStore)
+		instance, err := h.credentialStore.GetUnusedInstance(batch.ID)
+		if err != nil {
+			continue
+		}
+		rawSdJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
 		attributes, err := parseBatchAttributes(batch, query, rawSdJwt)
 		if err != nil {
 			continue
@@ -149,6 +168,8 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Attributes:                  attributes,
 			ExpiryDate:                  expiryUnix(batch),
 			Image:                       image,
+			Revoked:                     h.revocation != nil && h.revocation.IsRevoked(instance),
+			RevocationSupported:         instance.StatusListURI != nil,
 		}
 
 		if batch.IssuedAt.Valid {
