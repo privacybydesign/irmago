@@ -44,7 +44,7 @@ func CreateTestSdJwtVcWithHolderKey[T sdjwtvc.LeafClaimDataType](vct, issuerUrl 
 		sdjwtClaims = append(sdjwtClaims, sdjwtvc.SdClaim(key, value))
 	}
 
-	return sdjwtvc.NewSdJwtBuilder().
+	return sdjwtvc.NewSdJwtVcBuilder().
 		WithPayload(sdjwtClaims...).
 		WithIssuerCertificateChain(x5c).
 		Build(sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey())

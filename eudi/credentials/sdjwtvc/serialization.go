@@ -55,7 +55,7 @@ func CreateTestSdJwtVc() (SdJwtVc, error) {
 		return "", err
 	}
 
-	return NewSdJwtBuilder().
+	return NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_Subject, "6c5c0a49-b589-431d-bae7-219122a9ec2c"),
 			Claim(Key_SdAlg, iana.SHA256),

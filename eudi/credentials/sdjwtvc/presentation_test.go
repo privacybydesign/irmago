@@ -9,7 +9,7 @@ import (
 
 func buildTestSdJwtWithNestedClaims(t *testing.T) SdJwtVc {
 	t.Helper()
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
@@ -145,7 +145,7 @@ func TestCreatePresentation_DuplicatePaths_NoDuplicateDisclosures(t *testing.T) 
 // buildMixedSdJwt has top-level claims where some are SD and some are plaintext.
 func buildMixedSdJwt(t *testing.T) SdJwtVc {
 	t.Helper()
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
@@ -164,7 +164,7 @@ func buildMixedSdJwt(t *testing.T) SdJwtVc {
 // an SD object containing a mix of SD and non-SD sub-claims.
 func buildMixedNestedSdJwt(t *testing.T) SdJwtVc {
 	t.Helper()
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
@@ -310,7 +310,7 @@ func TestCreatePresentation_MixedNested_CombinedPaths(t *testing.T) {
 //   - "scores": a plaintext array (non-SD, non-SD items)
 func buildSdJwtWithArrays(t *testing.T) SdJwtVc {
 	t.Helper()
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
@@ -342,7 +342,7 @@ func buildSdJwtWithArrays(t *testing.T) SdJwtVc {
 // buildSdJwtWithNestedArrayInObject has an object containing an SD array.
 func buildSdJwtWithNestedArrayInObject(t *testing.T) SdJwtVc {
 	t.Helper()
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
@@ -411,7 +411,7 @@ func TestCreatePresentation_SdArrayElement_OutOfBounds_NoError(t *testing.T) {
 
 func TestCreatePresentation_SdArrayElement_MultipleIndices(t *testing.T) {
 	// Build an array with multiple SD items.
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
@@ -454,7 +454,7 @@ func TestCreatePresentation_SdArrayElement_MultipleIndices(t *testing.T) {
 // This tests the combination of SD objects → arrays with SD elements → scalar values.
 func buildComplexNestedSdJwt(t *testing.T) SdJwtVc {
 	t.Helper()
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
@@ -614,7 +614,7 @@ func TestCreatePresentation_ComplexNested_SelectBudgetSkipsTeam(t *testing.T) {
 //	        [0]: SdItem "Urbanism"
 func buildDeeplyNestedSdJwt(t *testing.T) SdJwtVc {
 	t.Helper()
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
@@ -922,7 +922,7 @@ func buildTestSdJwtWithoutSdAlg(t *testing.T) SdJwtVc {
 	t.Helper()
 	// Build an SD-JWT without _sd_alg. Per SD-JWT spec Section 4.1.1,
 	// the holder MUST default to sha-256 when _sd_alg is absent.
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_Issuer, "https://example.com"),
 			Claim(Key_VerifiableCredentialType, "TestCredential"),

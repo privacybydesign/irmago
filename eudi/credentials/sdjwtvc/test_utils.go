@@ -46,7 +46,7 @@ func createDefaultTestingSdJwt(t *testing.T, keyBinder KeyBinder) SdJwtVc {
 	holderKeyClaim, err := HolderKeyClaim(holderKey[0])
 	require.NoError(t, err)
 
-	sdJwt, err := NewSdJwtBuilder().
+	sdJwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			holderKeyClaim,
 			Claim(Key_Issuer, issuer),

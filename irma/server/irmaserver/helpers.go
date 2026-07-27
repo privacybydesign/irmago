@@ -890,7 +890,7 @@ func (session *sessionData) generateSdJwts(
 				claims = append(claims, sdjwtvc.SdClaim(key, value))
 			}
 
-			sdJwt, err := sdjwtvc.NewSdJwtBuilder().
+			sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
 				WithPayload(claims...).
 				WithIssuerCertificateChain(sdJwtIssuer.CertChainX5c).Build(creator)
 

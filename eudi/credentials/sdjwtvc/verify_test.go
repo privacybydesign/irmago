@@ -1421,7 +1421,7 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 
 	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
 
-	sdjwt, err := NewSdJwtBuilder().
+	sdjwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_ExpiryTime, time.Now().Unix()),
 			Claim(Key_Issuer, config.IssUrl),

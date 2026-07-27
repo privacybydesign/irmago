@@ -229,9 +229,15 @@ func (e *ClaimElement) encodeArray(mode encodeMode) (SerializedClaim, error) {
 	return marshalEmbedded(e.Key, result, disclosures)
 }
 
-type SdJwtBuilder struct {
+// Builder builds a plain SD-JWT (draft-ietf-oauth-selective-disclosure-jwt):
+// it enforces only the SD-JWT-core rule that `_sd_alg`, when provided, is a
+// supported hashing algorithm (defaulting to sha-256). It has no opinion on
+// `vct`, `iss`, or the `typ` header — callers set those explicitly via
+// WithTyp, or leave them out entirely.
+type Builder struct {
 	claims          []*ClaimElement
 	issuerCertChain []string
+	typ             string
 }
 
 func SdItem[T LeafClaimDataType](value T) *ClaimElement {
@@ -339,42 +345,33 @@ func JsonToClaimTree(key string, json map[string]any) (*ClaimElement, error) {
 	return Object(key, subClaims...), nil
 }
 
-func (b *SdJwtBuilder) WithPayload(claims ...*ClaimElement) *SdJwtBuilder {
+func (b *Builder) WithPayload(claims ...*ClaimElement) *Builder {
 	b.claims = claims
 	return b
 }
 
-func (b *SdJwtBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtBuilder {
+func (b *Builder) WithIssuerCertificateChain(certChain []string) *Builder {
 	b.issuerCertChain = certChain
 	return b
 }
 
-func (b *SdJwtBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
-	vctClaimFound := false
+// WithTyp sets the JWT `typ` header. SD-JWT core has no opinion on its
+// value; if unset, the header is omitted.
+func (b *Builder) WithTyp(typ string) *Builder {
+	b.typ = typ
+	return b
+}
+
+func (b *Builder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	var sdAlg iana.HashingAlgorithm
 	for _, c := range b.claims {
-		switch c.Key {
-		case Key_VerifiableCredentialType:
-			vctClaimFound = true
-		case Key_Issuer:
-			url, ok := c.Value.(string)
-			if !ok {
-				return "", fmt.Errorf("issuer url (iss) is provided but is not a string")
-			}
-
-			if !strings.HasPrefix(url, "https://") {
-				return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", url)
-			}
-		case Key_SdAlg:
+		if c.Key == Key_SdAlg {
 			alg, ok := c.Value.(iana.HashingAlgorithm)
 			if !ok {
 				return "", fmt.Errorf("provided '%v' claim not a string: %v", Key_SdAlg, c.Value)
 			}
 			sdAlg = alg
 		}
-	}
-	if !vctClaimFound {
-		return "", fmt.Errorf("'vct' claim required but not found")
 	}
 
 	rootNode := &ClaimElement{
@@ -403,7 +400,9 @@ func (b *SdJwtBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 
 	header := map[string]any{
 		"x5c": b.issuerCertChain,
-		"typ": "dc+sd-jwt",
+	}
+	if b.typ != "" {
+		header["typ"] = b.typ
 	}
 
 	result, err := jwtCreator.CreateSignedJwt(header, string(claimsJson.Value))
@@ -415,6 +414,57 @@ func (b *SdJwtBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 	return CreateSdJwtVc(IssuerSignedJwt(result), claimsJson.Disclosures), nil
 }
 
-func NewSdJwtBuilder() *SdJwtBuilder {
-	return &SdJwtBuilder{}
+func NewBuilder() *Builder {
+	return &Builder{}
+}
+
+// SdJwtVcBuilder builds an SD-JWT VC (draft-ietf-oauth-sd-jwt-vc) on top of
+// the generic SD-JWT Builder: it additionally requires a `vct` claim,
+// requires `iss` (when provided) to be a valid https:// URL, and sets the
+// `typ` header to SdJwtVcTyp.
+type SdJwtVcBuilder struct {
+	claims          []*ClaimElement
+	issuerCertChain []string
+}
+
+func (b *SdJwtVcBuilder) WithPayload(claims ...*ClaimElement) *SdJwtVcBuilder {
+	b.claims = claims
+	return b
+}
+
+func (b *SdJwtVcBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtVcBuilder {
+	b.issuerCertChain = certChain
+	return b
+}
+
+func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
+	vctClaimFound := false
+	for _, c := range b.claims {
+		switch c.Key {
+		case Key_VerifiableCredentialType:
+			vctClaimFound = true
+		case Key_Issuer:
+			url, ok := c.Value.(string)
+			if !ok {
+				return "", fmt.Errorf("issuer url (iss) is provided but is not a string")
+			}
+
+			if !strings.HasPrefix(url, "https://") {
+				return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", url)
+			}
+		}
+	}
+	if !vctClaimFound {
+		return "", fmt.Errorf("'vct' claim required but not found")
+	}
+
+	return NewBuilder().
+		WithPayload(b.claims...).
+		WithIssuerCertificateChain(b.issuerCertChain).
+		WithTyp(SdJwtVcTyp).
+		Build(jwtCreator)
+}
+
+func NewSdJwtVcBuilder() *SdJwtVcBuilder {
+	return &SdJwtVcBuilder{}
 }

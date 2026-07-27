@@ -83,7 +83,7 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 }
 
 func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
-	sdjwt, err := NewSdJwtBuilder().
+	sdjwt, err := NewSdJwtVcBuilder().
 		WithPayload(
 			Claim(Key_Issuer, "https://example.com"),
 			Claim(Key_VerifiableCredentialType, "pbdf.pbdf.email"),
