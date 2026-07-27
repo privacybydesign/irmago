@@ -14,10 +14,11 @@ import (
 // CredentialMetadata view. VCT is the authoritative source per OID4VCI
 // v1.0 § 12.2.4; VCI fills locales and claims that VCT does not cover.
 //
-// Granularity is per-locale-entry, not per-field: a locale present in VCT
-// is taken from VCT in its entirety, dropping the corresponding VCI entry
-// (including VCI-only fields such as BackgroundImage). Locales absent
-// from VCT survive from VCI unchanged.
+// Credential-level display merges per field, not per whole entry: for a
+// locale present in both sources, VCT wins each field it specifies, and any
+// field VCT leaves empty (Logo, Description, BackgroundColor, TextColor,
+// BackgroundImage) is inherited from the VCI entry for that locale. Locales
+// absent from VCT survive from VCI unchanged.
 //
 // Locale matching is BCP 47 base-language only (en-US and en collapse
 // to "en"); on collision the VCT entry wins and the canonical tag
@@ -31,8 +32,9 @@ import (
 // coercion (JSON-unmarshaled float64 matches Go int). Wildcard null
 // elements only match other null elements. On match, Path is taken from
 // VCT (cosmetic — both inputs canonicalise equal), Mandatory is taken
-// from VCI (VCT has no notion of it), and Display arrays are merged via
-// the same per-locale rules.
+// from VCI (VCT has no notion of it), and per-claim Display arrays are
+// merged per locale entry (a claim display carries only a name, so there
+// is no empty field to inherit from VCI).
 //
 // Output order is VCT-first with VCI-only entries appended in VCI's
 // relative order, applied to credential-level Display, Claims, and per-
@@ -50,6 +52,20 @@ func mergeCredentialDisplays(vct *typemetadata.VctTypeMetadata, vci *metadata.Cr
 	var out metadata.CredentialDisplays
 	emitted := map[string]struct{}{}
 
+	var vciDisplays metadata.CredentialDisplays
+	if vci != nil {
+		vciDisplays = vci.Display
+	}
+	// Index the first VCI entry per canonical locale key so a VCT entry can
+	// inherit fields VCT leaves empty from the VCI entry for the same locale.
+	vciByKey := map[string]int{}
+	for i, d := range vciDisplays {
+		key := canonicalLocaleKeyFromPtr(d.Locale)
+		if _, exists := vciByKey[key]; !exists {
+			vciByKey[key] = i
+		}
+	}
+
 	if vct != nil {
 		for _, d := range vct.Display {
 			key := canonicalLocaleKey(d.Locale)
@@ -57,22 +73,45 @@ func mergeCredentialDisplays(vct *typemetadata.VctTypeMetadata, vci *metadata.Cr
 				continue
 			}
 			emitted[key] = struct{}{}
-			out = append(out, vctDisplayToCredentialDisplay(d))
+			cd := vctDisplayToCredentialDisplay(d)
+			if idx, found := vciByKey[key]; found {
+				fillEmptyDisplayFields(&cd, vciDisplays[idx])
+			}
+			out = append(out, cd)
 		}
 	}
 
-	if vci != nil {
-		for _, d := range vci.Display {
-			key := canonicalLocaleKeyFromPtr(d.Locale)
-			if _, seen := emitted[key]; seen {
-				continue
-			}
-			emitted[key] = struct{}{}
-			out = append(out, d)
+	for _, d := range vciDisplays {
+		key := canonicalLocaleKeyFromPtr(d.Locale)
+		if _, seen := emitted[key]; seen {
+			continue
 		}
+		emitted[key] = struct{}{}
+		out = append(out, d)
 	}
 
 	return out
+}
+
+// fillEmptyDisplayFields implements the field-level fallback: every field the
+// VCT-derived entry leaves empty is inherited from the VCI entry for the same
+// locale. VCT wins each field it specifies; VCI only fills the gaps.
+func fillEmptyDisplayFields(dst *metadata.CredentialDisplay, vci metadata.CredentialDisplay) {
+	if dst.Logo == nil {
+		dst.Logo = vci.Logo
+	}
+	if dst.Description == "" {
+		dst.Description = vci.Description
+	}
+	if dst.BackgroundColor == "" {
+		dst.BackgroundColor = vci.BackgroundColor
+	}
+	if dst.TextColor == "" {
+		dst.TextColor = vci.TextColor
+	}
+	if dst.BackgroundImage == nil {
+		dst.BackgroundImage = vci.BackgroundImage
+	}
 }
 
 func mergeClaims(vct *typemetadata.VctTypeMetadata, vci *metadata.CredentialMetadata) []metadata.ClaimsDescription {

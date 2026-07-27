@@ -37,6 +37,7 @@ type session struct {
 	httpClient               *http.Client
 	handler                  Handler
 	storage                  storage.Storage
+	credentialService        services.CredentialService
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
 	holderKeyBinder          HolderKeyBinder
 
@@ -359,9 +360,8 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 }
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
-	credentialService := services.NewCredentialService(s.storage, s.locale)
 	for _, fc := range fetched {
-		err := credentialService.VerifyAndStoreIssuedCredentials(
+		err := s.credentialService.VerifyAndStoreIssuedCredentials(
 			fc.verifiedSdJwtVcs,
 			fc.credentialConfigurationId,
 			*s.credentialIssuerMetadata,

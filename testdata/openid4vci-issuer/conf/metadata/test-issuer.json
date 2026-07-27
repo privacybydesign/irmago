@@ -95,6 +95,62 @@
         }
       ]
     },
+    "StatusListCredentialSdJwt": {
+      "format": "dc+sd-jwt",
+      "scope": "StatusListCredentialSdJwt",
+      "extends": "TestCredential",
+      "cryptographic_binding_methods_supported": [
+        "did:jwk"
+      ],
+      "credential_signing_alg_values_supported": [
+        "ES256"
+      ],
+      "proof_types_supported": {
+        "jwt": {
+          "proof_signing_alg_values_supported": [
+            "ES256"
+          ]
+        }
+      },
+      "credential_metadata": {
+        "display": [
+          {
+            "name": "Status List Credential (SD-JWT)",
+            "locale": "en"
+          }
+        ],
+        "claims": [
+          {
+            "path": [
+              "given_name"
+            ],
+            "display": [
+              {
+                "name": "Given Name",
+                "locale": "en"
+              }
+            ]
+          },
+          {
+            "path": [
+              "email"
+            ],
+            "display": [
+              {
+                "name": "Email",
+                "locale": "en"
+              }
+            ]
+          }
+        ]
+      },
+      "display": [
+        {
+          "name": "Status List Credential (SD-JWT)",
+          "locale": "en"
+        }
+      ]
+    },
     "EmailCredentialSdJwt": {
       "format": "dc+sd-jwt",
       "scope": "EmailCredentialSdJwt",

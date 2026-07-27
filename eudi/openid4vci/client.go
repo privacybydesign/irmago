@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
@@ -31,6 +32,8 @@ type Client struct {
 	httpClient     *http.Client
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
+
+	credentialService services.CredentialService
 
 	// holderKeyBinder creates the holder binding keys and OpenID4VCI proofs of
 	// possession during issuance. It is a required dependency (software or
@@ -53,6 +56,7 @@ type Client struct {
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	credentialService services.CredentialService,
 	holderKeyBinder HolderKeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
@@ -67,11 +71,12 @@ func NewClient(httpClient *http.Client,
 	}
 
 	return &Client{
-		httpClient:      httpClient,
-		Configuration:   config,
-		holderVerifier:  holderVerifier,
-		holderKeyBinder: holderKeyBinder,
-		currentLocale:   currentLocale,
+		httpClient:        httpClient,
+		Configuration:     config,
+		holderVerifier:    holderVerifier,
+		credentialService: credentialService,
+		holderKeyBinder:   holderKeyBinder,
+		currentLocale:     currentLocale,
 	}, nil
 }
 
@@ -164,6 +169,7 @@ func (client *Client) handleCredentialOffer(
 		holderVerifier:             client.holderVerifier,
 		holderKeyBinder:            client.holderKeyBinder,
 		storage:                    client.Configuration.Storage,
+		credentialService:          client.credentialService,
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,
