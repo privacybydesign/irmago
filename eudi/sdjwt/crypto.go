@@ -2,13 +2,9 @@ package sdjwt
 
 import (
 	"crypto/ecdsa"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
-	"errors"
 	"maps"
-	"os"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwa"
@@ -47,25 +43,6 @@ func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]a
 	}
 
 	return jwt, nil
-}
-
-func DecodeEcdsaPrivateKey(bytes []byte) (*ecdsa.PrivateKey, error) {
-	block, _ := pem.Decode(bytes)
-	if block == nil || block.Type != "EC PRIVATE KEY" {
-		return nil, errors.New("failed to decode ecsda private key")
-	}
-
-	return x509.ParseECPrivateKey(block.Bytes)
-
-}
-
-func ReadEcdsaPrivateKey(path string) (*ecdsa.PrivateKey, error) {
-	keyBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return DecodeEcdsaPrivateKey(keyBytes)
 }
 
 func CreateUrlEncodedHash(algorithm iana.HashingAlgorithm, content string) (string, error) {

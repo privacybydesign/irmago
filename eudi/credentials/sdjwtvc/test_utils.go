@@ -11,12 +11,11 @@ import (
 
 	_ "embed"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
-	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
@@ -35,42 +34,6 @@ type x509TestConfig struct {
 	ShouldFail                     bool
 }
 
-func createDefaultTestingSdJwt(t *testing.T, keyBinder sdjwt.KeyBinder) SdJwtVc {
-	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
-	require.NoError(t, err)
-
-	issuer := "https://irma.app"
-	jwtCreator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
-
-	holderKey, err := keyBinder.CreateKeyPairs(1)
-	require.NoError(t, err)
-
-	holderKeyClaim, err := sdjwt.HolderKeyClaim(holderKey[0])
-	require.NoError(t, err)
-
-	sdJwt, err := NewSdJwtVcBuilder().
-		WithPayload(
-			holderKeyClaim,
-			sdjwt.Claim(sdjwt.Key_Issuer, issuer),
-			sdjwt.Claim(Key_VerifiableCredentialType, "pbdf.pbdf.email"),
-			sdjwt.Claim(sdjwt.Key_SdAlg, iana.SHA256),
-			sdjwt.SdClaim("family_name", "Yivi"),
-			sdjwt.SdClaim("location", "Utrecht"),
-		).
-		WithIssuerCertificateChain(irmaAppCert).
-		Build(jwtCreator)
-
-	require.NoError(t, err)
-
-	return sdJwt
-}
-
-func createKbJwt(t *testing.T, sdJwt SdJwtVc, keyBinder sdjwt.KeyBinder) sdjwt.KeyBindingJwt {
-	kbjwt, err := sdjwt.CreateKbJwt(sdjwt.SdJwt(sdJwt), keyBinder, "nonce", "Verifier")
-	require.NoError(t, err)
-	return kbjwt
-}
-
 func jsonToMap(t *testing.T, js string) map[string]any {
 	var result map[string]any
 	err := json.Unmarshal([]byte(js), &result)
@@ -79,7 +42,7 @@ func jsonToMap(t *testing.T, js string) map[string]any {
 }
 
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
-	key, err := sdjwt.DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
+	key, err := encryption.DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}
@@ -87,7 +50,7 @@ func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {
 }
 
 func readTestIssuerPrivateKey() (*ecdsa.PrivateKey, error) {
-	key, err := sdjwt.DecodeEcdsaPrivateKey(testdata.IssuerPrivKeyBytes)
+	key, err := encryption.DecodeEcdsaPrivateKey(testdata.IssuerPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}
@@ -100,10 +63,6 @@ func NewEcdsaJwtCreatorWithHolderTestKey() (sdjwt.JwtCreator, error) {
 		return nil, err
 	}
 	return sdjwt.NewJwtCreator(key), nil
-}
-
-func readHolderPublicJwk() (jwk.Key, error) {
-	return jwk.ParseKey(testdata.HolderPubJwkBytes)
 }
 
 // =======================================================================

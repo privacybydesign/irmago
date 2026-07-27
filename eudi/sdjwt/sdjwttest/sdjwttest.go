@@ -8,15 +8,9 @@ import (
 	"fmt"
 
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/testdata"
 )
-
-// NewDefaultEcdsaJwtCreatorWithHolderPrivateKey creates a JwtCreator backed by
-// the fixed holder test key.
-func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (sdjwt.JwtCreator, error) {
-	key, err := sdjwt.DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
-	return sdjwt.NewJwtCreator(key), err
-}
 
 // NewEcdsaJwtCreatorWithIssuerTestKey creates a JwtCreator backed by the fixed
 // issuer test key.
@@ -29,7 +23,7 @@ func NewEcdsaJwtCreatorWithIssuerTestKey() sdjwt.JwtCreator {
 }
 
 func readTestIssuerPrivateKey() (*ecdsa.PrivateKey, error) {
-	key, err := sdjwt.DecodeEcdsaPrivateKey(testdata.IssuerPrivKeyBytes)
+	key, err := encryption.DecodeEcdsaPrivateKey(testdata.IssuerPrivKeyBytes)
 	if err != nil || key == nil {
 		return nil, fmt.Errorf("failed to read ecdsa private key: %v", err)
 	}

@@ -20,9 +20,9 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/privacybydesign/gabi/gabikeys"
-	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
+	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/sirupsen/logrus"
 )
@@ -565,7 +565,7 @@ func readSdJwtIssuerPrivKeys(dir string) (map[irma.IssuerIdentifier]*ecdsa.Priva
 		if err != nil {
 			return nil, fmt.Errorf("failed to read ecdsa private key from '%v': %v", match, err)
 		}
-		privKey, err := sdjwt.DecodeEcdsaPrivateKey(bytes)
+		privKey, err := encryption.DecodeEcdsaPrivateKey(bytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode ecdsa private key from '%v': %v", match, err)
 		}
