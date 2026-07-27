@@ -14,7 +14,6 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
-	"github.com/privacybydesign/irmago/testdata"
 )
 
 type JwtCreator interface {
@@ -29,15 +28,6 @@ func NewJwtCreator(privateKey *ecdsa.PrivateKey) JwtCreator {
 	return &DefaultEcdsaJwtCreator{
 		privateKey: privateKey,
 	}
-}
-
-// NewDefaultEcdsaJwtCreatorWithHolderPrivateKey pulls in the irmago/testdata
-// fixture key; this is test-only code that will move to sdjwttest.
-func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (JwtCreator, error) {
-	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
-	return &DefaultEcdsaJwtCreator{
-		privateKey: key,
-	}, err
 }
 
 func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]any, payload string) (string, error) {

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestNewBuilder(t *testing.T) {
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 	irmaAppCert, err := utils.ParsePemCertificateChainToX5cFormat(testdata.IssuerCert_irma_app_Bytes)
 	require.NoError(t, err)
 	sdJwt, err := NewSdJwtVcBuilder().
@@ -113,13 +114,13 @@ func Test_BuildSdJwtVc_NoVct_BuildFailure(t *testing.T) {
 }
 
 func requireBuildFailure(t *testing.T, builder *SdJwtVcBuilder) {
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 	_, err := builder.Build(jwtCreator)
 	require.Error(t, err)
 }
 
 func requireValidSdJwtVc(t *testing.T, builder *SdJwtVcBuilder) {
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 	sdjwtvc, err := builder.Build(jwtCreator)
 	require.NoError(t, err)
 	context := CreateTestVerificationContext()

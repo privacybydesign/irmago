@@ -14,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -200,7 +201,7 @@ func createTestSdJwtVcWithHolderKey[T sdjwt.LeafClaimDataType](vct, issuerUrl st
 	return sdjwtvc.NewSdJwtVcBuilder().
 		WithPayload(sdjwtClaims...).
 		WithIssuerCertificateChain(x5c).
-		Build(sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
 }
 
 // TODO: this func becomes irrelevant once we have our own metadata storage (and no longer depend on metadata in the IrmaClient)

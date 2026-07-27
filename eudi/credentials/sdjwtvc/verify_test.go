@@ -7,6 +7,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
@@ -711,7 +712,7 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 	chain, err := utils.ParsePemCertificateChainToX5cFormat(config.IssuerCert)
 	require.NoError(t, err)
 
-	creator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	creator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 
 	builtSdJwtVc, err := NewSdJwtVcBuilder().
 		WithPayload(

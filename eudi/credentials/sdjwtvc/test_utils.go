@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
@@ -39,7 +40,7 @@ func createDefaultTestingSdJwt(t *testing.T, keyBinder sdjwt.KeyBinder) SdJwtVc 
 	require.NoError(t, err)
 
 	issuer := "https://irma.app"
-	jwtCreator := NewEcdsaJwtCreatorWithIssuerTestkey()
+	jwtCreator := sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey()
 
 	holderKey, err := keyBinder.CreateKeyPairs(1)
 	require.NoError(t, err)
@@ -75,17 +76,6 @@ func jsonToMap(t *testing.T, js string) map[string]any {
 	err := json.Unmarshal([]byte(js), &result)
 	require.NoError(t, err)
 	return result
-}
-
-// NewEcdsaJwtCreatorWithIssuerTestkey pulls in the irmago/testdata fixture
-// key; this is test-only code that will move to sdjwttest.
-func NewEcdsaJwtCreatorWithIssuerTestkey() sdjwt.JwtCreator {
-	key, err := readTestIssuerPrivateKey()
-	if err != nil {
-		return nil
-	}
-
-	return sdjwt.NewJwtCreator(key)
 }
 
 func readTestHolderPrivateKey() (*ecdsa.PrivateKey, error) {

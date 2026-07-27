@@ -9,6 +9,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/privacybydesign/irmago/testdata"
@@ -48,7 +49,7 @@ func CreateTestSdJwtVcWithHolderKey[T sdjwt.LeafClaimDataType](vct, issuerUrl st
 	return sdjwtvc.NewSdJwtVcBuilder().
 		WithPayload(sdjwtClaims...).
 		WithIssuerCertificateChain(x5c).
-		Build(sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
 }
 
 // CreateMultipleSdJwtVcsWithCustomKeyBinder creates multiple test SD-JWT VCs using a custom key binder.
