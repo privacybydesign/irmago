@@ -34,13 +34,17 @@ func (c *CurrentLocale) Get() string {
 	return c.v
 }
 
-func (c *CurrentLocale) Set(locale string) {
+// Set stores the locale and reports whether it differs from the previous one,
+// so callers can skip work when the app re-asserts a locale it already set.
+func (c *CurrentLocale) Set(locale string) (changed bool) {
 	if locale == "" {
 		locale = DefaultFallbackLanguage
 	}
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	changed = c.v != locale
 	c.v = locale
-	c.mu.Unlock()
+	return changed
 }
 
 // BundleLanguage returns the language the fallback chain picks for the text

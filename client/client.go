@@ -8,7 +8,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -57,8 +56,6 @@ type Client struct {
 	// logos. The app owns it: it supplies the initial value via New and
 	// updates it through SetLocale; irmago does not persist it.
 	currentLocale *clientmodels.CurrentLocale
-	// logoBackfillMutex serializes background logo-backfill sweeps.
-	logoBackfillMutex sync.Mutex
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -259,10 +256,12 @@ func New(
 // SetLocale changes the locale used to resolve all app-facing text and logos.
 // Non-blocking: text resolves offline from stored metadata on the next pull;
 // logos missing for the new locale are fetched by a background backfill that
-// signals ClientHandler.UpdateAttributes on completion.
+// signals ClientHandler.UpdateAttributes on completion. Re-setting the locale
+// the wallet already uses does nothing.
 func (client *Client) SetLocale(locale string) {
-	client.currentLocale.Set(locale)
-	client.requestLogoBackfill()
+	if client.currentLocale.Set(locale) {
+		client.requestLogoBackfill()
+	}
 }
 
 // locale returns the current locale for resolving app-facing text and logos.
@@ -271,14 +270,11 @@ func (client *Client) locale() string {
 }
 
 // requestLogoBackfill runs a background sweep fetching the logos that resolve
-// for the current locale but are not cached. Sweeps serialize on a mutex; each
-// sweep re-reads the locale at start, so a sweep queued behind another picks
-// up the newest locale. Repeat sweeps with a warm cache only perform Exists
-// checks, so redundant requests are cheap.
+// for the current locale but are not cached. One sweep per actual locale
+// change, so overlap needs no guarding: a sweep started for a superseded
+// locale only warms the cache for a language the user just left.
 func (client *Client) requestLogoBackfill() {
 	go func() {
-		client.logoBackfillMutex.Lock()
-		defer client.logoBackfillMutex.Unlock()
 		added := services.BackfillLogos(client.eudiStorage, common.HTTPClient, client.currentLocale.Get())
 		if added > 0 && client.clientHandler != nil {
 			client.clientHandler.UpdateAttributes()
