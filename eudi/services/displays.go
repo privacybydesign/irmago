@@ -1,8 +1,9 @@
 package services
 
 import (
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
@@ -90,12 +91,7 @@ func LoadResolvedLogo(manager filesystem.LogoManager, uris clientmodels.Translat
 	if img := eudi.LoadLogoImage(manager, clientmodels.Resolve(uris, locale)); img != nil {
 		return img
 	}
-	keys := make([]string, 0, len(uris))
-	for k := range uris {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(uris)) {
 		if img := eudi.LoadLogoImage(manager, uris[k]); img != nil {
 			return img
 		}
@@ -120,31 +116,32 @@ func BackfillLogos(s storage.Storage, httpClient *http.Client, locale string) in
 
 	added := 0
 	for _, batch := range batches {
-		if uri := clientmodels.Resolve(IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale); uri != "" {
-			added += fetchLogoIfMissing(issuerLogos, httpClient, uri)
-		}
+		added += FetchLogoIfMissing(issuerLogos, httpClient, clientmodels.Resolve(IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale))
 		if batch.CredentialMetadata != nil {
-			if uri := clientmodels.Resolve(CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale); uri != "" {
-				added += fetchLogoIfMissing(credentialLogos, httpClient, uri)
-			}
+			added += FetchLogoIfMissing(credentialLogos, httpClient, clientmodels.Resolve(CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale))
 		}
 	}
 	return added
 }
 
-// fetchLogoIfMissing downloads and caches a logo unless it is already cached.
-// Returns 1 when a logo was newly cached, 0 otherwise.
-func fetchLogoIfMissing(manager filesystem.LogoManager, httpClient *http.Client, uri string) int {
-	if exists, err := manager.Exists(uri); err != nil || exists {
+// FetchLogoIfMissing downloads and caches a logo unless the URI is empty or
+// the logo is already cached. Returns 1 when a logo was newly cached, 0
+// otherwise. An Exists error is treated as a miss: a redundant download beats
+// permanently skipping the logo.
+func FetchLogoIfMissing(manager filesystem.LogoManager, httpClient *http.Client, uri string) int {
+	if uri == "" {
+		return 0
+	}
+	if exists, err := manager.Exists(uri); err == nil && exists {
 		return 0
 	}
 	data, mimeType, err := helpers.DownloadRemoteImage(httpClient, uri)
 	if err != nil {
-		eudi.Logger.Warnf("logo backfill: failed to download logo from %q: %v", uri, err)
+		eudi.Logger.Warnf("failed to download logo from %q: %v", uri, err)
 		return 0
 	}
 	if err := manager.Save(uri, data, mimeType); err != nil {
-		eudi.Logger.Warnf("logo backfill: failed to cache logo from %q: %v", uri, err)
+		eudi.Logger.Warnf("failed to cache logo from %q: %v", uri, err)
 		return 0
 	}
 	return 1

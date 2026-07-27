@@ -1,7 +1,6 @@
 package clientmodels
 
 import (
-	"sort"
 	"sync"
 
 	"golang.org/x/text/language"
@@ -24,7 +23,12 @@ func NewCurrentLocale(locale string) *CurrentLocale {
 	return &CurrentLocale{v: locale}
 }
 
+// Get is nil-safe: a component constructed without a locale holder resolves
+// text with the default fallback language rather than panicking.
 func (c *CurrentLocale) Get() string {
+	if c == nil {
+		return DefaultFallbackLanguage
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.v
@@ -69,19 +73,15 @@ func BundleLanguage(locale string, fields ...TranslatedString) string {
 	}
 
 	// Deterministic last resort: the lowest key holding a non-empty value.
-	keys := []string{}
+	lowest := ""
 	for _, f := range fields {
 		for k, v := range f {
-			if v != "" {
-				keys = append(keys, k)
+			if v != "" && (lowest == "" || k < lowest) {
+				lowest = k
 			}
 		}
 	}
-	if len(keys) == 0 {
-		return ""
-	}
-	sort.Strings(keys)
-	return keys[0]
+	return lowest
 }
 
 // Resolve returns the translation of a standalone TranslatedString for the

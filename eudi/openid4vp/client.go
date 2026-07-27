@@ -60,9 +60,6 @@ func NewClient(
 	verifierValidator VerifierValidator,
 	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
-	if currentLocale == nil {
-		currentLocale = clientmodels.NewCurrentLocale("")
-	}
 	return &Client{
 		Configuration:     eudiConf,
 		dcqlHandler:       dcql.NewDcqlHandler(handlers),

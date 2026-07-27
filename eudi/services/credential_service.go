@@ -57,9 +57,6 @@ func NewCredentialService(
 	revocation *RevocationService,
 	currentLocale *clientmodels.CurrentLocale,
 ) CredentialService {
-	if currentLocale == nil {
-		currentLocale = clientmodels.NewCurrentLocale("")
-	}
 	return &credentialService{
 		credentialStore:       credentialStore,
 		holderBindingKeyStore: holderBindingKeyStore,

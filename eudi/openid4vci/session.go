@@ -312,7 +312,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
 
 		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(merged.Display), s.locale)
-		downloadLogoIfMissing(logoManager, s.httpClient, uri)
+		services.FetchLogoIfMissing(logoManager, s.httpClient, uri)
 	}
 	return nil
 }

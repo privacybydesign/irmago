@@ -23,9 +23,6 @@ type SdJwtVcDcqlHandler struct {
 
 // NewIrmaSdJwtVcDcqlHandler creates a new handler for DCQL credential queries for SD-JWT-VC credentials issued over IRMA.
 func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwtvc.KeyBinder, currentLocale *clientmodels.CurrentLocale) *SdJwtVcDcqlHandler {
-	if currentLocale == nil {
-		currentLocale = clientmodels.NewCurrentLocale("")
-	}
 	return &SdJwtVcDcqlHandler{
 		storage:       storage,
 		config:        config,

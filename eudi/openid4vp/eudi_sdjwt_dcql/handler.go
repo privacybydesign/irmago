@@ -86,9 +86,6 @@ func NewSdJwtVcDcqlHandler(
 	currentLocale *clientmodels.CurrentLocale,
 	revocation RevocationChecker,
 ) *SdJwtVcDcqlHandler {
-	if currentLocale == nil {
-		currentLocale = clientmodels.NewCurrentLocale("")
-	}
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: credentialStore,

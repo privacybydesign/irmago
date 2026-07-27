@@ -15,10 +15,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
-	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
-	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -66,10 +64,6 @@ func NewClient(httpClient *http.Client,
 	if holderKeyBinder == nil {
 		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
 	}
-	if currentLocale == nil {
-		currentLocale = clientmodels.NewCurrentLocale("")
-	}
-
 	return &Client{
 		httpClient:        httpClient,
 		Configuration:     config,
@@ -331,28 +325,9 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	// are fetched lazily by the backfill sweep when the locale changes.
 	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
 	issuerLogoURI := clientmodels.Resolve(metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), client.currentLocale.Get())
-	downloadLogoIfMissing(issuerLogoManager, client.httpClient, issuerLogoURI)
+	services.FetchLogoIfMissing(issuerLogoManager, client.httpClient, issuerLogoURI)
 
 	return &credentialIssuerMetadata, nil
-}
-
-// downloadLogoIfMissing fetches and caches a logo unless the URI is empty or
-// the logo is already cached.
-func downloadLogoIfMissing(manager filesystem.LogoManager, httpClient *http.Client, uri string) {
-	if uri == "" {
-		return
-	}
-	if exists, err := manager.Exists(uri); err == nil && exists {
-		return
-	}
-	logoData, logoMimeType, err := helpers.DownloadRemoteImage(httpClient, uri)
-	if err != nil {
-		eudi.Logger.Warnf("failed to download logo from %q: %v", uri, err)
-		return
-	}
-	if err := manager.Save(uri, logoData, logoMimeType); err != nil {
-		eudi.Logger.Warnf("failed to cache logo from %q: %v", uri, err)
-	}
 }
 
 func (client *Client) Dismiss() {
@@ -525,7 +500,7 @@ func (client *Client) downloadCredentialLogos(
 			continue
 		}
 		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale)
-		downloadLogoIfMissing(credentialLogoManager, client.httpClient, uri)
+		services.FetchLogoIfMissing(credentialLogoManager, client.httpClient, uri)
 	}
 }
 
