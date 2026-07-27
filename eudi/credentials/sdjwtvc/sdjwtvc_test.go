@@ -12,12 +12,14 @@ import (
 // is `iss` field is required
 func TestNoIssuerLinkIsErr(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
-		Subject:                  "subject",
+		RegisteredClaims: RegisteredClaims{
+			Subject:   "subject",
+			Expiry:    nil,
+			IssuedAt:  nil,
+			NotBefore: nil,
+			Issuer:    "",
+		},
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   nil,
-		IssuedAt:                 nil,
-		NotBefore:                nil,
-		Issuer:                   "",
 	}
 
 	_, err := IssuerSignedJwtPayload_ToJson(payload)
@@ -27,12 +29,14 @@ func TestNoIssuerLinkIsErr(t *testing.T) {
 // the `iss` field of the issuer signed jwt is required to have a valid https link
 func TestNoHttpsIssuerIsErr(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
-		Subject:                  "subject",
+		RegisteredClaims: RegisteredClaims{
+			Subject:   "subject",
+			Expiry:    nil,
+			IssuedAt:  nil,
+			NotBefore: nil,
+			Issuer:    "http://invalid.com",
+		},
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   nil,
-		IssuedAt:                 nil,
-		NotBefore:                nil,
-		Issuer:                   "http://invalid.com",
 	}
 
 	_, err := IssuerSignedJwtPayload_ToJson(payload)
@@ -41,12 +45,14 @@ func TestNoHttpsIssuerIsErr(t *testing.T) {
 
 func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 	payload := IssuerSignedJwtPayload{
-		Subject:                  "subject",
+		RegisteredClaims: RegisteredClaims{
+			Subject:   "subject",
+			Expiry:    nil,
+			IssuedAt:  nil,
+			NotBefore: nil,
+			Issuer:    "https://example.com",
+		},
 		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-		Expiry:                   nil,
-		IssuedAt:                 nil,
-		NotBefore:                nil,
-		Issuer:                   "https://example.com",
 	}
 
 	json, err := IssuerSignedJwtPayload_ToJson(payload)

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
-	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 // IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
@@ -46,42 +45,14 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 
 // IssuerSignedJwtPayload is a representation of the payload of the issuer signed jwt part of an SD-JWT VC
 type IssuerSignedJwtPayload struct {
-	// OPTIONAL: The identifier of the Subject of the Verifiable Credential.
-	// The Issuer MAY use it to provide the Subject identifier known by the Issuer.
-	// There is no requirement for a binding to exist between sub and cnf claims
-	Subject string
+	RegisteredClaims
 
 	// REQUIRED: the type of verifiable credential
 	VerifiableCredentialType string
 
-	// OPTIONAL. As defined in Section 4.1.1 of [RFC7519] this claim explicitly indicates the Issuer of the Verifiable Credential
-	// when it is not conveyed by other means (e.g., the subject of the end-entity certificate of an x5c header)
-	Issuer string
-
-	// OPTIONAL: list of hashed -> base64url encoded disclosures
-	// hashing algorithm is defined by `_sd_alg` field
-	// is allowed to be omitted, and is not allowed to be empty (should be omitted in that case)
-	Sd []HashedDisclosure
-
-	// OPTIONAL: hashing algorithm to be used for the disclosure hashes in `_sd` and the hash over
-	// the complete SD-JWT VC that can be found in the key binding JWT
-	SdAlg iana.HashingAlgorithm
-
-	// OPTIONAL: Public key (JWK or kid with did:jwk method) of the holder, which can be used to verify the key binding jwt
-	Confirm *CnfField
-
 	// OPTIONAL: The information on how to read the status of the verifiable credential
 	// (draft-ietf-oauth-status-list-15 §5.1).
 	Status *statuslist.StatusClaim
-
-	// OPTIONAL: expiry time, must not be accepted after this moment
-	Expiry *int64
-
-	// OPTIONAL: time of issuance
-	IssuedAt *int64
-
-	// OPTIONAL: The time before which the verifiable credential MUST NOT be accepted before validating
-	NotBefore *int64
 }
 
 // SdJwtVc_IssuerRepresentation is a representation of the SD-JWT VC that can be used by the issuer or holder to issue and disclose

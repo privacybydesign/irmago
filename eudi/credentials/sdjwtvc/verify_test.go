@@ -467,7 +467,9 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAn
 		"WyJQVzh1U3dIUGZPaDNmRU5KR0NlRUJRIiwibmF0aW9uYWxpdGllcyIsW3siLi4uIjoiYjdNVFhSWm1NeUUyMl9aeWlOdkFwNmh5Z0k1WThFeTZLTnVLVWFINmxpbyJ9LHsiLi4uIjoiaC1DUWxic2g3MHBxdVpkVmFnandZU29qV1VUNDFaelhmdnIzRkxDbzRLcyJ9XV0",
 	}
 	payload := IssuerSignedJwtPayload{
-		SdAlg: "sha-256",
+		RegisteredClaims: RegisteredClaims{
+			SdAlg: "sha-256",
+		},
 	}
 
 	issuerSignedJwtPayload := map[string]any{

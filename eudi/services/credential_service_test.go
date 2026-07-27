@@ -1095,10 +1095,12 @@ func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwtvc.CnfField) *sdjwtvc.Ve
 	now := time.Now().Unix()
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
-			Issuer:                   issuer,
+			RegisteredClaims: sdjwtvc.RegisteredClaims{
+				Issuer:   issuer,
+				IssuedAt: &now,
+				Confirm:  cnf,
+			},
 			VerifiableCredentialType: vct,
-			IssuedAt:                 &now,
-			Confirm:                  cnf,
 		},
 		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
 			"sub": "user123",
@@ -1327,11 +1329,13 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
-			Issuer:                   issuer,
+			RegisteredClaims: sdjwtvc.RegisteredClaims{
+				Issuer:    issuer,
+				IssuedAt:  &issuedAt,
+				Expiry:    &expiry,
+				NotBefore: &notBefore,
+			},
 			VerifiableCredentialType: vct,
-			IssuedAt:                 &issuedAt,
-			Expiry:                   &expiry,
-			NotBefore:                &notBefore,
 		},
 		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
 			"sub": "user123",
