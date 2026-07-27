@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -18,6 +19,12 @@ import (
 // key from the AES storage key. Bumping the version suffix produces an entirely
 // new keyspace without touching the AES key.
 const fsFilenameKeyHkdfInfo = "irmago-fs-filename-v1"
+
+// tmpFilePrefix marks the half-written files writeFile renames into place.
+// Real filenames are hex HMACs, so the prefix cannot collide with one; Walk
+// skips these, and a leftover from a crashed write is overwritten by the next
+// successful one.
+const tmpFilePrefix = ".tmp-"
 
 type fileManager struct {
 	basePath        string
@@ -174,22 +181,42 @@ func (s *fsStorage) Scope(fullPath string) *scopedFS {
 	return &scopedFS{parent: s, fullPath: fullPath}
 }
 
+// writeFile atomically replaces filePath with data. The encrypted bytes go to
+// a temp file in the same directory, which is then renamed over the target, so
+// a concurrent reader sees either the whole old file or the whole new one.
+// Writing in place would expose a truncated prefix, and a partial ciphertext
+// does not fail as "missing" — it fails as "present but undecryptable".
 func (s *fsStorage) writeFile(filePath string, data []byte) error {
 	encryptedData, err := s.encryptionMiddleware.Encrypt(data)
 	if err != nil {
 		return err
 	}
 
-	out, err := os.Create(filePath)
+	// Same directory keeps the rename within one filesystem, where it is atomic.
+	tmp, err := os.CreateTemp(filepath.Dir(filePath), tmpFilePrefix)
 	if err != nil {
 		return fmt.Errorf("error creating file on disk: %v", err)
 	}
-	defer out.Close()
+	// Cleans up every failure path below; a no-op once the rename succeeds.
+	defer os.Remove(tmp.Name())
 
-	if _, err := out.Write(encryptedData); err != nil {
+	if _, err := tmp.Write(encryptedData); err != nil {
+		tmp.Close()
 		return fmt.Errorf("error saving file content: %v", err)
 	}
+	// Without this a crash can leave the renamed file holding garbage rather
+	// than either version.
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("error flushing file content: %v", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("error closing file on disk: %v", err)
+	}
 
+	if err := os.Rename(tmp.Name(), filePath); err != nil {
+		return fmt.Errorf("error replacing file on disk: %v", err)
+	}
 	return nil
 }
 
@@ -261,7 +288,7 @@ func (s *scopedFS) Walk(fn func(data []byte) error, onError func(err error)) err
 		return err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), tmpFilePrefix) {
 			continue
 		}
 		path := filepath.Join(s.fullPath, entry.Name())
