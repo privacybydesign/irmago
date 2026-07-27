@@ -384,7 +384,7 @@ func addTestKbJwt(config testSdJwtVcKbConfig, sdjwtvc SdJwtVc) (SdJwtVcKb, error
 		payload[Key_Nonce] = *config.nonce
 	}
 	if config.useActualSdHash {
-		hash, err := sdjwt.CreateUrlEncodedHash(iana.SHA256, string(sdjwtvc))
+		hash, err := iana.CreateUrlEncodedHash(iana.SHA256, string(sdjwtvc))
 		if err != nil {
 			return "", err
 		}

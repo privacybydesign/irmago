@@ -2,14 +2,12 @@ package sdjwt
 
 import (
 	"crypto/ecdsa"
-	"encoding/base64"
 	"encoding/json"
 	"maps"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jws"
-	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
 type JwtCreator interface {
@@ -43,14 +41,6 @@ func (c *DefaultEcdsaJwtCreator) CreateSignedJwt(customHeaderFields map[string]a
 	}
 
 	return jwt, nil
-}
-
-func CreateUrlEncodedHash(algorithm iana.HashingAlgorithm, content string) (string, error) {
-	hash, err := iana.Sum(algorithm, content)
-	if err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(hash), nil
 }
 
 type JwtVerifier interface {

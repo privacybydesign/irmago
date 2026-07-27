@@ -167,7 +167,7 @@ type EncodedDisclosure string
 type HashedDisclosure string
 
 func HashEncodedDisclosure(algorithm iana.HashingAlgorithm, disclosure EncodedDisclosure) (HashedDisclosure, error) {
-	hash, err := CreateUrlEncodedHash(algorithm, string(disclosure))
+	hash, err := iana.CreateUrlEncodedHash(algorithm, string(disclosure))
 	if err != nil {
 		return "", err
 	}

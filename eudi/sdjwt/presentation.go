@@ -69,7 +69,7 @@ func decodeAndIndex(fullSdJwt SdJwt) (IssuerSignedJwt, map[string]any, map[strin
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to split SD-JWT: %v", err)
 	}
-	payload, err := decodeJwtPayloadFromJwt(issuerSignedJwt)
+	payload, err := decodePayloadFromJwt(issuerSignedJwt)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -82,7 +82,7 @@ func decodeAndIndex(fullSdJwt SdJwt) (IssuerSignedJwt, map[string]any, map[strin
 
 	byHash := make(map[string]indexedDisclosure, len(allDisclosures))
 	for _, enc := range allDisclosures {
-		hash, err := CreateUrlEncodedHash(iana.HashingAlgorithm(hashAlg), string(enc))
+		hash, err := iana.CreateUrlEncodedHash(iana.HashingAlgorithm(hashAlg), string(enc))
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("failed to hash disclosure: %v", err)
 		}

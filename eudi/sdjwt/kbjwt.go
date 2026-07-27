@@ -14,6 +14,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didkey"
+	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
@@ -24,18 +25,6 @@ import (
 type systemClock struct{}
 
 func (systemClock) Now() time.Time { return time.Now() }
-
-// extractOptionalWith looks up an optional key in a claims map and parses it
-// with valueParser, returning the zero value if the key is absent. Defined
-// here instead of reused from eudi/utils for the same reason as systemClock.
-func extractOptionalWith[T any](claims map[string]any, key string, valueParser func(any) (T, error)) (T, error) {
-	value, ok := claims[key]
-	if !ok {
-		var zero T
-		return zero, nil
-	}
-	return valueParser(value)
-}
 
 // KeyBindingJwt is a string containing the key binding jwt (just the jwt, no ~ or something)
 type KeyBindingJwt string
@@ -234,7 +223,7 @@ func CreateKbJwt(sdJwt SdJwt, creator KeyBinder, nonce string, audience string) 
 		return "", err
 	}
 
-	hash, err := CreateUrlEncodedHash(alg, string(sdJwt))
+	hash, err := iana.CreateUrlEncodedHash(alg, string(sdJwt))
 	if err != nil {
 		return "", err
 	}
@@ -258,7 +247,7 @@ func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwt) (iana.HashingAlgorithm,
 		alg = string(iana.SHA256)
 	}
 
-	confirm, err := extractOptionalWith(claims, Key_Confirmationkey, ParseConfirmField)
+	confirm, err := utils.ExtractOptionalWith(claims, Key_Confirmationkey, ParseConfirmField)
 	if err != nil {
 		return "", nil, err
 	}

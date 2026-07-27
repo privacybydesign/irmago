@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// TestDependencyInvariant enforces the hard boundary from
-// docs/sdjwt-package-split-plan.md: eudi/sdjwt is the pure SD-JWT core and
+// TestDependencyInvariant enforces the hard boundary : eudi/sdjwt is the pure SD-JWT core and
 // must never depend on the SD-JWT VC policy layer, Token Status List, the
 // scheme package, or SD-JWT VC Type Metadata — directly or transitively.
 //
@@ -30,7 +29,7 @@ func TestDependencyInvariant(t *testing.T) {
 	}
 
 	deps := make(map[string]bool)
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		deps[line] = true
 	}
 

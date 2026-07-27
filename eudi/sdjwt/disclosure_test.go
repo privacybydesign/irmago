@@ -32,10 +32,10 @@ func TestSdJwtWithSingleDisclosureAndWithoutKbJwt(t *testing.T) {
 
 	require.NoError(t, err)
 
-	require.True(t, strings.HasSuffix(string(sdJwt), "~"), "sdJwt expected to end with ~ but doesn't: %v", sdJwt)
+	require.True(t, strings.HasSuffix(string(sdJwt), "~"), "SD-JWT expected to end with ~ but doesn't: %v", sdJwt)
 
 	if num := strings.Count(string(sdJwt), "~"); num != 2 {
-		t.Fatalf("sdJwt expected have 2 ~ but has: %v (%v)", num, sdJwt)
+		t.Fatalf("SD-JWT expected have 2 ~ but has: %v (%v)", num, sdJwt)
 	}
 }
 

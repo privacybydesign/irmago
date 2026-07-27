@@ -28,6 +28,5 @@
 // would be convenient (a system clock, a generic optional-field lookup):
 // both transitively import eudi/scheme through unrelated X.509-
 // certificate-extension code living in those same packages, so kbjwt.go
-// carries tiny private replacements instead (systemClock,
-// extractOptionalWith) rather than pulling that dependency in.
+// carries tiny private replacements instead (systemClock) rather than pulling that dependency in.
 package sdjwt

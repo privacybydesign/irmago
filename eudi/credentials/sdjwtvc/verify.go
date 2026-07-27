@@ -581,7 +581,7 @@ func (v *verifierKeyBindingProcessor) parseAndVerifyKeyBindingJwt(
 		return nil, err
 	}
 
-	hash, err := sdjwt.CreateUrlEncodedHash(issuerSignedJwtPayload.SdAlg, string(sdJwtVc))
+	hash, err := iana.CreateUrlEncodedHash(issuerSignedJwtPayload.SdAlg, string(sdJwtVc))
 	if err != nil {
 		return nil, err
 	}

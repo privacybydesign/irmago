@@ -282,7 +282,7 @@ func (client *Client) EnrolledSchemeManagers() []irma.SchemeManagerIdentifier {
 	return client.irmaClient.EnrolledSchemeManagers()
 }
 
-func sdjwtBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMetadata) *irma.CredentialInfo {
+func sdjwtvcBatchMetadataToIrmaCredentialInfo(metadata irmaclient.SdJwtVcBatchMetadata) *irma.CredentialInfo {
 	credIdSegments := strings.Split(metadata.CredentialType, ".")
 
 	attrs := map[irma.AttributeTypeIdentifier]irma.TranslatedString{}
@@ -322,7 +322,7 @@ func (client *Client) getIrmaCredentialInfoList() irma.CredentialInfoList {
 	result := irma.CredentialInfoList{}
 
 	for _, sdjwtvcMeta := range sdjwtvcs {
-		result = append(result, sdjwtBatchMetadataToIrmaCredentialInfo(sdjwtvcMeta))
+		result = append(result, sdjwtvcBatchMetadataToIrmaCredentialInfo(sdjwtvcMeta))
 	}
 
 	result = append(result, idemix...)
@@ -363,7 +363,7 @@ func hashAttributesAndCredType(info *irma.CredentialInfo) (string, error) {
 		hashContent.WriteString(key + string(valueStr))
 	}
 
-	return sdjwt.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
+	return iana.CreateUrlEncodedHash(iana.SHA256, hashContent.String())
 }
 
 func sameCredentialAndAttributesCombi(creds []*irma.CredentialInfo) (bool, error) {

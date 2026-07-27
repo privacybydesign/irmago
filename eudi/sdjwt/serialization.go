@@ -108,10 +108,10 @@ func DecodeJwtPayload(sdJwt SdJwt) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeJwtPayloadFromJwt(issJwt)
+	return decodePayloadFromJwt(issJwt)
 }
 
-func decodeJwtPayloadFromJwt(jwt IssuerSignedJwt) (map[string]any, error) {
+func decodePayloadFromJwt(jwt IssuerSignedJwt) (map[string]any, error) {
 	parts := strings.Split(string(jwt), ".")
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("invalid JWT: expected 3 parts, got %d", len(parts))
