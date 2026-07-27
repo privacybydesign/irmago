@@ -56,6 +56,10 @@ type Client struct {
 	// logos. The app owns it: it supplies the initial value via New and
 	// updates it through SetLocale; irmago does not persist it.
 	currentLocale *clientmodels.CurrentLocale
+
+	// logoBackfill fetches the logos the current locale resolves to but that
+	// were never downloaded, in the background. Closed before eudiStorage.
+	logoBackfill *services.LogoBackfiller
 	// TODO: move preferences from IrmaClient to here
 	//Preferences      clientsettings.Preferences
 }
@@ -244,13 +248,23 @@ func New(
 	}
 
 	client.sessionManager.Client = client
+	client.logoBackfill = services.NewLogoBackfiller(eudiStorage, common.HTTPClient, client.onLogosBackfilled)
 
 	// Startup backfill: fetch logos that resolve for the current locale but
 	// are missing from the cache (credentials issued before the wallet became
 	// locale-aware, or whose issuance-time download failed).
-	client.requestLogoBackfill()
+	client.logoBackfill.Request(currentLocale.Get())
 
 	return client, nil
+}
+
+// onLogosBackfilled asks the app to re-read the credentials it has already
+// rendered, but only when a sweep actually put new logos on disk — a sweep that
+// found everything cached has nothing for the UI to redraw.
+func (client *Client) onLogosBackfilled(cached int) {
+	if cached > 0 && client.clientHandler != nil {
+		client.clientHandler.UpdateAttributes()
+	}
 }
 
 // SetLocale changes the locale used to resolve all app-facing text and logos.
@@ -260,7 +274,7 @@ func New(
 // the wallet already uses does nothing.
 func (client *Client) SetLocale(locale string) {
 	if client.currentLocale.Set(locale) {
-		client.requestLogoBackfill()
+		client.logoBackfill.Request(client.currentLocale.Get())
 	}
 }
 
@@ -269,20 +283,10 @@ func (client *Client) locale() string {
 	return client.currentLocale.Get()
 }
 
-// requestLogoBackfill runs a background sweep fetching the logos that resolve
-// for the current locale but are not cached. One sweep per actual locale
-// change, so overlap needs no guarding: a sweep started for a superseded
-// locale only warms the cache for a language the user just left.
-func (client *Client) requestLogoBackfill() {
-	go func() {
-		added := services.BackfillLogos(client.eudiStorage, common.HTTPClient, client.currentLocale.Get())
-		if added > 0 && client.clientHandler != nil {
-			client.clientHandler.UpdateAttributes()
-		}
-	}()
-}
-
 func (client *Client) Close() error {
+	// Before the stores close under it, so Close is deterministic and a sweep
+	// cannot outlive the database it reads.
+	client.logoBackfill.Close()
 	client.scheduler.Shutdown()
 	client.irmaClient.Close()
 	client.eudiStorage.Close()

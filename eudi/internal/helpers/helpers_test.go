@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,7 +16,7 @@ func TestDownloadRemoteImage_DataURI(t *testing.T) {
 		// "PNG" as a trivial base64 payload
 		payload := "UE5H" // base64("PNG")
 		uri := "data:image/png;base64," + payload
-		data, mediaType, err := DownloadRemoteImage(httpClient, uri)
+		data, mediaType, err := DownloadRemoteImage(context.Background(), httpClient, uri)
 		require.NoError(t, err)
 		require.Equal(t, "image/png", mediaType)
 		require.Equal(t, []byte("PNG"), data)
@@ -23,7 +24,7 @@ func TestDownloadRemoteImage_DataURI(t *testing.T) {
 
 	t.Run("plain (non-base64) data URI", func(t *testing.T) {
 		uri := "data:text/plain,hello"
-		data, mediaType, err := DownloadRemoteImage(httpClient, uri)
+		data, mediaType, err := DownloadRemoteImage(context.Background(), httpClient, uri)
 		require.NoError(t, err)
 		require.Equal(t, "text/plain", mediaType)
 		require.Equal(t, []byte("hello"), data)
@@ -31,14 +32,14 @@ func TestDownloadRemoteImage_DataURI(t *testing.T) {
 
 	t.Run("invalid data URI without comma", func(t *testing.T) {
 		uri := "data:image/png;base64"
-		_, _, err := DownloadRemoteImage(httpClient, uri)
+		_, _, err := DownloadRemoteImage(context.Background(), httpClient, uri)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missing comma")
 	})
 
 	t.Run("invalid base64 payload", func(t *testing.T) {
 		uri := "data:image/png;base64,not-valid-base64!!!"
-		_, _, err := DownloadRemoteImage(httpClient, uri)
+		_, _, err := DownloadRemoteImage(context.Background(), httpClient, uri)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "base64 decode failed")
 	})
@@ -51,7 +52,7 @@ func TestDownloadRemoteImage_DataURI(t *testing.T) {
 		}))
 		defer server.Close()
 
-		data, mediaType, err := DownloadRemoteImage(httpClient, server.URL+"/logo.png")
+		data, mediaType, err := DownloadRemoteImage(context.Background(), httpClient, server.URL+"/logo.png")
 		require.NoError(t, err)
 		require.Equal(t, "image/png", mediaType)
 		require.Equal(t, imageData, data)

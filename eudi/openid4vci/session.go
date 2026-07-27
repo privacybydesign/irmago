@@ -269,7 +269,7 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 // issuance VCT — the post-issuance VCT may legitimately disagree with it.
 //
 // Logos introduced by the type metadata (top-level display.logo or
-// rendering.simple.logo) are downloaded inline so LoadLogoImage in
+// rendering.simple.logo) are downloaded inline so the logo lookup in
 // buildOfferedCredentials finds them. Failures fall back silently to the
 // existing credential_metadata.
 func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*fetchedCredential) error {
@@ -312,7 +312,7 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 		s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId] = config
 
 		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(merged.Display), s.locale)
-		services.FetchLogoIfMissing(logoManager, s.httpClient, uri)
+		services.FetchLogoIfMissing(ctx, logoManager, s.httpClient, uri)
 	}
 	return nil
 }
@@ -402,12 +402,12 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerName := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(issuerDisplays), s.locale)
 
 		credentialLogoManager := s.storage.FileSystem().Credentials().LogoManager()
-		image := eudi.LoadLogoImage(credentialLogoManager,
-			clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), s.locale))
+		image := services.LoadResolvedLogo(credentialLogoManager,
+			metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), s.locale)
 
 		issuerLogoManager := s.storage.FileSystem().Issuers().LogoManager()
-		issuerImage := eudi.LoadLogoImage(issuerLogoManager,
-			clientmodels.Resolve(metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale))
+		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
+			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
 		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload, s.locale)
 

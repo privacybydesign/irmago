@@ -77,14 +77,18 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 	return result, nil
 }
 
-// resolveCredTypeTexts resolves a credential type's name, category and issue
-// URL as one text bundle: a single language for all three fields.
+// resolveCredTypeTexts resolves a credential type's name and category as one
+// text bundle: a single language for both fields. The issue URL is resolved
+// independently — it is a link, not displayed text, so it carries no
+// mixed-language risk and must not disappear because the bundle settled on a
+// language that happens to lack it.
 func resolveCredTypeTexts(credType *irma.CredentialType, locale string) (name string, category *string, issueURL *string) {
 	nameTS := clientmodels.TranslatedString(credType.Name)
 	categoryTS := credType.Category.ToClientmodels()
-	issueURLTS := credType.IssueURL.ToClientmodels()
-	lang := clientmodels.BundleLanguage(locale, nameTS, categoryTS, issueURLTS)
-	return nameTS[lang], clientmodels.PtrIfNonEmpty(categoryTS[lang]), clientmodels.PtrIfNonEmpty(issueURLTS[lang])
+	lang := clientmodels.BundleLanguage(locale, nameTS, categoryTS)
+	return nameTS[lang],
+		clientmodels.PtrIfNonEmpty(categoryTS[lang]),
+		clientmodels.ResolvePtr(credType.IssueURL.ToClientmodels(), locale)
 }
 
 // resolveAttrTexts resolves an attribute type's display name and description

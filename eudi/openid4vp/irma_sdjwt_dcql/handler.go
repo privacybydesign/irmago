@@ -270,23 +270,17 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 	// Build attributes for the matched claims, using display metadata from irma.Configuration
 	attributes := h.buildMatchedAttributes(credType, candidate.claimMatches, metadata, locale)
 
-	// Resolve the credential's text fields as one bundle: one language for the
-	// whole object, never mixed-language text.
-	nameTS := clientmodels.TranslatedString(credType.Name)
-	issueURLTS := credType.IssueURL.ToClientmodels()
-	lang := clientmodels.BundleLanguage(locale, nameTS, issueURLTS)
-
 	remainingCount := metadata.RemainingInstanceCount
 	model := clientmodels.SelectableCredentialInstance{
 		CredentialId:                credTypeId.String(),
 		Hash:                        metadata.Hash,
 		Image:                       clientmodels.ImageFromFile(credType.Logo(h.config)),
-		Name:                        nameTS[lang],
+		Name:                        clientmodels.Resolve(clientmodels.TranslatedString(credType.Name), locale),
 		Issuer:                      buildIssuerTrustedParty(h.config, issuer, locale),
 		Format:                      clientmodels.Format_SdJwtVc,
 		BatchInstanceCountRemaining: &remainingCount,
 		Attributes:                  attributes,
-		IssueURL:                    clientmodels.PtrIfNonEmpty(issueURLTS[lang]),
+		IssueURL:                    clientmodels.ResolvePtr(credType.IssueURL.ToClientmodels(), locale),
 	}
 
 	if metadata.SignedOn != nil {
@@ -481,8 +475,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 	// One language for the descriptor's text fields together.
 	nameTS := clientmodels.TranslatedString(credType.Name)
 	categoryTS := credType.Category.ToClientmodels()
-	issueURLTS := credType.IssueURL.ToClientmodels()
-	lang := clientmodels.BundleLanguage(locale, nameTS, categoryTS, issueURLTS)
+	lang := clientmodels.BundleLanguage(locale, nameTS, categoryTS)
 
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: credTypeId.String(),
@@ -491,7 +484,7 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		Category:     clientmodels.PtrIfNonEmpty(categoryTS[lang]),
 		Image:        clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Attributes:   attributes,
-		IssueURL:     clientmodels.PtrIfNonEmpty(issueURLTS[lang]),
+		IssueURL:     clientmodels.ResolvePtr(credType.IssueURL.ToClientmodels(), locale),
 	}, nil
 }
 
@@ -516,17 +509,14 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 
 	// Enrich with display metadata if available
 	if credType, ok := h.config.CredentialTypes[credTypeId]; ok {
-		nameTS := clientmodels.TranslatedString(credType.Name)
-		issueURLTS := credType.IssueURL.ToClientmodels()
-		lang := clientmodels.BundleLanguage(locale, nameTS, issueURLTS)
-		logCred.Name = nameTS[lang]
+		logCred.Name = clientmodels.Resolve(clientmodels.TranslatedString(credType.Name), locale)
 		logCred.Image = clientmodels.ImageFromFile(credType.Logo(h.config))
 
 		if issuer, ok := h.config.Issuers[credType.IssuerIdentifier()]; ok {
 			logCred.Issuer = buildIssuerTrustedParty(h.config, issuer, locale)
 		}
 
-		logCred.IssueURL = clientmodels.PtrIfNonEmpty(issueURLTS[lang])
+		logCred.IssueURL = clientmodels.ResolvePtr(credType.IssueURL.ToClientmodels(), locale)
 	}
 
 	// Build disclosed attributes

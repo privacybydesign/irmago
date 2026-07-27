@@ -21,9 +21,13 @@ import (
 const fsFilenameKeyHkdfInfo = "irmago-fs-filename-v1"
 
 // tmpFilePrefix marks the half-written files writeFile renames into place.
-// Real filenames are hex HMACs, so the prefix cannot collide with one; Walk
-// skips these, and a leftover from a crashed write is overwritten by the next
-// successful one.
+// Real filenames are hex HMACs, so the prefix cannot collide with one, and
+// Walk skips these.
+//
+// Nothing sweeps them: os.CreateTemp appends a fresh random suffix per call, so
+// a leftover is never reused, and a crash landing between CreateTemp and Rename
+// leaks one small file. The window is sub-millisecond, which does not justify
+// scanning every scope directory at open time on a phone.
 const tmpFilePrefix = ".tmp-"
 
 type fileManager struct {

@@ -79,6 +79,34 @@ func TestBundleLanguage_TextBundle(t *testing.T) {
 	})
 }
 
+// Bundled text and an independently-resolved field behave differently on
+// purpose, and the difference is subtle enough that a future refactor could
+// quietly re-bundle them. A field the bundle language lacks resolves empty
+// (never borrowing another language's words), while ResolvePtr falls back so
+// the value survives. The motivating case is a credential type's IssueURL: a
+// URL is a link, not displayed text, so dropping it would lose the "get this
+// credential" action entirely for every locale that doesn't translate it.
+func TestResolvePtr_FallsBackIndependentlyOfTheTextBundle(t *testing.T) {
+	name := TranslatedString{"en": "Student card", "nl": "Studentenkaart"}
+	category := TranslatedString{"en": "Education"} // untranslated
+	issueURL := TranslatedString{"en": "https://issuer.example.com/enroll"}
+
+	lang := BundleLanguage("nl", name, category)
+	assert.Equal(t, "nl", lang)
+	assert.Equal(t, "Studentenkaart", name[lang])
+	assert.Equal(t, "", category[lang], "bundled text must not mix languages")
+
+	got := ResolvePtr(issueURL, "nl")
+	assert.NotNil(t, got, "a URL is not a translation — it must survive an untranslated locale")
+	assert.Equal(t, "https://issuer.example.com/enroll", *got)
+}
+
+func TestResolvePtr_NilWhenNoTranslationExists(t *testing.T) {
+	assert.Nil(t, ResolvePtr(nil, "nl"))
+	assert.Nil(t, ResolvePtr(TranslatedString{}, "nl"))
+	assert.Nil(t, ResolvePtr(TranslatedString{"en": ""}, "nl"))
+}
+
 func TestPtrIfNonEmpty(t *testing.T) {
 	assert.Nil(t, PtrIfNonEmpty(""))
 	got := PtrIfNonEmpty("value")

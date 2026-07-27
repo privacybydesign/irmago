@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -296,15 +297,25 @@ func TestScopedFS_ConcurrentWritesNeverExposeAPartialFile(t *testing.T) {
 					return
 				default:
 				}
-				require.NoError(t, scope.Write("k", "", payload))
+				// assert, not require: require ends in t.FailNow, which is only
+				// valid on the goroutine running the test. From a writer it would
+				// Goexit that writer, quietly reducing the concurrency this test
+				// exists to exercise.
+				if !assert.NoError(t, scope.Write("k", "", payload)) {
+					return
+				}
 			}
 		})
 	}
 
+	// Compare lengths rather than contents: each payload is a repeat of one
+	// distinct byte, so the length identifies which version was read, a torn
+	// read shows up as a third length, and a failure prints two integers
+	// instead of 320 KB of raw bytes.
 	for range 300 {
 		got, err := scope.Read("k", "")
 		require.NoError(t, err, "reader saw a half-written file")
-		require.Contains(t, [][]byte{small, large}, got, "reader saw a torn file")
+		require.Contains(t, []int{len(small), len(large)}, len(got), "reader saw a torn file")
 	}
 	close(stop)
 	wg.Wait()

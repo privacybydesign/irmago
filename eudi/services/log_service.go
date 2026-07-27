@@ -359,16 +359,20 @@ func reResolveAttributeNames(attrs []clientmodels.Attribute, batch *models.Crede
 	}
 }
 
-// storedLogAttribute mirrors clientmodels.Attribute but keeps the display
-// name and description raw, so both the current string form and the legacy
-// TranslatedString-map form (entries written before the wallet became
-// locale-aware) decode without data loss.
+// storedLogAttribute reads back a clientmodels.Attribute that was written with
+// json.Marshal, keeping only the display name and description raw so both the
+// current string form and the legacy TranslatedString-map form (entries written
+// before the wallet became locale-aware) decode without data loss.
+//
+// Attribute is embedded rather than re-listed field by field: a hand-written
+// mirror would silently stop round-tripping any field added to Attribute later,
+// with no error — just a value missing from the activity log. The two fields
+// below shadow their embedded namesakes, which Go's JSON decoder resolves in
+// their favour because they sit at the shallower depth.
 type storedLogAttribute struct {
-	ClaimPath      []any                        `json:"claim_path"`
-	DisplayName    json.RawMessage              `json:"display_name,omitempty"`
-	Description    json.RawMessage              `json:"description,omitempty"`
-	Value          *clientmodels.AttributeValue `json:"value,omitempty"`
-	RequestedValue *clientmodels.AttributeValue `json:"requested_value,omitempty"`
+	clientmodels.Attribute
+	DisplayName json.RawMessage `json:"display_name,omitempty"`
+	Description json.RawMessage `json:"description,omitempty"`
 }
 
 // decodeStoredAttributes decodes a stored log credential's attribute list,
@@ -385,13 +389,9 @@ func decodeStoredAttributes(credentialId string, raw []byte, locale string) []cl
 	}
 	attrs := make([]clientmodels.Attribute, len(stored))
 	for i, s := range stored {
-		attrs[i] = clientmodels.Attribute{
-			ClaimPath:      s.ClaimPath,
-			DisplayName:    decodeOptionalStoredText(s.DisplayName, locale),
-			Description:    decodeOptionalStoredText(s.Description, locale),
-			Value:          s.Value,
-			RequestedValue: s.RequestedValue,
-		}
+		attrs[i] = s.Attribute
+		attrs[i].DisplayName = decodeOptionalStoredText(s.DisplayName, locale)
+		attrs[i].Description = decodeOptionalStoredText(s.Description, locale)
 	}
 	return attrs
 }

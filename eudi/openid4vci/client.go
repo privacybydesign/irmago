@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -92,6 +93,15 @@ func (client *Client) NewSession(sessionId int, credentialOfferEndpointUrl strin
 
 func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) {
 	go func() {
+		// The locale is fixed for the whole flow. This goroutine spans several
+		// network round trips (issuer metadata, VCT resolution, logo downloads);
+		// re-reading the live locale at each step would let a SetLocale landing
+		// in that window produce a half-translated permission screen, and a logo
+		// downloaded for one locale but looked up for another. Read it once here
+		// and thread it through — this is the only currentLocale read in the file.
+		locale := client.currentLocale.Get()
+		ctx := context.Background()
+
 		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
 		if err != nil {
 			handleFailure(handler, "%s", err.Error())
@@ -121,15 +131,14 @@ func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointU
 		baseline := snapshotCredentialMetadata(credentialIssuerMetadata)
 
 		resolver := typemetadata.NewResolver(client.httpClient)
-		client.resolveCredentialMetadataFromVct(context.Background(), credentialOffer, credentialIssuerMetadata, baseline, resolver)
+		client.resolveCredentialMetadataFromVct(ctx, credentialOffer, credentialIssuerMetadata, baseline, resolver)
 
-		// Download credential logos now that CredentialMetadata is final — the
-		// VCT enrichment above can introduce logos (e.g. via
-		// rendering.simple.logo) that weren't present in the issuer document.
-		client.downloadCredentialLogos(credentialOffer, credentialIssuerMetadata)
+		// After the VCT enrichment above, which can introduce logos (e.g. via
+		// rendering.simple.logo) that weren't in the issuer document.
+		client.downloadLogos(ctx, credentialOffer, credentialIssuerMetadata, locale)
 
 		// Everything looks in order; handle the session by starting the Authorization flow (e.g. show UI to user, obtain authorization, etc)
-		err = client.handleCredentialOffer(sessionId, credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, handler)
+		err = client.handleCredentialOffer(sessionId, credentialOffer, credentialIssuerMetadata, baseline, resolver, redirectUri, locale, handler)
 
 		if err != nil {
 			handleFailure(handler, "failed to handle credential offer: %v", err)
@@ -144,10 +153,11 @@ func (client *Client) handleCredentialOffer(
 	originalCredentialMetadata map[string]*metadata.CredentialMetadata,
 	vctResolver *typemetadata.Resolver,
 	redirectUri string,
+	locale string,
 	handler Handler,
 ) error {
-	requestorInfo := client.convertToTrustedParty(credentialIssuerMetadata)
-	creds, err := client.convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo.Name)
+	requestorInfo := client.convertToTrustedParty(credentialIssuerMetadata, locale)
+	creds, err := client.convertToCredentialInfoList(credentialOffer.CredentialConfigurationIds, credentialIssuerMetadata, requestorInfo.Name, locale)
 	if err != nil {
 		return fmt.Errorf("failed to convert credential info list: %v", err)
 	}
@@ -167,7 +177,7 @@ func (client *Client) handleCredentialOffer(
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
 		originalCredentialMetadata: originalCredentialMetadata,
-		locale:                     client.currentLocale.Get(),
+		locale:                     locale,
 		redirectUri:                redirectUri,
 	}
 	defer func() {
@@ -320,13 +330,6 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 		return nil, fmt.Errorf("failed to validate credential issuer metadata against credential offer: %v", err)
 	}
 
-	// Valid metadata; download the issuer logo that resolves for the current
-	// locale, if present and not already cached. Logos for other languages
-	// are fetched lazily by the backfill sweep when the locale changes.
-	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
-	issuerLogoURI := clientmodels.Resolve(metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), client.currentLocale.Get())
-	services.FetchLogoIfMissing(issuerLogoManager, client.httpClient, issuerLogoURI)
-
 	return &credentialIssuerMetadata, nil
 }
 
@@ -347,8 +350,8 @@ func (client *Client) convertToCredentialInfoList(
 	requestedCredentialConfigs []string,
 	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
 	issuerName string,
+	locale string,
 ) ([]*clientmodels.CredentialDescriptor, error) {
-	locale := client.currentLocale.Get()
 	result := make([]*clientmodels.CredentialDescriptor, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
@@ -367,8 +370,8 @@ func (client *Client) convertToCredentialInfoList(
 			name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale)
 
 			credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
-			image := eudi.LoadLogoImage(credentialLogoManager,
-				clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale))
+			image := services.LoadResolvedLogo(credentialLogoManager,
+				metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale)
 
 			result = append(result, &clientmodels.CredentialDescriptor{
 				CredentialId: config.VerifiableCredentialType,
@@ -403,14 +406,13 @@ func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale strin
 	return attrs
 }
 
-func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata) *clientmodels.TrustedParty {
+func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata, locale string) *clientmodels.TrustedParty {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
-	locale := client.currentLocale.Get()
 	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
 	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
-	issuerImage := eudi.LoadLogoImage(issuerLogoManager,
-		clientmodels.Resolve(metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale))
+	issuerImage := services.LoadResolvedLogo(issuerLogoManager,
+		metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale)
 
 	return &clientmodels.TrustedParty{
 		Id:       credentialIssuerMetadata.CredentialIssuer,
@@ -483,24 +485,29 @@ func (client *Client) resolveCredentialMetadataFromVct(
 	}
 }
 
-// downloadCredentialLogos caches, for each offered credential configuration,
-// the logo that resolves for the current locale. Called after
-// resolveCredentialMetadataFromVct so VCT-derived logos (e.g. from
+// downloadLogos caches the issuer logo and, for each offered credential
+// configuration, the credential logo that resolves for the given locale. Call
+// it after resolveCredentialMetadataFromVct so VCT-derived logos (e.g. from
 // rendering.simple.logo) are picked up too. Logos for other languages are
 // fetched lazily by the backfill sweep when the locale changes.
-func (client *Client) downloadCredentialLogos(
+func (client *Client) downloadLogos(
+	ctx context.Context,
 	offer *CredentialOffer,
 	issuerMetadata *metadata.CredentialIssuerMetadata,
+	locale string,
 ) {
-	credentialLogoManager := client.Configuration.Storage.FileSystem().Credentials().LogoManager()
-	locale := client.currentLocale.Get()
+	fs := client.Configuration.Storage.FileSystem()
+	fetch := func(manager filesystem.LogoManager, uris clientmodels.TranslatedString) {
+		services.FetchLogoIfMissing(ctx, manager, client.httpClient, clientmodels.Resolve(uris, locale))
+	}
+
+	fetch(fs.Issuers().LogoManager(), metadata.LogoURIsByLanguage(issuerMetadata.Display))
 	for _, configID := range offer.CredentialConfigurationIds {
 		config, ok := issuerMetadata.CredentialConfigurationsSupported[configID]
 		if !ok || config.CredentialMetadata == nil {
 			continue
 		}
-		uri := clientmodels.Resolve(metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale)
-		services.FetchLogoIfMissing(credentialLogoManager, client.httpClient, uri)
+		fetch(fs.Credentials().LogoManager(), metadata.LogoURIsByLanguage(config.CredentialMetadata.Display))
 	}
 }
 

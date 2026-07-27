@@ -95,6 +95,16 @@ func Resolve(ts TranslatedString, locale string) string {
 	return ts[BundleLanguage(locale, ts)]
 }
 
+// ResolvePtr resolves a standalone TranslatedString into an optional (*string)
+// DTO field, yielding nil when no translation is available at all. Use this for
+// fields that are not displayed text — a URL, for instance — so they resolve
+// independently of the object's text bundle: a URL carries no mixed-language
+// risk, and dropping it because the bundle settled on a language that lacks it
+// would lose the field entirely rather than fall back.
+func ResolvePtr(ts TranslatedString, locale string) *string {
+	return PtrIfNonEmpty(Resolve(ts, locale))
+}
+
 // PtrIfNonEmpty returns a pointer to s, or nil when s is empty. Used to fill
 // the optional (*string) DTO fields from a resolved translation.
 func PtrIfNonEmpty(s string) *string {

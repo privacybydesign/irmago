@@ -2,6 +2,8 @@ package services
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -457,4 +459,35 @@ func TestLogReadDecodesLegacyMapFormat(t *testing.T) {
 	require.Equal(t, "Uw e-mail", *attr.Description)
 	require.NotNil(t, attr.Value)
 	require.Equal(t, "a@b.com", *attr.Value.String)
+}
+
+// EUDI log attributes are written with json.Marshal on clientmodels.Attribute
+// and read back through storedLogAttribute, which embeds Attribute so a field
+// added to it keeps round-tripping. This pins that: populate every field, send
+// it through both halves, require equality. A drift would otherwise be silent —
+// no error, just a value missing from the activity log.
+func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
+	displayName, description := "Email address", "The address you receive mail on"
+	value, requested := "a@b.com", "b@c.com"
+
+	original := clientmodels.Attribute{
+		ClaimPath:      []any{"address", "street", float64(1)},
+		DisplayName:    &displayName,
+		Description:    &description,
+		Value:          &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &value},
+		RequestedValue: &clientmodels.AttributeValue{Type: clientmodels.AttributeType_String, String: &requested},
+	}
+	// A field left unset would round-trip as zero either way, proving nothing.
+	rv := reflect.ValueOf(original)
+	for i := range rv.NumField() {
+		require.False(t, rv.Field(i).IsZero(), "populate %s too", rv.Type().Field(i).Name)
+	}
+
+	raw, err := json.Marshal([]clientmodels.Attribute{original})
+	require.NoError(t, err)
+
+	decoded := decodeStoredAttributes("https://example.com/vct/test", raw, "en")
+
+	require.Len(t, decoded, 1)
+	require.Equal(t, original, decoded[0])
 }
