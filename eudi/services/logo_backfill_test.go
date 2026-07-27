@@ -46,15 +46,10 @@ func newBackfillTestStorage(t *testing.T) *backfillTestStorage {
 	return &backfillTestStorage{db: d, fs: filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())}
 }
 
-// sweeps collects the per-sweep cached counts. Tests read it rather than
-// waiting on Close, which cancels before it waits and so would cut short the
-// very sweep under observation. Receiving blocks until the next sweep lands;
-// go test's own timeout catches a sweep that never does.
-func newSweepChannel() (chan int, func(cached int)) {
-	ch := make(chan int, 16) // a sweep must never block reporting its result
-	return ch, func(cached int) { ch <- cached }
-}
-
+// Tests observe sweeps through a buffered channel of per-sweep cached counts
+// rather than by waiting on Close, which cancels before it waits and so would
+// cut short the very sweep under observation. Receiving blocks until the next
+// sweep lands; go test's own timeout catches a sweep that never does.
 func requireNoFurtherSweep(t *testing.T, ch chan int) {
 	t.Helper()
 	select {
@@ -158,8 +153,8 @@ func TestLogoBackfiller_SupersededRequestsCoalesceIntoOneSweep(t *testing.T) {
 	s := newBackfillTestStorage(t)
 	storeBackfillBatch(t, s, server.URL)
 
-	sweeps, onSweepDone := newSweepChannel()
-	b := NewLogoBackfiller(s, server.Client(), onSweepDone)
+	sweeps := make(chan int, 16) // a sweep must never block reporting its result
+	b := NewLogoBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
 	defer b.Close()
 
 	b.Request("nl")
@@ -205,8 +200,8 @@ func TestLogoBackfiller_CloseAbortsAnInFlightDownload(t *testing.T) {
 	s := newBackfillTestStorage(t)
 	storeBackfillBatch(t, s, server.URL)
 
-	sweeps, onSweepDone := newSweepChannel()
-	b := NewLogoBackfiller(s, server.Client(), onSweepDone)
+	sweeps := make(chan int, 16) // a sweep must never block reporting its result
+	b := NewLogoBackfiller(s, server.Client(), func(cached int) { sweeps <- cached })
 
 	b.Request("nl")
 	<-entered // the sweep is now blocked inside a download

@@ -121,7 +121,6 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 	added := 0
 	for _, batch := range batches {
 		if ctx.Err() != nil {
-			eudi.Logger.Debugf("logo backfill: cancelled after caching %d logo(s)", added)
 			break
 		}
 		added += FetchLogoIfMissing(ctx, issuerLogos, httpClient, clientmodels.Resolve(IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale))
