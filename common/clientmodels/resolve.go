@@ -2,6 +2,7 @@ package clientmodels
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/text/language"
 )
@@ -66,7 +67,7 @@ func BundleLanguage(locale string, fields ...TranslatedString) string {
 	if locale != "" && has(locale) {
 		return locale
 	}
-	if base, ok := baseLanguage(locale); ok && has(base) {
+	if base, ok := BaseLanguage(locale); ok && has(base) {
 		return base
 	}
 	if has(DefaultFallbackLanguage) {
@@ -114,17 +115,39 @@ func PtrIfNonEmpty(s string) *string {
 	return &s
 }
 
-// baseLanguage reduces a locale to its base language ("nl-BE" → "nl").
-// Duplicated from eudi/metadata to avoid an import cycle (that package
-// imports clientmodels).
-func baseLanguage(locale string) (string, bool) {
+// lastBaseLanguage memoises the most recent BaseLanguage result.
+//
+// One listing pull calls BundleLanguage several hundred times — once per field
+// of every attribute of every credential — always with the same locale, and
+// every call whose exact locale is absent from the map (which is all of them
+// when the app passes a region tag like "en-US", since schemes key by base
+// language) falls through to language.Parse at ~250ns and 3 allocations. A
+// single-entry cache is enough: the locale changes when the user taps a
+// setting, not within a call.
+var lastBaseLanguage atomic.Pointer[baseLanguageResult]
+
+type baseLanguageResult struct {
+	locale, base string
+	ok           bool
+}
+
+// BaseLanguage reduces a locale to its base language ("nl-BE" → "nl"),
+// reporting false for an empty or unparseable locale. It lives here, the
+// lowest package involved, so the maps keyed by base language and the chain
+// that looks them up cannot disagree about what a base language is.
+func BaseLanguage(locale string) (string, bool) {
 	if locale == "" {
 		return "", false
 	}
-	tag, err := language.Parse(locale)
-	if err != nil {
-		return "", false
+	if cached := lastBaseLanguage.Load(); cached != nil && cached.locale == locale {
+		return cached.base, cached.ok
 	}
-	base, _ := tag.Base()
-	return base.String(), true
+
+	result := baseLanguageResult{locale: locale}
+	if tag, err := language.Parse(locale); err == nil {
+		base, _ := tag.Base()
+		result.base, result.ok = base.String(), true
+	}
+	lastBaseLanguage.Store(&result)
+	return result.base, result.ok
 }

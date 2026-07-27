@@ -93,30 +93,11 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
 		}
 
-		issuerName := clientmodels.Resolve(IssuerNamesByLanguage(batch.IssuerDisplay), locale)
+		display := ResolveBatchDisplay(batch, locale)
+		issuerName := display.IssuerName
+		credentialName := display.CredentialName
 
-		credentialName := ""
-		claimDisplayLookup := map[string]string{}
-		metadataOrder := map[string]int{}
-
-		if batch.CredentialMetadata != nil {
-			credentialName = clientmodels.Resolve(CredentialNamesByLanguage(batch.CredentialMetadata.Display), locale)
-
-			for i, claim := range batch.CredentialMetadata.Claims {
-				var path []any
-				if err := json.Unmarshal(claim.Path, &path); err != nil {
-					continue
-				}
-				key := clientmodels.ClaimPathKey(path)
-				metadataOrder[key] = i
-				if len(claim.Display) == 0 {
-					continue
-				}
-				claimDisplayLookup[key] = clientmodels.Resolve(ClaimNamesByLanguage(claim.Display), locale)
-			}
-		}
-
-		attrs := buildAttributesFromPayload(processedSdJwtPayload, claimDisplayLookup, metadataOrder)
+		attrs := buildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
 
 		var iat, exp *int64
 		if batch.ExpiresAt.Valid {

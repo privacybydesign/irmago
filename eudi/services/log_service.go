@@ -163,45 +163,50 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 }
 
 func (s *eudiLogService) entriesToLogInfos(entries []*models.EudiLogEntry) ([]clientmodels.LogInfo, error) {
-	batchByVct := s.batchesByVct()
+	if len(entries) == 0 {
+		return []clientmodels.LogInfo{}, nil
+	}
+	displayByVct := s.liveDisplaysByVct()
 	result := make([]clientmodels.LogInfo, 0, len(entries))
 	for _, e := range entries {
-		info, err := s.entryToLogInfo(e, batchByVct)
-		if err != nil {
-			eudi.Logger.Warnf("failed to convert log entry %s: %v", e.ID, err)
-			continue
-		}
-		result = append(result, info)
+		result = append(result, s.entryToLogInfo(e, displayByVct))
 	}
 	return result, nil
 }
 
-// batchesByVct indexes the stored credential batches by their VCT so log
-// entries can re-resolve display text against live metadata for the current
-// locale. Best-effort: on a storage error the index is empty and logs fall
-// back to their creation-time snapshots. When multiple batches share a VCT,
-// one carrying credential metadata is preferred.
-func (s *eudiLogService) batchesByVct() map[string]*models.CredentialBatch {
-	result := map[string]*models.CredentialBatch{}
+// liveDisplaysByVct resolves, per stored credential type, the display text the
+// current locale gives it, so log entries can re-resolve against live metadata
+// instead of their creation-time snapshot. Resolving here rather than per log
+// credential matters: a page of entries usually covers far fewer credential
+// types than it has rows.
+//
+// Best-effort: on a storage error the index is empty and every log falls back
+// to its snapshot. When several batches share a VCT, one carrying credential
+// metadata is preferred.
+func (s *eudiLogService) liveDisplaysByVct() map[string]ResolvedBatchDisplay {
 	batches, err := s.credentialStore.GetCredentialBatchList()
 	if err != nil {
 		eudi.Logger.Warnf("failed to load credential batches for log text re-resolution: %v", err)
-		return result
+		return map[string]ResolvedBatchDisplay{}
 	}
+
+	preferred := map[string]*models.CredentialBatch{}
 	for _, batch := range batches {
-		if existing, ok := result[batch.VerifiableCredentialType]; ok && existing.CredentialMetadata != nil {
+		if existing, ok := preferred[batch.VerifiableCredentialType]; ok && existing.CredentialMetadata != nil {
 			continue
 		}
-		result[batch.VerifiableCredentialType] = batch
+		preferred[batch.VerifiableCredentialType] = batch
+	}
+
+	result := make(map[string]ResolvedBatchDisplay, len(preferred))
+	for vct, batch := range preferred {
+		result[vct] = ResolveBatchDisplay(batch, s.locale)
 	}
 	return result
 }
 
-func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry, batchByVct map[string]*models.CredentialBatch) (clientmodels.LogInfo, error) {
-	logCreds, err := modelCredentialsToLogCredentials(e.Credentials, s.credLogoManager, s.issuerLogoManager, s.locale, batchByVct)
-	if err != nil {
-		return clientmodels.LogInfo{}, err
-	}
+func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry, displayByVct map[string]ResolvedBatchDisplay) clientmodels.LogInfo {
+	logCreds := s.modelCredentialsToLogCredentials(e.Credentials, displayByVct)
 
 	info := clientmodels.LogInfo{
 		Type: clientmodels.LogType(e.Type),
@@ -235,10 +240,11 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry, batchByVct map[s
 		}
 	}
 
-	return info, nil
+	return info
 }
 
-func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogoManager filesystem.LogoManager, issuerLogoManager filesystem.LogoManager, locale string, batchByVct map[string]*models.CredentialBatch) ([]clientmodels.LogCredential, error) {
+func (s *eudiLogService) modelCredentialsToLogCredentials(creds []models.EudiLogCredential, displayByVct map[string]ResolvedBatchDisplay) []clientmodels.LogCredential {
+	locale := s.locale
 	result := make([]clientmodels.LogCredential, len(creds))
 	for i, c := range creds {
 		name := decodeStoredText(c.Name, locale)
@@ -253,12 +259,10 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		if formats == nil {
 			formats = []clientmodels.CredentialFormat{}
 		}
-		credImage := eudi.LoadLogoImage(credLogoManager, c.CredentialId)
-		issuerImage := eudi.LoadLogoImage(issuerLogoManager, c.IssuerId)
-		var issueURL *string
-		if s := decodeStoredText(c.IssueURL, locale); s != "" {
-			issueURL = &s
-		}
+		credImage := eudi.LoadLogoImage(s.credLogoManager, c.CredentialId)
+		issuerImage := eudi.LoadLogoImage(s.issuerLogoManager, c.IssuerId)
+		issueURL := decodeOptionalStoredText(json.RawMessage(c.IssueURL), locale)
+
 		var issuanceDate, expiryDate *int64
 		if c.IssuanceDate.Valid {
 			x := c.IssuanceDate.V.Unix()
@@ -274,18 +278,14 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 		// active locale. The persisted snapshot remains the fallback for
 		// deleted credentials, untranslated fields, and verifier names (which
 		// have no stored metadata to consult).
-		if batch := batchByVct[c.CredentialId]; batch != nil {
-			if batch.CredentialMetadata != nil {
-				if n := clientmodels.Resolve(CredentialNamesByLanguage(batch.CredentialMetadata.Display), locale); n != "" {
-					name = n
-				}
+		if live, ok := displayByVct[c.CredentialId]; ok {
+			if live.CredentialName != "" {
+				name = live.CredentialName
 			}
-			if canReResolveIssuerName(c.IssuerId, issuerName, batch) {
-				if n := clientmodels.Resolve(IssuerNamesByLanguage(batch.IssuerDisplay), locale); n != "" {
-					issuerName = n
-				}
+			if live.IssuerName != "" && canReResolveIssuerName(c.IssuerId, issuerName, live) {
+				issuerName = live.IssuerName
 			}
-			reResolveAttributeNames(attrs, batch, locale)
+			reResolveAttributeNames(attrs, live.ClaimNames)
 		}
 
 		result[i] = clientmodels.LogCredential{
@@ -302,25 +302,25 @@ func modelCredentialsToLogCredentials(creds []models.EudiLogCredential, credLogo
 			IssueURL:            issueURL,
 		}
 	}
-	return result, nil
+	return result
 }
 
-// canReResolveIssuerName reports whether the batch's issuer displays belong
-// to this log entry's issuer, guarding against relabeling a log with a
-// different issuer's name when the same credential type was later issued by
-// someone else. Either the ids match, or the snapshot name is one of the
-// batch's issuer display names — the latter covers the OpenID4VCI issuance
-// flow, which records the issuer's well-known URL while the batch stores the
-// JWT's iss claim, so the ids may legitimately use different identifier
-// schemes for the same issuer.
-func canReResolveIssuerName(issuerId, snapshotName string, batch *models.CredentialBatch) bool {
-	if issuerId == batch.CredentialIssuer {
+// canReResolveIssuerName reports whether the stored credential's issuer
+// displays belong to this log entry's issuer, guarding against relabeling a
+// log with a different issuer's name when the same credential type was later
+// issued by someone else. Either the ids match, or the snapshot name is one of
+// the issuer's display names — the latter covers the OpenID4VCI issuance flow,
+// which records the issuer's well-known URL while the batch stores the JWT's
+// iss claim, so the ids may legitimately use different identifier schemes for
+// the same issuer.
+func canReResolveIssuerName(issuerId, snapshotName string, live ResolvedBatchDisplay) bool {
+	if issuerId == live.IssuerId {
 		return true
 	}
 	if snapshotName == "" {
 		return false
 	}
-	for _, name := range IssuerNamesByLanguage(batch.IssuerDisplay) {
+	for _, name := range live.IssuerNames {
 		if name == snapshotName {
 			return true
 		}
@@ -329,31 +329,15 @@ func canReResolveIssuerName(issuerId, snapshotName string, batch *models.Credent
 }
 
 // reResolveAttributeNames overrides attribute display names with the
-// translation the batch's live claim metadata resolves for the locale.
-// Attributes whose path has no metadata entry (exact or null-wildcard match)
-// keep their snapshot.
-func reResolveAttributeNames(attrs []clientmodels.Attribute, batch *models.CredentialBatch, locale string) {
-	if batch.CredentialMetadata == nil {
-		return
-	}
-	lookup := map[string]string{}
-	for _, claim := range batch.CredentialMetadata.Claims {
-		if len(claim.Display) == 0 {
-			continue
-		}
-		var path []any
-		if err := json.Unmarshal(claim.Path, &path); err != nil {
-			continue
-		}
-		if n := clientmodels.Resolve(ClaimNamesByLanguage(claim.Display), locale); n != "" {
-			lookup[clientmodels.ClaimPathKey(path)] = n
-		}
-	}
-	if len(lookup) == 0 {
+// translation the stored credential's live claim metadata resolves for the
+// locale. Attributes whose path has no metadata entry (exact or null-wildcard
+// match), or whose entry has no translation, keep their snapshot.
+func reResolveAttributeNames(attrs []clientmodels.Attribute, claimNames map[string]string) {
+	if len(claimNames) == 0 {
 		return
 	}
 	for i := range attrs {
-		if d, ok := lookupDisplayName(lookup, attrs[i].ClaimPath); ok {
+		if d, ok := lookupDisplayName(claimNames, attrs[i].ClaimPath); ok && d != "" {
 			attrs[i].DisplayName = &d
 		}
 	}
@@ -399,13 +383,7 @@ func decodeStoredAttributes(credentialId string, raw []byte, locale string) []cl
 // decodeOptionalStoredText decodes an optional stored log text field to an
 // optional string: absent, null, and unresolvable inputs all yield nil.
 func decodeOptionalStoredText(raw json.RawMessage, locale string) *string {
-	if len(raw) == 0 {
-		return nil
-	}
-	if s := decodeStoredText(raw, locale); s != "" {
-		return &s
-	}
-	return nil
+	return clientmodels.PtrIfNonEmpty(decodeStoredText(raw, locale))
 }
 
 // decodeStoredText decodes a stored log text field. New entries store a plain

@@ -118,14 +118,26 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 	credentialLogos := s.FileSystem().Credentials().LogoManager()
 	issuerLogos := s.FileSystem().Issuers().LogoManager()
 
+	// Credentials from one issuer share an issuer logo, so without this the
+	// sweep would re-check the same URI once per batch — and, when the download
+	// fails, re-request a dead URL once per batch.
+	seen := map[string]struct{}{}
+	fetchOnce := func(manager filesystem.LogoManager, uri string) int {
+		if _, done := seen[uri]; done {
+			return 0
+		}
+		seen[uri] = struct{}{}
+		return FetchLogoIfMissing(ctx, manager, httpClient, uri)
+	}
+
 	added := 0
 	for _, batch := range batches {
 		if ctx.Err() != nil {
 			break
 		}
-		added += FetchLogoIfMissing(ctx, issuerLogos, httpClient, clientmodels.Resolve(IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale))
+		added += fetchOnce(issuerLogos, clientmodels.Resolve(IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale))
 		if batch.CredentialMetadata != nil {
-			added += FetchLogoIfMissing(ctx, credentialLogos, httpClient, clientmodels.Resolve(CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale))
+			added += fetchOnce(credentialLogos, clientmodels.Resolve(CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale))
 		}
 	}
 	return added

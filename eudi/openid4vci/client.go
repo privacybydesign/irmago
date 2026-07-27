@@ -389,13 +389,8 @@ func (client *Client) convertToCredentialInfoList(
 func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale string) []clientmodels.Attribute {
 	var attrs []clientmodels.Attribute
 	for _, claim := range claims {
-		var displayName *string
-		if len(claim.Display) > 0 {
-			displays := metadata.ToTranslateableList(claim.Display)
-			if dn := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale); dn != "" {
-				displayName = &dn
-			}
-		}
+		displays := metadata.ToTranslateableList(claim.Display)
+		displayName := clientmodels.ResolvePtr(metadata.ConvertDisplayToTranslatedString(displays), locale)
 
 		attrs = append(attrs, clientmodels.Attribute{
 			ClaimPath:   claim.Path,

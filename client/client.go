@@ -48,7 +48,6 @@ type Client struct {
 	didValidator      *openid4vp.DidVerifierValidator
 	scheduler         gocron.Scheduler
 	sessionManager    sessionManager
-	clientHandler     irmaclient.ClientHandler
 	credentialService services.CredentialService
 	revocationService *services.RevocationService
 
@@ -237,7 +236,6 @@ func New(
 		keyBinder:         irmaKeyBinder,
 		didValidator:      didValidator,
 		scheduler:         scheduler,
-		clientHandler:     handler,
 		currentLocale:     currentLocale,
 		credentialService: credentialService,
 		revocationService: revocationService,

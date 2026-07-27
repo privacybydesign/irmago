@@ -10,11 +10,9 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
-	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
-	"gorm.io/gorm"
 )
 
 func newTestLogService(t *testing.T) EudiLogService {
@@ -24,29 +22,8 @@ func newTestLogService(t *testing.T) EudiLogService {
 func newTestLogServiceWithLocale(t *testing.T, locale string) *eudiLogService {
 	t.Helper()
 
-	const passphrase = "test-passphrase-1234567890123456"
-	database, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte(passphrase))}, &gorm.Config{})
-	require.NoError(t, err)
-
-	err = database.AutoMigrate(
-		&models.EudiLogEntry{},
-		&models.EudiLogCredential{},
-		&models.HolderBindingKey{},
-		&models.ECDSAKeyMetadata{},
-		&models.RSAKeyMetadata{},
-		&models.IssuerMetadataDisplay{},
-		&models.CredentialMetadata{},
-		&models.CredentialDisplay{},
-		&models.CredentialClaim{},
-		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
-	)
-	require.NoError(t, err)
-
-	var aesKey [32]byte
-	copy(aesKey[:], passphrase)
-	fs := filesystem.NewFileSystemStorage(aesKey, t.TempDir())
+	database := newTestHolderDB(t)
+	fs := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 
 	return &eudiLogService{
 		locale:              locale,

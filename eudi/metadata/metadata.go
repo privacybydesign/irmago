@@ -193,17 +193,7 @@ func (m CredentialIssuerMetadata) GetAllBaseLanguages() []string {
 }
 
 func TryGetBaseLanguageFromLocale(locale string) (string, bool) {
-	if locale == "" {
-		return "", false
-	}
-
-	baseLang, err := language.Parse(locale)
-	if err != nil {
-		return "", false
-	}
-	lang, _ := baseLang.Base()
-
-	return lang.String(), true
+	return clientmodels.BaseLanguage(locale)
 }
 
 func (m CredentialIssuerMetadata) GetAllLanguages() []string {
@@ -316,12 +306,9 @@ func LogoURIsByLanguage[T CredentialDisplay | CredentialIssuerDisplay](displays 
 			result[""] = logo.Uri
 			continue
 		}
-		lang, err := language.Parse(*locale)
-		if err != nil {
-			continue
+		if base, ok := TryGetBaseLanguageFromLocale(*locale); ok {
+			result[base] = logo.Uri
 		}
-		base, _ := lang.Base()
-		result[base.String()] = logo.Uri
 	}
 	return result
 }

@@ -38,7 +38,7 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 			if attr.RevocationAttribute {
 				continue
 			}
-			dn, _ := resolveAttrTexts(attr, locale)
+			dn, _ := attr.ResolveTexts(locale)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{attr.ID},
 				DisplayName: dn,
@@ -48,7 +48,7 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 			})
 		}
 
-		name, category, issueURL := resolveCredTypeTexts(cred, locale)
+		name, category, issueURL := cred.ResolveTexts(locale)
 
 		// The FAQ is its own text bundle: one language for all four fields.
 		introTS, purposeTS := cred.FAQIntro.ToClientmodels(), cred.FAQPurpose.ToClientmodels()
@@ -59,7 +59,7 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 			Credential: clientmodels.CredentialDescriptor{
 				CredentialId: cred.Identifier().String(),
 				Name:         name,
-				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+				Issuer:       issuer.ToTrustedParty(irmaConfig, locale),
 				IssueURL:     issueURL,
 				Category:     category,
 				Image:        clientmodels.ImageFromFile(cred.Logo(irmaConfig)),
@@ -75,48 +75,6 @@ func (client *Client) GetCredentialStore() ([]*clientmodels.CredentialStoreItem,
 	}
 
 	return result, nil
-}
-
-// resolveCredTypeTexts resolves a credential type's name and category as one
-// text bundle: a single language for both fields. The issue URL is resolved
-// independently — it is a link, not displayed text, so it carries no
-// mixed-language risk and must not disappear because the bundle settled on a
-// language that happens to lack it.
-func resolveCredTypeTexts(credType *irma.CredentialType, locale string) (name string, category *string, issueURL *string) {
-	nameTS := clientmodels.TranslatedString(credType.Name)
-	categoryTS := credType.Category.ToClientmodels()
-	lang := clientmodels.BundleLanguage(locale, nameTS, categoryTS)
-	return nameTS[lang],
-		clientmodels.PtrIfNonEmpty(categoryTS[lang]),
-		clientmodels.ResolvePtr(credType.IssueURL.ToClientmodels(), locale)
-}
-
-// resolveAttrTexts resolves an attribute type's display name and description
-// as one text bundle: a single language for both fields.
-func resolveAttrTexts(atType *irma.AttributeType, locale string) (displayName *string, description *string) {
-	nameTS := clientmodels.TranslatedString(atType.Name)
-	descTS := clientmodels.TranslatedString(atType.Description)
-	lang := clientmodels.BundleLanguage(locale, nameTS, descTS)
-	return clientmodels.PtrIfNonEmpty(nameTS[lang]), clientmodels.PtrIfNonEmpty(descTS[lang])
-}
-
-// buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo
-// and the scheme manager as parent. Each party resolves its own text bundle.
-func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer, locale string) clientmodels.TrustedParty {
-	scheme := irmaConfig.SchemeManagers[issuer.SchemeManagerIdentifier()]
-	parent := clientmodels.TrustedParty{
-		Id:       scheme.Identifier().String(),
-		Name:     clientmodels.Resolve(clientmodels.TranslatedString(scheme.Name), locale),
-		Verified: scheme.Status == irma.SchemeManagerStatusValid,
-	}
-	logoPath := issuer.Logo(irmaConfig)
-	return clientmodels.TrustedParty{
-		Id:       issuer.Identifier().String(),
-		Name:     clientmodels.Resolve(clientmodels.TranslatedString(issuer.Name), locale),
-		Image:    clientmodels.ImageFromFile(logoPath),
-		Verified: scheme.Status == irma.SchemeManagerStatusValid,
-		Parent:   &parent,
-	}
 }
 
 // createIssuanceBundle builds an IssuanceBundle from one inner con. Attrs from
@@ -203,7 +161,7 @@ func createCredentialDescriptor(
 					}
 					requestedValue.String = &s
 				}
-				dn, _ := resolveAttrTexts(a, locale)
+				dn, _ := a.ResolveTexts(locale)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:      []any{a.ID},
 					DisplayName:    dn,
@@ -216,11 +174,11 @@ func createCredentialDescriptor(
 	// Display in schema order rather than the verifier's request order.
 	attributes = sortAttributesBySchema(attributes, info)
 
-	name, category, issueURL := resolveCredTypeTexts(info, locale)
+	name, category, issueURL := info.ResolveTexts(locale)
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
 		Name:         name,
-		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+		Issuer:       issuer.ToTrustedParty(irmaConfig, locale),
 		Category:     category,
 		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
@@ -243,7 +201,7 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		if at.RevocationAttribute {
 			continue
 		}
-		dn, _ := resolveAttrTexts(at, locale)
+		dn, _ := at.ResolveTexts(locale)
 		attributes = append(attributes, clientmodels.Attribute{
 			ClaimPath:   []any{at.ID},
 			DisplayName: dn,
@@ -253,11 +211,11 @@ func getCredentialDescriptor(irmaConfig *irma.Configuration, id irma.CredentialT
 		})
 	}
 
-	name, category, issueURL := resolveCredTypeTexts(info, locale)
+	name, category, issueURL := info.ResolveTexts(locale)
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: info.Identifier().String(),
 		Name:         name,
-		Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+		Issuer:       issuer.ToTrustedParty(irmaConfig, locale),
 		Category:     category,
 		Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 		Attributes:   attributes,
@@ -308,7 +266,7 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				if at.IsOptional() && len(attrValue) == 0 {
 					continue
 				}
-				dn, description := resolveAttrTexts(at, locale)
+				dn, description := at.ResolveTexts(locale)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:   []any{at.ID},
 					DisplayName: dn,
@@ -317,13 +275,13 @@ func credentialInfoListToSchemaless(irmaConfig *irma.Configuration, creds irma.C
 				})
 			}
 
-			name, _, issueURL := resolveCredTypeTexts(info, locale)
+			name, _, issueURL := info.ResolveTexts(locale)
 			newCred := clientmodels.Credential{
 				CredentialId: cred.Identifier().String(),
 				Hash:         instanceHash,
 				Image:        clientmodels.ImageFromFile(info.Logo(irmaConfig)),
 				Name:         name,
-				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+				Issuer:       issuer.ToTrustedParty(irmaConfig, locale),
 				CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 					format: cred.Hash,
 				},

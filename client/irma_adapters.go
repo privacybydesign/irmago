@@ -318,7 +318,7 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 					continue
 				}
 				rawVal := irma.TranslatedString(attributeValues[atType.Index])
-				name, description := resolveAttrTexts(atType, locale)
+				name, description := atType.ResolveTexts(locale)
 				attributes = append(attributes, clientmodels.Attribute{
 					ClaimPath:   []any{atType.ID},
 					DisplayName: name,
@@ -327,13 +327,13 @@ func (client *Client) rawLogEntryToLogInfo(entry *irmaclient.LogEntry) (clientmo
 				})
 			}
 
-			name, _, issueURL := resolveCredTypeTexts(credTypeInfo, locale)
+			name, _, issueURL := credTypeInfo.ResolveTexts(locale)
 			removedCreds = append(removedCreds, clientmodels.LogCredential{
 				CredentialId: credentialTypeId.String(),
 				Formats:      formats,
 				Image:        clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 				Name:         name,
-				Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+				Issuer:       issuer.ToTrustedParty(irmaConfig, locale),
 				Attributes:   attributes,
 				IssueURL:     issueURL,
 			})
@@ -385,7 +385,7 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 				continue
 			}
 			rawVal := irma.TranslatedString(attr.Value)
-			name, description := resolveAttrTexts(atType, locale)
+			name, description := atType.ResolveTexts(locale)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{atType.ID},
 				DisplayName: name,
@@ -394,13 +394,13 @@ func disclosedAttributesToLogCredentials(irmaConfig *irma.Configuration, attribu
 			})
 		}
 
-		name, _, issueURL := resolveCredTypeTexts(credTypeInfo, locale)
+		name, _, issueURL := credTypeInfo.ResolveTexts(locale)
 		result = append(result, clientmodels.LogCredential{
 			CredentialId: credTypeId.String(),
 			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_Idemix},
 			Image:        clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 			Name:         name,
-			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+			Issuer:       issuer.ToTrustedParty(irmaConfig, locale),
 			Attributes:   attributes,
 			IssuanceDate: issuanceTimes[credTypeId],
 			IssueURL:     issueURL,
@@ -432,7 +432,7 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 				continue
 			}
 			rawVal := irma.TranslatedString(cred.Attributes[atType.GetAttributeTypeIdentifier()])
-			name, description := resolveAttrTexts(atType, locale)
+			name, description := atType.ResolveTexts(locale)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{atType.ID},
 				DisplayName: name,
@@ -441,13 +441,13 @@ func issuedCredentialsToLogCredentials(irmaConfig *irma.Configuration, creds irm
 			})
 		}
 
-		name, _, issueURL := resolveCredTypeTexts(credTypeInfo, locale)
+		name, _, issueURL := credTypeInfo.ResolveTexts(locale)
 		result = append(result, clientmodels.LogCredential{
 			CredentialId:        credTypeId.String(),
 			Formats:             formats,
 			Image:               clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 			Name:                name,
-			Issuer:              buildIssuerTrustedParty(irmaConfig, issuer, locale),
+			Issuer:              issuer.ToTrustedParty(irmaConfig, locale),
 			Attributes:          attributes,
 			IssuanceDate:        func() *int64 { x := time.Time(cred.SignedOn).Unix(); return &x }(),
 			ExpiryDate:          func() *int64 { x := time.Time(cred.Expires).Unix(); return &x }(),
@@ -485,7 +485,7 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			}
 			v := rawVal
 			irmaVal := irma.NewTranslatedString(&v)
-			name, description := resolveAttrTexts(atType, locale)
+			name, description := atType.ResolveTexts(locale)
 			attributes = append(attributes, clientmodels.Attribute{
 				ClaimPath:   []any{atType.ID},
 				DisplayName: name,
@@ -494,13 +494,13 @@ func openid4vpCredentialLogsToLogCredentials(irmaConfig *irma.Configuration, log
 			})
 		}
 
-		name, _, issueURL := resolveCredTypeTexts(credTypeInfo, locale)
+		name, _, issueURL := credTypeInfo.ResolveTexts(locale)
 		result = append(result, clientmodels.LogCredential{
 			CredentialId: log.CredentialType,
 			Formats:      formats,
 			Image:        clientmodels.ImageFromFile(credTypeInfo.Logo(irmaConfig)),
 			Name:         name,
-			Issuer:       buildIssuerTrustedParty(irmaConfig, issuer, locale),
+			Issuer:       issuer.ToTrustedParty(irmaConfig, locale),
 			Attributes:   attributes,
 			IssueURL:     issueURL,
 		})

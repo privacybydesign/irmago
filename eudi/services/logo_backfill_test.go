@@ -10,7 +10,6 @@ import (
 
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
-	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
@@ -29,21 +28,10 @@ func (s *backfillTestStorage) RemoveAll() error                         { return
 
 func newBackfillTestStorage(t *testing.T) *backfillTestStorage {
 	t.Helper()
-	d, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("test-key-123"))}, &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, d.AutoMigrate(
-		&models.HolderBindingKey{},
-		&models.ECDSAKeyMetadata{},
-		&models.RSAKeyMetadata{},
-		&models.IssuerMetadataDisplay{},
-		&models.CredentialMetadata{},
-		&models.CredentialDisplay{},
-		&models.CredentialClaim{},
-		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
-	))
-	return &backfillTestStorage{db: d, fs: filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())}
+	return &backfillTestStorage{
+		db: newTestHolderDB(t),
+		fs: filesystem.NewFileSystemStorage([32]byte{}, t.TempDir()),
+	}
 }
 
 // Tests observe sweeps through a buffered channel of per-sweep cached counts

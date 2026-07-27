@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"maps"
 	"slices"
 
@@ -93,4 +94,64 @@ func LoadResolvedLogo(manager filesystem.LogoManager, uris clientmodels.Translat
 		}
 	}
 	return nil
+}
+
+// ResolvedBatchDisplay is a stored credential batch's display text, resolved
+// once for one locale.
+//
+// Both the credential list and the activity log need the same handful of
+// values per batch, and both used to rebuild them per item — but they depend
+// only on (batch, locale), so a page of 50 log entries over 20 credentials
+// rebuilt the same maps 50 times, JSON-decoding every claim path each round.
+type ResolvedBatchDisplay struct {
+	CredentialName string
+	IssuerName     string
+	IssuerId       string
+
+	// IssuerNames backs the activity log's issuer-identity check, which has to
+	// compare a log entry's snapshot name against every language the batch
+	// carries.
+	IssuerNames clientmodels.TranslatedString
+
+	// ClaimNames maps clientmodels.ClaimPathKey to the resolved claim display
+	// name. A claim whose metadata carries no translation for this locale maps
+	// to "", which callers distinguish from an absent key: the credential list
+	// treats a present-but-empty name as a label it should still emit, the log
+	// treats it as "keep the snapshot".
+	ClaimNames map[string]string
+
+	// ClaimOrder maps clientmodels.ClaimPathKey to the claim's position in the
+	// metadata, so attributes can be shown in issuer order rather than
+	// alphabetically. Covers every claim, including those with no display.
+	ClaimOrder map[string]int
+}
+
+// ResolveBatchDisplay resolves everything a batch's display metadata says, for
+// one locale, in one pass.
+func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedBatchDisplay {
+	d := ResolvedBatchDisplay{
+		IssuerId:    batch.CredentialIssuer,
+		IssuerNames: IssuerNamesByLanguage(batch.IssuerDisplay),
+		ClaimNames:  map[string]string{},
+		ClaimOrder:  map[string]int{},
+	}
+	d.IssuerName = clientmodels.Resolve(d.IssuerNames, locale)
+
+	if batch.CredentialMetadata == nil {
+		return d
+	}
+	d.CredentialName = clientmodels.Resolve(CredentialNamesByLanguage(batch.CredentialMetadata.Display), locale)
+
+	for i, claim := range batch.CredentialMetadata.Claims {
+		var path []any
+		if err := json.Unmarshal(claim.Path, &path); err != nil {
+			continue
+		}
+		key := clientmodels.ClaimPathKey(path)
+		d.ClaimOrder[key] = i
+		if len(claim.Display) > 0 {
+			d.ClaimNames[key] = clientmodels.Resolve(ClaimNamesByLanguage(claim.Display), locale)
+		}
+	}
+	return d
 }
