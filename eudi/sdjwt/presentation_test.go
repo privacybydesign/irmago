@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"testing"
@@ -7,13 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func buildTestSdJwtWithNestedClaims(t *testing.T) SdJwtVc {
+func buildTestSdJwtWithNestedClaims(t *testing.T) SdJwt {
 	t.Helper()
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "TestCredential"),
 			Claim(Key_IssuedAt, 1700000000),
 			SdClaim("given_name", "Alice"),
 			SdClaim("family_name", "Smith"),
@@ -22,8 +21,13 @@ func buildTestSdJwtWithNestedClaims(t *testing.T) SdJwtVc {
 				SdClaim("city", "Amsterdam"),
 				SdClaim("country", "NL"),
 			),
+			Object("personal_data",
+				SdClaim("first_name", "Gerrit"),
+				SdClaim("last_name", "Dijkstra"),
+			),
+			Array("nationalities", Item("NL"), SdItem("FR")),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
 }
@@ -143,32 +147,30 @@ func TestCreatePresentation_DuplicatePaths_NoDuplicateDisclosures(t *testing.T) 
 // --- SD-JWTs with mixed SD and non-SD claims ---
 
 // buildMixedSdJwt has top-level claims where some are SD and some are plaintext.
-func buildMixedSdJwt(t *testing.T) SdJwtVc {
+func buildMixedSdJwt(t *testing.T) SdJwt {
 	t.Helper()
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "MixedCredential"),
 			Claim(Key_IssuedAt, 1700000000),
 			SdClaim("email", "alice@example.com"),   // SD
 			Claim("nickname", "Ali"),                // plaintext (not SD)
 			SdClaim("phone_number", "+31612345678"), // SD
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
 }
 
 // buildMixedNestedSdJwt has a non-SD object containing SD sub-claims, and
 // an SD object containing a mix of SD and non-SD sub-claims.
-func buildMixedNestedSdJwt(t *testing.T) SdJwtVc {
+func buildMixedNestedSdJwt(t *testing.T) SdJwt {
 	t.Helper()
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "MixedNestedCredential"),
 			Claim(Key_IssuedAt, 1700000000),
 			SdClaim("given_name", "Bob"),
 			// Non-SD object with SD sub-claims: address is always visible,
@@ -185,7 +187,7 @@ func buildMixedNestedSdJwt(t *testing.T) SdJwtVc {
 				SdClaim("salary", "100000"),
 			),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
 }
@@ -308,13 +310,12 @@ func TestCreatePresentation_MixedNested_CombinedPaths(t *testing.T) {
 //   - "tags": a non-SD array with mixed SD/non-SD items
 //   - "roles": an SD array (the array itself is selectively disclosed)
 //   - "scores": a plaintext array (non-SD, non-SD items)
-func buildSdJwtWithArrays(t *testing.T) SdJwtVc {
+func buildSdJwtWithArrays(t *testing.T) SdJwt {
 	t.Helper()
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "ArrayCredential"),
 			Claim(Key_IssuedAt, 1700000000),
 			SdClaim("name", "Charlie"),
 			// Non-SD array containing a mix of SD and non-SD items.
@@ -334,19 +335,18 @@ func buildSdJwtWithArrays(t *testing.T) SdJwtVc {
 				Item(85),
 			),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
 }
 
 // buildSdJwtWithNestedArrayInObject has an object containing an SD array.
-func buildSdJwtWithNestedArrayInObject(t *testing.T) SdJwtVc {
+func buildSdJwtWithNestedArrayInObject(t *testing.T) SdJwt {
 	t.Helper()
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "NestedArrayCredential"),
 			Claim(Key_IssuedAt, 1700000000),
 			SdObject("profile",
 				SdClaim("username", "charlie"),
@@ -356,7 +356,7 @@ func buildSdJwtWithNestedArrayInObject(t *testing.T) SdJwtVc {
 				),
 			),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
 }
@@ -411,11 +411,10 @@ func TestCreatePresentation_SdArrayElement_OutOfBounds_NoError(t *testing.T) {
 
 func TestCreatePresentation_SdArrayElement_MultipleIndices(t *testing.T) {
 	// Build an array with multiple SD items.
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "MultiSdArray"),
 			Claim(Key_IssuedAt, 1700000000),
 			Array("items",
 				SdItem("first"),
@@ -423,7 +422,7 @@ func TestCreatePresentation_SdArrayElement_MultipleIndices(t *testing.T) {
 				SdItem("third"),
 			),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 
 	// Select index 0 and 2 — should include 2 disclosures with correct values.
@@ -452,13 +451,12 @@ func TestCreatePresentation_SdArrayElement_MultipleIndices(t *testing.T) {
 //	"tags" (non-SD array with SD items: tag strings)
 //
 // This tests the combination of SD objects → arrays with SD elements → scalar values.
-func buildComplexNestedSdJwt(t *testing.T) SdJwtVc {
+func buildComplexNestedSdJwt(t *testing.T) SdJwt {
 	t.Helper()
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "OrgCredential"),
 			Claim(Key_IssuedAt, 1700000000),
 			SdClaim("org_name", "ACME Corp"),
 			SdObject("projects",
@@ -476,7 +474,7 @@ func buildComplexNestedSdJwt(t *testing.T) SdJwtVc {
 				SdItem("internal"),
 			),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
 }
@@ -612,13 +610,12 @@ func TestCreatePresentation_ComplexNested_SelectBudgetSkipsTeam(t *testing.T) {
 //	      "faculty_name": "Architecture" (SD claim)
 //	      "departments" (non-SD array):
 //	        [0]: SdItem "Urbanism"
-func buildDeeplyNestedSdJwt(t *testing.T) SdJwtVc {
+func buildDeeplyNestedSdJwt(t *testing.T) SdJwt {
 	t.Helper()
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_SdAlg, iana.SHA256),
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "UniversityCredential"),
 			Claim(Key_IssuedAt, 1700000000),
 			SdObject("university",
 				SdClaim("name", "TU Delft"),
@@ -648,7 +645,7 @@ func buildDeeplyNestedSdJwt(t *testing.T) SdJwtVc {
 				),
 			),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
 }
@@ -918,19 +915,18 @@ func TestCreatePresentation_NestedSdClaim_AlongsideSdArray(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
-func buildTestSdJwtWithoutSdAlg(t *testing.T) SdJwtVc {
+func buildTestSdJwtWithoutSdAlg(t *testing.T) SdJwt {
 	t.Helper()
 	// Build an SD-JWT without _sd_alg. Per SD-JWT spec Section 4.1.1,
 	// the holder MUST default to sha-256 when _sd_alg is absent.
-	sdJwt, err := NewSdJwtVcBuilder().
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "TestCredential"),
 			Claim(Key_IssuedAt, 1700000000),
 			SdClaim("given_name", "Alice"),
 			SdClaim("email", "alice@example.com"),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 	require.NoError(t, err)
 	return sdJwt
 }
@@ -958,9 +954,9 @@ func TestCreatePresentation_MissingSdAlg_AllClaims(t *testing.T) {
 }
 
 // extractDisclosureKeys splits the SD-JWT result and returns the keys of all included disclosures.
-func extractDisclosureKeys(t *testing.T, sdJwt SdJwtVc) []string {
+func extractDisclosureKeys(t *testing.T, sdJwt SdJwt) []string {
 	t.Helper()
-	_, disclosures, err := splitSdJwtVc(sdJwt)
+	_, disclosures, err := Split(sdJwt)
 	require.NoError(t, err)
 	var keys []string
 	for _, d := range disclosures {
@@ -972,9 +968,9 @@ func extractDisclosureKeys(t *testing.T, sdJwt SdJwtVc) []string {
 }
 
 // extractDecodedDisclosures returns all decoded disclosures from an SD-JWT presentation.
-func extractDecodedDisclosures(t *testing.T, sdJwt SdJwtVc) []DisclosureContent {
+func extractDecodedDisclosures(t *testing.T, sdJwt SdJwt) []DisclosureContent {
 	t.Helper()
-	_, disclosures, err := splitSdJwtVc(sdJwt)
+	_, disclosures, err := Split(sdJwt)
 	require.NoError(t, err)
 	var result []DisclosureContent
 	for _, d := range disclosures {

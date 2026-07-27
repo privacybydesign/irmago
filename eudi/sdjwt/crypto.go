@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"crypto/ecdsa"
@@ -31,6 +31,8 @@ func NewJwtCreator(privateKey *ecdsa.PrivateKey) JwtCreator {
 	}
 }
 
+// NewDefaultEcdsaJwtCreatorWithHolderPrivateKey pulls in the irmago/testdata
+// fixture key; this is test-only code that will move to sdjwttest.
 func NewDefaultEcdsaJwtCreatorWithHolderPrivateKey() (JwtCreator, error) {
 	key, err := DecodeEcdsaPrivateKey(testdata.HolderPrivKeyBytes)
 	return &DefaultEcdsaJwtCreator{

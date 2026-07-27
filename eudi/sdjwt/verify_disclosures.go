@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
-func parseSdField(value any) ([]HashedDisclosure, error) {
+func ParseSdField(value any) ([]HashedDisclosure, error) {
 	strs, ok := value.([]any)
 	if !ok {
 		return []HashedDisclosure{}, fmt.Errorf("failed to convert _sd field to []any (%s)", value)
@@ -30,7 +30,7 @@ func parseSdField(value any) ([]HashedDisclosure, error) {
 	return result, nil
 }
 
-func parseConfirmField(value any) (*CnfField, error) {
+func ParseConfirmField(value any) (*CnfField, error) {
 	anyMap, ok := value.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("failed to parse as anymap: %v", value)
@@ -61,10 +61,10 @@ func parseConfirmField(value any) (*CnfField, error) {
 	return nil, fmt.Errorf("failed to parse cnf field: unsupported confirmation method, expected jwk or did:jwk: %v", value)
 }
 
-func verifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,
+func VerifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,
 	issuerSignedJwtClaims *map[string]any,
 	disclosures []EncodedDisclosure,
-) (ProcessedSdJwtPayload, []*DisclosureContent, error) {
+) (ProcessedPayload, []*DisclosureContent, error) {
 	// Step 3.a: decode all disclosures and calculate their digests
 	decodedDisclosuresMap := make(map[HashedDisclosure]*DisclosureContent, len(disclosures))
 	for _, disc := range disclosures {
@@ -105,7 +105,7 @@ func verifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,
 	}
 	delete(*issuerSignedJwtClaims, Key_SdAlg)
 
-	return ProcessedSdJwtPayload(*issuerSignedJwtClaims), decodedDisclosures, nil
+	return ProcessedPayload(*issuerSignedJwtClaims), decodedDisclosures, nil
 }
 
 func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[HashedDisclosure]*DisclosureContent) error {
@@ -212,7 +212,7 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 	}
 
 	// Found disclosure digests at this level.. replace with disclosure values
-	sdDigests, err := parseSdField(sdValue)
+	sdDigests, err := ParseSdField(sdValue)
 	if err != nil {
 		return fmt.Errorf("failed to parse digests for claim %q: %v", Key_Sd, err)
 	}
@@ -247,7 +247,7 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 	return nil
 }
 
-func extractClaimsAndDisclosuresDigestsFromToken(token jwt.Token) (map[string]any, error) {
+func ExtractClaimsAndDisclosureDigestsFromToken(token jwt.Token) (map[string]any, error) {
 	issuerSignedJwtClaims := map[string]any{}
 	for _, key := range token.Keys() {
 		var value any

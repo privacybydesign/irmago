@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"encoding/json"
@@ -7,29 +7,29 @@ import (
 	"slices"
 )
 
-type ProcessedSdJwtPayload map[string]any
+type ProcessedPayload map[string]any
 
-// MarshalJSON ensures that the JSON encoding of the ProcessedSdJwtPayload is deterministic by sorting map keys, which is necessary for consistent hashing of the payload.
+// MarshalJSON ensures that the JSON encoding of the ProcessedPayload is deterministic by sorting map keys, which is necessary for consistent hashing of the payload.
 // In order to calculate the hash consistently, the entire payload structure has to be sorted.
-// Fortunately, ProcessedSdJwtPayload is built up from map[string]any structures (where any is either a scalar value, a map, or an array), which we can sort by marshalling to JSON, which already sorts map keys.
-func (p *ProcessedSdJwtPayload) MarshalJSON() ([]byte, error) {
+// Fortunately, ProcessedPayload is built up from map[string]any structures (where any is either a scalar value, a map, or an array), which we can sort by marshalling to JSON, which already sorts map keys.
+func (p *ProcessedPayload) MarshalJSON() ([]byte, error) {
 	p.Sort()
 	return json.Marshal(map[string]any(*p))
 }
 
-// Sort sorts the ProcessedSdJwtPayload in place, by sorting all arrays by their values (when the array is of a scalar type).
+// Sort sorts the ProcessedPayload in place, by sorting all arrays by their values (when the array is of a scalar type).
 // This ensures that the JSON encoding of the payload is deterministic, which is necessary for consistent hashing of the payload.
 // As the map is keyed, it cannot be sorted itself, but this is handled by the JSON marshalling.
-func (p *ProcessedSdJwtPayload) Sort() {
+func (p *ProcessedPayload) Sort() {
 	for _, v := range *p {
 		rt := reflect.TypeOf(v)
 		switch rt.Kind() {
 		case reflect.Map:
-			m, ok := v.(ProcessedSdJwtPayload)
+			m, ok := v.(ProcessedPayload)
 			if ok {
 				m.Sort()
 			} else {
-				panic(fmt.Errorf("unexpected map type in ProcessedSdJwtPayload: %v", rt))
+				panic(fmt.Errorf("unexpected map type in ProcessedPayload: %v", rt))
 			}
 		case reflect.Slice, reflect.Array:
 			kind := rt.Elem().Kind()
@@ -73,14 +73,14 @@ func (p *ProcessedSdJwtPayload) Sort() {
 //   - int: selects the element at the given index in the current array.
 //   - nil: asserts the current value is an array and keeps it as the selection.
 //
-// Navigation descends through nested ProcessedSdJwtPayload values and slices.
+// Navigation descends through nested ProcessedPayload values and slices.
 // Returns the value at the end of the path, or an error if:
 //   - a path component has an unsupported type,
 //   - an intermediate value is not an object when a string key is used,
 //   - an intermediate value is not an array when an integer index or nil is used,
 //   - a key is not present in the current object, or
 //   - an index is out of range.
-func (p *ProcessedSdJwtPayload) GetClaimValue(pathPointer []any) (any, error) {
+func (p *ProcessedPayload) GetClaimValue(pathPointer []any) (any, error) {
 	if p == nil && len(pathPointer) > 0 {
 		return nil, fmt.Errorf("processed SD-JWT payload is nil")
 	}
@@ -94,7 +94,7 @@ func (p *ProcessedSdJwtPayload) GetClaimValue(pathPointer []any) (any, error) {
 		case string:
 			var m map[string]any
 			switch v := current.(type) {
-			case ProcessedSdJwtPayload:
+			case ProcessedPayload:
 				m = v
 			case map[string]any:
 				m = v

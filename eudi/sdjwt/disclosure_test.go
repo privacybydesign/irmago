@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"slices"
@@ -8,67 +8,6 @@ import (
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
 )
-
-// is `iss` field is required
-func TestNoIssuerLinkIsErr(t *testing.T) {
-	payload := IssuerSignedJwtPayload{
-		RegisteredClaims: RegisteredClaims{
-			Subject:   "subject",
-			Expiry:    nil,
-			IssuedAt:  nil,
-			NotBefore: nil,
-			Issuer:    "",
-		},
-		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-	}
-
-	_, err := IssuerSignedJwtPayload_ToJson(payload)
-	require.Error(t, err)
-}
-
-// the `iss` field of the issuer signed jwt is required to have a valid https link
-func TestNoHttpsIssuerIsErr(t *testing.T) {
-	payload := IssuerSignedJwtPayload{
-		RegisteredClaims: RegisteredClaims{
-			Subject:   "subject",
-			Expiry:    nil,
-			IssuedAt:  nil,
-			NotBefore: nil,
-			Issuer:    "http://invalid.com",
-		},
-		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-	}
-
-	_, err := IssuerSignedJwtPayload_ToJson(payload)
-	require.Error(t, err)
-}
-
-func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
-	payload := IssuerSignedJwtPayload{
-		RegisteredClaims: RegisteredClaims{
-			Subject:   "subject",
-			Expiry:    nil,
-			IssuedAt:  nil,
-			NotBefore: nil,
-			Issuer:    "https://example.com",
-		},
-		VerifiableCredentialType: "pbdf.sidn-pbdf.email",
-	}
-
-	json, err := IssuerSignedJwtPayload_ToJson(payload)
-
-	require.NoError(t, err)
-
-	values := jsonToMap(t, json)
-
-	require.Equal(t, values[Key_Subject], "subject")
-	require.Equal(t, values[Key_VerifiableCredentialType], "pbdf.sidn-pbdf.email")
-	require.Equal(t, values[Key_Issuer], "https://example.com")
-
-	require.NotContains(t, values, Key_Sd)
-	require.NotContains(t, values, Key_SdAlg)
-	require.NotContains(t, values, Key_Confirmationkey)
-}
 
 func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 	numDisclosures := 1000
@@ -82,33 +21,49 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 	}
 }
 
-func TestCreateSdJwtVcWithSingleDisclosuresAndWithoutKbJwt(t *testing.T) {
-	sdjwt, err := NewSdJwtVcBuilder().
+func TestSdJwtWithSingleDisclosureAndWithoutKbJwt(t *testing.T) {
+	sdJwt, err := NewBuilder().
 		WithPayload(
 			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_VerifiableCredentialType, "pbdf.pbdf.email"),
 			Claim(Key_SdAlg, iana.SHA256),
 			SdClaim("family", "Yivi"),
 		).
-		Build(NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(newTestJwtCreator(t))
 
 	require.NoError(t, err)
 
-	require.True(t, strings.HasSuffix(string(sdjwt), "~"), "sdjwt expected to end with ~ but doesn't: %v", sdjwt)
+	require.True(t, strings.HasSuffix(string(sdJwt), "~"), "sdJwt expected to end with ~ but doesn't: %v", sdJwt)
 
-	if num := strings.Count(string(sdjwt), "~"); num != 2 {
-		t.Fatalf("sdjwt expected have 2 ~ but has: %v (%v)", num, sdjwt)
+	if num := strings.Count(string(sdJwt), "~"); num != 2 {
+		t.Fatalf("sdJwt expected have 2 ~ but has: %v (%v)", num, sdJwt)
 	}
 }
 
-func TestCreateSdJwtVcWithDisclosuresAndKbJwt(t *testing.T) {
+func TestSdJwtWithDisclosuresAndKbJwt(t *testing.T) {
 	keyBinder := NewDefaultKeyBinderWithInMemoryStorage()
-	sdjwt := createDefaultTestingSdJwt(t, keyBinder)
-	kbjwt := createKbJwt(t, sdjwt, keyBinder)
-	fullSdjwt := AddKeyBindingJwtToSdJwtVc(sdjwt, kbjwt)
+	holderKeys, err := keyBinder.CreateKeyPairs(1)
+	require.NoError(t, err)
+	holderKeyClaim, err := HolderKeyClaim(holderKeys[0])
+	require.NoError(t, err)
 
-	if numTildes := strings.Count(string(fullSdjwt), "~"); numTildes != 3 {
-		t.Fatalf("expected 3 ~, but got %v (%v)", numTildes, fullSdjwt)
+	sdJwt, err := NewBuilder().
+		WithPayload(
+			holderKeyClaim,
+			Claim(Key_Issuer, "https://example.com"),
+			Claim(Key_SdAlg, iana.SHA256),
+			SdClaim("family_name", "Yivi"),
+			SdClaim("location", "Utrecht"),
+		).
+		Build(newTestJwtCreator(t))
+	require.NoError(t, err)
+
+	kbjwt, err := CreateKbJwt(sdJwt, keyBinder, "nonce", "Verifier")
+	require.NoError(t, err)
+
+	fullSdJwt := AddKeyBindingJwt(sdJwt, kbjwt)
+
+	if numTildes := strings.Count(string(fullSdJwt), "~"); numTildes != 3 {
+		t.Fatalf("expected 3 ~, but got %v (%v)", numTildes, fullSdJwt)
 	}
 }
 

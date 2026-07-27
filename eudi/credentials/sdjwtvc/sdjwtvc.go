@@ -1,6 +1,20 @@
 package sdjwtvc
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+)
+
+// SdJwtVc represents an encoded SD-JWT VC as a string, be it with or without disclosures, without a key binding jwt.
+// It is a defined type (not an alias) over sdjwt.SdJwt so that the compiler flags any place a raw
+// SD-JWT is used where an SD-JWT VC is expected.
+type SdJwtVc sdjwt.SdJwt
+
+// SdJwtVcKb represents an encoded SD-JWT VC as a string, be it with or without disclosures, potentially
+// with a key binding jwt (which needs to be determined by processing). See SdJwtVc for why this is a
+// defined type rather than an alias.
+type SdJwtVcKb sdjwt.SdJwtKb
 
 const (
 	Key_VerifiableCredentialType          string = "vct"
@@ -18,7 +32,7 @@ const (
 // vct#integrity is defined as a string, so a non-string here is either an
 // issuer bug or a downgrade attempt that shouldn't silently bypass integrity
 // verification.
-func LookupVctIntegrityClaim(payload ProcessedSdJwtPayload) (string, bool, error) {
+func LookupVctIntegrityClaim(payload sdjwt.ProcessedPayload) (string, bool, error) {
 	raw, ok := payload[Key_VerifiableCredentialTypeIntegrity]
 	if !ok {
 		return "", false, nil
@@ -36,15 +50,15 @@ func LookupVctIntegrityClaim(payload ProcessedSdJwtPayload) (string, bool, error
 // StandardClaims contains JWT-registered and SD-JWT-specific claims that are not user data.
 // Use this to distinguish issuer/protocol metadata from actual credential attributes.
 var StandardClaims = map[string]struct{}{
-	Key_Issuer:                   {},
-	Key_IssuedAt:                 {},
-	Key_ExpiryTime:               {},
-	Key_NotBefore:                {},
-	Key_Subject:                  {},
+	sdjwt.Key_Issuer:             {},
+	sdjwt.Key_IssuedAt:           {},
+	sdjwt.Key_ExpiryTime:         {},
+	sdjwt.Key_NotBefore:          {},
+	sdjwt.Key_Subject:            {},
 	Key_VerifiableCredentialType: {},
-	Key_Confirmationkey:          {},
+	sdjwt.Key_Confirmationkey:    {},
 	Key_Status:                   {},
-	Key_Sd:                       {},
-	Key_SdAlg:                    {},
+	sdjwt.Key_Sd:                 {},
+	sdjwt.Key_SdAlg:              {},
 	Key_Federation:               {},
 }

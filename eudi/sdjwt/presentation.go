@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ type indexedDisclosure struct {
 	decoded DisclosureContent
 }
 
-// CreatePresentation creates a new SD-JWT VC containing only the disclosures
+// CreatePresentation creates a new SD-JWT containing only the disclosures
 // that correspond to the given claim paths. Each path is a list of string keys
 // that navigate into the (possibly nested) SD-JWT payload.
 //
@@ -19,9 +19,9 @@ type indexedDisclosure struct {
 //   - the disclosure for "address" (if it is selectively disclosed at the top level)
 //   - the disclosure for "street" (nested inside the address object's _sd)
 //
-// The returned SD-JWT VC has the same issuer-signed JWT but only the selected
+// The returned SD-JWT has the same issuer-signed JWT but only the selected
 // disclosures appended.
-func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) {
+func CreatePresentation(fullSdJwt SdJwt, claimPaths [][]any) (SdJwt, error) {
 	issuerSignedJwt, payload, byHash, err := decodeAndIndex(fullSdJwt)
 	if err != nil {
 		return "", err
@@ -36,7 +36,7 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 		return "", err
 	}
 
-	return CreateSdJwtVc(issuerSignedJwt, selected), nil
+	return Create(issuerSignedJwt, selected), nil
 }
 
 // PostDisclosureView returns the JSON value a verifier would see if a
@@ -52,7 +52,7 @@ func CreatePresentation(fullSdJwt SdJwtVc, claimPaths [][]any) (SdJwtVc, error) 
 // paths. When the issuer chose a coarse SD granularity (multiple fields
 // bundled into one disclosure value), those bundled fields show up here so
 // the user sees them up front.
-func PostDisclosureView(fullSdJwt SdJwtVc, claimPaths [][]any) (map[string]any, error) {
+func PostDisclosureView(fullSdJwt SdJwt, claimPaths [][]any) (map[string]any, error) {
 	_, payload, byHash, err := decodeAndIndex(fullSdJwt)
 	if err != nil {
 		return nil, err
@@ -62,12 +62,12 @@ func PostDisclosureView(fullSdJwt SdJwtVc, claimPaths [][]any) (map[string]any, 
 	return view, nil
 }
 
-// decodeAndIndex splits and decodes an SD-JWT VC and indexes its disclosures
+// decodeAndIndex splits and decodes an SD-JWT and indexes its disclosures
 // by hash, ready for path-walking and disclosure-application logic.
-func decodeAndIndex(fullSdJwt SdJwtVc) (IssuerSignedJwt, map[string]any, map[string]indexedDisclosure, error) {
-	issuerSignedJwt, allDisclosures, err := splitSdJwtVc(fullSdJwt)
+func decodeAndIndex(fullSdJwt SdJwt) (IssuerSignedJwt, map[string]any, map[string]indexedDisclosure, error) {
+	issuerSignedJwt, allDisclosures, err := Split(fullSdJwt)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("failed to split SD-JWT VC: %v", err)
+		return "", nil, nil, fmt.Errorf("failed to split SD-JWT: %v", err)
 	}
 	payload, err := decodeJwtPayloadFromJwt(issuerSignedJwt)
 	if err != nil {

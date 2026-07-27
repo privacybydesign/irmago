@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"crypto/rand"
@@ -10,7 +10,7 @@ import (
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
-// The format of an SD-JWT VC:
+// The format of an SD-JWT:
 //
 // Without any disclosures:
 //     <Issuer signed JWT>~

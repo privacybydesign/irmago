@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 

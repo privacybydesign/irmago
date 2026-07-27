@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
 // IssuerSignedJwtPayload_ToJson converts the payload of the issuer signed jwt to json,
@@ -18,15 +19,15 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 	}
 
 	if len(payload.Sd) != 0 {
-		jsonValues[Key_Sd] = payload.Sd
+		jsonValues[sdjwt.Key_Sd] = payload.Sd
 	}
 
 	if payload.SdAlg != "" {
-		jsonValues[Key_SdAlg] = payload.SdAlg
+		jsonValues[sdjwt.Key_SdAlg] = payload.SdAlg
 	}
 
 	if payload.Confirm != nil && payload.Confirm.Jwk != nil {
-		jsonValues[Key_Confirmationkey] = payload.Confirm
+		jsonValues[sdjwt.Key_Confirmationkey] = payload.Confirm
 	}
 
 	if payload.Status != nil && payload.Status.StatusList != nil {
@@ -34,10 +35,10 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 	}
 
 	jsonValues[Key_VerifiableCredentialType] = payload.VerifiableCredentialType
-	jsonValues[Key_ExpiryTime] = payload.Expiry
-	jsonValues[Key_IssuedAt] = payload.IssuedAt
-	jsonValues[Key_Subject] = payload.Subject
-	jsonValues[Key_Issuer] = payload.Issuer
+	jsonValues[sdjwt.Key_ExpiryTime] = payload.Expiry
+	jsonValues[sdjwt.Key_IssuedAt] = payload.IssuedAt
+	jsonValues[sdjwt.Key_Subject] = payload.Subject
+	jsonValues[sdjwt.Key_Issuer] = payload.Issuer
 
 	jsonBytes, err := json.Marshal(jsonValues)
 	return string(jsonBytes), err
@@ -45,7 +46,7 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 
 // IssuerSignedJwtPayload is a representation of the payload of the issuer signed jwt part of an SD-JWT VC
 type IssuerSignedJwtPayload struct {
-	RegisteredClaims
+	sdjwt.RegisteredClaims
 
 	// REQUIRED: the type of verifiable credential
 	VerifiableCredentialType string
@@ -57,11 +58,11 @@ type IssuerSignedJwtPayload struct {
 
 // SdJwtVc_IssuerRepresentation is a representation of the SD-JWT VC that can be used by the issuer or holder to issue and disclose
 type SdJwtVc_IssuerRepresentation struct {
-	IssuerSignedJwt IssuerSignedJwt
-	Disclosures     []DisclosureContent
+	IssuerSignedJwt sdjwt.IssuerSignedJwt
+	Disclosures     []sdjwt.DisclosureContent
 }
 
-func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator) (IssuerSignedJwt, error) {
+func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator sdjwt.JwtCreator) (sdjwt.IssuerSignedJwt, error) {
 	json, err := IssuerSignedJwtPayload_ToJson(payload)
 	if err != nil {
 		return "", err
@@ -74,5 +75,5 @@ func CreateIssuerSignedJwt(payload IssuerSignedJwtPayload, jwtCreator JwtCreator
 	if err != nil {
 		return "", err
 	}
-	return IssuerSignedJwt(jwt), nil
+	return sdjwt.IssuerSignedJwt(jwt), nil
 }

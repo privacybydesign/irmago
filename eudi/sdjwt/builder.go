@@ -1,9 +1,8 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -362,7 +361,7 @@ func (b *Builder) WithTyp(typ string) *Builder {
 	return b
 }
 
-func (b *Builder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
+func (b *Builder) Build(jwtCreator JwtCreator) (SdJwt, error) {
 	var sdAlg iana.HashingAlgorithm
 	for _, c := range b.claims {
 		if c.Key == Key_SdAlg {
@@ -411,60 +410,9 @@ func (b *Builder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
 		return "", fmt.Errorf("failed to create issuer signed payload: %w", err)
 	}
 
-	return CreateSdJwtVc(IssuerSignedJwt(result), claimsJson.Disclosures), nil
+	return Create(IssuerSignedJwt(result), claimsJson.Disclosures), nil
 }
 
 func NewBuilder() *Builder {
 	return &Builder{}
-}
-
-// SdJwtVcBuilder builds an SD-JWT VC (draft-ietf-oauth-sd-jwt-vc) on top of
-// the generic SD-JWT Builder: it additionally requires a `vct` claim,
-// requires `iss` (when provided) to be a valid https:// URL, and sets the
-// `typ` header to SdJwtVcTyp.
-type SdJwtVcBuilder struct {
-	claims          []*ClaimElement
-	issuerCertChain []string
-}
-
-func (b *SdJwtVcBuilder) WithPayload(claims ...*ClaimElement) *SdJwtVcBuilder {
-	b.claims = claims
-	return b
-}
-
-func (b *SdJwtVcBuilder) WithIssuerCertificateChain(certChain []string) *SdJwtVcBuilder {
-	b.issuerCertChain = certChain
-	return b
-}
-
-func (b *SdJwtVcBuilder) Build(jwtCreator JwtCreator) (SdJwtVc, error) {
-	vctClaimFound := false
-	for _, c := range b.claims {
-		switch c.Key {
-		case Key_VerifiableCredentialType:
-			vctClaimFound = true
-		case Key_Issuer:
-			url, ok := c.Value.(string)
-			if !ok {
-				return "", fmt.Errorf("issuer url (iss) is provided but is not a string")
-			}
-
-			if !strings.HasPrefix(url, "https://") {
-				return "", fmt.Errorf("issuer url (iss) is required to be a valid https link when provided (but was '%s')", url)
-			}
-		}
-	}
-	if !vctClaimFound {
-		return "", fmt.Errorf("'vct' claim required but not found")
-	}
-
-	return NewBuilder().
-		WithPayload(b.claims...).
-		WithIssuerCertificateChain(b.issuerCertChain).
-		WithTyp(SdJwtVcTyp).
-		Build(jwtCreator)
-}
-
-func NewSdJwtVcBuilder() *SdJwtVcBuilder {
-	return &SdJwtVcBuilder{}
 }
