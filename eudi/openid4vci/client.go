@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"runtime/debug"
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -87,6 +88,11 @@ func (client *Client) NewSession(sessionId int, credentialOfferEndpointUrl strin
 
 func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) {
 	go func() {
+		// This goroutine is owned by irmago, so the app bridge's own recover
+		// does not cover it: an unrecovered panic here aborts the whole host
+		// process instead of ending the session. Turn it into a session failure.
+		defer recoverSessionPanic(handler)
+
 		credentialOfferJson, err := client.validateCredentialOfferEndpointAndObtainCredentialOfferParameters(credentialOfferEndpointUrl)
 		if err != nil {
 			handleFailure(handler, "%s", err.Error())
@@ -242,6 +248,14 @@ func (client *Client) ParseAndValidateCredentialOffer(credentialOfferJson string
 	// Validate all requested Credential Configuration IDs are unique
 	if !metadata.IsUniqueStrings(credentialOffer.CredentialConfigurationIds, true) {
 		return nil, fmt.Errorf("credential_configuration_ids in credential offer are not unique")
+	}
+
+	// grants is OPTIONAL per OID4VCI v1.0 § 4.1.1: when it is absent the wallet
+	// is supposed to derive the grant types from the authorization server
+	// metadata. We do not support that yet, so reject the offer here rather than
+	// let the missing member reach the grant selection in configureIssuerSettings.
+	if credentialOffer.Grants == nil {
+		return nil, fmt.Errorf("no grants found in credential offer")
 	}
 
 	return &credentialOffer, nil
@@ -450,6 +464,26 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	eudi.Logger.Errorf(message, fmtArgs...)
 	handler.Failure(&clientmodels.SessionError{
 		WrappedError: fmt.Sprintf(message, fmtArgs...),
+	})
+}
+
+// recoverSessionPanic reports a panic on the session goroutine as a session
+// failure. It has to be deferred from the goroutine's own function body, since
+// recover only sees panics of the goroutine it runs on.
+func recoverSessionPanic(handler Handler) {
+	e := recover()
+	if e == nil {
+		return
+	}
+
+	stack := string(debug.Stack())
+	eudi.Logger.Errorf("recovering from panic: %v\nstack trace:\n%v", e, stack)
+	handler.Failure(&clientmodels.SessionError{
+		// Same error type the legacy irmaclient session uses for a recovered
+		// panic (irma.ErrorPanic), so the app can handle both alike.
+		ErrorType:    "panic",
+		WrappedError: fmt.Sprintf("openid4vci session panicked: %v", e),
+		Stack:        stack,
 	})
 }
 

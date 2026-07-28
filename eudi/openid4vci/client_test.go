@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
@@ -112,6 +115,142 @@ func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl stri
 	require.True(t, success)
 
 	storage.Close()
+}
+
+// failureRecordingHandler makes the SessionError itself available to the test,
+// which MockSessionHandler.Failure does not do (it only signals "not successful").
+type failureRecordingHandler struct {
+	*MockSessionHandler
+	failures chan *clientmodels.SessionError
+}
+
+func newFailureRecordingHandler(t *testing.T) *failureRecordingHandler {
+	return &failureRecordingHandler{
+		MockSessionHandler: newMockSessionHandler(t),
+		failures:           make(chan *clientmodels.SessionError, 1),
+	}
+}
+
+func (h *failureRecordingHandler) Failure(err *clientmodels.SessionError) {
+	h.failures <- err
+}
+
+func (h *failureRecordingHandler) awaitFailure(t *testing.T) *clientmodels.SessionError {
+	t.Helper()
+	select {
+	case err := <-h.failures:
+		return err
+	case <-time.After(10 * time.Second):
+		t.Fatal("session did not report a failure")
+		return nil
+	}
+}
+
+// panickingRoundTripper panics instead of performing a request, to inject a
+// panic into the goroutine the openid4vci client runs its session on.
+type panickingRoundTripper struct {
+	message string
+}
+
+func (rt *panickingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	panic(rt.message)
+}
+
+// countingRoundTripper fails every request and records how many were attempted,
+// so a test can assert a session was aborted before it went to the network.
+type countingRoundTripper struct {
+	requests atomic.Int32
+}
+
+func (rt *countingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	rt.requests.Add(1)
+	return nil, fmt.Errorf("no request expected in this test")
+}
+
+func TestParseAndValidateCredentialOfferGrants(t *testing.T) {
+	const issuerAndConfigIds = `"credential_issuer":"https://issuer.example.com","credential_configuration_ids":["ExampleCredentialSdJwt"]`
+
+	tests := []struct {
+		name      string
+		offer     string
+		expectErr string
+	}{
+		{
+			name:  "pre-authorized code grant is accepted",
+			offer: `{` + issuerAndConfigIds + `,"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{"pre-authorized_code":"code"}}}`,
+		},
+		{
+			// An empty grants object is a valid offer as far as parsing goes; the
+			// grant selection in configureIssuerSettings rejects it later.
+			name:  "empty grants object is accepted",
+			offer: `{` + issuerAndConfigIds + `,"grants":{}}`,
+		},
+		{
+			name:      "absent grants member is rejected",
+			offer:     `{` + issuerAndConfigIds + `}`,
+			expectErr: "no grants found in credential offer",
+		},
+		{
+			name:      "null grants member is rejected",
+			offer:     `{` + issuerAndConfigIds + `,"grants":null}`,
+			expectErr: "no grants found in credential offer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &Client{}
+
+			offer, err := client.ParseAndValidateCredentialOffer(tt.offer)
+
+			if tt.expectErr != "" {
+				require.ErrorContains(t, err, tt.expectErr)
+				require.Nil(t, offer)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, offer.Grants)
+		})
+	}
+}
+
+// A credential offer without a grants member used to nil-dereference on the
+// session goroutine, killing the whole host process instead of the session.
+func TestNewSessionCredentialOfferWithoutGrantsFailsSession(t *testing.T) {
+	offers := map[string]string{
+		"absent grants member": `{"credential_issuer":"https://issuer.example.com","credential_configuration_ids":["ExampleCredentialSdJwt"]}`,
+		"null grants member":   `{"credential_issuer":"https://issuer.example.com","credential_configuration_ids":["ExampleCredentialSdJwt"],"grants":null}`,
+	}
+
+	for name, offer := range offers {
+		t.Run(name, func(t *testing.T) {
+			handler := newFailureRecordingHandler(t)
+			transport := &countingRoundTripper{}
+			client := &Client{httpClient: &http.Client{Transport: transport}}
+
+			client.NewSession(1, "openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "https://open.yivi.app/-/auth-callback", handler)
+
+			require.Contains(t, handler.awaitFailure(t).WrappedError, "no grants found in credential offer")
+			// The offer is rejected during validation, before the issuer metadata
+			// fetch that used to precede the nil dereference.
+			require.Zero(t, transport.requests.Load())
+		})
+	}
+}
+
+func TestNewSessionReportsPanicAsSessionFailure(t *testing.T) {
+	handler := newFailureRecordingHandler(t)
+	client := &Client{
+		httpClient: &http.Client{Transport: &panickingRoundTripper{message: "injected panic"}},
+	}
+
+	client.NewSession(1, "openid-credential-offer://?credential_offer_uri=http://issuer.example.com/offer", "https://open.yivi.app/-/auth-callback", handler)
+
+	sessionError := handler.awaitFailure(t)
+	require.Equal(t, "panic", sessionError.ErrorType)
+	require.Contains(t, sessionError.WrappedError, "injected panic")
+	require.NotEmpty(t, sessionError.Stack)
 }
 
 func addTestCredentialsToStorage(t *testing.T, storage irmaclient.SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
