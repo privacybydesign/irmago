@@ -31,10 +31,10 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m)
+	tp := client.convertToTrustedParty(m, "en")
 
 	require.NotNil(t, tp)
-	require.Equal(t, "Test Issuer", tp.Name[""], "name carried through from display")
+	require.Equal(t, "Test Issuer", tp.Name, "name carried through from display")
 	require.Equal(t, "https://issuer.example.com/tenant", tp.Id,
 		"Id must mirror CredentialIssuer — the log service uses it as the LogoManager key when persisting the issuer logo")
 	require.NotNil(t, tp.Image, "issuer logo should be populated when cached for display.logo.uri")
@@ -67,7 +67,7 @@ func TestConvertToTrustedParty_PreservesSvgMimeType(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m)
+	tp := client.convertToTrustedParty(m, "en")
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image)
@@ -95,7 +95,7 @@ func TestConvertToTrustedParty_NoMimeType_LeavesMimeTypeNil(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m)
+	tp := client.convertToTrustedParty(m, "en")
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image)
@@ -122,7 +122,7 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_DataUri(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m)
+	tp := client.convertToTrustedParty(m, "en")
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image, "data URI logos must reach requestorInfo just like HTTP URIs do")
@@ -141,7 +141,7 @@ func TestConvertToTrustedParty_NoLogo_LeavesImageNil(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m)
+	tp := client.convertToTrustedParty(m, "en")
 
 	require.NotNil(t, tp)
 	require.Nil(t, tp.Image, "no logo advertised → Image must stay nil")

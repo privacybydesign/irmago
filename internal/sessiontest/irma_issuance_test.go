@@ -63,6 +63,16 @@ func testSessionHandlerForIrmaIssuance(t *testing.T) {
 		testAttributesOrderedByDisplayIndex,
 	)
 
+	runDutchSessionTest(t,
+		"issuance and data tab in dutch locale",
+		testDutchIrmaIssuanceAndDataTab,
+	)
+
+	runEudiSessionTest(t,
+		"data tab and logs follow locale switch",
+		testIrmaLocaleSwitchDataTabAndLogs,
+	)
+
 	t.Run("revocation attributes excluded from credentials", func(t *testing.T) {
 		revServer := startRevocationServer(t, true, "postgres")
 		defer revServer.Stop()
@@ -290,7 +300,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	requireNoAttr(t, attributeMap(offered.Attributes), []any{"votingnumber"})
 	requireAttrsInOrder(t, offered.Attributes, expectedAttr{
 		Path:        []any{"election"},
-		DisplayName: &clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
+		DisplayName: new("Election"),
 		Value:       strVal("plantsoen"),
 	})
 
@@ -343,7 +353,7 @@ func testRandomBlindAttributesExcludedFromOfferedCredentials(
 	require.Equal(t, "irma-demo.stemmen.stempas", owned.CredentialId)
 	requireAttrsInOrder(t, owned.Attributes, expectedAttr{
 		Path:        []any{"election"},
-		DisplayName: &clientmodels.TranslatedString{"en": "Election", "nl": "Verkiezing"},
+		DisplayName: new("Election"),
 		Value:       strVal("plantsoen"),
 	})
 
@@ -484,22 +494,22 @@ func testAttributesOrderedByDisplayIndex(
 	studentCardExpectedAttrs := []expectedAttr{
 		{
 			Path:        []any{"level"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Type", "nl": "Soort"},
+			DisplayName: new("Type"),
 			Value:       strVal("high"),
 		},
 		{
 			Path:        []any{"studentID"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Student number", "nl": "Studentnummer"},
+			DisplayName: new("Student number"),
 			Value:       strVal("67890"),
 		},
 		{
 			Path:        []any{"studentCardNumber"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Student card number", "nl": "Studentenkaartnummer"},
+			DisplayName: new("Student card number"),
 			Value:       strVal("12345"),
 		},
 		{
 			Path:        []any{"university"},
-			DisplayName: &clientmodels.TranslatedString{"en": "University", "nl": "Universiteit"},
+			DisplayName: new("University"),
 			Value:       strVal("University of the Arts"),
 		},
 	}
@@ -550,7 +560,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	// Prove that the revocation attribute (with empty ID) is not visible — only BSN should be present
 	requireAttrsInOrder(t, rootCred.Attributes, expectedAttr{
 		Path:        []any{"BSN"},
-		DisplayName: &clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
+		DisplayName: new("BSN"),
 		Value:       strVal("299792458"),
 	})
 
@@ -580,7 +590,7 @@ func testRevocationAttributesExcludedFromCredentials(
 	require.True(t, cred.Revoked, "owned option should show credential as revoked during disclosure permission")
 	requireAttrsInOrder(t, cred.Attributes, expectedAttr{
 		Path:        []any{"BSN"},
-		DisplayName: &clientmodels.TranslatedString{"en": "BSN", "nl": "BSN"},
+		DisplayName: new("BSN"),
 		Value:       strVal("299792458"),
 	})
 
@@ -605,4 +615,144 @@ func testRevocationAttributesExcludedFromCredentials(
 	}
 	require.NotNil(t, rootCred, "revoked credential should still be in GetCredentials")
 	require.True(t, rootCred.Revoked, "credential should be marked as revoked")
+}
+
+// testDutchIrmaIssuanceAndDataTab pins the Dutch-locale resolution for the
+// classic IRMA protocol and the data-tab layer: the issuance permission
+// prompt, the stored credential list, and the bbolt activity log all render
+// the scheme's Dutch translations. The English path is pinned by the other
+// tests in this file.
+func testDutchIrmaIssuanceAndDataTab(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	req := createIrmaIssuanceRequestWithSdJwts("test.test.email", "email")
+	c.NewSession(1, startSameDeviceIrmaSessionAtServer(t, irmaServer, req))
+
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_RequestPermission)
+	require.Len(t, session.OfferedCredentials, 1)
+
+	offered := session.OfferedCredentials[0]
+	require.Equal(t, "Demo E-mailadres", offered.Name)
+	require.Equal(t, "Demo test issuer", offered.Issuer.Name)
+	requireAttrsInOrder(t, offered.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	grantPermission(t, c, session.Id)
+	session = awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	// Data tab: the stored credential resolves through the Dutch scheme texts.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
+	require.Equal(t, "Demo E-mailadres", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	// Classic (bbolt) activity log: rebuilt from the scheme at read time, so
+	// it follows the client's locale too.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	issuance := findLog(logs, clientmodels.LogType_Issuance)
+	require.NotNil(t, issuance)
+	var logCred *clientmodels.LogCredential
+	for i := range issuance.IssuanceLog.Credentials {
+		if issuance.IssuanceLog.Credentials[i].CredentialId == "test.test.email" {
+			logCred = &issuance.IssuanceLog.Credentials[i]
+			break
+		}
+	}
+	require.NotNil(t, logCred, "expected an issuance log entry for test.test.email")
+	require.Equal(t, "Demo E-mailadres", logCred.Name)
+	require.Equal(t, "Demo test issuer", logCred.Issuer.Name)
+}
+
+// testIrmaLocaleSwitchDataTabAndLogs pins the classic-IRMA counterpart of the
+// locale-switch behavior: credentials and logs are rebuilt from the scheme at
+// read time, so a client that issued under "en" and then switches to "nl"
+// (and back) sees the scheme's translations for the active locale everywhere.
+func testIrmaLocaleSwitchDataTabAndLogs(
+	t *testing.T,
+	irmaServer *IrmaServer,
+	c *client.Client,
+	sessionHandler *MockSessionHandler,
+) {
+	// Session runs under the English locale.
+	issue(t, irmaServer, c, sessionHandler, 1, createIrmaIssuanceRequestWithSdJwts("test.test.email", "email"))
+	session := awaitSessionState(t, sessionHandler)
+	requireSessionState(t, session, 1, clientmodels.Type_Issuance, clientmodels.Status_Success)
+
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
+	require.Equal(t, "Demo Email address", cred.Name)
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	// Switch to Dutch: the next pull resolves through the Dutch scheme texts.
+	c.SetLocale("nl")
+
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	cred = findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
+	require.Equal(t, "Demo E-mailadres", cred.Name)
+	requireAttrsInOrder(t, cred.Attributes,
+		expectedAttr{
+			Path:        []any{"email"},
+			DisplayName: new("E-mailadres"),
+			Description: new("Uw geverifiëerde e-mailadres"),
+			Value:       strVal("test@gmail.com"),
+		},
+	)
+
+	// Classic logs are rebuilt from the scheme at read time, so they follow
+	// the locale switch too.
+	logs, err := c.LoadNewestLogs(100)
+	require.NoError(t, err)
+	issuance := findLog(logs, clientmodels.LogType_Issuance)
+	require.NotNil(t, issuance)
+	var logCred *clientmodels.LogCredential
+	for i := range issuance.IssuanceLog.Credentials {
+		if issuance.IssuanceLog.Credentials[i].CredentialId == "test.test.email" {
+			logCred = &issuance.IssuanceLog.Credentials[i]
+			break
+		}
+	}
+	require.NotNil(t, logCred)
+	require.Equal(t, "Demo E-mailadres", logCred.Name)
+
+	// Switching back restores the English resolution.
+	c.SetLocale("en")
+
+	creds, err = c.GetCredentials()
+	require.NoError(t, err)
+	cred = findCredentialById(creds, "test.test.email")
+	require.NotNil(t, cred)
+	require.Equal(t, "Demo Email address", cred.Name)
 }
