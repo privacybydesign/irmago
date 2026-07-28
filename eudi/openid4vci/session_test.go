@@ -507,7 +507,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 		"sub":         "u1",
 	}
 
-	attrs := buildAttributesWithValues(claims, payload)
+	attrs := buildAttributesWithValues(claims, payload, "en")
 
 	byPath := map[string]int{}
 	for i, a := range attrs {
@@ -528,7 +528,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	idx, ok := byPath["family_name"]
 	require.True(t, ok, "family_name should appear")
 	require.NotNil(t, attrs[idx].DisplayName)
-	require.Equal(t, "Family Name", (*attrs[idx].DisplayName)["en"])
+	require.Equal(t, "Family Name", *attrs[idx].DisplayName)
 
 	// given_name is in payload but not metadata → DisplayName nil.
 	idx, ok = byPath["given_name"]
@@ -539,7 +539,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	idx, ok = byPath["address"]
 	require.True(t, ok, "address section header should appear")
 	require.NotNil(t, attrs[idx].DisplayName)
-	require.Equal(t, "Address", (*attrs[idx].DisplayName)["en"])
+	require.Equal(t, "Address", *attrs[idx].DisplayName)
 	require.Nil(t, attrs[idx].Value)
 
 	// address.city: no metadata → no inherited display.

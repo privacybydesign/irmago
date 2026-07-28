@@ -43,6 +43,7 @@ type Client struct {
 	dcqlHandler       *dcql.DcqlHandler
 	verifierValidator VerifierValidator
 	currentSession    *openid4vpSession
+	currentLocale     *clientmodels.CurrentLocale
 }
 
 // RefreshPendingPermissionRequest sends another, updated verification request if there's an active session.
@@ -57,12 +58,14 @@ func NewClient(
 	eudiConf *eudi.Configuration,
 	handlers []dcql.DcqlCredentialQueryHandler,
 	verifierValidator VerifierValidator,
+	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
 	return &Client{
 		Configuration:     eudiConf,
 		dcqlHandler:       dcql.NewDcqlHandler(handlers),
 		verifierValidator: verifierValidator,
 		currentSession:    nil,
+		currentLocale:     currentLocale,
 	}, nil
 }
 
@@ -146,7 +149,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		requestor := &clientmodels.TrustedParty{
-			Name:     clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName),
+			Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
 			Verified: endEntityCert != nil,
 		}
 		if endEntityCert != nil {
