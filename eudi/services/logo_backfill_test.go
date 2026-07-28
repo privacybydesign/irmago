@@ -51,7 +51,13 @@ func requireNoFurtherSweep(t *testing.T, ch chan int) {
 // for both the issuer and the credential, served from baseURL.
 func storeBackfillBatch(t *testing.T, s *backfillTestStorage, baseURL string) {
 	t.Helper()
-	batch := &models.CredentialBatch{
+	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(backfillBatch(baseURL)))
+}
+
+// backfillBatch builds the batch storeBackfillBatch persists, so a test that
+// needs a different logo layout can adjust it before storing.
+func backfillBatch(baseURL string) *models.CredentialBatch {
+	return &models.CredentialBatch{
 		IssuerURL:                "https://issuer.example.com",
 		VerifiableCredentialType: "https://vct.example.com/Test",
 		Format:                   models.CredentialFormatSdJwtVc,
@@ -73,7 +79,6 @@ func storeBackfillBatch(t *testing.T, s *backfillTestStorage, baseURL string) {
 		},
 		Instances: []models.IssuedCredentialInstance{{RawCredential: []byte("raw")}},
 	}
-	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(batch))
 }
 
 func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
@@ -105,6 +110,54 @@ func TestBackfillLogos_FetchesOnlyMissingResolvingLogos(t *testing.T) {
 	added = backfillLogos(context.Background(), s, server.Client(), "nl")
 	require.Equal(t, 0, added)
 	require.Equal(t, 1, requests["/cred-nl.png"])
+}
+
+// An issuer may serve one brand image as both its issuer and its credential
+// logo. The two managers are separate directories, so the sweep must cache it in
+// both — deduplicating downloads per manager rather than across the whole sweep.
+func TestBackfillLogos_SharedUriIsCachedInBothManagers(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("logo-bytes"))
+	}))
+	defer server.Close()
+
+	s := newBackfillTestStorage(t)
+
+	// One image, used as both the nl issuer logo and the nl credential logo.
+	shared := server.URL + "/brand.png"
+	batch := backfillBatch(server.URL)
+	for i := range batch.IssuerDisplay {
+		if batch.IssuerDisplay[i].Locale.V == "nl" {
+			batch.IssuerDisplay[i].LogoURI = nullStr(shared)
+		}
+	}
+	for i := range batch.CredentialMetadata.Display {
+		if batch.CredentialMetadata.Display[i].Locale.V == "nl" {
+			batch.CredentialMetadata.Display[i].LogoURI = shared
+		}
+	}
+	require.NoError(t, db.NewCredentialStore(s.Db()).StoreBatch(batch))
+
+	added := backfillLogos(context.Background(), s, server.Client(), "nl")
+
+	require.Equal(t, 2, added, "the shared logo must be cached once per manager")
+	require.Equal(t, 2, requests, "one download per manager that needs it")
+
+	for _, m := range []filesystem.LogoManager{
+		s.FileSystem().Issuers().LogoManager(),
+		s.FileSystem().Credentials().LogoManager(),
+	} {
+		exists, err := m.Exists(shared)
+		require.NoError(t, err)
+		require.True(t, exists, "shared logo missing from one of the two managers")
+	}
+
+	// Warm cache: nothing further downloaded.
+	require.Equal(t, 0, backfillLogos(context.Background(), s, server.Client(), "nl"))
+	require.Equal(t, 2, requests)
 }
 
 // Tapping through several languages must not queue up a sweep per tap. Only the

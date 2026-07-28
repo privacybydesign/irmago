@@ -120,9 +120,13 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 
 	// Credentials from one issuer share an issuer logo, so without this the
 	// sweep would re-check the same URI once per batch — and, when the download
-	// fails, re-request a dead URL once per batch.
-	seen := map[string]struct{}{}
-	fetchOnce := func(manager filesystem.LogoManager, uri string) int {
+	// fails, re-request a dead URL once per batch. Tracked per manager, not
+	// globally: the two managers are separate directories, so an issuer serving
+	// one brand image as both its issuer and its credential logo needs it cached
+	// in both. A single set would cache it in whichever came first and leave the
+	// other permanently empty.
+	seenIssuer, seenCredential := map[string]struct{}{}, map[string]struct{}{}
+	fetchOnce := func(seen map[string]struct{}, manager filesystem.LogoManager, uri string) int {
 		if _, done := seen[uri]; done {
 			return 0
 		}
@@ -135,9 +139,9 @@ func backfillLogos(ctx context.Context, s storage.Storage, httpClient *http.Clie
 		if ctx.Err() != nil {
 			break
 		}
-		added += fetchOnce(issuerLogos, clientmodels.Resolve(IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale))
+		added += fetchOnce(seenIssuer, issuerLogos, clientmodels.Resolve(IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale))
 		if batch.CredentialMetadata != nil {
-			added += fetchOnce(credentialLogos, clientmodels.Resolve(CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale))
+			added += fetchOnce(seenCredential, credentialLogos, clientmodels.Resolve(CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale))
 		}
 	}
 	return added
