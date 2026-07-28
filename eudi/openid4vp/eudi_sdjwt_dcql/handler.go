@@ -75,7 +75,7 @@ type SdJwtVcDcqlHandler struct {
 // handler will then return empty obtainable descriptors as before.
 //
 // keyBinder is the KB-JWT signer used when a presentation requires holder
-// binding. Pass sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(
+// binding. Pass sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(
 // eudiStorage.Db())) for the default software, storage-backed signer, or a
 // WSCA/HSM-backed implementation to keep the holder private key out of process.
 func NewSdJwtVcDcqlHandler(

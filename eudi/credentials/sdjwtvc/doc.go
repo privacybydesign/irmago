@@ -34,8 +34,7 @@
 //     runs, at the end of ProcessAndVerifySdJwtVc.
 //
 // Two follow-ups were considered and deliberately deferred rather than
-// done as part of the split (see docs/sdjwt-package-split-plan.md,
-// "Deferred"): replacing IssuerSignedJwtPayload.Status's direct
+// done as part of the split: replacing IssuerSignedJwtPayload.Status's direct
 // *statuslist.StatusClaim with a VC-local status claim type, and turning
 // StatusChecker into a fully pluggable post-verification hook interface
 // rather than a struct field.

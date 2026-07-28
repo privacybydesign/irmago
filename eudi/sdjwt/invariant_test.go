@@ -37,7 +37,7 @@ func TestDependencyInvariant(t *testing.T) {
 		if deps[f] {
 			t.Errorf("eudi/sdjwt must not depend on %s, directly or transitively — "+
 				"this violates the one-directional boundary described in "+
-				"docs/sdjwt-package-split-plan.md and eudi/sdjwt/doc.go", f)
+				"eudi/sdjwt/doc.go", f)
 		}
 	}
 }
