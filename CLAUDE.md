@@ -89,10 +89,15 @@ Two things to know about this:
 `internal/sessiontest` and the `!local_tests` files need the services in
 `docker-compose.yml`. The tests reach them over `localhost`:
 
-- `postgres` on 5432, plus the one-shot `postgres-init` container, which runs
-  `irma/server/keyshare/cleanup.sql` and then `schema.sql` against it. That step
-  creates the `irma` schema; without it the keyshare and myirma database tests
-  fail. The connection string the tests use is `PostgresTestUrl` in
+- `postgres` on 5432. The tests create the `irma` schema themselves: the
+  keyshare, myirma and tasks packages each define `SetupDatabase(t)` (e.g.
+  `irma/server/keyshare/keyshareserver/postgresdb_test.go:171`), which runs
+  `cleanup.sql` and then `schema.sql`, and every Postgres test calls it first.
+  So the database only has to be up. `docker-compose.yml` also has a one-shot
+  `postgres-init` container running those same two scripts, but it sits in the
+  `yivi` service's `depends_on`, not the `test` service's, so `docker compose
+  run test` never starts it. It is there for running a keyshare or myirma
+  server by hand. The connection string the tests use is `PostgresTestUrl` in
   `internal/test/postgres.go`.
 - `mysql` on 3306 and `sqlserver` on 1433, used only by
   `internal/sessiontest/revocation_test.go`.
