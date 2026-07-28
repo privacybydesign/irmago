@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -10,7 +11,9 @@ import (
 
 // DownloadRemoteImage downloads an image from a remote URI.
 // It supports both standard HTTP(S) URLs and data URIs (e.g., "data:image/png;base64,...").
-func DownloadRemoteImage(httpClient *http.Client, remoteImageUri string) ([]byte, string, error) {
+// Cancelling ctx aborts the transfer, so a caller shutting down does not have to
+// wait out the HTTP client's timeout.
+func DownloadRemoteImage(ctx context.Context, httpClient *http.Client, remoteImageUri string) ([]byte, string, error) {
 	// data URIs (e.g. "data:image/png;base64,...") carry the image inline — no HTTP request needed.
 	if strings.HasPrefix(remoteImageUri, "data:") {
 		// Expected format: data:<mediatype>[;base64],<data>
@@ -35,7 +38,12 @@ func DownloadRemoteImage(httpClient *http.Client, remoteImageUri string) ([]byte
 		return imageBytes, mediaType, nil
 	}
 
-	response, err := httpClient.Get(remoteImageUri)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, remoteImageUri, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to build request for image %s: %v", remoteImageUri, err)
+	}
+
+	response, err := httpClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download image %s: %v", remoteImageUri, err)
 	}

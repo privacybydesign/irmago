@@ -6,14 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 ### Added
+- Locale-aware client: `client.New` takes an initial UI locale and `Client.SetLocale` changes it at runtime. All app-facing text resolves inside irmago through a fixed fallback chain (exact locale → base language → English → any); text of one object never mixes languages, while fields that are not displayed text — logos and issue URLs — fall back across languages independently, so they survive a locale that does not translate them.
+- Background logo backfill on startup and locale change: fetches logos missing for the current locale and signals `ClientHandler.UpdateAttributes()` when a sweep actually caches something. A single worker runs the sweeps, so they never overlap and a burst of language changes collapses into one sweep for the language the user landed on; `Client.Close` cancels a running sweep, aborting any download in flight, and waits for it to unwind. Listing calls never block on the network.
+
+### Changed
+- **Breaking:** `clientmodels` DTOs ship resolved strings instead of translation maps (17 `TranslatedString` fields). The gomobile app must update in lockstep: pass the locale to `client.New`, call `SetLocale` on language changes, and drop client-side language picking.
+- Issuance downloads only the logo that resolves for the current locale, skipping cached ones, instead of the first available display's logo.
+- EUDI activity logs persist text resolved at creation time; on read, entries re-resolve against the stored credential's metadata for the active locale, falling back to the snapshot for deleted credentials and verifier names. Entries written by earlier versions (translation-map format) are decoded transparently.
 - Support for the IETF OAuth Token Status List (draft-ietf-oauth-status-list-15) on SD-JWT VC credentials: the wallet fetches, verifies, and caches Status List Tokens (`application/statuslist+jwt`), checks credential status at issuance, at disclosure, and on a background sweep, and exposes `Client.RefreshStatuses(ctx)` for UI-initiated refreshes.
 
 ### Fixed
+- EUDI storage writes are now atomic: `writeFile` writes to a temp file and renames it into place, so a crash or a concurrent write can no longer leave a partially written file behind. Previously a truncated ciphertext read back as a decryption error rather than as a missing file — the worse of the two failure modes, since it looks like corruption rather than absence.
+- The data tab resolved credential and issuer logos from the first display entry only, so a logo attached to another language's display did not show.
+- OpenID4VCI issuance logs recorded the issuer metadata's `vct` (possibly a placeholder like `"unknown"`) as the credential id; the issued JWT's `vct` claim now takes precedence.
 - SD-JWT VC credential displays now merge per field instead of per whole locale entry: when the VCT type-metadata document defines a `display` entry for a locale, `openid4vci.Merge` keeps VCT's value for every field it specifies but inherits any field VCT leaves empty (`logo`, `description`, `background_color`, `text_color`, `background_image`) from the OpenID4VCI `credential_metadata` entry for the same locale. Previously the whole VCI entry was dropped for that locale, so issuers that put the credential logo on the VCI side while the VCT `display` omitted it ended up with a blank credential logo in the wallet ([#635](https://github.com/privacybydesign/irmago/issues/635)).
 - Credential, issuer and verifier logos now keep their MIME type: the EUDI `LogoManager` stores the Content-Type reported on download (or by the verifier's scheme data) alongside the image bytes, and `LoadLogoImage` returns it in `clientmodels.Image.MimeType`. Previously the MIME type was discarded, so wallets could not tell SVG logos apart from bitmaps and SD-JWT VC credential logos in SVG format rendered blank ([irmamobile#674](https://github.com/privacybydesign/irmamobile/issues/674)). **Breaking (internal API):** `filesystem.LogoManager.Save` takes an extra `mimeType` parameter and `Get` returns it.
 
-## Internal
-- Refactor the SD-JWT implementation to correctly split the SD-JWT and SD-JWT VC specification details into seperate packages.
+### Internal
+- Dutch-locale and locale-switch integration tests for every protocol and integration layer.
+- The storage regression tests now assert EUDI activity-log content, pinning the legacy translation-map decoding. Regenerate the regression fixture at the next release: this version changes the stored log text format and the issuance-log credential id.
+- Refactor the SD-JWT implementation to correctly split the SD-JWT and SD-JWT VC specification details into separate packages.
 
 ## [1.2.0] - 2026-07-22
 ### Added

@@ -136,7 +136,7 @@ func TestGetCredentialMetadataList_MapsIssuerDisplay(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, batch.CredentialIssuer, result[0].Issuer.Id)
-	assert.Equal(t, "Test Issuer", result[0].Issuer.Name["en"])
+	assert.Equal(t, "Test Issuer", result[0].Issuer.Name)
 }
 
 func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
@@ -148,7 +148,7 @@ func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, "My Credential", result[0].Name["en"])
+	assert.Equal(t, "My Credential", result[0].Name)
 }
 
 func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
@@ -162,7 +162,7 @@ func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, result[0].Attributes, 1)
-	assert.Equal(t, "Family Name", (*result[0].Attributes[0].DisplayName)["en"])
+	assert.Equal(t, "Family Name", *result[0].Attributes[0].DisplayName)
 }
 
 func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
@@ -214,7 +214,7 @@ func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
 	familyName, ok := byPath[clientmodels.ClaimPathKey([]any{"family_name"})]
 	require.True(t, ok, "family_name should appear")
 	require.NotNil(t, familyName.DisplayName)
-	assert.Equal(t, "Family Name", (*familyName.DisplayName)["en"])
+	assert.Equal(t, "Family Name", *familyName.DisplayName)
 	require.NotNil(t, familyName.Value)
 	require.NotNil(t, familyName.Value.String)
 	assert.Equal(t, "Smith", *familyName.Value.String)
@@ -228,7 +228,7 @@ func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
 	address, ok := byPath[clientmodels.ClaimPathKey([]any{"address"})]
 	require.True(t, ok, "address section header should appear")
 	require.NotNil(t, address.DisplayName)
-	assert.Equal(t, "Address", (*address.DisplayName)["en"])
+	assert.Equal(t, "Address", *address.DisplayName)
 	assert.Nil(t, address.Value, "section header has no value")
 
 	// address.city: child of named section but child not named in metadata → no parent inheritance.
@@ -322,7 +322,7 @@ func TestGetCredentialMetadataList_IssuerDisplayWithoutLocale_ResultsInDefaultLo
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, "No Locale Issuer", result[0].Issuer.Name[clientmodels.DefaultFallbackLanguage])
+	assert.Equal(t, "No Locale Issuer", result[0].Issuer.Name)
 }
 
 // TestGetCredentialMetadataList_IssuerDisplayRegionalLocale_KeyedByBaseLanguage
@@ -346,7 +346,7 @@ func TestGetCredentialMetadataList_IssuerDisplayRegionalLocale_KeyedByBaseLangua
 	result, err := svc.GetCredentialMetadataList()
 
 	require.NoError(t, err)
-	assert.Equal(t, "Example Issuer", result[0].Issuer.Name["en"],
+	assert.Equal(t, "Example Issuer", result[0].Issuer.Name,
 		"regional locales must collapse to the base language to match the in-memory issuance path")
 }
 
@@ -1113,7 +1113,7 @@ func TestVerifyAndStore_LinksHolderBindingKeyByThumbprint(t *testing.T) {
 	credStore := &mockCredentialStore{}
 	keyStore := &mockHolderBindingKeyStore{}
 	fileStorage := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage}
+	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
 
 	pubKey, thumbprint := generateTestJwk(t)
 	keyID := datatypes.NewUUIDv4()
@@ -1137,7 +1137,7 @@ func TestVerifyAndStore_LinksHolderBindingKeyByDidUrl(t *testing.T) {
 	credStore := &mockCredentialStore{}
 	keyStore := &mockHolderBindingKeyStore{}
 	fileStorage := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage}
+	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
 
 	didUrl := "did:jwk:eyJrdHkiOiJFQyJ9#0"
 	keyID := datatypes.NewUUIDv4()
@@ -1209,7 +1209,7 @@ func TestVerifyAndStore_NoKeyBinding_DoesNotLink(t *testing.T) {
 	credStore := &mockCredentialStore{}
 	keyStore := &mockHolderBindingKeyStore{}
 	fileStorage := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
-	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage}
+	svc := &credentialService{credentialStore: credStore, holderBindingKeyStore: keyStore, fileStorage: fileStorage, currentLocale: clientmodels.NewCurrentLocale("en")}
 
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
@@ -1322,6 +1322,7 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 		credentialStore:       storeMock,
 		holderBindingKeyStore: &mockHolderBindingKeyStore{},
 		fileStorage:           fileStorageMock,
+		currentLocale:         clientmodels.NewCurrentLocale("en"),
 		// BatchRevocation reads the same mock store; no live checker needed.
 		revocation: NewRevocationService(nil, storeMock),
 	}
