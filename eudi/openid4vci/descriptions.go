@@ -1,6 +1,7 @@
 package openid4vci
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -45,6 +46,14 @@ func (g *Grants) UnmarshalJSON(data []byte) error {
 
 	*g = Grants{}
 	for grantType, parameters := range raw {
+		// A null value names no grant. Decoding it would leave a grant with every
+		// parameter empty, which for the pre-authorized code grant means an empty
+		// pre-authorized_code sent to the token endpoint. Skip it, so the offer is
+		// handled the same way as one whose grants member is absent or empty.
+		if bytes.Equal(bytes.TrimSpace(parameters), []byte("null")) {
+			continue
+		}
+
 		switch grantType {
 		case oauth2.GrantTypeAuthorizationCode:
 			var grant AuthorizationCodeGrant

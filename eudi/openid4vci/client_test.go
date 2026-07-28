@@ -223,6 +223,19 @@ func TestParseAndValidateCredentialOfferGrants(t *testing.T) {
 			},
 		},
 		{
+			// A grant whose value is null names no grant, so the offer is treated
+			// like one with an empty grants object rather than yielding a grant
+			// with every parameter empty (an empty pre-authorized_code, in
+			// particular).
+			name:  "null grant value names no grant",
+			offer: `{` + issuerAndConfigIds + `,"grants":{"authorization_code":null,"urn:ietf:params:oauth:grant-type:pre-authorized_code":null}}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.Nil(t, grants.AuthorizationCodeGrant)
+				require.Nil(t, grants.PreAuthorizedCodeGrant)
+				require.True(t, grants.IsEmpty())
+			},
+		},
+		{
 			// Grant types we do not implement are kept, so an offer that names
 			// only those is not mistaken for an empty grants object.
 			name:  "unsupported grant types are kept",
