@@ -25,9 +25,11 @@ const fsFilenameKeyHkdfInfo = "irmago-fs-filename-v1"
 // Walk skips these.
 //
 // Nothing sweeps them: os.CreateTemp appends a fresh random suffix per call, so
-// a leftover is never reused, and a crash landing between CreateTemp and Rename
-// leaks one small file. The window is sub-millisecond, which does not justify
-// scanning every scope directory at open time on a phone.
+// a leftover is never reused. Only process death between CreateTemp and Rename
+// leaks one — every error path is covered by writeFile's deferred Remove — and
+// RemoveAll reclaims whatever leaked, since it clears the directory without
+// filtering. One logo-sized file per killed write does not justify scanning
+// every scope directory at open time on a phone.
 const tmpFilePrefix = ".tmp-"
 
 type fileManager struct {
