@@ -611,7 +611,7 @@ func selectOfferedGrant(grants *Grants) (Grant, error) {
 	if grants.AuthorizationCodeGrant != nil {
 		return grants.AuthorizationCodeGrant, nil
 	}
-	return nil, fmt.Errorf("no supported grant type found in credential offer, it only offers %s", strings.Join(grants.UnsupportedGrantTypes, ", "))
+	return nil, fmt.Errorf("no supported grant type found in credential offer, which only offers %s", strings.Join(grants.UnsupportedGrantTypes, ", "))
 }
 
 // deriveGrantFromAuthorizationServerMetadata determines the grant type to use
@@ -623,10 +623,14 @@ func selectOfferedGrant(grants *Grants) (Grant, error) {
 // are grant members and therefore also absent.
 func deriveGrantFromAuthorizationServerMetadata(asMetadata *oauth2.AuthorizationServerMetadata) (Grant, error) {
 	if !asMetadata.SupportsGrantType(oauth2.GrantTypeAuthorizationCode) {
+		supported := "none"
+		if len(asMetadata.GrantTypesSupported) > 0 {
+			supported = strings.Join(asMetadata.GrantTypesSupported, ", ")
+		}
 		return nil, fmt.Errorf(
-			"credential offer has no grants and the authorization server does not support the %s grant type (it supports %s)",
+			"credential offer has no grants and the authorization server does not support the %s grant type, it supports %s",
 			oauth2.GrantTypeAuthorizationCode,
-			strings.Join(asMetadata.GrantTypesSupported, ", "),
+			supported,
 		)
 	}
 	return &AuthorizationCodeGrant{}, nil

@@ -432,7 +432,7 @@ func Test_openid4vciSession_configureIssuerSettings_grantSelection(t *testing.T)
 		{
 			name:      "grants with only unsupported grant types returns error",
 			grants:    &Grants{UnsupportedGrantTypes: []string{"urn:example:some-future-grant"}},
-			expectErr: "no supported grant type found in credential offer, it only offers urn:example:some-future-grant",
+			expectErr: "no supported grant type found in credential offer, which only offers urn:example:some-future-grant",
 		},
 	}
 
