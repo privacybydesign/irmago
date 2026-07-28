@@ -500,14 +500,15 @@ func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.Tr
 }
 
 func (s *session) configureIssuerSettings() error {
-	// Determine which grant-type to use (Pre-Authorized Code is preferred over Authorization Code).
-	if s.credentialOffer.Grants.PreAuthorizedCodeGrant != nil {
-		s.issuerSettings.grantType = s.credentialOffer.Grants.PreAuthorizedCodeGrant
-	} else if s.credentialOffer.Grants.AuthorizationCodeGrant != nil {
-		s.issuerSettings.grantType = s.credentialOffer.Grants.AuthorizationCodeGrant
-	} else {
-		return fmt.Errorf("no supported grant type found in credential offer")
+	// Determine which grant-type to use. This can leave grantType nil: the
+	// offer's grants member is OPTIONAL, and deriving the grant type from the
+	// authorization server metadata has to wait until that metadata is fetched
+	// below.
+	grantType, err := selectOfferedGrant(s.credentialOffer.Grants)
+	if err != nil {
+		return err
 	}
+	s.issuerSettings.grantType = grantType
 
 	// Determine authorization server to use and fetch its metadata
 	authorizationServer, err := s.getAuthorizationServer()
@@ -520,6 +521,15 @@ func (s *session) configureIssuerSettings() error {
 	}
 	s.issuerSettings.authorizationServer = authorizationServer
 	s.issuerSettings.authorizationServerMetadata = asMetadata
+
+	if s.issuerSettings.grantType == nil {
+		grantType, err := deriveGrantFromAuthorizationServerMetadata(asMetadata)
+		if err != nil {
+			return err
+		}
+		eudi.Logger.Infof("credential offer has no grants; using the %s grant type advertised by authorization server %s", grantType.GetGrantType(), authorizationServer)
+		s.issuerSettings.grantType = grantType
+	}
 
 	// TODO: verify AS supports the required features and to extract endpoints
 
@@ -584,12 +594,56 @@ func getCredentialRequestPreferences(c metadata.CredentialConfiguration) *sessio
 	return s
 }
 
+// selectOfferedGrant picks the grant to use from the offer's grants member,
+// preferring the Pre-Authorized Code grant over the Authorization Code grant.
+// It returns a nil grant when the offer names no grant type at all, in which
+// case OID4VCI v1.0 § 4.1.1 requires the wallet to determine the grant type
+// from the authorization server metadata instead. An offer that does name grant
+// types, but only ones this wallet does not implement, is an error: the issuer
+// stated which grants it is prepared to process for this offer.
+func selectOfferedGrant(grants *Grants) (Grant, error) {
+	if grants.IsEmpty() {
+		return nil, nil
+	}
+	if grants.PreAuthorizedCodeGrant != nil {
+		return grants.PreAuthorizedCodeGrant, nil
+	}
+	if grants.AuthorizationCodeGrant != nil {
+		return grants.AuthorizationCodeGrant, nil
+	}
+	return nil, fmt.Errorf("no supported grant type found in credential offer, it only offers %s", strings.Join(grants.UnsupportedGrantTypes, ", "))
+}
+
+// deriveGrantFromAuthorizationServerMetadata determines the grant type to use
+// for an offer without a grants member, which OID4VCI v1.0 § 4.1.1 requires the
+// wallet to take from the authorization server metadata. Only the Authorization
+// Code grant can be derived: the Pre-Authorized Code flow needs a
+// pre-authorized_code, and that value exists only in the offer. The derived
+// grant carries no issuer_state and no authorization_server hint, both of which
+// are grant members and therefore also absent.
+func deriveGrantFromAuthorizationServerMetadata(asMetadata *oauth2.AuthorizationServerMetadata) (Grant, error) {
+	if !asMetadata.SupportsGrantType(oauth2.GrantTypeAuthorizationCode) {
+		return nil, fmt.Errorf(
+			"credential offer has no grants and the authorization server does not support the %s grant type (it supports %s)",
+			oauth2.GrantTypeAuthorizationCode,
+			strings.Join(asMetadata.GrantTypesSupported, ", "),
+		)
+	}
+	return &AuthorizationCodeGrant{}, nil
+}
+
 func (s *session) getAuthorizationServer() (string, error) {
 	if len(s.credentialIssuerMetadata.AuthorizationServers) == 0 {
 		// Use the credential issuer as the authorization server if no authorization servers are listed in the metadata
 		return s.credentialOffer.CredentialIssuer, nil
 	} else {
-		credentialOfferedAuthServer := s.issuerSettings.grantType.GetAuthorizationServer()
+		// The authorization_server hint is a grant member, so an offer without
+		// grants gives none: fall back to the first advertised server, the same
+		// way an offered grant without the hint does.
+		var credentialOfferedAuthServer *string
+		if s.issuerSettings.grantType != nil {
+			credentialOfferedAuthServer = s.issuerSettings.grantType.GetAuthorizationServer()
+		}
 
 		// Try to match the authorization server from the offer to the metadata, or just pick the first one if no hint is given in the offer
 		if credentialOfferedAuthServer == nil {

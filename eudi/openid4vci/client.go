@@ -250,13 +250,10 @@ func (client *Client) ParseAndValidateCredentialOffer(credentialOfferJson string
 		return nil, fmt.Errorf("credential_configuration_ids in credential offer are not unique")
 	}
 
-	// grants is OPTIONAL per OID4VCI v1.0 § 4.1.1: when it is absent the wallet
-	// is supposed to derive the grant types from the authorization server
-	// metadata. We do not support that yet, so reject the offer here rather than
-	// let the missing member reach the grant selection in configureIssuerSettings.
-	if credentialOffer.Grants == nil {
-		return nil, fmt.Errorf("no grants found in credential offer")
-	}
+	// grants is OPTIONAL per OID4VCI v1.0 § 4.1.1, so an absent, null or empty
+	// member is not a validation error: the grant type is then derived from the
+	// authorization server metadata in configureIssuerSettings, which is the
+	// first point where that metadata is available.
 
 	return &credentialOffer, nil
 }

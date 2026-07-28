@@ -1,20 +1,83 @@
 package openid4vci
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/oauth2"
 )
 
 type CredentialOffer struct {
 	CredentialIssuer           string   `json:"credential_issuer"`
 	CredentialConfigurationIds []string `json:"credential_configuration_ids"`
-	Grants                     *Grants  `json:"grants,omitempty"`
+
+	// Grants is OPTIONAL per OID4VCI v1.0 § 4.1.1 and is nil when the offer
+	// omits it (or sets it to null). The wallet then has to determine the grant
+	// types from the authorization server metadata; see
+	// session.configureIssuerSettings.
+	Grants *Grants `json:"grants,omitempty"`
 }
 
+// Grants holds the grant types the Credential Issuer's authorization server is
+// prepared to process for a credential offer, keyed by grant type identifier.
 type Grants struct {
 	AuthorizationCodeGrant *AuthorizationCodeGrant `json:"authorization_code,omitempty"`
 	PreAuthorizedCodeGrant *PreAuthorizedCodeGrant `json:"urn:ietf:params:oauth:grant-type:pre-authorized_code,omitempty"`
+
+	// UnsupportedGrantTypes holds the identifiers of offered grant types this
+	// wallet does not implement. It exists so an empty grants object, for which
+	// OID4VCI v1.0 § 4.1.1 requires deriving the grant types from the
+	// authorization server metadata, can be told apart from an offer that does
+	// name grant types but none we can use.
+	UnsupportedGrantTypes []string `json:"-"`
+}
+
+// UnmarshalJSON decodes the offer's grants member. The struct tags above are
+// only used for marshalling: grant types are keyed by identifier, and unknown
+// identifiers have to be collected rather than dropped.
+func (g *Grants) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("failed to unmarshal grants: %v", err)
+	}
+
+	*g = Grants{}
+	for grantType, parameters := range raw {
+		switch grantType {
+		case oauth2.GrantTypeAuthorizationCode:
+			var grant AuthorizationCodeGrant
+			if err := json.Unmarshal(parameters, &grant); err != nil {
+				return fmt.Errorf("failed to unmarshal %s grant: %v", grantType, err)
+			}
+			g.AuthorizationCodeGrant = &grant
+		case oauth2.GrantTypePreAuthorizedCode:
+			var grant PreAuthorizedCodeGrant
+			if err := json.Unmarshal(parameters, &grant); err != nil {
+				return fmt.Errorf("failed to unmarshal %s grant: %v", grantType, err)
+			}
+			g.PreAuthorizedCodeGrant = &grant
+		default:
+			g.UnsupportedGrantTypes = append(g.UnsupportedGrantTypes, grantType)
+		}
+	}
+	// Map iteration order is random; sort so error messages are stable.
+	slices.Sort(g.UnsupportedGrantTypes)
+
+	return nil
+}
+
+// IsEmpty reports whether the grants member named no grant type at all. A nil
+// Grants (an absent or null grants member) counts as empty, since OID4VCI v1.0
+// § 4.1.1 handles both the same way.
+func (g *Grants) IsEmpty() bool {
+	if g == nil {
+		return true
+	}
+	return g.AuthorizationCodeGrant == nil &&
+		g.PreAuthorizedCodeGrant == nil &&
+		len(g.UnsupportedGrantTypes) == 0
 }
 
 type GrantType int

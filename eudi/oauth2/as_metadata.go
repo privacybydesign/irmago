@@ -10,6 +10,15 @@ import (
 	"strings"
 )
 
+// OAuth 2.0 grant type identifiers, as they appear in an authorization server's
+// grant_types_supported metadata and in an OpenID4VCI credential offer's grants
+// member.
+const (
+	GrantTypeAuthorizationCode = "authorization_code"
+	GrantTypeImplicit          = "implicit"
+	GrantTypePreAuthorizedCode = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+)
+
 type AuthorizationServerMetadata struct {
 	// RFC 8414 fields
 	Issuer                                             string   `json:"issuer"`
@@ -97,6 +106,17 @@ type AuthorizationDetailsResponseRecord struct {
 	Type                      string   `json:"type"`
 	CredentialConfigurationId string   `json:"credential_configuration_id"`
 	CredentialIdentifiers     []string `json:"credential_identifiers,omitempty"`
+}
+
+// SupportsGrantType reports whether the authorization server is willing to
+// process the given grant type. grant_types_supported is OPTIONAL in RFC 8414
+// § 2, which defines the default as ["authorization_code", "implicit"] when the
+// member is omitted, so an absent list is not the same as an empty one.
+func (as *AuthorizationServerMetadata) SupportsGrantType(grantType string) bool {
+	if as.GrantTypesSupported == nil {
+		return grantType == GrantTypeAuthorizationCode || grantType == GrantTypeImplicit
+	}
+	return slices.Contains(as.GrantTypesSupported, grantType)
 }
 
 func (as *AuthorizationServerMetadata) GetCodeChallengeProvider() CodeChallengeProvider {
