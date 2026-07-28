@@ -42,27 +42,27 @@ func TestYesnoAttributeBecomesBoolean(t *testing.T) {
 	expectedAttrs := []expectedAttr{
 		{
 			Path:        []any{"firstName"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			DisplayName: new("First name"),
 			Value:       strVal("Alice"),
 		},
 		{
 			Path:        []any{"familyName"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: new("Family name"),
 			Value:       strVal("Smith"),
 		},
 		{
 			Path:        []any{"over_18"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Over 18", "nl": "Ouder dan 18"},
+			DisplayName: new("Over 18"),
 			Value:       boolVal(true),
 		},
 		{
 			Path:        []any{"over_21"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Over 21", "nl": "Ouder dan 21"},
+			DisplayName: new("Over 21"),
 			Value:       boolVal(false),
 		},
 		{
 			Path:        []any{"nationalityNL"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Dutch nationality", "nl": "Nederlandse nationaliteit"},
+			DisplayName: new("Dutch nationality"),
 			Value:       boolVal(true),
 		},
 	}

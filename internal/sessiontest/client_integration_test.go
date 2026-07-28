@@ -581,33 +581,33 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 
 		require.Contains(t, credential.Formats, clientmodels.Format_Idemix)
 		require.Equal(t, "irma-demo.MijnOverheid.fullName", credential.CredentialId)
-		require.Equal(t, "Demo Name", credential.Name["en"])
-		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name["en"])
+		require.Equal(t, "Demo Name", credential.Name)
+		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name)
 		require.True(t, credential.Issuer.Verified, "issuer should be verified")
 
 		requireAttrsInOrder(t, credential.Attributes,
 			expectedAttr{
 				Path:        []any{"firstnames"},
-				DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
-				Description: &clientmodels.TranslatedString{"en": "All of your first names", "nl": "Al uw voornamen"},
+				DisplayName: new("First names"),
+				Description: new("All of your first names"),
 				Value:       strVal("Barry"),
 			},
 			expectedAttr{
 				Path:        []any{"firstname"},
-				DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
-				Description: &clientmodels.TranslatedString{"en": "Your first name", "nl": "Uw voornaam"},
+				DisplayName: new("First name"),
+				Description: new("Your first name"),
 				Value:       strVal("Bar"),
 			},
 			expectedAttr{
 				Path:        []any{"familyname"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
-				Description: &clientmodels.TranslatedString{"en": "Your family name", "nl": "Uw achternaam"},
+				DisplayName: new("Family name"),
+				Description: new("Your family name"),
 				Value:       strVal("Batsbak"),
 			},
 			expectedAttr{
 				Path:        []any{"prefix"},
-				DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
-				Description: &clientmodels.TranslatedString{"en": "Family name prefix", "nl": "Tussenvoegsel van uw achternaam"},
+				DisplayName: new("Prefix"),
+				Description: new("Family name prefix"),
 				Value:       strVal("Sir"),
 			},
 		)
@@ -770,15 +770,15 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	cred := log.RemovalLog.Credentials[0]
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -837,15 +837,15 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	cred := log.DisclosureLog.Credentials[0]
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -859,15 +859,15 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	cred := log.SignedMessageLog.Credentials[0]
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_Idemix}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -922,15 +922,15 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	cred := log.DisclosureLog.Credentials[0]
 	require.Equal(t, []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc}, cred.Formats)
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -956,15 +956,15 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Contains(t, cred.Formats, clientmodels.Format_Idemix)
 
 	require.Equal(t, "test.test.email", cred.CredentialId)
-	require.Equal(t, "Demo Email address", cred.Name["en"])
-	require.Equal(t, "Demo test issuer", cred.Issuer.Name["en"])
+	require.Equal(t, "Demo Email address", cred.Name)
+	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
 	require.True(t, cred.Issuer.Verified, "issuer should be verified")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
 			Path:        []any{"email"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Email address", "nl": "E-mailadres"},
-			Description: &clientmodels.TranslatedString{"en": "Your verified email address", "nl": "Uw geverifiëerde e-mailadres"},
+			DisplayName: new("Email address"),
+			Description: new("Your verified email address"),
 			Value:       strVal("test@gmail.com"),
 		},
 	)
@@ -1202,17 +1202,35 @@ func (mh *MockSessionHandler) UpdateSession(s clientmodels.SessionState) {
 }
 
 func createClientWithoutKeyshareEnrollment(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
-	client, _, sessionHandler := instantiateClient(t, issuerChain)
+	client, _, sessionHandler := instantiateClient(t, issuerChain, "en")
 	return client, sessionHandler
 }
 
 func createClientWithIssuerChain(t *testing.T, issuerChain []byte) (*client.Client, *MockSessionHandler) {
-	client, clientHandler, sessionHandler := instantiateClient(t, issuerChain)
+	client, clientHandler, sessionHandler := instantiateClient(t, issuerChain, "en")
 	client.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "en")
 
 	require.NoError(t, clientHandler.AwaitEnrollmentResult())
 
 	return client, sessionHandler
+}
+
+// createDutchClient creates a keyshare-enrolled client whose UI locale is
+// Dutch, so all app-facing text resolves through the "nl" translations.
+func createDutchClient(t *testing.T) (*client.Client, *MockSessionHandler) {
+	c, clientHandler, sessionHandler := instantiateClient(t, nil, "nl")
+	c.KeyshareEnroll(irma.NewSchemeManagerIdentifier("test"), nil, "12345", "nl")
+
+	require.NoError(t, clientHandler.AwaitEnrollmentResult())
+
+	return c, sessionHandler
+}
+
+// createDutchClientWithoutKeyshareEnrollment creates a Dutch-locale client for
+// EUDI-only flows that don't need the keyshare server.
+func createDutchClientWithoutKeyshareEnrollment(t *testing.T) (*client.Client, *MockSessionHandler) {
+	c, _, sessionHandler := instantiateClient(t, nil, "nl")
+	return c, sessionHandler
 }
 
 func createClientWithCustomIssuerTrustChain(
@@ -1229,7 +1247,7 @@ func createClientWithCustomIssuerTrustChain(
 	return createClientWithIssuerChain(t, issuerChainBytes)
 }
 
-func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -1271,7 +1289,7 @@ func instantiateClient(t *testing.T, issuerChain []byte) (*client.Client, *irmac
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey)
+	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey, locale)
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
@@ -1440,17 +1458,17 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	requireAttrsInOrder(t, credWithoutPrefix.Attributes,
 		expectedAttr{
 			Path:        []any{"firstnames"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			DisplayName: new("First names"),
 			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			DisplayName: new("First name"),
 			Value:       strVal("Bar"),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: new("Family name"),
 			Value:       strVal("Batsbak"),
 		},
 	)
@@ -1460,22 +1478,22 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	requireAttrsInOrder(t, credWithPrefix.Attributes,
 		expectedAttr{
 			Path:        []any{"firstnames"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			DisplayName: new("First names"),
 			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			DisplayName: new("First name"),
 			Value:       strVal("Bar"),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: new("Family name"),
 			Value:       strVal("Batsbak"),
 		},
 		expectedAttr{
 			Path:        []any{"prefix"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Prefix", "nl": "Tussenvoegsel"},
+			DisplayName: new("Prefix"),
 			Value:       strVal("Sir"),
 		},
 	)
@@ -1517,17 +1535,17 @@ func testOptionalEmptyAttributesExcludedFromGetCredentials(t *testing.T) {
 	requireAttrsInOrder(t, credEmptyFirstname.Attributes,
 		expectedAttr{
 			Path:        []any{"firstnames"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First names", "nl": "Voornamen"},
+			DisplayName: new("First names"),
 			Value:       strVal("Barry"),
 		},
 		expectedAttr{
 			Path:        []any{"firstname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "First name", "nl": "Voornaam"},
+			DisplayName: new("First name"),
 			Value:       strVal(""),
 		},
 		expectedAttr{
 			Path:        []any{"familyname"},
-			DisplayName: &clientmodels.TranslatedString{"en": "Family name", "nl": "Achternaam"},
+			DisplayName: new("Family name"),
 			Value:       strVal("Batsbak"),
 		},
 	)

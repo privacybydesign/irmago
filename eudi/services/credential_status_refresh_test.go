@@ -9,7 +9,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	dbpkg "github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
-	"github.com/privacybydesign/irmago/eudi/storage/db/sqlcipher"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -18,26 +17,6 @@ import (
 // newRefreshService builds a RevocationService for the status-refresh tests.
 func newRefreshService(db *gorm.DB, checker *statuslist.Checker) *RevocationService {
 	return NewRevocationService(checker, dbpkg.NewCredentialStore(db))
-}
-
-func newTestRefreshDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	d, err := gorm.Open(sqlcipher.Dialector{Connector: sqlcipher.NewConnector(":memory:", []byte("test-key-refresh"))}, &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, d.AutoMigrate(
-		&models.HolderBindingKey{},
-		&models.ECDSAKeyMetadata{},
-		&models.RSAKeyMetadata{},
-		&models.IssuerMetadataDisplay{},
-		&models.CredentialMetadata{},
-		&models.CredentialDisplay{},
-		&models.CredentialClaim{},
-		&models.ClaimDisplay{},
-		&models.CredentialBatch{},
-		&models.IssuedCredentialInstance{},
-		&models.StatusListCacheEntry{},
-	))
-	return d
 }
 
 func seedBatch(t *testing.T, db *gorm.DB, hash, issuer string, instances []models.IssuedCredentialInstance) *models.CredentialBatch {
@@ -69,13 +48,13 @@ func instanceWithStatus(uri string, idx uint64) models.IssuedCredentialInstance 
 }
 
 func Test_RefreshStatuses_NilChecker_NoOp(t *testing.T) {
-	db := newTestRefreshDB(t)
+	db := newTestHolderDB(t)
 	svc := newRefreshService(db, nil)
 	require.NoError(t, svc.RefreshStatuses(context.Background()))
 }
 
 func Test_RefreshStatuses_NoInstancesWithStatus_NoOp(t *testing.T) {
-	db := newTestRefreshDB(t)
+	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 	checker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: signer.X509VerificationContext(),
@@ -90,7 +69,7 @@ func Test_RefreshStatuses_NoInstancesWithStatus_NoOp(t *testing.T) {
 }
 
 func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *testing.T) {
-	db := newTestRefreshDB(t)
+	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 	// One status list shared across batches, all copies Valid.
 	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
@@ -151,7 +130,7 @@ func Test_RefreshStatuses_OneFetchPerSharedURI_OneRepresentativePerBatch(t *test
 // single representative, yet the batch is still reported revoked once that
 // representative's bit reads Invalid (the read path's "any invalid" rule).
 func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t *testing.T) {
-	db := newTestRefreshDB(t)
+	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 
 	// All three copies of the batch are revoked together by the issuer.
@@ -209,7 +188,7 @@ func Test_RefreshStatuses_MultiInstanceBatch_OneRepresentativeDrivesRevocation(t
 // return the previously-cached "valid" value, otherwise a revocation would
 // never be observed until the TTL happened to expire.
 func Test_RefreshStatuses_DetectsRevocationTransition(t *testing.T) {
-	db := newTestRefreshDB(t)
+	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 
 	// Initially the credential at idx 4 is Valid.
@@ -248,7 +227,7 @@ func Test_RefreshStatuses_DetectsRevocationTransition(t *testing.T) {
 }
 
 func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
-	db := newTestRefreshDB(t)
+	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 	good := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{
 		Issuer:   "https://issuer.example",
@@ -285,7 +264,7 @@ func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 }
 
 func Test_RefreshStatuses_OnlyUpdatesOnSuccess(t *testing.T) {
-	db := newTestRefreshDB(t)
+	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 	checker := statuslist.NewChecker(statuslist.VerificationContext{
 		X509Context: signer.X509VerificationContext(),
@@ -328,7 +307,7 @@ func Test_RefreshStatuses_OnlyUpdatesOnSuccess(t *testing.T) {
 // its eudi DB. This test therefore mirrors the client's wiring at the service
 // layer instead.
 func Test_ScheduledRefresh_PicksUpRevocation(t *testing.T) {
-	db := newTestRefreshDB(t)
+	db := newTestHolderDB(t)
 	signer := statuslist.NewTestStatusListSigner(t)
 
 	srv := statuslist.NewTestStatusListServerWithToken(t, signer, statuslist.TestStatusListOpts{

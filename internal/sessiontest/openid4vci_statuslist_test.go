@@ -111,7 +111,7 @@ func testOpenID4VCIStatusListIssuanceAcceptsValid(t *testing.T) {
 	// The credential is present in the wallet.
 	creds, err := c.GetCredentials()
 	require.NoError(t, err)
-	cred := findCredentialByName(t, creds, "en", "Status List Credential (SD-JWT)")
+	cred := findCredentialByName(t, creds, "Status List Credential (SD-JWT)")
 	require.NotNil(t, cred, "issued status-list credential should appear in GetCredentials")
 
 	// The background refresh sweep runs against the real agent for the stored
