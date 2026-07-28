@@ -246,6 +246,29 @@ func TestParseAndValidateCredentialOfferGrants(t *testing.T) {
 			},
 		},
 		{
+			// The null value is skipped for the grant types we implement, not for
+			// the identifiers we do not: the issuer named one, so the offer is not
+			// the empty one a grant type is derived for.
+			name:  "unsupported grant type with a null value is kept",
+			offer: `{` + issuerAndConfigIds + `,"grants":{"urn:example:future-grant":null}}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.Equal(t, []string{"urn:example:future-grant"}, grants.UnsupportedGrantTypes)
+				require.False(t, grants.IsEmpty())
+			},
+		},
+		{
+			// pre-authorized_code is REQUIRED per OID4VCI v1.0 § 4.1.1, and an
+			// empty one is what the null grant value above would have produced.
+			name:      "pre-authorized code grant without a code is rejected",
+			offer:     `{` + issuerAndConfigIds + `,"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{}}}`,
+			expectErr: "missing the required pre-authorized_code parameter",
+		},
+		{
+			name:      "pre-authorized code grant with an empty code is rejected",
+			offer:     `{` + issuerAndConfigIds + `,"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{"pre-authorized_code":""}}}`,
+			expectErr: "missing the required pre-authorized_code parameter",
+		},
+		{
 			name:      "grants member of the wrong type is rejected",
 			offer:     `{` + issuerAndConfigIds + `,"grants":"authorization_code"}`,
 			expectErr: "failed to unmarshal grants",

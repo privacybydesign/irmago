@@ -48,23 +48,36 @@ func (g *Grants) UnmarshalJSON(data []byte) error {
 	for grantType, parameters := range raw {
 		// A null value names no grant. Decoding it would leave a grant with every
 		// parameter empty, which for the pre-authorized code grant means an empty
-		// pre-authorized_code sent to the token endpoint. Skip it, so the offer is
-		// handled the same way as one whose grants member is absent or empty.
-		if bytes.Equal(bytes.TrimSpace(parameters), []byte("null")) {
-			continue
-		}
+		// pre-authorized_code sent to the token endpoint. Skip such a grant, so the
+		// offer is handled the same way as one whose grants member is absent or
+		// empty. An identifier this wallet does not implement is recorded whatever
+		// its value: the issuer did name a grant type, so the offer is not the empty
+		// one § 4.1.1 derives a grant type for.
+		isNull := bytes.Equal(bytes.TrimSpace(parameters), []byte("null"))
 
 		switch grantType {
 		case oauth2.GrantTypeAuthorizationCode:
+			if isNull {
+				continue
+			}
 			var grant AuthorizationCodeGrant
 			if err := json.Unmarshal(parameters, &grant); err != nil {
 				return fmt.Errorf("failed to unmarshal %s grant: %v", grantType, err)
 			}
 			g.AuthorizationCodeGrant = &grant
 		case oauth2.GrantTypePreAuthorizedCode:
+			if isNull {
+				continue
+			}
 			var grant PreAuthorizedCodeGrant
 			if err := json.Unmarshal(parameters, &grant); err != nil {
 				return fmt.Errorf("failed to unmarshal %s grant: %v", grantType, err)
+			}
+			// pre-authorized_code is REQUIRED in this grant per OID4VCI v1.0
+			// § 4.1.1. An empty one would otherwise reach the token endpoint, the
+			// same outcome the null value above is skipped for.
+			if grant.PreAuthorizedCode == "" {
+				return fmt.Errorf("%s grant is missing the required pre-authorized_code parameter", grantType)
 			}
 			g.PreAuthorizedCodeGrant = &grant
 		default:
