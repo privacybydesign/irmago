@@ -355,6 +355,10 @@ func TestNewSessionReportsPanicAsSessionFailure(t *testing.T) {
 	require.Equal(t, "panic", sessionError.ErrorType)
 	require.Contains(t, sessionError.WrappedError, "injected panic")
 	require.NotEmpty(t, sessionError.Stack)
+	// Info carries the message and the stack, the way the legacy irmaclient
+	// session reports a recovered panic.
+	require.Contains(t, sessionError.Info, "injected panic")
+	require.Contains(t, sessionError.Info, sessionError.Stack)
 }
 
 func addTestCredentialsToStorage(t *testing.T, storage irmaclient.SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {

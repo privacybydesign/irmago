@@ -496,7 +496,7 @@ func Test_openid4vciSession_configureIssuerSettings_derivesGrantWithAdvertisedAu
 	require.Equal(t, GrantType_AuthorizationCode, s.issuerSettings.grantType.GetGrantType())
 }
 
-func Test_openid4vciSession_derivedGrantIsUsedByAuthorizationCodeFlow(t *testing.T) {
+func Test_openid4vciSession_grantAccessorsUseTheConfiguredGrant(t *testing.T) {
 	s := &session{
 		credentialOffer: &CredentialOffer{CredentialIssuer: "https://issuer.example.com"},
 		issuerSettings:  openid4vciSessionIssuerSettings{grantType: &AuthorizationCodeGrant{}},

@@ -475,11 +475,16 @@ func recoverSessionPanic(handler Handler) {
 
 	stack := string(debug.Stack())
 	eudi.Logger.Errorf("recovering from panic: %v\nstack trace:\n%v", e, stack)
+	message := fmt.Sprintf("openid4vci session panicked: %v", e)
 	handler.Failure(&clientmodels.SessionError{
-		// Same error type the legacy irmaclient session uses for a recovered
-		// panic (irma.ErrorPanic), so the app can handle both alike.
+		// Same shape the legacy irmaclient session uses for a recovered panic:
+		// error type irma.ErrorPanic (the string "panic"), and the message
+		// followed by the stack in Info (irma/irmaclient/session.go). Info is
+		// filled as well as Stack so the app's panic screen shows the same detail
+		// for both paths, whichever of the two fields it reads.
 		ErrorType:    "panic",
-		WrappedError: fmt.Sprintf("openid4vci session panicked: %v", e),
+		WrappedError: message,
+		Info:         message + "\n\n" + stack,
 		Stack:        stack,
 	})
 }
