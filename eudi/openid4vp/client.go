@@ -45,20 +45,16 @@ type Client struct {
 	verifierValidator VerifierValidator
 	currentLocale     *clientmodels.CurrentLocale
 
-	// currentSession is written by the session goroutine and read by Dismiss and
-	// RefreshPendingPermissionRequest, which run on their callers' goroutines.
+	// Written by the session goroutine, read by Dismiss and
+	// RefreshPendingPermissionRequest on their callers' goroutines.
 	currentSession atomic.Pointer[openid4vpSession]
 }
 
-// RefreshPendingPermissionRequest re-asks the current session for permission with
-// a freshly built plan. Called on every completed IRMA session (see
-// IrmaClient.SetOnSessionDoneCallback) so that issuance-during-disclosure re-shows
-// a plan that now has the obtained credential in it.
-//
-// Silent unless the session is actually waiting for an answer: in any other phase
-// — mid disclosure POST, or already dismissed — nobody is there to receive one,
-// and asking anyway puts a permission screen in front of the user for a session
-// that has moved on.
+// RefreshPendingPermissionRequest re-asks the current session for permission with a
+// freshly built plan, so issuance-during-disclosure re-shows a plan containing the
+// obtained credential. Called on every completed IRMA session (see
+// IrmaClient.SetOnSessionDoneCallback), hence silent unless someone is actually
+// parked waiting for an answer.
 func (client *Client) RefreshPendingPermissionRequest() {
 	if session := client.currentSession.Load(); session != nil && session.awaiting.Load() {
 		session.requestPermission()
@@ -86,14 +82,11 @@ func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismiss
 	return client
 }
 
-// Dismiss dismisses the current session. A dismissal is a denial, so it travels
-// the same channel the user's own "no" does: one code path unwinds the session,
-// reports Cancelled and clears currentSession, whoever triggered it.
-//
-// Without this the session goroutine stayed parked in awaitPermission forever, so
-// currentSession was never cleared and every later RefreshPendingPermissionRequest
-// re-asked the dismissed session for permission — once per IRMA session completed
-// anywhere in the app.
+// Dismiss dismisses the current session. A dismissal is a denial, so it travels the
+// same channel the user's own "no" does: one path unwinds the session, reports
+// Cancelled and clears currentSession. Without it the session goroutine stayed
+// parked in awaitPermission forever, so every later refresh re-asked the dismissed
+// session for permission.
 func (client *Client) Dismiss() {
 	session := client.currentSession.Load()
 	if session == nil {
@@ -207,7 +200,9 @@ func (client *Client) handleAuthorizationRequest(
 		answers:     make(chan *permissionResponse, 1),
 	}
 	client.currentSession.Store(session)
-	defer client.currentSession.Store(nil)
+	// CAS, not Store(nil): sessions are unserialised goroutines, so a session
+	// starting while this one unwinds must keep its own pointer.
+	defer client.currentSession.CompareAndSwap(session, nil)
 	return session.perform()
 }
 
@@ -225,14 +220,11 @@ type openid4vpSession struct {
 	// preExistingHashes tracks owned credential hashes at session start,
 	// used to detect newly issued credentials for WrongCredentialIssued.
 	preExistingHashes map[string]struct{}
-	// awaiting is true only while the session goroutine is parked in
-	// awaitPermission, i.e. only while an answer has somewhere to go. Claiming it
-	// via compare-and-swap is what makes an answer exclusive; read from other
-	// goroutines, see [Client.RefreshPendingPermissionRequest].
+	// True only while the session goroutine is parked in awaitPermission, i.e. only
+	// while an answer has somewhere to go. Claiming it by CAS is what makes an
+	// answer exclusive. Also read by [Client.RefreshPendingPermissionRequest].
 	awaiting atomic.Bool
-	// answers carries the verdict from whoever collects it — the UI callback or
-	// [Client.Dismiss] — to the parked session goroutine. Buffered, so neither of
-	// those callers ever blocks on the handover.
+	// Carries the verdict to the parked goroutine. Buffered, so nobody blocks.
 	answers chan *permissionResponse
 }
 
@@ -240,11 +232,10 @@ type permissionResponse struct {
 	selections []dcql.DisclosureSelection
 }
 
-// answer hands a verdict to the session goroutine parked in awaitPermission.
-// Reports whether it was delivered: only the first answer per parked window is, so
-// a second Dismiss — or a callback belonging to a permission request that a
-// refresh has since superseded — is a no-op instead of a stray value left behind
-// in the channel for the next await to pick up.
+// answer hands a verdict to the goroutine parked in awaitPermission and reports
+// whether it was delivered. Only the first answer per parked window is, so a second
+// Dismiss — or the callback of a permission request a refresh has superseded — is a
+// no-op instead of a stray value the next await picks up.
 func (session *openid4vpSession) answer(response *permissionResponse) bool {
 	if !session.awaiting.CompareAndSwap(true, false) {
 		return false
@@ -264,8 +255,8 @@ func (session *openid4vpSession) requestPermission() error {
 	}
 	session.lastPlan = plan
 
-	// Armed before dispatching, not after: a handler may invoke the callback
-	// synchronously, and an answer arriving before the window opens is discarded.
+	// Armed before dispatching: a handler may answer synchronously, and an answer
+	// arriving before the window opens is discarded.
 	session.awaiting.Store(true)
 	session.handler.RequestVerificationPermission(
 		plan,
@@ -307,8 +298,7 @@ func (session *openid4vpSession) perform() error {
 	}
 	permResp := session.awaitPermission()
 
-	// Nothing to disclose, either because the user picked nothing or because the
-	// session was dismissed. Both are the same outcome, so both land here.
+	// Nothing to disclose: the user picked nothing, or the session was dismissed.
 	if permResp == nil {
 		eudi.Logger.Info("openid4vp: nothing to disclose, cancelling")
 		session.handler.Cancelled()

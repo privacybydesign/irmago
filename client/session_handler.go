@@ -30,6 +30,8 @@ type session struct {
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
+	// Terminal state finish last dispatched, so a repeat of it can be dropped.
+	dispatched clientmodels.SessionStatus
 	// IRMA disclosure/signature request we're currently asking the user to satisfy.
 	// Held so choicesToAnswer can re-sort the user's selected AttributePaths back into
 	// the order the request asked for (the IRMA proof verifier matches j-th disclosed
@@ -65,16 +67,20 @@ func (s *session) error(err error) {
 	s.finish()
 }
 
-// finish evicts the session from the manager and dispatches its final state, so
-// the Sessions map does not grow unboundedly across the app's lifetime. The
-// eviction doubles as the guard: only the first call dispatches, so a protocol
-// reporting a terminal state after HandleUserInteraction's dismissal backstop
-// already reported one cannot emit a second event for the same session.
+// finish dispatches the session's final state and evicts the session from the
+// manager, so the Sessions map does not grow unboundedly. A repeat of the same
+// state is dropped: HandleUserInteraction's dismissal backstop and a protocol's
+// own Cancelled both report Dismissed. A *different* later state is not — the
+// backstop is a guess, and OpenID4VCI's Dismiss only logs, so issuance runs on
+// and stores the credential. Swallowing that Success would tell the user their
+// wallet did nothing.
 func (s *session) finish() {
-	if !s.client.sessionManager.DeleteSession(s.State.Id) {
+	if s.dispatched == s.State.Status {
 		return
 	}
+	s.dispatched = s.State.Status
 	s.dispatchState()
+	s.client.sessionManager.DeleteSession(s.State.Id)
 }
 
 func newSessionError(err *irma.SessionError) *clientmodels.SessionError {
@@ -111,16 +117,10 @@ func (m *sessionManager) Clear() {
 	m.Sessions = map[int]*session{}
 }
 
-// DeleteSession evicts the session and reports whether it was still registered,
-// so callers can tell the first eviction from a later duplicate.
-func (m *sessionManager) DeleteSession(id int) bool {
+func (m *sessionManager) DeleteSession(id int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.Sessions[id]; !ok {
-		return false
-	}
 	delete(m.Sessions, id)
-	return true
 }
 
 func (m *sessionManager) GetSession(id int) (*session, bool) {
@@ -751,9 +751,7 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 	case clientmodels.UI_DismissSession:
 		session.dismisser.Dismiss()
 		// Mark dismissed regardless of protocol: OpenID4VCI's Dismiss does not report
-		// the dismissal at all, and OpenID4VP's reports it once its session goroutine
-		// unwinds. finish dispatches once, so whichever gets there first is the event
-		// the UI sees.
+		// it at all, OpenID4VP's only once its goroutine unwinds. finish drops the repeat.
 		session.State.Status = clientmodels.Status_Dismissed
 		session.finish()
 	case clientmodels.UI_PreAuthorizedCode:
