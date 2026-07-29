@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,36 +19,67 @@ func init() {
 	eudi.Logger = logrus.New()
 }
 
-// testHandler captures the Failure callback from the OpenID4VP client.
-type testHandler struct {
-	failureCh chan *clientmodels.SessionError
+// newTestClient builds a Client with the one collaborator a session needs.
+func newTestClient() *Client {
+	return &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
 }
 
-func (h *testHandler) Failure(err *clientmodels.SessionError) {
-	h.failureCh <- err
+// awaitOn returns the next value sent on ch, failing the test if none arrives.
+func awaitOn[T any](t *testing.T, ch chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
+		var zero T
+		return zero
+	}
 }
 
-func (h *testHandler) Cancelled() {}
+// spyHandler records what the client reported, so a test can tell a legitimate
+// re-ask from the runaway re-asking of a dead session.
+type spyHandler struct {
+	requests  atomic.Int32
+	cancels   atomic.Int32
+	successes atomic.Int32
+	requested chan PermissionHandler
+	failed    chan *clientmodels.SessionError
+}
 
-func (h *testHandler) Success(_ string, _ []clientmodels.LogCredential) {}
+func newSpyHandler() *spyHandler {
+	return &spyHandler{
+		requested: make(chan PermissionHandler, 16),
+		failed:    make(chan *clientmodels.SessionError, 1),
+	}
+}
 
-func (h *testHandler) RequestVerificationPermission(
+func (h *spyHandler) Failure(err *clientmodels.SessionError) { h.failed <- err }
+
+func (h *spyHandler) Cancelled() { h.cancels.Add(1) }
+
+func (h *spyHandler) Success(_ string, _ []clientmodels.LogCredential) { h.successes.Add(1) }
+
+func (h *spyHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
 	_ *clientmodels.TrustedParty,
 	_ map[string]string,
-	_ PermissionHandler,
+	callback PermissionHandler,
 ) {
+	h.requests.Add(1)
+	h.requested <- callback
 }
 
-func awaitFailure(t *testing.T, h *testHandler) *clientmodels.SessionError {
+// awaitRequest returns the callback the session handed out with its latest
+// permission request, so a test can answer as the UI would.
+func (h *spyHandler) awaitRequest(t *testing.T) PermissionHandler {
 	t.Helper()
-	select {
-	case err := <-h.failureCh:
-		return err
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for failure callback")
-		return nil
-	}
+	return awaitOn(t, h.requested, "a permission request")
+}
+
+func (h *spyHandler) awaitFailure(t *testing.T) *clientmodels.SessionError {
+	t.Helper()
+	return awaitOn(t, h.failed, "a failure callback")
 }
 
 func TestNewSession_NonOKHttpStatus_ReportsFailure(t *testing.T) {
@@ -65,23 +97,23 @@ func TestNewSession_NonOKHttpStatus_ReportsFailure(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
-			handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
+			client := newTestClient()
+			handler := newSpyHandler()
 
 			client.NewSession(fmt.Sprintf("openid4vp://?request_uri=%s", server.URL), handler)
 
-			err := awaitFailure(t, handler)
+			err := handler.awaitFailure(t)
 			require.Contains(t, err.WrappedError, fmt.Sprintf("HTTP %d", code))
 		})
 	}
 }
 
 func TestNewSession_MissingRequestUri_ReportsFailure(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
-	handler := &testHandler{failureCh: make(chan *clientmodels.SessionError, 1)}
+	client := newTestClient()
+	handler := newSpyHandler()
 
 	client.NewSession("openid4vp://", handler)
 
-	err := awaitFailure(t, handler)
+	err := handler.awaitFailure(t)
 	require.Contains(t, err.WrappedError, "request_uri")
 }
