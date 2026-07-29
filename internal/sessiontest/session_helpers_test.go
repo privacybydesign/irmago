@@ -217,8 +217,30 @@ func requireSessionState(
 ) {
 	t.Helper()
 	require.Equal(t, id, session.Id)
-	require.Equal(t, status, session.Status)
+	require.Equal(t, status, session.Status, "session error: %s", describeSessionError(session.Error))
 	require.Equal(t, sessionType, session.Type)
+}
+
+// describeSessionError renders the error a failed session carries, for use in an
+// assertion message. A session that fails reaches the test only as
+// Status_Error, so a status assertion that does not print this reports the
+// symptom ("expected request_permission, got error") and drops the reason.
+func describeSessionError(err *clientmodels.SessionError) string {
+	if err == nil {
+		return "none"
+	}
+
+	description := fmt.Sprintf("type=%q wrapped=%q", err.ErrorType, err.WrappedError)
+	if err.Info != "" {
+		description += fmt.Sprintf(" info=%q", err.Info)
+	}
+	if err.RemoteStatus != 0 {
+		description += fmt.Sprintf(" remote_status=%d", err.RemoteStatus)
+	}
+	if err.RemoteError != nil {
+		description += fmt.Sprintf(" remote_error=%+v", *err.RemoteError)
+	}
+	return description
 }
 
 // requireRequestorInfo validates the standard test requestor info

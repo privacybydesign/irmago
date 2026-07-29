@@ -29,6 +29,7 @@ func TestTestHelpers(t *testing.T) {
 	t.Run("requireCredentialDescriptor", testRequireCredentialDescriptor)
 	t.Run("requireCredentialDescriptor_failures", testRequireCredentialDescriptor_Failures)
 	t.Run("findAttr", testFindAttr)
+	t.Run("describeSessionError", testDescribeSessionError)
 }
 
 // fakeT captures test failures without affecting the real test runner.
@@ -764,6 +765,42 @@ func testFindAttr(t *testing.T) {
 	t.Run("returns nil when not found", func(t *testing.T) {
 		result := findAttr(attrs, "phone")
 		require.Nil(t, result)
+	})
+}
+
+func testDescribeSessionError(t *testing.T) {
+	t.Run("no error", func(t *testing.T) {
+		require.Equal(t, "none", describeSessionError(nil))
+	})
+
+	t.Run("type and wrapped error", func(t *testing.T) {
+		require.Equal(t,
+			`type="openid4vp" wrapped="failed to verify auth request jwt"`,
+			describeSessionError(&clientmodels.SessionError{
+				ErrorType:    "openid4vp",
+				WrappedError: "failed to verify auth request jwt",
+			}),
+		)
+	})
+
+	t.Run("optional fields are omitted when empty", func(t *testing.T) {
+		description := describeSessionError(&clientmodels.SessionError{ErrorType: "panic"})
+		require.NotContains(t, description, "info=")
+		require.NotContains(t, description, "remote_status=")
+		require.NotContains(t, description, "remote_error=")
+	})
+
+	t.Run("info and remote fields are included when set", func(t *testing.T) {
+		description := describeSessionError(&clientmodels.SessionError{
+			ErrorType:    "transport",
+			WrappedError: "request failed",
+			Info:         "stack trace",
+			RemoteStatus: 500,
+			RemoteError:  &clientmodels.RemoteError{Description: "boom"},
+		})
+		require.Contains(t, description, `info="stack trace"`)
+		require.Contains(t, description, "remote_status=500")
+		require.Contains(t, description, "boom")
 	})
 }
 
