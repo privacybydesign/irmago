@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"runtime/debug"
 	"strings"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -92,6 +93,11 @@ func (client *Client) NewSession(sessionId int, credentialOfferEndpointUrl strin
 
 func (client *Client) handleSessionAsync(sessionId int, credentialOfferEndpointUrl string, redirectUri string, handler Handler) {
 	go func() {
+		// This goroutine is owned by irmago, so the app bridge's own recover
+		// does not cover it: an unrecovered panic here aborts the whole host
+		// process instead of ending the session. Turn it into a session failure.
+		defer recoverSessionPanic(handler)
+
 		// The locale is fixed for the whole flow. This goroutine spans several
 		// network round trips (issuer metadata, VCT resolution, logo downloads);
 		// re-reading the live locale at each step would let a SetLocale landing
@@ -259,6 +265,11 @@ func (client *Client) ParseAndValidateCredentialOffer(credentialOfferJson string
 		return nil, fmt.Errorf("credential_configuration_ids in credential offer are not unique")
 	}
 
+	// grants is OPTIONAL per OID4VCI v1.0 § 4.1.1, so an absent, null or empty
+	// member is not a validation error: the grant type is then derived from the
+	// authorization server metadata in configureIssuerSettings, which is the
+	// first point where that metadata is available.
+
 	return &credentialOffer, nil
 }
 
@@ -420,6 +431,31 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	eudi.Logger.Errorf(message, fmtArgs...)
 	handler.Failure(&clientmodels.SessionError{
 		WrappedError: fmt.Sprintf(message, fmtArgs...),
+	})
+}
+
+// recoverSessionPanic reports a panic on the session goroutine as a session
+// failure. It has to be deferred from the goroutine's own function body, since
+// recover only sees panics of the goroutine it runs on.
+func recoverSessionPanic(handler Handler) {
+	e := recover()
+	if e == nil {
+		return
+	}
+
+	stack := string(debug.Stack())
+	eudi.Logger.Errorf("recovering from panic: %v\nstack trace:\n%v", e, stack)
+	message := fmt.Sprintf("openid4vci session panicked: %v", e)
+	handler.Failure(&clientmodels.SessionError{
+		// Same shape the legacy irmaclient session uses for a recovered panic:
+		// error type irma.ErrorPanic (the string "panic"), and the message
+		// followed by the stack in Info (irma/irmaclient/session.go). Info is
+		// filled as well as Stack so the app's panic screen shows the same detail
+		// for both paths, whichever of the two fields it reads.
+		ErrorType:    "panic",
+		WrappedError: message,
+		Info:         message + "\n\n" + stack,
+		Stack:        stack,
 	})
 }
 
