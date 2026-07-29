@@ -15,7 +15,6 @@ import (
 // member.
 const (
 	GrantTypeAuthorizationCode = "authorization_code"
-	GrantTypeImplicit          = "implicit"
 	GrantTypePreAuthorizedCode = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 )
 
@@ -111,10 +110,12 @@ type AuthorizationDetailsResponseRecord struct {
 // SupportsGrantType reports whether the authorization server is willing to
 // process the given grant type. grant_types_supported is OPTIONAL in RFC 8414
 // § 2, which defines the default as ["authorization_code", "implicit"] when the
-// member is omitted, so an absent list is not the same as an empty one.
+// member is omitted; OpenID4VCI never uses the implicit grant, so only the
+// authorization_code default is relevant here, and an absent list is not the
+// same as an empty one.
 func (as *AuthorizationServerMetadata) SupportsGrantType(grantType string) bool {
 	if as.GrantTypesSupported == nil {
-		return grantType == GrantTypeAuthorizationCode || grantType == GrantTypeImplicit
+		return grantType == GrantTypeAuthorizationCode
 	}
 	return slices.Contains(as.GrantTypesSupported, grantType)
 }
