@@ -70,7 +70,9 @@ func (s *session) error(err error) {
 // finish dispatches the session's final state and evicts the session from the
 // manager, so the Sessions map does not grow unboundedly. A repeat of the same
 // state is dropped: HandleUserInteraction's dismissal backstop and a protocol's
-// own Cancelled both report Dismissed. A *different* later state is not — the
+// own Cancelled both report Dismissed. Best-effort, not a guarantee — dispatched,
+// like the State.Status it is compared against, is written from both the UI and
+// protocol goroutines without synchronisation. A *different* later state is not — the
 // backstop is a guess, and OpenID4VCI's Dismiss only logs, so issuance runs on
 // and stores the credential. Swallowing that Success would tell the user their
 // wallet did nothing.

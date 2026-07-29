@@ -92,8 +92,13 @@ func (client *Client) Dismiss() {
 	if session == nil {
 		return
 	}
-	eudi.Logger.Info("openid4vp: session dismissed")
-	session.answer(nil)
+	// This log is the only diagnostic for the path, so report what happened: a
+	// dismissal racing the user's own answer, or following one, delivers nothing.
+	if session.answer(nil) {
+		eudi.Logger.Info("openid4vp: session dismissed")
+	} else {
+		eudi.Logger.Info("openid4vp: dismissal ignored, session was already answered")
+	}
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {

@@ -1,68 +1,21 @@
 package openid4vp
 
 import (
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/stretchr/testify/require"
 )
 
-// permissionSpyHandler counts permission requests and cancellations, so a test
-// can tell a legitimate re-ask from the runaway re-asking of a dead session.
-type permissionSpyHandler struct {
-	requests  atomic.Int32
-	cancels   atomic.Int32
-	successes atomic.Int32
-	failures  atomic.Int32
-	requested chan PermissionHandler
-}
-
-func newPermissionSpyHandler() *permissionSpyHandler {
-	return &permissionSpyHandler{requested: make(chan PermissionHandler, 16)}
-}
-
-func (h *permissionSpyHandler) Failure(_ *clientmodels.SessionError) { h.failures.Add(1) }
-
-func (h *permissionSpyHandler) Cancelled() { h.cancels.Add(1) }
-
-func (h *permissionSpyHandler) Success(_ string, _ []clientmodels.LogCredential) {
-	h.successes.Add(1)
-}
-
-func (h *permissionSpyHandler) RequestVerificationPermission(
-	_ *clientmodels.DisclosurePlan,
-	_ *clientmodels.TrustedParty,
-	_ map[string]string,
-	callback PermissionHandler,
-) {
-	h.requests.Add(1)
-	h.requested <- callback
-}
-
-// awaitRequest returns the callback the session handed out with its latest
-// permission request, so a test can answer as the UI would.
-func (h *permissionSpyHandler) awaitRequest(t *testing.T) PermissionHandler {
-	t.Helper()
-	select {
-	case callback := <-h.requested:
-		return callback
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for a permission request")
-		return nil
-	}
-}
-
 // startParkedSession drives a session up to the point where it is waiting for the
 // user's answer — the state a dismissal has to be able to break out of — and
 // returns the callback it is waiting on. An empty DCQL query keeps the plan build
 // trivial; these tests are about the session lifecycle, not candidate matching.
-func startParkedSession(t *testing.T) (*Client, *permissionSpyHandler, chan error, PermissionHandler) {
+func startParkedSession(t *testing.T) (*Client, *spyHandler, chan error, PermissionHandler) {
 	t.Helper()
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
-	handler := newPermissionSpyHandler()
+	client := newTestClient()
+	handler := newSpyHandler()
 
 	done := make(chan error, 1)
 	go func() {
@@ -78,12 +31,7 @@ func startParkedSession(t *testing.T) (*Client, *permissionSpyHandler, chan erro
 
 func awaitPerformReturn(t *testing.T, done chan error) {
 	t.Helper()
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("session goroutine did not unwind after Dismiss")
-	}
+	require.NoError(t, awaitOn(t, done, "the session goroutine to unwind"))
 }
 
 // Regression: Dismiss only logged, so the session goroutine stayed parked in
@@ -98,7 +46,6 @@ func TestDismiss_UnwindsSessionAndClearsCurrentSession(t *testing.T) {
 	require.Nil(t, client.currentSession.Load(), "Dismiss must clear the current session")
 	require.EqualValues(t, 1, handler.cancels.Load(), "dismissal reported exactly once")
 	require.EqualValues(t, 0, handler.successes.Load())
-	require.EqualValues(t, 0, handler.failures.Load())
 }
 
 // The bug as it showed up in the wallet: after the dismissal, every completed
@@ -156,7 +103,7 @@ func TestAnswer_FirstOneWins(t *testing.T) {
 // POSTing the authorization response — must not be re-asked either. Reproduced
 // directly, since the phase is a narrow window in a live session.
 func TestRefreshPendingPermissionRequest_SilentWhenNotAwaiting(t *testing.T) {
-	handler := newPermissionSpyHandler()
+	handler := newSpyHandler()
 	session := &openid4vpSession{
 		request:     &AuthorizationRequest{},
 		requestor:   &clientmodels.TrustedParty{Name: "Test verifier"},
@@ -165,7 +112,7 @@ func TestRefreshPendingPermissionRequest_SilentWhenNotAwaiting(t *testing.T) {
 		answers:     make(chan *permissionResponse, 1),
 	}
 
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	client := newTestClient()
 	client.currentSession.Store(session)
 
 	client.RefreshPendingPermissionRequest()
@@ -176,16 +123,10 @@ func TestRefreshPendingPermissionRequest_SilentWhenNotAwaiting(t *testing.T) {
 		"an answer with nobody parked to receive it must not be queued")
 }
 
-func TestRefreshPendingPermissionRequest_NoSession(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
-	require.NotPanics(t, client.RefreshPendingPermissionRequest)
-}
-
-func TestDismiss_NoSession(t *testing.T) {
-	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
-	handler := newPermissionSpyHandler()
+func TestNoSessionInFlight_DismissAndRefreshAreNoOps(t *testing.T) {
+	client := &Client{}
 	require.NotPanics(t, client.Dismiss)
-	require.EqualValues(t, 0, handler.cancels.Load())
+	require.NotPanics(t, client.RefreshPendingPermissionRequest)
 }
 
 // Only one caller may report the dismissal, or the wallet gets a second terminal

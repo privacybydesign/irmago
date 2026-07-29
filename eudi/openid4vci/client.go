@@ -343,6 +343,15 @@ func (client *Client) GetAndVerifyCredentialIssuerMetadata(credentialOffer *Cred
 	return &credentialIssuerMetadata, nil
 }
 
+// Dismiss only logs: it does not stop the issuance it claims to stop, and reports
+// no terminal state. client/session_handler.go's dismissal backstop reports
+// Dismissed on its behalf, and finish there deliberately lets the later Success
+// through, because issuance runs on and stores the credential regardless.
+//
+// TODO: actually cancel. Unlike openid4vp this cannot be one channel send — the
+// session parks at three separate channels and spends long stretches in HTTP
+// round trips, so it needs a context threaded through the grant handlers plus a
+// decision on what a mid-flight dismissal does with credentials already fetched.
 func (client *Client) Dismiss() {
 	eudi.Logger.Info("openid4vci: session dismissed")
 }
