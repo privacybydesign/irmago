@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
@@ -42,14 +43,25 @@ type Client struct {
 	Configuration     *eudi.Configuration
 	dcqlHandler       *dcql.DcqlHandler
 	verifierValidator VerifierValidator
-	currentSession    *openid4vpSession
 	currentLocale     *clientmodels.CurrentLocale
+
+	// currentSession is written by the session goroutine and read by Dismiss and
+	// RefreshPendingPermissionRequest, which run on their callers' goroutines.
+	currentSession atomic.Pointer[openid4vpSession]
 }
 
-// RefreshPendingPermissionRequest sends another, updated verification request if there's an active session.
+// RefreshPendingPermissionRequest re-asks the current session for permission with
+// a freshly built plan. Called on every completed IRMA session (see
+// IrmaClient.SetOnSessionDoneCallback) so that issuance-during-disclosure re-shows
+// a plan that now has the obtained credential in it.
+//
+// Silent unless the session is actually waiting for an answer: in any other phase
+// — mid disclosure POST, or already dismissed — nobody is there to receive one,
+// and asking anyway puts a permission screen in front of the user for a session
+// that has moved on.
 func (client *Client) RefreshPendingPermissionRequest() {
-	if client.currentSession != nil {
-		client.currentSession.requestPermission()
+	if session := client.currentSession.Load(); session != nil && session.awaiting.Load() {
+		session.requestPermission()
 	}
 }
 
@@ -64,7 +76,6 @@ func NewClient(
 		Configuration:     eudiConf,
 		dcqlHandler:       dcql.NewDcqlHandler(handlers),
 		verifierValidator: verifierValidator,
-		currentSession:    nil,
 		currentLocale:     currentLocale,
 	}, nil
 }
@@ -75,9 +86,21 @@ func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismiss
 	return client
 }
 
-// Dismiss dismisses the current session.
+// Dismiss dismisses the current session. A dismissal is a denial, so it travels
+// the same channel the user's own "no" does: one code path unwinds the session,
+// reports Cancelled and clears currentSession, whoever triggered it.
+//
+// Without this the session goroutine stayed parked in awaitPermission forever, so
+// currentSession was never cleared and every later RefreshPendingPermissionRequest
+// re-asked the dismissed session for permission — once per IRMA session completed
+// anywhere in the app.
 func (client *Client) Dismiss() {
+	session := client.currentSession.Load()
+	if session == nil {
+		return
+	}
 	eudi.Logger.Info("openid4vp: session dismissed")
+	session.answer(nil)
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {
@@ -176,16 +199,16 @@ func (client *Client) handleAuthorizationRequest(
 	requestor *clientmodels.TrustedParty,
 	handler Handler,
 ) error {
-	client.currentSession = &openid4vpSession{
+	session := &openid4vpSession{
 		request:     request,
 		requestor:   requestor,
 		handler:     handler,
 		dcqlHandler: client.dcqlHandler,
+		answers:     make(chan *permissionResponse, 1),
 	}
-	defer func() {
-		client.currentSession = nil
-	}()
-	return client.currentSession.perform()
+	client.currentSession.Store(session)
+	defer client.currentSession.Store(nil)
+	return session.perform()
 }
 
 // ========================================================================
@@ -193,28 +216,45 @@ func (client *Client) handleAuthorizationRequest(
 // ========================================================================
 
 type openid4vpSession struct {
-	request                  *AuthorizationRequest
-	requestor                *clientmodels.TrustedParty
-	handler                  Handler
-	dcqlHandler              *dcql.DcqlHandler
-	pendingPermissionRequest *permissionRequest
-	lastPlan                 *clientmodels.DisclosurePlan
-	lastResult               *dcql.DcqlResult
+	request     *AuthorizationRequest
+	requestor   *clientmodels.TrustedParty
+	handler     Handler
+	dcqlHandler *dcql.DcqlHandler
+	lastPlan    *clientmodels.DisclosurePlan
+	lastResult  *dcql.DcqlResult
 	// preExistingHashes tracks owned credential hashes at session start,
 	// used to detect newly issued credentials for WrongCredentialIssued.
 	preExistingHashes map[string]struct{}
-}
-
-type permissionRequest struct {
-	channel chan *permissionResponse
+	// awaiting is true only while the session goroutine is parked in
+	// awaitPermission, i.e. only while an answer has somewhere to go. Claiming it
+	// via compare-and-swap is what makes an answer exclusive; read from other
+	// goroutines, see [Client.RefreshPendingPermissionRequest].
+	awaiting atomic.Bool
+	// answers carries the verdict from whoever collects it — the UI callback or
+	// [Client.Dismiss] — to the parked session goroutine. Buffered, so neither of
+	// those callers ever blocks on the handover.
+	answers chan *permissionResponse
 }
 
 type permissionResponse struct {
 	selections []dcql.DisclosureSelection
 }
 
+// answer hands a verdict to the session goroutine parked in awaitPermission.
+// Reports whether it was delivered: only the first answer per parked window is, so
+// a second Dismiss — or a callback belonging to a permission request that a
+// refresh has since superseded — is a no-op instead of a stray value left behind
+// in the channel for the next await to pick up.
+func (session *openid4vpSession) answer(response *permissionResponse) bool {
+	if !session.awaiting.CompareAndSwap(true, false) {
+		return false
+	}
+	session.answers <- response
+	return true
+}
+
 func (session *openid4vpSession) awaitPermission() *permissionResponse {
-	return <-session.pendingPermissionRequest.channel
+	return <-session.answers
 }
 
 func (session *openid4vpSession) requestPermission() error {
@@ -224,17 +264,18 @@ func (session *openid4vpSession) requestPermission() error {
 	}
 	session.lastPlan = plan
 
+	// Armed before dispatching, not after: a handler may invoke the callback
+	// synchronously, and an answer arriving before the window opens is discarded.
+	session.awaiting.Store(true)
 	session.handler.RequestVerificationPermission(
 		plan,
 		session.requestor,
 		session.lastResult.HashToQueryId,
 		func(proceed bool, selections []dcql.DisclosureSelection) {
 			if proceed {
-				session.pendingPermissionRequest.channel <- &permissionResponse{
-					selections: selections,
-				}
+				session.answer(&permissionResponse{selections: selections})
 			} else {
-				session.pendingPermissionRequest.channel <- nil
+				session.answer(nil)
 			}
 		},
 	)
@@ -260,21 +301,16 @@ func (session *openid4vpSession) buildDisclosurePlan() (*clientmodels.Disclosure
 }
 
 func (session *openid4vpSession) perform() error {
-	session.pendingPermissionRequest = &permissionRequest{
-		channel: make(chan *permissionResponse, 1),
-	}
-	defer func() {
-		session.pendingPermissionRequest = nil
-	}()
-
 	err := session.requestPermission()
 	if err != nil {
 		return fmt.Errorf("failed to request permission: %v", err)
 	}
 	permResp := session.awaitPermission()
 
+	// Nothing to disclose, either because the user picked nothing or because the
+	// session was dismissed. Both are the same outcome, so both land here.
 	if permResp == nil {
-		eudi.Logger.Info("openid4vp: no attributes selected for disclosure, cancelling")
+		eudi.Logger.Info("openid4vp: nothing to disclose, cancelling")
 		session.handler.Cancelled()
 		return nil
 	}

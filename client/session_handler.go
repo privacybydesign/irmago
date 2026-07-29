@@ -65,12 +65,16 @@ func (s *session) error(err error) {
 	s.finish()
 }
 
-// finish dispatches the session's final state and evicts the session from the
-// manager, so the Sessions map does not grow unboundedly across the app's
-// lifetime. Safe to call more than once: a second eviction is a no-op.
+// finish evicts the session from the manager and dispatches its final state, so
+// the Sessions map does not grow unboundedly across the app's lifetime. The
+// eviction doubles as the guard: only the first call dispatches, so a protocol
+// reporting a terminal state after HandleUserInteraction's dismissal backstop
+// already reported one cannot emit a second event for the same session.
 func (s *session) finish() {
+	if !s.client.sessionManager.DeleteSession(s.State.Id) {
+		return
+	}
 	s.dispatchState()
-	s.client.sessionManager.DeleteSession(s.State.Id)
 }
 
 func newSessionError(err *irma.SessionError) *clientmodels.SessionError {
@@ -107,10 +111,16 @@ func (m *sessionManager) Clear() {
 	m.Sessions = map[int]*session{}
 }
 
-func (m *sessionManager) DeleteSession(id int) {
+// DeleteSession evicts the session and reports whether it was still registered,
+// so callers can tell the first eviction from a later duplicate.
+func (m *sessionManager) DeleteSession(id int) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, ok := m.Sessions[id]; !ok {
+		return false
+	}
 	delete(m.Sessions, id)
+	return true
 }
 
 func (m *sessionManager) GetSession(id int) (*session, bool) {
@@ -740,14 +750,12 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 		session.pinHandler(payload.Proceed, payload.Pin)
 	case clientmodels.UI_DismissSession:
 		session.dismisser.Dismiss()
-		// Ensure the session is always marked as dismissed, regardless of protocol.
-		// Some protocol implementations (e.g. OpenID4VP) don't call Cancelled() from Dismiss().
-		// When Cancelled() did fire, Status is already Dismissed and the session has
-		// already been finished/evicted; skip to avoid a stale re-dispatch.
-		if session.State.Status != clientmodels.Status_Dismissed {
-			session.State.Status = clientmodels.Status_Dismissed
-			session.finish()
-		}
+		// Mark dismissed regardless of protocol: OpenID4VCI's Dismiss does not report
+		// the dismissal at all, and OpenID4VP's reports it once its session goroutine
+		// unwinds. finish dispatches once, so whichever gets there first is the event
+		// the UI sees.
+		session.State.Status = clientmodels.Status_Dismissed
+		session.finish()
 	case clientmodels.UI_PreAuthorizedCode:
 		payload := userInteraction.Payload.(clientmodels.SessionPreAuthorizedCodeInteractionPayload)
 		session.preAuthorizedCodeHandler(payload.Proceed, payload.TransactionCode)
