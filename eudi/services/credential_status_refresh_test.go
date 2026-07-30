@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -282,6 +284,44 @@ func Test_RefreshStatuses_OneURIFailure_DoesNotAbortSweep(t *testing.T) {
 	}
 	require.Equal(t, uint8(statuslist.StatusValid), statusesByURI[good.URL()])
 	require.Equal(t, uint8(0), statusesByURI["http://127.0.0.1:0/nope"])
+}
+
+// Test_RefreshStatuses_CancelledFetch_ReportsCancellation separates the two
+// kinds of fetch failure: an unreachable URI is fail-soft and skipped, but a
+// fetch aborted because ctx was cancelled means the sweep was cut short, and the
+// caller has to be able to tell that from a sweep that looked at everything.
+// Without it, cancellation landing in the last group's fetch returns nil.
+func Test_RefreshStatuses_CancelledFetch_ReportsCancellation(t *testing.T) {
+	db := newTestHolderDB(t)
+	signer := statuslist.NewTestStatusListSigner(t)
+	checker := statuslist.NewChecker(statuslist.VerificationContext{
+		X509Context: signer.X509VerificationContext(),
+	}, statuslist.NewInMemoryCache())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// A status list whose fetch never completes: it cancels the sweep and then
+	// waits for the aborted request to be dropped.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+
+	seedBatch(t, db, "h1", "https://issuer.example", []models.IssuedCredentialInstance{
+		instanceWithStatus(srv.URL, 0),
+	})
+
+	svc := newRefreshService(db, checker)
+	changed, err := svc.RefreshStatuses(ctx)
+	require.ErrorIs(t, err, context.Canceled, "a cancelled fetch is a cut-short sweep, not a skipped URI")
+	require.Zero(t, changed)
+
+	// And nothing was written back, so the change is still there to find.
+	var row models.IssuedCredentialInstance
+	require.NoError(t, db.First(&row, "status_list_uri = ?", srv.URL).Error)
+	require.Nil(t, row.LastStatusCheckAt)
 }
 
 func Test_RefreshStatuses_OnlyUpdatesOnSuccess(t *testing.T) {

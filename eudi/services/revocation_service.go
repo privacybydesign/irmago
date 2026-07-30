@@ -92,7 +92,10 @@ func (s *RevocationService) IsRevoked(instance *models.IssuedCredentialInstance)
 // Returns how many batches' statuses moved — one representative per batch, so
 // this counts batches, not rows. Re-confirmations and failures leave the stored
 // status alone and so count for nothing; callers use the count to decide
-// whether anything happened worth telling the app about.
+// whether anything happened worth telling the app about. A cut-short sweep
+// returns both: the changes it did write back, and the cancellation. Both matter
+// — the writebacks are committed, so a caller that discards the count on an
+// error loses those changes for good.
 func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, err error) {
 	if s.checker == nil {
 		return 0, nil
@@ -128,6 +131,13 @@ func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, e
 		// One Refresh per URI populates the cache; the per-idx Check calls
 		// below then read from the warm cache (no extra HTTP traffic).
 		if _, err := s.checker.Refresh(ctx, statuslist.Reference{URI: uri}); err != nil {
+			// A fetch aborted by cancellation is not a fail-soft per-URI error:
+			// it means the sweep was cut short, which the caller has to be able
+			// to tell from a sweep that looked at everything. Without this, a
+			// cancellation landing in the last group's fetch returns nil.
+			if ctx.Err() != nil {
+				return changed, ctx.Err()
+			}
 			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(uri), err)
 			continue
 		}

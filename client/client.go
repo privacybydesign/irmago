@@ -78,6 +78,12 @@ func New(
 	aesKey [32]byte,
 	locale string,
 ) (*Client, error) {
+	// Required: the wallet calls it from background jobs and from IrmaClient
+	// without a nil guard, so a nil one would panic on a goroutine no caller
+	// can recover from. Fail here instead, where the app can see it.
+	if handler == nil {
+		return nil, fmt.Errorf("handler is required")
+	}
 	if err := common.AssertPathExists(storagePath); err != nil {
 		return nil, err
 	}
@@ -271,7 +277,7 @@ func New(
 // SetLocale changes the locale used to resolve all app-facing text and logos.
 // Non-blocking: text resolves offline from stored metadata on the next pull;
 // logos missing for the new locale are fetched by a background backfill that
-// signals ClientHandler.UpdateAttributes on completion. Re-setting the locale
+// signals ClientHandler.CredentialsChanged on completion. Re-setting the locale
 // the wallet already uses does nothing.
 func (client *Client) SetLocale(locale string) {
 	if client.currentLocale.Set(locale) {
@@ -303,11 +309,16 @@ func (client *Client) Close() error {
 // A status change signals ClientHandler.CredentialsChanged, on the calling
 // goroutine — for the scheduled sweep, the job's own, so a handler that blocks
 // delays the next sweep. Re-confirming a status the wallet already had is
-// silent, as is a sweep cut short by a cancelled ctx — a caller that gave up on
-// the sweep does not want its result.
+// silent.
+//
+// A cancelled ctx cuts the sweep short but does not suppress the signal: what
+// the sweep wrote back before it stopped is committed, and a later sweep sees a
+// re-confirmation, so a change dropped here is a change the app never hears
+// about. It is signalled even though the caller gave up, and err reports the
+// cancellation.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
 	changed, err := client.revocationService.RefreshStatuses(ctx)
-	if changed > 0 && ctx.Err() == nil {
+	if changed > 0 {
 		client.handler.CredentialsChanged()
 	}
 	return err
