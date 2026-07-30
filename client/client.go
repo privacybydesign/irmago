@@ -51,6 +51,11 @@ type Client struct {
 	credentialService services.CredentialService
 	revocationService *services.RevocationService
 
+	// handler is how the wallet wakes the app when what it has already rendered
+	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
+	// cannot survive a session.
+	handler ClientHandler
+
 	// currentLocale is the locale used to resolve all app-facing text and
 	// logos. The app owns it: it supplies the initial value via New and
 	// updates it through SetLocale; irmago does not persist it.
@@ -67,7 +72,7 @@ func New(
 	storagePath string,
 	irmaConfigurationPath string,
 	eudiAppDataPath string,
-	handler irmaclient.ClientHandler,
+	handler ClientHandler,
 	sessionHandler clientmodels.SessionHandler,
 	signer irmaclient.Signer,
 	aesKey [32]byte,
@@ -176,7 +181,7 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, handler, signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(handler), signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
@@ -236,6 +241,7 @@ func New(
 		keyBinder:         irmaKeyBinder,
 		didValidator:      didValidator,
 		scheduler:         scheduler,
+		handler:           handler,
 		currentLocale:     currentLocale,
 		credentialService: credentialService,
 		revocationService: revocationService,
@@ -249,8 +255,8 @@ func New(
 	client.logoBackfill = services.NewLogoBackfiller(eudiStorage, common.HTTPClient, func(cached int) {
 		// Re-read the credentials the app has already rendered, but only when
 		// the sweep put new logos on disk — nothing new, nothing to redraw.
-		if cached > 0 && handler != nil {
-			handler.UpdateAttributes()
+		if cached > 0 {
+			client.handler.CredentialsChanged()
 		}
 	})
 
@@ -288,13 +294,23 @@ func (client *Client) Close() error {
 	return client.storage.Close()
 }
 
-// RefreshStatuses re-fetches the Token Status List for every stored
-// SD-JWT VC instance and updates its LastKnownStatus column. Use
-// this on app resume or when the UI exposes an explicit refresh
-// action. Errors during the sweep are logged; the previous
-// LastKnownStatus persists for any URI that fails to refresh.
+// RefreshStatuses re-fetches the Token Status List for one representative
+// instance per stored SD-JWT VC batch and updates its LastKnownStatus column.
+// Use this on app resume or when the UI exposes an explicit refresh action.
+// Errors during the sweep are logged; the previous LastKnownStatus persists for
+// any URI that fails to refresh.
+//
+// A status change signals ClientHandler.CredentialsChanged, on the calling
+// goroutine — for the scheduled sweep, the job's own, so a handler that blocks
+// delays the next sweep. Re-confirming a status the wallet already had is
+// silent, as is a sweep cut short by a cancelled ctx — a caller that gave up on
+// the sweep does not want its result.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
-	return client.revocationService.RefreshStatuses(ctx)
+	changed, err := client.revocationService.RefreshStatuses(ctx)
+	if changed > 0 && ctx.Err() == nil {
+		client.handler.CredentialsChanged()
+	}
+	return err
 }
 
 type SessionRequestData struct {
@@ -686,7 +702,8 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 	// representative instance's LastKnownStatus per credential batch (a batch is
 	// revoked all at once, so one entry stands in for the whole batch). Skipped
 	// when the interval is non-positive. The sweep is fail-soft: per-URI errors
-	// are logged inside RefreshStatuses and the previous status is kept.
+	// are logged inside RefreshStatuses and the previous status is kept. A sweep
+	// that finds a status change signals the app through RefreshStatuses.
 	if statusTokenListRefreshInterval > 0 {
 		_, err = client.scheduler.NewJob(
 			gocron.DurationJob(statusTokenListRefreshInterval),

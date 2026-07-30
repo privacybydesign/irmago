@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
@@ -17,6 +18,9 @@ import (
 type MockClientHandler struct {
 	enrollmentChannel chan error
 	log               bool
+
+	// Atomic: written from whichever goroutine woke the UI, read from the test's.
+	credentialsChanged atomic.Int32
 }
 
 func NewMockClientHandler() *MockClientHandler {
@@ -55,6 +59,14 @@ func (h *MockClientHandler) ChangePinBlocked(manager irma.SchemeManagerIdentifie
 func (h *MockClientHandler) UpdateConfiguration(new *irma.IrmaIdentifierSet)                    {}
 func (h *MockClientHandler) UpdateAttributes()                                                  {}
 func (h *MockClientHandler) Revoked(cred *irma.CredentialIdentifier)                            {}
+func (h *MockClientHandler) CredentialsChanged() {
+	h.credentialsChanged.Add(1)
+}
+
+func (h *MockClientHandler) CredentialsChangedCount() int {
+	return int(h.credentialsChanged.Load())
+}
+
 func (h *MockClientHandler) ReportError(err error) {
 	if h.log {
 		fmt.Printf("ReportError(): %v\n", err)
