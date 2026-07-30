@@ -7,164 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ========================== ProcessedPayload.Sort Tests ==========================
-// Current behaviour summary:
-//   - Nested ProcessedPayload values are recursively sorted.
-//   - Scalar values (string, int, bool, float) are left unchanged.
-//   - Slice values are sorted in ascending order.
-//   - Map values that are not ProcessedPayload cause a panic.
-//   - Nil values in the map cause a panic (reflect.TypeOf(nil).Kind() panics).
-
-func Test_ProcessedPayload_Sort_EmptyPayload_NoPanic(t *testing.T) {
-	p := ProcessedPayload{}
-	require.NotPanics(t, func() { p.Sort() })
-}
-
-func Test_ProcessedPayload_Sort_ScalarValues_Unchanged(t *testing.T) {
-	p := ProcessedPayload{
-		"str":   "hello",
-		"int":   42,
-		"float": 3.14,
-		"bool":  true,
-	}
-
-	p.Sort()
-
-	require.Equal(t, "hello", p["str"])
-	require.Equal(t, 42, p["int"])
-	require.Equal(t, 3.14, p["float"])
-	require.Equal(t, true, p["bool"])
-}
-
-func Test_ProcessedPayload_Sort_NestedPayload_RecurseWithoutPanic(t *testing.T) {
-	inner := ProcessedPayload{
-		"b": "second",
-		"a": "first",
-	}
-	p := ProcessedPayload{
-		"nested": inner,
-		"top":    "value",
-	}
-
-	require.NotPanics(t, func() { p.Sort() })
-	// Values must still be present and unchanged after sort.
-	require.Equal(t, "value", p["top"])
-	innerResult, ok := p["nested"].(ProcessedPayload)
-	require.True(t, ok)
-	require.Equal(t, "first", innerResult["a"])
-	require.Equal(t, "second", innerResult["b"])
-}
-
-func Test_ProcessedPayload_Sort_DeeplyNestedPayload_RecurseWithoutPanic(t *testing.T) {
-	p := ProcessedPayload{
-		"level1": ProcessedPayload{
-			"level2": ProcessedPayload{
-				"level3": ProcessedPayload{
-					"leaf": "value",
-				},
-			},
-		},
-	}
-
-	require.NotPanics(t, func() { p.Sort() })
-
-	l1 := p["level1"].(ProcessedPayload)
-	l2 := l1["level2"].(ProcessedPayload)
-	l3 := l2["level3"].(ProcessedPayload)
-	require.Equal(t, "value", l3["leaf"])
-}
-
-func Test_ProcessedPayload_Sort_SliceValue_Sorted(t *testing.T) {
-	p := ProcessedPayload{
-		"items": []string{"c", "a", "b"},
-	}
-
-	p.Sort()
-
-	result, ok := p["items"].([]string)
-	require.True(t, ok)
-	require.Equal(t, []string{"a", "b", "c"}, result)
-}
-
-func Test_ProcessedPayload_Sort_SliceOfInts_Sorted(t *testing.T) {
-	p := ProcessedPayload{
-		"nums": []int{3, 1, 2},
-	}
-
-	p.Sort()
-
-	result, ok := p["nums"].([]int)
-	require.True(t, ok)
-	require.Equal(t, []int{1, 2, 3}, result)
-}
-
-func Test_ProcessedPayload_Sort_NilValueInMap_DoesNotPanic(t *testing.T) {
-	p := ProcessedPayload{
-		"test": nil,
-	}
-
-	require.NotPanics(t, func() { p.Sort() })
-}
-
-func Test_ProcessedPayload_Sort_UnknownMapType_Panics(t *testing.T) {
-	// A map[string]string value is not castable to ProcessedPayload (map[string]any),
-	// so Sort must panic when it encounters it.
-	p := ProcessedPayload{
-		"bad": map[string]string{"key": "val"},
-	}
-
-	require.Panics(t, func() { p.Sort() })
-}
-
-func Test_ProcessedPayload_Sort_MultipleNestedPayloads_AllRecursed(t *testing.T) {
-	p := ProcessedPayload{
-		"first": ProcessedPayload{
-			"x": "1",
-		},
-		"second": ProcessedPayload{
-			"y": "2",
-		},
-		"scalar": "flat",
-	}
-
-	require.NotPanics(t, func() { p.Sort() })
-
-	require.Equal(t, "flat", p["scalar"])
-	require.Equal(t, "1", p["first"].(ProcessedPayload)["x"])
-	require.Equal(t, "2", p["second"].(ProcessedPayload)["y"])
-}
-
-func Test_ProcessedPayload_Sort_NestedPayloadContainingSlice_SliceUnsorted(t *testing.T) {
-	inner := ProcessedPayload{
-		"tags": []string{"z", "a", "m"},
-	}
-	p := ProcessedPayload{
-		"nested": inner,
-	}
-
-	p.Sort()
-
-	result := p["nested"].(ProcessedPayload)["tags"].([]string)
-	require.Equal(t, []string{"a", "m", "z"}, result)
-}
-
-func Test_ProcessedPayload_Sort_NestedPayloadContainingSliceAny_SliceSorted(t *testing.T) {
-	inner := ProcessedPayload{
-		"tags": []any{"z", "a", "m"},
-	}
-	p := ProcessedPayload{
-		"nested": inner,
-	}
-
-	p.Sort()
-
-	result := p["nested"].(ProcessedPayload)["tags"].([]string)
-	require.Equal(t, []string{"a", "m", "z"}, result)
-}
-
 // ========================== ProcessedPayload.MarshalJSON Tests ==========================
-// MarshalJSON calls Sort() before marshalling, producing a fully deterministic JSON encoding:
-// map keys are sorted by encoding/json, and slice elements are sorted by Sort().
+// MarshalJSON produces a fully deterministic JSON encoding: map keys are sorted at every
+// nesting level by encoding/json, while array element order is preserved as-is, since it
+// is meaningful in SD-JWT claims.
 
 func Test_ProcessedPayload_MarshalJSON_EmptyPayload(t *testing.T) {
 	p := ProcessedPayload{}
@@ -189,7 +35,7 @@ func Test_ProcessedPayload_MarshalJSON_ScalarValues_KeysSorted(t *testing.T) {
 	require.Equal(t, `{"a":"first","m":"middle","z":"last"}`, string(out))
 }
 
-func Test_ProcessedPayload_MarshalJSON_StringSlice_ArraySorted(t *testing.T) {
+func Test_ProcessedPayload_MarshalJSON_StringSlice_ArrayOrderPreserved(t *testing.T) {
 	p := ProcessedPayload{
 		"tags": []string{"cherry", "apple", "banana"},
 	}
@@ -197,10 +43,10 @@ func Test_ProcessedPayload_MarshalJSON_StringSlice_ArraySorted(t *testing.T) {
 	out, err := json.Marshal(&p)
 
 	require.NoError(t, err)
-	require.Equal(t, `{"tags":["apple","banana","cherry"]}`, string(out))
+	require.Equal(t, `{"tags":["cherry","apple","banana"]}`, string(out))
 }
 
-func Test_ProcessedPayload_MarshalJSON_IntSlice_ArraySorted(t *testing.T) {
+func Test_ProcessedPayload_MarshalJSON_IntSlice_ArrayOrderPreserved(t *testing.T) {
 	p := ProcessedPayload{
 		"nums": []int{30, 10, 20},
 	}
@@ -208,10 +54,10 @@ func Test_ProcessedPayload_MarshalJSON_IntSlice_ArraySorted(t *testing.T) {
 	out, err := json.Marshal(&p)
 
 	require.NoError(t, err)
-	require.Equal(t, `{"nums":[10,20,30]}`, string(out))
+	require.Equal(t, `{"nums":[30,10,20]}`, string(out))
 }
 
-func Test_ProcessedPayload_MarshalJSON_NestedMap_KeysAndContentSorted(t *testing.T) {
+func Test_ProcessedPayload_MarshalJSON_NestedMap_KeysSorted(t *testing.T) {
 	p := ProcessedPayload{
 		"z_key": "last",
 		"a_key": ProcessedPayload{
@@ -226,7 +72,7 @@ func Test_ProcessedPayload_MarshalJSON_NestedMap_KeysAndContentSorted(t *testing
 	require.Equal(t, `{"a_key":{"a_inner":"first","z_inner":"last"},"z_key":"last"}`, string(out))
 }
 
-func Test_ProcessedPayload_MarshalJSON_NestedMapWithSlice_FullyDeterministic(t *testing.T) {
+func Test_ProcessedPayload_MarshalJSON_NestedMapWithSlice_KeysSortedArrayOrderPreserved(t *testing.T) {
 	p := ProcessedPayload{
 		"z": "scalar",
 		"a": ProcessedPayload{
@@ -240,7 +86,7 @@ func Test_ProcessedPayload_MarshalJSON_NestedMapWithSlice_FullyDeterministic(t *
 	out, err := json.Marshal(&p)
 
 	require.NoError(t, err)
-	require.Equal(t, `{"a":{"counts":[10,20,30],"name":"nested","scores":[1.1,2.2,3.3],"tags":["a","m","z"]},"z":"scalar"}`, string(out))
+	require.Equal(t, `{"a":{"counts":[30,10,20],"name":"nested","scores":[3.3,1.1,2.2],"tags":["z","a","m"]},"z":"scalar"}`, string(out))
 }
 
 func Test_ProcessedPayload_MarshalJSON_Deterministic_SameBytesTwice(t *testing.T) {
