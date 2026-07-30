@@ -15,9 +15,13 @@ import (
 // sweep's — so an implementation must not block.
 type ClientHandler interface {
 	// CredentialsChanged says the credentials the app is showing are out of
-	// date: one was issued or deleted, a revocation status moved (idemix or
-	// SD-JWT VC, newly revoked or no longer suspended), or a logo finished
+	// date: an idemix credential was issued, a revocation status moved (idemix
+	// or SD-JWT VC, newly revoked or no longer suspended), or a logo finished
 	// downloading. Re-request them.
+	//
+	// Not everything that touches the credential list fires it: deleting a
+	// credential and an OpenID4VCI issuance are silent, because the app drives
+	// those itself and already has the outcome.
 	//
 	// Coalesced rather than itemised on purpose — the app re-reads the whole
 	// list either way — and fired only on a change, never on re-confirming a
