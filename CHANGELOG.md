@@ -5,9 +5,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
-### Internal
-- Centralize ad-hoc `http.Client` instantiations into a single shared `common.HTTPClient`, giving one source of truth for outbound client configuration.
+### Added
+- Locale-aware client: `client.New` takes an initial UI locale and `Client.SetLocale` changes it at runtime. All app-facing text resolves inside irmago through a fixed fallback chain (exact locale → base language → English → any); text of one object never mixes languages, while fields that are not displayed text — logos and issue URLs — fall back across languages independently, so they survive a locale that does not translate them.
+- Background logo backfill on startup and locale change: fetches logos missing for the current locale and signals `ClientHandler.UpdateAttributes()` when a sweep actually caches something. A single worker runs the sweeps, so they never overlap and a burst of language changes collapses into one sweep for the language the user landed on; `Client.Close` cancels a running sweep, aborting any download in flight, and waits for it to unwind. Listing calls never block on the network.
+- An OpenID4VCI credential offer without a `grants` member is now accepted: the grant type is taken from the authorization server's `grant_types_supported` metadata, as OID4VCI v1.0 § 4.1.1 requires for an absent or empty `grants`. An omitted `grant_types_supported` counts as `["authorization_code", "implicit"]` per RFC 8414 § 2. Only the authorization code grant can be derived this way, because the pre-authorized code flow needs a `pre-authorized_code` and only the offer can supply one, so such an offer still fails when the authorization server does not support `authorization_code`. An offer that does name grant types, but only ones the wallet does not implement, keeps failing as before.
 
+### Changed
+- **Breaking:** `clientmodels` DTOs ship resolved strings instead of translation maps (17 `TranslatedString` fields). The gomobile app must update in lockstep: pass the locale to `client.New`, call `SetLocale` on language changes, and drop client-side language picking.
+- Issuance downloads only the logo that resolves for the current locale, skipping cached ones, instead of the first available display's logo.
+- EUDI activity logs persist text resolved at creation time; on read, entries re-resolve against the stored credential's metadata for the active locale, falling back to the snapshot for deleted credentials and verifier names. Entries written by earlier versions (translation-map format) are decoded transparently.
+- Support for the IETF OAuth Token Status List (draft-ietf-oauth-status-list-15) on SD-JWT VC credentials: the wallet fetches, verifies, and caches Status List Tokens (`application/statuslist+jwt`), checks credential status at issuance, at disclosure, and on a background sweep, and exposes `Client.RefreshStatuses(ctx)` for UI-initiated refreshes.
+
+### Fixed
+- An OpenID4VCI credential offer that omits the optional `grants` member (or sets it to `null`) no longer takes down the host process. `grants` is OPTIONAL per OID4VCI v1.0 § 4.1.1, but the pointer was dereferenced without a nil check while selecting the grant type, and that happened on a goroutine owned by irmago, so the resulting nil pointer panic was not covered by any `recover` and aborted the app rather than ending the session. As a backstop, a panic anywhere on the OpenID4VCI session goroutine is now reported as a session failure ([#643](https://github.com/privacybydesign/irmago/issues/643)).
+- An OpenID4VCI credential offer whose pre-authorized code grant omits the `pre-authorized_code`, which is REQUIRED per OID4VCI v1.0 § 4.1.1, is now rejected while the offer is parsed. Previously the wallet accepted it and sent an empty `pre-authorized_code` to the token endpoint.
+- EUDI storage writes are now atomic: `writeFile` writes to a temp file and renames it into place, so a crash or a concurrent write can no longer leave a partially written file behind. Previously a truncated ciphertext read back as a decryption error rather than as a missing file — the worse of the two failure modes, since it looks like corruption rather than absence.
+- The data tab resolved credential and issuer logos from the first display entry only, so a logo attached to another language's display did not show.
+- OpenID4VCI issuance logs recorded the issuer metadata's `vct` (possibly a placeholder like `"unknown"`) as the credential id; the issued JWT's `vct` claim now takes precedence.
+- SD-JWT VC credential displays now merge per field instead of per whole locale entry: when the VCT type-metadata document defines a `display` entry for a locale, `openid4vci.Merge` keeps VCT's value for every field it specifies but inherits any field VCT leaves empty (`logo`, `description`, `background_color`, `text_color`, `background_image`) from the OpenID4VCI `credential_metadata` entry for the same locale. Previously the whole VCI entry was dropped for that locale, so issuers that put the credential logo on the VCI side while the VCT `display` omitted it ended up with a blank credential logo in the wallet ([#635](https://github.com/privacybydesign/irmago/issues/635)).
+- Credential, issuer and verifier logos now keep their MIME type: the EUDI `LogoManager` stores the Content-Type reported on download (or by the verifier's scheme data) alongside the image bytes, and `LoadLogoImage` returns it in `clientmodels.Image.MimeType`. Previously the MIME type was discarded, so wallets could not tell SVG logos apart from bitmaps and SD-JWT VC credential logos in SVG format rendered blank ([irmamobile#674](https://github.com/privacybydesign/irmamobile/issues/674)). **Breaking (internal API):** `filesystem.LogoManager.Save` takes an extra `mimeType` parameter and `Get` returns it.
+- Dismissing an OpenID4VP session left it running, so its permission screen reappeared on every IRMA session completed afterwards. `Dismiss` now delivers a denial through the same channel the user's own refusal travels, unwinding the session, and the permission refresh only fires while a session is genuinely awaiting an answer.
+- `session.finish` drops a repeat of the terminal state it already dispatched, so `HandleUserInteraction`'s dismissal backstop and a protocol's own `Cancelled` no longer both emit a `Dismissed` event. Best-effort rather than guaranteed: the state it compares is written from both the UI and protocol goroutines without synchronisation, like `session.State` itself. A *different* later terminal state is still dispatched — the backstop is a guess about what the protocol will do, and OpenID4VCI's `Dismiss` only logs, so its issuance runs on past the guess and stores a credential; the wallet now reports that `Success` rather than leaving the user on the dismissal.
+
+### Internal
+- Dutch-locale and locale-switch integration tests for every protocol and integration layer.
+- The storage regression tests now assert EUDI activity-log content, pinning the legacy translation-map decoding. Regenerate the regression fixture at the next release: this version changes the stored log text format and the issuance-log credential id.
+
+## [1.2.0] - 2026-07-22
 ### Added
 - `eudi/holderkeys`: a CGO-free package providing the holder-key seam (`HolderSigner`, `SoftwareHolderSigner`, the KB-JWT `NewSignerKeyBinder` bridge) so a WSCA adapter or a server-side (Postgres) holder can implement external holder-key signing without pulling in a sqlcipher (cgo) dependency.
 - Pluggable holder-key binding seams for external secure devices (WSCA/HSM): `openid4vci.NewClient` takes a required `HolderKeyBinder` and `eudi_sdjwt_dcql.NewSdJwtVcDcqlHandler` a required `sdjwtvc.KeyBinder`, and `proofs.BuildWithES256Signer` signs the OpenID4VCI proof of possession via an external signer. Callers pass the software, storage-backed binder for the existing behaviour, or a WSCA/HSM-backed implementation.
@@ -18,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - EUDI holder key-metadata models (`ECDSAKeyMetadata`, `RSAKeyMetadata`) tagged `HolderBindingKeyID` as a unique index rather than the primary key the doc comment intends, so the models had no primary key. When GORM upserts the key-metadata association while storing a holder binding key it builds the `ON CONFLICT` target from the primary key; with none defined it emitted `ON CONFLICT DO UPDATE` with no target, which Postgres rejects (SQLSTATE 42601) — breaking every OpenID4VCI credential redemption on a Postgres-backed holder storage. `HolderBindingKeyID` is now `primaryKey`. Backwards-compatible: `AutoMigrate` is additive and keeps the existing unique index, which still satisfies the new `ON CONFLICT (holder_binding_key_id)` on both SQLite and Postgres.
 - `AutoMigrate` of the EUDI holder models is now ordered parents-before-children, so it also runs on foreign-key-enforcing drivers (e.g. Postgres) and not only SQLite.
 - `eudi/storage` no longer transitively pulls in the cgo `sqlcipher` package. The sqlcipher-only constructor moved from `storage.NewStorage` to a new `eudi/storage/sqlcipherstorage` package as `sqlcipherstorage.New`, so a pure-Go dialector consumer (e.g. `gorm.io/driver/postgres`) can import `eudi/storage` and build without compiling sqlcipher — including under `CGO_ENABLED=1` / `go test -race`, which the old layout still forced. **Breaking:** callers of `storage.NewStorage(...)` now call `sqlcipherstorage.New(...)` (identical signature); `storage.NewStorageWithDialector` is unchanged.
+
+### Internal
+- Centralize ad-hoc `http.Client` instantiations into a single shared `common.HTTPClient`, giving one source of truth for outbound client configuration.
 
 ## [1.1.1] - 2026-07-14
 ### Security
@@ -707,6 +734,7 @@ This release contains several large new features. In particular, the shoulder su
 - Combined issuance-disclosure requests with two schemes one of which has a keyshare server now work as expected
 - Various other bugfixes
 
+[1.2.0]: https://github.com/privacybydesign/irmago/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/privacybydesign/irmago/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/privacybydesign/irmago/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/privacybydesign/irmago/compare/v0.19.2...v1.0.0

@@ -3,11 +3,29 @@ package db
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+// CredentialStatusInstance is an instance's status_list reference.
+// BatchID lets callers select a single representative instance per batch.
+type CredentialStatusInstance struct {
+	InstanceID    datatypes.UUID
+	BatchID       datatypes.UUID
+	StatusListURI string
+	StatusListIdx uint64
+}
+
+// BatchInstanceStatus pairs a batch's deterministic hash with one of its
+// instances' last-known Token Status List status. Only instances that carry
+// a status_list reference are reported.
+type BatchInstanceStatus struct {
+	Hash            string
+	LastKnownStatus uint8
+}
 
 // CredentialStore is the public interface for inserting and retrieving issued credentials.
 type CredentialStore interface {
@@ -42,6 +60,20 @@ type CredentialStore interface {
 	// DeleteBatchByHash looks up a CredentialBatch by its deterministic hash and deletes it
 	// along with all its instances (via CASCADE). Returns ErrNotFound if no batch exists with that hash.
 	DeleteBatchByHash(hash string) error
+
+	// ListInstancesWithStatusReference returns every IssuedCredentialInstance
+	// with a (status_list.uri, status_list.idx) pair.
+	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
+
+	// ListStatusReferencedInstanceStatuses returns the (batch hash,
+	// last_known_status) pair for every instance carrying a Token Status List
+	// reference. Used to surface per-credential revocation in the credential
+	// list without loading full instances.
+	ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error)
+
+	// UpdateInstanceStatus writes last_known_status and last_status_check_at
+	// on a single IssuedCredentialInstance. Returns ErrNotFound on no match.
+	UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error
 }
 
 type credentialStore struct {
@@ -180,5 +212,49 @@ func (s *credentialStore) DeleteBatch(batchID datatypes.UUID) error {
 		return ErrNotFound
 	}
 
+	return nil
+}
+
+func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatusInstance, error) {
+	var out []CredentialStatusInstance
+	err := s.db.
+		Model(&models.IssuedCredentialInstance{}).
+		Select("id AS instance_id, " +
+			"credential_batch_id AS batch_id, " +
+			"status_list_uri AS status_list_uri, " +
+			"status_list_idx AS status_list_idx").
+		Where("status_list_uri IS NOT NULL AND status_list_idx IS NOT NULL").
+		Scan(&out).Error
+	return out, err
+}
+
+func (s *credentialStore) ListStatusReferencedInstanceStatuses() ([]BatchInstanceStatus, error) {
+	var out []BatchInstanceStatus
+	err := s.db.
+		Model(&models.IssuedCredentialInstance{}).
+		Select("credential_batches.hash AS hash, " +
+			"issued_credential_instances.last_known_status AS last_known_status").
+		Joins("JOIN credential_batches ON credential_batches.id = issued_credential_instances.credential_batch_id").
+		Where("issued_credential_instances.status_list_uri IS NOT NULL").
+		Scan(&out).Error
+	return out, err
+}
+
+func (s *credentialStore) UpdateInstanceStatus(instanceID datatypes.UUID, status uint8, checkedAt time.Time) error {
+	if instanceID.IsNil() {
+		return fmt.Errorf("instanceID is required")
+	}
+	res := s.db.Model(&models.IssuedCredentialInstance{}).
+		Where("id = ?", instanceID).
+		Updates(map[string]any{
+			"last_known_status":    status,
+			"last_status_check_at": checkedAt,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
 	return nil
 }

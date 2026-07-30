@@ -4,17 +4,21 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
+	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -57,7 +61,15 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, services.NewHolderBindingKeyService(conf.Storage.Db()))
+	credStore := db.NewCredentialStore(s.Db())
+	credentialService := services.NewCredentialService(
+		credStore,
+		db.NewHolderBindingKeyStore(s.Db()),
+		s.FileSystem(),
+		services.NewRevocationService(nil, credStore),
+		nil,
+	)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 
@@ -104,6 +116,286 @@ func testIssuingCredential_Success(t *testing.T, credentialOfferEndpointUrl stri
 	require.True(t, success)
 
 	storage.Close()
+}
+
+// failureRecordingHandler makes the SessionError itself available to the test,
+// which MockSessionHandler.Failure does not do (it only signals "not successful").
+// It overrides Failure, so a failing session does not reach AwaitSessionEnd:
+// wait for the failure with awaitFailure instead.
+type failureRecordingHandler struct {
+	*MockSessionHandler
+	failures chan *clientmodels.SessionError
+}
+
+func newFailureRecordingHandler(t *testing.T) *failureRecordingHandler {
+	return &failureRecordingHandler{
+		MockSessionHandler: newMockSessionHandler(t),
+		failures:           make(chan *clientmodels.SessionError, 1),
+	}
+}
+
+func (h *failureRecordingHandler) Failure(err *clientmodels.SessionError) {
+	h.failures <- err
+}
+
+func (h *failureRecordingHandler) awaitFailure(t *testing.T) *clientmodels.SessionError {
+	t.Helper()
+	select {
+	case err := <-h.failures:
+		return err
+	case <-time.After(10 * time.Second):
+		t.Fatal("session did not report a failure")
+		return nil
+	}
+}
+
+// panickingRoundTripper panics instead of performing a request, to inject a
+// panic into the goroutine the openid4vci client runs its session on.
+type panickingRoundTripper struct {
+	message string
+}
+
+func (rt *panickingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	panic(rt.message)
+}
+
+// countingRoundTripper fails every request and records how many were attempted,
+// so a test can assert a session was aborted before it went to the network.
+type countingRoundTripper struct {
+	requests atomic.Int32
+}
+
+func (rt *countingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	rt.requests.Add(1)
+	return nil, fmt.Errorf("no request expected in this test")
+}
+
+func TestParseAndValidateCredentialOfferGrants(t *testing.T) {
+	const issuerAndConfigIds = `"credential_issuer":"https://issuer.example.com","credential_configuration_ids":["ExampleCredentialSdJwt"]`
+
+	tests := []struct {
+		name      string
+		offer     string
+		expectErr string
+		// check inspects the parsed grants member, which is nil when the offer
+		// omits it.
+		check func(t *testing.T, grants *Grants)
+	}{
+		{
+			name:  "pre-authorized code grant is accepted",
+			offer: `{` + issuerAndConfigIds + `,"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{"pre-authorized_code":"code"}}}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.NotNil(t, grants.PreAuthorizedCodeGrant)
+				require.Equal(t, "code", grants.PreAuthorizedCodeGrant.PreAuthorizedCode)
+				require.False(t, grants.IsEmpty())
+			},
+		},
+		{
+			name:  "authorization code grant is accepted",
+			offer: `{` + issuerAndConfigIds + `,"grants":{"authorization_code":{"issuer_state":"state-1"}}}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.NotNil(t, grants.AuthorizationCodeGrant)
+				require.NotNil(t, grants.AuthorizationCodeGrant.IssuerState)
+				require.Equal(t, "state-1", *grants.AuthorizationCodeGrant.IssuerState)
+			},
+		},
+		{
+			// grants is OPTIONAL per OID4VCI v1.0 § 4.1.1; the grant type is
+			// derived from the authorization server metadata later on.
+			name:  "absent grants member is accepted",
+			offer: `{` + issuerAndConfigIds + `}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.Nil(t, grants)
+			},
+		},
+		{
+			name:  "null grants member is accepted",
+			offer: `{` + issuerAndConfigIds + `,"grants":null}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.Nil(t, grants)
+			},
+		},
+		{
+			name:  "empty grants object is accepted and reported as empty",
+			offer: `{` + issuerAndConfigIds + `,"grants":{}}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.NotNil(t, grants)
+				require.True(t, grants.IsEmpty())
+			},
+		},
+		{
+			// A grant whose value is null names no grant, so the offer is treated
+			// like one with an empty grants object rather than yielding a grant
+			// with every parameter empty (an empty pre-authorized_code, in
+			// particular).
+			name:  "null grant value names no grant",
+			offer: `{` + issuerAndConfigIds + `,"grants":{"authorization_code":null,"urn:ietf:params:oauth:grant-type:pre-authorized_code":null}}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.Nil(t, grants.AuthorizationCodeGrant)
+				require.Nil(t, grants.PreAuthorizedCodeGrant)
+				require.True(t, grants.IsEmpty())
+			},
+		},
+		{
+			// Grant types we do not implement are kept, so an offer that names
+			// only those is not mistaken for an empty grants object.
+			name:  "unsupported grant types are kept",
+			offer: `{` + issuerAndConfigIds + `,"grants":{"urn:example:zz-future-grant":{},"urn:example:aa-future-grant":{}}}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.Equal(t, []string{"urn:example:aa-future-grant", "urn:example:zz-future-grant"}, grants.UnsupportedGrantTypes)
+				require.False(t, grants.IsEmpty())
+			},
+		},
+		{
+			// The null value is skipped for the grant types we implement, not for
+			// the identifiers we do not: the issuer named one, so the offer is not
+			// the empty one a grant type is derived for.
+			name:  "unsupported grant type with a null value is kept",
+			offer: `{` + issuerAndConfigIds + `,"grants":{"urn:example:future-grant":null}}`,
+			check: func(t *testing.T, grants *Grants) {
+				require.Equal(t, []string{"urn:example:future-grant"}, grants.UnsupportedGrantTypes)
+				require.False(t, grants.IsEmpty())
+			},
+		},
+		{
+			// pre-authorized_code is REQUIRED per OID4VCI v1.0 § 4.1.1, and an
+			// empty one is what the null grant value above would have produced.
+			name:      "pre-authorized code grant without a code is rejected",
+			offer:     `{` + issuerAndConfigIds + `,"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{}}}`,
+			expectErr: "missing the required pre-authorized_code parameter",
+		},
+		{
+			name:      "pre-authorized code grant with an empty code is rejected",
+			offer:     `{` + issuerAndConfigIds + `,"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{"pre-authorized_code":""}}}`,
+			expectErr: "missing the required pre-authorized_code parameter",
+		},
+		{
+			name:      "grants member of the wrong type is rejected",
+			offer:     `{` + issuerAndConfigIds + `,"grants":"authorization_code"}`,
+			expectErr: "failed to unmarshal grants",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &Client{}
+
+			offer, err := client.ParseAndValidateCredentialOffer(tt.offer)
+
+			if tt.expectErr != "" {
+				require.ErrorContains(t, err, tt.expectErr)
+				require.Nil(t, offer)
+				return
+			}
+
+			require.NoError(t, err)
+			tt.check(t, offer.Grants)
+		})
+	}
+}
+
+// A credential offer without a grants member is valid (OID4VCI v1.0 § 4.1.1),
+// so the session continues to the issuer metadata instead of being rejected
+// during offer validation. It used to nil-dereference on the session goroutine,
+// killing the whole host process instead of the session.
+func TestNewSessionCredentialOfferWithoutGrantsContinuesSession(t *testing.T) {
+	offers := map[string]string{
+		"absent grants member": `{"credential_issuer":"https://issuer.example.com","credential_configuration_ids":["ExampleCredentialSdJwt"]}`,
+		"null grants member":   `{"credential_issuer":"https://issuer.example.com","credential_configuration_ids":["ExampleCredentialSdJwt"],"grants":null}`,
+		"empty grants member":  `{"credential_issuer":"https://issuer.example.com","credential_configuration_ids":["ExampleCredentialSdJwt"],"grants":{}}`,
+	}
+
+	for name, offer := range offers {
+		t.Run(name, func(t *testing.T) {
+			handler := newFailureRecordingHandler(t)
+			// Every request fails, so the session ends at the issuer metadata
+			// fetch: the point of this test is that it gets there at all.
+			transport := &countingRoundTripper{}
+			client := &Client{httpClient: &http.Client{Transport: transport}}
+
+			client.NewSession(1, "openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "https://open.yivi.app/-/auth-callback", handler)
+
+			require.Contains(t, handler.awaitFailure(t).WrappedError, "failed to get and verify credential issuer metadata")
+			require.NotZero(t, transport.requests.Load())
+		})
+	}
+}
+
+// End-to-end check that an offer without a grants member starts the
+// authorization code flow with the grant type taken from the authorization
+// server metadata.
+func TestNewSessionWithoutGrantsDerivesAuthorizationCodeFlow(t *testing.T) {
+	storage, client := createOpenID4VCiClientForTesting(t)
+	defer storage.Close()
+
+	var issuerBaseUrl string
+	issuerTestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(testdata.GetWellKnownConfigurationUrl(issuerBaseUrl)))
+		case r.URL.Path == "/.well-known/oauth-authorization-server":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(fmt.Appendf(nil, `{
+				"issuer": %q,
+				"authorization_endpoint": "%s/authorize",
+				"token_endpoint": "%s/token",
+				"response_types_supported": ["code"],
+				"grant_types_supported": ["authorization_code"],
+				"code_challenge_methods_supported": ["S256"]
+			}`, issuerBaseUrl, issuerBaseUrl, issuerBaseUrl))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer issuerTestServer.Close()
+	issuerBaseUrl = issuerTestServer.URL
+
+	offer := fmt.Sprintf(
+		`{"credential_issuer":"%s/b0ce4f83-1946-4037-b13c-641191fd3214","credential_configuration_ids":["employee-badge"]}`,
+		issuerBaseUrl,
+	)
+
+	handler := newFailureRecordingHandler(t)
+	client.NewSession(1, "openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "https://open.yivi.app/-/auth-callback", handler)
+
+	select {
+	case received := <-handler.authCodeRequestChannel:
+		parameters := url.Values(received.request.AuthorizationParameters)
+		require.Equal(t, issuerBaseUrl+"/authorize", received.request.AuthorizationEndpoint)
+		require.Equal(t, "code", parameters.Get("response_type"))
+		require.NotEmpty(t, parameters.Get("state"))
+		// issuer_state is a member of the offered authorization code grant, so a
+		// derived grant has none to send.
+		require.Empty(t, parameters.Get("issuer_state"))
+
+		// Let the user decline, so the session ends instead of going on to the
+		// token endpoint this test does not serve.
+		received.callback(false, nil)
+		require.Contains(t, handler.awaitFailure(t).WrappedError, "cancelled or denied by user")
+	case failure := <-handler.failures:
+		t.Fatalf("session failed instead of starting the authorization code flow: %v", failure.WrappedError)
+	case <-time.After(30 * time.Second):
+		t.Fatal("session did not start the authorization code flow")
+	}
+}
+
+func TestNewSessionReportsPanicAsSessionFailure(t *testing.T) {
+	handler := newFailureRecordingHandler(t)
+	client := &Client{
+		httpClient: &http.Client{Transport: &panickingRoundTripper{message: "injected panic"}},
+	}
+
+	client.NewSession(1, "openid-credential-offer://?credential_offer_uri=http://issuer.example.com/offer", "https://open.yivi.app/-/auth-callback", handler)
+
+	sessionError := handler.awaitFailure(t)
+	require.Equal(t, "panic", sessionError.ErrorType)
+	require.Contains(t, sessionError.WrappedError, "injected panic")
+	require.NotEmpty(t, sessionError.Stack)
+	// Info carries the message and the stack, the way the legacy irmaclient
+	// session reports a recovered panic.
+	require.Contains(t, sessionError.Info, "injected panic")
+	require.Contains(t, sessionError.Info, sessionError.Stack)
 }
 
 func addTestCredentialsToStorage(t *testing.T, storage irmaclient.SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
