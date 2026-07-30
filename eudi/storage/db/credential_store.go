@@ -27,8 +27,14 @@ type CredentialStore interface {
 	// the given vct string. Does not preload instances.
 	GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error)
 
+	// GetBatchesByDocType returns all CredentialBatches whose VerifiableCredentialType matches
+	// the given mso_mdoc docType string. Equivalent query to GetBatchesByVCT, named separately
+	// so mdoc call sites read naturally (an mdoc credential has no vct).
+	GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error)
+
 	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
-	// not yet been marked as used. Returns ErrNotFound if all instances are used.
+	// not yet been marked as used, with its holder binding key (and algorithm-specific
+	// metadata) preloaded. Returns ErrNotFound if all instances are used.
 	GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error)
 
 	// MarkInstanceUsed sets Used = true on the given instance and decrements RemainingCount
@@ -114,6 +120,10 @@ func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch
 	return batches, nil
 }
 
+func (s *credentialStore) GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error) {
+	return s.GetBatchesByVCT(docType)
+}
+
 func (s *credentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {
 	if batchID.IsNil() {
 		return nil, fmt.Errorf("batchID is required")
@@ -121,6 +131,8 @@ func (s *credentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.Iss
 
 	var instance models.IssuedCredentialInstance
 	err := s.db.
+		Preload("HolderBindingKey").
+		Preload("HolderBindingKey.ECDSA").
 		Where("credential_batch_id = ? AND used = ?", batchID, false).
 		First(&instance).
 		Error

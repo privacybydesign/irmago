@@ -7,7 +7,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // ============================================================

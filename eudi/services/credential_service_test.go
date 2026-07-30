@@ -118,7 +118,7 @@ func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 	batch := newStorageBatch()
-	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"family_name":"Smith","sub":"user123"}`)
+	batch.ResolvedClaims = datatypes.JSON(`{"family_name":"Smith","sub":"user123"}`)
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -132,7 +132,7 @@ func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 
 func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
 	batch := newStorageBatch()
-	batch.ProcessedSdJwtPayload = datatypes.JSON(`{
+	batch.ResolvedClaims = datatypes.JSON(`{
 		"family_name": "Smith",
 		"given_name": "Alice",
 		"address": {"city": "Amsterdam", "extra": ""},
@@ -1052,6 +1052,10 @@ func (m *mockCredentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialB
 	return nil, nil
 }
 
+func (m *mockCredentialStore) GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error) {
+	return nil, nil
+}
+
 func (m *mockCredentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {
 	return nil, db.ErrNotFound
 }
@@ -1176,7 +1180,7 @@ func newStorageBatch() *models.CredentialBatch {
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "testhash",
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
+		ResolvedClaims:           datatypes.JSON(`{"sub":"user123"}`),
 		IssuedAt:                 datatypes.NullTime{V: now, Valid: true},
 		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
 		BatchSize:                1,

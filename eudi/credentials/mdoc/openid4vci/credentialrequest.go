@@ -3,10 +3,11 @@ package openid4vci
 import (
 	"encoding/base64"
 	"fmt"
+	"regexp"
 
 	"github.com/fxamacker/cbor/v2"
 
-	"mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // ============================================================
@@ -124,6 +125,49 @@ func (r CredentialResponse) SingleCredential() (mdoc.MDoc, error) {
 	return m, nil
 }
 
+// proofOfAgeDocType is the docType this profile issues under
+// credential_configuration_id "proof_of_age" (see credentialoffer.go) —
+// the only credential this AV Blueprint profile defines.
+const proofOfAgeDocType = "eu.europa.ec.av.1"
+
+// ageOverPattern matches "age_over_NN" where NN is one or more digits
+// (age_over_16, age_over_21, age_over_65, ...). age_over_18 itself also
+// matches this pattern, but is validated separately as mandatory below.
+var ageOverPattern = regexp.MustCompile(`^age_over_[0-9]+$`)
+
+// validateAVClaims enforces EU AV Blueprint Annex A §4.1.2: only
+// age_over_18 (mandatory) and age_over_NN (optional) are permitted, and
+// every value must be a real Go bool — never a string, int, or anything
+// else that could still marshal into a CBOR value.
+//
+// This lives here, not in mdoc.Issuer.Issue(), because it's a rule of
+// *this profile's* one credential type, not of mdoc issuance in general —
+// mdoc.Issuer.Issue() signs whatever docType/namespace/claims it's given
+// (a passport, a driving licence, an email credential, ...); this
+// package is what's specific to the AV Blueprint's proof_of_age
+// credential, so this is where that profile boundary belongs.
+func validateAVClaims(claims map[string]any) error {
+	sawAgeOver18 := false
+
+	for identifier, value := range claims {
+		if identifier == "age_over_18" {
+			sawAgeOver18 = true
+		} else if !ageOverPattern.MatchString(identifier) {
+			return fmt.Errorf("attribute %q not permitted in eu.europa.ec.av.1 (Annex A §4.1.2 — only age_over_18 and age_over_NN allowed)", identifier)
+		}
+
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf("attribute %q has non-boolean value %v (%T) — all av.1 attributes must be bool", identifier, value, value)
+		}
+	}
+
+	if !sawAgeOver18 {
+		return fmt.Errorf("age_over_18 is mandatory in eu.europa.ec.av.1 and was not provided")
+	}
+
+	return nil
+}
+
 // IssueFromCredentialRequest is the full issuer-side handler for a
 // Credential Request: extracts and verifies the proof of possession
 // against expectedAud/expectedNonce, and — only once that succeeds —
@@ -131,6 +175,12 @@ func (r CredentialResponse) SingleCredential() (mdoc.MDoc, error) {
 // holder controls, rather than an untrusted holderPub parameter. Rejects
 // a request with the wrong number of proofs, or a proof that doesn't
 // verify, before ever calling iss.Issue().
+//
+// docType is validated against this profile's own claims only when it's
+// proofOfAgeDocType — this package still only ever issues that one
+// credential (see credentialoffer.go's hardcoded "proof_of_age" config
+// id), but mdoc.Issuer.Issue() itself is doc-type-agnostic, so any AV-
+// specific restriction has to be applied here rather than there.
 func IssueFromCredentialRequest(iss *mdoc.Issuer, req CredentialRequest, docType, namespace string, claims map[string]any, expectedAud, expectedNonce string) (*mdoc.MDoc, error) {
 	proofJWT, err := req.SingleProof()
 	if err != nil {
@@ -139,6 +189,11 @@ func IssueFromCredentialRequest(iss *mdoc.Issuer, req CredentialRequest, docType
 	holderPub, err := VerifyProofOfPossession(proofJWT, expectedAud, expectedNonce)
 	if err != nil {
 		return nil, fmt.Errorf("verify proof of possession: %w", err)
+	}
+	if docType == proofOfAgeDocType {
+		if err := validateAVClaims(claims); err != nil {
+			return nil, fmt.Errorf("invalid claims: %w", err)
+		}
 	}
 	return iss.Issue(docType, namespace, claims, holderPub)
 }

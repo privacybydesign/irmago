@@ -46,10 +46,12 @@ import (
 const preAuthorizedCodeGrantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 
 // proofOfAgeScope is the token request's scope value in Annex A §A.10's
-// worked example. Kept distinct from proofOfAgeCredentialConfigId
-// (credentialoffer.go) even though both happen to be "proof_of_age" in
-// this profile — scope and credential_configuration_ids are different
-// OpenID4VCI concepts that only coincide in value here.
+// worked example — one possible value callers can pass to
+// NewPreAuthorizedTokenRequest. Kept distinct from
+// proofOfAgeCredentialConfigId (credentialoffer.go) even though both
+// happen to be "proof_of_age" in that worked example — scope and
+// credential_configuration_ids are different OpenID4VCI concepts that
+// only coincide in value there.
 const proofOfAgeScope = "proof_of_age"
 
 // bearerTokenType is the token_type value in Annex A §A.10's worked
@@ -92,11 +94,13 @@ func NewAccessToken() (string, error) {
 // NewPreAuthorizedTokenRequest builds the application/x-www-form-urlencoded
 // body a wallet POSTs to the token endpoint to redeem a pre-authorized_code
 // grant, matching Annex A §A.10's worked example field-for-field
-// (grant_type, scope, pre-authorized_code, tx_code).
-func NewPreAuthorizedTokenRequest(preAuthorizedCode, txCode string) string {
+// (grant_type, scope, pre-authorized_code, tx_code). scope identifies
+// which credential the wallet is redeeming the grant for — proof_of_age
+// in Annex A's worked example, but any scope this issuer recognizes.
+func NewPreAuthorizedTokenRequest(scope, preAuthorizedCode, txCode string) string {
 	values := url.Values{
 		"grant_type":          {preAuthorizedCodeGrantType},
-		"scope":               {proofOfAgeScope},
+		"scope":               {scope},
 		"pre-authorized_code": {preAuthorizedCode},
 		"tx_code":             {txCode},
 	}
@@ -105,22 +109,26 @@ func NewPreAuthorizedTokenRequest(preAuthorizedCode, txCode string) string {
 
 // ParsePreAuthorizedTokenRequest is the issuer-side inverse of
 // NewPreAuthorizedTokenRequest: decodes the form body and returns the
-// pre-authorized_code and tx_code the wallet presented. Rejects a body
+// scope, pre-authorized_code, and tx_code the wallet presented — scope
+// tells the issuer which credential this token is being requested for,
+// so it can decide what to actually issue at the credential endpoint
+// rather than assuming a single fixed credential type. Rejects a body
 // with the wrong (or missing) grant_type, or a missing pre-authorized_code,
-// rather than silently returning zero values — tx_code itself is returned
-// as-is (including empty), the same way ParseDirectPostForm preserves an
-// empty state rather than conflating it with "field absent".
-func ParsePreAuthorizedTokenRequest(body string) (preAuthorizedCode, txCode string, err error) {
+// rather than silently returning zero values — tx_code and scope
+// themselves are returned as-is (including empty), the same way
+// ParseDirectPostForm preserves an empty state rather than conflating it
+// with "field absent".
+func ParsePreAuthorizedTokenRequest(body string) (preAuthorizedCode, txCode, scope string, err error) {
 	values, err := url.ParseQuery(body)
 	if err != nil {
-		return "", "", fmt.Errorf("decode form body: %w", err)
+		return "", "", "", fmt.Errorf("decode form body: %w", err)
 	}
 	if got := values.Get("grant_type"); got != preAuthorizedCodeGrantType {
-		return "", "", fmt.Errorf("unexpected grant_type %q, expected %q", got, preAuthorizedCodeGrantType)
+		return "", "", "", fmt.Errorf("unexpected grant_type %q, expected %q", got, preAuthorizedCodeGrantType)
 	}
 	preAuthorizedCode = values.Get("pre-authorized_code")
 	if preAuthorizedCode == "" {
-		return "", "", fmt.Errorf("form body has no pre-authorized_code field")
+		return "", "", "", fmt.Errorf("form body has no pre-authorized_code field")
 	}
-	return preAuthorizedCode, values.Get("tx_code"), nil
+	return preAuthorizedCode, values.Get("tx_code"), values.Get("scope"), nil
 }

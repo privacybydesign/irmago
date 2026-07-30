@@ -4,9 +4,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
-	"mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // TestCredentialRequestMatchesBlueprintWorkedExample confirms
@@ -211,5 +212,97 @@ func TestIssueFromCredentialRequestRejectsInvalidProof(t *testing.T) {
 	_, err = IssueFromCredentialRequest(issuer, req, "eu.europa.ec.av.1", "eu.europa.ec.av.1", claims, "https://credential-issuer.example.com", "expected-nonce")
 	if err == nil {
 		t.Fatalf("expected error for proof signed over wrong nonce, got none")
+	}
+}
+
+// ============================================================
+// AV PROFILE CLAIM VALIDATION (Annex A §4.1.2)
+//
+// mdoc.Issuer.Issue() itself enforces no claim schema — these rules are
+// specific to this profile's one credential type (docType
+// "eu.europa.ec.av.1"), so IssueFromCredentialRequest is where they're
+// applied, not Issue().
+// ============================================================
+
+func newCredentialRequestFixture(t *testing.T) (*mdoc.Issuer, CredentialRequest, string, string) {
+	t.Helper()
+	issuer, err := mdoc.NewIssuer()
+	if err != nil {
+		t.Fatalf("NewIssuer: %v", err)
+	}
+	holder, err := mdoc.NewHolder()
+	if err != nil {
+		t.Fatalf("NewHolder: %v", err)
+	}
+	const aud = "https://credential-issuer.example.com"
+	const nonce = "some-c-nonce"
+	proofJWT, err := SignProofOfPossession(holder, aud, nonce)
+	if err != nil {
+		t.Fatalf("SignProofOfPossession: %v", err)
+	}
+	return issuer, NewCredentialRequest(proofJWT), aud, nonce
+}
+
+func TestIssueFromCredentialRequestRejectsDisallowedAttribute(t *testing.T) {
+	issuer, req, aud, nonce := newCredentialRequestFixture(t)
+
+	claims := map[string]any{
+		"age_over_18": true,
+		"family_name": "Smith", // not permitted per Annex A §4.1.2
+	}
+	_, err := IssueFromCredentialRequest(issuer, req, "eu.europa.ec.av.1", "eu.europa.ec.av.1", claims, aud, nonce)
+	if err == nil {
+		t.Fatalf("expected rejection of family_name, but it succeeded")
+	}
+	if !strings.Contains(err.Error(), "family_name") {
+		t.Fatalf("expected error to name the offending attribute, got: %v", err)
+	}
+}
+
+func TestIssueFromCredentialRequestRejectsNonBooleanValue(t *testing.T) {
+	issuer, req, aud, nonce := newCredentialRequestFixture(t)
+
+	claims := map[string]any{
+		"age_over_18": true,
+		"age_over_21": "true", // string, not bool — must be rejected
+	}
+	_, err := IssueFromCredentialRequest(issuer, req, "eu.europa.ec.av.1", "eu.europa.ec.av.1", claims, aud, nonce)
+	if err == nil {
+		t.Fatalf("expected rejection of non-bool value, but it succeeded")
+	}
+	if !strings.Contains(err.Error(), "age_over_21") {
+		t.Fatalf("expected error to name the offending attribute, got: %v", err)
+	}
+}
+
+func TestIssueFromCredentialRequestRejectsMissingMandatoryAgeOver18(t *testing.T) {
+	issuer, req, aud, nonce := newCredentialRequestFixture(t)
+
+	claims := map[string]any{
+		"age_over_21": true, // age_over_18 missing — mandatory per profile
+	}
+	_, err := IssueFromCredentialRequest(issuer, req, "eu.europa.ec.av.1", "eu.europa.ec.av.1", claims, aud, nonce)
+	if err == nil {
+		t.Fatalf("expected rejection of claim set missing age_over_18, but it succeeded")
+	}
+	if !strings.Contains(err.Error(), "age_over_18") {
+		t.Fatalf("expected error to mention the missing mandatory attribute, got: %v", err)
+	}
+}
+
+// TestIssueFromCredentialRequestSkipsAVValidationForOtherDocTypes confirms
+// the AV Blueprint's claim restrictions only apply to docType
+// "eu.europa.ec.av.1" — a request for any other credential (passport,
+// driving licence, ...) is passed through to Issue() untouched.
+func TestIssueFromCredentialRequestSkipsAVValidationForOtherDocTypes(t *testing.T) {
+	issuer, req, aud, nonce := newCredentialRequestFixture(t)
+
+	claims := map[string]any{"family_name": "Smith", "given_name": "Alice"}
+	credential, err := IssueFromCredentialRequest(issuer, req, "eu.europa.ec.pid.1", "eu.europa.ec.pid.1", claims, aud, nonce)
+	if err != nil {
+		t.Fatalf("expected non-AV docType to skip AV claim validation, got: %v", err)
+	}
+	if credential.DocType != "eu.europa.ec.pid.1" {
+		t.Fatalf("expected docType eu.europa.ec.pid.1, got %q", credential.DocType)
 	}
 }

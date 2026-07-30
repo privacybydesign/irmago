@@ -88,90 +88,68 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 }
 
 // ============================================================
-// AV PROFILE CLAIM VALIDATION (Annex A §4.1.2)
+// DOC-TYPE-AGNOSTIC ISSUANCE
 // ============================================================
+//
+// Issue() itself enforces no profile-specific claim schema — any
+// docType/namespace/claims combination is signed as given. Profile
+// rules (e.g. the AV Blueprint's Annex A §4.1.2 restriction to
+// age_over_18/age_over_NN, enforced in openid4vci's
+// IssueFromCredentialRequest) live above this layer, since a passport,
+// a driving licence, or an email credential each have their own claim
+// shape that Issue() has no business knowing about.
 
-func TestIssueRejectsDisallowedAttribute(t *testing.T) {
+func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 	issuer, err := NewIssuer()
 	if err != nil {
 		t.Fatalf("NewIssuer: %v", err)
 	}
 	holder, _ := NewHolder()
 
-	_, err = issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{
-			"age_over_18": true,
-			"family_name": "Smith", // not permitted per Annex A §4.1.2
-		}, holder.PublicKey())
-
-	if err == nil {
-		t.Fatalf("expected Issue to reject family_name, but it succeeded")
+	cases := []struct {
+		name      string
+		docType   string
+		namespace string
+		claims    map[string]any
+	}{
+		{
+			name:      "age verification",
+			docType:   "eu.europa.ec.av.1",
+			namespace: "eu.europa.ec.av.1",
+			claims:    map[string]any{"age_over_18": true, "age_over_16": true, "age_over_65": false},
+		},
+		{
+			name:      "passport",
+			docType:   "eu.europa.ec.pid.1",
+			namespace: "eu.europa.ec.pid.1",
+			claims:    map[string]any{"family_name": "Smith", "given_name": "Alice", "birth_date": "1990-01-01"},
+		},
+		{
+			name:      "driving licence",
+			docType:   "org.iso.18013.5.1.mDL",
+			namespace: "org.iso.18013.5.1",
+			claims:    map[string]any{"family_name": "Jansen", "driving_privileges": "B"},
+		},
+		{
+			name:      "email",
+			docType:   "eu.europa.ec.email.1",
+			namespace: "eu.europa.ec.email.1",
+			claims:    map[string]any{"email_address": "alice@example.com"},
+		},
 	}
-	if !strings.Contains(err.Error(), "family_name") {
-		t.Fatalf("expected error to name the offending attribute, got: %v", err)
-	}
-	t.Logf("correctly rejected disallowed attribute: %v", err)
-}
 
-func TestIssueRejectsNonBooleanValue(t *testing.T) {
-	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
-	holder, _ := NewHolder()
-
-	_, err = issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{
-			"age_over_18": true,
-			"age_over_21": "true", // string, not bool — must be rejected
-		}, holder.PublicKey())
-
-	if err == nil {
-		t.Fatalf("expected Issue to reject a non-bool value, but it succeeded")
-	}
-	if !strings.Contains(err.Error(), "age_over_21") {
-		t.Fatalf("expected error to name the offending attribute, got: %v", err)
-	}
-	t.Logf("correctly rejected non-bool value: %v", err)
-}
-
-func TestIssueRejectsMissingMandatoryAgeOver18(t *testing.T) {
-	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
-	holder, _ := NewHolder()
-
-	_, err = issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{
-			"age_over_21": true, // age_over_18 missing — mandatory per profile
-		}, holder.PublicKey())
-
-	if err == nil {
-		t.Fatalf("expected Issue to reject a claim set missing age_over_18, but it succeeded")
-	}
-	if !strings.Contains(err.Error(), "age_over_18") {
-		t.Fatalf("expected error to mention the missing mandatory attribute, got: %v", err)
-	}
-	t.Logf("correctly rejected missing mandatory attribute: %v", err)
-}
-
-func TestIssueAcceptsValidAgeOverNNVariants(t *testing.T) {
-	issuer, err := NewIssuer()
-	if err != nil {
-		t.Fatalf("NewIssuer: %v", err)
-	}
-	holder, _ := NewHolder()
-
-	// age_over_18 plus a few different NN variants, all bool — should issue cleanly.
-	_, err = issuer.Issue("eu.europa.ec.av.1", "eu.europa.ec.av.1",
-		map[string]any{
-			"age_over_18": true,
-			"age_over_16": true,
-			"age_over_65": false,
-		}, holder.PublicKey())
-
-	if err != nil {
-		t.Fatalf("expected valid age_over_NN variants to be accepted, got: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mdoc, err := issuer.Issue(tc.docType, tc.namespace, tc.claims, holder.PublicKey())
+			if err != nil {
+				t.Fatalf("Issue: %v", err)
+			}
+			if mdoc.DocType != tc.docType {
+				t.Fatalf("expected docType %q, got %q", tc.docType, mdoc.DocType)
+			}
+			if len(mdoc.IssuerSigned.NameSpaces[tc.namespace]) != len(tc.claims) {
+				t.Fatalf("expected %d claims in namespace %q, got %d", len(tc.claims), tc.namespace, len(mdoc.IssuerSigned.NameSpaces[tc.namespace]))
+			}
+		})
 	}
 }

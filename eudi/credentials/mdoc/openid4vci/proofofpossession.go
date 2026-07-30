@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // ============================================================

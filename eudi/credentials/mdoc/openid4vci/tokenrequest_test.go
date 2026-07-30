@@ -43,7 +43,7 @@ func TestNewTokenResponseMatchesBlueprintWorkedExample(t *testing.T) {
 // NewPreAuthorizedTokenRequest's form body matches Annex A §A.10's worked
 // example field-for-field.
 func TestNewPreAuthorizedTokenRequestMatchesBlueprintWorkedExample(t *testing.T) {
-	body := NewPreAuthorizedTokenRequest("SplxlOBeZQQYbYS6WxSbIA", "493536")
+	body := NewPreAuthorizedTokenRequest(proofOfAgeScope, "SplxlOBeZQQYbYS6WxSbIA", "493536")
 
 	got, err := url.ParseQuery(body)
 	if err != nil {
@@ -65,9 +65,9 @@ func TestNewPreAuthorizedTokenRequestMatchesBlueprintWorkedExample(t *testing.T)
 // NewPreAuthorizedTokenRequest decodes back to the exact pre-authorized_code
 // and tx_code it was given.
 func TestPreAuthorizedTokenRequestRoundTrips(t *testing.T) {
-	body := NewPreAuthorizedTokenRequest("some-code-123", "9999")
+	body := NewPreAuthorizedTokenRequest("passport", "some-code-123", "9999")
 
-	code, txCode, err := ParsePreAuthorizedTokenRequest(body)
+	code, txCode, scope, err := ParsePreAuthorizedTokenRequest(body)
 	if err != nil {
 		t.Fatalf("ParsePreAuthorizedTokenRequest: %v", err)
 	}
@@ -76,6 +76,9 @@ func TestPreAuthorizedTokenRequestRoundTrips(t *testing.T) {
 	}
 	if txCode != "9999" {
 		t.Fatalf("expected tx_code %q, got %q", "9999", txCode)
+	}
+	if scope != "passport" {
+		t.Fatalf("expected scope %q, got %q", "passport", scope)
 	}
 }
 
@@ -88,7 +91,7 @@ func TestParsePreAuthorizedTokenRequestRejectsWrongGrantType(t *testing.T) {
 		"pre-authorized_code": {"some-code"},
 		"tx_code":             {"1234"},
 	}
-	if _, _, err := ParsePreAuthorizedTokenRequest(values.Encode()); err == nil {
+	if _, _, _, err := ParsePreAuthorizedTokenRequest(values.Encode()); err == nil {
 		t.Fatalf("expected error for wrong grant_type, got none")
 	}
 }
@@ -101,7 +104,7 @@ func TestParsePreAuthorizedTokenRequestRejectsMissingCode(t *testing.T) {
 		"grant_type": {preAuthorizedCodeGrantType},
 		"tx_code":    {"1234"},
 	}
-	if _, _, err := ParsePreAuthorizedTokenRequest(values.Encode()); err == nil {
+	if _, _, _, err := ParsePreAuthorizedTokenRequest(values.Encode()); err == nil {
 		t.Fatalf("expected error for missing pre-authorized_code, got none")
 	}
 }

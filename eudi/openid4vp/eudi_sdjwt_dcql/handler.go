@@ -441,7 +441,7 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 // first fully satisfiable set determines which claims are included.
 func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, rawSdJwt sdjwtvc.SdJwtVc) ([]clientmodels.Attribute, error) {
 	var resolved sdjwtvc.ProcessedSdJwtPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
+	if err := json.Unmarshal([]byte(batch.ResolvedClaims), &resolved); err != nil {
 		return nil, err
 	}
 
@@ -870,7 +870,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	attrs := make([]clientmodels.Attribute, 0)
 
 	var resolved sdjwtvc.ProcessedSdJwtPayload
-	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
+	if err := json.Unmarshal([]byte(batch.ResolvedClaims), &resolved); err != nil {
 		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.VerifiableCredentialType, err)
 	}
 

@@ -8,7 +8,6 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 	"math/big"
-	"regexp"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -130,44 +129,6 @@ func (iss *Issuer) DSCert() *x509.Certificate {
 	return iss.dscert
 }
 
-// ageOverPattern matches "age_over_NN" where NN is one or more digits
-// (age_over_16, age_over_21, age_over_65, ...). age_over_18 itself also
-// matches this pattern, but is validated separately as mandatory below.
-var ageOverPattern = regexp.MustCompile(`^age_over_[0-9]+$`)
-
-// validateAVClaims enforces EU AV Blueprint Annex A §4.1.2: only
-// age_over_18 (mandatory) and age_over_NN (optional) are permitted, and
-// every value must be a real Go bool — never a string, int, or anything
-// else that could still marshal into a CBOR value.
-//
-// Without this check, Issue() would silently accept and sign claims like
-// claims["family_name"] = "Smith", which the profile explicitly forbids
-// ("SHALL NOT include any other attribute") — the struct fields
-// (IssuerSignedItem.ElementValue, the claims map) stay generic to
-// faithfully model the general mdoc envelope, but this profile boundary
-// is where AV-specific restrictions are actually enforced.
-func validateAVClaims(claims map[string]any) error {
-	sawAgeOver18 := false
-
-	for identifier, value := range claims {
-		if identifier == "age_over_18" {
-			sawAgeOver18 = true
-		} else if !ageOverPattern.MatchString(identifier) {
-			return fmt.Errorf("attribute %q not permitted in eu.europa.ec.av.1 (Annex A §4.1.2 — only age_over_18 and age_over_NN allowed)", identifier)
-		}
-
-		if _, ok := value.(bool); !ok {
-			return fmt.Errorf("attribute %q has non-boolean value %v (%T) — all av.1 attributes must be bool", identifier, value, value)
-		}
-	}
-
-	if !sawAgeOver18 {
-		return fmt.Errorf("age_over_18 is mandatory in eu.europa.ec.av.1 and was not provided")
-	}
-
-	return nil
-}
-
 // shuffleIdentifiers randomizes identifiers in place using a
 // cryptographically secure Fisher-Yates shuffle. See the comment in
 // Issue() for why this must be random rather than sorted.
@@ -187,10 +148,6 @@ func shuffleIdentifiers(identifiers []string) error {
 // holderPub is the holder's device public key — gets embedded in MSO.deviceKeyInfo
 // This locks the credential to the specific device that generated that key pair
 func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any, holderPub *ecdsa.PublicKey) (*MDoc, error) {
-	if err := validateAVClaims(claims); err != nil {
-		return nil, fmt.Errorf("invalid claims: %w", err)
-	}
-
 	// ── Build IssuerSignedItems ──────────────────────────────────
 	// Claim order is randomized — deliberately NOT sorted — before
 	// digestID assignment. A deterministic order (e.g. alphabetical, which

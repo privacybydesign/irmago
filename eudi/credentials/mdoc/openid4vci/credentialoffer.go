@@ -41,8 +41,12 @@ import (
 // ============================================================
 
 // proofOfAgeCredentialConfigId is the credential_configuration_ids value
-// Annex A §A.10's worked example uses for this profile's one credential
-// type.
+// Annex A §A.10's worked example uses for its Proof of Age credential.
+// It's just one possible value callers can pass to NewCredentialOffer —
+// the issuer decides which credential_configuration_id an offer carries
+// (proof_of_age, a passport, a driving licence, ...) based on whatever
+// out-of-band identity check the offer follows; nothing here is
+// hardcoded to this one credential type.
 const proofOfAgeCredentialConfigId = "proof_of_age"
 
 // CredentialOffer is the object an issuer hands a wallet — as a QR code
@@ -81,14 +85,14 @@ type TxCode struct {
 	Description string `json:"description"`
 }
 
-// NewCredentialOffer builds the Credential Offer object for this
-// profile's single credential_configuration_ids value ("proof_of_age"),
-// carrying preAuthorizedCode and txCode under the pre-authorized_code
-// grant.
-func NewCredentialOffer(credentialIssuer, preAuthorizedCode string, txCode TxCode) CredentialOffer {
+// NewCredentialOffer builds the Credential Offer object for the given
+// credential_configuration_id — proof_of_age, a passport, a driving
+// licence, or any other credential this issuer supports — carrying
+// preAuthorizedCode and txCode under the pre-authorized_code grant.
+func NewCredentialOffer(credentialIssuer, credentialConfigurationId, preAuthorizedCode string, txCode TxCode) CredentialOffer {
 	return CredentialOffer{
 		CredentialIssuer:           credentialIssuer,
-		CredentialConfigurationIds: []string{proofOfAgeCredentialConfigId},
+		CredentialConfigurationIds: []string{credentialConfigurationId},
 		Grants: Grants{
 			PreAuthorized: PreAuthorizedCodeGrant{
 				PreAuthorizedCode: preAuthorizedCode,

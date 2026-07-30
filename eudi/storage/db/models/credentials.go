@@ -7,31 +7,34 @@ import (
 	"gorm.io/gorm"
 )
 
-// TODO: we need to add polymorphic associations to support multiple credential formats in the future, but for now we only support SD-JWT VCs, so we can keep all fields in one table and use the Format field to distinguish them. See https://gorm.io/docs/polymorphism.html for reference on how to implement this when we need it.
-
 // CredentialFormat represents the credential format identifier as defined in the OID4VCI spec.
 type CredentialFormat string
 
 const (
 	CredentialFormatSdJwtVc CredentialFormat = "dc+sd-jwt"
+	CredentialFormatMsoMdoc CredentialFormat = "mso_mdoc"
 )
 
 // CredentialBatch groups all credential instances issued from a single credential_configuration_id
-// request within one OID4VCI issuance session. When the issuer supports batch issuance,
-// BatchSize > 1 and multiple IssuedCredentialInstance rows belong to this batch. Single-use
-// wallets decrement RemainingCount on each presentation; the batch is exhausted when it reaches 0.
+// request within one OID4VCI issuance session, shared across every credential format (the Format
+// field discriminates). When the issuer supports batch issuance, BatchSize > 1 and multiple
+// IssuedCredentialInstance rows belong to this batch. Single-use wallets decrement RemainingCount
+// on each presentation; the batch is exhausted when it reaches 0.
 type CredentialBatch struct {
 	ID datatypes.UUID
 
-	// IssuerURL is the iss claim from the issuer-signed JWT, equal to the credential_issuer
-	// in the credential offer (OID4VCI §7.1.1 requires iss == credential_issuer).
-	// This is the value used for DCQL TrustedAuthority resolution in OID4VP.
+	// IssuerURL is the iss claim from the issuer-signed JWT (SD-JWT) or the credential_issuer
+	// used at issuance (mdoc), equal to the credential_issuer in the credential offer
+	// (OID4VCI §7.1.1 requires iss == credential_issuer). This is the value used for DCQL
+	// TrustedAuthority resolution in OID4VP.
 	IssuerURL string
 
-	// VerifiableCredentialType is the vct claim from the issued SD-JWT VC.
+	// VerifiableCredentialType is the credential type identifier: the vct claim for
+	// "dc+sd-jwt" credentials, or the ISO 18013-5 docType (e.g. "eu.europa.ec.av.1") for
+	// "mso_mdoc" credentials.
 	VerifiableCredentialType string
 
-	// Format is the credential format identifier (e.g. "dc+sd-jwt").
+	// Format is the credential format identifier (e.g. "dc+sd-jwt", "mso_mdoc").
 	Format CredentialFormat
 
 	// Hash is a deterministic hash over the credential type and its sorted disclosed attributes.
@@ -39,8 +42,11 @@ type CredentialBatch struct {
 	// storage remains compatible with the IRMA client's deduplication logic.
 	Hash string `gorm:"uniqueIndex"`
 
-	// ProcessedSdJwtPayload is the JSON-encoded payload of the SD-JWT after processing/verifying the issuer-signed JWT.
-	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
+	// ResolvedClaims is the JSON-encoded claims of the credential, cached at issuance time so
+	// matching a DCQL query doesn't require re-parsing the raw credential. For "dc+sd-jwt" this
+	// is the processed SD-JWT payload (after processing/verifying the issuer-signed JWT); for
+	// "mso_mdoc" this is a namespace -> elementIdentifier -> value map.
+	ResolvedClaims datatypes.JSON `gorm:"type:JSON;not null"`
 
 	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
 	IssuedAt datatypes.NullTime

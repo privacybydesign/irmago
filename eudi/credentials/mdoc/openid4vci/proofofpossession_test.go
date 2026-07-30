@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // TestSignProofOfPossessionVerifies confirms a JWT built by

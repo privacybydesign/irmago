@@ -1,6 +1,6 @@
 package openid4vp
 
-import "mdoc"
+import "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 
 // ============================================================
 // AUTHORIZATION REQUEST — the single OpenID4VP request object carrying

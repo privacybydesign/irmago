@@ -9,9 +9,9 @@ import (
 	"log"
 	"sort"
 
-	"mdoc"
-	"mdoc/openid4vci"
-	"mdoc/openid4vp"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc/openid4vci"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc/openid4vp"
 )
 
 // ============================================================
@@ -145,7 +145,7 @@ func main() {
 	if err != nil {
 		log.Fatal("generate tx_code:", err)
 	}
-	offer := openid4vci.NewCredentialOffer(credentialIssuerURL, preAuthCode, txCodeMeta)
+	offer := openid4vci.NewCredentialOffer(credentialIssuerURL, "proof_of_age", preAuthCode, txCodeMeta)
 	fmt.Println("\n--- ISSUER: Building Credential Offer (OpenID4VCI, pre-authorized_code) ---")
 	fmt.Println("  credential_configuration_ids: [\"proof_of_age\"]")
 	fmt.Println("  pre-authorized_code generated ✓  (delivered via QR code / deep link)")
@@ -173,7 +173,7 @@ func main() {
 	// they received over the separate e-mail channel. Simulated here as
 	// the demo reusing the same Go variable, since there's no real e-mail
 	// channel to actually send it over.
-	tokenReqBody := openid4vci.NewPreAuthorizedTokenRequest(grant.PreAuthorizedCode, txCodeValue)
+	tokenReqBody := openid4vci.NewPreAuthorizedTokenRequest("proof_of_age", grant.PreAuthorizedCode, txCodeValue)
 	fmt.Println("\n--- HOLDER: Redeeming Credential Offer (POST /token) ---")
 	fmt.Printf("  grant_type=pre-authorized_code, pre-authorized_code + tx_code presented ✓  (%d bytes)\n", len(tokenReqBody))
 
@@ -185,13 +185,14 @@ func main() {
 	// this package doesn't model (see credentialoffer.go's file comment);
 	// the demo does it here with plain local variables standing in for a
 	// real session store.
-	gotCode, gotTxCode, err := openid4vci.ParsePreAuthorizedTokenRequest(tokenReqBody)
+	gotCode, gotTxCode, gotScope, err := openid4vci.ParsePreAuthorizedTokenRequest(tokenReqBody)
 	if err != nil {
 		log.Fatal("parse token request:", err)
 	}
 	if gotCode != preAuthCode || gotTxCode != txCodeValue {
 		log.Fatal("pre-authorized_code/tx_code mismatch — rejecting before issuing any token")
 	}
+	fmt.Printf("  scope=%q — identifies which credential this token grants access to\n", gotScope)
 	accessToken, err := openid4vci.NewAccessToken()
 	if err != nil {
 		log.Fatal("generate access_token:", err)

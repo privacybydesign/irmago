@@ -32,6 +32,15 @@ func NewHolder() (*Holder, error) {
 	return &Holder{devicekey: deviceKey}, nil
 }
 
+// NewHolderFromPrivateKey wraps an already-generated device key pair in a
+// Holder. Used by wallet storage layers that persist the device key
+// generated at issuance time (e.g. as part of a HolderBindingKey record)
+// and need to reconstruct a Holder capable of signing at presentation
+// time, in a later process than the one that called NewHolder.
+func NewHolderFromPrivateKey(deviceKey *ecdsa.PrivateKey) *Holder {
+	return &Holder{devicekey: deviceKey}
+}
+
 // PublicKey returns the holder's device public key — the only part of the
 // device key pair an issuer (or anyone else) ever needs; the private key
 // stays inside Holder and is never returned.

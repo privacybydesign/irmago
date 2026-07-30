@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // ============================================================

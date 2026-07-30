@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"mdoc"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 )
 
 // TestDirectPostFormRoundTrips confirms NewDirectPostForm + ParseDirectPostForm

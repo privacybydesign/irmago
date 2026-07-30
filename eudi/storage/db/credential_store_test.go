@@ -43,7 +43,7 @@ func newBatch(hash string) *models.CredentialBatch {
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
+		ResolvedClaims:           datatypes.JSON(`{"sub":"user123"}`),
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,
@@ -112,7 +112,7 @@ func newBatchWithInstances(hash string, instanceCount int) *models.CredentialBat
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
+		ResolvedClaims:           datatypes.JSON(`{"sub":"user123"}`),
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                uint(instanceCount),
 		RemainingCount:           uint(instanceCount),
@@ -149,7 +149,7 @@ func newBatchWithInstancesAndKeys(hash string, instanceCount int) *models.Creden
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
+		ResolvedClaims:           datatypes.JSON(`{"sub":"user123"}`),
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                uint(instanceCount),
 		RemainingCount:           uint(instanceCount),
@@ -332,6 +332,24 @@ func TestGetBatchesByVCT_EmptyVCT(t *testing.T) {
 	require.Error(t, err)
 }
 
+// GetBatchesByDocType queries the same column as GetBatchesByVCT -- one shared table serves
+// every credential format, distinguished only by the Format column. This test uses an
+// mso_mdoc-formatted batch purely to document that GetBatchesByDocType is the natural name
+// for mdoc callers (an mdoc credential has no vct), not because the schema branches on format.
+func TestGetBatchesByDocType_Found(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	mdocBatch := newBatch("hash-doctype-1")
+	mdocBatch.Format = models.CredentialFormatMsoMdoc
+	mdocBatch.VerifiableCredentialType = "eu.europa.ec.av.1"
+	require.NoError(t, store.StoreBatch(mdocBatch))
+
+	batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	assert.Equal(t, "hash-doctype-1", batches[0].Hash)
+}
+
 func TestGetBatchesByVCT_FiltersCorrectly(t *testing.T) {
 	store := newTestCredentialStore(t)
 
@@ -373,6 +391,19 @@ func TestGetUnusedInstance_ReturnsUnusedInstance(t *testing.T) {
 	instance, err := store.GetUnusedInstance(batch.ID)
 	require.NoError(t, err)
 	assert.False(t, instance.Used)
+}
+
+func TestGetUnusedInstance_PreloadsHolderBindingKey(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	batch := newBatchWithInstancesAndKeys("hash-unused-instance-key", 1)
+	require.NoError(t, store.StoreBatch(batch))
+
+	instance, err := store.GetUnusedInstance(batch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, instance.HolderBindingKey)
+	require.NotNil(t, instance.HolderBindingKey.ECDSA)
+	assert.Equal(t, "P-256", instance.HolderBindingKey.ECDSA.CurveName)
 }
 
 // --- MarkInstanceUsed ---

@@ -54,11 +54,18 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		return nil, err
 	}
 
-	// Convert storage models to client models
-	clientModels := make([]*clientmodels.Credential, len(m))
-	for i, batch := range m {
+	// Convert storage models to client models. CredentialBatch rows are shared across formats
+	// (see models.CredentialFormat), but this listing only knows how to decode the SD-JWT shape
+	// of ResolvedClaims -- mso_mdoc batches are skipped here (mdoc_dcql has its own candidate/log
+	// listing for its own flows) until a format-agnostic listing is built.
+	clientModels := make([]*clientmodels.Credential, 0, len(m))
+	for _, batch := range m {
+		if batch.Format != models.CredentialFormatSdJwtVc {
+			continue
+		}
+
 		var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
-		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &processedSdJwtPayload); err != nil {
+		if err := json.Unmarshal(batch.ResolvedClaims, &processedSdJwtPayload); err != nil {
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
 		}
 
@@ -140,7 +147,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			credentialImage = eudi.LoadLogoImage(credentialLogoManager, batch.CredentialMetadata.Display[0].LogoURI)
 		}
 
-		clientModels[i] = &clientmodels.Credential{
+		clientModels = append(clientModels, &clientmodels.Credential{
 			CredentialId: batch.VerifiableCredentialType,
 			Hash:         batch.Hash,
 			Image:        credentialImage,
@@ -163,7 +170,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Revoked:                      false, // revocation is not yet implemented, so default to false for now
 			RevocationSupported:          false,
 			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
-		}
+		})
 	}
 
 	return clientModels, nil
@@ -231,7 +238,7 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		VerifiableCredentialType: first.IssuerSignedJwtPayload.VerifiableCredentialType,
 		Format:                   models.CredentialFormat(credentialConfiguration.Format),
 		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(processedPayload),
+		ResolvedClaims:           datatypes.JSON(processedPayload),
 		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
 		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
 		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),

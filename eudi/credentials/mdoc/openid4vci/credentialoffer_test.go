@@ -17,7 +17,7 @@ func TestNewCredentialOfferMatchesBlueprintWorkedExample(t *testing.T) {
 		InputMode:   "numeric",
 		Description: "Please provide the one-time code sent via e-mail",
 	}
-	offer := NewCredentialOffer("https://credential-issuer.example.com", "oaKazRN8I0IbtZ0C7JuMn5", txCode)
+	offer := NewCredentialOffer("https://credential-issuer.example.com", proofOfAgeCredentialConfigId, "oaKazRN8I0IbtZ0C7JuMn5", txCode)
 
 	encoded, err := json.Marshal(offer)
 	if err != nil {
@@ -58,7 +58,7 @@ func TestNewCredentialOfferMatchesBlueprintWorkedExample(t *testing.T) {
 // NewCredentialOffer was given.
 func TestCredentialOfferRoundTrips(t *testing.T) {
 	txCode := TxCode{Length: 4, InputMode: "numeric", Description: "test code"}
-	offer := NewCredentialOffer("https://issuer.example.com", "some-code-123", txCode)
+	offer := NewCredentialOffer("https://issuer.example.com", proofOfAgeCredentialConfigId, "some-code-123", txCode)
 
 	encoded, err := json.Marshal(offer)
 	if err != nil {
@@ -79,6 +79,19 @@ func TestCredentialOfferRoundTrips(t *testing.T) {
 	}
 	if !reflect.DeepEqual(grant.TxCode, txCode) {
 		t.Fatalf("expected tx_code %+v, got %+v", txCode, grant.TxCode)
+	}
+}
+
+// TestNewCredentialOfferAcceptsArbitraryCredentialConfigurationId
+// confirms NewCredentialOffer isn't hardcoded to proof_of_age — any
+// credential_configuration_id this issuer supports (a passport, a
+// driving licence, ...) can be offered the same way.
+func TestNewCredentialOfferAcceptsArbitraryCredentialConfigurationId(t *testing.T) {
+	txCode := TxCode{Length: 4, InputMode: "numeric", Description: "test code"}
+	offer := NewCredentialOffer("https://issuer.example.com", "passport", "some-code-123", txCode)
+
+	if len(offer.CredentialConfigurationIds) != 1 || offer.CredentialConfigurationIds[0] != "passport" {
+		t.Fatalf("expected credential_configuration_ids [\"passport\"], got %v", offer.CredentialConfigurationIds)
 	}
 }
 
