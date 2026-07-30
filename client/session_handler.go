@@ -30,6 +30,8 @@ type session struct {
 	// Hashes of credentials that already existed when the disclosure plan was first created.
 	// Used to exclude pre-existing credentials from WrongCredentialIssued detection.
 	preExistingCredentialHashes map[string]struct{}
+	// Terminal state finish last dispatched, so a repeat of it can be dropped.
+	dispatched clientmodels.SessionStatus
 	// IRMA disclosure/signature request we're currently asking the user to satisfy.
 	// Held so choicesToAnswer can re-sort the user's selected AttributePaths back into
 	// the order the request asked for (the IRMA proof verifier matches j-th disclosed
@@ -66,9 +68,19 @@ func (s *session) error(err error) {
 }
 
 // finish dispatches the session's final state and evicts the session from the
-// manager, so the Sessions map does not grow unboundedly across the app's
-// lifetime. Safe to call more than once: a second eviction is a no-op.
+// manager, so the Sessions map does not grow unboundedly. A repeat of the same
+// state is dropped: HandleUserInteraction's dismissal backstop and a protocol's
+// own Cancelled both report Dismissed. Best-effort, not a guarantee — dispatched,
+// like the State.Status it is compared against, is written from both the UI and
+// protocol goroutines without synchronisation. A *different* later state is not — the
+// backstop is a guess, and OpenID4VCI's Dismiss only logs, so issuance runs on
+// and stores the credential. Swallowing that Success would tell the user their
+// wallet did nothing.
 func (s *session) finish() {
+	if s.dispatched == s.State.Status {
+		return
+	}
+	s.dispatched = s.State.Status
 	s.dispatchState()
 	s.client.sessionManager.DeleteSession(s.State.Id)
 }
@@ -740,14 +752,10 @@ func (client *Client) HandleUserInteraction(userInteraction clientmodels.Session
 		session.pinHandler(payload.Proceed, payload.Pin)
 	case clientmodels.UI_DismissSession:
 		session.dismisser.Dismiss()
-		// Ensure the session is always marked as dismissed, regardless of protocol.
-		// Some protocol implementations (e.g. OpenID4VP) don't call Cancelled() from Dismiss().
-		// When Cancelled() did fire, Status is already Dismissed and the session has
-		// already been finished/evicted; skip to avoid a stale re-dispatch.
-		if session.State.Status != clientmodels.Status_Dismissed {
-			session.State.Status = clientmodels.Status_Dismissed
-			session.finish()
-		}
+		// Mark dismissed regardless of protocol: OpenID4VCI's Dismiss does not report
+		// it at all, OpenID4VP's only once its goroutine unwinds. finish drops the repeat.
+		session.State.Status = clientmodels.Status_Dismissed
+		session.finish()
 	case clientmodels.UI_PreAuthorizedCode:
 		payload := userInteraction.Payload.(clientmodels.SessionPreAuthorizedCodeInteractionPayload)
 		session.preAuthorizedCodeHandler(payload.Proceed, payload.TransactionCode)
