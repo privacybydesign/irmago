@@ -24,7 +24,7 @@ import (
 type VerifiedSdJwtVc struct {
 	IssuerSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []sdjwt.DisclosureContent
-	ProcessedSdJwtPayload  sdjwt.ProcessedPayload
+	ProcessedSdJwtPayload  *sdjwt.ProcessedPayload
 
 	KeyBindingJwt *sdjwt.KeyBindingJwtPayload
 
@@ -200,7 +200,7 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 		Disclosures:            decodedDisclosures,
 		KeyBindingJwt:          kbJwtPayload,
 		rawSdJwtVc:             rawSdJwtVc,
-		ProcessedSdJwtPayload:  *processedSdJwtPayload,
+		ProcessedSdJwtPayload:  processedSdJwtPayload,
 	}, nil
 }
 
@@ -236,7 +236,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
 	sdAlg := iana.SHA256
 	if token.Has(sdjwt.Key_SdAlg) {
-		if h := utils.GetOptional[string](token, sdjwt.Key_SdAlg); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
+		if h := getOptional[string](token, sdjwt.Key_SdAlg); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
 			sdAlg = iana.HashingAlgorithm(h)
 		} else {
 			return nil, nil, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
@@ -644,4 +644,15 @@ func (p *holderVerifierKeyBindingProcessor) ProcessAndVerifyKeyBindingJwt(kbjwt 
 // ParseAndVerifySdJwtVc is used to verify an SD-JWT VC using the verification options passed via the context parameter.
 func (v *HolderVerificationProcessor) ParseAndVerifySdJwtVc(sdjwtvc SdJwtVcKb) (*VerifiedSdJwtVc, error) {
 	return v.sdJwtVcProcessor.ProcessAndVerifySdJwtVc(sdjwtvc, &holderVerifierKeyBindingProcessor{})
+}
+
+// ====== Utils ======
+
+func getOptional[T any](token jwt.Token, key string) T {
+	var value T
+	err := token.Get(key, &value)
+	if err != nil {
+		return *new(T)
+	}
+	return value
 }

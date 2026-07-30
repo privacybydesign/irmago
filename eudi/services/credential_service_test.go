@@ -1103,7 +1103,7 @@ func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwt.CnfField) *sdjwtvc.Veri
 			},
 			VerifiableCredentialType: vct,
 		},
-		ProcessedSdJwtPayload: sdjwt.ProcessedPayload{
+		ProcessedSdJwtPayload: &sdjwt.ProcessedPayload{
 			"sub": "user123",
 		},
 	}
@@ -1339,7 +1339,7 @@ func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwt
 			},
 			VerifiableCredentialType: vct,
 		},
-		ProcessedSdJwtPayload: sdjwt.ProcessedPayload{
+		ProcessedSdJwtPayload: &sdjwt.ProcessedPayload{
 			"sub": "user123",
 		},
 	}

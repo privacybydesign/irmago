@@ -19,20 +19,6 @@ const (
 	KbJwtTyp string = "kb+jwt"
 )
 
-// RegisteredClaimNames are the top-level JSON keys defined by the SD-JWT
-// core spec (registered JWT claims plus `_sd`/`_sd_alg`/`cnf`): protocol
-// metadata, never user-supplied disclosed data.
-var RegisteredClaimNames = map[string]struct{}{
-	Key_Issuer:          {},
-	Key_IssuedAt:        {},
-	Key_ExpiryTime:      {},
-	Key_NotBefore:       {},
-	Key_Subject:         {},
-	Key_Confirmationkey: {},
-	Key_Sd:              {},
-	Key_SdAlg:           {},
-}
-
 // RegisteredClaims holds the registered JWT claims and SD-JWT-specific
 // claims (`_sd`, `_sd_alg`, `cnf`) that make up the core of an issuer-signed
 // SD-JWT payload, independent of any SD-JWT VC extensions.

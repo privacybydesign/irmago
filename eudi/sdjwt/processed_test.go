@@ -98,6 +98,14 @@ func Test_ProcessedPayload_Sort_SliceOfInts_Sorted(t *testing.T) {
 	require.Equal(t, []int{1, 2, 3}, result)
 }
 
+func Test_ProcessedPayload_Sort_NilValueInMap_DoesNotPanic(t *testing.T) {
+	p := ProcessedPayload{
+		"test": nil,
+	}
+
+	require.NotPanics(t, func() { p.Sort() })
+}
+
 func Test_ProcessedPayload_Sort_UnknownMapType_Panics(t *testing.T) {
 	// A map[string]string value is not castable to ProcessedPayload (map[string]any),
 	// so Sort must panic when it encounters it.
@@ -129,6 +137,20 @@ func Test_ProcessedPayload_Sort_MultipleNestedPayloads_AllRecursed(t *testing.T)
 func Test_ProcessedPayload_Sort_NestedPayloadContainingSlice_SliceUnsorted(t *testing.T) {
 	inner := ProcessedPayload{
 		"tags": []string{"z", "a", "m"},
+	}
+	p := ProcessedPayload{
+		"nested": inner,
+	}
+
+	p.Sort()
+
+	result := p["nested"].(ProcessedPayload)["tags"].([]string)
+	require.Equal(t, []string{"a", "m", "z"}, result)
+}
+
+func Test_ProcessedPayload_Sort_NestedPayloadContainingSliceAny_SliceSorted(t *testing.T) {
+	inner := ProcessedPayload{
+		"tags": []any{"z", "a", "m"},
 	}
 	p := ProcessedPayload{
 		"nested": inner,

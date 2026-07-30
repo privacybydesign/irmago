@@ -343,6 +343,7 @@ func newResolverPrimedWith(t *testing.T, url, body string) *typemetadata.Resolve
 }
 
 func makeFetchedCredential(configID, vct string, payload map[string]any) *fetchedCredential {
+	p := sdjwt.ProcessedPayload(payload)
 	return &fetchedCredential{
 		credentialConfigurationId: configID,
 		verifiedSdJwtVcs: []*sdjwtvc.VerifiedSdJwtVc{
@@ -350,7 +351,7 @@ func makeFetchedCredential(configID, vct string, payload map[string]any) *fetche
 				IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
 					VerifiableCredentialType: vct,
 				},
-				ProcessedSdJwtPayload: sdjwt.ProcessedPayload(payload),
+				ProcessedSdJwtPayload: &p,
 			},
 		},
 	}

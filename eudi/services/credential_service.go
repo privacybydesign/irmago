@@ -98,7 +98,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		issuerName := display.IssuerName
 		credentialName := display.CredentialName
 
-		attrs := buildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
+		attrs := BuildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
 
 		var iat, exp *int64
 		if batch.ExpiresAt.Valid {
@@ -497,14 +497,6 @@ func BuildAttributesFromPayload(
 		attrs = FlattenClaimValue(attrs, []any{key}, topLevel[key], lookup, metadataOrder)
 	}
 	return attrs
-}
-
-func buildAttributesFromPayload(
-	payload *sdjwt.ProcessedPayload,
-	lookup map[string]string,
-	metadataOrder map[string]int,
-) []clientmodels.Attribute {
-	return BuildAttributesFromPayload(payload, lookup, metadataOrder)
 }
 
 // FlattenClaimValue recursively flattens arrays and objects into individual scalar

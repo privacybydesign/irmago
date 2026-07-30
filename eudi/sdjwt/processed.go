@@ -21,8 +21,13 @@ func (p *ProcessedPayload) MarshalJSON() ([]byte, error) {
 // This ensures that the JSON encoding of the payload is deterministic, which is necessary for consistent hashing of the payload.
 // As the map is keyed, it cannot be sorted itself, but this is handled by the JSON marshalling.
 func (p *ProcessedPayload) Sort() {
-	for _, v := range *p {
+	for k, v := range *p {
 		rt := reflect.TypeOf(v)
+
+		if rt == nil {
+			continue
+		}
+
 		switch rt.Kind() {
 		case reflect.Map:
 			m, ok := v.(ProcessedPayload)
@@ -32,34 +37,135 @@ func (p *ProcessedPayload) Sort() {
 				panic(fmt.Errorf("unexpected map type in ProcessedPayload: %v", rt))
 			}
 		case reflect.Slice, reflect.Array:
-			kind := rt.Elem().Kind()
+			var kind reflect.Kind
+
+			// Find the kind of the slice or array, by iterating through the elements and checking their types.
+			// If all types are equal, we can sort the slice or array by that type. If the types are not equal, we cannot sort the slice or array.
+			if v != nil && reflect.ValueOf(v).Len() != 0 {
+				kind = reflect.TypeOf(reflect.ValueOf(v).Index(0).Interface()).Kind()
+				for i := 1; i < reflect.ValueOf(v).Len(); i++ {
+					elemKind := reflect.TypeOf(reflect.ValueOf(v).Index(i).Interface()).Kind()
+					if elemKind != kind {
+						// Mixed types in the slice or array, cannot sort.
+						kind = reflect.Invalid
+						break
+					}
+				}
+				if kind == reflect.Invalid {
+					continue // Skip sorting this slice or array, as it has mixed types.
+				}
+			}
+
+			im, err := json.Marshal(v)
+			if err != nil {
+				panic(fmt.Errorf("failed to marshal slice or array in ProcessedPayload: %v", err))
+			}
+
 			switch kind {
 			case reflect.Float32:
-				slices.Sort(v.([]float32))
+				arr := []float32{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Float64:
-				slices.Sort(v.([]float64))
+				arr := []float64{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Uint8:
-				slices.Sort(v.([]uint8))
+				arr := []uint8{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Uint16:
-				slices.Sort(v.([]uint16))
+				arr := []uint16{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Uint32:
-				slices.Sort(v.([]uint32))
+				arr := []uint32{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Uint64:
-				slices.Sort(v.([]uint64))
+				arr := []uint64{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Uint:
-				slices.Sort(v.([]uint))
+				arr := []uint{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Int8:
-				slices.Sort(v.([]int8))
+				arr := []int8{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Int16:
-				slices.Sort(v.([]int16))
+				arr := []int16{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Int32:
-				slices.Sort(v.([]int32))
+				arr := []int32{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Int64:
-				slices.Sort(v.([]int64))
+				arr := []int64{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.Int:
-				slices.Sort(v.([]int))
+				arr := []int{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			case reflect.String:
-				slices.Sort(v.([]string))
+				arr := []string{}
+				err = json.Unmarshal(im, &arr)
+				if err != nil {
+					panic(fmt.Errorf("failed to unmarshal slice or array in ProcessedPayload: %v", err))
+				}
+				slices.Sort(arr)
+				(*p)[k] = arr
 			}
 		}
 	}

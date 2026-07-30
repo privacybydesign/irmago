@@ -535,7 +535,7 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 	// Assert
 	require.NoError(t, err)
 
-	payload := result.ProcessedSdJwtPayload
+	payload := *result.ProcessedSdJwtPayload
 
 	// Standard JWT claims must be present
 	require.Equal(t, "https://openid4vc.staging.yivi.app", payload["iss"], "iss claim should be present in processed payload")
