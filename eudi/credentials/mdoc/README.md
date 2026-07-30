@@ -1,59 +1,30 @@
 # mDoc Issuer → Holder → Verifier (Go)
 
-A minimal, self-contained implementation of ISO 18013-5 mDoc selective disclosure,
-built against the EU Age Verification Blueprint (Annex A, `eu.europa.ec.av.1`).
+An implementation of ISO 18013-5 mDoc selective disclosure, built against the EU Age
+Verification Blueprint (Annex A, `eu.europa.ec.av.1`).
 
-Not production code — written to understand how mDoc, CBOR, COSE_Sign1, Tag-24,
-certificate chains, device binding, and selective disclosure fit together.
+This package (`mdoc`) is the core format library only: `Issuer`, `Holder`, `Verifier`,
+`MDoc`, `DeviceResponse`, `SelectiveDisclose`, and the CBOR/COSE crypto helpers. It has
+no HTTP/protocol code of its own — the same role `eudi/credentials/sdjwtvc` plays for
+SD-JWT VC. Everything OpenID4VP/OpenID4VCI-shaped now lives in the real, format-agnostic
+protocol packages that also serve SD-JWT:
 
----
+- **Presentation (OpenID4VP):** `eudi/openid4vp/mdoc_dcql` implements
+  `dcql.DcqlCredentialQueryHandler` for `mso_mdoc`, mirroring `eudi_sdjwt_dcql` for
+  SD-JWT. The one mdoc-specific piece of session-transcript construction
+  (`newOpenID4VPSessionTranscript`) lives there too, next to the rest of the real
+  disclosure logic, rather than in a separate subpackage here.
+- **Issuance (OpenID4VCI):** `eudi/openid4vci` is the real, format-agnostic issuance
+  client (credential offer, token/nonce endpoints, proof-of-possession JWT via
+  `eudi/credentials/proofs.JwtProofBuilder` — none of that is mdoc-specific).
+  `eudi/services/credential_format_parser_mdoc.go` implements `CredentialFormatParser`
+  for `mso_mdoc`: decoding, verifying, and extracting holder-binding data from a freshly
+  issued mdoc, the issuance-side analogue of the DCQL handler above.
 
-## Package layout
-
-Three real Go packages, not just directories:
-
-```
-mdoc                — core domain types + credential mechanics, shared by both protocols
-  Issuer, Holder, Verifier, MDoc, DeviceResponse, SelectiveDisclose, crypto helpers
-
-mdoc/openid4vp       — OpenID4VP presentation wire format
-  DCQLQuery, AuthorizationRequest, vp_token, direct_post, SessionTranscript
-
-mdoc/openid4vci      — OpenID4VCI pre-authorized_code issuance wire format
-  CredentialOffer, token/nonce endpoints, proof of possession, credential endpoint
-```
-
-`openid4vp` and `openid4vci` both import `mdoc`; `mdoc` imports neither (no cycle),
-and the two protocol packages don't import each other. This means every function that
-needs to touch `Holder`'s or `Issuer`'s *private* fields (the device key, the DS/IACA
-keys) has to live in the root `mdoc` package — Go doesn't allow defining a method on a
-type from another package, exported fields or not. Two consequences worth knowing:
-
-- `SignProofOfPossession` and `IssueFromCredentialRequest` live in `openid4vci` as
-  **free functions** taking `*mdoc.Holder`/`*mdoc.Issuer` as their first argument
-  (`openid4vci.SignProofOfPossession(holder, aud, nonce)`,
-  `openid4vci.IssueFromCredentialRequest(issuer, req, ...)`) rather than methods
-  (`holder.SignProofOfPossession(...)`) — `IssueFromCredentialRequest` only ever
-  touched `Issuer`'s already-exported `Issue` method, so this was a pure signature
-  change; `SignProofOfPossession` needed a genuinely new capability.
-- `Holder.SignRawDigest(digest []byte) (r, s *big.Int, err error)` (in `holder.go`) is
-  that new capability — it signs with the device private key and returns the raw
-  ECDSA signature components, but never the key itself. This is what lets
-  `openid4vci.SignProofOfPossession` build a JWS's R||S signature encoding (different
-  from COSE_Sign1's ASN.1 DER) without this package needing to expose the private key
-  — the same "ask the Secure Enclave to sign, never extract the key" model `NewHolder`
-  already documents.
-- `crypto.go`'s on-curve point validation is exported as
-  `mdoc.ECDSAPublicKeyFromCoordinates` specifically so `openid4vci`'s proof-of-possession
-  JWK reconstruction can reuse it instead of duplicating that logic.
-
-Each protocol package also has its own `buildHappyPathMDoc`-style test helper
-(`openid4vp/vptoken_test.go`) — Go test helpers can't be shared across packages at all
-(even exported ones aren't compiled into the importable package), so this is a small,
-deliberate duplication of test setup, not production logic.
-
-`cmd/demo/main.go` imports all three packages, exactly as any other external consumer
-of this module would.
+This package previously carried its own hand-rolled copies of both protocols
+(`openid4vp/`, `openid4vci/` subpackages) plus a standalone `cmd/demo` driving them —
+built before mdoc was wired into the real client. That duplication has been removed now
+that both directions are wired for real; see the sections below for what's left.
 
 ---
 
@@ -79,19 +50,12 @@ of this module would.
 | Tamper detection | ✓ | digest mismatch on value tampering |
 | `deviceSigned` / `deviceAuth` | ✓ | `SignDeviceAuth` + `VerifyWithDeviceAuth` — fresh COSE_Sign1 per session, checked against `deviceKeyInfo` |
 | Device-binding replay/clone rejection | ✓ | wrong signer and wrong-session deviceAuth both rejected |
-| Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | `NewOpenID4VPSessionTranscript` — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, null, responseUri]))]`, matching Multipaz's `vpSessionTranscript` for the AV Blueprint's `response_mode=direct_post` case |
 | `DeviceSigned` wrapper struct | ✓ | `AttachDeviceSigned` populates an `MDoc.DeviceSigned` field (deviceAuth + empty deviceNameSpaces), matching ISO 18013-5's actual document shape instead of passing deviceAuth bytes around separately |
 | `DeviceResponse` container | ✓ | `NewDeviceResponse`/`VerifyDeviceResponse` — real response container, holds one or more documents; reader authentication deliberately omitted per Annex A §A.6 |
-| DCQL request (`dcql_query`) | ✓ | `NewDCQLQuery`/`RequestedAttributes`/`CredentialQueryId` — mirrors `eudi/openid4vp/dcql`'s `DcqlQuery`/`CredentialQuery`/`Claim` shape (`format: mso_mdoc`, `meta.doctype_value`, `claims[].path = [namespace, elementIdentifier]`), matching the AV Blueprint's own worked example byte-for-byte in JSON form |
-| `vp_token` encode/decode | ✓ | `NewVPTokenJSON`/`ParseVPTokenJSON` — base64url CBOR `DeviceResponse` wrapped in the `{queryId: [credential]}` JSON shape `response_mode=direct_post` actually POSTs, mirroring `eudi/openid4vp/response.go`'s `createDirectPostVpToken` |
-| `direct_post` form body + `state` | ✓ | `NewDirectPostForm`/`ParseDirectPostForm` — the real `application/x-www-form-urlencoded` body (`vp_token=...&state=...`), matching `eudi/openid4vp/response.go`'s `createAuthorizationResponseHttpRequest` exactly; `state` (`AuthorizationRequest.State`) is carried through opaque and unchanged — unlike `nonce`, it never enters any hash or signature, it's pure anti-CSRF/session-correlation bookkeeping |
-| Authorization Request (`client_id`/`nonce`/`response_uri`/`state`/`dcql_query`) | ✓ | `AuthorizationRequest`/`NewAuthorizationRequest`/`SessionTranscript()` — mirrors `eudi/openid4vp.AuthorizationRequest`'s field names/JSON tags for the subset this profile uses, `response_mode` fixed to `"direct_post"`; closes the previous gap where `clientId`/`nonce`/`responseUri` were hardcoded Go values with no real request object being parsed at all |
-| OpenID4VCI Credential Offer (`pre-authorized_code`) | ✓ | `NewCredentialOffer`/`PreAuthorizedGrant` — matches Annex A §A.10's worked example (`credential_issuer`, `credential_configuration_ids: ["proof_of_age"]`, `grants."urn:ietf:params:oauth:grant-type:pre-authorized_code"`) field-for-field; `NewPreAuthorizedCode`/`NewTxCode` generate the opaque code and the out-of-band PIN/OTP respectively |
-| OpenID4VCI token endpoint (`pre-authorized_code`) | ✓ | `NewPreAuthorizedTokenRequest`/`ParsePreAuthorizedTokenRequest` and `NewTokenResponse` — matches Annex A §A.10's worked example (`grant_type`, `scope=proof_of_age`, `pre-authorized_code`, `tx_code` → `access_token`/`token_type: "Bearer"`/`expires_in`) field-for-field, no more and no less |
-| OpenID4VCI Nonce Endpoint | ✓ | `NewNonceResponse`/`NewCNonce` — models `[OID4VCI]` §7's `POST /nonce` → `{"c_nonce": "..."}`, even though Annex A never mentions it — see "Known gaps" |
-| OpenID4VCI proof of possession (`jwt` proof type) | ✓ | `openid4vci.SignProofOfPossession(holder, ...)`/`openid4vci.VerifyProofOfPossession` — a hand-rolled JWS (RFC 7515) compact serialization matching Annex A §A.10's decoded example header (`typ: openid4vci-proof+jwt`, `alg: ES256`, `jwk`); verification recovers and returns the holder's public key, which the issuer can now trust having confirmed possession — unlike `Issue()`'s current `holderPub` parameter, simply trusted with no proof. A free function taking `*mdoc.Holder`, not a method on it — see "Package layout" |
-| OpenID4VCI credential endpoint | ✓ | `openid4vci.NewCredentialRequest`/`SingleProof` and `NewCredentialResponse`/`SingleCredential` — matches Annex A §A.10's `{"proofs": {"jwt": [...]}}` request and `{"credentials": [{"credential": "..."}]}` response shapes; `openid4vci.IssueFromCredentialRequest(issuer, ...)` verifies the proof of possession first and only then calls `issuer.Issue()` with the *proven* device key — this is the point where the full `pre-authorized_code` issuance flow (offer → token → nonce → proof → credential) actually connects end-to-end |
-| OpenID4VCI `authorization_code` grant | ✗ | Annex A §A.4 mandates it too, but it requires an interactive browser login redirect at the issuer rather than a pure wire-format object — planned as a later phase, see "Known gaps" |
+| Issuance-time verification (all namespaces) | ✓ | `VerifyAllDisclosedNamespaces` — verifies issuerAuth/MSO/digests across every namespace present, for the credential-endpoint response before selective disclosure has happened; `Verify` remains the single-namespace, presentation-time entry point |
+| Real OpenID4VP `SessionTranscript`/`Handover` | ✓ | now built in `eudi/openid4vp/mdoc_dcql` (production code), not in this package — `["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, null, responseUri]))]`, matching Multipaz's `vpSessionTranscript` for the AV Blueprint's `response_mode=direct_post` case |
+| OpenID4VCI `pre-authorized_code` issuance | ✓ | wired for real through `eudi/openid4vci` (generic) + `eudi/services/credential_format_parser_mdoc.go` (mdoc-specific parsing/verification) — not modeled in this package |
+| OpenID4VCI `authorization_code` grant | ✓ | inherited for free — `eudi/openid4vci` already implements it generically for every format |
 | Session encryption (BLE/NFC) | ✗ | transport layer not built; also explicitly out of scope for the AV Blueprint (proximity presentation is excluded — see Annex A §A.6) |
 | W3C Digital Credentials API path (`DeviceRequest`, HPKE `EncryptedResponse`) | ✗ | out of scope for this package by design — see "OpenID4VP only" below |
 
@@ -102,30 +66,21 @@ of this module would.
 `DeviceResponse` is the top-level *Go type* in this package — `MDoc` doesn't know or
 care whether it's traveling alone or bundled with other documents, `DeviceResponse` is
 what holds a list of them (`Documents []MDoc`, plural — see
-`TestNewDeviceResponseSupportsMultipleDocuments`). But `DeviceResponse` itself isn't the
-outermost thing on the wire. Over OpenID4VP, two more layers sit on top of it:
+`TestNewDeviceResponseSupportsMultipleDocuments`):
 
 ```
-direct_post form body (application/x-www-form-urlencoded, the actual HTTP POST body)
-  └── "vp_token=...&state=..."                              ← NewDirectPostForm / ParseDirectPostForm
-        └── vp_token value (JSON)
-              └── {queryId: [ base64url( CBOR( DeviceResponse ) ) ]}   ← NewVPTokenJSON / ParseVPTokenJSON
-                    └── DeviceResponse                                  ← NewDeviceResponse / VerifyDeviceResponse
-                          └── Documents []MDoc                          ← one or more, per presentation
-                                ├── DocType
-                                ├── IssuerSigned{NameSpaces, IssuerAuth}  ← issuer's signature, fixed since issuance
-                                └── DeviceSigned{NameSpaces, DeviceAuth}  ← holder's signature, fresh per session
+DeviceResponse                                  ← NewDeviceResponse / VerifyDeviceResponse
+  └── Documents []MDoc                          ← one or more, per presentation
+        ├── DocType
+        ├── IssuerSigned{NameSpaces, IssuerAuth}  ← issuer's signature, fixed since issuance
+        └── DeviceSigned{NameSpaces, DeviceAuth}  ← holder's signature, fresh per session
 ```
 
-`state` rides alongside `vp_token` as a sibling form field, not nested inside it — it's
-opaque bookkeeping the verifier invents and the holder echoes back unchanged, and never
-touches the CBOR/JSON payload at all (see `NewDirectPostForm`).
-
-So "the topmost container" depends on which layer you mean: within this package's own
-Go types, `DeviceResponse` is outermost. On the actual OpenID4VP wire, the
-`application/x-www-form-urlencoded` HTTP body is outermost, `vp_token`'s JSON object is
-one layer inside that, and `DeviceResponse` is the (CBOR-encoded, base64url'd) payload
-sitting inside one of its array entries.
+On the real OpenID4VP wire, `eudi/openid4vp/mdoc_dcql.PrepareDisclosure` CBOR-encodes and
+base64url-encodes a `DeviceResponse` directly into the `dcql.QueryResponse.Credentials`
+slice that `eudi/openid4vp`'s generic response builder sends — this package has no
+opinion on the surrounding JSON/form-body shape, that's entirely the generic OpenID4VP
+layer's job (same as it is for SD-JWT).
 
 ---
 
@@ -160,59 +115,15 @@ monolithic test file:
 | `verifier_test.go` | `TestNotYetValidMSOIsRejected` | Verifier clock pinned between the (backdated) cert `NotBefore` and the MSO's `validFrom` — isolates the MSO validityInfo check specifically, distinct from cert validity |
 | `verifier_test.go` | `TestNotYetValidCertIsRejected` | Verifier clock pinned before the certs' `NotBefore` — chain correctly rejected as not-yet-valid |
 | `verifier_test.go` | `TestDeviceAuthStillVerifiesWithDetachedPayload` | Detaching the deviceAuth payload doesn't break verification — the verifier reconstructs it itself |
-| `openid4vp/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape` | `NewOpenID4VPSessionTranscript` produces `[null, null, ["OpenID4VPHandover", digest]]`, and the digest matches an independently-computed `SHA-256(CBOR([clientId, nonce, null, responseUri]))` |
-| `openid4vp/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptBindsAllInputs` | `clientId`, `nonce`, and `responseUri` each independently change the resulting digest — none of them can be silently ignored |
-| `openid4vp/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth` | A real OpenID4VP-shaped transcript actually plugs into `SignDeviceAuth`/`VerifyWithDeviceAuth`; a verifier deriving the transcript from a mismatched nonce correctly rejects the signature |
-| `openid4vp/dcqlquery_test.go` | `TestNewDCQLQueryRoundTrips` | `NewDCQLQuery` + `RequestedAttributes` round-trips the exact namespace and attribute list requested |
-| `openid4vp/dcqlquery_test.go` | `TestDCQLQueryRejectsUnknownDocType` | `RequestedAttributes` errors for a docType that was never requested, instead of silently returning a zero result |
-| `openid4vp/dcqlquery_test.go` | `TestDCQLQueryRejectsMismatchedNamespaceClaims` | A (malformed, for this single-namespace profile) query whose claims span more than one namespace is rejected rather than silently returning just the first claim's namespace |
-| `openid4vp/dcqlquery_test.go` | `TestDCQLQueryMatchesBlueprintWorkedExample` | `NewDCQLQuery`'s JSON output matches the AV Blueprint's own worked example shape (`format`, `meta.doctype_value`, `claims[].path`) field-for-field |
-| `openid4vp/dcqlquery_test.go` | `TestCredentialQueryIdRoundTrips` | `CredentialQueryId` returns the exact id the query was built with, and errors for an unrequested docType |
+| `verifier_issuance_test.go` | `TestVerifyAllDisclosedNamespaces_HappyPath` | Verifies a freshly issued (not yet selectively disclosed) mdoc across every namespace it carries |
+| `verifier_issuance_test.go` | `TestVerifyAllDisclosedNamespaces_TamperedDigestIsRejected` | Same tamper-detection guarantee as `Verify`, for the multi-namespace entry point |
+| `verifier_issuance_test.go` | `TestVerify_PopulatesDeviceKeyAndValidityInfo` | `VerificationResult.DeviceKey` matches the holder's real public key, `ValidityInfo` is populated |
+| `verifier_issuance_test.go` | `TestNewVerifierFromPool` | `NewVerifierFromPool` behaves identically to `NewVerifier` given an equivalent trust pool |
 | `deviceresponse_test.go` | `TestAttachDeviceSignedRoundTrips` | `AttachDeviceSigned` populates `MDoc.DeviceSigned` with the exact deviceAuth bytes passed in, and returns a copy — the original mdoc is left untouched |
 | `deviceresponse_test.go` | `TestVerifyDeviceResponseSucceeds` | Full flow through the real `DeviceResponse` container (`AttachDeviceSigned` → `NewDeviceResponse` → `VerifyDeviceResponse`) produces the same result as calling `VerifyWithDeviceAuth` directly |
 | `deviceresponse_test.go` | `TestVerifyDeviceResponseRejectsMissingDeviceSigned` | A document without `DeviceSigned` attached is rejected with a descriptive error, not a nil-dereference panic |
 | `deviceresponse_test.go` | `TestNewDeviceResponseSupportsMultipleDocuments` | A `DeviceResponse` bundling two distinct holders' documents from the same issuer verifies each document independently and correctly |
 | `deviceresponse_test.go` | `TestDeviceAuthSignatureEncodesInline` | `DeviceAuth.DeviceSignature` embeds as structured CBOR (`cbor.RawMessage`), not as an opaque re-encoded byte string |
-| `openid4vp/vptoken_test.go` | `TestVPTokenRoundTrips` | `NewVPTokenJSON` + `ParseVPTokenJSON` is a faithful round trip — the `DeviceResponse` that comes back out verifies exactly like the original |
-| `openid4vp/vptoken_test.go` | `TestVPTokenShape` | The vp_token JSON is `{queryId: [base64url(no padding) CBOR credential]}`, matching `response_mode=direct_post`'s actual wire shape |
-| `openid4vp/vptoken_test.go` | `TestVPTokenRejectsUnknownQueryId` | `ParseVPTokenJSON` errors for a query id the vp_token has no credential for, instead of returning a zero-value `DeviceResponse` |
-| `openid4vp/directpost_test.go` | `TestDirectPostFormRoundTrips` | `NewDirectPostForm` + `ParseDirectPostForm` round-trips both the `DeviceResponse` and the `state` value; the response still verifies correctly |
-| `openid4vp/directpost_test.go` | `TestDirectPostFormShape` | The body is real `application/x-www-form-urlencoded` with `vp_token` and `state` as separate fields, matching `eudi/openid4vp/response.go`'s `createAuthorizationResponseHttpRequest` shape |
-| `openid4vp/directpost_test.go` | `TestDirectPostFormPreservesEmptyState` | An empty `state` round-trips as empty, rather than being conflated with "field absent" |
-| `openid4vp/directpost_test.go` | `TestDirectPostFormRejectsMissingVPToken` | A malformed body with no `vp_token` field errors out instead of returning a zero-value `DeviceResponse` |
-| `openid4vp/authorizationrequest_test.go` | `TestNewAuthorizationRequestShape` | `NewAuthorizationRequest`'s JSON output carries `client_id`, `response_uri`, `nonce`, `state`, `dcql_query`, and `response_mode` fixed to `"direct_post"` |
-| `openid4vp/authorizationrequest_test.go` | `TestAuthorizationRequestRoundTrips` | A request built by `NewAuthorizationRequest` decodes back to the exact DCQL query and session-binding values it was given, and the decoded query still answers `RequestedAttributes` correctly |
-| `openid4vp/authorizationrequest_test.go` | `TestAuthorizationRequestSessionTranscriptMatchesDirectCall` | `AuthorizationRequest.SessionTranscript()` produces the exact same `SessionTranscript` as calling `NewOpenID4VPSessionTranscript` directly with the request's own fields |
-| `openid4vci/credentialoffer_test.go` | `TestNewCredentialOfferMatchesBlueprintWorkedExample` | `NewCredentialOffer`'s JSON output matches the AV Blueprint's Annex A §A.10 worked example field-for-field |
-| `openid4vci/credentialoffer_test.go` | `TestCredentialOfferRoundTrips` | A JSON-marshaled offer decodes back to the exact `pre-authorized_code`/`tx_code` grant it was built with |
-| `openid4vci/credentialoffer_test.go` | `TestPreAuthorizedGrantRejectsMissingCode` | A zero-value offer with no `pre-authorized_code` is rejected instead of returning an empty grant |
-| `openid4vci/credentialoffer_test.go` | `TestNewPreAuthorizedCodeIsRandomAndOpaque` | Two calls produce distinct, non-empty codes — not a fixed or predictable value |
-| `openid4vci/credentialoffer_test.go` | `TestNewTxCodeGeneratesCorrectLengthNumericCode` | The generated code matches its own declared length and is all-numeric, per `input_mode: "numeric"` |
-| `openid4vci/credentialoffer_test.go` | `TestNewTxCodeRejectsNonPositiveLength` | A zero or negative length is rejected rather than producing a malformed code |
-| `openid4vci/tokenrequest_test.go` | `TestNewTokenResponseMatchesBlueprintWorkedExample` | `NewTokenResponse`'s JSON output matches the AV Blueprint's Annex A §A.10 worked example field-for-field |
-| `openid4vci/tokenrequest_test.go` | `TestNewPreAuthorizedTokenRequestMatchesBlueprintWorkedExample` | `NewPreAuthorizedTokenRequest`'s form body matches Annex A §A.10's worked example field-for-field |
-| `openid4vci/tokenrequest_test.go` | `TestPreAuthorizedTokenRequestRoundTrips` | A request built by `NewPreAuthorizedTokenRequest` decodes back to the exact `pre-authorized_code`/`tx_code` it was given |
-| `openid4vci/tokenrequest_test.go` | `TestParsePreAuthorizedTokenRequestRejectsWrongGrantType` | A form body with the wrong `grant_type` is rejected instead of silently accepted |
-| `openid4vci/tokenrequest_test.go` | `TestParsePreAuthorizedTokenRequestRejectsMissingCode` | A form body missing `pre-authorized_code` is rejected instead of returning an empty code |
-| `openid4vci/tokenrequest_test.go` | `TestNewAccessTokenIsRandomAndOpaque` | Two calls produce distinct, non-empty access tokens — not a fixed or predictable value |
-| `openid4vci/nonceendpoint_test.go` | `TestNewNonceResponseShape` | `NewNonceResponse`'s JSON output is a bare `{"c_nonce": "..."}` object, matching `[OID4VCI]` §7 |
-| `openid4vci/nonceendpoint_test.go` | `TestNewCNonceIsRandomAndOpaque` | Two calls produce distinct, non-empty `c_nonce` values — not a fixed or predictable value |
-| `openid4vci/proofofpossession_test.go` | `TestSignProofOfPossessionVerifies` | A JWT built by `SignProofOfPossession` is accepted by `VerifyProofOfPossession`, which recovers the exact same public key the holder signed with |
-| `openid4vci/proofofpossession_test.go` | `TestProofJWTHeaderShape` | The decoded header matches Annex A §A.10's worked example shape (`typ`, `alg`, EC/P-256 `jwk`) |
-| `openid4vci/proofofpossession_test.go` | `TestProofJWTClaimsOmitIss` | The claims JSON has no `iss` field at all — not merely an empty one — matching this profile's lack of client authentication |
-| `openid4vci/proofofpossession_test.go` | `TestVerifyProofOfPossessionRejectsWrongAud` | A JWT signed for one audience is rejected when verified against a different one |
-| `openid4vci/proofofpossession_test.go` | `TestVerifyProofOfPossessionRejectsWrongNonce` | A JWT signed over one nonce is rejected when verified against a different one |
-| `openid4vci/proofofpossession_test.go` | `TestVerifyProofOfPossessionRejectsMalformedJWT` | A string that isn't a well-formed 3-part JWT is rejected rather than panicking |
-| `openid4vci/proofofpossession_test.go` | `TestVerifyProofOfPossessionRejectsTamperedSignature` | Flipping a byte in the signature causes verification to fail |
-| `openid4vci/proofofpossession_test.go` | `TestVerifyProofOfPossessionRejectsWrongTyp` | A JWT whose header carries a different `typ` is rejected, even if otherwise validly signed |
-| `openid4vci/credentialrequest_test.go` | `TestCredentialRequestMatchesBlueprintWorkedExample` | `NewCredentialRequest`'s JSON output matches Annex A §A.10's worked example shape |
-| `openid4vci/credentialrequest_test.go` | `TestCredentialRequestSingleProofRoundTrips` | `SingleProof` extracts the exact JWT `NewCredentialRequest` was given |
-| `openid4vci/credentialrequest_test.go` | `TestCredentialRequestSingleProofRejectsWrongCount` | `SingleProof` errors on zero or multiple proofs rather than silently picking one |
-| `openid4vci/credentialrequest_test.go` | `TestCredentialResponseRoundTrips` | `NewCredentialResponse` + `SingleCredential` is a faithful round trip — the `MDoc` that comes back out matches the original exactly |
-| `openid4vci/credentialrequest_test.go` | `TestCredentialResponseShape` | The JSON shape matches Annex A §A.10's worked example: `{"credentials": [{"credential": "..."}]}` |
-| `openid4vci/credentialrequest_test.go` | `TestCredentialResponseSingleCredentialRejectsWrongCount` | `SingleCredential` errors on zero or multiple credentials |
-| `openid4vci/credentialrequest_test.go` | `TestIssueFromCredentialRequestIssuesToProvenKey` | `IssueFromCredentialRequest` issues a real, verifiable mdoc bound to the exact device key the holder proved it controls |
-| `openid4vci/credentialrequest_test.go` | `TestIssueFromCredentialRequestRejectsInvalidProof` | A proof signed over the wrong nonce is rejected before `Issue()` is ever called |
 
 `testhelpers_test.go` holds `buildHappyPathMDoc`, `keysOf`, and `unwrapTag24Generic` —
 shared fixtures/helpers used across the files above, rather than duplicated per-file.
@@ -222,6 +133,10 @@ Run with:
 ```bash
 go test -v .
 ```
+
+Real OpenID4VP session-transcript tests now live alongside the rest of the disclosure
+logic in `eudi/openid4vp/mdoc_dcql`; real OpenID4VCI issuance tests live in
+`eudi/services` (`credential_format_parser_mdoc_test.go`) and `eudi/openid4vci`.
 
 ### `decode/` — standalone CBOR/COSE inspector
 
@@ -297,6 +212,12 @@ binding (once, at issuance):        deviceKeyInfo says "this key belongs to this
 authentication (every presentation): deviceAuth proves "I am that key, right now"
 ```
 
+The real client generates and stores this device key the same way it does for SD-JWT
+holder-binding keys — via `eudi/services.HolderBindingKeyService.CreateKeyPairsWithProofs`
+— then reconstructs a signing-capable `Holder` from the stored private key at
+presentation time via `Holder.NewHolderFromPrivateKey` (see
+`eudi/openid4vp/mdoc_dcql.PrepareDisclosure`).
+
 ---
 
 ## Crypto suite
@@ -325,193 +246,12 @@ attributes: age_over_18 (mandatory), age_over_NN (optional)
             no other attributes permitted
 ```
 
----
-
-## Running
-
-This is a library package (`package mdoc`) — `main.go` no longer lives at the module
-root, so there's nothing to `go run .` directly. Two ways to run it:
-
-```bash
-# first time only
-go mod tidy
-
-# runnable walkthrough — a separate package main under cmd/ that imports mdoc
-# and drives it purely through the exported API (NewIssuer, Issue, Verify, ...)
-go run ./cmd/demo
-
-# full test suite — same walkthrough plus all regression/negative cases.
-# The library itself (Issue, SelectiveDisclose, Verify, VerifyWithDeviceAuth)
-# prints nothing — a real consumer importing mdoc shouldn't get unsolicited
-# stdout output — so this just shows pass/fail per test, plus a few
-# deliberate t.Logf calls (e.g. the CBOR/COSE hex dumps in mdoc_test.go)
-go test -v .
-
-# just the happy-path issuance → disclosure → verification walkthrough
-go test -v -run TestFullIssuanceFlow_ProducesValidMDoc .
-```
-
-`cmd/demo/main.go` is intentionally a separate package rather than living in the
-`mdoc` package itself — it only calls exported functions (`Issuer.IACACert()`,
-`Holder.PublicKey()`, etc.), the same way any real external consumer of this
-package would.
-
-The demo also takes care not to let the verifier and holder implicitly share
-state that a real, separate wallet and verifier never would: the verifier's whole
-`AuthorizationRequest` — `client_id`, `nonce`, `response_uri`, `state`, and the DCQL
-query together — is `json.Marshal`'d and the holder only ever works with a fresh
-`json.Unmarshal` of that JSON (`receivedRequest`), the same way a wallet would only
-ever see the request as it arrived over the wire. In particular, the holder derives
-`SessionTranscript` via `receivedRequest.SessionTranscript()` and recovers the
-vp_token response key via `receivedRequest.DcqlQuery.CredentialQueryId(docType)`
-rather than reusing the verifier's own `clientId`/`nonce`/`responseUri`/
-`verifierQueryId` Go variables — the two sides compute matching values
-independently and only agree because the protocol works, not because they're the
-same variables. This closes what used to be a real gap: earlier versions of this
-demo hardcoded `clientId`/`nonce`/`responseUri` as separately-known Go values with
-no real Authorization Request object being parsed at all (see `openid4vp/authorizationrequest.go`).
-
-The demo's issuance half now exercises the full OpenID4VCI `pre-authorized_code` flow
-end-to-end, in place of what used to be a single direct `issuer.Issue(...)` call, all
-via the `openid4vci` package: `NewCredentialOffer` → (simulated wire crossing via
-`json.Marshal`/`Unmarshal`, the same pattern as the DCQL query) →
-`NewPreAuthorizedTokenRequest`/`ParsePreAuthorizedTokenRequest` → `NewTokenResponse` →
-`NewNonceResponse` → `SignProofOfPossession(holder, ...)` → `NewCredentialRequest` →
-`IssueFromCredentialRequest(issuer, ...)` (which verifies the proof of possession
-*before* calling `issuer.Issue()` internally) → `NewCredentialResponse` →
-`SingleCredential`. The `tx_code`/`pre-authorized_code` session lookup that a real
-issuer's server would do is simulated with plain local variables, since that's genuine
-server-side state this package doesn't model (see `openid4vci/credentialoffer.go`'s
-file comment) — the demo checks equality itself and calls `log.Fatal` on a mismatch,
-the same way it already does for the `state` check further down in the VP half.
-
----
-
-## Expected output
-
-Output from `go run ./cmd/demo`:
-
-```
-========================================
-  mDoc Issuer → Holder → Verifier Demo
-  with two-level cert chain + deviceKeyInfo
-========================================
-
-IACA root CA generated (self-signed, offline in production)
-  Subject: Test Age Verification IACA Root CA
-DS cert generated (signed by IACA root)
-  Subject: Test Age Verification DS - 001
-  Issuer:  Test Age Verification IACA Root CA
-
-Device key generated (x: <16 hex chars>...)
-
---- ISSUER: Building Credential Offer (OpenID4VCI, pre-authorized_code) ---
-  credential_configuration_ids: ["proof_of_age"]
-  pre-authorized_code generated ✓  (delivered via QR code / deep link)
-  tx_code generated ✓  (4-digit PIN, delivered via e-mail — NOT inside the offer)
-
---- HOLDER: Redeeming Credential Offer (POST /token) ---
-  grant_type=pre-authorized_code, pre-authorized_code + tx_code presented ✓  (158 bytes)
-  tx_code verified ✓  (issuer's own session lookup — no client auth per §A.5)
-  access_token issued ✓  (token_type=Bearer, expires_in=86400s)
-
---- ISSUER: Nonce Endpoint (POST /nonce) ---
-  c_nonce issued ✓  (32 chars)
-
---- HOLDER: Credential Request (POST /credential) ---
-  Authorization: Bearer <8 hex chars>...  (access_token, in the HTTP header — not the JSON body)
-  proofs.jwt: [<PoP JWT>]  (<N> bytes, typ=openid4vci-proof+jwt, alg=ES256)
-
---- ISSUER: Credential Response ---
-  proof of possession verified ✓  (device key confirmed BEFORE issuance)
-  credentials: [{credential: <base64url CBOR mdoc>}]  (<N> bytes)
-
---- ISSUER: Building mDoc ---
-  Claim: age_over_16 = true
-  Claim: age_over_18 = true
-  Claim: age_over_21 = false
-  MSO signed by DS cert ✓  (1406 bytes)
-  x5chain: DS cert + IACA cert
-  deviceKeyInfo: embedded holder public key ✓
-
---- VERIFIER: Building Authorization Request (OpenID4VP) ---
-  dcql_query: format=mso_mdoc, doctype_value=eu.europa.ec.av.1, claims=[eu.europa.ec.av.1.age_over_18]
-  response_mode=direct_post — client_id, nonce, response_uri, state bundled together
-
---- HOLDER: Selective disclosure ---
-  Withholding: age_over_16
-  Revealing:   age_over_18
-  Withholding: age_over_21
-
-deviceAuth signed ✓  (74 bytes)
-  (fresh per session — binds presentation to this verifier + session)
-
-direct_post form built ✓  (2402 bytes, POSTed to response_uri as application/x-www-form-urlencoded)
-  state echoed back correctly ✓  (anti-CSRF check passed)
-
---- VERIFIER: Verifying mDoc ---
-  age_over_18 = true  digest: ✓
-  Verification: PASSED ✓
-  deviceAuth signature: valid ✓  (matches session transcript)
-
-========================================
-  RESULT
-========================================
-  DocType:          eu.europa.ec.av.1
-  Valid:            true
-  DeviceAuth Valid: true
-  Disclosed attributes:
-    age_over_18 = true
-
-========================================
-  CHAIN ATTACK TEST (attacker's own cert chain)
-========================================
-
---- ISSUER: Building mDoc ---
-  Claim: age_over_18 = true
-  MSO signed by DS cert ✓  (1331 bytes)
-  x5chain: DS cert + IACA cert
-  deviceKeyInfo: embedded holder public key ✓
-
---- HOLDER: Selective disclosure ---
-  Revealing:   age_over_18
-
---- VERIFIER: Verifying mDoc ---
-  Attacker's mDoc valid: false
-  Error: chain verification failed: x509: certificate signed by unknown authority ...
-  (correctly rejected — attacker's root not trusted ✓)
-
-========================================
-  DEVICE-KEY MISMATCH TEST (cloned mdoc, wrong signer)
-========================================
-
---- VERIFIER: Verifying mDoc ---
-  age_over_18 = true  digest: ✓
-  Verification: PASSED ✓
-  Cloned mdoc deviceAuth valid: false
-  Error: deviceAuth signature invalid: verification error
-  (correctly rejected — deviceAuth signed by wrong key ✓)
-```
-
-Note what changed from earlier drafts of this demo: the per-item `salt`/`Digest[N]` hex
-lines and the granular "Certificate chain: valid ✓" / "MSO signature: valid ✓" / "MSO
-validityInfo: within window ✓" sub-steps are gone. Those used to come from `fmt.Println`
-calls **inside** `Issue`/`Verify` themselves — but a real consumer importing `mdoc` as a
-dependency shouldn't get unsolicited console output on every call (this is the same
-convention `sdjwtvc` follows: zero `fmt.Println`/`fmt.Printf` in its non-test source).
-The library now returns values only; everything printed above is reconstructed here in
-`cmd/demo/main.go` purely from `mdoc`'s exported API (`credential.IssuerSigned.IssuerAuth`,
-`VerificationResult.Attributes`, etc.) — nothing the demo prints required new exports.
-
-The demo skips the tamper-detection scenario — constructing a tampered item requires
-the package's internal `tag24Wrap` helper, which isn't exported (deliberately: real
-external callers never need to hand-craft an `IssuerSignedItem`). That scenario, plus
-all of the above, are covered as proper tests instead — see `TestUntrustedRootIsRejected`,
-`TestTamperedDigestIsRejected`, and `TestDeviceAuthWrongSignerIsRejected` in the test
-table above. Since the library is silent, `go test -v .` no longer reproduces this
-narrative output — it just shows `PASS`/`FAIL` per test plus the deliberate `t.Logf` hex
-dumps of the presented mdoc, `issuerAuth`, and `deviceAuth` (`mdoc_test.go:28,32,36`),
-with a final `PASS`/`ok` summary.
+This attribute restriction (`validateAVClaims`) is enforced in
+`eudi/services/credential_format_parser_mdoc.go`'s real issuance path, not in this
+package — `mdoc.Issuer.Issue()` itself signs whatever docType/namespace/claims it's
+given (a passport, a driving licence, ...); the AV-Blueprint-specific restriction
+belongs in the profile package that only ever issues `proof_of_age`, not in the
+doc-type-agnostic core.
 
 ---
 
@@ -520,20 +260,18 @@ with a final `PASS`/`ok` summary.
 ### OpenID4VP only — the W3C Digital Credentials API path is out of scope by design
 
 The AV Blueprint's Annex A §A.6 states the W3C Digital Credentials API is the
-*default* presentation method, with OpenID4VP only as a *fallback*. This package
-deliberately models the OpenID4VP fallback path exclusively — everything here
-(`DCQLQuery`, `NewVPTokenJSON`/`ParseVPTokenJSON`, `NewOpenID4VPSessionTranscript`)
-is OpenID4VP-shaped. Concretely out of scope as a result:
+*default* presentation method, with OpenID4VP only as a *fallback*. Both this package
+and `eudi/openid4vp/mdoc_dcql` deliberately model the OpenID4VP fallback path
+exclusively. Concretely out of scope as a result:
 
 - ISO 18013-5's native `DeviceRequest` CBOR object (§8.3.2.1.2.1) — the blueprint
   confirms this is used *exclusively* by the DC API path; OpenID4VP requests
-  attributes via a DCQL query instead (JSON, see `DCQLQuery`), which is what this
-  package implements.
+  attributes via a DCQL query instead (JSON), which `eudi/openid4vp/dcql` implements
+  generically for every format.
 - The DC API's `EncryptedResponse = ["dcapi", {enc, cipherText}]` wrapper, where
   `cipherText` is `DeviceResponse` encrypted with HPKE (RFC 9180). OpenID4VP's
-  `response_mode=direct_post` sends `DeviceResponse` unencrypted (as base64url CBOR
-  inside the vp_token JSON — see `NewVPTokenJSON`), so no HPKE layer is needed for
-  the path this package actually implements.
+  `response_mode=direct_post` sends `DeviceResponse` unencrypted (as base64url CBOR),
+  so no HPKE layer is needed for the path actually implemented.
 
 ### No session encryption / transport layer
 
@@ -541,24 +279,8 @@ Real ISO 18013-5 *proximity* presentations happen over BLE or NFC, with session 
 derived via ECDH from a QR-code-carried verifier ephemeral key, then AES-GCM/AES-CCM
 encrypting the actual `DeviceRequest`/`DeviceResponse` exchange. None of that transport
 layer is modeled here — and per the AV Blueprint's own Annex A §A.6, it doesn't need to
-be: proximity presentation is explicitly out of scope for this profile.
-
-`NewOpenID4VPSessionTranscript`, `NewDCQLQuery`, `AuthorizationRequest`,
-`NewVPTokenJSON`/`ParseVPTokenJSON`, and `NewDirectPostForm`/`ParseDirectPostForm`
-together model the OpenID4VP-shaped request → disclosure → response wire format
-end-to-end, down to the real `application/x-www-form-urlencoded` HTTP body shape (see
-`cmd/demo/main.go`) — but none of it is wired into an actual HTTP client/server yet
-(no real HTTP POST over a socket, no QR code actually rendered/scanned). The demo does
-now build a real `AuthorizationRequest` (`client_id`, `nonce`, `response_uri`, `state`,
-`dcql_query` bundled together — see `openid4vp/authorizationrequest.go`), `json.Marshal` it, and
-have the holder `json.Unmarshal` it back before deriving `SessionTranscript` and the
-DCQL query id from it — this used to be a real gap (`clientId`/`nonce`/`responseUri`
-hardcoded as separately-known Go values with nothing being parsed at all) and is now
-closed. `TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth` still uses hardcoded
-`clientId`/`nonce`/`responseUri` literals directly, but deliberately so — it's a
-focused unit test of `NewOpenID4VPSessionTranscript` in isolation, not exercising
-`AuthorizationRequest`. `state` is generated fresh per demo run via `crypto/rand`, same
-as the device key and each item's digest salt.
+be: proximity presentation is explicitly out of scope for this profile. The real client
+only ever presents over HTTPS via OpenID4VP (`eudi/openid4vp`).
 
 ### Verifier sees total digest count
 
@@ -566,7 +288,7 @@ The full `issuerAuth` (all digests) travels with every presentation. The verifie
 call `len(mso.ValueDigests[namespace])` to learn how many total claims exist, even for
 undisclosed ones. Values are hidden — count is not.
 
-(Digest*order* is a separate concern and is handled: `Issue()` assigns digestIDs via a
+(Digest *order* is a separate concern and is handled: `Issue()` assigns digestIDs via a
 cryptographically random shuffle, not a sorted/deterministic order — see the comment on
 `shuffleIdentifiers` in `issuer.go` — so a disclosed claim's digestID reveals nothing
 about undisclosed claims' relative position. Only the *count* remains visible.)
@@ -588,37 +310,17 @@ deliberately, *permanently* not used — "the Age Verification solution does not
 incorporate such a trust list. Using a self-signed certificate does not offer any
 value." This isn't a phased limitation (§A.3's own "may be added in future versions"
 list doesn't mention PAR or trust lists at all) — it's a stated architectural choice.
-So `NewCredentialOffer`/`PreAuthorizedGrant` model no client authentication because
-there is none in this profile: trust rests entirely on `tx_code` possession (a PIN/OTP
-delivered out-of-band, e.g. email) plus TLS/Web PKI, not on any pre-registered or
-attested wallet identity.
+Trust rests entirely on `tx_code` possession (a PIN/OTP delivered out-of-band, e.g.
+email) plus TLS/Web PKI, not on any pre-registered or attested wallet identity — this
+is generic `eudi/openid4vci` behavior, not something specific to mdoc.
 
-### Annex A is silent on nonce mechanics for issuance — this package fills the gap with the base spec's Nonce Endpoint
+### Proof of possession has no replay window
 
-Annex A §A.10's worked Token Response is exactly
-`{"access_token": "...", "token_type": "Bearer", "expires_in": 86400}` — no `c_nonce`
-anywhere, and Annex A never mentions a Nonce Endpoint either (unlike §A.5, which is
-explicit that OpenID4VP presentation requests "MUST specify the nonce parameter").
-This isn't an oversight in `NewTokenResponse`: an *earlier* OID4VCI draft did put
-`c_nonce` in the token response, but the final `[OID4VCI]` 1.0 spec moved nonce
-issuance to a dedicated Nonce Endpoint instead (§7 — a bare `POST /nonce` returning
-`{"c_nonce": "..."}`, modeled in `openid4vci/nonceendpoint.go`). Annex A simply doesn't mention
-either mechanism on the issuance side, so this package follows the current base spec
-rather than the outdated draft behavior. The planned `openid4vci/proofofpossession.go`'s PoP JWT
-will sign over the `c_nonce` this endpoint produces.
-
-### Proof of possession has no replay window — by the same design principle as the rest of this package
-
-`VerifyProofOfPossession` checks `typ`, `alg`, `aud`, `nonce`, and the signature itself,
-but does not check the proof JWT's `iat` against any freshness window, and does not
-track whether a given `c_nonce` has already been redeemed. Real replay protection here
-comes from the issuer's own session state — a nonce store that marks a `c_nonce` as
-spent the moment it's successfully used — which is genuine server-side state this
-package doesn't model, the same way it doesn't track whether a `pre-authorized_code`
-has already been redeemed either (see `openid4vci/credentialoffer.go`'s file comment). A real
-issuer integrating this package is expected to enforce single-use nonce redemption
-itself; `VerifyProofOfPossession` only checks that the JWT presented actually is a
-validly signed proof over the values the issuer expects.
+`eudi/credentials/proofs.JwtProofBuilder`'s proof JWT carries `iat`, `aud`, and `nonce`,
+but the real client does not track proof-JWT freshness or `c_nonce` single-use itself —
+that's the issuer's own session state to enforce (a nonce store marking a `c_nonce` as
+spent the moment it's redeemed), which is genuine server-side state no client package
+models. A real issuer is expected to enforce single-use nonce redemption itself.
 
 ### Real clock, not injected, by default
 

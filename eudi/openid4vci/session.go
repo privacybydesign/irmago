@@ -38,7 +38,7 @@ type session struct {
 	httpClient               *http.Client
 	handler                  Handler
 	storage                  storage.Storage
-	holderVerifier           *sdjwtvc.HolderVerificationProcessor
+	credentialFormatParsers  services.CredentialFormatParsers
 
 	// vctResolver provides cached raw bytes of fetched SD-JWT VC type
 	// metadata documents so the post-issuance integrity check (verifyVctIntegrity)
@@ -204,10 +204,24 @@ func (s *session) perform() {
 // for a single credential configuration, before they are stored.
 type fetchedCredential struct {
 	credentialConfigurationId      string
-	verifiedSdJwtVcs               []*sdjwtvc.VerifiedSdJwtVc
+	parsedCredentials              []*services.ParsedCredential
 	requireCryptographicKeyBinding bool
 	publicKeyIdentifiers           []models.PublicHolderBindingKey
 	keyBindingService              services.HolderBindingKeyService
+}
+
+// sdJwtVcsOf extracts the SdJwtVc field from every parsed credential that
+// has one set, skipping formats (e.g. mso_mdoc) that don't. Used by the
+// VCT-specific code paths (enrichMetadataFromFetchedVct, verifyVctIntegrity)
+// that have no equivalent concept for other formats.
+func sdJwtVcsOf(parsed []*services.ParsedCredential) []*sdjwtvc.VerifiedSdJwtVc {
+	result := make([]*sdjwtvc.VerifiedSdJwtVc, 0, len(parsed))
+	for _, p := range parsed {
+		if p.SdJwtVc != nil {
+			result = append(result, p.SdJwtVc)
+		}
+	}
+	return result
 }
 
 func (fc *fetchedCredential) cleanupKeys() {
@@ -272,16 +286,17 @@ func (s *session) enrichMetadataFromFetchedVct(ctx context.Context, fetched []*f
 	}
 	logoManager := s.storage.FileSystem().Credentials().LogoManager()
 	for _, fc := range fetched {
-		if len(fc.verifiedSdJwtVcs) == 0 {
+		sdJwtVcs := sdJwtVcsOf(fc.parsedCredentials)
+		if len(sdJwtVcs) == 0 {
 			continue
 		}
-		vctURL := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType
+		vctURL := sdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType
 		// Within a single credential configuration, every issued VC must
 		// declare the same vct. Heterogeneous vcts in one batch would mean
 		// we resolve only [0]'s metadata, then verifyVctIntegrity later
 		// fails for [1..n] with a confusing "no type metadata was fetched"
 		// — better to reject the whole session up front.
-		for i, vc := range fc.verifiedSdJwtVcs[1:] {
+		for i, vc := range sdJwtVcs[1:] {
 			if vc.IssuerSignedJwtPayload.VerifiableCredentialType != vctURL {
 				return fmt.Errorf(
 					"credential %q batch is heterogeneous: vc[0].vct=%q vs vc[%d].vct=%q",
@@ -345,7 +360,7 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 		return nil
 	}
 	for _, fc := range fetched {
-		for _, vc := range fc.verifiedSdJwtVcs {
+		for _, vc := range sdJwtVcsOf(fc.parsedCredentials) {
 			integrity, present, err := sdjwtvc.LookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
 			if err != nil {
 				return fmt.Errorf("vct#integrity on credential %q: %w", fc.credentialConfigurationId, err)
@@ -369,7 +384,7 @@ func (s *session) storeCredentials(fetched []*fetchedCredential) error {
 	credentialService := services.NewCredentialService(s.storage)
 	for _, fc := range fetched {
 		err := credentialService.VerifyAndStoreIssuedCredentials(
-			fc.verifiedSdJwtVcs,
+			fc.parsedCredentials,
 			fc.credentialConfigurationId,
 			*s.credentialIssuerMetadata,
 			fc.requireCryptographicKeyBinding,
@@ -392,14 +407,22 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 
 	for _, fc := range fetched {
 		config, ok := s.credentialIssuerMetadata.CredentialConfigurationsSupported[fc.credentialConfigurationId]
-		if !ok || config.CredentialMetadata == nil {
+		if !ok || config.CredentialMetadata == nil || len(fc.parsedCredentials) == 0 {
 			continue
 		}
 
 		// Use the first credential in the batch as source of attribute values.
-		var payload sdjwtvc.ProcessedSdJwtPayload
-		if len(fc.verifiedSdJwtVcs) > 0 {
-			payload = fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
+		first := fc.parsedCredentials[0]
+		var attrs []clientmodels.Attribute
+		if first.SdJwtVc != nil {
+			attrs = buildAttributesWithValues(config.CredentialMetadata.Claims, first.SdJwtVc.ProcessedSdJwtPayload)
+		} else {
+			var resolved map[string]map[string]any
+			if err := json.Unmarshal(first.ResolvedClaims, &resolved); err != nil {
+				eudi.Logger.Warnf("failed to unmarshal resolved claims for %q: %v", fc.credentialConfigurationId, err)
+			} else {
+				attrs = services.BuildMdocAttributesFromResolvedClaims(config.CredentialMetadata.Claims, resolved)
+			}
 		}
 
 		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
@@ -426,20 +449,13 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			}
 		}
 
-		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload)
-
 		var batchSize *uint
 		if batch != nil {
 			n := batch.BatchSize
 			batchSize = &n
 		}
 
-		var issuanceDate, expiryDate *int64
-		if len(fc.verifiedSdJwtVcs) > 0 {
-			jwt := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload
-			issuanceDate = jwt.IssuedAt
-			expiryDate = jwt.Expiry
-		}
+		issuanceDate, expiryDate := first.IssuedAt, first.ExpiresAt
 
 		cred := clientmodels.Credential{
 			CredentialId: config.VerifiableCredentialType,
@@ -452,7 +468,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			Image:                 image,
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
-				clientmodels.Format_SdJwtVc: batchSize,
+				clientmodels.CredentialFormat(first.Format): batchSize,
 			},
 			Attributes:   attrs,
 			IssuanceDate: issuanceDate,
@@ -794,23 +810,28 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("invalid credential response: %v", err)
 	}
 
-	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
+	parser, ok := s.credentialFormatParsers[models.CredentialFormat(credentialConfig.Format)]
+	if !ok {
+		return nil, fmt.Errorf("no credential format parser registered for format %q", credentialConfig.Format)
+	}
+
+	parsedCredentials := make([]*services.ParsedCredential, len(credentialResponse.Credentials))
 	for i, cred := range credentialResponse.Credentials {
-		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
+		parsed, err := parser.ParseAndVerify(cred.Credential, s.credentialIssuerMetadata.CredentialIssuer, requireCryptographicKeyBinding)
 		if err != nil {
 			return nil, fmt.Errorf("failed to verify credential: %v", err)
 		}
-		verifiedSdJwtVcs[i] = verifiedSdJwt
+		parsedCredentials[i] = parsed
 	}
 
-	err = sdjwtvc.CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs)
+	err = parser.CheckBatchUniqueness(parsedCredentials)
 	if err != nil {
 		return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
 	}
 
 	return &fetchedCredential{
 		credentialConfigurationId:      credentialConfigurationId,
-		verifiedSdJwtVcs:               verifiedSdJwtVcs,
+		parsedCredentials:              parsedCredentials,
 		requireCryptographicKeyBinding: requireCryptographicKeyBinding,
 		publicKeyIdentifiers:           publicKeyIdentifiers,
 		keyBindingService:              keyBindingService,

@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/stretchr/testify/require"
 )
 
@@ -344,12 +345,14 @@ func newResolverPrimedWith(t *testing.T, url, body string) *typemetadata.Resolve
 func makeFetchedCredential(configID, vct string, payload map[string]any) *fetchedCredential {
 	return &fetchedCredential{
 		credentialConfigurationId: configID,
-		verifiedSdJwtVcs: []*sdjwtvc.VerifiedSdJwtVc{
+		parsedCredentials: []*services.ParsedCredential{
 			{
-				IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
-					VerifiableCredentialType: vct,
+				SdJwtVc: &sdjwtvc.VerifiedSdJwtVc{
+					IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
+						VerifiableCredentialType: vct,
+					},
+					ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload(payload),
 				},
-				ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload(payload),
 			},
 		},
 	}

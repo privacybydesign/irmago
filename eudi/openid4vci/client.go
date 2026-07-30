@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/services"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -26,10 +27,11 @@ type SdJwtVcStorageClient interface {
 }
 
 type Client struct {
-	Configuration  *eudi.Configuration
-	httpClient     *http.Client
-	currentSession *session
-	holderVerifier *sdjwtvc.HolderVerificationProcessor
+	Configuration           *eudi.Configuration
+	httpClient              *http.Client
+	currentSession          *session
+	holderVerifier          *sdjwtvc.HolderVerificationProcessor
+	credentialFormatParsers services.CredentialFormatParsers
 
 	// Allow non-HTTPS for testing purposes
 	allowInsecureHttp bool
@@ -38,15 +40,17 @@ type Client struct {
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	credentialFormatParsers services.CredentialFormatParsers,
 ) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("configuration cannot be nil")
 	}
 
 	return &Client{
-		httpClient:     httpClient,
-		Configuration:  config,
-		holderVerifier: holderVerifier,
+		httpClient:              httpClient,
+		Configuration:           config,
+		holderVerifier:          holderVerifier,
+		credentialFormatParsers: credentialFormatParsers,
 	}, nil
 }
 
@@ -136,7 +140,7 @@ func (client *Client) handleCredentialOffer(
 		credentials:                creds,
 		handler:                    handler,
 		httpClient:                 client.httpClient,
-		holderVerifier:             client.holderVerifier,
+		credentialFormatParsers:    client.credentialFormatParsers,
 		storage:                    client.Configuration.Storage,
 		vctResolver:                vctResolver,
 		allowInsecureHttp:          client.allowInsecureHttp,
@@ -347,8 +351,8 @@ func (client *Client) convertToCredentialInfoList(
 	result := make([]*clientmodels.CredentialDescriptor, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
-			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
-				// We only support SD-JWT VCs for now
+			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+				config.Format != metadata.CredentialFormatIdentifier_MsoMdoc {
 				continue
 			}
 

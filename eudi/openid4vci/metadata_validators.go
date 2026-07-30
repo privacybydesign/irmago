@@ -174,8 +174,10 @@ func (v *CredentialConfigurationValidator) Verify(c *metadata.CredentialConfigur
 // ValidateSupportedFeatures verifies that the credential configuration is supported by our client. It is split from the credential configuration validation, so it can be used at the moment a configuration is used to request credentials,
 // because it makes no sense to validate configurations up front, which will not be requested either way.
 func (v *CredentialConfigurationValidator) ValidateSupportedFeatures(c *metadata.CredentialConfiguration) error {
-	// We only support SD-JWT VC, for now
-	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc && c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
+	// We only support SD-JWT VC and mso_mdoc, for now
+	if c.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+		c.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy &&
+		c.Format != metadata.CredentialFormatIdentifier_MsoMdoc {
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 
@@ -243,7 +245,9 @@ func (v *W3CDILDFormatVerifier) Verify(credentialConfiguration *metadata.Credent
 	return nil
 }
 
-// Verify returns nil for now, as we don't support mDoc Credentials, so just return nil and accept any metadata that we get
+// Verify returns nil for now — mso_mdoc has no format-specific issuer metadata
+// fields to validate yet (docType is confirmed against the issued credential
+// itself, not the issuer metadata), so just accept any metadata that we get.
 func (v *MdocFormatVerifier) Verify(credentialConfiguration *metadata.CredentialConfiguration) error {
 	return nil
 }

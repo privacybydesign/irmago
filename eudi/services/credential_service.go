@@ -21,12 +21,12 @@ import (
 	"gorm.io/datatypes"
 )
 
-// CredentialService stores verified SD-JWT VCs and their associated holder binding keys
+// CredentialService stores verified credentials and their associated holder binding keys
 // in a single atomic transaction.
 type CredentialService interface {
 	GetCredentialMetadataList() ([]*clientmodels.Credential, error)
 	VerifyAndStoreIssuedCredentials(
-		verifiedSdJwtVcs []*sdjwtvc.VerifiedSdJwtVc,
+		parsedCredentials []*ParsedCredential,
 		credentialConfigurationId string,
 		metadata metadata.CredentialIssuerMetadata,
 		requireCryptographicKeyBinding bool,
@@ -186,27 +186,27 @@ func batchInstanceCountsRemaining(batch *models.CredentialBatch) map[clientmodel
 	return map[clientmodels.CredentialFormat]*uint{format: &batch.RemainingCount}
 }
 
-// StoreIssuedCredentials builds a CredentialBatch from the supplied verified credentials and
+// StoreIssuedCredentials builds a CredentialBatch from the supplied parsed credentials and
 // metadata, then persists the batch and all its instances in one transaction.
 //
 // keyModels must either be empty (no cryptographic key binding required) or have exactly the same length as
-// verifiedSdJwtVcs (one key per instance). All credentials in the slice are assumed to have been
-// issued from the same credential_configuration_id and therefore share vct, issuer, and timing claims.
+// parsedCredentials (one key per instance). All credentials in the slice are assumed to have been
+// issued from the same credential_configuration_id and therefore share their type, issuer, and timing claims.
 func (s *credentialService) VerifyAndStoreIssuedCredentials(
-	verifiedSdJwtVcs []*sdjwtvc.VerifiedSdJwtVc,
+	parsedCredentials []*ParsedCredential,
 	credentialConfigurationId string,
 	issuerMetadata metadata.CredentialIssuerMetadata,
 	requireCryptographicKeyBinding bool,
 	publicKeyIdentifiers []models.PublicHolderBindingKey,
 ) error {
-	if len(verifiedSdJwtVcs) == 0 {
+	if len(parsedCredentials) == 0 {
 		return nil // nothing to store
 	}
 
-	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(verifiedSdJwtVcs) {
+	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(parsedCredentials) {
 		return fmt.Errorf(
-			"publicKeyIdentifiers length (%d) must equal verifiedSdJwtVcs length (%d) when cryptographic key binding is used",
-			len(publicKeyIdentifiers), len(verifiedSdJwtVcs),
+			"publicKeyIdentifiers length (%d) must equal parsedCredentials length (%d) when cryptographic key binding is used",
+			len(publicKeyIdentifiers), len(parsedCredentials),
 		)
 	}
 
@@ -215,18 +215,18 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	var matchedKeyIDs []datatypes.UUID
 	if requireCryptographicKeyBinding {
 		var err error
-		matchedKeyIDs, err = matchAllHolderBindingKeys(verifiedSdJwtVcs, publicKeyIdentifiers)
+		matchedKeyIDs, err = matchAllHolderBindingKeys(parsedCredentials, publicKeyIdentifiers)
 		if err != nil {
 			s.deleteOrphanedKeys(publicKeyIdentifiers)
 			return err
 		}
 	}
 
-	// All instances in a batch share the same vct, issuer, and timing claims.
+	// All instances in a batch share the same type, issuer, and timing claims.
 	// Use the first credential as the source of truth for batch-level metadata.
-	first := verifiedSdJwtVcs[0]
+	first := parsedCredentials[0]
 
-	hash, processedPayload, err := s.computeHashAndDeleteExisting(first)
+	hash, err := s.computeHashAndDeleteExisting(first)
 	if err != nil {
 		return err
 	}
@@ -234,27 +234,27 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
 	batch := &models.CredentialBatch{
-		IssuerURL:                first.IssuerSignedJwtPayload.Issuer,
-		VerifiableCredentialType: first.IssuerSignedJwtPayload.VerifiableCredentialType,
+		IssuerURL:                first.IssuerURL,
+		VerifiableCredentialType: first.VerifiableCredentialType,
 		Format:                   models.CredentialFormat(credentialConfiguration.Format),
 		Hash:                     hash,
-		ResolvedClaims:           datatypes.JSON(processedPayload),
-		CredentialIssuer:         first.IssuerSignedJwtPayload.Issuer,
+		ResolvedClaims:           datatypes.JSON(first.ResolvedClaims),
+		CredentialIssuer:         first.IssuerURL,
 		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
 		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                uint(len(verifiedSdJwtVcs)),
-		RemainingCount:           uint(len(verifiedSdJwtVcs)),
-		Instances:                buildInstances(verifiedSdJwtVcs),
+		BatchSize:                uint(len(parsedCredentials)),
+		RemainingCount:           uint(len(parsedCredentials)),
+		Instances:                buildInstances(parsedCredentials),
 	}
 
-	if first.IssuerSignedJwtPayload.IssuedAt != nil {
-		batch.IssuedAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.IssuedAt, 0), Valid: true}
+	if first.IssuedAt != nil {
+		batch.IssuedAt = datatypes.NullTime{V: time.Unix(*first.IssuedAt, 0), Valid: true}
 	}
-	if first.IssuerSignedJwtPayload.Expiry != nil {
-		batch.ExpiresAt = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.Expiry, 0), Valid: true}
+	if first.ExpiresAt != nil {
+		batch.ExpiresAt = datatypes.NullTime{V: time.Unix(*first.ExpiresAt, 0), Valid: true}
 	}
-	if first.IssuerSignedJwtPayload.NotBefore != nil {
-		batch.NotBefore = datatypes.NullTime{V: time.Unix(*first.IssuerSignedJwtPayload.NotBefore, 0), Valid: true}
+	if first.NotBefore != nil {
+		batch.NotBefore = datatypes.NullTime{V: time.Unix(*first.NotBefore, 0), Valid: true}
 	}
 
 	if err := s.credentialStore.StoreBatch(batch); err != nil {
@@ -268,33 +268,43 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	return nil
 }
 
-func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJwtVc) (string, []byte, error) {
-	processedPayload, err := json.Marshal(vc.ProcessedSdJwtPayload)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to marshal processed SD-JWT payload: %w", err)
+func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (string, error) {
+	var hash string
+	var err error
+	if p.SdJwtVc != nil {
+		hash, err = hashForSdJwtVc(p.VerifiableCredentialType, p.ResolvedClaims)
+	} else {
+		hash, err = hashGeneric(p.VerifiableCredentialType, p.ResolvedClaims)
 	}
-
-	hash, err := hashForSdJwtVc(vc.IssuerSignedJwtPayload.VerifiableCredentialType, processedPayload)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to compute credential hash: %w", err)
+		return "", fmt.Errorf("failed to compute credential hash: %w", err)
 	}
 
 	// If a batch with this hash already exists, delete it so the new issuance
 	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
 	if existing, err := s.credentialStore.GetBatchByHash(hash); err == nil {
 		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
-			return "", nil, fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
+			return "", fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
 		}
 	}
 
-	return hash, processedPayload, nil
+	return hash, nil
 }
 
-func buildInstances(vcs []*sdjwtvc.VerifiedSdJwtVc) []models.IssuedCredentialInstance {
-	instances := make([]models.IssuedCredentialInstance, len(vcs))
-	for i, v := range vcs {
+// hashGeneric hashes credType+claims directly, with no standard-claim
+// stripping — used for formats (mso_mdoc) whose ResolvedClaims is already a
+// bare namespace->element->value map with nothing resembling
+// sdjwtvc.StandardClaims mixed in, unlike hashForSdJwtVc.
+func hashGeneric(credType string, resolvedClaimsBytes []byte) (string, error) {
+	combined := append([]byte(credType), resolvedClaimsBytes...)
+	return fmt.Sprintf("%x", sha256.Sum256(combined)), nil
+}
+
+func buildInstances(parsedCredentials []*ParsedCredential) []models.IssuedCredentialInstance {
+	instances := make([]models.IssuedCredentialInstance, len(parsedCredentials))
+	for i, p := range parsedCredentials {
 		instances[i] = models.IssuedCredentialInstance{
-			RawCredential: []byte(v.GetRawSdJwtVc()),
+			RawCredential: p.RawCredentialBytes,
 		}
 	}
 	return instances
@@ -344,11 +354,13 @@ func convertCredentialMetadata(config metadata.CredentialConfiguration) *models.
 	return result
 }
 
-// matchAllHolderBindingKeys matches every credential's cnf claim to a stored
-// holder binding key. Returns an error if any credential cannot be matched,
-// ensuring the caller can abort before any side effects.
+// matchAllHolderBindingKeys matches every credential to a stored holder
+// binding key: via its cnf claim for dc+sd-jwt, or via its embedded device
+// key's thumbprint/DID for every other format. Returns an error if any
+// credential cannot be matched, ensuring the caller can abort before any
+// side effects.
 func matchAllHolderBindingKeys(
-	vcs []*sdjwtvc.VerifiedSdJwtVc,
+	parsedCredentials []*ParsedCredential,
 	publicKeyIdentifiers []models.PublicHolderBindingKey,
 ) ([]datatypes.UUID, error) {
 	keyByThumbprint := map[string]datatypes.UUID{}
@@ -362,19 +374,45 @@ func matchAllHolderBindingKeys(
 		}
 	}
 
-	result := make([]datatypes.UUID, len(vcs))
-	for i, v := range vcs {
-		cnf := v.IssuerSignedJwtPayload.Confirm
-		if cnf == nil {
-			return nil, fmt.Errorf("credential %d requires holder binding but has no cnf claim", i)
+	result := make([]datatypes.UUID, len(parsedCredentials))
+	for i, p := range parsedCredentials {
+		var keyID datatypes.UUID
+		var err error
+		if p.SdJwtVc != nil {
+			cnf := p.SdJwtVc.IssuerSignedJwtPayload.Confirm
+			if cnf == nil {
+				return nil, fmt.Errorf("credential %d requires holder binding but has no cnf claim", i)
+			}
+			keyID, err = matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
+		} else {
+			if p.HolderBindingKeyThumbprint == nil && p.HolderBindingKeyDidUrl == nil {
+				return nil, fmt.Errorf("credential %d requires holder binding but carries no key-binding data", i)
+			}
+			keyID, err = matchHolderBindingKeyByIdentifiers(p.HolderBindingKeyDidUrl, p.HolderBindingKeyThumbprint, keyByDidUrl, keyByThumbprint)
 		}
-		keyID, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
 		if err != nil {
 			return nil, fmt.Errorf("credential %d: %w", i, err)
 		}
 		result[i] = keyID
 	}
 	return result, nil
+}
+
+// matchHolderBindingKeyByIdentifiers is matchHolderBindingKey's generic
+// counterpart for formats with no cnf claim (mso_mdoc), taking already-
+// extracted identifiers instead of an sdjwtvc.CnfField.
+func matchHolderBindingKeyByIdentifiers(didUrl, thumbprint *string, keyByDidUrl, keyByThumbprint map[string]datatypes.UUID) (datatypes.UUID, error) {
+	if didUrl != nil {
+		if keyID, ok := keyByDidUrl[*didUrl]; ok {
+			return keyID, nil
+		}
+	}
+	if thumbprint != nil {
+		if keyID, ok := keyByThumbprint[*thumbprint]; ok {
+			return keyID, nil
+		}
+	}
+	return datatypes.UUID{}, fmt.Errorf("no matching holder binding key found")
 }
 
 func (s *credentialService) deleteOrphanedKeys(publicKeyIdentifiers []models.PublicHolderBindingKey) {
@@ -418,6 +456,70 @@ func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]dat
 	}
 
 	return datatypes.UUID{}, fmt.Errorf("no matching holder binding key found for cnf claim")
+}
+
+// BuildMdocAttributesFromResolvedClaims builds an attribute list directly
+// from a resolved mso_mdoc claims map (namespace -> elementIdentifier ->
+// value), for the permission-dialog display at issuance time. Mirrors
+// BuildAttributesFromPayload's role for dc+sd-jwt, but mso_mdoc claim paths
+// are always exactly two components deep (namespace, elementIdentifier)
+// with no nesting to walk, unlike SD-JWT's arbitrary JSON.
+func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, resolved map[string]map[string]any) []clientmodels.Attribute {
+	displayLookup := map[string]clientmodels.TranslatedString{}
+	metadataOrder := map[string]int{}
+	for i, c := range claims {
+		key := clientmodels.ClaimPathKey(c.Path)
+		metadataOrder[key] = i
+		if len(c.Display) == 0 {
+			continue
+		}
+		displayLookup[key] = metadata.ConvertDisplayToTranslatedString(metadata.ToTranslateableList(c.Display))
+	}
+
+	type mdocClaimEntry struct {
+		namespace, elementIdentifier string
+		value                        any
+	}
+	entries := make([]mdocClaimEntry, 0)
+	for namespace, elements := range resolved {
+		for elementIdentifier, value := range elements {
+			entries = append(entries, mdocClaimEntry{namespace, elementIdentifier, value})
+		}
+	}
+
+	orderOf := func(e mdocClaimEntry) int {
+		key := clientmodels.ClaimPathKey([]any{e.namespace, e.elementIdentifier})
+		if idx, ok := metadataOrder[key]; ok {
+			return idx
+		}
+		return 1<<31 - 1
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		oi, oj := orderOf(entries[i]), orderOf(entries[j])
+		if oi != oj {
+			return oi < oj
+		}
+		if entries[i].namespace != entries[j].namespace {
+			return entries[i].namespace < entries[j].namespace
+		}
+		return entries[i].elementIdentifier < entries[j].elementIdentifier
+	})
+
+	attrs := make([]clientmodels.Attribute, 0, len(entries))
+	for _, e := range entries {
+		path := []any{e.namespace, e.elementIdentifier}
+		var dn *clientmodels.TranslatedString
+		if d, ok := displayLookup[clientmodels.ClaimPathKey(path)]; ok && len(d) > 0 {
+			dnCopy := d
+			dn = &dnCopy
+		}
+		attrs = append(attrs, clientmodels.Attribute{
+			ClaimPath:   path,
+			DisplayName: dn,
+			Value:       clientmodels.NewAttributeValue(e.value),
+		})
+	}
+	return attrs
 }
 
 // BuildAttributesFromPayload walks the credential payload top-down and emits an

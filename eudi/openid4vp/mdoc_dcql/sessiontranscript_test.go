@@ -1,4 +1,4 @@
-package openid4vp
+package mdoc_dcql
 
 import (
 	"crypto/sha256"
@@ -14,16 +14,16 @@ import (
 // CBOR-encodes as [null, null, ["OpenID4VPHandover", digest]] and that the
 // digest matches an independently-computed SHA-256(CBOR([clientId, nonce,
 // null, responseUri])) — i.e. the exact construction documented on
-// NewOpenID4VPSessionTranscript, cross-checked against Multipaz's
+// newOpenID4VPSessionTranscript, cross-checked against Multipaz's
 // vpSessionTranscript.
 func TestOpenID4VPSessionTranscriptShape(t *testing.T) {
 	clientId := "redirect_uri:https://verifier.example.com/response"
 	nonce := "abc123"
 	responseUri := "https://verifier.example.com/response"
 
-	st, err := NewOpenID4VPSessionTranscript(clientId, nonce, responseUri)
+	st, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri)
 	if err != nil {
-		t.Fatalf("NewOpenID4VPSessionTranscript: %v", err)
+		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
 	}
 
 	if st.DeviceEngagementBytes != nil {
@@ -80,16 +80,16 @@ func TestOpenID4VPSessionTranscriptShape(t *testing.T) {
 // them didn't, a verifier could accept a deviceAuth signed for a different
 // session/client than the one it actually requested.
 func TestOpenID4VPSessionTranscriptBindsAllInputs(t *testing.T) {
-	base, err := NewOpenID4VPSessionTranscript("client-a", "nonce-a", "https://a.example.com/response")
+	base, err := newOpenID4VPSessionTranscript("client-a", "nonce-a", "https://a.example.com/response")
 	if err != nil {
-		t.Fatalf("NewOpenID4VPSessionTranscript base: %v", err)
+		t.Fatalf("newOpenID4VPSessionTranscript base: %v", err)
 	}
 	baseDigest := base.Handover.([]any)[1].([]byte)
 
 	variants := map[string]mdoc.SessionTranscript{}
-	variants["clientId"], _ = NewOpenID4VPSessionTranscript("client-b", "nonce-a", "https://a.example.com/response")
-	variants["nonce"], _ = NewOpenID4VPSessionTranscript("client-a", "nonce-b", "https://a.example.com/response")
-	variants["responseUri"], _ = NewOpenID4VPSessionTranscript("client-a", "nonce-a", "https://b.example.com/response")
+	variants["clientId"], _ = newOpenID4VPSessionTranscript("client-b", "nonce-a", "https://a.example.com/response")
+	variants["nonce"], _ = newOpenID4VPSessionTranscript("client-a", "nonce-b", "https://a.example.com/response")
+	variants["responseUri"], _ = newOpenID4VPSessionTranscript("client-a", "nonce-a", "https://b.example.com/response")
 
 	for field, variant := range variants {
 		variantDigest := variant.Handover.([]any)[1].([]byte)
@@ -130,9 +130,9 @@ func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 	clientId := "redirect_uri:https://verifier.example.com/response"
 	nonce := "abc123"
 	responseUri := "https://verifier.example.com/response"
-	transcript, err := NewOpenID4VPSessionTranscript(clientId, nonce, responseUri)
+	transcript, err := newOpenID4VPSessionTranscript(clientId, nonce, responseUri)
 	if err != nil {
-		t.Fatalf("NewOpenID4VPSessionTranscript: %v", err)
+		t.Fatalf("newOpenID4VPSessionTranscript: %v", err)
 	}
 
 	deviceAuthBytes, err := holder.SignDeviceAuth(docType, transcript)
@@ -152,9 +152,9 @@ func TestOpenID4VPSessionTranscriptIntegratesWithDeviceAuth(t *testing.T) {
 	// A verifier that derives its transcript from a different nonce (e.g.
 	// it issued one authorization request, the holder responded to
 	// another) must NOT accept the same deviceAuth signature.
-	wrongTranscript, err := NewOpenID4VPSessionTranscript(clientId, "different-nonce", responseUri)
+	wrongTranscript, err := newOpenID4VPSessionTranscript(clientId, "different-nonce", responseUri)
 	if err != nil {
-		t.Fatalf("NewOpenID4VPSessionTranscript (wrong nonce): %v", err)
+		t.Fatalf("newOpenID4VPSessionTranscript (wrong nonce): %v", err)
 	}
 	mismatchResult := verifier.VerifyWithDeviceAuth(presented, namespace, docType, wrongTranscript, deviceAuthBytes)
 	if mismatchResult.DeviceAuthValid {

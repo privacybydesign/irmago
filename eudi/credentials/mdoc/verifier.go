@@ -1,6 +1,7 @@
 package mdoc
 
 import (
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
@@ -40,6 +41,14 @@ func NewVerifier(rootCerts []*x509.Certificate) *Verifier {
 	return &Verifier{trustedRoots: pool}
 }
 
+// NewVerifierFromPool is like NewVerifier but takes an already-built trust-
+// root pool directly, so callers that already maintain a *x509.CertPool
+// (e.g. the wallet's own trust model) don't need to keep a parallel
+// []*x509.Certificate list just to construct a Verifier.
+func NewVerifierFromPool(rootCerts *x509.CertPool) *Verifier {
+	return &Verifier{trustedRoots: rootCerts}
+}
+
 // NewVerifierWithClock is like NewVerifier but pins certificate validity
 // checks to a fixed point in time instead of the real system clock. Used
 // to test expired / not-yet-valid certificate rejection deterministically,
@@ -65,20 +74,36 @@ type VerificationResult struct {
 	Valid           bool
 	Error           string
 	DeviceAuthValid bool // FIX: now actually populated — see VerifyWithDeviceAuth
+
+	// DeviceKey is the holder's device public key embedded in the MSO's
+	// deviceKeyInfo, reconstructed on a best-effort basis: if it can't be
+	// decoded, this is left nil rather than failing Verify() itself (the
+	// digest/signature checks are the security-critical part of Verify;
+	// callers that actually need the device key, e.g. issuance-time
+	// holder-binding-key matching, check DeviceKey == nil themselves).
+	DeviceKey *ecdsa.PublicKey
+
+	// ValidityInfo mirrors the MSO's own validity window, exposed so
+	// callers (e.g. issuance-time storage of IssuedAt/ExpiresAt/NotBefore)
+	// don't need to re-decode the MSO themselves.
+	ValidityInfo ValidityInfo
 }
 
-// Verify performs full issuerAuth verification:
+// verifyIssuerAuthAndMSO performs the format-wide trust checks shared by
+// every verification entry point:
 //  1. Decode COSE_Sign1
 //  2. Extract x5chain from header 33
 //  3. Walk the cert chain: DS cert → IACA cert → trusted root
 //  4. Verify COSE_Sign1 signature using DS cert's public key
 //  5. Decode MSO from payload
-//  6. For each disclosed item: recompute digest and compare (constant-time)
+//  6. Check the MSO's own validityInfo window (validFrom/validUntil)
 //
-// This does NOT check deviceAuth — use VerifyWithDeviceAuth for the full
-// presentation flow. Kept separate so issuer-only verification (e.g. just
-// checking the MSO/digests without a live session) still works standalone.
-func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
+// It does NOT check per-namespace digests or deviceAuth — callers do that
+// themselves (Verify for a single known namespace,
+// VerifyAllDisclosedNamespaces for every namespace present). Returns a nil
+// *MSO alongside a result with Error set on any failure; result.DocType,
+// result.DeviceKey, and result.ValidityInfo are always populated on success.
+func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult) {
 	result := VerificationResult{
 		DocType:    mdoc.DocType,
 		Attributes: make(map[string]any),
@@ -88,7 +113,7 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 	var msg cose.Sign1Message
 	if err := cbor.Unmarshal(mdoc.IssuerSigned.IssuerAuth, &msg); err != nil {
 		result.Error = fmt.Sprintf("decode cose: %v", err)
-		return result
+		return nil, result
 	}
 
 	// Step 2: extract x5chain from unprotected header 33
@@ -97,7 +122,7 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 	rawVal, exists := msg.Headers.Unprotected[int64(33)]
 	if !exists {
 		result.Error = "no x5chain in issuerAuth header 33"
-		return result
+		return nil, result
 	}
 
 	chainRaw, ok := rawVal.([]any)
@@ -106,14 +131,14 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		single, ok2 := rawVal.([]byte)
 		if !ok2 {
 			result.Error = fmt.Sprintf("x5chain wrong type: %T", rawVal)
-			return result
+			return nil, result
 		}
 		chainRaw = []any{single}
 	}
 
 	if len(chainRaw) == 0 {
 		result.Error = "x5chain is empty"
-		return result
+		return nil, result
 	}
 
 	// parse all certs: certs[0] = DS cert (leaf), certs[1..] = intermediates (IACA cert)
@@ -122,12 +147,12 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		b, ok := raw.([]byte)
 		if !ok {
 			result.Error = fmt.Sprintf("x5chain[%d] wrong type: %T", i, raw)
-			return result
+			return nil, result
 		}
 		c, err := x509.ParseCertificate(b)
 		if err != nil {
 			result.Error = fmt.Sprintf("parse x5chain[%d]: %v", i, err)
-			return result
+			return nil, result
 		}
 		certs = append(certs, c)
 	}
@@ -151,7 +176,7 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 	})
 	if err != nil {
 		result.Error = fmt.Sprintf("chain verification failed: %v", err)
-		return result
+		return nil, result
 	}
 
 	// Step 4: verify COSE_Sign1 signature using DS cert's public key
@@ -160,11 +185,11 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 	coseverifier, err := cose.NewVerifier(cose.AlgorithmES256, dsCert.PublicKey)
 	if err != nil {
 		result.Error = fmt.Sprintf("create verifier: %v", err)
-		return result
+		return nil, result
 	}
 	if err := msg.Verify(nil, coseverifier); err != nil {
 		result.Error = fmt.Sprintf("MSO signature invalid: %v", err)
-		return result
+		return nil, result
 	}
 
 	// Step 5: decode MSO from payload. Payload is Tag24-wrapped (see
@@ -173,7 +198,7 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 	mso, err := tag24Unwrap[MSO](msg.Payload)
 	if err != nil {
 		result.Error = fmt.Sprintf("decode mso: %v", err)
-		return result
+		return nil, result
 	}
 
 	// Step 5b: check the MSO's own validityInfo window (validFrom/validUntil).
@@ -186,11 +211,75 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 	if now.Before(mso.ValidityInfo.ValidFrom) {
 		result.Error = fmt.Sprintf("credential not yet valid: validFrom=%s, now=%s",
 			mso.ValidityInfo.ValidFrom.Format(time.RFC3339), now.Format(time.RFC3339))
-		return result
+		return nil, result
 	}
 	if now.After(mso.ValidityInfo.ValidUntil) {
 		result.Error = fmt.Sprintf("credential expired: validUntil=%s, now=%s",
 			mso.ValidityInfo.ValidUntil.Format(time.RFC3339), now.Format(time.RFC3339))
+		return nil, result
+	}
+
+	result.ValidityInfo = mso.ValidityInfo
+
+	// Best-effort: reconstruct the device public key embedded in the MSO.
+	// Left nil on failure rather than failing verification outright — see
+	// VerificationResult.DeviceKey's doc comment.
+	if devicePub, err := ecdsaPublicKeyFromCOSE(mso.DeviceKeyInfo.DeviceKey); err == nil {
+		result.DeviceKey = devicePub
+	}
+
+	return &mso, result
+}
+
+// verifyNamespaceDigests recomputes SHA-256(Tag24(item)) for each disclosed
+// item in items and compares it against nsDigests[item.DigestID]
+// (constant-time), returning the decoded elementIdentifier -> elementValue
+// map on success. Shared by Verify (single known namespace) and
+// VerifyAllDisclosedNamespaces (every namespace present).
+func verifyNamespaceDigests(items []Tag24Item, nsDigests map[uint64][]byte) (map[string]any, error) {
+	attrs := make(map[string]any, len(items))
+	for _, tag24item := range items {
+		var rawTag cbor.RawTag
+		if err := cbor.Unmarshal(tag24item.EncodedItem, &rawTag); err != nil {
+			return nil, fmt.Errorf("unwrap tag24: %v", err)
+		}
+		var innerBytes []byte
+		if err := cbor.Unmarshal(rawTag.Content, &innerBytes); err != nil {
+			return nil, fmt.Errorf("unwrap inner: %v", err)
+		}
+		var item IssuerSignedItem
+		if err := cbor.Unmarshal(innerBytes, &item); err != nil {
+			return nil, fmt.Errorf("decode item: %v", err)
+		}
+
+		hash := sha256.Sum256(tag24item.EncodedItem)
+		expectedDigest, exists := nsDigests[item.DigestID]
+		if !exists {
+			return nil, fmt.Errorf("digestID %d not in MSO", item.DigestID)
+		}
+
+		// constant-time comparison — prevents timing side channel
+		// where early exit on first mismatch would leak digest bytes
+		if subtle.ConstantTimeCompare(hash[:], expectedDigest) != 1 {
+			return nil, fmt.Errorf("digest mismatch for %s", item.ElementIdentifier)
+		}
+
+		attrs[item.ElementIdentifier] = item.ElementValue
+	}
+	return attrs, nil
+}
+
+// Verify performs full issuerAuth verification for a single known
+// namespace: verifyIssuerAuthAndMSO's chain/signature/MSO/validity checks,
+// followed by recomputing and comparing each disclosed item's digest in
+// namespace.
+//
+// This does NOT check deviceAuth — use VerifyWithDeviceAuth for the full
+// presentation flow. Kept separate so issuer-only verification (e.g. just
+// checking the MSO/digests without a live session) still works standalone.
+func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
+	mso, result := v.verifyIssuerAuthAndMSO(mdoc)
+	if mso == nil {
 		return result
 	}
 
@@ -200,46 +289,51 @@ func (v *Verifier) Verify(mdoc *MDoc, namespace string) VerificationResult {
 		return result
 	}
 
-	// Step 6: verify each disclosed item's digest
-	// Recompute SHA-256(Tag24(item)) and compare against MSO.ValueDigests[digestID]
-	for _, tag24item := range mdoc.IssuerSigned.NameSpaces[namespace] {
-		var rawTag cbor.RawTag
-		if err := cbor.Unmarshal(tag24item.EncodedItem, &rawTag); err != nil {
-			result.Error = fmt.Sprintf("unwrap tag24: %v", err)
-			return result
-		}
-		var innerBytes []byte
-		if err := cbor.Unmarshal(rawTag.Content, &innerBytes); err != nil {
-			result.Error = fmt.Sprintf("unwrap inner: %v", err)
-			return result
-		}
-		var item IssuerSignedItem
-		if err := cbor.Unmarshal(innerBytes, &item); err != nil {
-			result.Error = fmt.Sprintf("decode item: %v", err)
-			return result
-		}
-
-		hash := sha256.Sum256(tag24item.EncodedItem)
-		expectedDigest, exists := nsDigests[item.DigestID]
-		if !exists {
-			result.Error = fmt.Sprintf("digestID %d not in MSO", item.DigestID)
-			return result
-		}
-
-		// constant-time comparison — prevents timing side channel
-		// where early exit on first mismatch would leak digest bytes
-		if subtle.ConstantTimeCompare(hash[:], expectedDigest) != 1 {
-			result.Error = fmt.Sprintf("digest mismatch for %s", item.ElementIdentifier)
-			return result
-		}
-
-		result.Attributes[item.ElementIdentifier] = item.ElementValue
+	attrs, err := verifyNamespaceDigests(mdoc.IssuerSigned.NameSpaces[namespace], nsDigests)
+	if err != nil {
+		result.Error = err.Error()
+		return result
 	}
 
-	// stash decoded MSO on the result path isn't exposed publicly, so
-	// VerifyWithDeviceAuth re-derives what it needs (deviceKey) itself.
+	result.Attributes = attrs
 	result.Valid = true
 	return result
+}
+
+// VerifyAllDisclosedNamespaces is Verify's issuance-time counterpart: rather
+// than checking a single caller-supplied namespace, it verifies digests for
+// every namespace actually present in mdoc.IssuerSigned.NameSpaces. Needed
+// because at issuance the caller doesn't know the docType's namespace set
+// ahead of a single Verify(mdoc, namespace) call, unlike presentation (which
+// already knows the namespace from the DCQL claim path being disclosed).
+// Returns the decoded namespace -> elementIdentifier -> value map alongside
+// the same VerificationResult shape Verify returns (Attributes is left at
+// its zero value here — namespace-scoped attributes are the return map, not
+// the result, since a single flat map would lose the namespace boundary).
+func (v *Verifier) VerifyAllDisclosedNamespaces(mdoc *MDoc) (map[string]map[string]any, VerificationResult) {
+	mso, result := v.verifyIssuerAuthAndMSO(mdoc)
+	if mso == nil {
+		return nil, result
+	}
+
+	resolved := make(map[string]map[string]any, len(mdoc.IssuerSigned.NameSpaces))
+	for namespace, items := range mdoc.IssuerSigned.NameSpaces {
+		nsDigests, ok := mso.ValueDigests[namespace]
+		if !ok {
+			result.Error = fmt.Sprintf("namespace %s not in MSO", namespace)
+			return nil, result
+		}
+		attrs, err := verifyNamespaceDigests(items, nsDigests)
+		if err != nil {
+			result.Error = err.Error()
+			return nil, result
+		}
+		resolved[namespace] = attrs
+	}
+
+	result.Attributes = nil
+	result.Valid = true
+	return resolved, result
 }
 
 // VerifyWithDeviceAuth performs the same checks as Verify, and additionally

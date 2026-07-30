@@ -17,7 +17,6 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	mdocvp "github.com/privacybydesign/irmago/eudi/credentials/mdoc/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -154,7 +153,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 		}
 		holder := stdmdoc.NewHolderFromPrivateKey(privKey)
 
-		transcript, err := mdocvp.NewOpenID4VPSessionTranscript(clientId, nonce, sel.ResponseUri)
+		transcript, err := newOpenID4VPSessionTranscript(clientId, nonce, sel.ResponseUri)
 		if err != nil {
 			return nil, fmt.Errorf("build session transcript: %w", err)
 		}

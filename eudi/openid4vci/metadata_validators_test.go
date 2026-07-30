@@ -292,7 +292,7 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 	}
 
 	unsupportedFeatureCredentialConfig := metadata.CredentialConfiguration{
-		Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+		Format: metadata.CredentialFormatIdentifier_W3CVCLD_ProofSuite,
 	}
 
 	tests := []struct {
@@ -335,7 +335,7 @@ func TestCredentialIssuerMetadata_ValidateAgainstCredentialOffer(t *testing.T) {
 				CredentialIssuer:           "https://issuer.example.com",
 				CredentialConfigurationIds: []string{"test"},
 			},
-			wantErr: `credential configuration "test" is not supported: unsupported credential format "mso_mdoc"`,
+			wantErr: `credential configuration "test" is not supported: unsupported credential format "ldp_vc"`,
 		},
 	}
 
@@ -446,6 +446,14 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			name: "credential signing algorithms can be nil",
 			config: metadata.CredentialConfiguration{
 				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
+				Scope:  &scope,
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc is a supported format",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_MsoMdoc,
 				Scope:  &scope,
 			},
 			wantErr: false,

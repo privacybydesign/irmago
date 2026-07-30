@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -356,7 +357,7 @@ func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		true,                              // requireCryptographicKeyBinding
@@ -373,7 +374,7 @@ func TestVerifyAndStoreIssuedCredentials_KeyBindingMismatch_TooManyKeys(t *testi
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		true,
@@ -393,7 +394,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_CallsStoreBatch(t *testing
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -412,7 +413,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_CallsStoreBatch(t *testing
 // 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 // 	err := svc.VerifyAndStoreIssuedCredentials(
-// 		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+// 		wrapSdJwtVcs(vc),
 // 		"config-id",
 // 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 // 		true,
@@ -432,7 +433,7 @@ func TestVerifyAndStoreIssuedCredentials_NoKeyBinding_NilHolderBindingKeyID(t *t
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -452,7 +453,7 @@ func TestVerifyAndStoreIssuedCredentials_BatchSize(t *testing.T) {
 	vc2 := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc1, vc2},
+		wrapSdJwtVcs(vc1, vc2),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -475,7 +476,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsIssuerMetadata(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", issuer, time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -496,7 +497,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsVCT(t *testing.T) {
 	vc := newVerifiedVc(vct, "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -514,7 +515,7 @@ func TestVerifyAndStoreIssuedCredentials_SetsFormat(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -533,7 +534,7 @@ func TestVerifyAndStoreIssuedCredentials_ExpirySet(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), expiry, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -552,7 +553,7 @@ func TestVerifyAndStoreIssuedCredentials_ExpiryZero_NilExpiresAt(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -572,7 +573,7 @@ func TestVerifyAndStoreIssuedCredentials_NotBeforeSet(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, nbf)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -591,7 +592,7 @@ func TestVerifyAndStoreIssuedCredentials_NotBeforeZero_NilNotBefore(t *testing.T
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -611,7 +612,7 @@ func TestVerifyAndStoreIssuedCredentials_StoreError_Propagated(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -628,7 +629,7 @@ func TestVerifyAndStoreIssuedCredentials_FullMetadata_ClaimsConverted(t *testing
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"full-config",
 		newFullIssuerMetadata("full-config"),
 		false,
@@ -654,7 +655,7 @@ func TestVerifyAndStoreIssuedCredentials_NilCredentialMetadata_StoredWithEmptyCl
 	m := newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		m,
 		false,
@@ -676,11 +677,11 @@ func TestVerifyAndStoreIssuedCredentials_HashIsDeterministic(t *testing.T) {
 	m := newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc)
 
 	_ = svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id", m, false, nil,
 	)
 	_ = svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id", m, false, nil,
 	)
 
@@ -919,7 +920,7 @@ func TestVerifyAndStore_LinksHolderBindingKeyByThumbprint(t *testing.T) {
 	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Jwk: &pubKey})
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		true,
@@ -943,7 +944,7 @@ func TestVerifyAndStore_LinksHolderBindingKeyByDidUrl(t *testing.T) {
 	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Kid: &didUrl})
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		true,
@@ -968,7 +969,7 @@ func TestVerifyAndStore_UnknownCnfKey_ReturnsError(t *testing.T) {
 	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Jwk: &unknownPubKey})
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		true,
@@ -991,7 +992,7 @@ func TestVerifyAndStore_MissingCnfClaim_ReturnsError(t *testing.T) {
 	thumbprint := "some-thumbprint"
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		true,
@@ -1012,7 +1013,7 @@ func TestVerifyAndStore_NoKeyBinding_DoesNotLink(t *testing.T) {
 	vc := newVerifiedVc("https://vct.example.com/Cred", "https://issuer.example.com", time.Now().Unix(), 0, 0)
 
 	err := svc.VerifyAndStoreIssuedCredentials(
-		[]*sdjwtvc.VerifiedSdJwtVc{vc},
+		wrapSdJwtVcs(vc),
 		"config-id",
 		newMinimalIssuerMetadata("config-id", metadata.CredentialFormatIdentifier_SdJwtVc),
 		false,
@@ -1126,6 +1127,37 @@ func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwt
 			"sub": "user123",
 		},
 	}
+}
+
+// wrapSdJwtVc mirrors sdJwtVcCredentialFormatParser.ParseAndVerify's
+// post-processing, letting tests build a *ParsedCredential straight from an
+// already-constructed *sdjwtvc.VerifiedSdJwtVc fixture without going
+// through a real signed JWT.
+func wrapSdJwtVc(vc *sdjwtvc.VerifiedSdJwtVc) *ParsedCredential {
+	resolvedClaims, err := json.Marshal(vc.ProcessedSdJwtPayload)
+	if err != nil {
+		panic(fmt.Sprintf("wrapSdJwtVc: failed to marshal test fixture payload: %v", err))
+	}
+	jwtPayload := vc.IssuerSignedJwtPayload
+	return &ParsedCredential{
+		Format:                   models.CredentialFormatSdJwtVc,
+		VerifiableCredentialType: jwtPayload.VerifiableCredentialType,
+		IssuerURL:                jwtPayload.Issuer,
+		ResolvedClaims:           resolvedClaims,
+		RawCredentialBytes:       []byte(vc.GetRawSdJwtVc()),
+		IssuedAt:                 jwtPayload.IssuedAt,
+		ExpiresAt:                jwtPayload.Expiry,
+		NotBefore:                jwtPayload.NotBefore,
+		SdJwtVc:                  vc,
+	}
+}
+
+func wrapSdJwtVcs(vcs ...*sdjwtvc.VerifiedSdJwtVc) []*ParsedCredential {
+	result := make([]*ParsedCredential, len(vcs))
+	for i, vc := range vcs {
+		result[i] = wrapSdJwtVc(vc)
+	}
+	return result
 }
 
 func newMinimalIssuerMetadata(configID string, format metadata.CredentialFormatIdentifier) metadata.CredentialIssuerMetadata {
