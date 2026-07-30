@@ -24,7 +24,7 @@ import (
 type VerifiedSdJwtVc struct {
 	IssuerSignedJwtPayload IssuerSignedJwtPayload
 	Disclosures            []sdjwt.DisclosureContent
-	ProcessedSdJwtPayload  *sdjwt.ProcessedPayload
+	ProcessedSdJwtPayload  sdjwt.ProcessedPayload
 
 	KeyBindingJwt *sdjwt.KeyBindingJwtPayload
 
@@ -200,7 +200,7 @@ func (v *sdJwtVcProcessor) ProcessAndVerifySdJwtVc(
 		Disclosures:            decodedDisclosures,
 		KeyBindingJwt:          kbJwtPayload,
 		rawSdJwtVc:             rawSdJwtVc,
-		ProcessedSdJwtPayload:  processedSdJwtPayload,
+		ProcessedSdJwtPayload:  *processedSdJwtPayload,
 	}, nil
 }
 

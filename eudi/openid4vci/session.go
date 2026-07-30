@@ -341,7 +341,7 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 	}
 	for _, fc := range fetched {
 		for _, vc := range fc.verifiedSdJwtVcs {
-			integrity, present, err := sdjwtvc.LookupVctIntegrityClaim(*vc.ProcessedSdJwtPayload)
+			integrity, present, err := sdjwtvc.LookupVctIntegrityClaim(vc.ProcessedSdJwtPayload)
 			if err != nil {
 				return fmt.Errorf("vct#integrity on credential %q: %w", fc.credentialConfigurationId, err)
 			}
@@ -393,7 +393,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		// Use the first credential in the batch as source of attribute values.
 		var payload sdjwt.ProcessedPayload
 		if len(fc.verifiedSdJwtVcs) > 0 {
-			payload = *fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
+			payload = fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
 		}
 
 		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
