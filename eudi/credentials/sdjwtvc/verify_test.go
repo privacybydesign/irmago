@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -538,17 +539,17 @@ func Test_HolderVerificationProcessor_ProcessedSdJwtPayload_ContainsDisclosedCla
 	payload := result.ProcessedSdJwtPayload
 
 	// Standard JWT claims must be present
-	require.Equal(t, "https://openid4vc.staging.yivi.app", payload["iss"], "iss claim should be present in processed payload")
-	require.Equal(t, "test.test.email", payload["vct"], "vct claim should be present in processed payload")
+	require.Equal(t, "https://openid4vc.staging.yivi.app", payload[jwt.IssuerKey], "iss claim should be present in processed payload")
+	require.Equal(t, "test.test.email", payload[VerifiableCredentialTypeKey], "vct claim should be present in processed payload")
 
 	// Selectively-disclosed claims must be embedded directly in the processed payload
 	require.Equal(t, "holder@example.com", payload["email"], "email disclosure should be embedded in processed payload")
 	require.Equal(t, "example.com", payload["domain"], "domain disclosure should be embedded in processed payload")
 
 	// _sd and _sd_alg must be stripped from the processed payload
-	_, hasSd := payload["_sd"]
+	_, hasSd := payload[sdjwt.SdKey]
 	require.False(t, hasSd, "_sd field should be removed from processed payload")
-	_, hasSdAlg := payload["_sd_alg"]
+	_, hasSdAlg := payload[sdjwt.SdAlgKey]
 	require.False(t, hasSdAlg, "_sd_alg field should be removed from processed payload")
 }
 
@@ -716,10 +717,10 @@ func runCertChainTestCase(t *testing.T, config x509TestConfig) {
 
 	builtSdJwtVc, err := NewSdJwtVcBuilder().
 		WithPayload(
-			sdjwt.Claim(sdjwt.Key_ExpiryTime, time.Now().Unix()),
-			sdjwt.Claim(sdjwt.Key_Issuer, config.IssUrl),
-			sdjwt.Claim(Key_VerifiableCredentialType, "test.test.email"),
-			sdjwt.Claim(sdjwt.Key_SdAlg, iana.SHA256),
+			sdjwt.Claim(jwt.IssuerKey, config.IssUrl),
+			sdjwt.Claim(jwt.ExpirationKey, time.Now().Unix()),
+			sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+			sdjwt.Claim(VerifiableCredentialTypeKey, "test.test.email"),
 			sdjwt.SdClaim("email", "test@gmail.com"),
 		).
 		WithIssuerCertificateChain(chain).Build(creator)

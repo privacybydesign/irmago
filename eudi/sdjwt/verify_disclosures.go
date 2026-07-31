@@ -103,7 +103,7 @@ func VerifyAndProcessDisclosures(sdAlg iana.HashingAlgorithm,
 	if issuerSignedJwtClaims == nil {
 		issuerSignedJwtClaims = &map[string]any{}
 	}
-	delete(*issuerSignedJwtClaims, Key_SdAlg)
+	delete(*issuerSignedJwtClaims, SdAlgKey)
 
 	return ProcessedPayload(*issuerSignedJwtClaims), decodedDisclosures, nil
 }
@@ -139,7 +139,7 @@ func processEmbeddedDisclosures(claims *map[string]any, decodedDisclosures map[H
 				// Check if the value is a disclosure (format should be {"...":"<digest>"}) or not, and if so,
 				// verify the array element disclosure exists
 				if valMap, ok := arrayElemValue.(map[string]any); ok {
-					if arrayElemDisclosureDigestVal, ok := valMap[Key_Ellipsis]; ok {
+					if arrayElemDisclosureDigestVal, ok := valMap[EllipsisKey]; ok {
 						// It's an embedded disclosure digest...
 						arrayElemDisclosureDigestStr, ok := arrayElemDisclosureDigestVal.(string)
 						if !ok {
@@ -206,7 +206,7 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 	}
 
 	// Check if there's an _sd field at this level
-	sdValue, ok := (*claims)[Key_Sd]
+	sdValue, ok := (*claims)[SdKey]
 	if !ok {
 		return nil
 	}
@@ -214,7 +214,7 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 	// Found disclosure digests at this level.. replace with disclosure values
 	sdDigests, err := ParseSdField(sdValue)
 	if err != nil {
-		return fmt.Errorf("failed to parse digests for claim %q: %v", Key_Sd, err)
+		return fmt.Errorf("failed to parse digests for claim %q: %v", SdKey, err)
 	}
 
 	for _, sdDigest := range sdDigests {
@@ -226,10 +226,10 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 			if embeddedDisclosure.IsArrayElement() {
 				return fmt.Errorf("embedded disclosure %s appears to be an array element, which is not expected here", embeddedDisclosure.Key)
 			}
-			if embeddedDisclosure.Key == Key_Sd {
+			if embeddedDisclosure.Key == SdKey {
 				return fmt.Errorf("embedded disclosure %s has an `_sd` field, which is not allowed", embeddedDisclosure.Key)
 			}
-			if embeddedDisclosure.Key == Key_Ellipsis {
+			if embeddedDisclosure.Key == EllipsisKey {
 				return fmt.Errorf("embedded disclosure %s has an `...` field, which is not allowed", embeddedDisclosure.Key)
 			}
 			if _, ok := (*claims)[embeddedDisclosure.Key]; ok {
@@ -242,7 +242,7 @@ func processSdClaim(claims *map[string]any, decodedDisclosures map[HashedDisclos
 	}
 
 	// Delete the _sd field after processing
-	delete(*claims, Key_Sd)
+	delete(*claims, SdKey)
 
 	return nil
 }

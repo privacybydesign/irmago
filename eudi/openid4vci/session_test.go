@@ -598,7 +598,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	}
 
 	// Standard claims are filtered out.
-	for _, key := range []string{"iss", "iat", "sub"} {
+	for _, key := range []string{jwt.IssuerKey, jwt.IssuedAtKey, jwt.SubjectKey} {
 		_, present := byPath[key]
 		require.False(t, present, "standard claim %q should not appear", key)
 	}

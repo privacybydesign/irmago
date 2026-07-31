@@ -3,6 +3,7 @@ package sdjwtvc
 import (
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/stretchr/testify/require"
 )
@@ -59,11 +60,11 @@ func TestIssuerSignedJwtPayloadToJson(t *testing.T) {
 
 	values := jsonToMap(t, json)
 
-	require.Equal(t, values[sdjwt.Key_Subject], "subject")
-	require.Equal(t, values[Key_VerifiableCredentialType], "pbdf.sidn-pbdf.email")
-	require.Equal(t, values[sdjwt.Key_Issuer], "https://example.com")
+	require.Equal(t, values[VerifiableCredentialTypeKey], "pbdf.sidn-pbdf.email")
+	require.Equal(t, values[jwt.IssuerKey], "https://example.com")
+	require.Equal(t, values[jwt.SubjectKey], "subject")
 
-	require.NotContains(t, values, sdjwt.Key_Sd)
-	require.NotContains(t, values, sdjwt.Key_SdAlg)
-	require.NotContains(t, values, sdjwt.Key_Confirmationkey)
+	require.NotContains(t, values, sdjwt.SdKey)
+	require.NotContains(t, values, sdjwt.SdAlgKey)
+	require.NotContains(t, values, sdjwt.ConfirmationKey)
 }

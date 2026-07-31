@@ -169,7 +169,7 @@ func (e *ClaimElement) encodeObject(mode encodeMode) (SerializedClaim, error) {
 	}
 
 	if len(sd) > 0 {
-		result["_sd"] = sd
+		result[SdKey] = sd
 	}
 
 	if e.SelectivelyDisclosable {
@@ -316,7 +316,7 @@ func HolderKeyClaim(key jwk.Key) (*ClaimElement, error) {
 	if err != nil {
 		return nil, fmt.Errorf("trying to unmarshal %v, but got error: %w", j, err)
 	}
-	return JsonToClaimTree(Key_Confirmationkey, y)
+	return JsonToClaimTree(ConfirmationKey, y)
 }
 
 func JsonToClaimTree(key string, json map[string]any) (*ClaimElement, error) {
@@ -364,10 +364,10 @@ func (b *Builder) WithTyp(typ string) *Builder {
 func (b *Builder) Build(jwtCreator JwtCreator) (SdJwt, error) {
 	var sdAlg iana.HashingAlgorithm
 	for _, c := range b.claims {
-		if c.Key == Key_SdAlg {
+		if c.Key == SdAlgKey {
 			alg, ok := c.Value.(iana.HashingAlgorithm)
 			if !ok {
-				return "", fmt.Errorf("provided '%v' claim not a string: %v", Key_SdAlg, c.Value)
+				return "", fmt.Errorf("provided '%v' claim not a string: %v", SdAlgKey, c.Value)
 			}
 			sdAlg = alg
 		}
@@ -384,7 +384,7 @@ func (b *Builder) Build(jwtCreator JwtCreator) (SdJwt, error) {
 		sdAlg = iana.SHA256
 	}
 	if sdAlg != iana.SHA256 {
-		return "", fmt.Errorf("'%s' value not supported: %v", Key_SdAlg, sdAlg)
+		return "", fmt.Errorf("'%s' value not supported: %v", SdAlgKey, sdAlg)
 	}
 
 	claims, err := rootNode.encode(encodeFullClaim)

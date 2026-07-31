@@ -3,6 +3,7 @@ package sdjwt
 import (
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
 )
@@ -11,9 +12,9 @@ func buildTestSdJwtWithNestedClaims(t *testing.T) SdJwt {
 	t.Helper()
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
+			Claim(SdAlgKey, iana.SHA256),
 			SdClaim("given_name", "Alice"),
 			SdClaim("family_name", "Smith"),
 			SdObject("address",
@@ -151,9 +152,9 @@ func buildMixedSdJwt(t *testing.T) SdJwt {
 	t.Helper()
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
+			Claim(SdAlgKey, iana.SHA256),
 			SdClaim("email", "alice@example.com"),   // SD
 			Claim("nickname", "Ali"),                // plaintext (not SD)
 			SdClaim("phone_number", "+31612345678"), // SD
@@ -169,9 +170,9 @@ func buildMixedNestedSdJwt(t *testing.T) SdJwt {
 	t.Helper()
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
+			Claim(SdAlgKey, iana.SHA256),
 			SdClaim("given_name", "Bob"),
 			// Non-SD object with SD sub-claims: address is always visible,
 			// but its children are selectively disclosable.
@@ -314,9 +315,9 @@ func buildSdJwtWithArrays(t *testing.T) SdJwt {
 	t.Helper()
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
+			Claim(SdAlgKey, iana.SHA256),
 			SdClaim("name", "Charlie"),
 			// Non-SD array containing a mix of SD and non-SD items.
 			Array("tags",
@@ -345,9 +346,9 @@ func buildSdJwtWithNestedArrayInObject(t *testing.T) SdJwt {
 	t.Helper()
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
+			Claim(SdAlgKey, iana.SHA256),
 			SdObject("profile",
 				SdClaim("username", "charlie"),
 				SdArray("permissions",
@@ -413,9 +414,9 @@ func TestCreatePresentation_SdArrayElement_MultipleIndices(t *testing.T) {
 	// Build an array with multiple SD items.
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
+			Claim(SdAlgKey, iana.SHA256),
 			Array("items",
 				SdItem("first"),
 				SdItem("second"),
@@ -455,9 +456,9 @@ func buildComplexNestedSdJwt(t *testing.T) SdJwt {
 	t.Helper()
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
+			Claim(SdAlgKey, iana.SHA256),
 			SdClaim("org_name", "ACME Corp"),
 			SdObject("projects",
 				SdClaim("project_name", "Phoenix"),
@@ -614,9 +615,9 @@ func buildDeeplyNestedSdJwt(t *testing.T) SdJwt {
 	t.Helper()
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_SdAlg, iana.SHA256),
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
+			Claim(SdAlgKey, iana.SHA256),
 			SdObject("university",
 				SdClaim("name", "TU Delft"),
 				Array("faculties",
@@ -804,13 +805,13 @@ func TestValidateDisclosureDependencies_MissingParent(t *testing.T) {
 	childHash := "child-hash-456"
 
 	payload := map[string]any{
-		Key_Sd: []any{parentHash},
+		SdKey: []any{parentHash},
 	}
 
 	byHash := map[string]indexedDisclosure{
 		parentHash: {
 			decoded: DisclosureContent{Key: "parent", Value: map[string]any{
-				Key_Sd: []any{childHash},
+				SdKey: []any{childHash},
 			}},
 		},
 		childHash: {
@@ -921,8 +922,8 @@ func buildTestSdJwtWithoutSdAlg(t *testing.T) SdJwt {
 	// the holder MUST default to sha-256 when _sd_alg is absent.
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_IssuedAt, 1700000000),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(jwt.IssuedAtKey, 1700000000),
 			SdClaim("given_name", "Alice"),
 			SdClaim("email", "alice@example.com"),
 		).

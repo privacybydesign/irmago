@@ -217,7 +217,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	}
 
 	var vct string
-	err = token.Get(Key_VerifiableCredentialType, &vct)
+	err = token.Get(VerifiableCredentialTypeKey, &vct)
 	if err != nil {
 		return nil, nil, nil, nil, errors.New("missing vct field")
 	}
@@ -235,8 +235,8 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 
 	// Check if the hashing algorithm was specified and supported, or use SHA-256 as default if the claim is not present
 	sdAlg := iana.SHA256
-	if token.Has(sdjwt.Key_SdAlg) {
-		if h := getOptional[string](token, sdjwt.Key_SdAlg); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
+	if token.Has(sdjwt.SdAlgKey) {
+		if h := getOptional[string](token, sdjwt.SdAlgKey); iana.IsSupportedHashingAlgorithm(iana.HashingAlgorithm(h)) {
 			sdAlg = iana.HashingAlgorithm(h)
 		} else {
 			return nil, nil, nil, nil, fmt.Errorf("unsupported _sd_alg: %s", h)
@@ -246,7 +246,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	var sdRaw, cnfRaw any
 
 	var sd []sdjwt.HashedDisclosure
-	err = token.Get(sdjwt.Key_Sd, &sdRaw)
+	err = token.Get(sdjwt.SdKey, &sdRaw)
 	if err == nil {
 		sd, err = sdjwt.ParseSdField(sdRaw)
 		if err != nil {
@@ -255,7 +255,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 	}
 
 	var cnf *sdjwt.CnfField
-	err = token.Get(sdjwt.Key_Confirmationkey, &cnfRaw)
+	err = token.Get(sdjwt.ConfirmationKey, &cnfRaw)
 	if err == nil {
 		cnf, err = sdjwt.ParseConfirmField(cnfRaw)
 		if err != nil {
@@ -265,7 +265,7 @@ func (v *sdJwtVcProcessor) parseAndVerifyIssuerSignedJwt(signedJwt sdjwt.IssuerS
 
 	// Optional Token Status List reference (draft-ietf-oauth-status-list-15 §5.1).
 	var status *statuslist.StatusClaim
-	if token.Has(Key_Status) {
+	if token.Has(StatusKey) {
 		status, err = parseStatusClaim(token)
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("failed to parse status claim: %v", err)
@@ -358,7 +358,7 @@ func (v *sdJwtVcProcessor) verifyTimeFields(issuerSignedJwtPayload *IssuerSigned
 // sibling members defined by future specs are silently ignored.
 func parseStatusClaim(token jwt.Token) (*statuslist.StatusClaim, error) {
 	var raw map[string]any
-	if err := token.Get(Key_Status, &raw); err != nil {
+	if err := token.Get(StatusKey, &raw); err != nil {
 		return nil, fmt.Errorf("status claim is not an object: %v", err)
 	}
 	slRaw, ok := raw["status_list"]

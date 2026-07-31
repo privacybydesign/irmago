@@ -878,11 +878,11 @@ func (session *sessionData) generateSdJwts(
 				return nil, err
 			}
 			claims := []*sdjwt.ClaimElement{
-				sdjwt.Claim(sdjwt.Key_SdAlg, iana.SHA256),
-				sdjwt.Claim(sdjwt.Key_Issuer, sdJwtIssuer.IssuerUrl),
-				sdjwt.Claim(sdjwtvc.Key_VerifiableCredentialType, credentialType),
-				sdjwt.Claim(sdjwt.Key_ExpiryTime, validUntil),
-				sdjwt.Claim(sdjwt.Key_IssuedAt, issuanceTime),
+				sdjwt.Claim("iss", sdJwtIssuer.IssuerUrl),
+				sdjwt.Claim("exp", validUntil),
+				sdjwt.Claim("iat", issuanceTime),
+				sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+				sdjwt.Claim(sdjwtvc.VerifiableCredentialTypeKey, credentialType),
 				holderKeyClaim,
 			}
 

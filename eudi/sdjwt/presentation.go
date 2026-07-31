@@ -75,7 +75,7 @@ func decodeAndIndex(fullSdJwt SdJwt) (IssuerSignedJwt, map[string]any, map[strin
 	}
 
 	// SD-JWT spec Section 4.1.1: default to sha-256 if _sd_alg is absent.
-	hashAlg, ok := payload[Key_SdAlg].(string)
+	hashAlg, ok := payload[SdAlgKey].(string)
 	if !ok {
 		hashAlg = string(iana.SHA256)
 	}
@@ -132,7 +132,7 @@ func collectSelectedDisclosures(
 					break
 				}
 
-				sdArray, _ := obj[Key_Sd].([]any)
+				sdArray, _ := obj[SdKey].([]any)
 				if sdArray != nil {
 					found := false
 					for _, h := range sdArray {
@@ -188,7 +188,7 @@ func applyDisclosures(value any, selected map[string]struct{}, byHash map[string
 		out := make(map[string]any, len(v))
 		for k, child := range v {
 			switch k {
-			case Key_Sd:
+			case SdKey:
 				hashes, ok := child.([]any)
 				if !ok {
 					continue
@@ -207,7 +207,7 @@ func applyDisclosures(value any, selected map[string]struct{}, byHash map[string
 					}
 					out[entry.decoded.Key] = applyDisclosures(entry.decoded.Value, selected, byHash)
 				}
-			case Key_SdAlg:
+			case SdAlgKey:
 				// metadata only, never user data
 			default:
 				out[k] = applyDisclosures(child, selected, byHash)
@@ -268,7 +268,7 @@ func collectReachableHashes(value any, selectedSet map[string]struct{}, byHash m
 	switch v := value.(type) {
 	case map[string]any:
 		// Check _sd array for object-level SD claims.
-		if sdArray, ok := v[Key_Sd].([]any); ok {
+		if sdArray, ok := v[SdKey].([]any); ok {
 			for _, h := range sdArray {
 				hashStr, ok := h.(string)
 				if !ok {
@@ -285,7 +285,7 @@ func collectReachableHashes(value any, selectedSet map[string]struct{}, byHash m
 		}
 		// Recurse into all object values (non-_sd keys may contain nested structures).
 		for key, child := range v {
-			if key != Key_Sd {
+			if key != SdKey {
 				collectReachableHashes(child, selectedSet, byHash, reachable)
 			}
 		}

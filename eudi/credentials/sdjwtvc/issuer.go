@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
@@ -34,9 +35,9 @@ func (b *SdJwtVcBuilder) Build(jwtCreator sdjwt.JwtCreator) (SdJwtVc, error) {
 	vctClaimFound := false
 	for _, c := range b.claims {
 		switch c.Key {
-		case Key_VerifiableCredentialType:
+		case VerifiableCredentialTypeKey:
 			vctClaimFound = true
-		case sdjwt.Key_Issuer:
+		case jwt.IssuerKey:
 			url, ok := c.Value.(string)
 			if !ok {
 				return "", fmt.Errorf("issuer url (iss) is provided but is not a string")

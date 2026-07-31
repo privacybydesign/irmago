@@ -3,6 +3,7 @@ package sdjwtvc
 import (
 	"fmt"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 )
 
@@ -17,10 +18,10 @@ type SdJwtVc sdjwt.SdJwt
 type SdJwtVcKb sdjwt.SdJwtKb
 
 const (
-	Key_VerifiableCredentialType          string = "vct"
-	Key_VerifiableCredentialTypeIntegrity string = "vct#integrity"
-	Key_Status                            string = "status"
-	Key_Federation                        string = "fed"
+	VerifiableCredentialTypeKey          string = "vct"
+	VerifiableCredentialTypeIntegrityKey string = "vct#integrity"
+	StatusKey                            string = "status"
+	FederationKey                        string = "fed"
 
 	SdJwtVcTyp        string = "dc+sd-jwt"
 	SdJwtVcTyp_Legacy string = "vc+sd-jwt"
@@ -33,16 +34,16 @@ const (
 // issuer bug or a downgrade attempt that shouldn't silently bypass integrity
 // verification.
 func LookupVctIntegrityClaim(payload sdjwt.ProcessedPayload) (string, bool, error) {
-	raw, ok := payload[Key_VerifiableCredentialTypeIntegrity]
+	raw, ok := payload[VerifiableCredentialTypeIntegrityKey]
 	if !ok {
 		return "", false, nil
 	}
 	str, ok := raw.(string)
 	if !ok {
-		return "", false, fmt.Errorf("claim %q has non-string value", Key_VerifiableCredentialTypeIntegrity)
+		return "", false, fmt.Errorf("claim %q has non-string value", VerifiableCredentialTypeIntegrityKey)
 	}
 	if str == "" {
-		return "", false, fmt.Errorf("claim %q is an empty string", Key_VerifiableCredentialTypeIntegrity)
+		return "", false, fmt.Errorf("claim %q is an empty string", VerifiableCredentialTypeIntegrityKey)
 	}
 	return str, true, nil
 }
@@ -50,15 +51,15 @@ func LookupVctIntegrityClaim(payload sdjwt.ProcessedPayload) (string, bool, erro
 // StandardClaims contains JWT-registered and SD-JWT-specific claims that are not user data.
 // Use this to distinguish issuer/protocol metadata from actual credential attributes.
 var StandardClaims = map[string]struct{}{
-	sdjwt.Key_Issuer:             {},
-	sdjwt.Key_IssuedAt:           {},
-	sdjwt.Key_ExpiryTime:         {},
-	sdjwt.Key_NotBefore:          {},
-	sdjwt.Key_Subject:            {},
-	Key_VerifiableCredentialType: {},
-	sdjwt.Key_Confirmationkey:    {},
-	Key_Status:                   {},
-	sdjwt.Key_Sd:                 {},
-	sdjwt.Key_SdAlg:              {},
-	Key_Federation:               {},
+	jwt.IssuerKey:               {},
+	jwt.SubjectKey:              {},
+	jwt.IssuedAtKey:             {},
+	jwt.NotBeforeKey:            {},
+	jwt.ExpirationKey:           {},
+	sdjwt.ConfirmationKey:       {},
+	sdjwt.SdKey:                 {},
+	sdjwt.SdAlgKey:              {},
+	FederationKey:               {},
+	VerifiableCredentialTypeKey: {},
+	StatusKey:                   {},
 }

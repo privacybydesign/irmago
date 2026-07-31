@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 	"github.com/stretchr/testify/require"
 )
@@ -24,8 +25,8 @@ func TestDisclosuresSaltBasicRequirements(t *testing.T) {
 func TestSdJwtWithSingleDisclosureAndWithoutKbJwt(t *testing.T) {
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_SdAlg, iana.SHA256),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(SdAlgKey, iana.SHA256),
 			SdClaim("family", "Yivi"),
 		).
 		Build(newTestJwtCreator(t))
@@ -49,8 +50,8 @@ func TestSdJwtWithDisclosuresAndKbJwt(t *testing.T) {
 	sdJwt, err := NewBuilder().
 		WithPayload(
 			holderKeyClaim,
-			Claim(Key_Issuer, "https://example.com"),
-			Claim(Key_SdAlg, iana.SHA256),
+			Claim(jwt.IssuerKey, "https://example.com"),
+			Claim(SdAlgKey, iana.SHA256),
 			SdClaim("family_name", "Yivi"),
 			SdClaim("location", "Utrecht"),
 		).

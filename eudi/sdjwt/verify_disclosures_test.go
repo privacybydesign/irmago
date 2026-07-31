@@ -37,7 +37,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_EmptySdFie
 	// Arrange
 	encodedDisclosures := []EncodedDisclosure{}
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{},
+		SdKey: []any{},
 	}
 
 	// Act
@@ -51,7 +51,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_SdFieldIsN
 	// Arrange
 	encodedDisclosures := []EncodedDisclosure{}
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": 42,
+		SdKey: 42,
 	}
 
 	// Act
@@ -65,7 +65,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_NonStringS
 	// Arrange
 	encodedDisclosures := []EncodedDisclosure{}
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{42},
+		SdKey: []any{42},
 	}
 
 	// Act
@@ -83,7 +83,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_Disclosure
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			"uaqRlJ33nALYusFITW0nuk67ZynCsLdwTI4EymZB5Rw",
 		},
 	}
@@ -103,7 +103,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_Disclosure
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			"YRYvIY_GmMyi58Byf6JCg3CZvC7D6MGmKOaEx2plM1k",
 		},
 	}
@@ -123,7 +123,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_AlreadyCon
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			"c3DYrtRZ3zLEKH2fcTrkRymiT4T5ZkwQuFfj3TlnRQQ",
 		},
 		"name": "Bravo",
@@ -146,7 +146,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_Disclosure
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
 		},
 	}
@@ -166,7 +166,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DigigestIs
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
 			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
 		},
@@ -189,7 +189,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DigigestIs
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			// Hash for array (NOT the array element)
 			"VSrHGnWHF4kq8bqP8PXoWCKa-hMkyfiJP8yUiACwNcM",
 		},
@@ -214,7 +214,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_DigigestIs
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			// Hash for arrays (NOT the array element)
 			"3KpnrnSJV9ING3MqFexvxLLkAEQDs4suq3MgG0RnE54",
 			"qt0kqMISbwENMMG5np5ABItPxlRMr4Wo3GhaIFdgE8A",
@@ -267,7 +267,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsNo
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			"dUbKLep3EvcBWZm6Y30WAp9EHEMcxPUwiA6yy6LYSwU",
 			"K4oRic8I4m2y8lMUAN7MttLYrynKgocsENANMvPoHYQ",
 		},
@@ -281,7 +281,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsNo
 	require.Len(t, disclosures, 2)
 
 	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
+	_, ok := issuerSignedJwtPayload[SdKey]
 	require.False(t, ok)
 
 	// Check the claims are present/replaced correctly
@@ -316,7 +316,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_SingleDisc
 		t.Run(string(hashAlg), func(t *testing.T) {
 			// Arrange
 			issuerSignedJwtPayload := map[string]any{
-				"_sd": []any{
+				SdKey: []any{
 					expectedDigest,
 				},
 			}
@@ -329,7 +329,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_SingleDisc
 			require.Len(t, disclosures, 1)
 
 			// Check that _sd field is removed from issuer signed jwt payload
-			_, ok := issuerSignedJwtPayload["_sd"]
+			_, ok := issuerSignedJwtPayload[SdKey]
 			require.False(t, ok)
 
 			// Check the claims are present/replaced correctly
@@ -349,7 +349,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAn
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			// Hash for array (NOT the array element)
 			"3KpnrnSJV9ING3MqFexvxLLkAEQDs4suq3MgG0RnE54",
 		},
@@ -363,7 +363,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAn
 	require.Len(t, disclosures, 2)
 
 	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
+	_, ok := issuerSignedJwtPayload[SdKey]
 	require.False(t, ok)
 
 	arrVal, ok := issuerSignedJwtPayload["nationalities"]
@@ -384,7 +384,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_WithPerman
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			"9gjVuXtdFROCgRrtNcGUXmF65rdezi_6Er_j76kmYyM",
 		},
 		"country": "DE",
@@ -398,7 +398,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_WithPerman
 	require.Len(t, disclosures, 1)
 
 	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
+	_, ok := issuerSignedJwtPayload[SdKey]
 	require.False(t, ok)
 
 	// Map should now contain the permanently disclosed value + the selectively disclosed value
@@ -424,7 +424,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAn
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			// Hash for array
 			"bH_IUnOFqaa2MAX1YNxrSyYv4OzPFC9cWwEMI3gn72w",
 		},
@@ -438,7 +438,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAn
 	require.Len(t, disclosures, 2)
 
 	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
+	_, ok := issuerSignedJwtPayload[SdKey]
 	require.False(t, ok)
 
 	arrVal, ok := issuerSignedJwtPayload["nationalities"]
@@ -463,7 +463,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAn
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			// Hash for array (NOT the array element)
 			"3mhS5a0J_TxEK5ZHlES0_MRx7qV7FERCHbX2lSEz94Q",
 		},
@@ -489,7 +489,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAn
 	}
 
 	issuerSignedJwtPayload := map[string]any{
-		"_sd": []any{
+		SdKey: []any{
 			// Hash for array (NOT the array element)
 			"FxetI8EvzLU8v49U8JdbN0FsQs4UtwudaT7xdPLYU3g",
 		},
@@ -503,7 +503,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_FlatSdJwt_ContainsAn
 	require.Len(t, disclosures, 2)
 
 	// Check that _sd field is removed from issuer signed jwt payload
-	_, ok := issuerSignedJwtPayload["_sd"]
+	_, ok := issuerSignedJwtPayload[SdKey]
 	require.False(t, ok)
 
 	arrVal, ok := issuerSignedJwtPayload["nationalities"]
@@ -555,7 +555,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_StructuredSdJwt_Cont
 	require.True(t, ok)
 
 	// Check that _sd field is removed from `address` field in the issuer signed jwt payload
-	_, ok = addrMap["_sd"]
+	_, ok = addrMap[SdKey]
 	require.False(t, ok)
 
 	// The object should contain 4 fields now: street_address, locality, region, country
@@ -611,7 +611,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_StructuredSdJwt_Cont
 	require.True(t, ok)
 
 	// Check that _sd field is removed from `address` field in the issuer signed jwt payload
-	_, ok = addrMap["_sd"]
+	_, ok = addrMap[SdKey]
 	require.False(t, ok)
 
 	// The object should contain 5 fields now: street_address, locality, region, country, nationalities
@@ -681,7 +681,7 @@ func Test_SdJwtProcessor_VerifyAndProcessPayloadDisclosures_RecursiveDisclosures
 	require.True(t, ok)
 
 	// Check that _sd field is removed from `address` field in the issuer signed jwt payload
-	_, ok = addrMap["_sd"]
+	_, ok = addrMap[SdKey]
 	require.False(t, ok)
 
 	// The object should contain 1 field now: street_address

@@ -3,18 +3,13 @@ package sdjwt
 import iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 
 const (
-	Key_Subject         string = "sub"
-	Key_ExpiryTime      string = "exp"
-	Key_IssuedAt        string = "iat"
-	Key_Issuer          string = "iss"
-	Key_Sd              string = "_sd"
-	Key_SdAlg           string = "_sd_alg"
-	Key_Confirmationkey string = "cnf"
-	Key_NotBefore       string = "nbf"
-	Key_Typ             string = "typ"
-	Key_X5c             string = "x5c"
-	Key_Kid             string = "kid"
-	Key_Ellipsis        string = "..."
+	SdKey           string = "_sd"
+	SdAlgKey        string = "_sd_alg"
+	ConfirmationKey string = "cnf" // cnf is part of RFC7800, not part of SD-JWT spec. We could/should move this to a separate package, but for now we keep it here for convenience.
+	TypHeaderKey    string = "typ"
+	X5cHeaderKey    string = "x5c"
+	KidHeaderKey    string = "kid"
+	EllipsisKey     string = "..."
 
 	KbJwtTyp string = "kb+jwt"
 )

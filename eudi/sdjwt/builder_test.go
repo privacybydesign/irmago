@@ -3,6 +3,7 @@ package sdjwt
 import (
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,7 +13,7 @@ import (
 func TestBuilder_NoVct_Success(t *testing.T) {
 	sdJwt, err := NewBuilder().
 		WithPayload(
-			Claim(Key_Issuer, "not-necessarily-a-url"),
+			Claim(jwt.IssuerKey, "not-necessarily-a-url"),
 			SdClaim("email", "test@gmail.com"),
 		).
 		Build(newTestJwtCreator(t))
@@ -22,5 +23,5 @@ func TestBuilder_NoVct_Success(t *testing.T) {
 	payload, err := DecodeJwtPayload(sdJwt)
 	require.NoError(t, err)
 	require.NotContains(t, payload, "vct")
-	require.Equal(t, "not-necessarily-a-url", payload[Key_Issuer])
+	require.Equal(t, "not-necessarily-a-url", payload[jwt.IssuerKey])
 }

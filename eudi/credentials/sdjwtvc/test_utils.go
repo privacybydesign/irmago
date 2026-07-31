@@ -11,6 +11,7 @@ import (
 
 	_ "embed"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
@@ -22,9 +23,8 @@ import (
 )
 
 const (
-	Key_SdHash   string = "sd_hash"
-	Key_Nonce    string = "nonce"
-	Key_Audience string = "aud"
+	SdHashKey string = "sd_hash"
+	NonceKey  string = "nonce"
 )
 
 type x509TestConfig struct {
@@ -381,25 +381,25 @@ type testSdJwtVcKbConfig struct {
 func addTestKbJwt(config testSdJwtVcKbConfig, sdjwtvc SdJwtVc) (SdJwtVcKb, error) {
 	payload := map[string]any{}
 	if config.nonce != nil {
-		payload[Key_Nonce] = *config.nonce
+		payload[NonceKey] = *config.nonce
 	}
 	if config.useActualSdHash {
 		hash, err := iana.CreateUrlEncodedHash(iana.SHA256, string(sdjwtvc))
 		if err != nil {
 			return "", err
 		}
-		payload[Key_SdHash] = hash
+		payload[SdHashKey] = hash
 	}
 
 	if config.sdHash != nil {
-		payload[Key_SdHash] = *config.sdHash
+		payload[SdHashKey] = *config.sdHash
 	}
 
 	if config.audience != nil {
-		payload[Key_Audience] = *config.audience
+		payload[jwt.AudienceKey] = *config.audience
 	}
 	if config.kbIssuedAt != nil {
-		payload[sdjwt.Key_IssuedAt] = *config.kbIssuedAt
+		payload[jwt.IssuedAtKey] = *config.kbIssuedAt
 	}
 
 	payloadJson, err := json.Marshal(payload)
@@ -409,9 +409,9 @@ func addTestKbJwt(config testSdJwtVcKbConfig, sdjwtvc SdJwtVc) (SdJwtVcKb, error
 
 	header := map[string]any{}
 	if config.kbjwtTypHeader == nil {
-		header[sdjwt.Key_Typ] = ""
+		header[sdjwt.TypHeaderKey] = ""
 	} else {
-		header[sdjwt.Key_Typ] = *config.kbjwtTypHeader
+		header[sdjwt.TypHeaderKey] = *config.kbjwtTypHeader
 	}
 
 	jwtCreator := sdjwt.NewJwtCreator(config.holderPrivateKey)
@@ -423,32 +423,38 @@ func addTestKbJwt(config testSdJwtVcKbConfig, sdjwtvc SdJwtVc) (SdJwtVcKb, error
 func createTestIssuerSignedJwt(config testSdJwtVcConfig) (sdjwt.IssuerSignedJwt, error) {
 	issuerPayload := map[string]any{}
 
-	if config.vct != nil {
-		issuerPayload[Key_VerifiableCredentialType] = *config.vct
-	}
+	// JWT-registered claims
 	if config.issuerUrl != nil {
-		issuerPayload[sdjwt.Key_Issuer] = *config.issuerUrl
+		issuerPayload[jwt.IssuerKey] = *config.issuerUrl
 	}
 	if config.issuedAt != nil {
-		issuerPayload[sdjwt.Key_IssuedAt] = *config.issuedAt
-	}
-	if config.expiryTime != nil {
-		issuerPayload[sdjwt.Key_ExpiryTime] = *config.expiryTime
+		issuerPayload[jwt.IssuedAtKey] = *config.issuedAt
 	}
 	if config.notBefore != nil {
-		issuerPayload[sdjwt.Key_NotBefore] = *config.notBefore
+		issuerPayload[jwt.NotBeforeKey] = *config.notBefore
 	}
+	if config.expiryTime != nil {
+		issuerPayload[jwt.ExpirationKey] = *config.expiryTime
+	}
+
+	// SD-JWT-specific claims
 	if config.cnfPubKey != nil {
-		issuerPayload[sdjwt.Key_Confirmationkey] = *config.cnfPubKey
+		issuerPayload[sdjwt.ConfirmationKey] = *config.cnfPubKey
 	}
 	if config.sdClaims != nil {
-		issuerPayload[sdjwt.Key_Sd] = *config.sdClaims
+		issuerPayload[sdjwt.SdKey] = *config.sdClaims
 	}
 	if config.sdAlg != nil {
-		issuerPayload[sdjwt.Key_SdAlg] = *config.sdAlg
+		issuerPayload[sdjwt.SdAlgKey] = *config.sdAlg
 	}
+
+	// SD-JWT VC-specific claims
+	if config.vct != nil {
+		issuerPayload[VerifiableCredentialTypeKey] = *config.vct
+	}
+
 	if config.status != nil && config.status.StatusList != nil {
-		issuerPayload[Key_Status] = map[string]any{
+		issuerPayload[StatusKey] = map[string]any{
 			"status_list": map[string]any{
 				"idx": config.status.StatusList.Index,
 				"uri": config.status.StatusList.URI,
@@ -459,15 +465,15 @@ func createTestIssuerSignedJwt(config testSdJwtVcConfig) (sdjwt.IssuerSignedJwt,
 	issuerHeader := map[string]any{}
 
 	if config.typHeader != nil {
-		issuerHeader[sdjwt.Key_Typ] = *config.typHeader
+		issuerHeader[sdjwt.TypHeaderKey] = *config.typHeader
 	}
 
 	if config.x5cHeader != nil {
-		issuerHeader[sdjwt.Key_X5c] = config.x5cHeader
+		issuerHeader[sdjwt.X5cHeaderKey] = config.x5cHeader
 	}
 
 	if config.kidHeader != nil {
-		issuerHeader[sdjwt.Key_Kid] = *config.kidHeader
+		issuerHeader[sdjwt.KidHeaderKey] = *config.kidHeader
 	}
 
 	jwtCreator := sdjwt.NewJwtCreator(config.issuerPrivateKey)
