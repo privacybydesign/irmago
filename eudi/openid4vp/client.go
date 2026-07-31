@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"sync/atomic"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
@@ -31,7 +32,7 @@ type Handler interface {
 // PermissionHandler is the callback the UI invokes after the user grants or denies permission.
 type PermissionHandler func(proceed bool, selections []dcql.DisclosureSelection)
 
-// SessionDismisser allows dismissing the current session.
+// SessionDismisser allows dismissing the session it was obtained for.
 type SessionDismisser interface {
 	Dismiss()
 }
@@ -45,20 +46,48 @@ type Client struct {
 	verifierValidator VerifierValidator
 	currentLocale     *clientmodels.CurrentLocale
 
-	// Written by the session goroutine, read by Dismiss and
-	// RefreshPendingPermissionRequest on their callers' goroutines.
-	currentSession atomic.Pointer[openid4vpSession]
+	// Sessions currently performing, each on its own goroutine. Sessions may
+	// overlap: a second disclosure can arrive while one is parked awaiting
+	// permission, so a single pointer would misroute answers between them.
+	// Registered/deregistered by the session goroutines, read by
+	// RefreshPendingPermissionRequest on its caller's goroutine.
+	mu       sync.Mutex
+	sessions map[*openid4vpSession]struct{}
 }
 
-// RefreshPendingPermissionRequest re-asks the current session for permission with a
-// freshly built plan, so issuance-during-disclosure re-shows a plan containing the
+// RefreshPendingPermissionRequest re-asks every awaiting session for permission with
+// a freshly built plan, so issuance-during-disclosure re-shows a plan containing the
 // obtained credential. Called on every completed IRMA session (see
 // IrmaClient.SetOnSessionDoneCallback), hence silent unless someone is actually
 // parked waiting for an answer.
 func (client *Client) RefreshPendingPermissionRequest() {
-	if session := client.currentSession.Load(); session != nil && session.awaiting.Load() {
-		session.requestPermission()
+	client.mu.Lock()
+	sessions := make([]*openid4vpSession, 0, len(client.sessions))
+	for session := range client.sessions {
+		sessions = append(sessions, session)
 	}
+	client.mu.Unlock()
+
+	for _, session := range sessions {
+		if session.awaiting.Load() {
+			session.requestPermission()
+		}
+	}
+}
+
+func (client *Client) register(session *openid4vpSession) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.sessions == nil {
+		client.sessions = map[*openid4vpSession]struct{}{}
+	}
+	client.sessions[session] = struct{}{}
+}
+
+func (client *Client) deregister(session *openid4vpSession) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	delete(client.sessions, session)
 }
 
 // NewClient creates a new OpenID4VP client.
@@ -76,28 +105,20 @@ func NewClient(
 	}, nil
 }
 
-// NewSession starts a new OpenID4VP session from the given URL and returns a SessionDismisser.
+// NewSession starts a new OpenID4VP session from the given URL and returns a
+// SessionDismisser bound to that session. Sessions may overlap, and each dismisser
+// dismisses only its own session, so dismissing one never cancels another.
 func (client *Client) NewSession(fullUrl string, handler Handler) SessionDismisser {
-	client.handleSessionAsync(fullUrl, handler)
-	return client
+	session := client.newSession(handler)
+	client.handleSessionAsync(fullUrl, session)
+	return session
 }
 
-// Dismiss dismisses the current session. A dismissal is a denial, so it travels the
-// same channel the user's own "no" does: one path unwinds the session, reports
-// Cancelled and clears currentSession. Without it the session goroutine stayed
-// parked in awaitPermission forever, so every later refresh re-asked the dismissed
-// session for permission.
-func (client *Client) Dismiss() {
-	session := client.currentSession.Load()
-	if session == nil {
-		return
-	}
-	// This log is the only diagnostic for the path, so report what happened: a
-	// dismissal racing the user's own answer, or following one, delivers nothing.
-	if session.answer(nil) {
-		eudi.Logger.Info("openid4vp: session dismissed")
-	} else {
-		eudi.Logger.Info("openid4vp: dismissal ignored, session was already answered")
+func (client *Client) newSession(handler Handler) *openid4vpSession {
+	return &openid4vpSession{
+		handler:     handler,
+		dcqlHandler: client.dcqlHandler,
+		answers:     make(chan *permissionResponse, 1),
 	}
 }
 
@@ -108,8 +129,9 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	})
 }
 
-func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
+func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSession) {
 	go func() {
+		handler := session.handler
 		parsedUrl, err := url.Parse(fullUrl)
 
 		if err != nil {
@@ -184,7 +206,7 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 		}
 
 		eudi.Logger.Infof("auth request: %#v", request)
-		err = client.handleAuthorizationRequest(request, requestor, handler)
+		err = client.handleAuthorizationRequest(session, request, requestor)
 
 		if err != nil {
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
@@ -193,21 +215,14 @@ func (client *Client) handleSessionAsync(fullUrl string, handler Handler) {
 }
 
 func (client *Client) handleAuthorizationRequest(
+	session *openid4vpSession,
 	request *AuthorizationRequest,
 	requestor *clientmodels.TrustedParty,
-	handler Handler,
 ) error {
-	session := &openid4vpSession{
-		request:     request,
-		requestor:   requestor,
-		handler:     handler,
-		dcqlHandler: client.dcqlHandler,
-		answers:     make(chan *permissionResponse, 1),
-	}
-	client.currentSession.Store(session)
-	// CAS, not Store(nil): sessions are unserialised goroutines, so a session
-	// starting while this one unwinds must keep its own pointer.
-	defer client.currentSession.CompareAndSwap(session, nil)
+	session.request = request
+	session.requestor = requestor
+	client.register(session)
+	defer client.deregister(session)
 	return session.perform()
 }
 
@@ -229,12 +244,34 @@ type openid4vpSession struct {
 	// while an answer has somewhere to go. Claiming it by CAS is what makes an
 	// answer exclusive. Also read by [Client.RefreshPendingPermissionRequest].
 	awaiting atomic.Bool
+	// Latched by Dismiss. A dismissal can arrive before the permission window opens
+	// — the session is still fetching and verifying the authorization request —
+	// where answer would discard it; requestPermission reads the latch and delivers
+	// the denial itself once there is a parked goroutine to receive it.
+	dismissed atomic.Bool
 	// Carries the verdict to the parked goroutine. Buffered, so nobody blocks.
 	answers chan *permissionResponse
 }
 
 type permissionResponse struct {
 	selections []dcql.DisclosureSelection
+}
+
+// Dismiss dismisses this session. A dismissal is a denial, so it travels the same
+// channel the user's own "no" does: one path unwinds the session and reports
+// Cancelled. Without it the session goroutine stayed parked in awaitPermission
+// forever, so every later refresh re-asked the dismissed session for permission.
+func (session *openid4vpSession) Dismiss() {
+	// Latched before answering: if the goroutine is not parked yet, the ordering
+	// against requestPermission's arm-then-check guarantees exactly one delivery.
+	session.dismissed.Store(true)
+	// This log is the only diagnostic for the path, so report what happened: a
+	// dismissal racing the user's own answer, or following one, delivers nothing.
+	if session.answer(nil) {
+		eudi.Logger.Info("openid4vp: session dismissed")
+	} else {
+		eudi.Logger.Info("openid4vp: dismissal latched, session was not awaiting an answer")
+	}
 }
 
 // answer hands a verdict to the goroutine parked in awaitPermission and reports
@@ -263,6 +300,14 @@ func (session *openid4vpSession) requestPermission() error {
 	// Armed before dispatching: a handler may answer synchronously, and an answer
 	// arriving before the window opens is discarded.
 	session.awaiting.Store(true)
+	// Arm first, then read the latch: a dismissal that ran in between delivered its
+	// own answer, and this one is dropped by answer's CAS; one that ran before found
+	// the window closed, so deliver its denial now instead of asking the UI for
+	// permission on a session the user already dismissed.
+	if session.dismissed.Load() {
+		session.answer(nil)
+		return nil
+	}
 	session.handler.RequestVerificationPermission(
 		plan,
 		session.requestor,
