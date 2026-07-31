@@ -11,12 +11,15 @@ import (
 )
 
 // CredentialStatusInstance is an instance's status_list reference.
-// BatchID lets callers select a single representative instance per batch.
+// BatchID lets callers select a single representative instance per batch, and
+// LastKnownStatus lets them tell a status change from a re-confirmation without
+// a second read.
 type CredentialStatusInstance struct {
-	InstanceID    datatypes.UUID
-	BatchID       datatypes.UUID
-	StatusListURI string
-	StatusListIdx uint64
+	InstanceID      datatypes.UUID
+	BatchID         datatypes.UUID
+	StatusListURI   string
+	StatusListIdx   uint64
+	LastKnownStatus uint8
 }
 
 // BatchInstanceStatus pairs a batch's deterministic hash with one of its
@@ -68,7 +71,8 @@ type CredentialStore interface {
 	DeleteBatchByHash(hash string) error
 
 	// ListInstancesWithStatusReference returns every IssuedCredentialInstance
-	// with a (status_list.uri, status_list.idx) pair.
+	// with a (status_list.uri, status_list.idx) pair, along with the status the
+	// wallet last recorded for it.
 	ListInstancesWithStatusReference() ([]CredentialStatusInstance, error)
 
 	// ListStatusReferencedInstanceStatuses returns the (batch hash,
@@ -234,7 +238,8 @@ func (s *credentialStore) ListInstancesWithStatusReference() ([]CredentialStatus
 		Select("id AS instance_id, " +
 			"credential_batch_id AS batch_id, " +
 			"status_list_uri AS status_list_uri, " +
-			"status_list_idx AS status_list_idx").
+			"status_list_idx AS status_list_idx, " +
+			"last_known_status AS last_known_status").
 		Where("status_list_uri IS NOT NULL AND status_list_idx IS NOT NULL").
 		Scan(&out).Error
 	return out, err

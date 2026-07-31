@@ -13,7 +13,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"gorm.io/datatypes"
@@ -23,7 +23,7 @@ import (
 // HolderBindingKeyService manages holder binding keys for both issuance
 // (CreateKeyPairsWithProofs) and disclosure (KeyBindingStorage).
 type HolderBindingKeyService interface {
-	sdjwtvc.KeyBindingStorage
+	sdjwt.KeyBindingStorage
 	CreateKeyPairsWithProofs(num uint, proofBuilder proofs.ProofBuilder) (publicKeyIdentifiers []models.PublicHolderBindingKey, proofs []string, err error)
 	RemoveKeys(ids []datatypes.UUID) error
 }
@@ -173,10 +173,10 @@ func (s *holderBindingKeyService) RemoveKeys(ids []datatypes.UUID) error {
 }
 
 // ---------------------------------------------------------------------------
-// sdjwtvc.KeyBindingStorage implementation
+// sdjwt.KeyBindingStorage implementation
 // ---------------------------------------------------------------------------
 
-var _ sdjwtvc.KeyBindingStorage = (*holderBindingKeyService)(nil)
+var _ sdjwt.KeyBindingStorage = (*holderBindingKeyService)(nil)
 
 func (s *holderBindingKeyService) GetAndRemovePrivateKey(pubKey jwk.Key) (*ecdsa.PrivateKey, error) {
 	// Try lookup by DID URL first (if kid is set, e.g. from did:jwk cnf resolution).

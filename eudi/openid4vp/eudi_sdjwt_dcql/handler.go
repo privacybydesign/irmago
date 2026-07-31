@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -58,7 +59,7 @@ type RevocationChecker interface {
 type SdJwtVcDcqlHandler struct {
 	storage         storage.Storage
 	credentialStore db.CredentialStore
-	keyBinder       sdjwtvc.KeyBinder
+	keyBinder       sdjwt.KeyBinder
 	vctFetcher      typemetadata.VctFetcher
 	issuerFetcher   typemetadata.IssuerFetcher
 	currentLocale   *clientmodels.CurrentLocale
@@ -74,7 +75,7 @@ type SdJwtVcDcqlHandler struct {
 // handler will then return empty obtainable descriptors as before.
 //
 // keyBinder is the KB-JWT signer used when a presentation requires holder
-// binding. Pass sdjwtvc.NewDefaultKeyBinder(services.NewHolderBindingKeyService(
+// binding. Pass sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(
 // eudiStorage.Db())) for the default software, storage-backed signer, or a
 // WSCA/HSM-backed implementation to keep the holder private key out of process.
 func NewSdJwtVcDcqlHandler(
@@ -82,7 +83,7 @@ func NewSdJwtVcDcqlHandler(
 	credentialStore db.CredentialStore,
 	vctFetcher typemetadata.VctFetcher,
 	issuerFetcher typemetadata.IssuerFetcher,
-	keyBinder sdjwtvc.KeyBinder,
+	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
 	revocation RevocationChecker,
 ) *SdJwtVcDcqlHandler {
@@ -419,18 +420,18 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 
 		rawSdJwt := sdjwtvc.SdJwtVc(instance.RawCredential)
 
-		selected, err := sdjwtvc.CreatePresentation(rawSdJwt, sel.ClaimPaths)
+		selected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(rawSdJwt), sel.ClaimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
 		presentation := string(selected)
 		if sel.RequireHolderBinding {
-			kbjwt, err := sdjwtvc.CreateKbJwt(selected, h.keyBinder, nonce, clientId)
+			kbjwt, err := sdjwt.CreateKbJwt(selected, h.keyBinder, nonce, clientId)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
 			}
-			presentation = string(sdjwtvc.AddKeyBindingJwtToSdJwtVc(selected, kbjwt))
+			presentation = string(sdjwt.AddKeyBindingJwt(selected, kbjwt))
 		}
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
@@ -465,8 +466,8 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 // constraints. When claim_sets is present, each set is tried in order and the
 // first fully satisfiable set determines which claims are included.
 func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQuery, rawSdJwt sdjwtvc.SdJwtVc, locale string) ([]clientmodels.Attribute, error) {
-	var resolved sdjwtvc.ProcessedSdJwtPayload
-	if err := json.Unmarshal([]byte(batch.ResolvedClaims), &resolved); err != nil {
+	var resolved sdjwt.ProcessedPayload
+	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
 		return nil, err
 	}
 
@@ -511,11 +512,11 @@ func parseBatchAttributes(batch *models.CredentialBatch, query dcql.CredentialQu
 func computeDisclosurePreviewLeaves(
 	rawSdJwt sdjwtvc.SdJwtVc,
 	requestedPaths [][]any,
-	resolved *sdjwtvc.ProcessedSdJwtPayload,
+	resolved *sdjwt.ProcessedPayload,
 	credentialType string,
 ) [][]any {
 	if len(rawSdJwt) > 0 {
-		view, err := sdjwtvc.PostDisclosureView(rawSdJwt, requestedPaths)
+		view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(rawSdJwt), requestedPaths)
 		if err == nil {
 			return collectViewLeafPaths(view)
 		}
@@ -532,7 +533,7 @@ func computeDisclosurePreviewLeaves(
 // recursively. Used as the fallback when the verifier-side view isn't
 // available — it reproduces the pre-refactor behavior for unit tests that
 // don't carry a parseable raw SD-JWT.
-func collectResolvedLeavesAtPaths(resolved *sdjwtvc.ProcessedSdJwtPayload, paths [][]any) [][]any {
+func collectResolvedLeavesAtPaths(resolved *sdjwt.ProcessedPayload, paths [][]any) [][]any {
 	var leaves [][]any
 	seen := make(map[string]struct{})
 	for _, p := range paths {
@@ -565,7 +566,7 @@ func collectResolvedLeavesAtPaths(resolved *sdjwtvc.ProcessedSdJwtPayload, paths
 // that carry a value constraint. The constrained set includes both the
 // original DCQL path and any leaves expanded under it, so RequestedValue
 // stamping works for value-constrained scalars.
-func expandClaimsToConcretePaths(claims []dcql.Claim, payload *sdjwtvc.ProcessedSdJwtPayload) ([][]any, map[string]struct{}) {
+func expandClaimsToConcretePaths(claims []dcql.Claim, payload *sdjwt.ProcessedPayload) ([][]any, map[string]struct{}) {
 	seenPaths := make(map[string]struct{})
 	constrained := make(map[string]struct{})
 	var paths [][]any
@@ -592,7 +593,7 @@ func expandClaimsToConcretePaths(claims []dcql.Claim, payload *sdjwtvc.Processed
 // descendantLeafPaths returns every scalar leaf path reachable from `path` in
 // the resolved payload. If the value at `path` is itself a scalar, returns
 // [path]. If it's a compound (object/array), recurses to the leaves.
-func descendantLeafPaths(payload *sdjwtvc.ProcessedSdJwtPayload, path []any) [][]any {
+func descendantLeafPaths(payload *sdjwt.ProcessedPayload, path []any) [][]any {
 	val, err := payload.GetClaimValue(path)
 	if err != nil {
 		// Path doesn't resolve in the resolved payload — fall back to the
@@ -703,7 +704,7 @@ func flattenPathsForDisplay(
 	attrs []clientmodels.Attribute,
 	requestedKeys map[string]struct{},
 	batch *models.CredentialBatch,
-	payload *sdjwtvc.ProcessedSdJwtPayload,
+	payload *sdjwt.ProcessedPayload,
 	pairs []pathToFlatten,
 	metadataOrder map[string]int,
 	locale string,
@@ -755,7 +756,7 @@ func flattenPathsForDisplay(
 // present, it tries each set in order and returns the claims from the first
 // fully satisfiable set. Without claim_sets, all claims must match.
 // Returns nil if the credential doesn't satisfy the query.
-func selectClaims(query dcql.CredentialQuery, payload *sdjwtvc.ProcessedSdJwtPayload) []dcql.Claim {
+func selectClaims(query dcql.CredentialQuery, payload *sdjwt.ProcessedPayload) []dcql.Claim {
 	// OpenID4VP Section 6.4.1: if claims is absent, the verifier requests no
 	// selectively disclosable claims. Return empty (non-nil) to indicate the
 	// credential matches but no SD claims are requested.
@@ -806,13 +807,13 @@ func selectClaims(query dcql.CredentialQuery, payload *sdjwtvc.ProcessedSdJwtPay
 // required by the DCQL spec (OpenID4VP Section 6.3).
 // Null path components (wildcards) are expanded: the claim matches if ANY array
 // element satisfies the remaining path.
-func claimMatches(claim dcql.Claim, payload *sdjwtvc.ProcessedSdJwtPayload) bool {
+func claimMatches(claim dcql.Claim, payload *sdjwt.ProcessedPayload) bool {
 	return claimMatchesPath(claim.Path, claim.Values, payload)
 }
 
 // claimMatchesPath recursively resolves a claim path against the payload,
 // expanding null wildcards into concrete array indices.
-func claimMatchesPath(path []any, values []any, payload *sdjwtvc.ProcessedSdJwtPayload) bool {
+func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload) bool {
 	// Find the first null in the path.
 	nullIdx := -1
 	for i, c := range path {
@@ -894,8 +895,8 @@ func toFloat64(v any) (float64, bool) {
 func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
 	attrs := make([]clientmodels.Attribute, 0)
 
-	var resolved sdjwtvc.ProcessedSdJwtPayload
-	if err := json.Unmarshal([]byte(batch.ResolvedClaims), &resolved); err != nil {
+	var resolved sdjwt.ProcessedPayload
+	if err := json.Unmarshal([]byte(batch.ProcessedSdJwtPayload), &resolved); err != nil {
 		eudi.Logger.Warnf("failed to unmarshal processed SD-JWT payload for %q: %v", batch.VerifiableCredentialType, err)
 	}
 
@@ -907,7 +908,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	if err != nil {
 		eudi.Logger.Warnf("failed to load raw SD-JWT for log credential %q: %v", batch.VerifiableCredentialType, err)
 	}
-	view, err := sdjwtvc.PostDisclosureView(rawSdJwt, claimPaths)
+	view, err := sdjwt.PostDisclosureView(sdjwt.SdJwt(rawSdJwt), claimPaths)
 	if err != nil {
 		eudi.Logger.Warnf("failed to compute post-disclosure view for log credential %q: %v", batch.VerifiableCredentialType, err)
 	}
@@ -1019,7 +1020,7 @@ func sortObjectKeysByMetadata(obj map[string]any, parentPath []any, metadataOrde
 // expandNullPaths expands a claim path with null wildcards into all concrete
 // paths by replacing each null with every valid array index. Paths without nulls
 // are returned as-is. A trailing null is stripped (the caller will expand the array).
-func expandNullPaths(path []any, payload *sdjwtvc.ProcessedSdJwtPayload) [][]any {
+func expandNullPaths(path []any, payload *sdjwt.ProcessedPayload) [][]any {
 	// Strip trailing null — the caller handles array expansion via flattenForDisclosure.
 	if len(path) > 0 && path[len(path)-1] == nil {
 		path = path[:len(path)-1]

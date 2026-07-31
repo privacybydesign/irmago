@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -153,7 +154,7 @@ func TestGetCredentialMetadataList_MapsCredentialDisplay(t *testing.T) {
 
 func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 	batch := newStorageBatch()
-	batch.ResolvedClaims = datatypes.JSON(`{"family_name":"Smith","sub":"user123"}`)
+	batch.ProcessedSdJwtPayload = datatypes.JSON(`{"family_name":"Smith","sub":"user123"}`)
 	mock := &mockCredentialStore{batchListResult: []*models.CredentialBatch{batch}}
 	fileStorageMock := filesystem.NewFileSystemStorage([32]byte{}, t.TempDir())
 	svc := newServiceWithMocks(mock, fileStorageMock)
@@ -167,7 +168,7 @@ func TestGetCredentialMetadataList_MapsAttributes(t *testing.T) {
 
 func TestGetCredentialMetadataList_PayloadDrivesAttributes(t *testing.T) {
 	batch := newStorageBatch()
-	batch.ResolvedClaims = datatypes.JSON(`{
+	batch.ProcessedSdJwtPayload = datatypes.JSON(`{
 		"family_name": "Smith",
 		"given_name": "Alice",
 		"address": {"city": "Amsterdam", "extra": ""},
@@ -1032,7 +1033,7 @@ func TestMatchHolderBindingKey_ByThumbprint(t *testing.T) {
 	keyByThumbprint := map[string]datatypes.UUID{thumbprint: expectedID}
 	keyByDidUrl := map[string]datatypes.UUID{}
 
-	cnf := &sdjwtvc.CnfField{Jwk: &pubKey}
+	cnf := &sdjwt.CnfField{Jwk: &pubKey}
 	keyID, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
 
 	require.NoError(t, err)
@@ -1046,7 +1047,7 @@ func TestMatchHolderBindingKey_ByDidUrl(t *testing.T) {
 	keyByThumbprint := map[string]datatypes.UUID{}
 	keyByDidUrl := map[string]datatypes.UUID{didUrl: expectedID}
 
-	cnf := &sdjwtvc.CnfField{Kid: &didUrl}
+	cnf := &sdjwt.CnfField{Kid: &didUrl}
 	keyID, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
 
 	require.NoError(t, err)
@@ -1062,7 +1063,7 @@ func TestMatchHolderBindingKey_DidUrlTakesPrecedence(t *testing.T) {
 	keyByThumbprint := map[string]datatypes.UUID{thumbprint: thumbprintKeyID}
 	keyByDidUrl := map[string]datatypes.UUID{didUrl: didKeyID}
 
-	cnf := &sdjwtvc.CnfField{Jwk: &pubKey, Kid: &didUrl}
+	cnf := &sdjwt.CnfField{Jwk: &pubKey, Kid: &didUrl}
 	keyID, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
 
 	require.NoError(t, err)
@@ -1075,7 +1076,7 @@ func TestMatchHolderBindingKey_UnknownKey_ReturnsError(t *testing.T) {
 	keyByThumbprint := map[string]datatypes.UUID{}
 	keyByDidUrl := map[string]datatypes.UUID{}
 
-	cnf := &sdjwtvc.CnfField{Jwk: &pubKey}
+	cnf := &sdjwt.CnfField{Jwk: &pubKey}
 	_, err := matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
 
 	require.Error(t, err)
@@ -1083,7 +1084,7 @@ func TestMatchHolderBindingKey_UnknownKey_ReturnsError(t *testing.T) {
 }
 
 func TestMatchHolderBindingKey_NoCnfFields_ReturnsError(t *testing.T) {
-	cnf := &sdjwtvc.CnfField{}
+	cnf := &sdjwt.CnfField{}
 	_, err := matchHolderBindingKey(cnf, map[string]datatypes.UUID{}, map[string]datatypes.UUID{})
 
 	require.Error(t, err)
@@ -1092,16 +1093,18 @@ func TestMatchHolderBindingKey_NoCnfFields_ReturnsError(t *testing.T) {
 
 // ========== holder binding key linking integration ==========
 
-func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwtvc.CnfField) *sdjwtvc.VerifiedSdJwtVc {
+func newVerifiedVcWithCnf(vct, issuer string, cnf *sdjwt.CnfField) *sdjwtvc.VerifiedSdJwtVc {
 	now := time.Now().Unix()
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
-			Issuer:                   issuer,
+			RegisteredClaims: sdjwt.RegisteredClaims{
+				Issuer:   issuer,
+				IssuedAt: &now,
+				Confirm:  cnf,
+			},
 			VerifiableCredentialType: vct,
-			IssuedAt:                 &now,
-			Confirm:                  cnf,
 		},
-		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
+		ProcessedSdJwtPayload: sdjwt.ProcessedPayload{
 			"sub": "user123",
 		},
 	}
@@ -1116,7 +1119,7 @@ func TestVerifyAndStore_LinksHolderBindingKeyByThumbprint(t *testing.T) {
 	pubKey, thumbprint := generateTestJwk(t)
 	keyID := datatypes.NewUUIDv4()
 
-	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Jwk: &pubKey})
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Jwk: &pubKey})
 
 	err := svc.VerifyAndStoreIssuedCredentials(
 		wrapSdJwtVcs(vc),
@@ -1140,7 +1143,7 @@ func TestVerifyAndStore_LinksHolderBindingKeyByDidUrl(t *testing.T) {
 	didUrl := "did:jwk:eyJrdHkiOiJFQyJ9#0"
 	keyID := datatypes.NewUUIDv4()
 
-	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Kid: &didUrl})
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Kid: &didUrl})
 
 	err := svc.VerifyAndStoreIssuedCredentials(
 		wrapSdJwtVcs(vc),
@@ -1165,7 +1168,7 @@ func TestVerifyAndStore_UnknownCnfKey_ReturnsError(t *testing.T) {
 	knownKeyID := datatypes.NewUUIDv4()
 	knownThumbprint := "some-other-thumbprint"
 
-	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwtvc.CnfField{Jwk: &unknownPubKey})
+	vc := newVerifiedVcWithCnf("https://vct.example.com/Cred", "https://issuer.example.com", &sdjwt.CnfField{Jwk: &unknownPubKey})
 
 	err := svc.VerifyAndStoreIssuedCredentials(
 		wrapSdJwtVcs(vc),
@@ -1333,13 +1336,15 @@ func newServiceWithMocks(storeMock *mockCredentialStore, fileStorageMock filesys
 func newVerifiedVc(vct, issuer string, issuedAt, expiry, notBefore int64) *sdjwtvc.VerifiedSdJwtVc {
 	return &sdjwtvc.VerifiedSdJwtVc{
 		IssuerSignedJwtPayload: sdjwtvc.IssuerSignedJwtPayload{
-			Issuer:                   issuer,
+			RegisteredClaims: sdjwt.RegisteredClaims{
+				Issuer:    issuer,
+				IssuedAt:  &issuedAt,
+				Expiry:    &expiry,
+				NotBefore: &notBefore,
+			},
 			VerifiableCredentialType: vct,
-			IssuedAt:                 &issuedAt,
-			Expiry:                   &expiry,
-			NotBefore:                &notBefore,
 		},
-		ProcessedSdJwtPayload: sdjwtvc.ProcessedSdJwtPayload{
+		ProcessedSdJwtPayload: sdjwt.ProcessedPayload{
 			"sub": "user123",
 		},
 	}
@@ -1428,7 +1433,7 @@ func newStorageBatch() *models.CredentialBatch {
 		VerifiableCredentialType: "https://vct.example.com/MyCredential",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "testhash",
-		ResolvedClaims:           datatypes.JSON(`{"sub":"user123"}`),
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
 		IssuedAt:                 datatypes.NullTime{V: now, Valid: true},
 		ExpiresAt:                datatypes.NullTime{V: exp, Valid: true},
 		BatchSize:                1,

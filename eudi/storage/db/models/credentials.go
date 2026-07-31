@@ -43,19 +43,18 @@ type CredentialBatch struct {
 	// storage remains compatible with the IRMA client's deduplication logic.
 	Hash string `gorm:"uniqueIndex"`
 
-	// ResolvedClaims is the JSON-encoded claims of the credential, cached at issuance time so
-	// matching a DCQL query doesn't require re-parsing the raw credential. For "dc+sd-jwt" this
-	// is the processed SD-JWT payload (after processing/verifying the issuer-signed JWT); for
-	// "mso_mdoc" this is a namespace -> elementIdentifier -> value map.
+	// ProcessedSdJwtPayload holds the credential's JSON-encoded claims, cached at issuance time
+	// so matching a DCQL query doesn't require re-parsing the raw credential.
 	//
-	// The column is deliberately still named processed_sd_jwt_payload: this field held only the
-	// SD-JWT payload when the table shipped, and AutoMigrate (the only schema mechanism here,
-	// see storage.autoMigrateHolderModels) cannot rename a column — it would try to ADD
-	// resolved_claims, which SQLite rejects for a NOT NULL column once the table has rows,
-	// failing startup for every wallet that already holds a credential. Pinning the physical
-	// name keeps existing databases readable with no migration; nothing outside GORM refers to
-	// the column, so only this tag knows the legacy name.
-	ResolvedClaims datatypes.JSON `gorm:"column:processed_sd_jwt_payload;type:JSON;not null"`
+	// Despite the name, the contents are format-dependent: for "dc+sd-jwt" this is the processed
+	// SD-JWT payload (after processing/verifying the issuer-signed JWT), and for "mso_mdoc" it is
+	// a namespace -> elementIdentifier -> value map. The name predates multi-format support and
+	// is kept deliberately — renaming the field renames the column, and AutoMigrate (the only
+	// schema mechanism here, see storage.autoMigrateHolderModels) cannot rename a column. It
+	// would instead try to ADD the new one, which SQLite rejects for a NOT NULL column once the
+	// table has rows, so every wallet already holding a credential would fail to open its
+	// database. See credentials_schema_test.go, which pins this.
+	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
 	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
 	IssuedAt datatypes.NullTime

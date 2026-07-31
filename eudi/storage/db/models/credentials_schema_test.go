@@ -22,14 +22,17 @@ func openHolderDB(t *testing.T) *gorm.DB {
 	return d
 }
 
-// TestCredentialBatchKeepsLegacyClaimsColumn pins the physical column backing
-// CredentialBatch.ResolvedClaims to its original name.
+// TestCredentialBatchKeepsLegacyClaimsColumn pins the column backing
+// CredentialBatch.ProcessedSdJwtPayload to its original name.
 //
 // AutoMigrate is the only schema mechanism the holder database has, and it can
 // only add columns — never rename one. Renaming the Go field therefore makes it
 // try to ADD a NOT NULL column, which SQLite refuses once the table holds rows,
 // so a wallet that already has a credential fails to open its database at all.
-// Renaming the field is fine; renaming the column is not.
+//
+// The field name is misleading on purpose: the column also stores mso_mdoc
+// claims, but the cost of correcting the name is a broken upgrade for every
+// existing wallet. Rename the field only alongside a real migration.
 func TestCredentialBatchKeepsLegacyClaimsColumn(t *testing.T) {
 	d := openHolderDB(t)
 	require.NoError(t, d.AutoMigrate(&models.CredentialBatch{}))
@@ -40,11 +43,9 @@ func TestCredentialBatchKeepsLegacyClaimsColumn(t *testing.T) {
 	).Scan(&columns).Error)
 
 	require.Contains(t, columns, "processed_sd_jwt_payload",
-		"CredentialBatch.ResolvedClaims must stay mapped to the processed_sd_jwt_payload column; "+
-			"renaming it breaks AutoMigrate for every wallet that already holds a credential")
-	require.NotContains(t, columns, "resolved_claims",
-		"a resolved_claims column means the gorm column tag was dropped, which AutoMigrate "+
-			"cannot apply to an existing non-empty database")
+		"the claims column must stay named processed_sd_jwt_payload; renaming "+
+			"CredentialBatch.ProcessedSdJwtPayload renames the column, which breaks "+
+			"AutoMigrate for every wallet that already holds a credential")
 }
 
 // TestAutoMigrateOverPopulatedDatabase runs AutoMigrate against a database that
@@ -59,7 +60,7 @@ func TestAutoMigrateOverPopulatedDatabase(t *testing.T) {
 		VerifiableCredentialType: "https://vct.example/x",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "hash-existing",
-		ResolvedClaims:           []byte(`{"sub":"pre-existing-user"}`),
+		ProcessedSdJwtPayload:    []byte(`{"sub":"pre-existing-user"}`),
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,
@@ -74,5 +75,5 @@ func TestAutoMigrateOverPopulatedDatabase(t *testing.T) {
 	// The stored claims must still be readable after the migration.
 	var got models.CredentialBatch
 	require.NoError(t, d.Where("hash = ?", "hash-existing").First(&got).Error)
-	require.JSONEq(t, `{"sub":"pre-existing-user"}`, string(got.ResolvedClaims))
+	require.JSONEq(t, `{"sub":"pre-existing-user"}`, string(got.ProcessedSdJwtPayload))
 }

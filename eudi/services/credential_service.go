@@ -15,6 +15,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -88,8 +89,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, 0, len(m))
 	for _, batch := range m {
-		var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
-		if err := json.Unmarshal(batch.ResolvedClaims, &processedSdJwtPayload); err != nil {
+		var processedSdJwtPayload *sdjwt.ProcessedPayload
+		if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &processedSdJwtPayload); err != nil {
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
 		}
 
@@ -97,7 +98,7 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		issuerName := display.IssuerName
 		credentialName := display.CredentialName
 
-		attrs := buildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
+		attrs := BuildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
 
 		var iat, exp *int64
 		if batch.ExpiresAt.Valid {
@@ -226,7 +227,7 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		VerifiableCredentialType: first.VerifiableCredentialType,
 		Format:                   models.CredentialFormat(credentialConfiguration.Format),
 		Hash:                     hash,
-		ResolvedClaims:           datatypes.JSON(first.ResolvedClaims),
+		ProcessedSdJwtPayload:    datatypes.JSON(first.ResolvedClaims),
 		CredentialIssuer:         first.IssuerURL,
 		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
 		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
@@ -452,7 +453,7 @@ func matchAllHolderBindingKeys(
 
 // matchHolderBindingKeyByIdentifiers is matchHolderBindingKey's generic
 // counterpart for formats with no cnf claim (mso_mdoc), taking already-
-// extracted identifiers instead of an sdjwtvc.CnfField.
+// extracted identifiers instead of an sdjwt.CnfField.
 func matchHolderBindingKeyByIdentifiers(didUrl, thumbprint *string, keyByDidUrl, keyByThumbprint map[string]datatypes.UUID) (datatypes.UUID, error) {
 	if didUrl != nil {
 		if keyID, ok := keyByDidUrl[*didUrl]; ok {
@@ -487,7 +488,7 @@ func (s *credentialService) linkHolderBindingKeys(keyIDs []datatypes.UUID, insta
 
 // matchHolderBindingKey resolves the holder binding key ID from the credential's cnf claim
 // by matching against the known thumbprints and DID URLs.
-func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]datatypes.UUID, keyByDidUrl map[string]datatypes.UUID) (datatypes.UUID, error) {
+func matchHolderBindingKey(cnf *sdjwt.CnfField, keyByThumbprint map[string]datatypes.UUID, keyByDidUrl map[string]datatypes.UUID) (datatypes.UUID, error) {
 	// Try DID URL (kid) first.
 	if cnf.Kid != nil {
 		if keyID, ok := keyByDidUrl[*cnf.Kid]; ok {
@@ -562,7 +563,7 @@ func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, 
 // entry produce attributes with DisplayName: nil. Top-level keys are ordered
 // by metadata position, then alphabetically for keys absent from the metadata.
 func BuildAttributesFromPayload(
-	payload *sdjwtvc.ProcessedSdJwtPayload,
+	payload *sdjwt.ProcessedPayload,
 	lookup map[string]string,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
@@ -581,14 +582,6 @@ func BuildAttributesFromPayload(
 		attrs = FlattenClaimValue(attrs, []any{key}, topLevel[key], lookup, metadataOrder)
 	}
 	return attrs
-}
-
-func buildAttributesFromPayload(
-	payload *sdjwtvc.ProcessedSdJwtPayload,
-	lookup map[string]string,
-	metadataOrder map[string]int,
-) []clientmodels.Attribute {
-	return BuildAttributesFromPayload(payload, lookup, metadataOrder)
 }
 
 // FlattenClaimValue recursively flattens arrays and objects into individual scalar

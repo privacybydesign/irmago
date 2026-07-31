@@ -3,8 +3,11 @@ package services
 import (
 	"testing"
 
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
@@ -15,21 +18,21 @@ import (
 func newTestSdJwtVcKb(t *testing.T, vct, issuerUrl string, claims map[string]string, x5c []string) sdjwtvc.SdJwtVcKb {
 	t.Helper()
 
-	sdjwtClaims := []*sdjwtvc.ClaimElement{
-		sdjwtvc.Claim(sdjwtvc.Key_SdAlg, iana.SHA256),
-		sdjwtvc.Claim(sdjwtvc.Key_VerifiableCredentialType, vct),
-		sdjwtvc.Claim(sdjwtvc.Key_Issuer, issuerUrl),
-		sdjwtvc.Claim(sdjwtvc.Key_IssuedAt, eudi_jwt.NewSystemClock().Now().Unix()),
-		sdjwtvc.Claim(sdjwtvc.Key_ExpiryTime, eudi_jwt.NewSystemClock().Now().Unix()+10000),
+	sdjwtClaims := []*sdjwt.ClaimElement{
+		sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+		sdjwt.Claim(sdjwtvc.VerifiableCredentialTypeKey, vct),
+		sdjwt.Claim(jwt.IssuerKey, issuerUrl),
+		sdjwt.Claim(jwt.IssuedAtKey, eudi_jwt.NewSystemClock().Now().Unix()),
+		sdjwt.Claim(jwt.ExpirationKey, eudi_jwt.NewSystemClock().Now().Unix()+10000),
 	}
 	for key, value := range claims {
-		sdjwtClaims = append(sdjwtClaims, sdjwtvc.SdClaim(key, value))
+		sdjwtClaims = append(sdjwtClaims, sdjwt.SdClaim(key, value))
 	}
 
-	sdJwt, err := sdjwtvc.NewSdJwtBuilder().
+	sdJwt, err := sdjwtvc.NewSdJwtVcBuilder().
 		WithPayload(sdjwtClaims...).
 		WithIssuerCertificateChain(x5c).
-		Build(sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
 	require.NoError(t, err)
 
 	return sdjwtvc.SdJwtVcKb(sdJwt)
@@ -71,7 +74,7 @@ func TestSdJwtVcCredentialFormatParser_ParseAndVerify_InvalidCredential(t *testi
 
 func TestSdJwtVcCredentialFormatParser_CheckBatchUniqueness_RejectsDuplicateKeyBinding(t *testing.T) {
 	pubKey, _ := generateTestJwk(t)
-	cnf := &sdjwtvc.CnfField{Jwk: &pubKey}
+	cnf := &sdjwt.CnfField{Jwk: &pubKey}
 
 	vc1 := newVerifiedVcWithCnf("vct-1", "https://issuer.example.com", cnf)
 	vc2 := newVerifiedVcWithCnf("vct-1", "https://issuer.example.com", cnf)

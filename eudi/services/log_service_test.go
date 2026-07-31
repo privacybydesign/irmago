@@ -263,7 +263,7 @@ func newLiveBatch(t *testing.T, svc *eudiLogService, vct, issuer string) {
 		VerifiableCredentialType: vct,
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "live-batch-hash",
-		ResolvedClaims:           datatypes.JSON(`{"email":"a@b.com"}`),
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"email":"a@b.com"}`),
 		IssuedAt:                 datatypes.NullTime{V: time.Now(), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,

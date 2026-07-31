@@ -207,7 +207,7 @@ func (h *MdocDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelectio
 // -> value map.
 func unmarshalResolvedClaims(batch *models.CredentialBatch) (map[string]map[string]any, error) {
 	var resolved map[string]map[string]any
-	if err := json.Unmarshal(batch.ResolvedClaims, &resolved); err != nil {
+	if err := json.Unmarshal(batch.ProcessedSdJwtPayload, &resolved); err != nil {
 		return nil, err
 	}
 	return resolved, nil

@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -35,7 +38,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
-	keyBinder := sdjwtvc.NewDefaultKeyBinderWithInMemoryStorage()
+	keyBinder := sdjwt.NewDefaultKeyBinderWithInMemoryStorage()
 	sdJwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
@@ -57,7 +60,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	sdJwtVcVerificationContext := sdjwtvc.SdJwtVcVerificationContext{
 		X509VerificationContext: &conf.Issuers,
 		Clock:                   eudi_jwt.NewSystemClock(),
-		JwtVerifier:             sdjwtvc.NewJwxJwtVerifier(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
 	}
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
@@ -402,7 +405,7 @@ func TestNewSessionReportsPanicAsSessionFailure(t *testing.T) {
 	require.Contains(t, sessionError.Info, sessionError.Stack)
 }
 
-func addTestCredentialsToStorage(t *testing.T, storage irmaclient.SdJwtVcStorage, keyBinder sdjwtvc.KeyBinder) {
+func addTestCredentialsToStorage(t *testing.T, storage irmaclient.SdJwtVcStorage, keyBinder sdjwt.KeyBinder) {
 	// ignoring all errors here, since it's not production code anyway
 	mobilephoneInfo, mobilephoneEntry := createMultipleSdJwtVcsWithCustomKeyBinder(t, keyBinder, "test.test.mobilephone", "https://openid4vc.staging.yivi.app",
 		map[string]string{
@@ -424,8 +427,8 @@ func addTestCredentialsToStorage(t *testing.T, storage irmaclient.SdJwtVcStorage
 	require.NoError(t, storage.StoreCredential(emailInfo2, emailSdjwt2))
 }
 
-func createMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
-	t *testing.T, keyBinder sdjwtvc.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
+func createMultipleSdJwtVcsWithCustomKeyBinder[T sdjwt.LeafClaimDataType](
+	t *testing.T, keyBinder sdjwt.KeyBinder, vct string, issuer string, claims map[string]T, num uint,
 ) (irmaclient.SdJwtVcBatchMetadata, []sdjwtvc.SdJwtVc) {
 	result := make([]sdjwtvc.SdJwtVc, num)
 
@@ -436,9 +439,9 @@ func createMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
 	}
 
 	for i := range num {
-		sdjwt, err := createTestSdJwtVc(keyBinder, vct, issuer, claims, certChain)
+		vc, err := createTestSdJwtVc(keyBinder, vct, issuer, claims, certChain)
 		require.NoError(t, err)
-		result[i] = sdjwt
+		result[i] = vc
 	}
 
 	// Convert to SdJwtVcKb since the holder doesn't know if a Key Binding JWT is present or not
@@ -456,7 +459,7 @@ func createMultipleSdJwtVcsWithCustomKeyBinder[T sdjwtvc.LeafClaimDataType](
 	}, result
 }
 
-func createTestSdJwtVc[T sdjwtvc.LeafClaimDataType](keyBinder sdjwtvc.KeyBinder, vct, issuerUrl string, claims map[string]T, x5c []string) (sdjwtvc.SdJwtVc, error) {
+func createTestSdJwtVc[T sdjwt.LeafClaimDataType](keyBinder sdjwt.KeyBinder, vct, issuerUrl string, claims map[string]T, x5c []string) (sdjwtvc.SdJwtVc, error) {
 	holderKey, err := keyBinder.CreateKeyPairs(1)
 	if err != nil {
 		return "", fmt.Errorf("failed to create holder keys: %v", err)
@@ -465,29 +468,29 @@ func createTestSdJwtVc[T sdjwtvc.LeafClaimDataType](keyBinder sdjwtvc.KeyBinder,
 	return createTestSdJwtVcWithHolderKey(vct, issuerUrl, claims, x5c, holderKey[0])
 }
 
-func createTestSdJwtVcWithHolderKey[T sdjwtvc.LeafClaimDataType](vct, issuerUrl string, claims map[string]T, x5c []string, cnfHolderHey jwk.Key) (sdjwtvc.SdJwtVc, error) {
-	holderKeyClaim, err := sdjwtvc.HolderKeyClaim(cnfHolderHey)
+func createTestSdJwtVcWithHolderKey[T sdjwt.LeafClaimDataType](vct, issuerUrl string, claims map[string]T, x5c []string, cnfHolderHey jwk.Key) (sdjwtvc.SdJwtVc, error) {
+	holderKeyClaim, err := sdjwt.HolderKeyClaim(cnfHolderHey)
 	if err != nil {
 		return "", err
 	}
 
-	sdjwtClaims := []*sdjwtvc.ClaimElement{
+	sdjwtClaims := []*sdjwt.ClaimElement{
 		holderKeyClaim,
-		sdjwtvc.Claim(sdjwtvc.Key_SdAlg, iana.SHA256),
-		sdjwtvc.Claim(sdjwtvc.Key_VerifiableCredentialType, vct),
-		sdjwtvc.Claim(sdjwtvc.Key_Issuer, issuerUrl),
-		sdjwtvc.Claim(sdjwtvc.Key_IssuedAt, eudi_jwt.NewSystemClock().Now().Unix()),
-		sdjwtvc.Claim(sdjwtvc.Key_ExpiryTime, eudi_jwt.NewSystemClock().Now().Unix()+10000),
+		sdjwt.Claim(jwt.IssuerKey, issuerUrl),
+		sdjwt.Claim(jwt.IssuedAtKey, eudi_jwt.NewSystemClock().Now().Unix()),
+		sdjwt.Claim(jwt.ExpirationKey, eudi_jwt.NewSystemClock().Now().Unix()+10000),
+		sdjwt.Claim(sdjwt.SdAlgKey, iana.SHA256),
+		sdjwt.Claim(sdjwtvc.VerifiableCredentialTypeKey, vct),
 	}
 
 	for key, value := range claims {
-		sdjwtClaims = append(sdjwtClaims, sdjwtvc.SdClaim(key, value))
+		sdjwtClaims = append(sdjwtClaims, sdjwt.SdClaim(key, value))
 	}
 
-	return sdjwtvc.NewSdJwtBuilder().
+	return sdjwtvc.NewSdJwtVcBuilder().
 		WithPayload(sdjwtClaims...).
 		WithIssuerCertificateChain(x5c).
-		Build(sdjwtvc.NewEcdsaJwtCreatorWithIssuerTestkey())
+		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
 }
 
 // TODO: this func becomes irrelevant once we have our own metadata storage (and no longer depend on metadata in the IrmaClient)

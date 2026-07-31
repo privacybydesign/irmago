@@ -62,7 +62,7 @@ func backfillBatch(baseURL string) *models.CredentialBatch {
 		VerifiableCredentialType: "https://vct.example.com/Test",
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     "hash1",
-		ResolvedClaims:           datatypes.JSON(`{"sub":"user123"}`),
+		ProcessedSdJwtPayload:    datatypes.JSON(`{"sub":"user123"}`),
 		IssuedAt:                 datatypes.NullTime{V: time.Now(), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,

@@ -70,7 +70,7 @@ func newTestBatch(hash, vct string, payload map[string]any) *models.CredentialBa
 		VerifiableCredentialType: vct,
 		Format:                   models.CredentialFormatSdJwtVc,
 		Hash:                     hash,
-		ResolvedClaims:           datatypes.JSON(payloadJSON),
+		ProcessedSdJwtPayload:    datatypes.JSON(payloadJSON),
 		IssuedAt:                 datatypes.NullTime{V: time.Now().UTC().Truncate(time.Second), Valid: true},
 		BatchSize:                1,
 		RemainingCount:           1,

@@ -43,6 +43,46 @@ import (
 func testSessionHandlerForOpenID4VCIStatusList(t *testing.T) {
 	t.Run("issuance accepts a valid status and refresh runs", testOpenID4VCIStatusListIssuanceAcceptsValid)
 	t.Run("revoked credential is surfaced in the disclosure plan", testOpenID4VPStatusListRevokedSurfacedInPlan)
+	t.Run("revocation found by the sweep notifies the app", testOpenID4VCIStatusListRevocationNotifiesApp)
+}
+
+// testOpenID4VCIStatusListRevocationNotifiesApp is the SD-JWT VC counterpart of
+// TestIdemixRevocationNotifiesApp: an issuer revokes a real status-list
+// credential, and the wallet's status refresh sweep tells the app about it
+// through ClientHandler.CredentialsChanged. It also pins the other half of the
+// contract — a sweep that only re-confirms a status the wallet already had stays
+// silent, so the scheduled sweep does not nag the app on every interval.
+func testOpenID4VCIStatusListRevocationNotifiesApp(t *testing.T) {
+	c, clientHandler, sessionHandler := instantiateClient(t, nil, "en")
+	defer c.Close()
+
+	issueStatusListCredential(t, c, sessionHandler, 1)
+
+	// Issuance may itself be a credentials change, so measure from here.
+	changesAfterIssuance := clientHandler.CredentialsChangedCount()
+
+	// The credential is valid and the wallet already recorded it as such at
+	// issuance, so this sweep finds nothing new.
+	require.NoError(t, c.RefreshStatuses(context.Background()))
+	require.Equal(t, changesAfterIssuance, clientHandler.CredentialsChangedCount(),
+		"re-confirming a status must not wake the app")
+
+	revokeStatusListCredentialViaVeramo(t, statusListCredentialEmail)
+
+	require.NoError(t, c.RefreshStatuses(context.Background()))
+	require.Equal(t, changesAfterIssuance+1, clientHandler.CredentialsChangedCount(),
+		"a status change must wake the app")
+
+	// The credential is revoked in what the app would now re-request.
+	creds, err := c.GetCredentials()
+	require.NoError(t, err)
+	cred := findCredentialByName(t, creds, "Status List Credential (SD-JWT)")
+	require.True(t, cred.Revoked, "the revocation the app was told about")
+
+	// A later sweep re-confirms the revocation it already knows about.
+	require.NoError(t, c.RefreshStatuses(context.Background()))
+	require.Equal(t, changesAfterIssuance+1, clientHandler.CredentialsChangedCount(),
+		"a known revocation is not re-reported")
 }
 
 const statusListCredentialEmail = "statuslist@example.com"
