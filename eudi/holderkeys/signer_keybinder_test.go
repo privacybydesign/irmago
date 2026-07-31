@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,13 +43,13 @@ func TestSignerKeyBinder_ProducesVerifiableKbJwt(t *testing.T) {
 	require.NoError(t, err)
 	var hdr map[string]any
 	require.NoError(t, json.Unmarshal(hdrBytes, &hdr))
-	require.Equal(t, sdjwtvc.KbJwtTyp, hdr["typ"])
+	require.Equal(t, sdjwt.KbJwtTyp, hdr["typ"])
 	require.Equal(t, "ES256", hdr["alg"])
 
 	// Payload: sd_hash / nonce / aud round-trip.
 	plBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	require.NoError(t, err)
-	var pl sdjwtvc.KeyBindingJwtPayload
+	var pl sdjwt.KeyBindingJwtPayload
 	require.NoError(t, json.Unmarshal(plBytes, &pl))
 	require.Equal(t, hash, pl.IssuerSignedJwtHash)
 	require.Equal(t, nonce, pl.Nonce)
