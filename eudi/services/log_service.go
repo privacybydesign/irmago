@@ -150,7 +150,7 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			Name:                nameJSON,
 			IssuerName:          issuerNameJSON,
 			IssuerId:            c.Issuer.Id,
-			IssuerVerified:      c.Issuer.Verified,
+			IssuerVerified:      c.Issuer.TrustLevel.IsTrusted(),
 			Attributes:          attrsJSON,
 			IssuanceDate:        issuanceDate,
 			ExpiryDate:          expiryDate,
@@ -293,7 +293,7 @@ func (s *eudiLogService) modelCredentialsToLogCredentials(creds []models.EudiLog
 			Formats:             formats,
 			Name:                name,
 			Image:               credImage,
-			Issuer:              clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage, Verified: c.IssuerVerified},
+			Issuer:              clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage, TrustLevel: loggedIssuerTrustLevel(c.IssuerVerified)},
 			Attributes:          attrs,
 			IssuanceDate:        issuanceDate,
 			ExpiryDate:          expiryDate,
@@ -303,6 +303,19 @@ func (s *eudiLogService) modelCredentialsToLogCredentials(creds []models.EudiLog
 		}
 	}
 	return result
+}
+
+// loggedIssuerTrustLevel reads a rung off the legacy IssuerVerified boolean a
+// log entry stores. The boolean only ever recorded "Yivi vouches for this
+// issuer", so it maps to high or to nothing at all: a false says the entry
+// carries no rung, which is not the same as a verdict of low. Log entries get
+// their own level columns in a later slice; until then every EUDI issuance log
+// renders levelless, as the pre-feature rows do.
+func loggedIssuerTrustLevel(issuerVerified bool) clientmodels.TrustLevel {
+	if issuerVerified {
+		return clientmodels.TrustLevel_High
+	}
+	return clientmodels.TrustLevel_Unevaluated
 }
 
 // canReResolveIssuerName reports whether the stored credential's issuer

@@ -1,6 +1,7 @@
 package openid4vp
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/privacybydesign/irmago/internal/common"
 )
 
@@ -45,6 +47,7 @@ type Client struct {
 	dcqlHandler       *dcql.DcqlHandler
 	verifierValidator VerifierValidator
 	currentLocale     *clientmodels.CurrentLocale
+	trustEvaluator    trust.Evaluator
 
 	// Sessions currently performing, each on its own goroutine. Sessions may
 	// overlap: a second disclosure can arrive while one is parked awaiting
@@ -90,18 +93,21 @@ func (client *Client) deregister(session *openid4vpSession) {
 	delete(client.sessions, session)
 }
 
-// NewClient creates a new OpenID4VP client.
+// NewClient creates a new OpenID4VP client. trustEvaluator must not be nil:
+// every session pins a trust view from it to rank the verifier it talks to.
 func NewClient(
 	eudiConf *eudi.Configuration,
 	handlers []dcql.DcqlCredentialQueryHandler,
 	verifierValidator VerifierValidator,
 	currentLocale *clientmodels.CurrentLocale,
+	trustEvaluator trust.Evaluator,
 ) (*Client, error) {
 	return &Client{
 		Configuration:     eudiConf,
 		dcqlHandler:       dcql.NewDcqlHandler(handlers),
 		verifierValidator: verifierValidator,
 		currentLocale:     currentLocale,
+		trustEvaluator:    trustEvaluator,
 	}, nil
 }
 
@@ -125,6 +131,17 @@ func (client *Client) newSession(handler Handler) *openid4vpSession {
 func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	eudi.Logger.Errorf(message, fmtArgs...)
 	handler.Failure(&clientmodels.SessionError{
+		WrappedError: fmt.Sprintf(message, fmtArgs...),
+	})
+}
+
+// handlePartyValidationFailure ends the session the same way handleFailure
+// does, but with the code that tells the app the verifier itself was rejected
+// rather than that the network or the protocol misbehaved.
+func handlePartyValidationFailure(handler Handler, message string, fmtArgs ...any) {
+	eudi.Logger.Errorf(message, fmtArgs...)
+	handler.Failure(&clientmodels.SessionError{
+		ErrorType:    clientmodels.ErrorType_PartyValidationFailed,
 		WrappedError: fmt.Sprintf(message, fmtArgs...),
 	})
 }
@@ -169,7 +186,12 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			ParseAndVerifyAuthorizationRequest(string(authRequestJwt))
 
 		if err != nil {
-			handleFailure(handler, "openid4vp: failed to verify authorization request: %v", err)
+			// The identity gate rejected the verifier: its chain, its signature
+			// or its DID did not hold up, or it identified itself in a way the
+			// wallet cannot authenticate at all. Either way the wallet does not
+			// know who it is talking to and nothing was disclosed, and the app
+			// has to be able to say so rather than show a generic error.
+			handlePartyValidationFailure(handler, "openid4vp: failed to verify authorization request: %v", err)
 			return
 		}
 
@@ -191,9 +213,17 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			}
 		}
 
+		// One pinned view for the whole session, taken before the first party is
+		// ranked, so a list refresh landing mid-session cannot change what this
+		// session decided about the verifier.
+		verdict := client.trustEvaluator.Snapshot(context.Background()).Verifier(trust.Evidence{
+			Certificate: endEntityCert,
+			Identifiers: []string{request.ClientId},
+		})
+
 		requestor := &clientmodels.TrustedParty{
-			Name:     clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
-			Verified: endEntityCert != nil,
+			Name:       clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
+			TrustLevel: verdict.Level,
 		}
 		if endEntityCert != nil {
 			requestor.Id = endEntityCert.SerialNumber.String()

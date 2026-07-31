@@ -129,12 +129,16 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Image:        credentialImage,
 			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
-				Id:       batch.CredentialIssuer,
-				Name:     issuerName,
-				Image:    issuerImage,
-				Url:      nil,
-				Parent:   nil,
-				Verified: false,
+				Id:    batch.CredentialIssuer,
+				Name:  issuerName,
+				Image: issuerImage,
+				Url:   nil,
+				// A stored credential carries no issuer evidence yet, so the
+				// certificate channel has nothing to say about it and the
+				// issuer ranks low. Ranking stored credentials against live
+				// evidence is its own slice.
+				TrustLevel: clientmodels.TrustLevel_Low,
+				Parent:     nil,
 			},
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{
 				clientmodels.CredentialFormat(batch.Format): batch.Hash,

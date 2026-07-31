@@ -54,10 +54,10 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 			Name:         "Test Credential",
 			Image:        &clientmodels.Image{Base64: credImageData},
 			Issuer: clientmodels.TrustedParty{
-				Id:       "https://example.com/issuer",
-				Name:     "Test Issuer",
-				Image:    &clientmodels.Image{Base64: issuerImageData},
-				Verified: true,
+				Id:         "https://example.com/issuer",
+				Name:       "Test Issuer",
+				Image:      &clientmodels.Image{Base64: issuerImageData},
+				TrustLevel: clientmodels.TrustLevel_High,
 			},
 			Attributes: []clientmodels.Attribute{
 				{
@@ -101,10 +101,10 @@ func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T)
 	require.NotNil(t, cred.Issuer.Image, "issuer image should survive log round-trip")
 	require.NotEmpty(t, cred.Issuer.Image.Base64)
 
-	// Issuer ID, name, and verified flag survive round-trip.
+	// Issuer ID, name, and trust level survive round-trip.
 	require.Equal(t, "https://example.com/issuer", cred.Issuer.Id)
 	require.Equal(t, "Test Issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "Verified flag should survive log round-trip")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "trust level should survive log round-trip")
 
 	// Credential metadata survives round-trip.
 	require.Equal(t, "https://example.com/vct/test", cred.CredentialId)
@@ -140,10 +140,10 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 			Image:        &clientmodels.Image{Base64: credImageData},
 			Name:         "Test Credential",
 			Issuer: clientmodels.TrustedParty{
-				Id:       "https://example.com/issuer",
-				Name:     "Test Issuer",
-				Image:    &clientmodels.Image{Base64: issuerImageData},
-				Verified: true,
+				Id:         "https://example.com/issuer",
+				Name:       "Test Issuer",
+				Image:      &clientmodels.Image{Base64: issuerImageData},
+				TrustLevel: clientmodels.TrustLevel_High,
 			},
 			Formats:      []clientmodels.CredentialFormat{clientmodels.Format_SdJwtVc},
 			Attributes:   []clientmodels.Attribute{},
@@ -175,9 +175,9 @@ func TestIssuanceLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
 	require.NotNil(t, cred.Issuer.Image, "issuer image should survive log round-trip")
 	require.NotEmpty(t, cred.Issuer.Image.Base64)
 
-	// Issuer ID and verified flag survive round-trip.
+	// Issuer ID and trust level survive round-trip.
 	require.Equal(t, "https://example.com/issuer", cred.Issuer.Id)
-	require.True(t, cred.Issuer.Verified, "Verified flag should survive log round-trip")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "trust level should survive log round-trip")
 }
 
 func TestRemovalLogRoundTrip(t *testing.T) {

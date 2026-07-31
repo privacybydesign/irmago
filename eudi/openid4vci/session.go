@@ -135,7 +135,12 @@ func (s *session) perform() {
 	fetched, err := s.obtainCredentials(permission.GetAccessToken())
 	if err != nil {
 		eudi.Logger.Infof("error obtaining credentials: %v", err)
+		errorType := ""
+		if eudi.IsPartyValidationFailure(err) {
+			errorType = clientmodels.ErrorType_PartyValidationFailed
+		}
 		s.handler.Failure(&clientmodels.SessionError{
+			ErrorType:    errorType,
 			WrappedError: err.Error(),
 		})
 		return
@@ -440,9 +445,10 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			CredentialId: credentialId,
 			Name:         name,
 			Issuer: clientmodels.TrustedParty{
-				Id:    s.credentialIssuerMetadata.CredentialIssuer,
-				Name:  issuerName,
-				Image: issuerImage,
+				Id:         s.credentialIssuerMetadata.CredentialIssuer,
+				Name:       issuerName,
+				Image:      issuerImage,
+				TrustLevel: s.requestorInfo.TrustLevel,
 			},
 			Image:                 image,
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
@@ -852,7 +858,11 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 	for i, cred := range credentialResponse.Credentials {
 		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
 		if err != nil {
-			return nil, fmt.Errorf("failed to verify credential: %v", err)
+			// This is the issuer's identity gate: the credential's signature is
+			// checked against the issuer's certificate chain or resolved DID.
+			// Mark it so the session reports a rejected party rather than a
+			// generic failure.
+			return nil, eudi.PartyValidationFailed(fmt.Errorf("failed to verify credential: %v", err))
 		}
 		verifiedSdJwtVcs[i] = verifiedSdJwt
 	}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +32,7 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_HttpUri(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", trust.CertificateView{})
 
 	require.NotNil(t, tp)
 	require.Equal(t, "Test Issuer", tp.Name, "name carried through from display")
@@ -67,7 +68,7 @@ func TestConvertToTrustedParty_PreservesSvgMimeType(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", trust.CertificateView{})
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image)
@@ -95,7 +96,7 @@ func TestConvertToTrustedParty_NoMimeType_LeavesMimeTypeNil(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", trust.CertificateView{})
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image)
@@ -122,7 +123,7 @@ func TestConvertToTrustedParty_PopulatesImageFromCache_DataUri(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", trust.CertificateView{})
 
 	require.NotNil(t, tp)
 	require.NotNil(t, tp.Image, "data URI logos must reach requestorInfo just like HTTP URIs do")
@@ -141,7 +142,7 @@ func TestConvertToTrustedParty_NoLogo_LeavesImageNil(t *testing.T) {
 		},
 	}
 
-	tp := client.convertToTrustedParty(m, "en")
+	tp := client.convertToTrustedParty(m, "en", trust.CertificateView{})
 
 	require.NotNil(t, tp)
 	require.Nil(t, tp.Image, "no logo advertised → Image must stay nil")

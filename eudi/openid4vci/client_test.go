@@ -72,7 +72,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 		services.NewRevocationService(nil, credStore),
 		nil,
 	)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil, services.NewTrustService())
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 

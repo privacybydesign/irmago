@@ -3,6 +3,7 @@ package irma
 import (
 	"testing"
 
+	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -43,4 +44,41 @@ func TestAttributeType_ResolveTexts_BundlesNameAndDescription(t *testing.T) {
 
 	assert.Equal(t, "Geboortedatum", *displayName)
 	assert.Nil(t, description, "bundled text must not mix languages")
+}
+
+// TestIssuer_ToTrustedParty_MapsSchemeStatusToARung pins the IRMA half of the
+// trust ladder's display mapping: an issuer in a valid scheme is vouched for by
+// Yivi itself, an issuer in a scheme that is not valid by nobody. The trust
+// mechanism is untouched; only what the app is told about it.
+func TestIssuer_ToTrustedParty_MapsSchemeStatusToARung(t *testing.T) {
+	for _, tc := range []struct {
+		status   SchemeManagerStatus
+		expected clientmodels.TrustLevel
+	}{
+		{SchemeManagerStatusValid, clientmodels.TrustLevel_High},
+		{SchemeManagerStatusInvalidSignature, clientmodels.TrustLevel_Low},
+		{SchemeManagerStatusParsingError, clientmodels.TrustLevel_Low},
+	} {
+		t.Run(string(tc.status), func(t *testing.T) {
+			conf := &Configuration{SchemeManagers: map[SchemeManagerIdentifier]*SchemeManager{
+				NewSchemeManagerIdentifier("test"): {
+					ID:     "test",
+					Name:   TranslatedString{"en": "Test scheme"},
+					Status: tc.status,
+				},
+			}}
+			issuer := &Issuer{
+				ID:              "test-issuer",
+				SchemeManagerID: "test",
+				Name:            TranslatedString{"en": "Test issuer"},
+			}
+
+			party := issuer.ToTrustedParty(conf, "en")
+
+			assert.Equal(t, tc.expected, party.TrustLevel)
+			assert.NotNil(t, party.Parent)
+			assert.Equal(t, tc.expected, party.Parent.TrustLevel,
+				"the scheme manager is ranked by the same status as the issuer under it")
+		})
+	}
 }

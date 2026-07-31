@@ -153,6 +153,10 @@ func New(
 
 	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
 
+	// The single home for trust-level evaluation, shared by both EUDI protocols
+	// so an issuer and a verifier are ranked by the same rules.
+	trustService := services.NewTrustService()
+
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
 	didValidator := openid4vp.NewDidVerifierValidator(false)
@@ -174,7 +178,7 @@ func New(
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale, trustService)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -226,6 +230,7 @@ func New(
 		credentialService,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 		currentLocale,
+		trustService,
 	)
 
 	if err != nil {

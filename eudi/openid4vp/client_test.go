@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
@@ -19,9 +20,12 @@ func init() {
 	eudi.Logger = logrus.New()
 }
 
-// newTestClient builds a Client with the one collaborator a session needs.
+// newTestClient builds a Client with the collaborators a session needs.
 func newTestClient() *Client {
-	return &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+	return &Client{
+		dcqlHandler:    dcql.NewDcqlHandler(nil),
+		trustEvaluator: services.NewTrustService(),
+	}
 }
 
 // awaitOn returns the next value sent on ch, failing the test if none arrives.
@@ -44,13 +48,17 @@ type spyHandler struct {
 	cancels   atomic.Int32
 	successes atomic.Int32
 	requested chan PermissionHandler
-	failed    chan *clientmodels.SessionError
+	// requestors carries the party each permission request was asked about, so
+	// a test can assert what the session decided about the verifier.
+	requestors chan *clientmodels.TrustedParty
+	failed     chan *clientmodels.SessionError
 }
 
 func newSpyHandler() *spyHandler {
 	return &spyHandler{
-		requested: make(chan PermissionHandler, 16),
-		failed:    make(chan *clientmodels.SessionError, 1),
+		requested:  make(chan PermissionHandler, 16),
+		requestors: make(chan *clientmodels.TrustedParty, 16),
+		failed:     make(chan *clientmodels.SessionError, 1),
 	}
 }
 
@@ -62,12 +70,19 @@ func (h *spyHandler) Success(_ string, _ []clientmodels.LogCredential) { h.succe
 
 func (h *spyHandler) RequestVerificationPermission(
 	_ *clientmodels.DisclosurePlan,
-	_ *clientmodels.TrustedParty,
+	requestor *clientmodels.TrustedParty,
 	_ map[string]string,
 	callback PermissionHandler,
 ) {
 	h.requests.Add(1)
+	h.requestors <- requestor
 	h.requested <- callback
+}
+
+// awaitRequestor returns the verifier the session asked permission about.
+func (h *spyHandler) awaitRequestor(t *testing.T) *clientmodels.TrustedParty {
+	t.Helper()
+	return awaitOn(t, h.requestors, "a permission request")
 }
 
 // awaitRequest returns the callback the session handed out with its latest
