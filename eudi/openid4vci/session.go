@@ -22,6 +22,7 @@ import (
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/oauth2"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -390,7 +391,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		}
 
 		// Use the first credential in the batch as source of attribute values.
-		var payload sdjwtvc.ProcessedSdJwtPayload
+		var payload sdjwt.ProcessedPayload
 		if len(fc.verifiedSdJwtVcs) > 0 {
 			payload = fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
 		}
@@ -463,7 +464,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 // (resolved to the given locale) and for ordering: claims declared in metadata
 // appear in declared order, payload-only claims are appended alphabetically.
 // Claims without a metadata display entry produce attributes with DisplayName: nil.
-func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwtvc.ProcessedSdJwtPayload, locale string) []clientmodels.Attribute {
+func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwt.ProcessedPayload, locale string) []clientmodels.Attribute {
 	displayLookup := map[string]string{}
 	metadataOrder := map[string]int{}
 	for i, c := range claims {

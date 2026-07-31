@@ -17,6 +17,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
@@ -576,7 +577,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 			Display: []metadata.Display{{Name: "Address", Locale: &en}},
 		},
 	}
-	payload := sdjwtvc.ProcessedSdJwtPayload{
+	payload := sdjwt.ProcessedPayload{
 		"family_name": "Smith",
 		"given_name":  "Alice",
 		"address":     map[string]any{"city": "Amsterdam", "extra": ""},
@@ -597,7 +598,7 @@ func Test_buildAttributesWithValues_PayloadDrives(t *testing.T) {
 	}
 
 	// Standard claims are filtered out.
-	for _, key := range []string{"iss", "iat", "sub"} {
+	for _, key := range []string{jwt.IssuerKey, jwt.IssuedAtKey, jwt.SubjectKey} {
 		_, present := byPath[key]
 		require.False(t, present, "standard claim %q should not appear", key)
 	}

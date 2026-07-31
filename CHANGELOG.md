@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration tests in `internal/sessiontest` for the revocation half of `CredentialsChanged`, one per credential technology: an idemix credential revoked at a revocation-enabled server (needs the docker-compose postgres, like the other revocation tests), and an SD-JWT VC revoked at the real status-list agent (in the opt-in status-list group, alongside its neighbours).
 - Dutch-locale and locale-switch integration tests for every protocol and integration layer.
 - The storage regression tests now assert EUDI activity-log content, pinning the legacy translation-map decoding. Regenerate the regression fixture at the next release: this version changes the stored log text format and the issuance-log credential id.
+- Refactor the SD-JWT implementation to correctly split the SD-JWT and SD-JWT VC specification details into separate packages.
 
 ## [1.2.0] - 2026-07-22
 ### Added
