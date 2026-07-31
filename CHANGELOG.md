@@ -80,7 +80,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Apply `go fix` modernizations across the codebase and enforce `go fix` as a CI status check
 - Update CI GitHub Action versions to Node 24 supported once
 - Update other dependencies to their latest releases: `github.com/lestrrat-go/jwx/v3`, `github.com/go-co-op/gocron` (v1 and v2), `github.com/spf13/{cast,cobra,pflag,viper}`, `go.etcd.io/bbolt`, `gorm.io/driver/{mysql,postgres,sqlserver}`, `github.com/alicebob/miniredis/v2`, `github.com/go-chi/cors` and `github.com/go-errors/errors`
-- Update remaining outdated dependencies to their latest releases, most notably `github.com/privacybydesign/gabi` (picks up a revocation witness-randomizer race fix), `go.etcd.io/bbolt` 1.4.3 → 1.5.0, `github.com/mr-tron/base58`, `gorm.io/gorm`, `github.com/minio/sha256-simd` and a batch of minor/patch indirect bumps
+- Update remaining outdated dependencies to their latest releases, most notably `github.com/privacybydesign/gabi`, `go.etcd.io/bbolt` 1.4.3 → 1.5.0, `github.com/lestrrat-go/jwx/v3`, `golang.org/x/{crypto,sync,term,text}`, `gorm.io/driver/{postgres,sqlserver}`, `gorm.io/gorm`, `github.com/go-chi/chi/v5`, `github.com/go-co-op/gocron/v2`, `github.com/mr-tron/base58`, `github.com/minio/sha256-simd` and a batch of minor/patch indirect bumps
+- The `github.com/privacybydesign/gabi` bump picks up the revocation witness-randomizer race fix, the `golang.org/x/crypto` and `golang.org/x/sys` CVE batch (GO-2026-5005/5006/5013–5021/5023/5033 and GO-2026-5024), and hardening fixes in `signed` (reject malformed signature encodings, guard against nil `pem.Block`), `gabikeys` (error on malformed `Bases` instead of a nil base, pin private key file permissions to 0600 on overwrite) and `credential` (return the non-revocation `Commit` error instead of panicking)
+- Raise the `go` directive to 1.26.4, following `github.com/privacybydesign/gabi`
 - Added DID First Candidate Recommendation backwards-compatibility for verification methods containing `publicKeyBase58` verification material.
 
 ### Fixed
