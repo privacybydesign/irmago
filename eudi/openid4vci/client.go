@@ -14,10 +14,12 @@ import (
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 )
 
 // SdJwtVcStorageClient is the interface that the openid4vci client requires for
@@ -57,7 +59,6 @@ func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
 	credentialService services.CredentialService,
-	credentialFormatParsers services.CredentialFormatParsers,
 	holderKeyBinder HolderKeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
 ) (*Client, error) {
@@ -72,10 +73,35 @@ func NewClient(httpClient *http.Client,
 		Configuration:           config,
 		holderVerifier:          holderVerifier,
 		credentialService:       credentialService,
-		credentialFormatParsers: credentialFormatParsers,
+		credentialFormatParsers: newCredentialFormatParsers(config, holderVerifier),
 		holderKeyBinder:         holderKeyBinder,
 		currentLocale:           currentLocale,
 	}, nil
+}
+
+// newCredentialFormatParsers builds the per-format parser registry used to
+// verify freshly issued credentials.
+//
+// It is derived here rather than passed in: both inputs are already arguments
+// of NewClient, so a caller-supplied registry could only ever repeat what this
+// function computes — while making it possible to forget one, or to wire a
+// registry inconsistent with the config the rest of the client uses. That is
+// not hypothetical: the parameter was silently dropped twice while merging,
+// each time disabling format dispatch with no compile error at the call site.
+//
+// mso_mdoc's IACA trust anchors are taken from the same issuer pool that backs
+// SD-JWT x5c validation. That assumes one shared PKI, which holds for the
+// current setup but is a deliberate simplification, not a general truth.
+func newCredentialFormatParsers(
+	config *eudi.Configuration,
+	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+) services.CredentialFormatParsers {
+	return services.CredentialFormatParsers{
+		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
+		models.CredentialFormatMsoMdoc: services.NewMdocCredentialFormatParser(
+			mdoc.NewVerifierFromPool(config.Issuers.GetVerificationOptionsTemplate().Roots),
+		),
+	}
 }
 
 func (client *Client) AllowInsecureHttpForTesting() {

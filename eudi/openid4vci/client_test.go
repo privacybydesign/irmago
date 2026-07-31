@@ -64,9 +64,6 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 	}
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
-	credentialFormatParsers := services.CredentialFormatParsers{
-		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
-	}
 
 	credStore := db.NewCredentialStore(s.Db())
 	credentialService := services.NewCredentialService(
@@ -76,11 +73,33 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 		services.NewRevocationService(nil, credStore),
 		nil,
 	)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, credentialFormatParsers, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 
 	return s, client
+}
+
+// TestNewClientRegistersEveryCredentialFormat pins that NewClient derives a
+// parser for every format the client claims to support.
+//
+// obtainCredential looks its parser up by format and fails the session when
+// there is none, so a missing entry disables issuance for that format at
+// runtime with nothing failing at compile time. That is not hypothetical: the
+// registry used to be a NewClient parameter and was silently dropped twice
+// while merging, each time leaving format dispatch broken.
+func TestNewClientRegistersEveryCredentialFormat(t *testing.T) {
+	s, client := createOpenID4VCiClientForTesting(t)
+	defer s.Close()
+
+	for _, format := range []models.CredentialFormat{
+		models.CredentialFormatSdJwtVc,
+		models.CredentialFormatMsoMdoc,
+	} {
+		parser, ok := client.credentialFormatParsers[format]
+		require.True(t, ok, "no parser registered for format %q", format)
+		require.NotNil(t, parser, "nil parser registered for format %q", format)
+	}
 }
 
 func TestOpenID4VciClient(t *testing.T) {

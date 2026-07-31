@@ -15,7 +15,6 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
-	"github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
@@ -30,7 +29,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
-	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -227,20 +225,15 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
-	// Initiate the OpenID4VCI client
+	// Initiate the OpenID4VCI client. It derives its own per-format credential
+	// parsers from eudiConf and holderVerifier, so there is nothing to register
+	// here when a new credential format is added.
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
-	credentialFormatParsers := services.CredentialFormatParsers{
-		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
-		models.CredentialFormatMsoMdoc: services.NewMdocCredentialFormatParser(
-			mdoc.NewVerifierFromPool(eudiConf.Issuers.GetVerificationOptionsTemplate().Roots),
-		),
-	}
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
 		holderVerifier,
 		credentialService,
-		credentialFormatParsers,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 		currentLocale,
 	)
