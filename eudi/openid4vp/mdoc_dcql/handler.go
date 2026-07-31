@@ -17,6 +17,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
@@ -27,13 +28,15 @@ import (
 type MdocDcqlHandler struct {
 	storage         storage.Storage
 	credentialStore db.CredentialStore
+	currentLocale   *clientmodels.CurrentLocale
 }
 
 // NewMdocDcqlHandler creates a new handler.
-func NewMdocDcqlHandler(eudiStorage storage.Storage) *MdocDcqlHandler {
+func NewMdocDcqlHandler(eudiStorage storage.Storage, currentLocale *clientmodels.CurrentLocale) *MdocDcqlHandler {
 	return &MdocDcqlHandler{
 		storage:         eudiStorage,
 		credentialStore: db.NewCredentialStore(eudiStorage.Db()),
+		currentLocale:   currentLocale,
 	}
 }
 
@@ -63,6 +66,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 		return nil, err
 	}
 
+	locale := h.currentLocale.Get()
 	now := time.Now()
 	hasExhaustedBatch := false
 	for _, batch := range batches {
@@ -87,13 +91,13 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 		candidate := clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
-			Name:                        dcql.BatchDisplayName(batch),
-			Issuer:                      dcql.BatchIssuerTrustedParty(batch, h.storage.FileSystem().Issuers().LogoManager()),
+			Name:                        credentialDisplayName(batch, locale),
+			Issuer:                      h.issuerTrustedParty(batch, locale),
 			Format:                      clientmodels.Format_MsoMdoc,
 			BatchInstanceCountRemaining: dcql.BatchInstanceCountRemaining(batch),
-			Attributes:                  buildAttributes(batch, claims, resolved),
+			Attributes:                  buildAttributes(batch, claims, resolved, locale),
 			ExpiryDate:                  dcql.BatchExpiryUnix(batch),
-			Image:                       dcql.BatchCredentialImage(batch, h.storage.FileSystem().Credentials().LogoManager()),
+			Image:                       h.credentialImage(batch, locale),
 		}
 		if batch.IssuedAt.Valid {
 			x := batch.IssuedAt.V.Unix()
@@ -352,7 +356,7 @@ func decodeECDSAPrivateKey(pkcs8Bytes []byte) (*ecdsa.PrivateKey, error) {
 // one Attribute per matched claim, flat (no nesting, no compound headers --
 // unlike SD-JWT, mso_mdoc claims are always exactly [namespace,
 // elementIdentifier], so there's nothing to walk or flatten).
-func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolved map[string]map[string]any) []clientmodels.Attribute {
+func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolved map[string]map[string]any, locale string) []clientmodels.Attribute {
 	attrs := make([]clientmodels.Attribute, 0, len(claims))
 	seen := make(map[string]struct{}, len(claims))
 	for _, claim := range claims {
@@ -371,10 +375,7 @@ func buildAttributes(batch *models.CredentialBatch, claims []dcql.Claim, resolve
 			value = clientmodels.NewAttributeValue(nsMap[elementIdentifier])
 		}
 
-		var dn *clientmodels.TranslatedString
-		if d := claimDisplayName(batch, namespace, elementIdentifier); len(d) > 0 {
-			dn = &d
-		}
+		dn := claimDisplayName(batch, namespace, elementIdentifier, locale)
 
 		attr := clientmodels.Attribute{
 			ClaimPath:   []any{namespace, elementIdentifier},
@@ -409,12 +410,71 @@ func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientm
 	}
 }
 
-// claimDisplayName is a thin mdoc-shaped wrapper over the shared
-// dcql.ClaimDisplayName — mdoc claim paths are always exactly
-// [namespace, elementIdentifier], so no wildcard handling is ever needed
-// here, but the underlying match logic is identical to every other format's.
-func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string) clientmodels.TranslatedString {
-	return dcql.ClaimDisplayName(batch, []any{namespace, elementIdentifier})
+// credentialImage loads the credential logo that resolves for the locale
+// from the batch's display metadata, mirroring eudi_sdjwt_dcql's identical
+// helper.
+func (h *MdocDcqlHandler) credentialImage(batch *models.CredentialBatch, locale string) *clientmodels.Image {
+	if batch.CredentialMetadata == nil {
+		return nil
+	}
+	logoManager := h.storage.FileSystem().Credentials().LogoManager()
+	return services.LoadResolvedLogo(logoManager, services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
+}
+
+// issuerTrustedParty builds a TrustedParty from the stored issuer display
+// metadata, mirroring eudi_sdjwt_dcql's identical helper.
+func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
+	return clientmodels.TrustedParty{
+		Id:    batch.CredentialIssuer,
+		Name:  clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
+		Image: h.issuerImage(batch, locale),
+	}
+}
+
+// issuerImage loads the issuer logo that resolves for the locale from the
+// batch's issuer display metadata, mirroring eudi_sdjwt_dcql's identical
+// helper.
+func (h *MdocDcqlHandler) issuerImage(batch *models.CredentialBatch, locale string) *clientmodels.Image {
+	logoManager := h.storage.FileSystem().Issuers().LogoManager()
+	return services.LoadResolvedLogo(logoManager, services.IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
+}
+
+// credentialDisplayName resolves a credential's display name from its stored
+// metadata, falling back to the docType when there is no display metadata.
+func credentialDisplayName(batch *models.CredentialBatch, locale string) string {
+	if batch.CredentialMetadata != nil {
+		if ts := services.CredentialNamesByLanguage(batch.CredentialMetadata.Display); len(ts) > 0 {
+			return clientmodels.Resolve(ts, locale)
+		}
+	}
+	return batch.VerifiableCredentialType
+}
+
+// claimDisplayName resolves a claim's display name from the stored credential
+// metadata. mdoc claim paths are always exactly [namespace, elementIdentifier],
+// so no wildcard handling is ever needed here, unlike eudi_sdjwt_dcql's
+// generic claimPathMatchesMetadataPath-based version.
+func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string, locale string) *string {
+	if batch.CredentialMetadata == nil {
+		return nil
+	}
+	for _, claim := range batch.CredentialMetadata.Claims {
+		if len(claim.Display) == 0 {
+			continue
+		}
+		var path []any
+		if err := json.Unmarshal(claim.Path, &path); err != nil {
+			continue
+		}
+		ns, el, ok := mdocPathParts(path)
+		if !ok || ns != namespace || el != elementIdentifier {
+			continue
+		}
+		if ts := services.ClaimNamesByLanguage(claim.Display); len(ts) > 0 {
+			return clientmodels.ResolvePtr(ts, locale)
+		}
+	}
+	return nil
 }
 
 // LogCredentialForHash builds a LogCredential for the stored mdoc batch identified by
@@ -450,6 +510,7 @@ func (h *MdocDcqlHandler) LogCredentialForHash(hash string) (*clientmodels.LogCr
 }
 
 func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any, resolved map[string]map[string]any) clientmodels.LogCredential {
+	locale := h.currentLocale.Get()
 	attrs := make([]clientmodels.Attribute, 0, len(claimPaths))
 	seen := make(map[string]struct{}, len(claimPaths))
 	for _, path := range claimPaths {
@@ -467,10 +528,7 @@ func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, clai
 		if nsMap, ok := resolved[namespace]; ok {
 			value = clientmodels.NewAttributeValue(nsMap[elementIdentifier])
 		}
-		var dn *clientmodels.TranslatedString
-		if d := claimDisplayName(batch, namespace, elementIdentifier); len(d) > 0 {
-			dn = &d
-		}
+		dn := claimDisplayName(batch, namespace, elementIdentifier, locale)
 		attrs = append(attrs, clientmodels.Attribute{
 			ClaimPath:   []any{namespace, elementIdentifier},
 			DisplayName: dn,
@@ -481,9 +539,9 @@ func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, clai
 	log := clientmodels.LogCredential{
 		CredentialId: batch.VerifiableCredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc},
-		Name:         dcql.BatchDisplayName(batch),
-		Image:        dcql.BatchCredentialImage(batch, h.storage.FileSystem().Credentials().LogoManager()),
-		Issuer:       dcql.BatchIssuerTrustedParty(batch, h.storage.FileSystem().Issuers().LogoManager()),
+		Name:         credentialDisplayName(batch, locale),
+		Image:        h.credentialImage(batch, locale),
+		Issuer:       h.issuerTrustedParty(batch, locale),
 		Attributes:   attrs,
 		ExpiryDate:   dcql.BatchExpiryUnix(batch),
 	}

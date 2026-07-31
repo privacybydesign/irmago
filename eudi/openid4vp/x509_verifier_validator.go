@@ -1,11 +1,11 @@
 package openid4vp
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/scheme"
 	"github.com/privacybydesign/irmago/eudi/utils"
+	"github.com/privacybydesign/irmago/internal/common"
 )
 
 // RequestorCertificateStoreVerifierValidator validates OpenID4VP authorization
@@ -62,7 +63,7 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
 
 		if authRequest.ClientMetadata.LogoUri != nil {
-			logoData, mimeType, err := helpers.DownloadRemoteImage(&http.Client{}, *authRequest.ClientMetadata.LogoUri)
+			logoData, mimeType, err := helpers.DownloadRemoteImage(context.Background(), common.HTTPClient, *authRequest.ClientMetadata.LogoUri)
 			if err != nil {
 				// If the logo download fails, we log a warning but continue without the logo
 				eudi.Logger.Warnf("failed to download verifier logo from %q: %v", *authRequest.ClientMetadata.LogoUri, err)

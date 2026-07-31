@@ -13,8 +13,8 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	"github.com/privacybydesign/irmago/eudi/metadata"
-	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -32,20 +32,42 @@ type CredentialService interface {
 		requireCryptographicKeyBinding bool,
 		publicKeyIdentifiers []models.PublicHolderBindingKey,
 	) error
+
+	// DeleteByHash deletes a stored CredentialBatch by its deterministic hash.
+	// Returns ErrNotFound if no batch exists with that hash.
+	DeleteByHash(hash string) error
 }
 
 type credentialService struct {
 	credentialStore       db.CredentialStore
 	holderBindingKeyStore db.HolderBindingKeyStore
 	fileStorage           filesystem.FileSystemStorage
+	// revocation supplies the per-batch revocation flags for the credential
+	// list view (see GetCredentialMetadataList).
+	revocation *RevocationService
+	// currentLocale is read on every call, not snapshotted, so a SetLocale in
+	// between two list calls is reflected without rebuilding the service.
+	currentLocale *clientmodels.CurrentLocale
 }
 
-func NewCredentialService(s storage.Storage) CredentialService {
+func NewCredentialService(
+	credentialStore db.CredentialStore,
+	holderBindingKeyStore db.HolderBindingKeyStore,
+	fileStorage filesystem.FileSystemStorage,
+	revocation *RevocationService,
+	currentLocale *clientmodels.CurrentLocale,
+) CredentialService {
 	return &credentialService{
-		credentialStore:       db.NewCredentialStore(s.Db()),
-		holderBindingKeyStore: db.NewHolderBindingKeyStore(s.Db()),
-		fileStorage:           s.FileSystem(),
+		credentialStore:       credentialStore,
+		holderBindingKeyStore: holderBindingKeyStore,
+		fileStorage:           fileStorage,
+		revocation:            revocation,
+		currentLocale:         currentLocale,
 	}
+}
+
+func (s *credentialService) DeleteByHash(hash string) error {
+	return s.credentialStore.DeleteBatchByHash(hash)
 }
 
 func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credential, error) {
@@ -54,72 +76,28 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		return nil, err
 	}
 
-	// Convert storage models to client models. CredentialBatch rows are shared across formats
-	// (see models.CredentialFormat), but this listing only knows how to decode the SD-JWT shape
-	// of ResolvedClaims -- mso_mdoc batches are skipped here (mdoc_dcql has its own candidate/log
-	// listing for its own flows) until a format-agnostic listing is built.
+	// Per-credential revocation flags are derived from stored Token Status List
+	// statuses (maintained by RevocationService.RefreshStatuses).
+	revoked, revocable, err := s.revocation.BatchRevocation()
+	if err != nil {
+		return nil, err
+	}
+
+	locale := s.currentLocale.Get()
+
+	// Convert storage models to client models
 	clientModels := make([]*clientmodels.Credential, 0, len(m))
 	for _, batch := range m {
-		if batch.Format != models.CredentialFormatSdJwtVc {
-			continue
-		}
-
 		var processedSdJwtPayload *sdjwtvc.ProcessedSdJwtPayload
 		if err := json.Unmarshal(batch.ResolvedClaims, &processedSdJwtPayload); err != nil {
 			processedSdJwtPayload = nil // fallback to nil if unmarshalling fails
 		}
 
-		issuerDisplays := clientmodels.TranslatedString{}
-		for _, d := range batch.IssuerDisplay {
-			locale := clientmodels.DefaultFallbackLanguage
-			if d.Locale.Valid {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-					locale = base
-				}
-			}
-			issuerDisplays[locale] = d.Name
-		}
+		display := ResolveBatchDisplay(batch, locale)
+		issuerName := display.IssuerName
+		credentialName := display.CredentialName
 
-		credentialDisplays := clientmodels.TranslatedString{}
-		claimDisplayLookup := map[string]clientmodels.TranslatedString{}
-		metadataOrder := map[string]int{}
-
-		if batch.CredentialMetadata != nil {
-			for _, d := range batch.CredentialMetadata.Display {
-				locale := clientmodels.DefaultFallbackLanguage
-				if d.Locale.Valid {
-					if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-						locale = base
-					}
-				}
-				credentialDisplays[locale] = d.Name
-			}
-
-			for i, claim := range batch.CredentialMetadata.Claims {
-				var path []any
-				if err := json.Unmarshal(claim.Path, &path); err != nil {
-					continue
-				}
-				key := clientmodels.ClaimPathKey(path)
-				metadataOrder[key] = i
-				if len(claim.Display) == 0 {
-					continue
-				}
-				display := clientmodels.TranslatedString{}
-				for _, d := range claim.Display {
-					locale := clientmodels.DefaultFallbackLanguage
-					if d.Locale.Valid {
-						if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-							locale = base
-						}
-					}
-					display[locale] = d.Name
-				}
-				claimDisplayLookup[key] = display
-			}
-		}
-
-		attrs := buildAttributesFromPayload(processedSdJwtPayload, claimDisplayLookup, metadataOrder)
+		attrs := buildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
 
 		var iat, exp *int64
 		if batch.ExpiresAt.Valid {
@@ -131,30 +109,27 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			iat = &x
 		}
 
-		// Try get the credential image from filesystem storage, if it exists.
+		// Load the logo that resolves for the current locale from filesystem
+		// storage. The logo falls back across languages independently of the
+		// text, so a logo shows whenever any display carries one.
 		credentialLogoManager := s.fileStorage.Credentials().LogoManager()
 		issuerLogoManager := s.fileStorage.Issuers().LogoManager()
 
-		var issuerImage *clientmodels.Image = nil
-		var credentialImage *clientmodels.Image = nil
+		issuerImage := LoadResolvedLogo(issuerLogoManager, IssuerLogoURIsByLanguage(batch.IssuerDisplay), locale)
 
-		// TODO: since we don't know which display is actually used by the client, we are currently just trying to get the logos for the first display. We should implement a more robust solution for this in the future, potentially by storing a separate logo for each display/language in the filesystem and retrieving the correct one based on the client's language preferences.
-		if len(batch.IssuerDisplay) > 0 && batch.IssuerDisplay[0].LogoURI.Valid {
-			issuerImage = eudi.LoadLogoImage(issuerLogoManager, batch.IssuerDisplay[0].LogoURI.V)
-		}
-
-		if batch.CredentialMetadata != nil && len(batch.CredentialMetadata.Display) > 0 && batch.CredentialMetadata.Display[0].LogoURI != "" {
-			credentialImage = eudi.LoadLogoImage(credentialLogoManager, batch.CredentialMetadata.Display[0].LogoURI)
+		var credentialImage *clientmodels.Image
+		if batch.CredentialMetadata != nil {
+			credentialImage = LoadResolvedLogo(credentialLogoManager, CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
 		}
 
 		clientModels = append(clientModels, &clientmodels.Credential{
 			CredentialId: batch.VerifiableCredentialType,
 			Hash:         batch.Hash,
 			Image:        credentialImage,
-			Name:         credentialDisplays,
+			Name:         credentialName,
 			Issuer: clientmodels.TrustedParty{
 				Id:       batch.CredentialIssuer,
-				Name:     issuerDisplays,
+				Name:     issuerName,
 				Image:    issuerImage,
 				Url:      nil,
 				Parent:   nil,
@@ -167,8 +142,8 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 			Attributes:                   attrs,
 			ExpiryDate:                   exp,
 			IssuanceDate:                 iat,
-			Revoked:                      false, // revocation is not yet implemented, so default to false for now
-			RevocationSupported:          false,
+			Revoked:                      revoked[batch.Hash],
+			RevocationSupported:          revocable[batch.Hash],
 			IssueURL:                     nil, // TODO: add issue URL to storage model so this can be filled in here
 		})
 	}
@@ -201,6 +176,19 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 ) error {
 	if len(parsedCredentials) == 0 {
 		return nil // nothing to store
+	}
+
+	// A batch's instances are the same logical credential and are revoked
+	// together. Per draft-ietf-oauth-status-list §13.2 each one-time-use copy
+	// MUST carry its OWN dedicated, distinct status entry (for unlinkability):
+	// require all-or-none presence and reject duplicate references. Reject here,
+	// before any side effects, so a malformed issuance can't delete the user's
+	// existing credential (computeHashAndDeleteExisting below is destructive).
+	if err := validateStatusReferences(parsedCredentials); err != nil {
+		if requireCryptographicKeyBinding {
+			s.deleteOrphanedKeys(publicKeyIdentifiers)
+		}
+		return err
 	}
 
 	if requireCryptographicKeyBinding && len(publicKeyIdentifiers) != len(parsedCredentials) {
@@ -291,6 +279,80 @@ func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (s
 	return hash, nil
 }
 
+// statusReferenceOf returns the credential's Token Status List reference, or
+// the zero Reference when it carries none. The zero value (empty URI) is a
+// safe "absent" sentinel because a real reference always has a non-empty URI.
+// Token Status List is an SD-JWT-specific concept (the status claim lives in
+// IssuerSignedJwtPayload); other formats (mso_mdoc) never carry one.
+func statusReferenceOf(p *ParsedCredential) statuslist.Reference {
+	if p.SdJwtVc == nil || p.SdJwtVc.IssuerSignedJwtPayload.Status == nil || p.SdJwtVc.IssuerSignedJwtPayload.Status.StatusList == nil {
+		return statuslist.Reference{}
+	}
+	return *p.SdJwtVc.IssuerSignedJwtPayload.Status.StatusList
+}
+
+// validateStatusReferences enforces the batch's Token Status List invariants from
+// draft-ietf-oauth-status-list §13.2/§13.3:
+//   - all-or-none: either every instance carries a status_list reference or none
+//     does (a partially-referenced batch would leave some instances
+//     status-checkable and others not);
+//   - uniqueness: each reference MUST be distinct across the batch. Every
+//     one-time-use copy needs its own dedicated (uri, idx) entry so presentations
+//     can't be correlated and to avoid double allocation (§13.3). Copies may
+//     differ by idx on one list or be spread across multiple Status List Tokens.
+func validateStatusReferences(parsedCredentials []*ParsedCredential) error {
+	firstHasRef := statusReferenceOf(parsedCredentials[0]) != (statuslist.Reference{})
+	seen := make(map[statuslist.Reference]int, len(parsedCredentials))
+	for i, p := range parsedCredentials {
+		ref := statusReferenceOf(p)
+		hasRef := ref != (statuslist.Reference{})
+		if hasRef != firstHasRef {
+			return fmt.Errorf(
+				"partial status_list reference in batch: instance 0 hasRef=%t but instance %d hasRef=%t; either all instances carry a status_list reference or none do",
+				firstHasRef, i, hasRef,
+			)
+		}
+		if !hasRef {
+			continue
+		}
+		if prev, dup := seen[ref]; dup {
+			return fmt.Errorf(
+				"duplicate status_list reference in batch: instances %d and %d both use %+v; each one-time-use copy MUST have a dedicated entry (draft-ietf-oauth-status-list §13.2)",
+				prev, i, ref,
+			)
+		}
+		seen[ref] = i
+	}
+	return nil
+}
+
+func buildInstances(parsedCredentials []*ParsedCredential) []models.IssuedCredentialInstance {
+	instances := make([]models.IssuedCredentialInstance, len(parsedCredentials))
+	now := time.Now()
+	for i, p := range parsedCredentials {
+		inst := models.IssuedCredentialInstance{
+			RawCredential: p.RawCredentialBytes,
+		}
+		// Persist the status_list reference so the disclosure path and
+		// the refresh sweep can run without re-parsing the SD-JWT VC.
+		// At issuance time the holder verifier has just confirmed the
+		// bit reads StatusValid (or the credential has no status
+		// reference), so seed LastKnownStatus accordingly. Formats with
+		// no status_list concept (mso_mdoc) simply carry none of this.
+		if ref := statusReferenceOf(p); ref != (statuslist.Reference{}) {
+			uri := ref.URI
+			idx := ref.Index
+			t := now
+			inst.StatusListURI = &uri
+			inst.StatusListIdx = &idx
+			inst.LastKnownStatus = uint8(statuslist.StatusValid)
+			inst.LastStatusCheckAt = &t
+		}
+		instances[i] = inst
+	}
+	return instances
+}
+
 // hashGeneric hashes credType+claims directly, with no standard-claim
 // stripping — used for formats (mso_mdoc) whose ResolvedClaims is already a
 // bare namespace->element->value map with nothing resembling
@@ -298,16 +360,6 @@ func (s *credentialService) computeHashAndDeleteExisting(p *ParsedCredential) (s
 func hashGeneric(credType string, resolvedClaimsBytes []byte) (string, error) {
 	combined := append([]byte(credType), resolvedClaimsBytes...)
 	return fmt.Sprintf("%x", sha256.Sum256(combined)), nil
-}
-
-func buildInstances(parsedCredentials []*ParsedCredential) []models.IssuedCredentialInstance {
-	instances := make([]models.IssuedCredentialInstance, len(parsedCredentials))
-	for i, p := range parsedCredentials {
-		instances[i] = models.IssuedCredentialInstance{
-			RawCredential: p.RawCredentialBytes,
-		}
-	}
-	return instances
 }
 
 func convertCredentialMetadata(config metadata.CredentialConfiguration) *models.CredentialMetadata {
@@ -465,8 +517,8 @@ func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]dat
 // the same arbitrary-depth structure FlattenClaimValue/sortObjectKeys
 // already walk for dc+sd-jwt -- so this reuses them directly rather than
 // re-implementing sort/flatten from scratch.
-func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, resolved map[string]map[string]any) []clientmodels.Attribute {
-	displayLookup := map[string]clientmodels.TranslatedString{}
+func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, resolved map[string]map[string]any, locale string) []clientmodels.Attribute {
+	displayLookup := map[string]string{}
 	metadataOrder := map[string]int{}
 	for i, c := range claims {
 		key := clientmodels.ClaimPathKey(c.Path)
@@ -476,18 +528,19 @@ func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, 
 		}
 		// Falls back to clientmodels.DefaultFallbackLanguage when a display
 		// entry carries no locale -- the same convention every other
-		// display-name conversion in this package uses.
+		// display-name conversion in this package uses. Resolved to a single
+		// string for the caller's locale, matching FlattenClaimValue's lookup.
 		display := clientmodels.TranslatedString{}
 		for _, d := range c.Display {
-			locale := clientmodels.DefaultFallbackLanguage
+			entryLocale := clientmodels.DefaultFallbackLanguage
 			if d.Locale != nil {
 				if base, ok := metadata.TryGetBaseLanguageFromLocale(*d.Locale); ok {
-					locale = base
+					entryLocale = base
 				}
 			}
-			display[locale] = d.Name
+			display[entryLocale] = d.Name
 		}
-		displayLookup[key] = display
+		displayLookup[key] = clientmodels.Resolve(display, locale)
 	}
 
 	topLevel := make(map[string]any, len(resolved))
@@ -504,13 +557,13 @@ func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, 
 
 // BuildAttributesFromPayload walks the credential payload top-down and emits an
 // Attribute for every claim it finds. Standard JWT/SD-JWT claims are filtered
-// out at the top level. The lookup map (built from issuer metadata) supplies
-// display names; claims without a metadata entry produce attributes with
-// DisplayName: nil. Top-level keys are ordered by metadata position, then
-// alphabetically for keys absent from the metadata.
+// out at the top level. The lookup map (built from issuer metadata, resolved
+// to the current locale) supplies display names; claims without a metadata
+// entry produce attributes with DisplayName: nil. Top-level keys are ordered
+// by metadata position, then alphabetically for keys absent from the metadata.
 func BuildAttributesFromPayload(
 	payload *sdjwtvc.ProcessedSdJwtPayload,
-	lookup map[string]clientmodels.TranslatedString,
+	lookup map[string]string,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
 	attrs := []clientmodels.Attribute{}
@@ -532,7 +585,7 @@ func BuildAttributesFromPayload(
 
 func buildAttributesFromPayload(
 	payload *sdjwtvc.ProcessedSdJwtPayload,
-	lookup map[string]clientmodels.TranslatedString,
+	lookup map[string]string,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
 	return BuildAttributesFromPayload(payload, lookup, metadataOrder)
@@ -548,7 +601,7 @@ func FlattenClaimValue(
 	attrs []clientmodels.Attribute,
 	path []any,
 	value any,
-	lookup map[string]clientmodels.TranslatedString,
+	lookup map[string]string,
 	metadataOrder map[string]int,
 ) []clientmodels.Attribute {
 	switch v := value.(type) {
@@ -578,7 +631,7 @@ func FlattenClaimValue(
 			attrs = FlattenClaimValue(attrs, childPath, v[key], lookup, metadataOrder)
 		}
 	default:
-		var dn *clientmodels.TranslatedString
+		var dn *string
 		if d, ok := lookupDisplayName(lookup, path); ok {
 			dnCopy := d
 			dn = &dnCopy
@@ -649,9 +702,9 @@ func isArrayIndex(component any) bool {
 // lookupDisplayName checks the lookup map for the given path, first by exact match,
 // then by replacing integer indices with nil (null wildcard) to match metadata paths
 // like ["faculties", null, "faculty_name"].
-func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []any) (clientmodels.TranslatedString, bool) {
+func lookupDisplayName(lookup map[string]string, path []any) (string, bool) {
 	// Exact match.
-	if d, ok := lookup[clientmodels.ClaimPathKey(path)]; ok && len(d) > 0 {
+	if d, ok := lookup[clientmodels.ClaimPathKey(path)]; ok && d != "" {
 		return d, true
 	}
 	// Wildcard match: replace integer indices with nil.
@@ -666,11 +719,11 @@ func lookupDisplayName(lookup map[string]clientmodels.TranslatedString, path []a
 		}
 	}
 	if hasIndex {
-		if d, ok := lookup[clientmodels.ClaimPathKey(wildcard)]; ok && len(d) > 0 {
+		if d, ok := lookup[clientmodels.ClaimPathKey(wildcard)]; ok && d != "" {
 			return d, true
 		}
 	}
-	return nil, false
+	return "", false
 }
 
 // hashForSdJwtVc computes the deterministic hash used for batch deduplication.

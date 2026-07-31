@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
 
@@ -195,6 +196,10 @@ func IssuerSignedJwtPayload_ToJson(payload IssuerSignedJwtPayload) (string, erro
 		jsonValues[Key_Confirmationkey] = payload.Confirm
 	}
 
+	if payload.Status != nil && payload.Status.StatusList != nil {
+		jsonValues[Key_Status] = payload.Status
+	}
+
 	jsonValues[Key_VerifiableCredentialType] = payload.VerifiableCredentialType
 	jsonValues[Key_ExpiryTime] = payload.Expiry
 	jsonValues[Key_IssuedAt] = payload.IssuedAt
@@ -292,7 +297,8 @@ type IssuerSignedJwtPayload struct {
 	Confirm *CnfField
 
 	// OPTIONAL: The information on how to read the status of the verifiable credential
-	Status *string
+	// (draft-ietf-oauth-status-list-15 §5.1).
+	Status *statuslist.StatusClaim
 
 	// OPTIONAL: expiry time, must not be accepted after this moment
 	Expiry *int64
