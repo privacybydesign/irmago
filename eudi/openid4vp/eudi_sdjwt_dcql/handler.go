@@ -307,13 +307,17 @@ func vctName(vctMeta *typemetadata.VctTypeMetadata, locale string) string {
 // when the metadata is nil. Logo is intentionally not fetched (the unobtainable
 // path stays inside the user's permission-prompt budget); frontend can resolve
 // the logo URL itself if it wants.
+// The issuer of a credential the wallet does not hold carries no evidence, so
+// no channel vouches for it and it ranks low, the same as the issuer of a
+// stored one.
 func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata, locale string) clientmodels.TrustedParty {
 	if issuerMeta == nil {
-		return clientmodels.TrustedParty{}
+		return clientmodels.TrustedParty{TrustLevel: clientmodels.TrustLevel_Low}
 	}
 	return clientmodels.TrustedParty{
-		Id:   issuerMeta.Id,
-		Name: clientmodels.Resolve(issuerMeta.Name, locale),
+		Id:         issuerMeta.Id,
+		Name:       clientmodels.Resolve(issuerMeta.Name, locale),
+		TrustLevel: clientmodels.TrustLevel_Low,
 	}
 }
 
@@ -1211,12 +1215,15 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch, loca
 }
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
-// including the issuer logo if available on disk.
+// including the issuer logo if available on disk. A stored credential carries no
+// issuer evidence yet, so its issuer ranks low here as it does in the credential
+// list; ranking stored credentials against live evidence is its own slice.
 func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
-		Id:    batch.CredentialIssuer,
-		Name:  clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
-		Image: h.issuerImage(batch, locale),
+		Id:         batch.CredentialIssuer,
+		Name:       clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
+		Image:      h.issuerImage(batch, locale),
+		TrustLevel: clientmodels.TrustLevel_Low,
 	}
 }
 
