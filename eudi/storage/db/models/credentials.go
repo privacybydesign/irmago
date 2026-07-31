@@ -47,7 +47,15 @@ type CredentialBatch struct {
 	// matching a DCQL query doesn't require re-parsing the raw credential. For "dc+sd-jwt" this
 	// is the processed SD-JWT payload (after processing/verifying the issuer-signed JWT); for
 	// "mso_mdoc" this is a namespace -> elementIdentifier -> value map.
-	ResolvedClaims datatypes.JSON `gorm:"type:JSON;not null"`
+	//
+	// The column is deliberately still named processed_sd_jwt_payload: this field held only the
+	// SD-JWT payload when the table shipped, and AutoMigrate (the only schema mechanism here,
+	// see storage.autoMigrateHolderModels) cannot rename a column — it would try to ADD
+	// resolved_claims, which SQLite rejects for a NOT NULL column once the table has rows,
+	// failing startup for every wallet that already holds a credential. Pinning the physical
+	// name keeps existing databases readable with no migration; nothing outside GORM refers to
+	// the column, so only this tag knows the legacy name.
+	ResolvedClaims datatypes.JSON `gorm:"column:processed_sd_jwt_payload;type:JSON;not null"`
 
 	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
 	IssuedAt datatypes.NullTime

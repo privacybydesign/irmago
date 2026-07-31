@@ -1165,15 +1165,6 @@ func pathLess(a, b []any, metadataOrder map[string]int) bool {
 	return len(a) < len(b)
 }
 
-// batchInstanceCountRemaining returns nil for batch-of-1 credentials (infinitely
-// reusable) and a pointer to the remaining count for larger batches.
-func batchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
-	if batch.BatchSize <= 1 {
-		return nil
-	}
-	return &batch.RemainingCount
-}
-
 // credentialImage loads the credential logo that resolves for the locale from
 // the batch's display metadata (falling back to any cached display logo while
 // the backfill fetches the preferred one). Returns nil when no logo is

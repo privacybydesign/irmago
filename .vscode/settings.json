@@ -1,0 +1,12 @@
+{
+    "go.toolsEnvVars": {
+        "CGO_ENABLED": "1",
+        "PATH": "C:\\msys64\\mingw64\\bin;${env:PATH}"
+    },
+    "gopls": {
+        "env": {
+            "CGO_ENABLED": "1",
+            "PATH": "C:\\msys64\\mingw64\\bin;${env:PATH}"
+        }
+    }
+}
