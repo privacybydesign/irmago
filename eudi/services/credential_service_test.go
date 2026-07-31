@@ -1240,3 +1240,61 @@ func newStorageBatch() *models.CredentialBatch {
 		},
 	}
 }
+
+// ========== BuildMdocAttributesFromResolvedClaims ==========
+
+func TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames(t *testing.T) {
+	claims := []metadata.ClaimsDescription{
+		{
+			Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"},
+			Display: []metadata.Display{
+				{Name: "Age Over 18", Locale: new(string)},
+			},
+		},
+		{
+			Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_21"},
+			Display: []metadata.Display{
+				// No locale set -- must fall back to DefaultFallbackLanguage,
+				// not an empty-string key.
+				{Name: "Age Over 21"},
+			},
+		},
+	}
+	*claims[0].Display[0].Locale = "en"
+
+	resolved := map[string]map[string]any{
+		"eu.europa.ec.av.1": {
+			"age_over_21": false,
+			"age_over_18": true,
+		},
+	}
+
+	attrs := BuildMdocAttributesFromResolvedClaims(claims, resolved)
+
+	require.Len(t, attrs, 2)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
+	require.NotNil(t, attrs[0].DisplayName)
+	assert.Equal(t, "Age Over 18", (*attrs[0].DisplayName)["en"])
+	require.NotNil(t, attrs[0].Value)
+
+	require.Equal(t, []any{"eu.europa.ec.av.1", "age_over_21"}, attrs[1].ClaimPath)
+	require.NotNil(t, attrs[1].DisplayName)
+	assert.Equal(t, "Age Over 21", (*attrs[1].DisplayName)[clientmodels.DefaultFallbackLanguage])
+	_, hasEmptyKey := (*attrs[1].DisplayName)[""]
+	assert.False(t, hasEmptyKey, "display name must not fall back to an empty-string locale key")
+}
+
+func TestBuildMdocAttributesFromResolvedClaims_NoMetadataStillEmitsValues(t *testing.T) {
+	resolved := map[string]map[string]any{
+		"eu.europa.ec.av.1": {
+			"age_over_18": true,
+		},
+	}
+
+	attrs := BuildMdocAttributesFromResolvedClaims(nil, resolved)
+
+	require.Len(t, attrs, 1)
+	assert.Equal(t, []any{"eu.europa.ec.av.1", "age_over_18"}, attrs[0].ClaimPath)
+	assert.Nil(t, attrs[0].DisplayName)
+}

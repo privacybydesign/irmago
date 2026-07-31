@@ -15,9 +15,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
-	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -68,7 +66,7 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 	now := time.Now()
 	hasExhaustedBatch := false
 	for _, batch := range batches {
-		if !isMdocBatchValid(batch, now) {
+		if !dcql.IsBatchValid(batch, now) {
 			continue
 		}
 		if batch.BatchSize > 1 && batch.RemainingCount == 0 {
@@ -89,13 +87,13 @@ func (h *MdocDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.Cred
 		candidate := clientmodels.SelectableCredentialInstance{
 			CredentialId:                batch.VerifiableCredentialType,
 			Hash:                        batch.Hash,
-			Name:                        credentialDisplayName(batch),
-			Issuer:                      h.issuerTrustedParty(batch),
+			Name:                        dcql.BatchDisplayName(batch),
+			Issuer:                      dcql.BatchIssuerTrustedParty(batch, h.storage.FileSystem().Issuers().LogoManager()),
 			Format:                      clientmodels.Format_MsoMdoc,
-			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
+			BatchInstanceCountRemaining: dcql.BatchInstanceCountRemaining(batch),
 			Attributes:                  buildAttributes(batch, claims, resolved),
-			ExpiryDate:                  expiryUnix(batch),
-			Image:                       h.credentialImage(batch),
+			ExpiryDate:                  dcql.BatchExpiryUnix(batch),
+			Image:                       dcql.BatchCredentialImage(batch, h.storage.FileSystem().Credentials().LogoManager()),
 		}
 		if batch.IssuedAt.Valid {
 			x := batch.IssuedAt.V.Unix()
@@ -411,129 +409,12 @@ func unobtainableDescriptor(docType string, query dcql.CredentialQuery) *clientm
 	}
 }
 
-func isMdocBatchValid(batch *models.CredentialBatch, now time.Time) bool {
-	epoch := time.Unix(0, 0)
-	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {
-		return false
-	}
-	if batch.NotBefore.Valid && !batch.NotBefore.V.Equal(epoch) && now.Before(batch.NotBefore.V) {
-		return false
-	}
-	return true
-}
-
-func batchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
-	if batch.BatchSize <= 1 {
-		return nil
-	}
-	return &batch.RemainingCount
-}
-
-func expiryUnix(batch *models.CredentialBatch) *int64 {
-	if batch.ExpiresAt.Valid {
-		x := batch.ExpiresAt.V.Unix()
-		return &x
-	}
-	return nil
-}
-
-func credentialDisplayName(batch *models.CredentialBatch) clientmodels.TranslatedString {
-	if batch.CredentialMetadata != nil {
-		ts := clientmodels.TranslatedString{}
-		for _, d := range batch.CredentialMetadata.Display {
-			locale := clientmodels.DefaultFallbackLanguage
-			if d.Locale.Valid {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-					locale = base
-				}
-			}
-			ts[locale] = d.Name
-		}
-		if len(ts) > 0 {
-			return ts
-		}
-	}
-	return clientmodels.TranslatedString{clientmodels.DefaultFallbackLanguage: batch.VerifiableCredentialType}
-}
-
+// claimDisplayName is a thin mdoc-shaped wrapper over the shared
+// dcql.ClaimDisplayName — mdoc claim paths are always exactly
+// [namespace, elementIdentifier], so no wildcard handling is ever needed
+// here, but the underlying match logic is identical to every other format's.
 func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string) clientmodels.TranslatedString {
-	if batch.CredentialMetadata == nil {
-		return clientmodels.TranslatedString{}
-	}
-	for _, claim := range batch.CredentialMetadata.Claims {
-		if len(claim.Display) == 0 {
-			continue
-		}
-		var path []any
-		if err := json.Unmarshal(claim.Path, &path); err != nil {
-			continue
-		}
-		ns, el, ok := mdocPathParts(path)
-		if !ok || ns != namespace || el != elementIdentifier {
-			continue
-		}
-		ts := clientmodels.TranslatedString{}
-		for _, d := range claim.Display {
-			locale := clientmodels.DefaultFallbackLanguage
-			if d.Locale.Valid {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-					locale = base
-				}
-			}
-			ts[locale] = d.Name
-		}
-		if len(ts) > 0 {
-			return ts
-		}
-	}
-	return clientmodels.TranslatedString{}
-}
-
-func (h *MdocDcqlHandler) credentialImage(batch *models.CredentialBatch) *clientmodels.Image {
-	if batch.CredentialMetadata == nil {
-		return nil
-	}
-	logoManager := h.storage.FileSystem().Credentials().LogoManager()
-	for _, display := range batch.CredentialMetadata.Display {
-		if display.LogoURI == "" {
-			continue
-		}
-		if img := eudi.LoadLogoImage(logoManager, display.LogoURI); img != nil {
-			return img
-		}
-	}
-	return nil
-}
-
-func (h *MdocDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty {
-	name := clientmodels.TranslatedString{}
-	for _, d := range batch.IssuerDisplay {
-		locale := clientmodels.DefaultFallbackLanguage
-		if d.Locale.Valid {
-			if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-				locale = base
-			}
-		}
-		name[locale] = d.Name
-	}
-	return clientmodels.TrustedParty{
-		Id:    batch.CredentialIssuer,
-		Name:  name,
-		Image: h.issuerImage(batch),
-	}
-}
-
-func (h *MdocDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientmodels.Image {
-	logoManager := h.storage.FileSystem().Issuers().LogoManager()
-	for _, d := range batch.IssuerDisplay {
-		if !d.LogoURI.Valid || d.LogoURI.V == "" {
-			continue
-		}
-		if img := eudi.LoadLogoImage(logoManager, d.LogoURI.V); img != nil {
-			return img
-		}
-	}
-	return nil
+	return dcql.ClaimDisplayName(batch, []any{namespace, elementIdentifier})
 }
 
 // LogCredentialForHash builds a LogCredential for the stored mdoc batch identified by
@@ -600,11 +481,11 @@ func (h *MdocDcqlHandler) buildLogCredential(batch *models.CredentialBatch, clai
 	log := clientmodels.LogCredential{
 		CredentialId: batch.VerifiableCredentialType,
 		Formats:      []clientmodels.CredentialFormat{clientmodels.Format_MsoMdoc},
-		Name:         credentialDisplayName(batch),
-		Image:        h.credentialImage(batch),
-		Issuer:       h.issuerTrustedParty(batch),
+		Name:         dcql.BatchDisplayName(batch),
+		Image:        dcql.BatchCredentialImage(batch, h.storage.FileSystem().Credentials().LogoManager()),
+		Issuer:       dcql.BatchIssuerTrustedParty(batch, h.storage.FileSystem().Issuers().LogoManager()),
 		Attributes:   attrs,
-		ExpiryDate:   expiryUnix(batch),
+		ExpiryDate:   dcql.BatchExpiryUnix(batch),
 	}
 	if batch.IssuedAt.Valid {
 		x := batch.IssuedAt.V.Unix()

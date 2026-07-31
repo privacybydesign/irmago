@@ -460,10 +460,11 @@ func matchHolderBindingKey(cnf *sdjwtvc.CnfField, keyByThumbprint map[string]dat
 
 // BuildMdocAttributesFromResolvedClaims builds an attribute list directly
 // from a resolved mso_mdoc claims map (namespace -> elementIdentifier ->
-// value), for the permission-dialog display at issuance time. Mirrors
-// BuildAttributesFromPayload's role for dc+sd-jwt, but mso_mdoc claim paths
-// are always exactly two components deep (namespace, elementIdentifier)
-// with no nesting to walk, unlike SD-JWT's arbitrary JSON.
+// value), for the permission-dialog display at issuance time. mso_mdoc's
+// resolved claims are just a two-level nested map -- a degenerate case of
+// the same arbitrary-depth structure FlattenClaimValue/sortObjectKeys
+// already walk for dc+sd-jwt -- so this reuses them directly rather than
+// re-implementing sort/flatten from scratch.
 func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, resolved map[string]map[string]any) []clientmodels.Attribute {
 	displayLookup := map[string]clientmodels.TranslatedString{}
 	metadataOrder := map[string]int{}
@@ -473,51 +474,30 @@ func BuildMdocAttributesFromResolvedClaims(claims []metadata.ClaimsDescription, 
 		if len(c.Display) == 0 {
 			continue
 		}
-		displayLookup[key] = metadata.ConvertDisplayToTranslatedString(metadata.ToTranslateableList(c.Display))
+		// Falls back to clientmodels.DefaultFallbackLanguage when a display
+		// entry carries no locale -- the same convention every other
+		// display-name conversion in this package uses.
+		display := clientmodels.TranslatedString{}
+		for _, d := range c.Display {
+			locale := clientmodels.DefaultFallbackLanguage
+			if d.Locale != nil {
+				if base, ok := metadata.TryGetBaseLanguageFromLocale(*d.Locale); ok {
+					locale = base
+				}
+			}
+			display[locale] = d.Name
+		}
+		displayLookup[key] = display
 	}
 
-	type mdocClaimEntry struct {
-		namespace, elementIdentifier string
-		value                        any
-	}
-	entries := make([]mdocClaimEntry, 0)
+	topLevel := make(map[string]any, len(resolved))
 	for namespace, elements := range resolved {
-		for elementIdentifier, value := range elements {
-			entries = append(entries, mdocClaimEntry{namespace, elementIdentifier, value})
-		}
+		topLevel[namespace] = elements
 	}
 
-	orderOf := func(e mdocClaimEntry) int {
-		key := clientmodels.ClaimPathKey([]any{e.namespace, e.elementIdentifier})
-		if idx, ok := metadataOrder[key]; ok {
-			return idx
-		}
-		return 1<<31 - 1
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		oi, oj := orderOf(entries[i]), orderOf(entries[j])
-		if oi != oj {
-			return oi < oj
-		}
-		if entries[i].namespace != entries[j].namespace {
-			return entries[i].namespace < entries[j].namespace
-		}
-		return entries[i].elementIdentifier < entries[j].elementIdentifier
-	})
-
-	attrs := make([]clientmodels.Attribute, 0, len(entries))
-	for _, e := range entries {
-		path := []any{e.namespace, e.elementIdentifier}
-		var dn *clientmodels.TranslatedString
-		if d, ok := displayLookup[clientmodels.ClaimPathKey(path)]; ok && len(d) > 0 {
-			dnCopy := d
-			dn = &dnCopy
-		}
-		attrs = append(attrs, clientmodels.Attribute{
-			ClaimPath:   path,
-			DisplayName: dn,
-			Value:       clientmodels.NewAttributeValue(e.value),
-		})
+	attrs := []clientmodels.Attribute{}
+	for _, namespace := range sortObjectKeys(topLevel, []any{}, metadataOrder) {
+		attrs = FlattenClaimValue(attrs, []any{namespace}, topLevel[namespace], displayLookup, metadataOrder)
 	}
 	return attrs
 }

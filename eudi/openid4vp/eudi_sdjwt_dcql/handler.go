@@ -14,7 +14,6 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
-	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -114,7 +113,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 	now := time.Now()
 	hasExhaustedBatch := false
 	for _, batch := range batches {
-		if !isBatchValid(batch, now) {
+		if !dcql.IsBatchValid(batch, now) {
 			continue
 		}
 		// Skip exhausted batches: when a batch was issued with multiple instances
@@ -141,9 +140,9 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Name:                        credentialDisplayName(batch),
 			Issuer:                      h.issuerTrustedParty(batch),
 			Format:                      clientmodels.Format_SdJwtVc,
-			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
+			BatchInstanceCountRemaining: dcql.BatchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
-			ExpiryDate:                  expiryUnix(batch),
+			ExpiryDate:                  dcql.BatchExpiryUnix(batch),
 			Image:                       image,
 		}
 
@@ -319,7 +318,7 @@ func claimDisplayFromVct(vctMeta *typemetadata.VctTypeMetadata, path []any) clie
 		return nil
 	}
 	for _, c := range vctMeta.Claims {
-		if !claimPathMatchesMetadataPath(path, c.Path) {
+		if !dcql.ClaimPathMatchesMetadataPath(path, c.Path) {
 			continue
 		}
 		ts := clientmodels.TranslatedString{}
@@ -901,7 +900,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 		Image:        h.credentialImage(batch),
 		Issuer:       h.issuerTrustedParty(batch),
 		Attributes:   attrs,
-		ExpiryDate:   expiryUnix(batch),
+		ExpiryDate:   dcql.BatchExpiryUnix(batch),
 	}
 
 	if batch.IssuedAt.Valid {
@@ -910,29 +909,6 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	}
 
 	return log
-}
-
-func expiryUnix(batch *models.CredentialBatch) *int64 {
-	if batch.ExpiresAt.Valid {
-		x := batch.ExpiresAt.V.Unix()
-		return &x
-	}
-	return nil
-}
-
-// isBatchValid returns false if the credential batch is expired or not yet valid.
-// Unix epoch (time.Unix(0,0)) is treated as "not set" because the storage layer
-// currently always marks ExpiresAt/NotBefore as Valid, even when the JWT has no
-// exp/nbf claims — storing 0 as the timestamp.
-func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
-	epoch := time.Unix(0, 0)
-	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {
-		return false
-	}
-	if batch.NotBefore.Valid && !batch.NotBefore.V.Equal(epoch) && now.Before(batch.NotBefore.V) {
-		return false
-	}
-	return true
 }
 
 // flattenForDisclosure recursively flattens arrays and objects into scalar
@@ -1168,142 +1144,27 @@ func pathLess(a, b []any, metadataOrder map[string]int) bool {
 	return len(a) < len(b)
 }
 
-// batchInstanceCountRemaining returns nil for batch-of-1 credentials (infinitely
-// reusable) and a pointer to the remaining count for larger batches.
-func batchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
-	if batch.BatchSize <= 1 {
-		return nil
-	}
-	return &batch.RemainingCount
-}
-
 // credentialImage resolves the credential logo from the batch's display metadata.
 // Returns nil if no logo is configured or the logo cannot be loaded.
 func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch) *clientmodels.Image {
-	if batch.CredentialMetadata == nil {
-		return nil
-	}
-	logoManager := h.storage.FileSystem().Credentials().LogoManager()
-	for _, display := range batch.CredentialMetadata.Display {
-		if display.LogoURI == "" {
-			continue
-		}
-		if img := eudi.LoadLogoImage(logoManager, display.LogoURI); img != nil {
-			return img
-		}
-	}
-	return nil
+	return dcql.BatchCredentialImage(batch, h.storage.FileSystem().Credentials().LogoManager())
 }
 
 // issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
 // including the issuer logo if available on disk.
 func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch) clientmodels.TrustedParty {
-	name := clientmodels.TranslatedString{}
-	for _, d := range batch.IssuerDisplay {
-		locale := clientmodels.DefaultFallbackLanguage
-		if d.Locale.Valid {
-			if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-				locale = base
-			}
-		}
-		name[locale] = d.Name
-	}
-	return clientmodels.TrustedParty{
-		Id:    batch.CredentialIssuer,
-		Name:  name,
-		Image: h.issuerImage(batch),
-	}
-}
-
-// issuerImage resolves the issuer logo from the batch's issuer display metadata.
-// Returns nil if no logo is configured or the logo cannot be loaded.
-func (h *SdJwtVcDcqlHandler) issuerImage(batch *models.CredentialBatch) *clientmodels.Image {
-	logoManager := h.storage.FileSystem().Issuers().LogoManager()
-	for _, d := range batch.IssuerDisplay {
-		if !d.LogoURI.Valid || d.LogoURI.V == "" {
-			continue
-		}
-		if img := eudi.LoadLogoImage(logoManager, d.LogoURI.V); img != nil {
-			return img
-		}
-	}
-	return nil
+	return dcql.BatchIssuerTrustedParty(batch, h.storage.FileSystem().Issuers().LogoManager())
 }
 
 // credentialDisplayName returns the display name for a credential from its stored metadata.
 // Falls back to the VCT if no display metadata is available.
 func credentialDisplayName(batch *models.CredentialBatch) clientmodels.TranslatedString {
-	if batch.CredentialMetadata != nil {
-		ts := clientmodels.TranslatedString{}
-		for _, d := range batch.CredentialMetadata.Display {
-			locale := clientmodels.DefaultFallbackLanguage
-			if d.Locale.Valid {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-					locale = base
-				}
-			}
-			ts[locale] = d.Name
-		}
-		if len(ts) > 0 {
-			return ts
-		}
-	}
-	return clientmodels.TranslatedString{clientmodels.DefaultFallbackLanguage: batch.VerifiableCredentialType}
+	return dcql.BatchDisplayName(batch)
 }
 
 // claimDisplayName looks up the display name for a claim from the stored credential
 // metadata. Returns an empty TranslatedString when no metadata display entry exists
 // for the path — callers treat that as "no display name".
 func claimDisplayName(batch *models.CredentialBatch, claimPath []any) clientmodels.TranslatedString {
-	if batch.CredentialMetadata == nil {
-		return clientmodels.TranslatedString{}
-	}
-	for _, claim := range batch.CredentialMetadata.Claims {
-		if len(claim.Display) == 0 {
-			continue
-		}
-		var path []any
-		if err := json.Unmarshal(claim.Path, &path); err != nil {
-			continue
-		}
-		if !claimPathMatchesMetadataPath(claimPath, path) {
-			continue
-		}
-		ts := clientmodels.TranslatedString{}
-		for _, d := range claim.Display {
-			locale := clientmodels.DefaultFallbackLanguage
-			if d.Locale.Valid {
-				if base, ok := metadata.TryGetBaseLanguageFromLocale(d.Locale.V); ok {
-					locale = base
-				}
-			}
-			ts[locale] = d.Name
-		}
-		if len(ts) > 0 {
-			return ts
-		}
-	}
-	return clientmodels.TranslatedString{}
-}
-
-// claimPathMatchesMetadataPath checks if a concrete claim path matches a metadata
-// path that may contain null wildcards. Null in the metadata path matches any
-// integer index in the claim path.
-func claimPathMatchesMetadataPath(claimPath []any, metadataPath []any) bool {
-	if len(claimPath) != len(metadataPath) {
-		return false
-	}
-	for i := range claimPath {
-		if metadataPath[i] == nil {
-			// Null wildcard matches any integer index.
-			if !isArrayIndex(claimPath[i]) {
-				return false
-			}
-		} else {
-			if fmt.Sprintf("%v", claimPath[i]) != fmt.Sprintf("%v", metadataPath[i]) {
-				return false
-			}
-		}
-	}
-	return true
+	return dcql.ClaimDisplayName(batch, claimPath)
 }
