@@ -44,6 +44,33 @@ func Test_openid4vciSession_obtainCredential_issuerValidationFailureIsTyped(t *t
 		"a credential that fails to verify against its issuer is an identity gate failure")
 }
 
+// The marker is set one call deeper than it is read: obtainCredential marks the
+// failure, obtainCredentials wraps it per credential configuration, and perform
+// reads it to type the session error. Regression: that wrapping used %v, which
+// stripped the marker, so the app got a generic error for every rejected issuer
+// in a real session while the check one frame down still passed.
+func Test_openid4vciSession_obtainCredentials_validationFailureSurvivesWrapping(t *testing.T) {
+	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp, _ := json.Marshal(CredentialResponse{
+			Credentials: []CredentialInstance{{Credential: tamperedTestCredential(t)}},
+		})
+		_, _ = w.Write(resp)
+	})
+
+	sess, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
+	defer ts.Close()
+	sess.holderVerifier = sdjwtvc.NewHolderVerificationProcessor(
+		sdjwtvc.CreateDefaultVerificationContext(testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes),
+	)
+
+	_, err := sess.obtainCredentials("test-token")
+
+	require.Error(t, err)
+	require.True(t, eudi.IsPartyValidationFailure(err),
+		"the gate failure has to stay recognizable where perform reads it")
+}
+
 func Test_openid4vciSession_obtainCredential_protocolFailureIsNotTyped(t *testing.T) {
 	credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

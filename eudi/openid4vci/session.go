@@ -253,7 +253,10 @@ func (s *session) obtainCredentials(accessToken string) ([]*fetchedCredential, e
 			for _, prev := range result {
 				prev.cleanupKeys()
 			}
-			return nil, fmt.Errorf("could not obtain credential %q: %v", credentialConfigurationId, err)
+			// Wrapped, not flattened: perform reads the identity gate marker off
+			// this error to decide the session error's type, and %v would strip
+			// it here, one frame below where it is read.
+			return nil, fmt.Errorf("could not obtain credential %q: %w", credentialConfigurationId, err)
 		}
 		result = append(result, fc)
 	}
