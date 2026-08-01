@@ -127,15 +127,13 @@ func testParseAndVerifyAuthorizationRequestFailureMissingX5C(t *testing.T) {
 
 func testParseAndVerifyAuthorizationRequestFailureExpiredX5C(t *testing.T) {
 	// Setup test data
-	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
-		token.Header["x5c"] = nil // Remove x5c header
-	}, testdata.PkiOption_ExpiredEndEntity)
+	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_ExpiredEndEntity)
 
 	// Parse and verify the authorization request
 	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to get end-entity certificate from x5c header: auth request token doesn't contain valid x5c field in the header")
+	require.Contains(t, err.Error(), "failed to parse auth request jwt: token is unverifiable: error while executing keyfunc: failed to verify relying party certificate: failed to verify x5c end-entity certificate: x509: certificate has expired or is not yet valid")
 }
 
 func testParseAndVerifyAuthorizationRequestFailureRevokedX5C(t *testing.T) {
