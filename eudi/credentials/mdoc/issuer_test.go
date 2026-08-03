@@ -60,7 +60,7 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 
 	const runs = 30
 	seenOrders := make(map[string]bool)
-	for i := 0; i < runs; i++ {
+	for i := range runs {
 		mdoc, err := issuer.Issue("eu.europa.ec.av.1", namespace, claims, holder.PublicKey())
 		if err != nil {
 			t.Fatalf("Issue #%d: %v", i, err)
