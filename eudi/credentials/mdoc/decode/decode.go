@@ -301,26 +301,24 @@ func printValue(v any, depth int) {
 				fmt.Printf("%s%v: %s\n", indent, k, formatted)
 				continue
 			}
-			switch val.(type) {
+			switch val := val.(type) {
 			case map[any]any, []any:
 				fmt.Printf("%s%v:\n", indent, k)
 				printValue(val, depth+1)
 			case []byte:
-				b := val.([]byte)
-				printBytesField(fmt.Sprintf("%v", k), b, depth)
+				printBytesField(fmt.Sprintf("%v", k), val, depth)
 			default:
 				fmt.Printf("%s%v: %v\n", indent, k, val)
 			}
 		}
 	case []any:
 		for i, item := range vv {
-			switch item.(type) {
+			switch item := item.(type) {
 			case map[any]any, []any:
 				fmt.Printf("%s[%d]:\n", indent, i)
 				printValue(item, depth+1)
 			case []byte:
-				b := item.([]byte)
-				printBytesField(fmt.Sprintf("[%d]", i), b, depth)
+				printBytesField(fmt.Sprintf("[%d]", i), item, depth)
 			default:
 				fmt.Printf("%s[%d]: %v\n", indent, i, item)
 			}
