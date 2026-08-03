@@ -56,6 +56,28 @@ func TestNewView_RoleIsPartOfTheGrant(t *testing.T) {
 	require.Equal(t, clientmodels.TrustLevel_Low, view.Issuer(ev).Level)
 }
 
+func TestNewView_OnboardedByYiviRanksHigh(t *testing.T) {
+	// Yivi's own list marking an entry as onboarded by Yivi is Yivi vouching for
+	// the party, which is what its scheme certificate would have said too.
+	listing := grantingVerifiers()
+	listing.listing.OnboardedByYivi = true
+
+	verdict := NewView(listing).Verifier(Evidence{Identifiers: []string{"did:web:verifier.example.com"}})
+
+	require.Equal(t, clientmodels.TrustLevel_High, verdict.Level)
+	require.NotNil(t, verdict.Listing)
+}
+
+func TestNewView_ListedWithoutTheMarkingStaysMedium(t *testing.T) {
+	// The marking is what separates the two rungs the list channel can grant. A
+	// marking Yivi did not make has already been dropped by the list channel, so
+	// what arrives here without one is another operator's word: medium.
+	verdict := NewView(grantingVerifiers()).Verifier(Evidence{Identifiers: []string{"did:web:verifier.example.com"}})
+
+	require.Equal(t, clientmodels.TrustLevel_Medium, verdict.Level)
+	require.False(t, verdict.Listing.OnboardedByYivi)
+}
+
 func TestNewView_ChannelsAreIndependent(t *testing.T) {
 	// A certificate under the Yivi anchors already reaches the top rung, so
 	// being on a list on top of it changes the rung not at all — but the

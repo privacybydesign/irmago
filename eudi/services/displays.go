@@ -1,12 +1,16 @@
 package services
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"maps"
+	"net/http"
 	"slices"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
+	"github.com/privacybydesign/irmago/eudi/internal/helpers"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
@@ -154,4 +158,41 @@ func ResolveBatchDisplay(batch *models.CredentialBatch, locale string) ResolvedB
 		}
 	}
 	return d
+}
+
+// LoadCuratedLogo returns the logo a recognized trust list names for a party,
+// downloading it on a cache miss.
+//
+// Credential and issuer logos are fetched ahead of use by the backfill sweep,
+// which walks stored credentials; a curated logo has no such sweep behind it,
+// so the first session that meets the party is what puts it in the cache. The
+// URI comes out of a signed list rather than from the party, which is what
+// makes fetching it safe to do here at all.
+//
+// A download that fails is not an error: the party renders without a logo — the
+// same as an entry that names none — and the next session tries again.
+func LoadCuratedLogo(ctx context.Context, manager filesystem.LogoManager, httpClient *http.Client, uri string) *clientmodels.Image {
+	if uri == "" || manager == nil {
+		return nil
+	}
+	if img := eudi.LoadLogoImage(manager, uri); img != nil {
+		return img
+	}
+
+	data, mimeType, err := helpers.DownloadRemoteImage(ctx, httpClient, uri)
+	if err != nil {
+		eudi.Logger.Warnf("failed to download curated logo %q: %v", uri, err)
+		return nil
+	}
+	if err := manager.Save(uri, data, mimeType); err != nil {
+		// The logo is in hand; only caching it failed. Show it for this session
+		// and let the next one try the download again.
+		eudi.Logger.Warnf("failed to cache curated logo %q: %v", uri, err)
+	}
+
+	image := &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(data)}
+	if mimeType != "" {
+		image.MimeType = &mimeType
+	}
+	return image
 }

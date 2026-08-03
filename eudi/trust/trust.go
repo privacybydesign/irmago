@@ -155,12 +155,26 @@ func (v layeredView) evaluate(role Role, ev Evidence) Verdict {
 		return verdict
 	}
 	verdict.Listing = listing
-	// Being on a recognized list is medium. Yivi's own list can say more, but
-	// that is the marking's job and it is not read here yet.
-	if levelRank(clientmodels.TrustLevel_Medium) > levelRank(verdict.Level) {
-		verdict.Level = clientmodels.TrustLevel_Medium
+	if granted := listing.level(); levelRank(granted) > levelRank(verdict.Level) {
+		verdict.Level = granted
 	}
 	return verdict
+}
+
+// level is the rung the listing earns. Being on a recognized list at all is
+// somebody vouching for the party: medium. Yivi's own list marking the entry as
+// onboarded by Yivi is Yivi vouching for it, which is the same word its scheme
+// certificate gives: high.
+//
+// Whether a marking is Yivi's word is settled before this point — the list
+// channel only carries the marking through from a list Yivi operates — so a
+// marking another operator put on its own list has already been dropped and
+// leaves the party at medium.
+func (l *Listing) level() clientmodels.TrustLevel {
+	if l.OnboardedByYivi {
+		return clientmodels.TrustLevel_High
+	}
+	return clientmodels.TrustLevel_Medium
 }
 
 // levelRank orders the rungs so channels can be combined by taking the

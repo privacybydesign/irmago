@@ -2,6 +2,7 @@ package openid4vp
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,9 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/scheme"
+	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/privacybydesign/irmago/internal/common"
 )
@@ -238,19 +242,7 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			Identifiers: verifierIdentifiers(request.ClientId),
 		})
 
-		requestor := &clientmodels.TrustedParty{
-			Name:       clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), client.currentLocale.Get()),
-			TrustLevel: verdict.Level,
-		}
-		if endEntityCert != nil {
-			requestor.Id = endEntityCert.SerialNumber.String()
-		}
-
-		if requestorSchemeData.Organization.Logo != nil && len(requestorSchemeData.Organization.Logo.Data) > 0 {
-			requestor.Image = &clientmodels.Image{
-				Base64: base64.StdEncoding.EncodeToString(requestorSchemeData.Organization.Logo.Data),
-			}
-		}
+		requestor := client.composeRequestor(verdict, requestorSchemeData, endEntityCert, request.ClientId)
 
 		eudi.Logger.Infof("auth request: %#v", request)
 		err = client.handleAuthorizationRequest(session, request, requestor)
@@ -259,6 +251,81 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
 		}
 	}()
+}
+
+// composeRequestor reduces what the wallet knows about the verifier to the party
+// the app renders, through the display precedence every party is composed by.
+//
+// Where the verifier's own material belongs depends on how it authenticated.
+// Without a certificate — a bare DID — the wallet has nothing but what the
+// request claims, so the material is the verifier's own word for itself. With
+// one, it is counted as attested, because the validator hands the requestor info
+// over already collapsed: the certificate's own account of the party (the Yivi
+// extension, or the subject's common name) and what the request asserts through
+// client_metadata arrive in the same field, and this side cannot tell them
+// apart. Separating them means changing what the validator surfaces, which is
+// where the issuer's x5c work lands too.
+func (client *Client) composeRequestor(
+	verdict trust.Verdict,
+	requestorSchemeData *scheme.RelyingPartyRequestor,
+	endEntityCert *x509.Certificate,
+	clientId string,
+) *clientmodels.TrustedParty {
+	locale := client.currentLocale.Get()
+	name := clientmodels.Resolve(clientmodels.TranslatedString(requestorSchemeData.Organization.LegalName), locale)
+
+	var display trust.PartyDisplay
+	if endEntityCert != nil {
+		display = trust.PartyDisplay{
+			Id: endEntityCert.SerialNumber.String(),
+			Attested: trust.PartyMetadata{
+				Name: name,
+				Logo: logoImage(requestorSchemeData.Organization.Logo),
+			},
+		}
+	} else {
+		display = trust.PartyDisplay{
+			// A verifier that did not authenticate with a certificate has no
+			// serial number to be known by, so it is identified by the party
+			// half of its client_id: the DID or hostname a user can recognize,
+			// and at low the only thing on the screen it did not choose itself.
+			Id:               verifierIdentifiers(clientId)[0],
+			SelfAssertedName: name,
+		}
+	}
+
+	if verdict.Listing != nil {
+		display.CuratedLogo = services.LoadCuratedLogo(
+			context.Background(),
+			client.verifierLogoManager(),
+			common.HTTPClient,
+			verdict.Listing.LogoURI,
+		)
+	}
+
+	return display.TrustedParty(verdict, locale)
+}
+
+// verifierLogoManager is the wallet's verifier logo cache, or nil when the
+// client was built without storage — which a test doing without one may, and
+// which then simply leaves a party without its logo.
+func (client *Client) verifierLogoManager() filesystem.LogoManager {
+	if client.Configuration == nil || client.Configuration.Storage == nil {
+		return nil
+	}
+	return client.Configuration.Storage.FileSystem().Verifiers().LogoManager()
+}
+
+// logoImage wraps a scheme logo for the app, or returns nil when there is none.
+func logoImage(logo *scheme.Logo) *clientmodels.Image {
+	if logo == nil || len(logo.Data) == 0 {
+		return nil
+	}
+	image := &clientmodels.Image{Base64: base64.StdEncoding.EncodeToString(logo.Data)}
+	if mimeType := logo.MimeType; mimeType != "" {
+		image.MimeType = &mimeType
+	}
+	return image
 }
 
 func (client *Client) handleAuthorizationRequest(

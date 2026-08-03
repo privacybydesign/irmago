@@ -137,3 +137,28 @@ func TestClient_NoRecognizedLists_RefreshHasNothingToDo(t *testing.T) {
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 	require.Equal(t, clientmodels.TrustLevel_Low, verifierLevel(c, "did:web:verifier.example.com"))
 }
+
+func TestClient_RefreshTrustLists_MarkedOnYivisListRanksHigh(t *testing.T) {
+	const did = "did:web:verifier.example.com"
+
+	signer := lote.NewTestLoteSigner(t)
+	server := lote.NewTestLoteServer(t)
+	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
+		lote.NewTestEntity("Listed BV", "",
+			lote.NewTestDidService(lote.ServiceTypeVerifier, did, lote.MarkingOnboardedByYivi))))
+
+	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
+	// The same list, once as Yivi's own and once as another operator's: the
+	// marking is the same bytes on the wire, and only the first is Yivi's word.
+	yivis := newClientWithTrustLists(t, storagePath, signer, []lote.Source{server.Source(testTrustListId, true)})
+	require.NoError(t, yivis.RefreshTrustLists(context.Background()))
+
+	require.Equal(t, clientmodels.TrustLevel_High, verifierLevel(yivis, did))
+
+	othersPath := filepath.Join(test.CreateTestStorage(t), "client")
+	others := newClientWithTrustLists(t, othersPath, signer, []lote.Source{server.Source(testTrustListId, false)})
+	require.NoError(t, others.RefreshTrustLists(context.Background()))
+
+	require.Equal(t, clientmodels.TrustLevel_Medium, verifierLevel(others, did),
+		"another operator marking a party as onboarded by Yivi is not Yivi vouching for it")
+}

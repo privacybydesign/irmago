@@ -442,10 +442,6 @@ func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.C
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
 	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
-	issuerLogoManager := client.Configuration.Storage.FileSystem().Issuers().LogoManager()
-	issuerImage := services.LoadResolvedLogo(issuerLogoManager,
-		metadata.LogoURIsByLanguage(credentialIssuerMetadata.Display), locale)
-
 	// The issuer's own certificate is not surfaced by the holder verification
 	// path yet, so the only evidence available here is its identifier and the
 	// certificate channel has nothing to say: a `x5c`-identified issuer ranks
@@ -454,12 +450,25 @@ func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.C
 		Identifiers: []string{credentialIssuerMetadata.CredentialIssuer},
 	})
 
-	return &clientmodels.TrustedParty{
-		Id:         credentialIssuerMetadata.CredentialIssuer,
-		Name:       clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
-		Image:      issuerImage,
-		TrustLevel: verdict.Level,
+	display := trust.PartyDisplay{
+		Id: credentialIssuerMetadata.CredentialIssuer,
+		// Credential-issuer metadata is served from the issuer's own well-known
+		// endpoint over TLS, which says the issuer really published it — not
+		// that anybody besides the issuer stands behind what it says. Until the
+		// issuer's certificate is surfaced (#660), everything here is its own
+		// word, logo included, and only the name of it reaches the user.
+		SelfAssertedName: clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
 	}
+	if verdict.Listing != nil {
+		display.CuratedLogo = services.LoadCuratedLogo(
+			context.Background(),
+			client.Configuration.Storage.FileSystem().Issuers().LogoManager(),
+			client.httpClient,
+			verdict.Listing.LogoURI,
+		)
+	}
+
+	return display.TrustedParty(verdict, locale)
 }
 
 func handleFailure(handler Handler, message string, fmtArgs ...any) {
