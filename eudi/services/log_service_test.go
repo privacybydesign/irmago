@@ -13,6 +13,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 func newTestLogService(t *testing.T) EudiLogService {
@@ -20,6 +21,14 @@ func newTestLogService(t *testing.T) EudiLogService {
 }
 
 func newTestLogServiceWithLocale(t *testing.T, locale string) *eudiLogService {
+	svc, _ := newTestLogServiceOnDB(t, locale)
+	return svc
+}
+
+// newTestLogServiceOnDB also hands back the database, for tests that have to
+// write a row the service itself no longer writes — a pre-feature log entry,
+// for instance.
+func newTestLogServiceOnDB(t *testing.T, locale string) (*eudiLogService, *gorm.DB) {
 	t.Helper()
 
 	database := newTestHolderDB(t)
@@ -32,7 +41,7 @@ func newTestLogServiceWithLocale(t *testing.T, locale string) *eudiLogService {
 		credLogoManager:     fs.Credentials().LogoManager(),
 		issuerLogoManager:   fs.Issuers().LogoManager(),
 		verifierLogoManager: fs.Verifiers().LogoManager(),
-	}
+	}, database
 }
 
 func TestDisclosureLogRoundTrip_PreservesCredentialAndIssuerImages(t *testing.T) {
@@ -467,4 +476,147 @@ func TestDecodeStoredAttributes_RoundTripsEveryAttributeField(t *testing.T) {
 
 	require.Len(t, decoded, 1)
 	require.Equal(t, original, decoded[0])
+}
+
+// TestLogRoundTrip_RecordsTrustLevelsAtSessionTime pins that both level
+// columns survive a write and a read: the requestor's on the entry, each
+// credential's issuer's on the credential.
+func TestLogRoundTrip_RecordsTrustLevelsAtSessionTime(t *testing.T) {
+	svc := newTestLogService(t)
+
+	require.NoError(t, svc.AddDisclosureLog(
+		clientmodels.TrustedParty{Id: "https://verifier.example.com", Name: "Listed Verifier", TrustLevel: clientmodels.TrustLevel_Medium},
+		[]clientmodels.LogCredential{{
+			CredentialId: "https://example.com/vct/test",
+			Name:         "Test Credential",
+			Issuer:       clientmodels.TrustedParty{Id: "https://example.com/issuer", Name: "Test Issuer", TrustLevel: clientmodels.TrustLevel_High},
+		}},
+	))
+	require.NoError(t, svc.AddIssuanceLog(
+		clientmodels.Protocol_OpenID4VCI,
+		clientmodels.TrustedParty{Id: "https://example.com/issuer", Name: "Test Issuer", TrustLevel: clientmodels.TrustLevel_Low},
+		[]clientmodels.LogCredential{{
+			CredentialId: "https://example.com/vct/other",
+			Name:         "Other Credential",
+			Issuer:       clientmodels.TrustedParty{Id: "https://example.com/issuer", Name: "Test Issuer", TrustLevel: clientmodels.TrustLevel_Low},
+		}},
+	))
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
+
+	issuance := logs[0].IssuanceLog
+	require.NotNil(t, issuance)
+	require.Equal(t, clientmodels.TrustLevel_Low, issuance.Issuer.TrustLevel)
+	require.Equal(t, clientmodels.TrustLevel_Low, issuance.Credentials[0].Issuer.TrustLevel)
+
+	disclosure := logs[1].DisclosureLog
+	require.NotNil(t, disclosure)
+	require.Equal(t, clientmodels.TrustLevel_Medium, disclosure.Verifier.TrustLevel)
+	require.Equal(t, clientmodels.TrustLevel_High, disclosure.Credentials[0].Issuer.TrustLevel)
+}
+
+// TestLogReadDoesNotReResolveTrustLevels pins the snapshot rule against the
+// one path that does re-resolve: display text follows live metadata, the
+// recorded rung does not. A party ranked low at session time still reads low
+// with the credential still in the wallet.
+func TestLogReadDoesNotReResolveTrustLevels(t *testing.T) {
+	svc := newTestLogServiceWithLocale(t, "en")
+
+	const vct = "https://example.com/vct/test"
+	const issuer = "https://example.com/issuer"
+	newLiveBatch(t, svc, vct, issuer)
+
+	require.NoError(t, svc.AddDisclosureLog(
+		clientmodels.TrustedParty{Id: "https://verifier.example.com", Name: "Test Verifier", TrustLevel: clientmodels.TrustLevel_Low},
+		[]clientmodels.LogCredential{{
+			CredentialId: vct,
+			Name:         "Test Credential",
+			Issuer:       clientmodels.TrustedParty{Id: issuer, Name: "Test Issuer", TrustLevel: clientmodels.TrustLevel_Low},
+		}},
+	))
+
+	svc.locale = "nl"
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+
+	cred := logs[0].DisclosureLog.Credentials[0]
+	require.Equal(t, "Testgegeven", cred.Name, "display text still re-resolves")
+	require.Equal(t, clientmodels.TrustLevel_Low, cred.Issuer.TrustLevel,
+		"the logged issuer keeps its session-time rung")
+	require.Equal(t, clientmodels.TrustLevel_Low, logs[0].DisclosureLog.Verifier.TrustLevel,
+		"the logged verifier keeps its session-time rung")
+}
+
+// TestLogRead_PreFeatureRowsRenderLevelless pins how rows written before the
+// level columns existed read back: the requestor carries no rung at all, and
+// the issuer's comes off the legacy boolean, which only ever meant "Yivi
+// vouches". A false boolean is not a verdict of low.
+func TestLogRead_PreFeatureRowsRenderLevelless(t *testing.T) {
+	svc, database := newTestLogServiceOnDB(t, "en")
+
+	// RequestorTrustLevel and IssuerTrustLevel stay nil throughout: the columns
+	// did not exist when these rows were written.
+	legacy := func(vct string, verified bool) *models.EudiLogEntry {
+		return &models.EudiLogEntry{
+			ID:            datatypes.NewUUIDv4(),
+			Type:          string(clientmodels.LogType_Disclosure),
+			Protocol:      string(clientmodels.Protocol_OpenID4VP),
+			CreatedAt:     time.Now(),
+			RequestorId:   "https://verifier.example.com",
+			RequestorName: datatypes.JSON(`"Legacy Verifier"`),
+			Credentials: []models.EudiLogCredential{{
+				ID:             datatypes.NewUUIDv4(),
+				CredentialId:   vct,
+				Name:           datatypes.JSON(`"Legacy Credential"`),
+				IssuerName:     datatypes.JSON(`"Legacy Issuer"`),
+				IssuerId:       "https://example.com/issuer",
+				IssuerVerified: verified,
+			}},
+		}
+	}
+	const vouchedFor = "https://example.com/vct/legacy-vouched-for"
+	const notVouchedFor = "https://example.com/vct/legacy-not-vouched-for"
+	require.NoError(t, database.Create(legacy(vouchedFor, true)).Error)
+	require.NoError(t, database.Create(legacy(notVouchedFor, false)).Error)
+
+	logs, err := svc.GetNewestLogs(10)
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
+
+	levelByVct := map[string]clientmodels.TrustLevel{}
+	for _, entry := range logs {
+		require.Equal(t, clientmodels.TrustLevel_Unevaluated, entry.DisclosureLog.Verifier.TrustLevel,
+			"a pre-feature row records nothing about the requestor")
+		cred := entry.DisclosureLog.Credentials[0]
+		levelByVct[cred.CredentialId] = cred.Issuer.TrustLevel
+	}
+
+	require.Equal(t, clientmodels.TrustLevel_High, levelByVct[vouchedFor],
+		"the legacy true boolean renders as high")
+	require.Equal(t, clientmodels.TrustLevel_Unevaluated, levelByVct[notVouchedFor],
+		"the legacy false boolean renders levelless, not as low")
+}
+
+// TestStoredTrustLevel_AbsentIsDistinctFromLow pins the storage encoding the
+// levelless rendering rests on: a verdict of low is stored, an unevaluated
+// party is stored as NULL, and the two do not collapse into each other.
+func TestStoredTrustLevel_AbsentIsDistinctFromLow(t *testing.T) {
+	require.Nil(t, storedTrustLevel(clientmodels.TrustLevel_Unevaluated))
+	for _, level := range []clientmodels.TrustLevel{
+		clientmodels.TrustLevel_Low,
+		clientmodels.TrustLevel_Medium,
+		clientmodels.TrustLevel_High,
+	} {
+		stored := storedTrustLevel(level)
+		require.NotNil(t, stored, "%q is a verdict and has to be stored", level)
+		require.Equal(t, level, loggedTrustLevel(stored))
+		require.Equal(t, level, loggedIssuerTrustLevel(stored, false),
+			"a stored level wins over the legacy boolean")
+	}
+	require.Equal(t, clientmodels.TrustLevel_Unevaluated, loggedTrustLevel(nil))
+	require.Equal(t, clientmodels.TrustLevel_High, loggedIssuerTrustLevel(nil, true))
+	require.Equal(t, clientmodels.TrustLevel_Unevaluated, loggedIssuerTrustLevel(nil, false))
 }
