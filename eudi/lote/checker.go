@@ -82,9 +82,6 @@ func (c *Checker) resolve(ctx context.Context, list RecognizedList) *List {
 	if stored := c.load(list); stored != nil {
 		return stored
 	}
-	if !c.mayFetch(list.Id) {
-		return nil
-	}
 	return c.fetch(ctx, list)
 }
 
@@ -115,8 +112,14 @@ func (c *Checker) load(list RecognizedList) *List {
 // believable and not a rollback of the copy already stored. Every failure
 // returns nil: an unreachable or rejected list is absent evidence.
 func (c *Checker) fetch(ctx context.Context, list RecognizedList) *List {
-	// Two sessions starting at once fetch once.
+	// Two sessions starting at once fetch once. The backoff is checked inside
+	// the singleflight rather than before it, so a session that starts while a
+	// fetch is in flight joins that fetch instead of being turned away and
+	// ranking the same party a rung below the session next to it.
 	result, err, _ := c.sf.Do(list.Id, func() (any, error) {
+		if !c.mayFetch(list.Id) {
+			return nil, nil
+		}
 		raw, err := c.download(ctx, list.URL)
 		if err != nil {
 			return nil, err
@@ -148,6 +151,11 @@ func (c *Checker) fetch(ctx context.Context, list RecognizedList) *List {
 	})
 	if err != nil {
 		c.logf("trust list %q is unavailable, parties will be ranked without it: %v", list.Id, err)
+		return nil
+	}
+	if result == nil {
+		// The backoff has not run out: no attempt was made, and there is
+		// nothing to report that the failing attempt did not already report.
 		return nil
 	}
 	return result.(*List)

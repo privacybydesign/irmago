@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"sync"
 	"testing"
 	"time"
 
@@ -215,6 +216,33 @@ func TestChecker_FailingEndpointIsRetriedOnATimer(t *testing.T) {
 	setNow(2 * fetchBackoff)
 	checker.Snapshot(context.Background())
 	require.Equal(t, int64(2), server.Hits(), "and must try again once the backoff runs out")
+}
+
+func TestChecker_SessionsMeetingOneFetchInFlightAllSeeTheList(t *testing.T) {
+	signer := NewTestListSigner(t)
+	server := NewTestListServer(t)
+	checker, base, _ := newTestChecker(t, server, signer)
+	server.Serve(t, signer, listedVerifier(base.Add(time.Hour), 1))
+	// Long enough that every session below starts while the first fetch is
+	// still open.
+	server.SetDelay(200 * time.Millisecond)
+
+	var wg sync.WaitGroup
+	listings := make([]*trust.Listing, 8)
+	for i := range listings {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			listings[i] = checker.Snapshot(context.Background()).Lookup(trust.RoleVerifier, verifierEvidence())
+		}()
+	}
+	wg.Wait()
+
+	for i, listing := range listings {
+		require.NotNil(t, listing,
+			"session %d was ranked without the list while its neighbours had it", i)
+	}
+	require.Equal(t, int64(1), server.Hits(), "and the list was fetched once")
 }
 
 func TestChecker_SnapshotIsPinnedForItsSession(t *testing.T) {

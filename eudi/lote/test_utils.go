@@ -230,6 +230,7 @@ type TestListServer struct {
 	body   atomic.Pointer[[]byte]
 	status atomic.Int64
 	hits   atomic.Int64
+	delay  atomic.Int64
 }
 
 // NewTestListServer starts a server that serves nothing yet. Use Serve to give
@@ -239,6 +240,9 @@ func NewTestListServer(t *testing.T) *TestListServer {
 	s := &TestListServer{}
 	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		s.hits.Add(1)
+		if delay := s.delay.Load(); delay > 0 {
+			time.Sleep(time.Duration(delay))
+		}
 		if status := s.status.Load(); status != 0 {
 			w.WriteHeader(int(status))
 			return
@@ -266,6 +270,10 @@ func (s *TestListServer) SetBody(body []byte) { s.body.Store(&body) }
 // SetStatus makes subsequent requests fail with this HTTP status. 0 restores
 // serving the list.
 func (s *TestListServer) SetStatus(status int) { s.status.Store(int64(status)) }
+
+// SetDelay holds every subsequent request open for this long before answering,
+// so a test can have several sessions meet one fetch in flight.
+func (s *TestListServer) SetDelay(delay time.Duration) { s.delay.Store(int64(delay)) }
 
 // Close stops the server, so the endpoint becomes unreachable.
 func (s *TestListServer) Close() { s.server.Close() }
