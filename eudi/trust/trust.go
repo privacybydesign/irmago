@@ -48,9 +48,10 @@ type Verdict struct {
 	Listing *Listing
 }
 
-// Listing is a party's entry on a recognized trust list. Nothing produces one
-// yet: the recognized-list channel is a later slice, and until it lands every
-// Verdict carries a nil Listing.
+// Listing is a party's entry on a recognized trust list, produced by the
+// recognized-list channel (the lote package). A Verdict carries a nil Listing
+// when no list vouched for the party, which includes every verdict the wallet
+// draws while it holds no usable list.
 type Listing struct {
 	// ListId identifies the recognized list the entry was found on.
 	ListId string
@@ -62,6 +63,16 @@ type Listing struct {
 	// on Yivi's own list.
 	OnboardedByYivi bool
 }
+
+// Role is which of the two grants a party is being asked about. It exists for
+// [ListSnapshot], where the role has to travel as data; callers of [View] name
+// the role by picking a method instead.
+type Role string
+
+const (
+	RoleIssuer   Role = "issuer"
+	RoleVerifier Role = "verifier"
+)
 
 // View evaluates parties against one pinned state of the world. A session takes
 // a View once and asks it about every party it meets, so a list refresh landing
@@ -78,6 +89,18 @@ type View interface {
 // Evaluator hands out one pinned View per session.
 type Evaluator interface {
 	Snapshot(ctx context.Context) View
+}
+
+// ListSnapshot is the recognized-list channel, pinned to one state of the
+// wallet's lists. It answers with the entry that grants the party in that role,
+// or nil when no list grants it — including when there is no usable list at
+// all, which is what makes an unreachable or expired list absent evidence
+// rather than a failure.
+//
+// Implemented by the lote package; declared here so the evaluation seam does
+// not depend on the list format.
+type ListSnapshot interface {
+	Lookup(role Role, ev Evidence) *Listing
 }
 
 // CertificateView is the certificate channel on its own: a party that
@@ -98,4 +121,59 @@ func certificateVerdict(ev Evidence) Verdict {
 		return Verdict{Level: clientmodels.TrustLevel_High}
 	}
 	return Verdict{Level: clientmodels.TrustLevel_Low}
+}
+
+// NewView combines the channels into the view a session evaluates against. A
+// nil snapshot leaves only the certificate channel, which is what the wallet
+// runs on before it has ever fetched a list.
+func NewView(lists ListSnapshot) View {
+	return layeredView{lists: lists}
+}
+
+// layeredView is the whole ladder: the certificate channel and the
+// recognized-list channel, each asked independently, the party landing on
+// whichever rung is higher. Independence is the point — a scheme-certified
+// party stays high while the list is down, and a listed party stays medium
+// while it holds no certificate.
+type layeredView struct {
+	lists ListSnapshot
+}
+
+// Verifier implements [View].
+func (v layeredView) Verifier(ev Evidence) Verdict { return v.evaluate(RoleVerifier, ev) }
+
+// Issuer implements [View].
+func (v layeredView) Issuer(ev Evidence) Verdict { return v.evaluate(RoleIssuer, ev) }
+
+func (v layeredView) evaluate(role Role, ev Evidence) Verdict {
+	verdict := certificateVerdict(ev)
+	if v.lists == nil {
+		return verdict
+	}
+	listing := v.lists.Lookup(role, ev)
+	if listing == nil {
+		return verdict
+	}
+	verdict.Listing = listing
+	// Being on a recognized list is medium. Yivi's own list can say more, but
+	// that is the marking's job and it is not read here yet.
+	if levelRank(clientmodels.TrustLevel_Medium) > levelRank(verdict.Level) {
+		verdict.Level = clientmodels.TrustLevel_Medium
+	}
+	return verdict
+}
+
+// levelRank orders the rungs so channels can be combined by taking the
+// strongest. Unevaluated ranks below every verdict: it is the absence of one.
+func levelRank(l clientmodels.TrustLevel) int {
+	switch l {
+	case clientmodels.TrustLevel_Low:
+		return 1
+	case clientmodels.TrustLevel_Medium:
+		return 2
+	case clientmodels.TrustLevel_High:
+		return 3
+	default:
+		return 0
+	}
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
+	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -51,6 +52,7 @@ type Client struct {
 	sessionManager    sessionManager
 	credentialService services.CredentialService
 	revocationService *services.RevocationService
+	trustService      *services.TrustService
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -78,6 +80,34 @@ func New(
 	signer irmaclient.Signer,
 	aesKey [32]byte,
 	locale string,
+) (*Client, error) {
+	return NewWithRecognizedTrustLists(
+		storagePath, irmaConfigurationPath, eudiAppDataPath,
+		handler, sessionHandler, signer, aesKey, locale,
+		lote.ProductionSources,
+	)
+}
+
+// NewWithRecognizedTrustLists is [New] with the compiled-in set of recognized
+// trust lists replaced. It is the one seam the wallet exposes for pointing at a
+// list other than the published ones: integration tests use it to serve a list
+// they control, and it is how a staging build would consult a staging list.
+// Everything else is the production wiring.
+//
+// It exists as a second constructor rather than as an option on New because New
+// is bound into the app through gomobile, which does not bind variadic
+// parameters — and because a test seam that has to be reached for is harder to
+// use by accident.
+func NewWithRecognizedTrustLists(
+	storagePath string,
+	irmaConfigurationPath string,
+	eudiAppDataPath string,
+	handler ClientHandler,
+	sessionHandler clientmodels.SessionHandler,
+	signer irmaclient.Signer,
+	aesKey [32]byte,
+	locale string,
+	recognizedTrustLists []lote.Source,
 ) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
@@ -154,8 +184,20 @@ func New(
 	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
 
 	// The single home for trust-level evaluation, shared by both EUDI protocols
-	// so an issuer and a verifier are ranked by the same rules.
-	trustService := services.NewTrustService()
+	// so an issuer and a verifier are ranked by the same rules. It reads the
+	// recognized lists through the LoTE checker, which holds them in memory and
+	// persists them, and never fetches on a session's path — see
+	// Client.RefreshTrustLists.
+	//
+	// The lists are signed by Yivi and chain to the Yivi root, so they are
+	// validated against the issuer anchors; both trust models pin the same root.
+	trustChecker := lote.NewChecker(lote.Config{
+		Sources:     recognizedTrustLists,
+		X509Context: &eudiConf.Issuers,
+		Store:       db.NewTrustListStore(eudiStorage.Db()),
+		HTTPClient:  common.HTTPClient,
+	})
+	trustService := services.NewTrustService(trustChecker)
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
@@ -257,6 +299,7 @@ func New(
 		currentLocale:     currentLocale,
 		credentialService: credentialService,
 		revocationService: revocationService,
+		trustService:      trustService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -328,6 +371,22 @@ func (client *Client) RefreshStatuses(ctx context.Context) error {
 		client.handler.CredentialsChanged()
 	}
 	return err
+}
+
+// RefreshTrustLists re-downloads the recognized trust lists and adopts the ones
+// that hold up. Use this on app resume, or when the UI exposes an explicit
+// refresh action.
+//
+// It is the only path that fetches a list: sessions read whatever the wallet
+// already holds, so a session is never delayed by a list download. A source
+// that fails leaves the list the wallet already held in force, and the returned
+// error names the sources that failed, for the caller's log. Nothing about a
+// failed refresh reaches a session beyond parties capping at a lower rung.
+//
+// The wallet does not run this on a schedule yet, so today it is the app's to
+// call.
+func (client *Client) RefreshTrustLists(ctx context.Context) error {
+	return client.trustService.RefreshLists(ctx)
 }
 
 type SessionRequestData struct {

@@ -11,7 +11,7 @@ import (
 )
 
 func TestTrustService_RunsDark(t *testing.T) {
-	view := NewTrustService().Snapshot(context.Background())
+	view := NewTrustService(nil).Snapshot(context.Background())
 
 	certified := view.Verifier(trust.Evidence{Certificate: &x509.Certificate{}})
 	require.Equal(t, clientmodels.TrustLevel_High, certified.Level)
@@ -29,7 +29,7 @@ func TestTrustService_SnapshotSurvivesACancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	view := NewTrustService().Snapshot(ctx)
+	view := NewTrustService(nil).Snapshot(ctx)
 	require.NotNil(t, view)
 	require.Equal(t, clientmodels.TrustLevel_Low, view.Verifier(trust.Evidence{}).Level)
 }

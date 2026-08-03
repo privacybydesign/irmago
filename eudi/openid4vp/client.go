@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -135,6 +136,22 @@ func handleFailure(handler Handler, message string, fmtArgs ...any) {
 	})
 }
 
+// verifierIdentifiers turns a client_id into the identifiers a recognized list
+// keys entries on, most specific first.
+//
+// A client_id is a prefixed identifier: the prefix says how the verifier
+// authenticates, the rest is who it is. A trust list names the party, so a DID
+// client_id contributes the bare DID — an entry that had to spell out
+// "decentralized_identifier:did:web:..." would be writing the wallet's protocol
+// into the scheme operator's data. The client_id is carried alongside it for
+// entries keyed on whatever else a prefix may introduce.
+func verifierIdentifiers(clientId string) []string {
+	if did, found := strings.CutPrefix(clientId, string(ClientIdentifierPrefix_DecentralizedDid)); found && did != "" {
+		return []string{did, clientId}
+	}
+	return []string{clientId}
+}
+
 // handlePartyValidationFailure ends the session the same way handleFailure
 // does, but with the code that tells the app the verifier itself was rejected
 // rather than that the network or the protocol misbehaved.
@@ -218,7 +235,7 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 		// session decided about the verifier.
 		verdict := client.trustEvaluator.Snapshot(context.Background()).Verifier(trust.Evidence{
 			Certificate: endEntityCert,
-			Identifiers: []string{request.ClientId},
+			Identifiers: verifierIdentifiers(request.ClientId),
 		})
 
 		requestor := &clientmodels.TrustedParty{

@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +42,13 @@ func serveAuthRequest(t *testing.T, authRequestJwt string) string {
 // newTrustTestClient builds a client that runs sessions against the given
 // verifier validator, ranking parties the way the wallet does today.
 func newTrustTestClient(validator VerifierValidator) *Client {
-	client, _ := NewClient(nil, []dcql.DcqlCredentialQueryHandler{stubQueryHandler{}}, validator, nil, services.NewTrustService())
+	return newTrustTestClientWithLists(validator, nil)
+}
+
+// newTrustTestClientWithLists is newTrustTestClient with the recognized-list
+// channel wired up to checker.
+func newTrustTestClientWithLists(validator VerifierValidator, checker *lote.Checker) *Client {
+	client, _ := NewClient(nil, []dcql.DcqlCredentialQueryHandler{stubQueryHandler{}}, validator, nil, services.NewTrustService(checker))
 	return client
 }
 
@@ -90,7 +97,7 @@ func TestNewSession_X509Verifier_RanksHigh(t *testing.T) {
 }
 
 func TestNewSession_DidWebVerifier_RanksLowAndProceeds(t *testing.T) {
-	authRequestJwt, validator := setupDidWebTest(t)
+	authRequestJwt, validator, _ := setupDidWebTest(t)
 
 	client := newTrustTestClient(validator)
 	handler := newSpyHandler()
@@ -147,9 +154,10 @@ func TestNewSession_GenericFailures_CarryNoPartyValidationCode(t *testing.T) {
 }
 
 // setupDidWebTest publishes a DID document for a loopback did:web verifier and
-// returns an authorization request signed with the key in that document. The
-// verifier has no certificate at all: it is the bare-DID case.
-func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierValidator) {
+// returns an authorization request signed with the key in that document, plus
+// the verifier's DID — what a trust list would name it by. The verifier has no
+// certificate at all: it is the bare-DID case.
+func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierValidator, did string) {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -186,5 +194,5 @@ func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierVal
 		"decentralized_identifier:"+didWeb, key, &x509.Certificate{},
 		func(token *jwt.Token) { delete(token.Header, "x5c") },
 	)
-	return authRequestJwt, NewDidVerifierValidator(true)
+	return authRequestJwt, NewDidVerifierValidator(true), didWeb
 }
