@@ -100,10 +100,7 @@ monolithic test file:
 | `crypto_test.go` | `TestValidityInfoUsesRFC3339Tag` | Confirms `signed`/`validFrom`/`validUntil` are CBOR tag-0 RFC3339 strings, matching the AV Blueprint's own worked example, not a bare Unix epoch integer |
 | `holder_test.go` | `TestDeviceAuthPayloadIsDetached` | Transmitted `deviceAuth` has `payload = null` (detached), matching the spec's `deviceSignature` example |
 | `issuer_test.go` | `TestClaimOrderingIsRandomized` | Issues the same claims 30 times, confirms `digestID` assignment varies across issuances (not a fixed/predictable order) while every claim stays reachable via its digestID |
-| `issuer_test.go` | `TestIssueRejectsDisallowedAttribute` | Any attribute other than `age_over_18`/`age_over_NN` (e.g. `family_name`) is rejected per Annex A §4.1.2 |
-| `issuer_test.go` | `TestIssueRejectsNonBooleanValue` | A non-bool value (e.g. `"true"` as a string) is rejected |
-| `issuer_test.go` | `TestIssueRejectsMissingMandatoryAgeOver18` | Claim sets missing the mandatory `age_over_18` are rejected |
-| `issuer_test.go` | `TestIssueAcceptsValidAgeOverNNVariants` | Multiple valid `age_over_NN` variants alongside `age_over_18` issue cleanly |
+| `issuer_test.go` | `TestIssueAcceptsArbitraryDocTypeAndClaims` | `Issue()` signs any docType/namespace/claims combination as given (age verification, PID, mDL, email) — pins the doc-type-agnostic contract described under "Data model" |
 | `verifier_test.go` | `TestUntrustedRootIsRejected` | Attacker's own valid IACA→DS chain, signed correctly, still rejected — root isn't in the verifier's trust pool |
 | `verifier_test.go` | `TestTamperedDigestIsRejected` | Flipped claim value fails the digest check |
 | `verifier_test.go` | `TestDeviceAuthWrongSignerIsRejected` | Cloned mdoc — deviceAuth signed by a different device's key — rejected |
@@ -134,9 +131,15 @@ Run with:
 go test -v .
 ```
 
-Real OpenID4VP session-transcript tests now live alongside the rest of the disclosure
-logic in `eudi/openid4vp/mdoc_dcql`; real OpenID4VCI issuance tests live in
-`eudi/services` (`credential_format_parser_mdoc_test.go`) and `eudi/openid4vci`.
+Tests for the protocol layers live with the code they cover, not here:
+
+| Location | Covers |
+|---|---|
+| `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies |
+| `eudi/services/credential_format_parser_mdoc_test.go` | `TestMdocCredentialFormatParser_ParseAndVerify` (+ `_UntrustedRootRejected`, `_InvalidBase64`) and `_CheckBatchUniqueness` — the issuance-side parse/verify path |
+| `eudi/services/credential_service_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
+| `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format |
+| `eudi/storage/db/credential_store_test.go` | `GetBatchesByDocType` against an `mso_mdoc` batch |
 
 ### `decode/` — standalone CBOR/COSE inspector
 
@@ -214,8 +217,8 @@ authentication (every presentation): deviceAuth proves "I am that key, right now
 
 The real client generates and stores this device key the same way it does for SD-JWT
 holder-binding keys — via `eudi/services.HolderBindingKeyService.CreateKeyPairsWithProofs`
-— then reconstructs a signing-capable `Holder` from the stored private key at
-presentation time via `Holder.NewHolderFromPrivateKey` (see
+— then reconstructs a signing-capable `Holder` from the stored PKCS#8 private key at
+presentation time via `mdoc.NewHolderFromPrivateKey` (see
 `eudi/openid4vp/mdoc_dcql.PrepareDisclosure`).
 
 ---
@@ -246,12 +249,20 @@ attributes: age_over_18 (mandatory), age_over_NN (optional)
             no other attributes permitted
 ```
 
-This attribute restriction (`validateAVClaims`) is enforced in
-`eudi/services/credential_format_parser_mdoc.go`'s real issuance path, not in this
-package — `mdoc.Issuer.Issue()` itself signs whatever docType/namespace/claims it's
-given (a passport, a driving licence, ...); the AV-Blueprint-specific restriction
-belongs in the profile package that only ever issues `proof_of_age`, not in the
-doc-type-agnostic core.
+**This attribute restriction is not currently enforced anywhere in irmago.**
+`mdoc.Issuer.Issue()` signs whatever docType/namespace/claims it is given (a
+passport, a driving licence, ...) — see `TestIssueAcceptsArbitraryDocTypeAndClaims`,
+which pins that as intended behaviour for the doc-type-agnostic core. Earlier
+revisions of this package enforced the restriction in `Issue()` and asserted it in
+four issuer tests; both were dropped when the package's own issuance path was
+removed.
+
+Nothing regressed by dropping them, because irmago never plays the issuer role in
+production: `Issuer` exists for tests, and the real AV issuer is an external
+service. The holder side has no use for the rule either — a wallet verifies what it
+is sent, and `credential_format_parser_mdoc.go` deliberately accepts any docType so
+that the same parser serves every mdoc credential type. Should irmago ever issue
+mdocs itself, the check belongs in that issuance path, not in `Issue()`.
 
 ---
 

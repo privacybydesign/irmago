@@ -85,9 +85,11 @@ type DeviceAuthentication struct {
 // Handover is `any` because its shape depends on the transport: a bare
 // string in most tests (via testhelpers_test.go's buildHappyPathMDoc
 // stub, where no real session exists), or a real structured value for an
-// actual OpenID4VP presentation — see NewOpenID4VPSessionTranscript, which
-// builds a spec-shaped SessionTranscript for that case and is what
-// cmd/demo/main.go actually uses throughout.
+// actual OpenID4VP presentation — built by newOpenID4VPSessionTranscript
+// in eudi/openid4vp/mdoc_dcql as
+// ["OpenID4VPHandover", SHA-256(CBOR([clientId, nonce, null, responseUri]))].
+// That construction lives there, not here, because this package holds no
+// OpenID4VP knowledge of its own — hence the open type.
 type SessionTranscript struct {
 	_                     struct{} `cbor:",toarray"`
 	DeviceEngagementBytes []byte   // from QR code / NFC tap

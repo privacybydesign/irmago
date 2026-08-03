@@ -7,8 +7,8 @@ signatures, certificate chains, or digests; it only decodes and prints
 structure so you can eyeball what's actually inside.
 
 Lives in its own directory because it's a separate `package main` — Go
-doesn't allow two `func main()`s in the same package, so this can't share a
-folder with the project's other runnable binary (`cmd/demo/main.go`).
+doesn't allow a `func main()` to sit in the same package as library code,
+so it cannot share a folder with the `mdoc` package it inspects.
 
 ---
 

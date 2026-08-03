@@ -92,12 +92,19 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 // ============================================================
 //
 // Issue() itself enforces no profile-specific claim schema — any
-// docType/namespace/claims combination is signed as given. Profile
-// rules (e.g. the AV Blueprint's Annex A §4.1.2 restriction to
-// age_over_18/age_over_NN, enforced in openid4vci's
-// IssueFromCredentialRequest) live above this layer, since a passport,
-// a driving licence, or an email credential each have their own claim
-// shape that Issue() has no business knowing about.
+// docType/namespace/claims combination is signed as given. That is
+// deliberate: a passport, a driving licence, or an email credential each
+// have their own claim shape that Issue() has no business knowing about,
+// so profile rules belong above this layer.
+//
+// Note that the AV Blueprint's Annex A §4.1.2 restriction (age_over_18
+// mandatory, only age_over_NN permitted, boolean values) is currently
+// enforced nowhere in this repo. Earlier revisions asserted it here, in
+// tests this one replaced, back when the package carried its own issuance
+// path. Nothing regressed by dropping them: irmago ships no production
+// mdoc issuer — Issuer exists for tests and the AV issuer is external — so
+// there is no code path the restriction would guard. If irmago ever issues
+// mdocs itself, it belongs in that issuance path, not in Issue().
 
 func TestIssueAcceptsArbitraryDocTypeAndClaims(t *testing.T) {
 	issuer, err := NewIssuer()

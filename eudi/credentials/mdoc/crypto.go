@@ -139,16 +139,13 @@ func ecdsaPublicKeyFromCOSE(k COSEKey) (*ecdsa.PublicKey, error) {
 	if k.Crv != 1 {
 		return nil, fmt.Errorf("unsupported crv: %d (want P-256/1)", k.Crv)
 	}
-	return ECDSAPublicKeyFromCoordinates(new(big.Int).SetBytes(k.X), new(big.Int).SetBytes(k.Y))
+	return ecdsaPublicKeyFromCoordinates(new(big.Int).SetBytes(k.X), new(big.Int).SetBytes(k.Y))
 }
 
-// ECDSAPublicKeyFromCoordinates builds a *ecdsa.PublicKey from raw P-256
-// x/y coordinates, validating the point actually lies on the curve.
-// Shared by ecdsaPublicKeyFromCOSE (crypto.go, this package) and
-// openid4vci's proof-of-possession JWK reconstruction — both rebuild a
-// public key from an untrusted wire encoding and need the same check.
-// Exported specifically so the openid4vci subpackage can reuse it without
-// duplicating the on-curve validation logic.
+// ecdsaPublicKeyFromCoordinates builds a *ecdsa.PublicKey from raw P-256
+// x/y coordinates, validating the point actually lies on the curve. It
+// rebuilds a public key from an untrusted wire encoding, so that check is
+// load-bearing. Called only by ecdsaPublicKeyFromCOSE, above.
 //
 // elliptic.Curve.IsOnCurve is deprecated ("low-level unsafe API"); the Go
 // team's own recommendation in that deprecation notice is to validate via
@@ -157,7 +154,7 @@ func ecdsaPublicKeyFromCOSE(k COSEKey) (*ecdsa.PublicKey, error) {
 // (0x04 || X || Y). ecdsa.Verify itself still needs a *ecdsa.PublicKey,
 // not a *ecdh.PublicKey, so this only uses ecdh for the validation step
 // and returns the ecdsa type the rest of this package works with.
-func ECDSAPublicKeyFromCoordinates(x, y *big.Int) (*ecdsa.PublicKey, error) {
+func ecdsaPublicKeyFromCoordinates(x, y *big.Int) (*ecdsa.PublicKey, error) {
 	curve := elliptic.P256()
 	byteLen := (curve.Params().BitSize + 7) / 8 // 32 for P-256
 	uncompressed := make([]byte, 1+2*byteLen)
