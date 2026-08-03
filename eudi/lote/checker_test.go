@@ -230,11 +230,9 @@ func TestChecker_SessionsMeetingOneFetchInFlightAllSeeTheList(t *testing.T) {
 	var wg sync.WaitGroup
 	listings := make([]*trust.Listing, 8)
 	for i := range listings {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			listings[i] = checker.Snapshot(context.Background()).Lookup(trust.RoleVerifier, verifierEvidence())
-		}()
+		})
 	}
 	wg.Wait()
 
