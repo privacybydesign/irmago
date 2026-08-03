@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/lote"
 	"github.com/privacybydesign/irmago/eudi/openid4vci"
 	"github.com/privacybydesign/irmago/eudi/openid4vp"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
@@ -78,6 +79,7 @@ func New(
 	signer irmaclient.Signer,
 	aesKey [32]byte,
 	locale string,
+	opts ...Option,
 ) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
@@ -85,6 +87,12 @@ func New(
 	if handler == nil {
 		return nil, fmt.Errorf("handler is required")
 	}
+
+	options := options{recognizedLists: productionRecognizedLists}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	if err := common.AssertPathExists(storagePath); err != nil {
 		return nil, err
 	}
@@ -154,8 +162,11 @@ func New(
 	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
 
 	// The single home for trust-level evaluation, shared by both EUDI protocols
-	// so an issuer and a verifier are ranked by the same rules.
-	trustService := services.NewTrustService()
+	// so an issuer and a verifier are ranked by the same rules. Its
+	// recognized-list channel keeps the wallet's copy of every list it
+	// recognizes in the same database as everything else.
+	loteChecker := lote.NewChecker(options.recognizedLists, db.NewRecognizedListStore(eudiStorage.Db()))
+	trustService := services.NewTrustService(loteChecker)
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})

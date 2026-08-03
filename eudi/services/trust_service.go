@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 
+	"github.com/privacybydesign/irmago/eudi/lote"
 	"github.com/privacybydesign/irmago/eudi/trust"
 )
 
@@ -10,29 +11,34 @@ import (
 // place where a party's identity evidence is turned into a rung on the trust
 // ladder, for both protocols and both roles.
 //
-// It runs dark for now — the certificate channel is the only one wired up, so a
-// party that authenticated with a Yivi-anchored certificate reaches high and
-// everything else reaches low, and no verdict carries a listing. The
-// recognized-list channel (the Yivi-published LoTE) plugs in here in a later
-// slice and adds the medium and marked-high rungs; the constructor grows a
-// checker parameter at that point.
+// Two channels feed it. The certificate channel puts a party whose chain
+// validated against the Yivi anchors on high. The recognized-list channel puts
+// a party granted on a list the wallet recognizes on medium. They are
+// independent, and the rung is the stronger of the two.
 //
 // Evaluation is fail-soft by construction: nothing on this path returns an
 // error, so a trust level can never fail a session.
-type TrustService struct{}
+type TrustService struct {
+	// checker is the recognized-list channel. Nil leaves the certificate
+	// channel on its own.
+	checker *lote.Checker
+}
 
-// NewTrustService returns the wallet's trust evaluator.
-func NewTrustService() *TrustService {
-	return &TrustService{}
+// NewTrustService returns the wallet's trust evaluator, reading the
+// recognized-list channel from checker. A nil checker runs the certificate
+// channel alone, which is what a wallet that recognizes no list does.
+func NewTrustService(checker *lote.Checker) *TrustService {
+	return &TrustService{checker: checker}
 }
 
 // Snapshot pins the state a single session evaluates against, so a list refresh
-// landing halfway through cannot change that session's verdicts. Dark mode has
-// no list state to pin yet, but sessions take their view here from the start so
-// the pinning point is not a later retrofit.
+// landing halfway through cannot change that session's verdicts.
 //
-// The context is the session's; the recognized-list channel will use it to
-// bound the read of the pinned list state.
-func (s *TrustService) Snapshot(_ context.Context) trust.View {
-	return trust.CertificateView{}
+// The context is the session's: resolving the recognized lists can mean
+// fetching one, and that fetch is bounded by it.
+func (s *TrustService) Snapshot(ctx context.Context) trust.View {
+	if s.checker == nil {
+		return trust.NewView(nil)
+	}
+	return trust.NewView(s.checker.Snapshot(ctx))
 }

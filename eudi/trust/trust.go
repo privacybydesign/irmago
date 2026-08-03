@@ -48,9 +48,7 @@ type Verdict struct {
 	Listing *Listing
 }
 
-// Listing is a party's entry on a recognized trust list. Nothing produces one
-// yet: the recognized-list channel is a later slice, and until it lands every
-// Verdict carries a nil Listing.
+// Listing is a party's entry on a recognized trust list.
 type Listing struct {
 	// ListId identifies the recognized list the entry was found on.
 	ListId string
@@ -61,6 +59,26 @@ type Listing struct {
 	// OnboardedByYivi marks an entry Yivi itself vouches for. Meaningful only
 	// on Yivi's own list.
 	OnboardedByYivi bool
+}
+
+// Role is the capacity a party is trusted in. Trust as an issuer and trust as a
+// verifier are separate grants, so every lookup names one.
+type Role int
+
+const (
+	// RoleIssuer is the capacity to issue credentials.
+	RoleIssuer Role = iota
+	// RoleVerifier is the capacity to ask for them.
+	RoleVerifier
+)
+
+// Lister is the recognized-list channel, in the terms this package evaluates
+// in: one pinned state of the lists, asked about one party at a time.
+type Lister interface {
+	// Lookup returns the entry that vouches for this party in this role, or nil
+	// when no recognized list does. Like everything else in this package it
+	// cannot fail: a list that could not be read vouches for nobody.
+	Lookup(role Role, ev Evidence) *Listing
 }
 
 // View evaluates parties against one pinned state of the world. A session takes
@@ -80,22 +98,64 @@ type Evaluator interface {
 	Snapshot(ctx context.Context) View
 }
 
-// CertificateView is the certificate channel on its own: a party that
-// authenticated with a certificate validated against the Yivi anchors is
-// vouched for by Yivi and reaches high; anything else reaches low. It draws no
-// distinction between the two roles, because a certificate is issued for one
-// role and the gate already checked it was used in that role.
-type CertificateView struct{}
+// NewView returns a View over the evaluation channels, reading the
+// recognized-list channel from lister. A nil lister leaves the certificate
+// channel on its own, which is what a wallet that recognizes no list runs.
+func NewView(lister Lister) View {
+	return channels{lister: lister}
+}
+
+// channels evaluates both channels and takes the stronger of the two. They are
+// independent by design: a party Yivi certified stays high while the list is
+// unreachable, and a party the list grants reaches medium without ever holding
+// a certificate.
+type channels struct {
+	lister Lister
+}
 
 // Verifier implements [View].
-func (CertificateView) Verifier(ev Evidence) Verdict { return certificateVerdict(ev) }
+func (v channels) Verifier(ev Evidence) Verdict { return v.evaluate(RoleVerifier, ev) }
 
 // Issuer implements [View].
-func (CertificateView) Issuer(ev Evidence) Verdict { return certificateVerdict(ev) }
+func (v channels) Issuer(ev Evidence) Verdict { return v.evaluate(RoleIssuer, ev) }
 
-func certificateVerdict(ev Evidence) Verdict {
+func (v channels) evaluate(role Role, ev Evidence) Verdict {
+	verdict := Verdict{Level: clientmodels.TrustLevel_Low}
+
+	// The certificate channel. A certificate here already validated against the
+	// Yivi anchors, so it is Yivi vouching for the party. It draws no
+	// distinction between the two roles: a certificate is issued for one role
+	// and the gate already checked it was used in that role.
 	if ev.Certificate != nil {
-		return Verdict{Level: clientmodels.TrustLevel_High}
+		verdict.Level = clientmodels.TrustLevel_High
 	}
-	return Verdict{Level: clientmodels.TrustLevel_Low}
+
+	// The recognized-list channel. The listing is carried whatever the rung
+	// works out to, because what a list says a party is called outranks what the
+	// party says about itself even when a certificate put it on a higher rung.
+	if v.lister != nil {
+		if listing := v.lister.Lookup(role, ev); listing != nil {
+			verdict.Listing = listing
+			if rank(clientmodels.TrustLevel_Medium) > rank(verdict.Level) {
+				verdict.Level = clientmodels.TrustLevel_Medium
+			}
+		}
+	}
+
+	return verdict
+}
+
+// rank orders the rungs so the channels can be compared. Unevaluated is not a
+// rung and ranks below every verdict.
+func rank(level clientmodels.TrustLevel) int {
+	switch level {
+	case clientmodels.TrustLevel_High:
+		return 3
+	case clientmodels.TrustLevel_Medium:
+		return 2
+	case clientmodels.TrustLevel_Low:
+		return 1
+	default:
+		return 0
+	}
 }

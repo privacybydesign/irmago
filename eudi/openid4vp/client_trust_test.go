@@ -12,10 +12,12 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/lote"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/testdata"
@@ -39,9 +41,17 @@ func serveAuthRequest(t *testing.T, authRequestJwt string) string {
 }
 
 // newTrustTestClient builds a client that runs sessions against the given
-// verifier validator, ranking parties the way the wallet does today.
+// verifier validator, ranking parties the way a wallet that recognizes no trust
+// list does.
 func newTrustTestClient(validator VerifierValidator) *Client {
-	client, _ := NewClient(nil, []dcql.DcqlCredentialQueryHandler{stubQueryHandler{}}, validator, nil, services.NewTrustService())
+	return newTrustTestClientWithLists(validator)
+}
+
+// newTrustTestClientWithLists is newTrustTestClient over a wallet that
+// recognizes the given trust lists.
+func newTrustTestClientWithLists(validator VerifierValidator, lists ...lote.RecognizedList) *Client {
+	checker := lote.NewChecker(lists, nil)
+	client, _ := NewClient(nil, []dcql.DcqlCredentialQueryHandler{stubQueryHandler{}}, validator, nil, services.NewTrustService(checker))
 	return client
 }
 
@@ -90,7 +100,7 @@ func TestNewSession_X509Verifier_RanksHigh(t *testing.T) {
 }
 
 func TestNewSession_DidWebVerifier_RanksLowAndProceeds(t *testing.T) {
-	authRequestJwt, validator := setupDidWebTest(t)
+	authRequestJwt, validator, _ := setupDidWebTest(t)
 
 	client := newTrustTestClient(validator)
 	handler := newSpyHandler()
@@ -147,9 +157,10 @@ func TestNewSession_GenericFailures_CarryNoPartyValidationCode(t *testing.T) {
 }
 
 // setupDidWebTest publishes a DID document for a loopback did:web verifier and
-// returns an authorization request signed with the key in that document. The
-// verifier has no certificate at all: it is the bare-DID case.
-func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierValidator) {
+// returns an authorization request signed with the key in that document, plus
+// the verifier's DID. The verifier has no certificate at all: it is the bare-DID
+// case, so the recognized-list channel is the only one that can vouch for it.
+func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierValidator, did string) {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -186,5 +197,119 @@ func setupDidWebTest(t *testing.T) (authRequestJwt string, validator VerifierVal
 		"decentralized_identifier:"+didWeb, key, &x509.Certificate{},
 		func(token *jwt.Token) { delete(token.Header, "x5c") },
 	)
-	return authRequestJwt, NewDidVerifierValidator(true)
+	return authRequestJwt, NewDidVerifierValidator(true), didWeb
+}
+
+// The sessions below drive the recognized-list channel end to end: a wallet
+// pointed at a trust list it serves itself, meeting a verifier that list has
+// something (or nothing) to say about.
+
+// serveTrustList starts a list server, serves a list granting every one of the
+// dids as a verifier, and returns the recognized-list configuration that points
+// the wallet at it.
+func serveTrustList(t *testing.T, dids ...string) (*lote.TestListServer, lote.RecognizedList) {
+	t.Helper()
+	signer := lote.NewTestListSigner(t)
+	server := lote.NewTestListServer(t)
+
+	providers := make([]lote.TrustServiceProvider, 0, len(dids))
+	for _, did := range dids {
+		providers = append(providers, lote.GrantedVerifier("Listed Verifier", lote.DidIdentity(did)))
+	}
+	server.Serve(t, signer, lote.NewTestList(lote.TestListOpts{Id: "yivi-test", Providers: providers}))
+
+	return server, server.RecognizedList("yivi-test", signer)
+}
+
+func TestNewSession_ListedDidWebVerifier_RanksMedium(t *testing.T) {
+	authRequestJwt, validator, did := setupDidWebTest(t)
+	_, recognizedList := serveTrustList(t, did)
+
+	client := newTrustTestClientWithLists(validator, recognizedList)
+	handler := newSpyHandler()
+
+	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+
+	requestor := handler.awaitRequestor(t)
+	require.Equal(t, clientmodels.TrustLevel_Medium, requestor.TrustLevel,
+		"a verifier granted on a recognized list is vouched for by whoever publishes that list")
+	require.True(t, requestor.TrustLevel.IsTrusted())
+}
+
+func TestNewSession_UnlistedDidWebVerifier_RanksLow(t *testing.T) {
+	authRequestJwt, validator, _ := setupDidWebTest(t)
+	_, recognizedList := serveTrustList(t, "did:web:someone.else.example.com")
+
+	client := newTrustTestClientWithLists(validator, recognizedList)
+	handler := newSpyHandler()
+
+	defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+
+	requestor := handler.awaitRequestor(t)
+	require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel,
+		"a list that does not name this verifier vouches for it no more than no list at all")
+}
+
+func TestNewSession_DegradedTrustList_RanksLowAndProceeds(t *testing.T) {
+	// Every way a list can fail to hold up is the same thing to a session: the
+	// list is absent, the party caps at low, and the session runs on. None of
+	// these may surface an error to the user.
+	for _, degradation := range []struct {
+		name    string
+		degrade func(t *testing.T, server *lote.TestListServer, list lote.RecognizedList) lote.RecognizedList
+	}{
+		{
+			name: "unreachable endpoint",
+			degrade: func(_ *testing.T, server *lote.TestListServer, list lote.RecognizedList) lote.RecognizedList {
+				server.Close()
+				return list
+			},
+		},
+		{
+			name: "endpoint erroring",
+			degrade: func(_ *testing.T, server *lote.TestListServer, list lote.RecognizedList) lote.RecognizedList {
+				server.SetStatus(500)
+				return list
+			},
+		},
+		{
+			name: "tampered signature",
+			degrade: func(t *testing.T, server *lote.TestListServer, list lote.RecognizedList) lote.RecognizedList {
+				// Re-signed by a chain the wallet's anchors do not cover.
+				server.Serve(t, lote.NewTestListSigner(t), lote.NewTestList(lote.TestListOpts{
+					Id:        "yivi-test",
+					Providers: []lote.TrustServiceProvider{lote.GrantedVerifier("Listed Verifier", lote.DidIdentity("did:web:whoever.example.com"))},
+				}))
+				return list
+			},
+		},
+		{
+			name: "expired list",
+			degrade: func(t *testing.T, server *lote.TestListServer, list lote.RecognizedList) lote.RecognizedList {
+				signer := lote.NewTestListSigner(t)
+				server.Serve(t, signer, lote.NewTestList(lote.TestListOpts{
+					Id:         "yivi-test",
+					NextUpdate: time.Now().Add(-time.Minute),
+					Providers:  []lote.TrustServiceProvider{lote.GrantedVerifier("Listed Verifier", lote.DidIdentity("did:web:whoever.example.com"))},
+				}))
+				return server.RecognizedList("yivi-test", signer)
+			},
+		},
+	} {
+		t.Run(degradation.name, func(t *testing.T) {
+			authRequestJwt, validator, did := setupDidWebTest(t)
+			server, recognizedList := serveTrustList(t, did)
+			recognizedList = degradation.degrade(t, server, recognizedList)
+
+			client := newTrustTestClientWithLists(validator, recognizedList)
+			handler := newSpyHandler()
+
+			defer client.NewSession(serveAuthRequest(t, authRequestJwt), handler).Dismiss()
+
+			// Reaching the permission screen at all is the fail-soft assertion.
+			requestor := handler.awaitRequestor(t)
+			require.Equal(t, clientmodels.TrustLevel_Low, requestor.TrustLevel)
+			require.Equal(t, int32(0), handler.cancels.Load(), "no error may surface to the user")
+		})
+	}
 }

@@ -23,7 +23,7 @@ func TestConvertToTrustedParty_RanksTheIssuer(t *testing.T) {
 		Display:          metadata.CredentialIssuerDisplays{{Display: metadata.Display{Name: "Test Issuer"}}},
 	}
 
-	tp := client.convertToTrustedParty(m, "en", trust.CertificateView{})
+	tp := client.convertToTrustedParty(m, "en", trust.NewView(nil))
 
 	require.Equal(t, clientmodels.TrustLevel_Low, tp.TrustLevel)
 	require.False(t, tp.TrustLevel.IsTrusted(), "a low issuer gets no trusted marker")

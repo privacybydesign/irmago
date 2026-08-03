@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -218,7 +219,7 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 		// session decided about the verifier.
 		verdict := client.trustEvaluator.Snapshot(context.Background()).Verifier(trust.Evidence{
 			Certificate: endEntityCert,
-			Identifiers: []string{request.ClientId},
+			Identifiers: verifierIdentifiers(request.ClientId),
 		})
 
 		requestor := &clientmodels.TrustedParty{
@@ -242,6 +243,19 @@ func (client *Client) handleSessionAsync(fullUrl string, session *openid4vpSessi
 			handleFailure(handler, "openid4vp: failed to handle authorization request: %v", err)
 		}
 	}()
+}
+
+// verifierIdentifiers turns a client_id into the identifiers the trust
+// evaluation channels key on: the client_id verbatim, and the bare DID when it
+// names one. The `decentralized_identifier:` prefix is OpenID4VP's framing for
+// how to read the rest, not part of the verifier's identity — a trust list
+// entry names the DID the way its document is resolved.
+func verifierIdentifiers(clientId string) []string {
+	identifiers := []string{clientId}
+	if did, ok := strings.CutPrefix(clientId, string(ClientIdentifierPrefix_DecentralizedDid)); ok {
+		identifiers = append(identifiers, did)
+	}
+	return identifiers
 }
 
 func (client *Client) handleAuthorizationRequest(

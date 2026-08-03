@@ -82,6 +82,7 @@ func autoMigrateHolderModels(db *gorm.DB) error {
 		&models.EudiLogEntry{},
 		&models.EudiLogCredential{},
 		&models.StatusListCacheEntry{},
+		&models.RecognizedTrustListEntry{},
 	); err != nil {
 		return fmt.Errorf("auto-migrate database failed: %w", err)
 	}
