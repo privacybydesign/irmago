@@ -139,7 +139,7 @@ func (s *redisSessionStore) update(ctx context.Context, token string, handler fu
 			return p.Set(ctx, key, string(updatedBytes), ttl).Err()
 		})
 		return err
-	})
+	}, key)
 	if err == errUnknownSession {
 		return err
 	} else if err != nil {

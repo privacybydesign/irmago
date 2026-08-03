@@ -355,8 +355,9 @@ func (s *redisSessionStore) transaction(ctx context.Context, t irma.RequestorTok
 }
 
 func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.ClientToken, handler func(session *sessionData) (bool, error)) error {
+	key := s.client.KeyPrefix + clientTokenLookupPrefix + string(t)
 	err := s.client.Watch(ctx, func(tx *redis.Tx) error {
-		getResult := tx.Get(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t))
+		getResult := tx.Get(ctx, key)
 		if getResult.Err() == redis.Nil {
 			return &UnknownSessionError{"", t}
 		} else if getResult.Err() != nil {
@@ -395,13 +396,13 @@ func (s *redisSessionStore) clientTransaction(ctx context.Context, t irma.Client
 		}
 
 		_, err = tx.TxPipelined(ctx, func(p redis.Pipeliner) error {
-			if err := p.Set(ctx, s.client.KeyPrefix+clientTokenLookupPrefix+string(t), sessionJSON, ttl).Err(); err != nil {
+			if err := p.Set(ctx, key, sessionJSON, ttl).Err(); err != nil {
 				return err
 			}
 			return p.Expire(ctx, s.client.KeyPrefix+requestorTokenLookupPrefix+string(session.RequestorToken), ttl).Err()
 		})
 		return err
-	})
+	}, key)
 	if _, ok := err.(*UnknownSessionError); ok {
 		return err
 	} else if err != nil {
