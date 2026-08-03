@@ -63,10 +63,10 @@ func (v *CompositeVerifierValidator) ParseAndVerifyAuthorizationRequest(requestJ
 		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 
 	default:
-		// Fallback to pre-registered client_id validation for backward compatibility
-		// if v.clientRegistry != nil && v.clientRegistry.IsRegistered(clientId) {
-		// 	return nil, nil, nil, fmt.Errorf("pre-registered client_id %q is not supported", clientId)
-		// }
+		// A client_id with no recognised prefix is a pre-registered one (OpenID4VP
+		// treats the absence of a prefix as the `pre-registered` scheme), which
+		// this wallet does not accept: there is no registry to resolve it against,
+		// so the verifier cannot be authenticated.
 		return nil, nil, nil, fmt.Errorf("unsupported client_id scheme in %q", clientId)
 	}
 }

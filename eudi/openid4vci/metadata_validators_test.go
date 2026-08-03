@@ -467,6 +467,87 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		// OID4VCI types credential_signing_alg_values_supported per format: COSE
+		// algorithm identifiers as integers for mso_mdoc, JWS algorithm names as
+		// strings for dc+sd-jwt. Reading mdoc's integers as strings rejected every
+		// mdoc configuration here, before any network call.
+		{
+			name: "mso_mdoc COSE ES256 identifier as float64, the shape encoding/json produces",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-7)},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc COSE ES256 identifier as int",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{-7},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc with several COSE identifiers, one of them ES256",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-8), float64(-7)},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc advertising only an algorithm the mdoc verifier cannot use",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:  &scope,
+				// -8 is EdDSA; eudi/credentials/mdoc signs and verifies ES256 only.
+				CredentialSigningAlgValuesSupported: []any{float64(-8)},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and only -7 (ES256) is supported, got [-8]",
+		},
+		{
+			name: "mso_mdoc advertising a JWS string instead of a COSE identifier",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{"ES256"},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and only -7 (ES256) is supported, got [ES256]",
+		},
+		{
+			name: "mso_mdoc with a non-integral number, which is not an identifier",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{-7.5},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and only -7 (ES256) is supported, got [-7.5]",
+		},
+		{
+			name: "mso_mdoc credential signing algorithms can be empty",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "dc+sd-jwt still rejects a COSE integer, which is the wrong shape for it",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_SdJwtVc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-7)},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported'",
+		},
 		{
 			name: "single credential signing algorithm - unsupported",
 			config: metadata.CredentialConfiguration{
@@ -1056,4 +1137,42 @@ func TestGetSupportedSignatureAlgorithms(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestValidateSupportedFeatures_EudiReferenceAgeVerificationMdoc runs the
+// validator against the credential configuration the EUDI reference issuer
+// actually serves for the AV Blueprint's Proof of Age attestation, copied
+// verbatim from age_verification_mdoc.json in
+// ghcr.io/eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py:0.9.4.
+//
+// It is decoded from JSON rather than built as Go literals on purpose: the bug
+// this pins was entirely about the Go type a JSON number decodes to, so a test
+// constructing []any{-7} by hand would have passed while the real thing failed.
+//
+// This is the configuration an mdoc integration test would request, so if this
+// stops validating, mdoc issuance is broken again.
+func TestValidateSupportedFeatures_EudiReferenceAgeVerificationMdoc(t *testing.T) {
+	const eudiAgeVerificationMdoc = `{
+		"format": "mso_mdoc",
+		"doctype": "eu.europa.ec.av.1",
+		"scope": "eu.europa.ec.eudi.age_verification_mdoc",
+		"cryptographic_binding_methods_supported": ["jwk", "cose_key"],
+		"credential_signing_alg_values_supported": [-7],
+		"proof_types_supported": {
+			"jwt": { "proof_signing_alg_values_supported": ["ES256"] }
+		}
+	}`
+
+	var config metadata.CredentialConfiguration
+	require.NoError(t, json.Unmarshal([]byte(eudiAgeVerificationMdoc), &config))
+
+	// Guard the premise: -7 must have landed as a float64, the way
+	// encoding/json decodes every JSON number into `any`.
+	require.Len(t, config.CredentialSigningAlgValuesSupported, 1)
+	require.IsType(t, float64(0), config.CredentialSigningAlgValuesSupported[0],
+		"a JSON number decodes into any as float64; the validator has to cope with that")
+
+	validator := CredentialConfigurationValidator{}
+	require.NoError(t, validator.ValidateSupportedFeatures(&config),
+		"the EUDI reference issuer's Proof of Age configuration must validate")
 }

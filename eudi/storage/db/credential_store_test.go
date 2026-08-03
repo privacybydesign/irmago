@@ -636,3 +636,63 @@ func TestDeleteBatch_Success(t *testing.T) {
 	_, err := store.GetBatchByHash("hash-delete-success")
 	require.ErrorIs(t, err, ErrNotFound)
 }
+
+// TestBatchLookupsPreloadDisplayMetadata pins that every batch lookup a display
+// or log path can reach eager-loads the same associations. A missing preload
+// does not fail — it silently yields empty display metadata, which is how
+// mdoc_dcql ended up rendering permission screens with a blank issuer name and
+// unnamed attributes while the SD-JWT handler (which uses the fully-preloaded
+// GetCredentialBatchList) looked fine.
+func TestBatchLookupsPreloadDisplayMetadata(t *testing.T) {
+	assertPreloaded := func(t *testing.T, batch *models.CredentialBatch) {
+		t.Helper()
+		require.NotNil(t, batch)
+		assert.NotEmpty(t, batch.IssuerDisplay, "IssuerDisplay must be preloaded (issuer name/logo)")
+		require.NotNil(t, batch.CredentialMetadata, "CredentialMetadata must be preloaded")
+		assert.NotEmpty(t, batch.CredentialMetadata.Display, "credential display entries must be preloaded")
+		require.NotEmpty(t, batch.CredentialMetadata.Claims, "claims must be preloaded (claim display names)")
+		assert.NotEmpty(t, batch.CredentialMetadata.Claims[0].Display, "each claim's display entries must be preloaded")
+	}
+
+	t.Run("GetCredentialBatchList", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		require.NoError(t, store.StoreBatch(newBatch("hash-preload-list")))
+
+		batches, err := store.GetCredentialBatchList()
+		require.NoError(t, err)
+		require.Len(t, batches, 1)
+		assertPreloaded(t, batches[0])
+	})
+
+	t.Run("GetBatchByHash", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		require.NoError(t, store.StoreBatch(newBatch("hash-preload-byhash")))
+
+		batch, err := store.GetBatchByHash("hash-preload-byhash")
+		require.NoError(t, err)
+		assertPreloaded(t, batch)
+	})
+
+	t.Run("GetBatchesByVCT", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		require.NoError(t, store.StoreBatch(newBatch("hash-preload-byvct")))
+
+		batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
+		require.NoError(t, err)
+		require.Len(t, batches, 1)
+		assertPreloaded(t, batches[0])
+	})
+
+	t.Run("GetBatchesByDocType", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		mdocBatch := newBatch("hash-preload-bydoctype")
+		mdocBatch.Format = models.CredentialFormatMsoMdoc
+		mdocBatch.VerifiableCredentialType = "eu.europa.ec.av.1"
+		require.NoError(t, store.StoreBatch(mdocBatch))
+
+		batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
+		require.NoError(t, err)
+		require.Len(t, batches, 1)
+		assertPreloaded(t, batches[0])
+	})
+}

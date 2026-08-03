@@ -173,16 +173,21 @@ func getEndEntityCertFromX5cHeader(token *jwt.Token) (*x509.Certificate, error) 
 
 // dcqlQueryToCredentialQueryInfos converts a DcqlQuery's credential queries
 // into the scheme-level CredentialQueryInfo representation.
+//
+// Both the credential type and the attribute names have to be read in a
+// format-aware way. mso_mdoc names its credential type with doctype_value
+// rather than vct_values, and its claim paths carry a namespace component that
+// is not an attribute — so copying only vct_values and flattening every path
+// component (as this did) made the validator reject every mdoc query outright:
+// first for a missing vct, and had that been supplied, for requesting the
+// namespace as though it were an unregistered attribute.
 func dcqlQueryToCredentialQueryInfos(query dcql.DcqlQuery) []scheme.CredentialQueryInfo {
 	result := make([]scheme.CredentialQueryInfo, len(query.Credentials))
 	for i, cq := range query.Credentials {
-		var paths []string
-		for path := range cq.AllClaimPaths() {
-			paths = append(paths, path)
-		}
 		result[i] = scheme.CredentialQueryInfo{
-			VctValues:  cq.VctValues(),
-			ClaimPaths: paths,
+			VctValues:      cq.VctValues(),
+			DocTypeValue:   cq.DocTypeValue(),
+			AttributeNames: cq.AuthorizationAttributeNames(),
 		}
 	}
 	return result

@@ -11,6 +11,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/internal/arrays"
+	cose "github.com/veraison/go-cose"
 	"golang.org/x/text/language"
 )
 
@@ -181,14 +182,9 @@ func (v *CredentialConfigurationValidator) ValidateSupportedFeatures(c *metadata
 		return fmt.Errorf("unsupported credential format %q", c.Format)
 	}
 
-	// Validate at least one credential signing algorithms is supported (which should be string values for SD-JWTs)
-	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
-		str, ok := v.(string)
-		return str, ok
-	})
-	if len(c.CredentialSigningAlgValuesSupported) != 0 &&
-		len(getSupportedSignatureAlgorithms(credentialSigningAlgValuesStrings)) == 0 {
-		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
+	// Validate at least one advertised credential signing algorithm is supported
+	if err := validateCredentialSigningAlgValues(c); err != nil {
+		return err
 	}
 
 	// We only support JWK and DID cryptographic binding method, for now
@@ -408,6 +404,76 @@ func isValidCSSColorLevel3(s string) bool {
 
 	return hex6.MatchString(s) || hex3.MatchString(s) || hex4.MatchString(s) || hex8.MatchString(s) ||
 		rgb.MatchString(s) || rgba.MatchString(s) || hsl.MatchString(s) || hsla.MatchString(s)
+}
+
+// validateCredentialSigningAlgValues checks that at least one advertised
+// credential signing algorithm is one this wallet can actually verify.
+//
+// OID4VCI's format annexes make this parameter REQUIRED and non-empty, but they
+// type its elements per format: mso_mdoc advertises COSE algorithm identifiers
+// as integers (-7 for ES256, RFC 9053), while dc+sd-jwt advertises JWS
+// algorithm names as strings ("ES256"). Reading every format as strings made an
+// mdoc configuration look as though it advertised no algorithm at all, so mdoc
+// issuance was refused here before the first network call — including from the
+// EUDI reference issuer, whose every mdoc configuration advertises exactly [-7].
+//
+// Checking rather than skipping matters because eudi/credentials/mdoc signs and
+// verifies with ES256 only. An issuer advertising just -8 (EdDSA) or -257
+// (RS256) is one whose issuerAuth we could never verify, and rejecting that
+// here — before any token or credential request — beats failing later with an
+// opaque "MSO signature invalid".
+//
+// An absent or empty array stays acceptable, as it was before: the spec
+// requires the parameter, but treating a lax issuer's omission as fatal would
+// reject credentials this wallet can verify perfectly well.
+func validateCredentialSigningAlgValues(c *metadata.CredentialConfiguration) error {
+	if len(c.CredentialSigningAlgValuesSupported) == 0 {
+		return nil
+	}
+
+	if c.Format == metadata.CredentialFormatIdentifier_MsoMdoc {
+		for _, raw := range c.CredentialSigningAlgValuesSupported {
+			if alg, ok := toCoseAlgorithmIdentifier(raw); ok && alg == int64(cose.AlgorithmES256) {
+				return nil
+			}
+		}
+		return fmt.Errorf(
+			"no supported signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and only %d (ES256) is supported, got %v",
+			cose.AlgorithmES256, c.CredentialSigningAlgValuesSupported,
+		)
+	}
+
+	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
+		str, ok := v.(string)
+		return str, ok
+	})
+	if len(getSupportedSignatureAlgorithms(credentialSigningAlgValuesStrings)) == 0 {
+		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
+	}
+	return nil
+}
+
+// toCoseAlgorithmIdentifier reads one advertised mso_mdoc signing algorithm as a
+// COSE algorithm identifier. float64 is the shape that actually arrives from a
+// fetched metadata document, since encoding/json decodes every JSON number into
+// `any` as float64; the integer cases cover values constructed in Go. A
+// non-integral number is not an identifier and is reported as unusable rather
+// than silently truncated.
+func toCoseAlgorithmIdentifier(v any) (int64, bool) {
+	switch n := v.(type) {
+	case float64:
+		i := int64(n)
+		if float64(i) != n {
+			return 0, false
+		}
+		return i, true
+	case int:
+		return int64(n), true
+	case int64:
+		return n, true
+	default:
+		return 0, false
+	}
 }
 
 func getSupportedSignatureAlgorithms(input []string) []string {

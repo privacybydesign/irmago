@@ -97,15 +97,30 @@ func NewCredentialStore(db *gorm.DB) CredentialStore {
 	}
 }
 
-func (s *credentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
-	var batches []*models.CredentialBatch
-	err := s.db.
-		Model(&models.CredentialBatch{}).
+// withBatchDisplayPreloads eager-loads every association needed to render a
+// batch: the issuer's display entries, and the credential metadata tree
+// (its display entries, its claims, and each claim's display entries).
+//
+// Centralized because a missing preload does not fail — it silently yields
+// empty display metadata, so the credential surfaces with a blank issuer name
+// and unnamed attributes, which is easy to ship and hard to notice. Every
+// batch lookup that a display or log path can reach goes through here so the
+// lookups cannot drift apart. That already happened once: mdoc_dcql reads
+// batches via GetBatchesByDocType and GetBatchByHash, both of which
+// under-preloaded relative to GetCredentialBatchList, leaving mdoc permission
+// screens and disclosure logs without issuer names or claim display names.
+func withBatchDisplayPreloads(db *gorm.DB) *gorm.DB {
+	return db.
 		Preload("IssuerDisplay").
 		Preload("CredentialMetadata").
 		Preload("CredentialMetadata.Display").
 		Preload("CredentialMetadata.Claims").
-		Preload("CredentialMetadata.Claims.Display").
+		Preload("CredentialMetadata.Claims.Display")
+}
+
+func (s *credentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
+	var batches []*models.CredentialBatch
+	err := withBatchDisplayPreloads(s.db.Model(&models.CredentialBatch{})).
 		Find(&batches).Error
 	return batches, err
 }
@@ -127,7 +142,7 @@ func (s *credentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, 
 	}
 
 	var batch models.CredentialBatch
-	err := s.db.First(&batch, "hash = ?", hash).Error
+	err := withBatchDisplayPreloads(s.db).First(&batch, "hash = ?", hash).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -144,9 +159,7 @@ func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch
 	}
 
 	var batches []*models.CredentialBatch
-	err := s.db.
-		Preload("CredentialMetadata").
-		Preload("CredentialMetadata.Display").
+	err := withBatchDisplayPreloads(s.db).
 		Where("verifiable_credential_type = ?", vct).
 		Find(&batches).Error
 	if err != nil {

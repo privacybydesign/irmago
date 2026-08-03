@@ -1,6 +1,11 @@
 package dcql
 
-import "iter"
+import (
+	"iter"
+	"slices"
+
+	"github.com/privacybydesign/irmago/common/clientmodels"
+)
 
 type DcqlQuery struct {
 	// REQUIRED: A non-empty array of credential queries that specify the requested verifiable credentials.
@@ -135,7 +140,8 @@ func (c CredentialQuery) AllClaimPaths() iter.Seq[string] {
 	}
 }
 
-// VctValues implements scheme.ValidatableCredentialQuery.
+// VctValues returns the SD-JWT VC type identifiers this query accepts, or nil
+// when it names none (every non-SD-JWT format, and a query without meta).
 func (c CredentialQuery) VctValues() []string {
 	if c.Meta == nil {
 		return nil
@@ -143,7 +149,52 @@ func (c CredentialQuery) VctValues() []string {
 	return c.Meta.VctValues
 }
 
-// ClaimPaths implements scheme.ValidatableCredentialQuery.
-func (c CredentialQuery) ClaimPaths() iter.Seq[string] {
-	return c.AllClaimPaths()
+// DocTypeValue returns the ISO 18013-5 docType this query accepts, or "" when
+// it names none (every non-mdoc format, and a query without meta). It mirrors
+// VctValues: the two are how the respective formats name a credential type,
+// and a query names exactly one format, so at most one of them is ever set.
+func (c CredentialQuery) DocTypeValue() string {
+	if c.Meta == nil {
+		return ""
+	}
+	return c.Meta.DocTypeValue
+}
+
+// mdocClaimPathLength is the fixed depth of an mso_mdoc claim path,
+// [namespace, elementIdentifier]. ISO 18013-5 has no nested claims.
+const mdocClaimPathLength = 2
+
+// AuthorizationAttributeNames returns the attribute identifiers this query
+// requests, for authorizing it against a relying party's registered attribute
+// set (scheme.CredentialQueryInfo.AttributeNames).
+//
+// Unlike AllClaimPaths it is format-aware, and it has to be. An mso_mdoc claim
+// path is always [namespace, elementIdentifier], where the namespace is a
+// container — the doctype's own scope — and not an attribute anyone registers.
+// Contributing both components, as AllClaimPaths does, would demand every
+// relying party register its namespaces as though they were attributes, which
+// no scheme does, so every mdoc query would be refused.
+//
+// A malformed mdoc path (not exactly two string components) contributes no
+// name. That cannot be used to smuggle a claim past authorization: the same
+// shape check in mdoc_dcql's claim matching rejects the path, so no candidate
+// is offered and there is nothing to disclose.
+//
+// Every other format keeps AllClaimPaths' behaviour of contributing every
+// string component of every path.
+func (c CredentialQuery) AuthorizationAttributeNames() []string {
+	if c.Format != string(clientmodels.Format_MsoMdoc) {
+		return slices.Collect(c.AllClaimPaths())
+	}
+
+	names := make([]string, 0, len(c.Claims))
+	for _, claim := range c.Claims {
+		if len(claim.Path) != mdocClaimPathLength {
+			continue
+		}
+		if element, ok := claim.Path[mdocClaimPathLength-1].(string); ok {
+			names = append(names, element)
+		}
+	}
+	return names
 }
