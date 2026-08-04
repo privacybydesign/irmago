@@ -139,7 +139,7 @@ Tests for the protocol layers live with the code they cover, not here:
 | `eudi/openid4vp/mdoc_dcql/sessiontranscript_test.go` | `TestOpenID4VPSessionTranscriptShape`, `…BindsAllInputs`, `…IntegratesWithDeviceAuth` — the byte-level handover formula, and that a `deviceAuth` signed over it verifies |
 | `eudi/services/credential_format_parser_mdoc_test.go` | `TestMdocCredentialFormatParser_ParseAndVerify` (+ `_UntrustedRootRejected`, `_InvalidBase64`) and `_CheckBatchUniqueness` — the issuance-side parse/verify path |
 | `eudi/services/credential_service_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
-| `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format |
+| `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format, and `credential_signing_alg_values_supported` validated as COSE algorithm identifiers — ES256 (`-7`) required, an identifier ISO 18013-5 permits but this wallet cannot verify distinguished from one it does not permit at all |
 | `eudi/storage/db/credential_store_test.go` | `GetBatchesByDocType` against an `mso_mdoc` batch |
 
 ### `decode/` — standalone CBOR/COSE inspector

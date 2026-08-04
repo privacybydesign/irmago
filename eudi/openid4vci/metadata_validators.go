@@ -406,8 +406,31 @@ func isValidCSSColorLevel3(s string) bool {
 		rgb.MatchString(s) || rgba.MatchString(s) || hsl.MatchString(s) || hsla.MatchString(s)
 }
 
+// mdocAllowedSigningAlgorithms lists the COSE algorithm identifiers (RFC 9053)
+// that ISO/IEC 18013-5 permits for the MSO signature over issuerAuth: ES256,
+// ES384, ES512 and EdDSA. An mso_mdoc configuration advertising nothing from
+// this set — only RS256 (-257), PS256 (-37), a MAC or encryption identifier —
+// is not describing a document any 18013-5 verifier could accept, so it is
+// reported as malformed metadata rather than as merely unsupported here.
+var mdocAllowedSigningAlgorithms = []int64{
+	int64(cose.AlgorithmES256), // -7
+	int64(cose.AlgorithmEdDSA), // -8, Ed25519/Ed448
+	int64(cose.AlgorithmES384), // -35
+	int64(cose.AlgorithmES512), // -36
+}
+
+// mdocVerifiableSigningAlgorithms is the subset of mdocAllowedSigningAlgorithms
+// that this wallet can check today: eudi/credentials/mdoc builds its COSE
+// verifier with ES256 for both issuerAuth and the device signature. It is this
+// list, not the wider one above, that decides whether an offer is accepted —
+// see validateMdocCredentialSigningAlgValues. Teaching the mdoc verifier a
+// further algorithm is therefore a matter of moving its identifier here.
+var mdocVerifiableSigningAlgorithms = []int64{
+	int64(cose.AlgorithmES256),
+}
+
 // validateCredentialSigningAlgValues checks that at least one advertised
-// credential signing algorithm is one this wallet can actually verify.
+// credential signing algorithm is legal for the credential's format.
 //
 // OID4VCI's format annexes make this parameter REQUIRED and non-empty, but they
 // type its elements per format: mso_mdoc advertises COSE algorithm identifiers
@@ -417,11 +440,13 @@ func isValidCSSColorLevel3(s string) bool {
 // issuance was refused here before the first network call — including from the
 // EUDI reference issuer, whose every mdoc configuration advertises exactly [-7].
 //
-// Checking rather than skipping matters because eudi/credentials/mdoc signs and
-// verifies with ES256 only. An issuer advertising just -8 (EdDSA) or -257
-// (RS256) is one whose issuerAuth we could never verify, and rejecting that
-// here — before any token or credential request — beats failing later with an
-// opaque "MSO signature invalid".
+// For mso_mdoc the gate is the set this wallet can actually verify, which is
+// what "supported features" means here. Admitting a spec-legal algorithm we
+// cannot check would not make such a credential obtainable — it would only move
+// the failure to the MSO signature check, after the user has consented and the
+// pre-authorized code has been spent, and report it as an opaque invalid
+// signature. The wider ISO 18013-5 set is still consulted, to say which kind of
+// wrong an offer is: beyond this wallet, or beyond the standard.
 //
 // An absent or empty array stays acceptable, as it was before: the spec
 // requires the parameter, but treating a lax issuer's omission as fatal would
@@ -432,15 +457,7 @@ func validateCredentialSigningAlgValues(c *metadata.CredentialConfiguration) err
 	}
 
 	if c.Format == metadata.CredentialFormatIdentifier_MsoMdoc {
-		for _, raw := range c.CredentialSigningAlgValuesSupported {
-			if alg, ok := toCoseAlgorithmIdentifier(raw); ok && alg == int64(cose.AlgorithmES256) {
-				return nil
-			}
-		}
-		return fmt.Errorf(
-			"no supported signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and only %d (ES256) is supported, got %v",
-			cose.AlgorithmES256, c.CredentialSigningAlgValuesSupported,
-		)
+		return validateMdocCredentialSigningAlgValues(c.CredentialSigningAlgValuesSupported)
 	}
 
 	credentialSigningAlgValuesStrings := arrays.ConvertTo(c.CredentialSigningAlgValuesSupported, func(v any) (string, bool) {
@@ -449,6 +466,40 @@ func validateCredentialSigningAlgValues(c *metadata.CredentialConfiguration) err
 	})
 	if len(getSupportedSignatureAlgorithms(credentialSigningAlgValuesStrings)) == 0 {
 		return fmt.Errorf("no supported signing algorithms in 'credential_signing_alg_values_supported'")
+	}
+	return nil
+}
+
+// validateMdocCredentialSigningAlgValues requires at least one advertised value
+// to be an algorithm this wallet can verify, and distinguishes the two ways an
+// offer can fail that: advertising only algorithms ISO 18013-5 permits but we
+// have yet to implement, which is our gap to close, and advertising nothing
+// 18013-5 permits for an MSO at all, which is a defect in the issuer's metadata.
+// Values that are not COSE algorithm identifiers to begin with — a JWS name like
+// "ES256", a non-integral number — count as neither, so a configuration made up
+// entirely of them is reported as the latter.
+func validateMdocCredentialSigningAlgValues(advertised []any) error {
+	var allowed []int64
+	for _, raw := range advertised {
+		if alg, ok := toCoseAlgorithmIdentifier(raw); ok && slices.Contains(mdocAllowedSigningAlgorithms, alg) {
+			allowed = append(allowed, alg)
+		}
+	}
+
+	if len(allowed) == 0 {
+		return fmt.Errorf(
+			"no allowed signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and ISO 18013-5 permits only %v, got %v",
+			mdocAllowedSigningAlgorithms, advertised,
+		)
+	}
+
+	if !slices.ContainsFunc(allowed, func(alg int64) bool {
+		return slices.Contains(mdocVerifiableSigningAlgorithms, alg)
+	}) {
+		return fmt.Errorf(
+			"no supported signing algorithms in 'credential_signing_alg_values_supported': %v is permitted by ISO 18013-5 but this wallet verifies only %v",
+			allowed, mdocVerifiableSigningAlgorithms,
+		)
 	}
 	return nil
 }

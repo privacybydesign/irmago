@@ -498,16 +498,61 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		// An mso_mdoc offer can miss in two distinct ways, and the error says
+		// which: it advertises an algorithm ISO 18013-5 permits (-7 ES256, -8
+		// EdDSA, -35 ES384, -36 ES512) that this wallet has yet to implement, or
+		// it advertises nothing 18013-5 permits for an MSO at all. Both are
+		// refused here, before any token or credential request.
 		{
-			name: "mso_mdoc advertising only an algorithm the mdoc verifier cannot use",
+			name: "mso_mdoc advertising EdDSA, permitted by 18013-5 but not verifiable here",
 			config: metadata.CredentialConfiguration{
-				Format: metadata.CredentialFormatIdentifier_MsoMdoc,
-				Scope:  &scope,
-				// -8 is EdDSA; eudi/credentials/mdoc signs and verifies ES256 only.
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
 				CredentialSigningAlgValuesSupported: []any{float64(-8)},
 			},
 			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and only -7 (ES256) is supported, got [-8]",
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': [-8] is permitted by ISO 18013-5 but this wallet verifies only [-7]",
+		},
+		{
+			name: "mso_mdoc advertising only ES384",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-35)},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': [-35] is permitted by ISO 18013-5 but this wallet verifies only [-7]",
+		},
+		{
+			name: "mso_mdoc advertising only ES384 and ES512, neither verifiable here",
+			config: metadata.CredentialConfiguration{
+				Format:                              metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:                               &scope,
+				CredentialSigningAlgValuesSupported: []any{float64(-35), float64(-36)},
+			},
+			wantErr:     true,
+			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': [-35 -36] is permitted by ISO 18013-5 but this wallet verifies only [-7]",
+		},
+		{
+			name: "mso_mdoc mixing a disallowed identifier with an allowed one",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:  &scope,
+				// -257 is RS256, which 18013-5 does not permit for the MSO.
+				CredentialSigningAlgValuesSupported: []any{float64(-257), float64(-7)},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mso_mdoc advertising only identifiers 18013-5 does not permit",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+				Scope:  &scope,
+				// -257 is RS256, -37 is PS256; neither may sign an MSO.
+				CredentialSigningAlgValuesSupported: []any{float64(-257), float64(-37)},
+			},
+			wantErr:     true,
+			expectedErr: "no allowed signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and ISO 18013-5 permits only [-7 -8 -35 -36], got [-257 -37]",
 		},
 		{
 			name: "mso_mdoc advertising a JWS string instead of a COSE identifier",
@@ -517,7 +562,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				CredentialSigningAlgValuesSupported: []any{"ES256"},
 			},
 			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and only -7 (ES256) is supported, got [ES256]",
+			expectedErr: "no allowed signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and ISO 18013-5 permits only [-7 -8 -35 -36], got [ES256]",
 		},
 		{
 			name: "mso_mdoc with a non-integral number, which is not an identifier",
@@ -527,7 +572,7 @@ func TestCredentialConfiguration_ValidateSupportedFeatures(t *testing.T) {
 				CredentialSigningAlgValuesSupported: []any{-7.5},
 			},
 			wantErr:     true,
-			expectedErr: "no supported signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and only -7 (ES256) is supported, got [-7.5]",
+			expectedErr: "no allowed signing algorithms in 'credential_signing_alg_values_supported': mso_mdoc advertises COSE algorithm identifiers and ISO 18013-5 permits only [-7 -8 -35 -36], got [-7.5]",
 		},
 		{
 			name: "mso_mdoc credential signing algorithms can be empty",

@@ -21,7 +21,8 @@ import (
 // IsBatchValid returns false if the credential batch is expired or not yet
 // valid. Unix epoch (time.Unix(0,0)) is treated as "not set" because the
 // storage layer currently always marks ExpiresAt/NotBefore as Valid, even
-// when the underlying credential has no exp/nbf claim — storing 0 as the
+// when the underlying credential states no expiry or not-before of its own
+// (an absent exp/nbf claim, an absent validityInfo bound) — storing 0 as the
 // timestamp.
 func IsBatchValid(batch *models.CredentialBatch, now time.Time) bool {
 	epoch := time.Unix(0, 0)

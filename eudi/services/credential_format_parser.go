@@ -24,9 +24,11 @@ type ParsedCredential struct {
 	IssuerURL string
 
 	// ResolvedClaims is the JSON-encoded claims to cache into
-	// models.CredentialBatch.ResolvedClaims: the processed SD-JWT payload
-	// for dc+sd-jwt, or a namespace -> elementIdentifier -> value map for
-	// mso_mdoc (the shape eudi/openid4vp/mdoc_dcql already expects to read).
+	// models.CredentialBatch.ProcessedSdJwtPayload — misleadingly named on the
+	// model for a schema reason documented there, and format-dependent in the
+	// same way this field is: the processed SD-JWT payload for dc+sd-jwt, or a
+	// namespace -> elementIdentifier -> value map for mso_mdoc (the shape
+	// eudi/openid4vp/mdoc_dcql already expects to read).
 	ResolvedClaims []byte
 
 	// RawCredentialBytes is persisted verbatim into

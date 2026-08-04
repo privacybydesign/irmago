@@ -56,13 +56,16 @@ type CredentialBatch struct {
 	// database. See credentials_schema_test.go, which pins this.
 	ProcessedSdJwtPayload datatypes.JSON `gorm:"type:JSON;not null"`
 
-	// IssuedAt is taken from the iat claim of the issuer-signed JWT.
+	// IssuedAt is the iat claim of the issuer-signed JWT ("dc+sd-jwt"), or the MSO's
+	// validityInfo.signed ("mso_mdoc").
 	IssuedAt datatypes.NullTime
 
-	// ExpiresAt is taken from the exp claim of the issuer-signed JWT. Nil if the credential does not expire.
+	// ExpiresAt is the exp claim of the issuer-signed JWT ("dc+sd-jwt"), or the MSO's
+	// validityInfo.validUntil ("mso_mdoc"). Nil if the credential does not expire.
 	ExpiresAt datatypes.NullTime
 
-	// NotBefore is taken from the nbf claim of the issuer-signed JWT. Nil if the credential has no nbf restriction.
+	// NotBefore is the nbf claim of the issuer-signed JWT ("dc+sd-jwt"), or the MSO's
+	// validityInfo.validFrom ("mso_mdoc"). Nil if the credential has no such restriction.
 	// OID4VP wallets must not present a credential before this time.
 	NotBefore datatypes.NullTime
 
@@ -130,9 +133,10 @@ func (b *CredentialBatch) validate() error {
 	return nil
 }
 
-// IssuedCredentialInstance is a single raw SD-JWT VC token within a CredentialBatch.
-// Each instance carries its own holder binding key, because the OID4VCI session creates
-// one key pair per proof JWT in the batch credential request.
+// IssuedCredentialInstance is a single raw credential within a CredentialBatch, in
+// whichever format the batch's Format field names. Each instance carries its own holder
+// binding key, because the OID4VCI session creates one key pair per proof JWT in the
+// batch credential request.
 type IssuedCredentialInstance struct {
 	ID datatypes.UUID
 
@@ -142,7 +146,9 @@ type IssuedCredentialInstance struct {
 	// Nil if the credential configuration did not require cryptographic key binding.
 	HolderBindingKey *HolderBindingKey `gorm:"constraint:OnDelete:CASCADE"`
 
-	// RawCredential is the raw SD-JWT VC token (without key binding JWT).
+	// RawCredential is the credential as issued, minus anything the holder re-creates per
+	// presentation: the SD-JWT VC token without its key binding JWT for "dc+sd-jwt", and
+	// CBOR of docType plus issuerSigned without DeviceSigned for "mso_mdoc".
 	// The surrounding SQLCipher layer encrypts this at rest.
 	RawCredential []byte `gorm:"type:bytea;not null"`
 
