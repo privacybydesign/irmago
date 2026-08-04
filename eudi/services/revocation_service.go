@@ -86,13 +86,23 @@ func (s *RevocationService) IsRevoked(instance *models.IssuedCredentialInstance)
 //
 // Fail-soft: per-URI and per-instance errors are logged and skipped, leaving
 // the previous LastKnownStatus in place. A nil checker makes this a no-op.
-func (s *RevocationService) RefreshStatuses(ctx context.Context) error {
+// Cancelling ctx is the one thing that does stop the sweep and surface an
+// error, keeping whatever was already written back.
+//
+// Returns how many batches' statuses moved — one representative per batch, so
+// this counts batches, not rows. Re-confirmations and failures leave the stored
+// status alone and so count for nothing; callers use the count to decide
+// whether anything happened worth telling the app about. A cut-short sweep
+// returns both: the changes it did write back, and the cancellation. Both matter
+// — the writebacks are committed, so a caller that discards the count on an
+// error loses those changes for good.
+func (s *RevocationService) RefreshStatuses(ctx context.Context) (changed int, err error) {
 	if s.checker == nil {
-		return nil
+		return 0, nil
 	}
 	instances, err := s.store.ListInstancesWithStatusReference()
 	if err != nil {
-		return fmt.Errorf("load instances: %w", err)
+		return 0, fmt.Errorf("load instances: %w", err)
 	}
 
 	// Keep one representative instance per batch. Any copy gives the same
@@ -113,9 +123,21 @@ func (s *RevocationService) RefreshStatuses(ctx context.Context) error {
 	}
 
 	for uri, group := range groups {
+		// Stop between groups, so shutdown does not wait on the remaining URIs.
+		if ctx.Err() != nil {
+			return changed, ctx.Err()
+		}
+
 		// One Refresh per URI populates the cache; the per-idx Check calls
 		// below then read from the warm cache (no extra HTTP traffic).
 		if _, err := s.checker.Refresh(ctx, statuslist.Reference{URI: uri}); err != nil {
+			// A fetch aborted by cancellation is not a fail-soft per-URI error:
+			// it means the sweep was cut short, which the caller has to be able
+			// to tell from a sweep that looked at everything. Without this, a
+			// cancellation landing in the last group's fetch returns nil.
+			if ctx.Err() != nil {
+				return changed, ctx.Err()
+			}
 			eudi.Logger.Warnf("status refresh: refresh %s failed: %v", common.SanitizeForLog(uri), err)
 			continue
 		}
@@ -126,12 +148,18 @@ func (s *RevocationService) RefreshStatuses(ctx context.Context) error {
 				eudi.Logger.Warnf("status refresh: check idx %d on %s failed: %v", inst.StatusListIdx, common.SanitizeForLog(uri), err)
 				continue
 			}
+			// Written either way, so a re-confirmation still records that the
+			// wallet looked; only a different value counts as a change.
 			if err := s.store.UpdateInstanceStatus(inst.InstanceID, uint8(st), now); err != nil {
 				eudi.Logger.Warnf("status refresh: writeback failed for instance %s: %v", inst.InstanceID, err)
+				continue
+			}
+			if uint8(st) != inst.LastKnownStatus {
+				changed++
 			}
 		}
 	}
-	return nil
+	return changed, nil
 }
 
 // BatchRevocation returns, keyed by batch hash, which batches support revocation
