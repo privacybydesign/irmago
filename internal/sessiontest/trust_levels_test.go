@@ -21,9 +21,8 @@ import (
 //
 // Each test publishes its own LoTE from an in-process server and points the
 // wallet at it through the construction seam
-// (client.NewWithRecognizedTrustLists, reached here through
-// instantiateClientWithTrustLists), so nothing depends on a published list
-// existing.
+// (lote.RecognizedSources, assigned by instantiateClientWithTrustLists), so
+// nothing depends on a published list existing.
 //
 // # The parties, and how to give one a rung
 //

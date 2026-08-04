@@ -1354,11 +1354,20 @@ func instantiateClientWithVerifierTrust(
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.NewWithRecognizedTrustLists(
-		storagePath, irmaConfigurationPath, eudiAppDataPath,
-		clientHandler, sessionHandler, test.NewSigner(t), aesKey, locale,
-		trustLists,
-	)
+
+	client, err := client.New(client.Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: irmaConfigurationPath,
+		EudiAppDataPath:       eudiAppDataPath,
+		Handler:               clientHandler,
+		SessionHandler:        sessionHandler,
+		Signer:                test.NewSigner(t),
+		AesKey:                aesKey,
+		Locale:                locale,
+		// The one seam for pointing a wallet at a list other than the published
+		// ones. Nil leaves the compiled-in set in force.
+		RecognizedTrustLists: trustLists,
+	})
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})

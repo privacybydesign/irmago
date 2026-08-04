@@ -62,17 +62,16 @@ func newClientWithTrustListsAndHandler(
 	require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "lote-test-root.pem"), encrypted))
 
 	handler := &testhelpers.TestClientHandler{T: t}
-	c, err := NewWithRecognizedTrustLists(
-		storagePath,
-		filepath.Join(test.FindTestdataFolder(t), "irma_configuration"),
-		eudiAppDataPath,
-		handler,
-		nil,
-		test.NewSigner(t),
-		aesKey,
-		"en",
-		sources,
-	)
+	c, err := New(Config{
+		StoragePath:           storagePath,
+		IrmaConfigurationPath: filepath.Join(test.FindTestdataFolder(t), "irma_configuration"),
+		EudiAppDataPath:       eudiAppDataPath,
+		Handler:               handler,
+		Signer:                test.NewSigner(t),
+		AesKey:                aesKey,
+		Locale:                "en",
+		RecognizedTrustLists:  sources,
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 	return c, handler
@@ -144,9 +143,9 @@ func TestClient_UnreachableTrustList_LeavesTheWalletUsable(t *testing.T) {
 }
 
 func TestClient_NoRecognizedLists_RefreshHasNothingToDo(t *testing.T) {
-	// What a released wallet does today: ProductionSources is empty, so the
+	// What a released wallet does today: RecognizedSources is empty, so the
 	// list channel contributes nothing and a refresh has nothing to fail at.
-	require.Empty(t, lote.ProductionSources)
+	require.Empty(t, lote.RecognizedSources)
 
 	signer := lote.NewTestLoteSigner(t)
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")

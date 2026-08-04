@@ -71,64 +71,71 @@ type Client struct {
 	//Preferences      clientsettings.Preferences
 }
 
-func New(
-	storagePath string,
-	irmaConfigurationPath string,
-	eudiAppDataPath string,
-	handler ClientHandler,
-	sessionHandler clientmodels.SessionHandler,
-	signer irmaclient.Signer,
-	aesKey [32]byte,
-	locale string,
-) (*Client, error) {
-	return NewWithRecognizedTrustLists(
-		storagePath, irmaConfigurationPath, eudiAppDataPath,
-		handler, sessionHandler, signer, aesKey, locale,
-		lote.ProductionSources,
-	)
+// Config is everything a wallet needs to exist. Fields are named rather than
+// positional deliberately: three of the paths are plain strings, and a caller that
+// transposed two of them would build a wallet that looks fine and stores its data
+// in the wrong place.
+//
+// The zero value of a field takes the documented default, so a caller supplies
+// only what it has an opinion about.
+type Config struct {
+	// StoragePath is where the IRMA client keeps its data. Must exist.
+	StoragePath string
+	// IrmaConfigurationPath is the irma_configuration assets directory the
+	// scheme is seeded from. Must exist.
+	IrmaConfigurationPath string
+	// EudiAppDataPath is where the EUDI storage lives. Created if absent.
+	EudiAppDataPath string
+
+	// Handler is how the wallet wakes the app when what it has already rendered
+	// went stale. Required: the wallet calls it from background jobs without a
+	// nil guard.
+	Handler ClientHandler
+	// SessionHandler receives session state updates. May be nil for a wallet
+	// that runs no sessions.
+	SessionHandler clientmodels.SessionHandler
+	// Signer signs the keyshare protocol's messages.
+	Signer irmaclient.Signer
+	// AesKey encrypts everything at rest, in both storage layers.
+	AesKey [32]byte
+
+	// Locale is the initial UI language. Empty takes
+	// clientmodels.DefaultFallbackLanguage; the app changes it with SetLocale.
+	Locale string
+
+	// RecognizedTrustLists replaces the compiled-in set of recognized trust
+	// lists. Nil takes lote.RecognizedSources, which is what a released wallet
+	// consults; integration tests and staging builds name their own.
+	//
+	// This is the one seam the wallet exposes for pointing at a list other than
+	// the published ones, and it belongs here rather than in a mutable package
+	// variable so that what a wallet consults is fixed by the call that built it.
+	RecognizedTrustLists []lote.Source
 }
 
-// NewWithRecognizedTrustLists is [New] with the compiled-in set of recognized
-// trust lists replaced. It is the one seam the wallet exposes for pointing at a
-// list other than the published ones: integration tests use it to serve a list
-// they control, and it is how a staging build would consult a staging list.
-// Everything else is the production wiring.
-//
-// It exists as a second constructor rather than as an option on New because New
-// is bound into the app through gomobile, which does not bind variadic
-// parameters — and because a test seam that has to be reached for is harder to
-// use by accident.
-func NewWithRecognizedTrustLists(
-	storagePath string,
-	irmaConfigurationPath string,
-	eudiAppDataPath string,
-	handler ClientHandler,
-	sessionHandler clientmodels.SessionHandler,
-	signer irmaclient.Signer,
-	aesKey [32]byte,
-	locale string,
-	recognizedTrustLists []lote.Source,
-) (*Client, error) {
+// New builds a wallet from cfg. It is the only constructor: everything optional
+// is a documented zero value on Config.
+func New(cfg Config) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
 	// can recover from. Fail here instead, where the app can see it.
-	if handler == nil {
+	if cfg.Handler == nil {
 		return nil, fmt.Errorf("handler is required")
 	}
-	if err := common.AssertPathExists(storagePath); err != nil {
+	if err := common.AssertPathExists(cfg.StoragePath); err != nil {
 		return nil, err
 	}
-	if err := common.AssertPathExists(irmaConfigurationPath); err != nil {
+	if err := common.AssertPathExists(cfg.IrmaConfigurationPath); err != nil {
 		return nil, err
 	}
-	if err := common.EnsureDirectoryExists(eudiAppDataPath); err != nil {
+	if err := common.EnsureDirectoryExists(cfg.EudiAppDataPath); err != nil {
 		return nil, err
 	}
 
 	// Load IRMA + EUDI configuration
 	irmaConf, err := irma.NewConfiguration(
-		filepath.Join(storagePath, "irma_configuration"),
-		irma.ConfigurationOptions{Assets: irmaConfigurationPath, IgnorePrivateKeys: true},
+		filepath.Join(cfg.StoragePath, "irma_configuration"),
+		irma.ConfigurationOptions{Assets: cfg.IrmaConfigurationPath, IgnorePrivateKeys: true},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating configuration failed: %v", err)
@@ -136,15 +143,15 @@ func NewWithRecognizedTrustLists(
 
 	eudi.Logger = irma.Logger
 
-	currentLocale := clientmodels.NewCurrentLocale(locale)
+	currentLocale := clientmodels.NewCurrentLocale(cfg.Locale)
 
 	// Create the encryption middleware, used by the IRMA classic clientstorage so all data is encrypted at rest.
-	// The EUDI storage layer derives its own AES middleware (and a separate filename-MAC sub-key) directly from the aesKey.
-	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(aesKey)
+	// The EUDI storage layer derives its own AES middleware (and a separate filename-MAC sub-key) directly from the AES key.
+	encryptionMiddleware := encryption.NewAESEncryptionMiddleware(cfg.AesKey)
 
 	// Create the EUDI storage (will be used by both the OpenID4VP and OpenID4VCI clients later)
-	dbPath := filepath.Join(eudiAppDataPath, storage.DbFilename)
-	eudiStorage, err := sqlcipherstorage.New(aesKey, dbPath, eudiAppDataPath)
+	dbPath := filepath.Join(cfg.EudiAppDataPath, storage.DbFilename)
+	eudiStorage, err := sqlcipherstorage.New(cfg.AesKey, dbPath, cfg.EudiAppDataPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate eudi storage: %v", err)
 	}
@@ -155,7 +162,7 @@ func NewWithRecognizedTrustLists(
 	}
 
 	// Initialize DB storage
-	s := clientstorage.NewStorage(storagePath, encryptionMiddleware)
+	s := clientstorage.NewStorage(cfg.StoragePath, encryptionMiddleware)
 	irmaStorage := irmaclient.NewIrmaStorage(s, irmaConf)
 
 	// Ensure storage path exists, and populate it with necessary files
@@ -190,8 +197,16 @@ func NewWithRecognizedTrustLists(
 	//
 	// The lists are signed by Yivi and chain to the Yivi root, so they are
 	// validated against the issuer anchors; both trust models pin the same root.
+	//
+	// Nil means the compiled-in set: a released wallet consults what it shipped
+	// with, and only a test or a staging build names its own.
+	recognizedLists := cfg.RecognizedTrustLists
+	if recognizedLists == nil {
+		recognizedLists = lote.RecognizedSources
+	}
+
 	trustChecker := lote.NewChecker(lote.Config{
-		Sources:     recognizedTrustLists,
+		Sources:     recognizedLists,
 		X509Context: &eudiConf.Issuers,
 		Store:       db.NewTrustListStore(eudiStorage.Db()),
 		HTTPClient:  common.HTTPClient,
@@ -236,7 +251,7 @@ func NewWithRecognizedTrustLists(
 		StatusChecker: statusChecker,
 	}
 
-	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(handler), signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
+	irmaClient, err := irmaclient.NewIrmaClient(irmaConf, newIrmaHandler(cfg.Handler), cfg.Signer, irmaStorage, sdJwtVcVerificationContext, sdjwtvcStorage, irmaKeyBinder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate irma client: %v", err)
 	}
@@ -297,14 +312,14 @@ func NewWithRecognizedTrustLists(
 		keyBinder:         irmaKeyBinder,
 		didValidator:      didValidator,
 		scheduler:         scheduler,
-		handler:           handler,
+		handler:           cfg.Handler,
 		currentLocale:     currentLocale,
 		credentialService: credentialService,
 		revocationService: revocationService,
 		trustService:      trustService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
-			SessionHandler: sessionHandler,
+			SessionHandler: cfg.SessionHandler,
 		},
 	}
 
