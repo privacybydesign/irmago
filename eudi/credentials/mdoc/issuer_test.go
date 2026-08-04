@@ -97,9 +97,10 @@ func TestClaimOrderingIsRandomized(t *testing.T) {
 // have their own claim shape that Issue() has no business knowing about,
 // so profile rules belong above this layer.
 //
-// Note that the AV Blueprint's Annex A §4.1.2 restriction (age_over_18
-// mandatory, only age_over_NN permitted, boolean values) is currently
-// enforced nowhere in this repo. Earlier revisions asserted it here, in
+// Note that the AV profile's attribute restriction (age_over_18 mandatory,
+// age_over_NN optional, boolean values — see the Data model section of this
+// package's README for what is and is not actually attributable to the
+// Blueprint) is currently enforced nowhere in this repo. Earlier revisions asserted it here, in
 // tests this one replaced, back when the package carried its own issuance
 // path. Nothing regressed by dropping them: irmago ships no production
 // mdoc issuer — Issuer exists for tests and the AV issuer is external — so

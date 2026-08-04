@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
+	"encoding/asn1"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -15,6 +17,54 @@ import (
 // ============================================================
 // VERIFIER
 // ============================================================
+
+// isoMdocDocumentSignerEKU is the extended key usage ISO/IEC 18013-5 Annex
+// B.1.2 requires on a Document Signer certificate: 1.0.18013.5.1.2. Despite
+// the registry naming it for the mDL, it is the DS usage for every 18013-5
+// doctype rather than driving licences alone — Multipaz stamps it on every DS
+// certificate it generates (MdocUtil.kt), and its sibling 1.0.18013.5.1.6 is
+// reader authentication.
+//
+// crypto/x509 has no ExtKeyUsage enum member for it, so on a parsed
+// certificate it arrives in UnknownExtKeyUsage rather than ExtKeyUsage.
+var isoMdocDocumentSignerEKU = asn1.ObjectIdentifier{1, 0, 18013, 5, 1, 2}
+
+// checkDocumentSignerEKU rejects a leaf certificate that is not authorized to
+// sign mdocs.
+//
+// Chaining to a trusted IACA root is not by itself evidence of being a
+// document signer. A real trust model issues for several roles beneath one
+// root — Yivi's own has a relying-party branch alongside the
+// attestation-provider branch — so without this check a certificate issued for
+// an unrelated purpose could sign an MSO that the wallet then accepts.
+//
+// This cannot be folded into x509.VerifyOptions.KeyUsages, which speaks only
+// crypto/x509's ExtKeyUsage enum and has no member for the ISO OID. That is
+// also why the chain walk still passes ExtKeyUsageAny: its sole job there is to
+// stop Go defaulting to ExtKeyUsageServerAuth, not to express a policy.
+//
+// A certificate with no EKU extension is accepted, because RFC 5280 §4.2.1.12
+// gives that the meaning "not restricted as to purpose" — there is nothing to
+// contradict. anyExtKeyUsage is accepted for the same reason. What gets
+// rejected is a certificate that does enumerate its permitted usages and does
+// not include this one.
+func checkDocumentSignerEKU(cert *x509.Certificate) error {
+	if len(cert.ExtKeyUsage) == 0 && len(cert.UnknownExtKeyUsage) == 0 {
+		return nil
+	}
+	if slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageAny) {
+		return nil
+	}
+	for _, oid := range cert.UnknownExtKeyUsage {
+		if oid.Equal(isoMdocDocumentSignerEKU) {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"document signer certificate is not authorized to sign mdocs: extended key usage does not include %s (ISO 18013-5 Annex B.1.2)",
+		isoMdocDocumentSignerEKU,
+	)
+}
 
 // Verifier holds the pre-installed trust anchor (IACA root cert)
 // Phase 1: our own test self-signed IACA root
@@ -176,6 +226,14 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	})
 	if err != nil {
 		result.Error = fmt.Sprintf("chain verification failed: %v", err)
+		return nil, result
+	}
+
+	// Step 3b: the chain above proves the DS cert descends from a trusted IACA
+	// root. This proves it was issued *as a document signer*, rather than for
+	// some other role beneath the same root.
+	if err := checkDocumentSignerEKU(dsCert); err != nil {
+		result.Error = err.Error()
 		return nil, result
 	}
 

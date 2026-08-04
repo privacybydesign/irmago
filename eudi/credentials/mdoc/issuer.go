@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"fmt"
 	"math/big"
 	"time"
@@ -96,6 +97,12 @@ func NewIssuer() (*Issuer, error) {
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  false, // leaf cert — cannot sign other certs
+		// ISO 18013-5 Annex B.1.2 requires the mdoc Document Signer extended
+		// key usage on a DS certificate, and the verifier now enforces it (see
+		// checkDocumentSignerEKU). crypto/x509 has no enum member for the OID,
+		// so it goes in UnknownExtKeyUsage — CreateCertificate encodes both
+		// that and ExtKeyUsage into the one EKU extension.
+		UnknownExtKeyUsage: []asn1.ObjectIdentifier{isoMdocDocumentSignerEKU},
 	}
 
 	// parent = iacaCert (parsed), signed with iacaKey — this establishes the chain

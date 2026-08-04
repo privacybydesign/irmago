@@ -43,6 +43,7 @@ that both directions are wired for real; see the sections below for what's left.
 | COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert |
 | Two-level certificate chain | ✓ | IACA root CA → DS cert, real x509 chain walk |
 | Chain attack rejection | ✓ | untrusted root rejected before signature check |
+| Document Signer extended key usage | ✓ | the DS cert must be authorized for `1.0.18013.5.1.2` (ISO 18013-5 Annex B.1.2) — see `checkDocumentSignerEKU`. Chaining to a trusted IACA root is not on its own evidence of being a document signer: a real trust model issues for several roles under one root, so a certificate issued for another purpose (TLS, reader auth) must not be able to sign an MSO. A certificate with no EKU extension is accepted, per RFC 5280 §4.2.1.12 |
 | Configurable verifier clock | ✓ | `NewVerifierWithClock` — tests expired / not-yet-valid certs and MSO validity deterministically |
 | MSO `validityInfo` check (validFrom/validUntil) | ✓ | checked separately from X.509 cert expiry — both are mandatory per ISO 18013-5 |
 | Selective disclosure | ✓ | holder filters items, issuerAuth reused unchanged |
@@ -176,6 +177,28 @@ Trust in the chain comes from the verifier independently walking and validating 
 X.509 chain (`x509.Verify`) — not from the COSE signature, since x5chain lives in the
 *unprotected* header.
 
+The chain walk is followed by a role check: the DS certificate must be authorized for
+the mdoc Document Signer extended key usage, `1.0.18013.5.1.2`. Go's
+`x509.VerifyOptions.KeyUsages` cannot express that OID (its `ExtKeyUsage` enum has no
+member for it), which is why the walk still passes `ExtKeyUsageAny` — that only stops
+Go defaulting to `ExtKeyUsageServerAuth` — and the EKU is checked separately against
+the parsed certificate's `UnknownExtKeyUsage`.
+
+The requirement comes from ISO 18013-5, **not** from the AV Blueprint, which says
+nothing about certificate profiles: it specifies no IACA or DS profile, never references
+ISO 18013-5 Annex B, and defers security considerations to OpenID4VCI/OpenID4VP. That
+silence is exactly why a certificate with no EKU extension has to be accepted — an
+issuer following the Blueprint literally is never told to add the usage, so mandating it
+would reject conformant issuers. Only a certificate that enumerates its usages and omits
+this one is refused.
+
+> **Interop note.** The EUDI reference issuer's development certificate
+> (`testdata/eudi-pid-issuer-py/certs/issuer.pem`) carries `clientAuth`, not the mdoc
+> DS usage, so it is rejected by this check. When the mdoc integration test is wired
+> up, either regenerate that certificate with the correct EKU (its `certs/generate.sh`
+> is in-tree) or introduce an explicit developer-mode relaxation. Do not widen the
+> production check to accommodate it.
+
 Two separate validity windows are checked, per ISO 18013-5: the X.509 certificates'
 own `NotBefore`/`NotAfter` (via the chain walk above), and the MSO's own
 `validityInfo.validFrom`/`validUntil` (checked independently in `Verify`, right after
@@ -240,14 +263,28 @@ COSE keys:  integer map keys per RFC 9053 (kty=1, crv=-1, x=-2, y=-3)
 
 ## Data model
 
-Per EU AV Blueprint Annex A §4.1.1 and §4.1.2:
-
 ```
 docType:    eu.europa.ec.av.1
 namespace:  eu.europa.ec.av.1
 attributes: age_over_18 (mandatory), age_over_NN (optional)
-            no other attributes permitted
 ```
+
+The docType and namespace are the Blueprint's, and are corroborated by the EUDI
+reference issuer's own credential configuration
+(`age_verification_mdoc.json` in
+`ghcr.io/eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py`), which declares
+`doctype: eu.europa.ec.av.1` and claims at
+`["eu.europa.ec.av.1", "age_over_NN"]` — `age_over_18` with `mandatory: true`, and
+`age_over_13/15/16/21/23/25` with `mandatory: false`. That is the strongest evidence
+for the attribute set, being a running implementation rather than prose.
+
+An earlier revision of this section cited "Annex A §4.1.1 and §4.1.2" and added "no
+other attributes permitted". Neither survived checking: the Blueprint's own data-model
+section shows a minimal example carrying `age_over_18` alone and does not enumerate the
+`age_over_NN` variants or forbid further attributes, and the `§4.1.x` numbering does not
+match Annex A's `§A.x` scheme, so it pointed at something other than the annex — if at
+anything. Treat every Annex A section number in this package as unverified (see
+References).
 
 **This attribute restriction is not currently enforced anywhere in irmago.**
 `mdoc.Issuer.Issue()` signs whatever docType/namespace/claims it is given (a
@@ -362,5 +399,18 @@ use `time.Now()`.
 - RFC 9052 — COSE (COSE_Sign1, Sig_structure)
 - RFC 9053 — COSE Key (integer map keys for `COSEKey`)
 - EU Age Verification Blueprint Annex A — `eu.europa.ec.av.1` profile
+  ([ageverification.dev](https://ageverification.dev/Technical%20Specification/annexes/annex-A/annex-A-av-profile))
+
+> **The Annex A section numbers cited throughout this package are unverified.** They
+> were not all taken from one reading and they disagree with each other: the crypto
+> suite is cited here as both §A.6 and §A.7, the OpenID4VP requirements as §A.6 while
+> the published annex appears to put `response_mode` under §A.5, the worked example as
+> §A.11 against an apparent §A.10, and the data model formerly as §4.1.x, which is not
+> Annex A's numbering at all. The *content* of each claim was checked and holds — P-256
+> with ES256 and SHA-256, `response_mode` MUST be `direct_post`, proximity presentation
+> out of scope, no AP metadata or certificate profile specified. Only the numbering is
+> in doubt. Anyone relying on a specific citation should confirm it against the
+> authoritative document first, and ideally pin the Blueprint revision here once
+> someone has it open.
 - IANA COSE Algorithms registry — `-7` = ES256
 - IANA COSE Key Types registry — `1`=kty, `-1`=crv, `-2`=x, `-3`=y
