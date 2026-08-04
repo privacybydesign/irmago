@@ -186,11 +186,20 @@ func (s *session) perform() {
 		return
 	}
 
-	// The credentials are in hand, which is the first moment the wallet holds
-	// the certificate the issuer signed with. Rank it now, before the permission
-	// screen: what the user is asked to trust is what was actually verified,
-	// not what the issuer's metadata claimed at offer time.
-	s.requestorInfo.TrustLevel = s.issuerVerdict(fetched...).Level
+	// The credentials are in hand, which is the first moment the wallet holds the
+	// certificate the issuer signed with and the identifier it signed under.
+	// Compose the party again, before the permission screen: what the user is
+	// asked to trust is what was actually verified, not what the issuer's
+	// metadata claimed at offer time — and that governs the curated name and
+	// logo as much as the rung, since a list that only matches the signing
+	// identifier is invisible at offer time.
+	s.requestorInfo = composeIssuerParty(
+		s.credentialIssuerMetadata,
+		s.locale,
+		s.issuerVerdict(fetched...),
+		s.storage.FileSystem().Issuers().LogoManager(),
+		s.httpClient,
+	)
 
 	// Build offered credentials with actual attribute values from the verified SD-JWTs.
 	offeredCredentials := s.buildOfferedCredentials(fetched)

@@ -19,12 +19,20 @@ HOST=localhost
 #   -subj "/C=NL/O=Demo Verifier CA/CN=Demo Requestors Root"
 
 # create verifier certificate request
+# organizationIdentifier (OID 2.5.4.97) is the attribute a LoTE entry pairs with
+# a certificate or SKI to key an entity: the certificate says which key, this says
+# which legal entity, and a match needs both. The integration tests exercise that
+# pairing, so the leaf has to carry one.
 openssl req -new -key verifier_ec_priv.pem -out verifier.csr \
-  -subj "/C=NL/O=Yivi/CN=localhost/serialNumber=1234"
+  -subj "/C=NL/O=Yivi/CN=localhost/serialNumber=1234/organizationIdentifier=VATNL-000000000"
 
 # sign verifier certificate request
+# 3650 days, not the 825 a TLS end-entity certificate would get: this is committed
+# test material, and a two-year fuse means the suite fails on a Tuesday for reasons
+# nobody remembers. The key is reused, so the subject key identifier — which list
+# entries key on — survives this re-issue.
 openssl x509 -req -in verifier.csr -CA ca.crt -CAkey ca_ec_priv.pem -CAcreateserial \
-  -out verifier.crt -days 825 -sha256 \
+  -out verifier.crt -days 3650 -sha256 \
   -extfile end-entity.cfg -extensions v3_req
 
 # put both ca and verifier certs in chain

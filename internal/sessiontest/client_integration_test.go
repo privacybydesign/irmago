@@ -1263,12 +1263,52 @@ func instantiateClientWithTrustLists(
 	loteRoot *x509.Certificate,
 	trustLists []lote.Source,
 ) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return instantiateClientWithVerifierTrust(t, "", issuerChain, locale, loteRoot, trustLists, testdata.VerifierCACertBytes)
+}
+
+// instantiateClientAtPath is instantiateClientWithTrustLists at a storage path
+// the caller supplies, so a second wallet can be built over the first one's data.
+// That is what proves a persisted document survives a restart and is re-verified
+// when it is read — client.New already takes the path, so this widens nothing
+// outside internal/sessiontest.
+func instantiateClientAtPath(
+	t *testing.T,
+	storagePath string,
+	issuerChain []byte,
+	locale string,
+	loteRoot *x509.Certificate,
+	trustLists []lote.Source,
+) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	require.NotEmpty(t, storagePath, "instantiateClientAtPath needs a path; use instantiateClientWithTrustLists for a fresh one")
+	return instantiateClientWithVerifierTrust(t, storagePath, issuerChain, locale, loteRoot, trustLists, testdata.VerifierCACertBytes)
+}
+
+// instantiateClientWithoutVerifierTrust builds a wallet that trusts no verifier
+// CA, so a verifier the compose services authenticate perfectly well fails this
+// wallet's identity gate. It is how a session test reaches the gate-failure state
+// without tampering with a request on the wire.
+func instantiateClientWithoutVerifierTrust(t *testing.T) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return instantiateClientWithVerifierTrust(t, "", nil, "en", nil, nil, nil)
+}
+
+// instantiateClientWithVerifierTrust is the full form. An empty storagePath gets
+// a fresh temporary one; verifierCA nil installs no verifier anchor at all.
+func instantiateClientWithVerifierTrust(
+	t *testing.T,
+	storagePath string,
+	issuerChain []byte,
+	locale string,
+	loteRoot *x509.Certificate,
+	trustLists []lote.Source,
+	verifierCA []byte,
+) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
 	path := test.FindTestdataFolder(t)
-	storageFolder := test.CreateTestStorage(t)
-	storagePath := filepath.Join(storageFolder, "client")
+	if storagePath == "" {
+		storagePath = filepath.Join(test.CreateTestStorage(t), "client")
+	}
 	irmaConfigurationPath := filepath.Join(storagePath, "irma_configuration")
 	eudiAppDataPath := filepath.Join(storagePath, "eudi")
 
@@ -1300,12 +1340,15 @@ func instantiateClientWithTrustLists(
 		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "lote-test-root.pem"), encLoteRoot))
 	}
 
-	// Add test verifier CA certificate as trusted chain.
+	// Add test verifier CA certificate as trusted chain. A nil verifierCA leaves
+	// the directory empty, which is what the gate-failure tests want.
 	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
 	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
-	encVerifierCA, err := encMiddleware.Encrypt(testdata.VerifierCACertBytes)
-	require.NoError(t, err)
-	require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
+	if verifierCA != nil {
+		encVerifierCA, err := encMiddleware.Encrypt(verifierCA)
+		require.NoError(t, err)
+		require.NoError(t, common.SaveFile(filepath.Join(verifierCertsPath, "ca.pem"), encVerifierCA))
+	}
 
 	clientHandler := irmaclient.NewMockClientHandler()
 	sessionHandler := &MockSessionHandler{

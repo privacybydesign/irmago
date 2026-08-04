@@ -18,6 +18,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/filesystem"
 	"github.com/privacybydesign/irmago/eudi/trust"
 )
 
@@ -441,30 +442,59 @@ func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale strin
 
 func (client *Client) convertToTrustedParty(credentialIssuerMetadata *metadata.CredentialIssuerMetadata, locale string, trustView trust.View) *clientmodels.TrustedParty {
 	// TODO: we need to use the signed metadata here, so we can get the requestor data from our certificate (at least, everything that is missing in the metadata)
-	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
-	// The issuer's own certificate is not surfaced by the holder verification
-	// path yet, so the only evidence available here is its identifier and the
-	// certificate channel has nothing to say: a `x5c`-identified issuer ranks
-	// low along with everyone else until that lands.
+	// The offer-time verdict, which is provisional: the only evidence the wallet
+	// holds before it fetches a credential is the issuer's own identifier, so the
+	// certificate channel has nothing to say and a recognized list can only match
+	// on that identifier. The session re-composes the party once the credentials
+	// are in hand — see composeIssuerParty's callers.
 	verdict := trustView.Issuer(trust.Evidence{
 		Identifiers: []string{credentialIssuerMetadata.CredentialIssuer},
 	})
+
+	return composeIssuerParty(
+		credentialIssuerMetadata,
+		locale,
+		verdict,
+		client.Configuration.Storage.FileSystem().Issuers().LogoManager(),
+		client.httpClient,
+	)
+}
+
+// composeIssuerParty reduces what the wallet knows about the credential issuer to
+// the party the app renders, through the display precedence every party is
+// composed by: the curated name and logo the recognized list carries first, what
+// the issuer says about itself last.
+//
+// It takes the verdict rather than computing one, because the same party is
+// composed twice in a session — provisionally at offer time, then again once the
+// fetched credentials reveal what signed them — and the second composition must
+// use the second verdict for the *name and logo* too, not only for the rung. A
+// listed issuer shown at medium under the name it gave itself would be the
+// curation silently dropped.
+func composeIssuerParty(
+	credentialIssuerMetadata *metadata.CredentialIssuerMetadata,
+	locale string,
+	verdict trust.Verdict,
+	issuerLogos filesystem.LogoManager,
+	httpClient *http.Client,
+) *clientmodels.TrustedParty {
+	displays := metadata.ToTranslateableList(credentialIssuerMetadata.Display)
 
 	display := trust.PartyDisplay{
 		Id: credentialIssuerMetadata.CredentialIssuer,
 		// Credential-issuer metadata is served from the issuer's own well-known
 		// endpoint over TLS, which says the issuer really published it — not
-		// that anybody besides the issuer stands behind what it says. Until the
-		// issuer's certificate is surfaced (#660), everything here is its own
-		// word, logo included, and only the name of it reaches the user.
+		// that anybody besides the issuer stands behind what it says. So it is
+		// the issuer's own word, logo included, and only the name of it reaches
+		// the user; a logo is never taken from a party's own account of itself.
 		SelfAssertedName: clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), locale),
 	}
 	if verdict.Listing != nil {
 		display.CuratedLogo = services.LoadCuratedLogo(
 			context.Background(),
-			client.Configuration.Storage.FileSystem().Issuers().LogoManager(),
-			client.httpClient,
+			issuerLogos,
+			httpClient,
 			verdict.Listing.LogoURI,
 		)
 	}

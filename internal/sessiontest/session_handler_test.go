@@ -18,4 +18,5 @@ func TestSessionHandler(t *testing.T) {
 	t.Run("irma/special", testSessionHandlerEdgeCases)
 	t.Run("eudi/logs", testSessionHandlerForEudiLogs)
 	t.Run("eudi/trust-levels", testSessionHandlerForTrustLevels)
+	t.Run("eudi/published-trust-list", testSessionHandlerForPublishedTrustList)
 }
