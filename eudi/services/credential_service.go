@@ -252,12 +252,12 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		// The evidence the trust ladder ranks this batch's issuer by on every
 		// later read. Nil for a DID-identified issuer, which is not a gap: the
 		// recognized-list channel names those parties by their DID.
-		IssuerCertificate: issuerCertificateDer(first),
-		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                uint(len(verifiedSdJwtVcs)),
-		RemainingCount:           uint(len(verifiedSdJwtVcs)),
-		Instances:                buildInstances(verifiedSdJwtVcs),
+		IssuerCertificate:  issuerCertificateDer(first),
+		IssuerDisplay:      slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata: convertCredentialMetadata(credentialConfiguration),
+		BatchSize:          uint(len(verifiedSdJwtVcs)),
+		RemainingCount:     uint(len(verifiedSdJwtVcs)),
+		Instances:          buildInstances(verifiedSdJwtVcs),
 	}
 
 	if first.IssuerSignedJwtPayload.IssuedAt != nil {
