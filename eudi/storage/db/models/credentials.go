@@ -62,7 +62,21 @@ type CredentialBatch struct {
 
 	// CredentialIssuer is the canonical URL of the credential issuer (credential_issuer claim).
 	CredentialIssuer string
-	IssuerDisplay    []IssuerMetadataDisplay `gorm:"constraint:OnDelete:CASCADE"`
+
+	// IssuerCertificate is the DER of the end-entity certificate this batch's
+	// credentials were signed with, when the issuer identified itself by `x5c`.
+	// Nil for a DID-identified issuer, and for batches stored before the column
+	// existed — those rank through the recognized-list channel alone.
+	//
+	// It is evidence rather than a verdict: the issuer's trust level is not
+	// stored, it is ranked again on every read, so a delisted issuer demotes and
+	// a newly listed one promotes without a migration. Non-nil means the chain
+	// validated against the wallet's anchors at issuance; a certificate revoked
+	// since is a certificate the wallet cannot know about without re-verifying,
+	// which is the same trade the rest of the wallet makes for stored credentials.
+	IssuerCertificate []byte `gorm:"type:bytea"`
+
+	IssuerDisplay []IssuerMetadataDisplay `gorm:"constraint:OnDelete:CASCADE"`
 
 	CredentialMetadata *CredentialMetadata `gorm:"constraint:OnDelete:CASCADE"`
 

@@ -67,13 +67,14 @@ func (s *eudiLogService) addSessionLog(logType clientmodels.LogType, protocol cl
 	}
 	saveLogoFromBase64(s.verifierLogoManager, requestor.Id, requestor.Image)
 	entry := &models.EudiLogEntry{
-		ID:            datatypes.NewUUIDv4(),
-		Type:          string(logType),
-		Protocol:      string(protocol),
-		CreatedAt:     time.Now(),
-		RequestorId:   requestor.Id,
-		RequestorName: requestorName,
-		Credentials:   creds,
+		ID:                  datatypes.NewUUIDv4(),
+		Type:                string(logType),
+		Protocol:            string(protocol),
+		CreatedAt:           time.Now(),
+		RequestorId:         requestor.Id,
+		RequestorName:       requestorName,
+		RequestorTrustLevel: storedTrustLevel(requestor.TrustLevel),
+		Credentials:         creds,
 	}
 	return s.store.AddLog(entry)
 }
@@ -150,7 +151,7 @@ func (s *eudiLogService) logCredentialsToModelCredentials(creds []clientmodels.L
 			Name:                nameJSON,
 			IssuerName:          issuerNameJSON,
 			IssuerId:            c.Issuer.Id,
-			IssuerVerified:      c.Issuer.Verified,
+			IssuerTrustLevel:    storedTrustLevel(c.Issuer.TrustLevel),
 			Attributes:          attrsJSON,
 			IssuanceDate:        issuanceDate,
 			ExpiryDate:          expiryDate,
@@ -216,9 +217,10 @@ func (s *eudiLogService) entryToLogInfo(e *models.EudiLogEntry, displayByVct map
 	requestorName := decodeStoredText(e.RequestorName, s.locale)
 	requestorImage := eudi.LoadLogoImage(s.verifierLogoManager, e.RequestorId)
 	requestor := &clientmodels.TrustedParty{
-		Id:    e.RequestorId,
-		Name:  requestorName,
-		Image: requestorImage,
+		Id:         e.RequestorId,
+		Name:       requestorName,
+		Image:      requestorImage,
+		TrustLevel: loggedTrustLevel(e.RequestorTrustLevel),
 	}
 
 	switch clientmodels.LogType(e.Type) {
@@ -293,7 +295,7 @@ func (s *eudiLogService) modelCredentialsToLogCredentials(creds []models.EudiLog
 			Formats:             formats,
 			Name:                name,
 			Image:               credImage,
-			Issuer:              clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage, Verified: c.IssuerVerified},
+			Issuer:              clientmodels.TrustedParty{Id: c.IssuerId, Name: issuerName, Image: issuerImage, TrustLevel: loggedIssuerTrustLevel(c.IssuerTrustLevel, c.IssuerVerified)},
 			Attributes:          attrs,
 			IssuanceDate:        issuanceDate,
 			ExpiryDate:          expiryDate,
@@ -303,6 +305,42 @@ func (s *eudiLogService) modelCredentialsToLogCredentials(creds []models.EudiLog
 		}
 	}
 	return result
+}
+
+// storedTrustLevel is the level a log row records for a party. An unevaluated
+// level is stored as NULL rather than as an empty string, so a row that never
+// had a level and a row whose party was ranked are distinguishable on read.
+func storedTrustLevel(level clientmodels.TrustLevel) *string {
+	if level == clientmodels.TrustLevel_Unevaluated {
+		return nil
+	}
+	s := string(level)
+	return &s
+}
+
+// loggedTrustLevel reads back the level a log row recorded at session time.
+// NULL means the row carries no rung, which renders levelless and is not the
+// same as a verdict of low.
+func loggedTrustLevel(stored *string) clientmodels.TrustLevel {
+	if stored == nil {
+		return clientmodels.TrustLevel_Unevaluated
+	}
+	return clientmodels.TrustLevel(*stored)
+}
+
+// loggedIssuerTrustLevel reads a logged issuer's rung, preferring the level the
+// row recorded at session time and falling back to the legacy IssuerVerified
+// boolean it replaced. That boolean only ever recorded "Yivi vouches for this
+// issuer", so it maps to high or to nothing at all: a false says the row
+// carries no rung, so a pre-feature entry renders levelless either way.
+func loggedIssuerTrustLevel(stored *string, issuerVerified bool) clientmodels.TrustLevel {
+	if stored != nil {
+		return clientmodels.TrustLevel(*stored)
+	}
+	if issuerVerified {
+		return clientmodels.TrustLevel_High
+	}
+	return clientmodels.TrustLevel_Unevaluated
 }
 
 // canReResolveIssuerName reports whether the stored credential's issuer

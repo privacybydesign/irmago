@@ -20,6 +20,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/db/models"
+	"github.com/privacybydesign/irmago/eudi/trust"
 )
 
 // isIrmaStyleVct reports whether vct looks like an IRMA scheme credential
@@ -67,6 +68,12 @@ type SdJwtVcDcqlHandler struct {
 	// revocation determines a candidate's Revoked flag. Nil disables the check
 	// (candidates are then never flagged revoked).
 	revocation RevocationChecker
+
+	// trustEvaluator ranks a stored credential's issuer while the disclosure
+	// plan is built, off the evidence issuance recorded. The rung a credential
+	// shows here therefore tracks the recognized lists, exactly as it does in
+	// the credential list.
+	trustEvaluator trust.Evaluator
 }
 
 // NewSdJwtVcDcqlHandler creates a new handler. vctFetcher and issuerFetcher are
@@ -86,6 +93,7 @@ func NewSdJwtVcDcqlHandler(
 	keyBinder sdjwt.KeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
 	revocation RevocationChecker,
+	trustEvaluator trust.Evaluator,
 ) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
 		storage:         eudiStorage,
@@ -95,6 +103,7 @@ func NewSdJwtVcDcqlHandler(
 		issuerFetcher:   issuerFetcher,
 		currentLocale:   currentLocale,
 		revocation:      revocation,
+		trustEvaluator:  trustEvaluator,
 	}
 }
 
@@ -307,13 +316,17 @@ func vctName(vctMeta *typemetadata.VctTypeMetadata, locale string) string {
 // when the metadata is nil. Logo is intentionally not fetched (the unobtainable
 // path stays inside the user's permission-prompt budget); frontend can resolve
 // the logo URL itself if it wants.
+// The issuer of a credential the wallet does not hold carries no evidence, so
+// no channel vouches for it and it ranks low, the same as the issuer of a
+// stored one.
 func issuerTrustedParty(issuerMeta *typemetadata.IssuerMetadata, locale string) clientmodels.TrustedParty {
 	if issuerMeta == nil {
-		return clientmodels.TrustedParty{}
+		return clientmodels.TrustedParty{TrustLevel: clientmodels.TrustLevel_Low}
 	}
 	return clientmodels.TrustedParty{
-		Id:   issuerMeta.Id,
-		Name: clientmodels.Resolve(issuerMeta.Name, locale),
+		Id:         issuerMeta.Id,
+		Name:       clientmodels.Resolve(issuerMeta.Name, locale),
+		TrustLevel: clientmodels.TrustLevel_Low,
 	}
 }
 
@@ -1210,14 +1223,28 @@ func (h *SdJwtVcDcqlHandler) credentialImage(batch *models.CredentialBatch, loca
 	return services.LoadResolvedLogo(logoManager, services.CredentialLogoURIsByLanguage(batch.CredentialMetadata.Display), locale)
 }
 
-// issuerTrustedParty builds a TrustedParty from the stored issuer display metadata,
-// including the issuer logo if available on disk.
+// issuerTrustedParty builds a TrustedParty from the stored issuer display
+// metadata, including the issuer logo if available on disk, and ranks the issuer
+// off the evidence issuance recorded — so a credential whose issuer was delisted
+// since shows the demoted rung here too, not just in the credential list.
 func (h *SdJwtVcDcqlHandler) issuerTrustedParty(batch *models.CredentialBatch, locale string) clientmodels.TrustedParty {
 	return clientmodels.TrustedParty{
-		Id:    batch.CredentialIssuer,
-		Name:  clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
-		Image: h.issuerImage(batch, locale),
+		Id:         batch.CredentialIssuer,
+		Name:       clientmodels.Resolve(services.IssuerNamesByLanguage(batch.IssuerDisplay), locale),
+		Image:      h.issuerImage(batch, locale),
+		TrustLevel: h.storedIssuerLevel(batch),
 	}
+}
+
+// storedIssuerLevel ranks one stored batch's issuer. A handler built without an
+// evaluator falls back to the listless view — the certificate channel alone —
+// rather than crashing on a caller that does not care about trust levels.
+func (h *SdJwtVcDcqlHandler) storedIssuerLevel(batch *models.CredentialBatch) clientmodels.TrustLevel {
+	view := trust.NewView(nil)
+	if h.trustEvaluator != nil {
+		view = h.trustEvaluator.Snapshot(context.Background())
+	}
+	return view.Issuer(services.BatchIssuerEvidence(batch)).Level
 }
 
 // issuerImage loads the issuer logo that resolves for the locale from the

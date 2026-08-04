@@ -29,6 +29,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/storage"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
+	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
@@ -51,6 +52,7 @@ type Client struct {
 	sessionManager    sessionManager
 	credentialService services.CredentialService
 	revocationService *services.RevocationService
+	trustService      *services.TrustService
 
 	// handler is how the wallet wakes the app when what it has already rendered
 	// went stale. Required: IrmaClient calls it unguarded too, so a nil one
@@ -78,6 +80,34 @@ func New(
 	signer irmaclient.Signer,
 	aesKey [32]byte,
 	locale string,
+) (*Client, error) {
+	return NewWithRecognizedTrustLists(
+		storagePath, irmaConfigurationPath, eudiAppDataPath,
+		handler, sessionHandler, signer, aesKey, locale,
+		lote.ProductionSources,
+	)
+}
+
+// NewWithRecognizedTrustLists is [New] with the compiled-in set of recognized
+// trust lists replaced. It is the one seam the wallet exposes for pointing at a
+// list other than the published ones: integration tests use it to serve a list
+// they control, and it is how a staging build would consult a staging list.
+// Everything else is the production wiring.
+//
+// It exists as a second constructor rather than as an option on New because New
+// is bound into the app through gomobile, which does not bind variadic
+// parameters — and because a test seam that has to be reached for is harder to
+// use by accident.
+func NewWithRecognizedTrustLists(
+	storagePath string,
+	irmaConfigurationPath string,
+	eudiAppDataPath string,
+	handler ClientHandler,
+	sessionHandler clientmodels.SessionHandler,
+	signer irmaclient.Signer,
+	aesKey [32]byte,
+	locale string,
+	recognizedTrustLists []lote.Source,
 ) (*Client, error) {
 	// Required: the wallet calls it from background jobs and from IrmaClient
 	// without a nil guard, so a nil one would panic on a goroutine no caller
@@ -151,7 +181,24 @@ func New(
 	}, statusListCache)
 	revocationService := services.NewRevocationService(statusChecker, credStore)
 
-	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale)
+	// The single home for trust-level evaluation, shared by both EUDI protocols
+	// so an issuer and a verifier are ranked by the same rules, and by the
+	// credential listing paths, which rank a stored credential's issuer on every
+	// read. It reads the recognized lists through the LoTE checker, which holds
+	// them in memory and persists them, and never fetches on a session's path —
+	// see Client.RefreshTrustLists.
+	//
+	// The lists are signed by Yivi and chain to the Yivi root, so they are
+	// validated against the issuer anchors; both trust models pin the same root.
+	trustChecker := lote.NewChecker(lote.Config{
+		Sources:     recognizedTrustLists,
+		X509Context: &eudiConf.Issuers,
+		Store:       db.NewTrustListStore(eudiStorage.Db()),
+		HTTPClient:  common.HTTPClient,
+	})
+	trustService := services.NewTrustService(trustChecker)
+
+	credentialService := services.NewCredentialService(credStore, hbkStore, eudiStorage.FileSystem(), revocationService, currentLocale, trustService)
 
 	// Verifier verification checks if the verifier is trusted
 	x509Validator := openid4vp.NewRequestorCertificateStoreVerifierValidator(&eudiConf.Verifiers, &openid4vp.DefaultQueryValidatorFactory{})
@@ -171,10 +218,11 @@ func New(
 		sdjwt.NewDefaultKeyBinder(services.NewHolderBindingKeyService(eudiStorage.Db())),
 		currentLocale,
 		revocationService,
+		trustService,
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale)
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale, trustService)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -226,6 +274,7 @@ func New(
 		credentialService,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 		currentLocale,
+		trustService,
 	)
 
 	if err != nil {
@@ -252,6 +301,7 @@ func New(
 		currentLocale:     currentLocale,
 		credentialService: credentialService,
 		revocationService: revocationService,
+		trustService:      trustService,
 		sessionManager: sessionManager{
 			Sessions:       map[int]*session{},
 			SessionHandler: sessionHandler,
@@ -319,6 +369,33 @@ func (client *Client) Close() error {
 // cancellation.
 func (client *Client) RefreshStatuses(ctx context.Context) error {
 	changed, err := client.revocationService.RefreshStatuses(ctx)
+	if changed > 0 {
+		client.handler.CredentialsChanged()
+	}
+	return err
+}
+
+// RefreshTrustLists re-downloads the recognized trust lists and adopts the ones
+// that hold up. Use this on app resume, or when the UI exposes an explicit
+// refresh action.
+//
+// It is the only path that fetches a list: sessions read whatever the wallet
+// already holds, so a session is never delayed by a list download. A source
+// that fails leaves the list the wallet already held in force, and the returned
+// error names the sources that failed, for the caller's log. Nothing about a
+// failed refresh reaches a session beyond parties capping at a lower rung.
+//
+// A list that comes back saying something different about the parties on it
+// signals ClientHandler.CredentialsChanged, on the calling goroutine — the
+// rung a stored credential's issuer holds is read fresh on every listing, so
+// what the app is showing is out of date. A re-issue carrying the same entries
+// is silent, the same way a re-confirmed credential status is: re-confirmation
+// never wakes the app.
+//
+// InitJobs runs this on a schedule; the app may also call it on resume or from
+// an explicit refresh action.
+func (client *Client) RefreshTrustLists(ctx context.Context) error {
+	changed, err := client.trustService.RefreshLists(ctx)
 	if changed > 0 {
 		client.handler.CredentialsChanged()
 	}
@@ -698,7 +775,7 @@ func (client *Client) GetPreferences() clientsettings.Preferences {
 	return client.irmaClient.Preferences
 }
 
-func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval time.Duration) {
+func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInterval, trustListRefreshInterval time.Duration) {
 	// Future TODO: add Context so we can check for cancellation of the job ?
 	_, err := client.scheduler.NewJob(
 		gocron.DurationJob(eudiCrlUpdateInterval),
@@ -728,6 +805,27 @@ func (client *Client) InitJobs(eudiCrlUpdateInterval, statusTokenListRefreshInte
 		)
 		if err != nil {
 			common.Logger.Warnf("failed to create new cron job for refreshing credential statuses: %v", err)
+		}
+	}
+
+	// Periodically re-download the recognized trust lists. Skipped when the
+	// interval is non-positive. Like the status sweep, this is where the wallet
+	// learns that a party it vouched for was delisted — a stored credential's
+	// issuer rung is read fresh on every listing, so the refresh only has to
+	// wake the app, which RefreshTrustLists does when entry content changed.
+	// Failures are logged and the lists already held stay in force.
+	if trustListRefreshInterval > 0 {
+		_, err = client.scheduler.NewJob(
+			gocron.DurationJob(trustListRefreshInterval),
+			gocron.NewTask(func() {
+				if err := client.RefreshTrustLists(context.Background()); err != nil {
+					common.Logger.Warnf("scheduled trust list refresh failed: %v", err)
+				}
+			}),
+			gocron.WithStartAt(gocron.WithStartImmediately()),
+		)
+		if err != nil {
+			common.Logger.Warnf("failed to create new cron job for refreshing trust lists: %v", err)
 		}
 	}
 }

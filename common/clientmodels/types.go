@@ -14,6 +14,35 @@ const DefaultFallbackLanguage = "en"
 // TranslatedString is a map from language code to translated text.
 type TranslatedString map[string]string
 
+// TrustLevel is how strongly a party is vouched for: the three rungs of the
+// trust ladder, plus the absence of any evaluation.
+//
+// The rung is the strongest party-level vouching found, never a judgement about
+// the party's identity: identity validation is a separate gate that fails the
+// session outright (see ErrorType_PartyValidationFailed). A trust level never
+// blocks a session — the wallet warns and lets the user decide.
+type TrustLevel string
+
+const (
+	// TrustLevel_Unevaluated is the zero value: nothing was evaluated for this
+	// party. It is distinct from TrustLevel_Low, which is a verdict ("nobody
+	// vouches"). It is omitted from JSON, so the app sees an absent field.
+	TrustLevel_Unevaluated TrustLevel = ""
+	// TrustLevel_Low means nobody vouches for the party.
+	TrustLevel_Low TrustLevel = "low"
+	// TrustLevel_Medium means the party is granted on a recognized trust list.
+	TrustLevel_Medium TrustLevel = "medium"
+	// TrustLevel_High means Yivi itself vouches for the party.
+	TrustLevel_High TrustLevel = "high"
+)
+
+// IsTrusted reports whether the level warrants the trusted marker in the UI:
+// medium or high, i.e. somebody beyond the party itself vouches for it. An
+// unevaluated level is not trusted.
+func (l TrustLevel) IsTrusted() bool {
+	return l == TrustLevel_Medium || l == TrustLevel_High
+}
+
 // TrustedParty represents an issuer, verifier, or scheme manager.
 type TrustedParty struct {
 	Id string `json:"id"`
@@ -25,8 +54,9 @@ type TrustedParty struct {
 	Image *Image `json:"image,omitempty"`
 	// The trust chain for this party (if any)
 	Parent *TrustedParty `json:"parent"`
-	// Whether this party is verified by the scheme manager
-	Verified bool `json:"verified"`
+	// How strongly this party is vouched for. Absent when nothing was
+	// evaluated, which is not the same as "low".
+	TrustLevel TrustLevel `json:"trust_level,omitempty"`
 }
 
 type Image struct {

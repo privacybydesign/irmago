@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/irma"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,4 +59,27 @@ func TestFinish_DispatchesLaterDifferentState(t *testing.T) {
 		clientmodels.Status_Dismissed,
 		clientmodels.Status_Success,
 	}, spy.statuses)
+}
+
+// The IRMA display mapping is the third channel onto the same DTO: a requestor
+// registered in the Yivi requestor scheme is vouched for by Yivi itself, an
+// unregistered one by nobody. The mechanism is untouched — only what the app is
+// told about it.
+func TestRequestorInfoToTrustedParty_MapsSchemeRegistrationToARung(t *testing.T) {
+	id := irma.NewRequestorIdentifier("test-requestors.test-requestor")
+
+	registered := requestorInfoToTrustedParty(&irma.RequestorInfo{
+		ID:   id,
+		Name: irma.TranslatedString{"en": "Local IRMA server"},
+	}, "en")
+	require.Equal(t, clientmodels.TrustLevel_High, registered.TrustLevel)
+	require.True(t, registered.TrustLevel.IsTrusted())
+
+	unregistered := requestorInfoToTrustedParty(&irma.RequestorInfo{
+		ID:         id,
+		Name:       irma.TranslatedString{"en": "Someone off the street"},
+		Unverified: true,
+	}, "en")
+	require.Equal(t, clientmodels.TrustLevel_Low, unregistered.TrustLevel)
+	require.False(t, unregistered.TrustLevel.IsTrusted())
 }

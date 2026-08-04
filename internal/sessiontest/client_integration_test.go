@@ -19,6 +19,7 @@ import (
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/internal/common"
 	"github.com/privacybydesign/irmago/internal/crypto/encryption"
 	"github.com/privacybydesign/irmago/internal/test"
@@ -583,7 +584,7 @@ func testIdemixOnlyCredentialRemovalLog(t *testing.T) {
 		require.Equal(t, "irma-demo.MijnOverheid.fullName", credential.CredentialId)
 		require.Equal(t, "Demo Name", credential.Name)
 		require.Equal(t, "Demo MijnOverheid.nl", credential.Issuer.Name)
-		require.True(t, credential.Issuer.Verified, "issuer should be verified")
+		require.Equal(t, clientmodels.TrustLevel_High, credential.Issuer.TrustLevel, "issuer should rank high")
 
 		requireAttrsInOrder(t, credential.Attributes,
 			expectedAttr{
@@ -714,7 +715,7 @@ func testDoubleSdJwtIssuanceFailsAfterRevocationListUpdate(t *testing.T) {
 	defer c.Close()
 
 	revocationListUpdateInterval := 3 * time.Second
-	c.InitJobs(revocationListUpdateInterval, 0) // status refresh disabled: not under test here
+	c.InitJobs(revocationListUpdateInterval, 0, 0) // status and trust list refresh disabled: not under test here
 
 	// Give the client some time to init and download the current CRL
 	time.Sleep(4 * time.Second)
@@ -772,7 +773,7 @@ func requireIdemixOnlyCredentialRemovalLog(t *testing.T, log clientmodels.LogInf
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -839,7 +840,7 @@ func requireIrmaDisclosureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -861,7 +862,7 @@ func requireSignatureLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -924,7 +925,7 @@ func requireOpenID4VPLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -958,7 +959,7 @@ func requireIrmaSdJwtIssuanceLog(t *testing.T, log clientmodels.LogInfo) {
 	require.Equal(t, "test.test.email", cred.CredentialId)
 	require.Equal(t, "Demo Email address", cred.Name)
 	require.Equal(t, "Demo test issuer", cred.Issuer.Name)
-	require.True(t, cred.Issuer.Verified, "issuer should be verified")
+	require.Equal(t, clientmodels.TrustLevel_High, cred.Issuer.TrustLevel, "issuer should rank high")
 
 	requireAttrsInOrder(t, cred.Attributes,
 		expectedAttr{
@@ -1248,6 +1249,20 @@ func createClientWithCustomIssuerTrustChain(
 }
 
 func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
+	return instantiateClientWithTrustLists(t, issuerChain, locale, nil, nil)
+}
+
+// instantiateClientWithTrustLists is instantiateClient with the wallet's
+// recognized-list set replaced, for tests that publish a LoTE of their own.
+// loteRoot is installed as an extra issuer trust anchor: it is where the wallet
+// looks for the key a list signature has to chain to.
+func instantiateClientWithTrustLists(
+	t *testing.T,
+	issuerChain []byte,
+	locale string,
+	loteRoot *x509.Certificate,
+	trustLists []lote.Source,
+) (*client.Client, *irmaclient.MockClientHandler, *MockSessionHandler) {
 	var aesKey [32]byte
 	copy(aesKey[:], "asdfasdfasdfasdfasdfasdfasdfasdf")
 
@@ -1278,6 +1293,13 @@ func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client
 		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "issuer_cert_openid4vc_staging_yivi_app.pem"), encIssuer))
 	}
 
+	if loteRoot != nil {
+		rootPem := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: loteRoot.Raw})
+		encLoteRoot, err := encMiddleware.Encrypt(rootPem)
+		require.NoError(t, err)
+		require.NoError(t, common.SaveFile(filepath.Join(issuerCertsPath, "lote-test-root.pem"), encLoteRoot))
+	}
+
 	// Add test verifier CA certificate as trusted chain.
 	verifierCertsPath := filepath.Join(storagePath, "eudi", "verifiers", "certificates")
 	require.NoError(t, common.EnsureDirectoryExists(verifierCertsPath))
@@ -1289,7 +1311,11 @@ func instantiateClient(t *testing.T, issuerChain []byte, locale string) (*client
 	sessionHandler := &MockSessionHandler{
 		SessionChan: make(chan clientmodels.SessionState, 10),
 	}
-	client, err := client.New(storagePath, irmaConfigurationPath, eudiAppDataPath, clientHandler, sessionHandler, test.NewSigner(t), aesKey, locale)
+	client, err := client.NewWithRecognizedTrustLists(
+		storagePath, irmaConfigurationPath, eudiAppDataPath,
+		clientHandler, sessionHandler, test.NewSigner(t), aesKey, locale,
+		trustLists,
+	)
 	require.NoError(t, err)
 
 	client.SetPreferences(clientsettings.Preferences{DeveloperMode: true})
