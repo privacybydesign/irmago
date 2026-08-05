@@ -3,7 +3,6 @@ package vcdmsdjwt
 import (
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
@@ -35,10 +34,9 @@ func TestCheckKeyBindingConfirmationUniqueness_DuplicateKidFails(t *testing.T) {
 
 func TestCheckKeyBindingConfirmationUniqueness_DuplicateJwkFails(t *testing.T) {
 	key := testdata.ParseHolderPubJwk()
-	var jwkKey jwk.Key = key
 	err := CheckKeyBindingConfirmationUniqueness([]*VerifiedSdJwtVcdm{
-		verifiedWithCnf(&sdjwt.CnfField{Jwk: &jwkKey}),
-		verifiedWithCnf(&sdjwt.CnfField{Jwk: &jwkKey}),
+		verifiedWithCnf(&sdjwt.CnfField{Jwk: &key}),
+		verifiedWithCnf(&sdjwt.CnfField{Jwk: &key}),
 	})
 	require.Error(t, err)
 }
