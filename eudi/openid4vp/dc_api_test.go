@@ -204,10 +204,31 @@ func TestParseDcApiRequest_Unsigned_Succeeds(t *testing.T) {
 	require.False(t, requestor.Verified)
 }
 
-func TestParseDcApiRequest_Unsigned_UsesClientNameWhenPresent(t *testing.T) {
+// Nothing authenticates client_metadata in an unsigned request, so client_name
+// must not be able to name the verifier: a caller that picks its own display
+// name could hide a phishing origin behind a trusted one.
+func TestParseDcApiRequest_Unsigned_IgnoresClientName(t *testing.T) {
 	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
 
 	_, requestor, err := client.parseDcApiRequest(&DcApiRequest{
+		Protocol: DcApiProtocolUnsigned,
+		Origin:   "https://phishing.example.net",
+		Data: unsignedRequestData(t, map[string]any{
+			"client_metadata": map[string]any{"client_name": "Rijksoverheid"},
+		}),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "phishing.example.net", requestor.Name)
+	require.False(t, requestor.Verified)
+}
+
+// client_metadata itself must survive, because the jwks it carries is what a
+// dc_api.jwt response is encrypted to.
+func TestParseDcApiRequest_Unsigned_KeepsClientMetadata(t *testing.T) {
+	client := &Client{dcqlHandler: dcql.NewDcqlHandler(nil)}
+
+	request, _, err := client.parseDcApiRequest(&DcApiRequest{
 		Protocol: DcApiProtocolUnsigned,
 		Origin:   testOrigin,
 		Data: unsignedRequestData(t, map[string]any{
@@ -216,8 +237,8 @@ func TestParseDcApiRequest_Unsigned_UsesClientNameWhenPresent(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, "Verifier Example", requestor.Name)
-	require.False(t, requestor.Verified)
+	require.NotNil(t, request.ClientMetadata)
+	require.Equal(t, "Verifier Example", *request.ClientMetadata.ClientName)
 }
 
 // Appendix A.2: the wallet MUST ignore client_id and expected_origins in an
@@ -443,6 +464,12 @@ func TestSameOrigin(t *testing.T) {
 		{"https://verifier.example.com", "https://verifier.example.com:8443", false},
 		{"https://verifier.example.com", "http://verifier.example.com", false},
 		{"https://verifier.example.com", "https://attacker.example.com", false},
+		// A default port written out explicitly is the same origin as one left
+		// off (RFC 6454), but only for its own scheme.
+		{"https://verifier.example.com", "https://verifier.example.com:443", true},
+		{"http://verifier.example.com:80", "http://verifier.example.com", true},
+		{"http://verifier.example.com:443", "https://verifier.example.com", false},
+		{"https://verifier.example.com:80", "http://verifier.example.com", false},
 		// The path is not part of an origin, but a verifier that signed for a
 		// trailing slash still means the same origin.
 		{"https://verifier.example.com/", "https://verifier.example.com", true},

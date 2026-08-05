@@ -80,7 +80,7 @@ func (client *Client) parseDcApiRequest(request *DcApiRequest) (*AuthorizationRe
 			return nil, nil, err
 		}
 		authRequest = parsed
-		requestor = unsignedDcApiRequestor(request.Origin, parsed.ClientMetadata)
+		requestor = unsignedDcApiRequestor(request.Origin)
 
 	case DcApiProtocolSigned:
 		var data dcApiSignedRequestData
@@ -195,18 +195,33 @@ func sameOrigin(a, b string) bool {
 		return false
 	}
 	return strings.EqualFold(parsedA.Scheme, parsedB.Scheme) &&
-		strings.EqualFold(parsedA.Host, parsedB.Host)
+		strings.EqualFold(originHostPort(parsedA), originHostPort(parsedB))
+}
+
+// originHostPort returns the host of an origin with the scheme's default port
+// removed when it was written out explicitly, so that https://example.com and
+// https://example.com:443 compare equal as RFC 6454 requires.
+func originHostPort(u *url.URL) string {
+	defaultPort := map[string]string{"http": "80", "https": "443"}[strings.ToLower(u.Scheme)]
+	if defaultPort != "" && u.Port() == defaultPort {
+		return u.Hostname()
+	}
+	return u.Host
 }
 
 // unsignedDcApiRequestor builds the requestor to show for an unsigned request.
 // There is no trust framework backing an unsigned request, so the verifier is
 // never presented as verified: all the wallet knows is the origin the platform
 // authenticated.
-func unsignedDcApiRequestor(origin string, metadata *ClientMetadata) *clientmodels.TrustedParty {
+//
+// client_metadata is deliberately not consulted for the display name. Nothing
+// authenticates it in an unsigned request, for the same reason client_id and
+// expected_origins are dropped, so letting client_name name the verifier would
+// hide the one fact the platform did authenticate behind a value the caller
+// chose for itself.
+func unsignedDcApiRequestor(origin string) *clientmodels.TrustedParty {
 	displayName := origin
-	if metadata != nil && metadata.ClientName != nil && *metadata.ClientName != "" {
-		displayName = *metadata.ClientName
-	} else if host := hostFromURL(origin); host != "" {
+	if host := hostFromURL(origin); host != "" {
 		displayName = host
 	}
 	return &clientmodels.TrustedParty{
