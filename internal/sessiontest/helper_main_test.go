@@ -12,6 +12,7 @@ import (
 	"github.com/privacybydesign/irmago/client/clientsettings"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/internal/clientstorage"
 	"github.com/privacybydesign/irmago/internal/common"
@@ -76,7 +77,7 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 	sdjwtStorage, err := irmaclient.NewInMemorySdJwtVcStorage()
 	require.NoError(t, err)
 
-	keyBinder := sdjwtvc.NewDefaultKeyBinder(sdjwtvc.NewInMemoryKeyBindingStorage())
+	keyBinder := sdjwt.NewDefaultKeyBinder(sdjwt.NewInMemoryKeyBindingStorage())
 
 	x509Options, err := utils.CreateX509VerifyOptionsFromCertChain(
 		testdata.IssuerCert_openid4vc_staging_yivi_app_Bytes,
@@ -88,7 +89,7 @@ func parseExistingStorage(t *testing.T, storageFolder string, options ...option)
 			VerifyOpts: *x509Options,
 		},
 		Clock:       eudi_jwt.NewSystemClock(),
-		JwtVerifier: sdjwtvc.NewJwxJwtVerifier(),
+		JwtVerifier: sdjwt.NewJwxJwtVerifier(),
 	}
 	client, err := irmaclient.NewIrmaClient(
 		conf,

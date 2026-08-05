@@ -7,25 +7,27 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
+	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/irmaclient"
 )
 
 // SdJwtVcDcqlHandler implements dcql.DcqlCredentialQueryHandler for SD-JWT-VC credentials.
 type SdJwtVcDcqlHandler struct {
-	storage   irmaclient.SdJwtVcStorage
-	config    *irma.Configuration
-	keyBinder sdjwtvc.KeyBinder
+	storage       irmaclient.SdJwtVcStorage
+	config        *irma.Configuration
+	keyBinder     sdjwt.KeyBinder
+	currentLocale *clientmodels.CurrentLocale
 }
 
 // NewIrmaSdJwtVcDcqlHandler creates a new handler for DCQL credential queries for SD-JWT-VC credentials issued over IRMA.
-func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwtvc.KeyBinder) *SdJwtVcDcqlHandler {
+func NewIrmaSdJwtVcDcqlHandler(storage irmaclient.SdJwtVcStorage, config *irma.Configuration, keyBinder sdjwt.KeyBinder, currentLocale *clientmodels.CurrentLocale) *SdJwtVcDcqlHandler {
 	return &SdJwtVcDcqlHandler{
-		storage:   storage,
-		config:    config,
-		keyBinder: keyBinder,
+		storage:       storage,
+		config:        config,
+		keyBinder:     keyBinder,
+		currentLocale: currentLocale,
 	}
 }
 
@@ -102,18 +104,18 @@ func (h *SdJwtVcDcqlHandler) PrepareDisclosure(selections []dcql.DisclosureSelec
 			return nil, fmt.Errorf("failed to remove instance of credential %s: %w", sel.CredentialHash, err)
 		}
 
-		sdjwtSelected, err := sdjwtvc.CreatePresentation(cred.SdJwtVc, sel.ClaimPaths)
+		sdjwtSelected, err := sdjwt.CreatePresentation(sdjwt.SdJwt(cred.SdJwtVc), sel.ClaimPaths)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create presentation: %w", err)
 		}
 
 		presentation := string(sdjwtSelected)
 		if sel.RequireHolderBinding {
-			kbjwt, err := sdjwtvc.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
+			kbjwt, err := sdjwt.CreateKbJwt(sdjwtSelected, h.keyBinder, nonce, clientId)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create kbjwt: %w", err)
 			}
-			presentation = string(sdjwtvc.AddKeyBindingJwtToSdJwtVc(sdjwtSelected, kbjwt))
+			presentation = string(sdjwt.AddKeyBindingJwt(sdjwtSelected, kbjwt))
 		}
 
 		result.QueryResponses = append(result.QueryResponses, dcql.QueryResponse{
@@ -263,20 +265,22 @@ func (h *SdJwtVcDcqlHandler) buildSelectableInstance(candidate sdJwtVcCredCandid
 		return nil, fmt.Errorf("issuer %s not found in configuration", issuerId.String())
 	}
 
+	locale := h.currentLocale.Get()
+
 	// Build attributes for the matched claims, using display metadata from irma.Configuration
-	attributes := h.buildMatchedAttributes(credType, candidate.claimMatches, metadata)
+	attributes := h.buildMatchedAttributes(credType, candidate.claimMatches, metadata, locale)
 
 	remainingCount := metadata.RemainingInstanceCount
 	model := clientmodels.SelectableCredentialInstance{
 		CredentialId:                credTypeId.String(),
 		Hash:                        metadata.Hash,
 		Image:                       clientmodels.ImageFromFile(credType.Logo(h.config)),
-		Name:                        clientmodels.TranslatedString(credType.Name),
-		Issuer:                      buildIssuerTrustedParty(h.config, issuer),
+		Name:                        clientmodels.Resolve(clientmodels.TranslatedString(credType.Name), locale),
+		Issuer:                      issuer.ToTrustedParty(h.config, locale),
 		Format:                      clientmodels.Format_SdJwtVc,
 		BatchInstanceCountRemaining: &remainingCount,
 		Attributes:                  attributes,
-		IssueURL:                    convertOptionalTranslatedString(credType.IssueURL),
+		IssueURL:                    clientmodels.ResolvePtr(credType.IssueURL.ToClientmodels(), locale),
 	}
 
 	if metadata.SignedOn != nil {
@@ -296,6 +300,7 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 	credType *irma.CredentialType,
 	matches []dcqlClaimMatch,
 	metadata irmaclient.SdJwtVcBatchMetadata,
+	locale string,
 ) []clientmodels.Attribute {
 	var attributes []clientmodels.Attribute
 
@@ -309,7 +314,7 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 		at, ok := attrTypesByID[match.attributeName]
 		if !ok {
 			// If the attribute type is not in the schema, create a basic attribute
-			dn := clientmodels.TranslatedString{"en": match.attributeName}
+			dn := match.attributeName
 			attr := clientmodels.Attribute{
 				ClaimPath:   []any{match.attributeName},
 				DisplayName: &dn,
@@ -323,12 +328,11 @@ func (h *SdJwtVcDcqlHandler) buildMatchedAttributes(
 			continue
 		}
 
-		description := clientmodels.TranslatedString(at.Description)
-		displayName := clientmodels.TranslatedString(at.Name)
+		displayName, description := at.ResolveTexts(locale)
 		attr := clientmodels.Attribute{
 			ClaimPath:   []any{at.ID},
-			DisplayName: &displayName,
-			Description: &description,
+			DisplayName: displayName,
+			Description: description,
 		}
 
 		// Set the actual value from the credential's stored attributes
@@ -425,11 +429,13 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		}
 	}
 
+	locale := h.currentLocale.Get()
+
 	// Build attributes for the selected claims
 	var attributes []clientmodels.Attribute
 	for _, claim := range claimsToShow {
 		pathKey := clientmodels.ClaimPathKey(claim.Path)
-		dn := clientmodels.TranslatedString{"en": pathKey}
+		dn := pathKey
 		attr := clientmodels.Attribute{
 			ClaimPath:   claim.Path,
 			DisplayName: &dn,
@@ -438,8 +444,9 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 		// Look up display metadata from the credential type schema
 		for _, at := range credType.AttributeTypes {
 			if clientmodels.ClaimPathKey([]any{at.ID}) == pathKey {
-				name := clientmodels.TranslatedString(at.Name)
-				attr.DisplayName = &name
+				if name := clientmodels.Resolve(clientmodels.TranslatedString(at.Name), locale); name != "" {
+					attr.DisplayName = &name
+				}
 				break
 			}
 		}
@@ -462,20 +469,23 @@ func (h *SdJwtVcDcqlHandler) buildCredentialDescriptor(credTypeId irma.Credentia
 	// Display in schema order rather than the verifier's claim order.
 	attributes = sortAttributesBySchema(attributes, credType)
 
+	name, category, issueURL := credType.ResolveTexts(locale)
+
 	return &clientmodels.CredentialDescriptor{
 		CredentialId: credTypeId.String(),
-		Name:         clientmodels.TranslatedString(credType.Name),
-		Issuer:       buildIssuerTrustedParty(h.config, issuer),
-		Category:     convertOptionalTranslatedString(credType.Category),
+		Name:         name,
+		Issuer:       issuer.ToTrustedParty(h.config, locale),
+		Category:     category,
 		Image:        clientmodels.ImageFromFile(credType.Logo(h.config)),
 		Attributes:   attributes,
-		IssueURL:     convertOptionalTranslatedString(credType.IssueURL),
+		IssueURL:     issueURL,
 	}, nil
 }
 
 // buildLogCredential creates a LogCredential for a disclosed credential.
 func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatchMetadata, disclosedClaimPaths [][]any) clientmodels.LogCredential {
 	credTypeId := irma.NewCredentialTypeIdentifier(metadata.CredentialType)
+	locale := h.currentLocale.Get()
 
 	logCred := clientmodels.LogCredential{
 		CredentialId: metadata.CredentialType,
@@ -493,21 +503,21 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 
 	// Enrich with display metadata if available
 	if credType, ok := h.config.CredentialTypes[credTypeId]; ok {
-		logCred.Name = clientmodels.TranslatedString(credType.Name)
+		logCred.Name = clientmodels.Resolve(clientmodels.TranslatedString(credType.Name), locale)
 		logCred.Image = clientmodels.ImageFromFile(credType.Logo(h.config))
 
 		if issuer, ok := h.config.Issuers[credType.IssuerIdentifier()]; ok {
-			logCred.Issuer = buildIssuerTrustedParty(h.config, issuer)
+			logCred.Issuer = issuer.ToTrustedParty(h.config, locale)
 		}
 
-		logCred.IssueURL = convertOptionalTranslatedString(credType.IssueURL)
+		logCred.IssueURL = clientmodels.ResolvePtr(credType.IssueURL.ToClientmodels(), locale)
 	}
 
 	// Build disclosed attributes
 	var attributes []clientmodels.Attribute
 	for _, claimPath := range disclosedClaimPaths {
 		pathKey := clientmodels.ClaimPathKey(claimPath)
-		dn := clientmodels.TranslatedString{"en": pathKey}
+		dn := pathKey
 		attr := clientmodels.Attribute{
 			ClaimPath:   claimPath,
 			DisplayName: &dn,
@@ -519,10 +529,11 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 		if credType, ok := h.config.CredentialTypes[credTypeId]; ok {
 			for _, at := range credType.AttributeTypes {
 				if clientmodels.ClaimPathKey([]any{at.ID}) == pathKey {
-					name := clientmodels.TranslatedString(at.Name)
-					description := clientmodels.TranslatedString(at.Description)
-					attr.DisplayName = &name
-					attr.Description = &description
+					displayName, description := at.ResolveTexts(locale)
+					if displayName != nil {
+						attr.DisplayName = displayName
+					}
+					attr.Description = description
 					matchedAtType = at
 					break
 				}
@@ -548,33 +559,6 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(metadata irmaclient.SdJwtVcBatch
 // ============================================================================
 // Shared helper functions
 // ============================================================================
-
-// buildIssuerTrustedParty constructs a TrustedParty for an issuer, including its logo
-// and the scheme manager as parent.
-func buildIssuerTrustedParty(irmaConfig *irma.Configuration, issuer *irma.Issuer) clientmodels.TrustedParty {
-	scheme := irmaConfig.SchemeManagers[issuer.SchemeManagerIdentifier()]
-	parent := clientmodels.TrustedParty{
-		Id:       scheme.Identifier().String(),
-		Name:     clientmodels.TranslatedString(scheme.Name),
-		Verified: scheme.Status == irma.SchemeManagerStatusValid,
-	}
-	return clientmodels.TrustedParty{
-		Id:       issuer.Identifier().String(),
-		Name:     clientmodels.TranslatedString(issuer.Name),
-		Image:    clientmodels.ImageFromFile(issuer.Logo(irmaConfig)),
-		Verified: scheme.Status == irma.SchemeManagerStatusValid,
-		Parent:   &parent,
-	}
-}
-
-// convertOptionalTranslatedString converts an irma.TranslatedString pointer to a clientmodels.TranslatedString pointer.
-func convertOptionalTranslatedString(s *irma.TranslatedString) *clientmodels.TranslatedString {
-	if s == nil {
-		return nil
-	}
-	t := clientmodels.TranslatedString(*s)
-	return &t
-}
 
 // displayHintToAttributeType converts an irma display hint to a clientmodels.AttributeType.
 func displayHintToAttributeType(s string) clientmodels.AttributeType {

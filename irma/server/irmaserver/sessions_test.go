@@ -2,12 +2,15 @@ package irmaserver
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-redis/redis/v8"
 	"github.com/privacybydesign/irmago/internal/test"
 	"github.com/privacybydesign/irmago/irma"
 	"github.com/privacybydesign/irmago/irma/server"
@@ -27,6 +30,76 @@ func sessionsConf(t *testing.T) *server.Configuration {
 		Logger:      logger,
 		SchemesPath: filepath.Join(test.FindTestdataFolder(t), "irma_configuration"),
 	}
+}
+
+func TestRedisClientTransactionWatchesSessionKey(t *testing.T) {
+	mr := miniredis.NewMiniRedis()
+	require.NoError(t, mr.Start())
+	defer mr.Close()
+
+	client := redis.NewClient(&redis.Options{Addr: mr.Host() + ":" + mr.Port()})
+	defer client.Close()
+
+	conf := sessionsConf(t)
+	conf.MaxSessionLifetime = 15
+	conf.SessionResultLifetime = 5
+	store := &redisSessionStore{
+		client: &server.RedisClient{Client: client},
+		conf:   conf,
+	}
+	req, err := server.ParseSessionRequest(`{"request":{"@context":"https://irma.app/ld/request/disclosure/v2","context":"AQ==","nonce":"MtILupG0g0J23GNR1YtupQ==","devMode":true,"disclose":[[[{"type":"test.test.email.email","value":"example@example.com"}]]]}}`)
+	require.NoError(t, err)
+	session := &sessionData{
+		Action:         irma.ActionDisclosing,
+		RequestorToken: "requestor",
+		ClientToken:    "client",
+		Rrequest:       req,
+		Status:         irma.ServerStatusConnected,
+		LastActive:     time.Now(),
+	}
+	require.NoError(t, store.add(context.Background(), session))
+
+	readDone := make(chan struct{})
+	continueWrite := make(chan struct{})
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- store.clientTransaction(context.Background(), session.ClientToken, func(ses *sessionData) (bool, error) {
+			close(readDone)
+			<-continueWrite
+			ses.Requestor = "transaction"
+			return true, nil
+		})
+	}()
+
+	select {
+	case <-readDone:
+	case err := <-errChan:
+		require.NoError(t, err, "transaction returned before the handler completed")
+	case <-time.After(time.Second):
+		t.Fatal("transaction did not read the session")
+	}
+
+	session.Requestor = "external"
+	sessionJSON, err := json.Marshal(session)
+	require.NoError(t, err)
+	key := store.client.KeyPrefix + clientTokenLookupPrefix + string(session.ClientToken)
+	require.NoError(t, client.Set(context.Background(), key, sessionJSON, time.Minute).Err())
+
+	close(continueWrite)
+	select {
+	case err := <-errChan:
+		var redisErr *RedisError
+		require.ErrorAs(t, err, &redisErr)
+		require.ErrorIs(t, redisErr.err, redis.TxFailedErr)
+	case <-time.After(time.Second):
+		t.Fatal("transaction did not finish")
+	}
+
+	sessionJSON, err = client.Get(context.Background(), key).Bytes()
+	require.NoError(t, err)
+	var storedSession sessionData
+	require.NoError(t, json.Unmarshal(sessionJSON, &storedSession))
+	require.Equal(t, "external", storedSession.Requestor)
 }
 
 func TestSessionHandlerInvokedOnCancel(t *testing.T) {

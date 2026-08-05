@@ -1,4 +1,4 @@
-package sdjwtvc
+package sdjwt
 
 import (
 	"crypto"
@@ -8,15 +8,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/didjwk"
 	"github.com/privacybydesign/irmago/eudi/didkey"
-	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
-	"github.com/privacybydesign/irmago/eudi/utils"
 	iana "github.com/privacybydesign/irmago/internal/crypto/hashing"
 )
+
+// systemClock is a minimal jwt.Clock backed by the system clock. Defined
+// here instead of reused from eudi/jwt because that package transitively
+// imports eudi/scheme (via eudi/utils' X.509 certificate-extension
+// helpers), which sdjwt must not depend on.
+type systemClock struct{}
+
+func (systemClock) Now() time.Time { return time.Now() }
+
+// extractOptionalWith parses claims[key] with valueParser, returning the zero
+// value when the key is absent. Defined here instead of reused from
+// eudi/utils for the same reason as systemClock.
+func extractOptionalWith[T any](claims map[string]any, key string, valueParser func(any) (T, error)) (T, error) {
+	value, ok := claims[key]
+	if !ok {
+		var zero T
+		return zero, nil
+	}
+	return valueParser(value)
+}
 
 // KeyBindingJwt is a string containing the key binding jwt (just the jwt, no ~ or something)
 type KeyBindingJwt string
@@ -33,6 +52,12 @@ type KeyBindingJwtPayload struct {
 
 	// Should equal "client_id" field from the openid4vp auth request
 	Audience string `json:"aud"`
+}
+
+type CnfField struct {
+	Jwk *jwk.Key `json:"jwk,omitempty"`
+	// Note: kid can be any value, but for now we only support the did:jwk method, so it should be a string did:jwk reference to a key in the database with keybinding keys
+	Kid *string `json:"kid,omitempty"`
 }
 
 type KeyBindingStorage interface {
@@ -128,7 +153,7 @@ type DefaultKeyBinder struct {
 
 func NewDefaultKeyBinder(storage KeyBindingStorage) KeyBinder {
 	return &DefaultKeyBinder{
-		clock:   eudi_jwt.NewSystemClock(),
+		clock:   systemClock{},
 		storage: storage,
 	}
 }
@@ -203,13 +228,13 @@ func (c *DefaultKeyBinder) RemoveAllPrivateKeys() error {
 	return c.storage.RemoveAllPrivateKeys()
 }
 
-func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string) (KeyBindingJwt, error) {
+func CreateKbJwt(sdJwt SdJwt, creator KeyBinder, nonce string, audience string) (KeyBindingJwt, error) {
 	alg, holderKey, err := ExtractHashingAlgorithmAndHolderPubKey(sdJwt)
 	if err != nil {
 		return "", err
 	}
 
-	hash, err := CreateUrlEncodedHash(alg, string(sdJwt))
+	hash, err := iana.CreateUrlEncodedHash(alg, string(sdJwt))
 	if err != nil {
 		return "", err
 	}
@@ -217,23 +242,23 @@ func CreateKbJwt(sdJwt SdJwtVc, creator KeyBinder, nonce string, audience string
 	return creator.CreateKeyBindingJwt(hash, holderKey, nonce, audience)
 }
 
-func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwtVc) (iana.HashingAlgorithm, jwk.Key, error) {
-	issuerSignedJwt, _, err := splitSdJwtVc(sdJwt)
+func ExtractHashingAlgorithmAndHolderPubKey(sdJwt SdJwt) (iana.HashingAlgorithm, jwk.Key, error) {
+	issuerSignedJwt, _, err := Split(sdJwt)
 	if err != nil {
 		return "", nil, err
 	}
-	_, claims, err := decodeJwtWithoutCheckingSignature(string(issuerSignedJwt))
+	_, claims, err := DecodeJwtWithoutCheckingSignature(string(issuerSignedJwt))
 	if err != nil {
 		return "", nil, err
 	}
 
 	// SD-JWT spec Section 4.1.1: default to sha-256 if _sd_alg is absent.
-	alg, ok := claims[Key_SdAlg].(string)
+	alg, ok := claims[SdAlgKey].(string)
 	if !ok {
 		alg = string(iana.SHA256)
 	}
 
-	confirm, err := utils.ExtractOptionalWith(claims, Key_Confirmationkey, parseConfirmField)
+	confirm, err := extractOptionalWith(claims, ConfirmationKey, ParseConfirmField)
 	if err != nil {
 		return "", nil, err
 	}
