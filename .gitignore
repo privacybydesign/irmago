@@ -1,5 +1,6 @@
 *.test
 !Dockerfile.test
+*.exe
 .DS_STORE
 .idea/
 testdata/tmp/*
