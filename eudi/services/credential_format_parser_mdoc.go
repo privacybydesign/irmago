@@ -59,8 +59,14 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 	}
 
 	parsed := &ParsedCredential{
-		Format:                   models.CredentialFormatMsoMdoc,
-		VerifiableCredentialType: m.DocType,
+		Format: models.CredentialFormatMsoMdoc,
+		// result.DocType, not m.DocType: the verifier reports the docType from the
+		// signed MSO, while m.DocType is the document envelope's own copy, which no
+		// signature covers. The two are now required to be equal for verification to
+		// succeed at all, so this is belt-and-braces — but this value becomes the
+		// credential's type, which DCQL doctype_value matching and relying-party
+		// authorization key off, so it should visibly come from the signed side.
+		VerifiableCredentialType: result.DocType,
 		IssuerURL:                credentialIssuer,
 		ResolvedClaims:           resolvedClaimsBytes,
 		RawCredentialBytes:       rawBytes,
@@ -75,6 +81,10 @@ func (p *mdocCredentialFormatParser) ParseAndVerify(raw, credentialIssuer string
 			return nil, fmt.Errorf("failed to compute device key thumbprint: %w", err)
 		}
 		parsed.HolderBindingKeyThumbprint = &thumbprint
+		// The key itself as well as its thumbprint: a DID-bound stored key has no
+		// thumbprint to match against, and the DID forms are derived from the key.
+		// See ParsedCredential.HolderBindingKeyPublicKey.
+		parsed.HolderBindingKeyPublicKey = result.DeviceKey
 	}
 
 	return parsed, nil

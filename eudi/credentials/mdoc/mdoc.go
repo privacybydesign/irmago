@@ -56,26 +56,80 @@ type ValidityInfo struct {
 }
 
 // IssuerSigned bundles the revealed claim items + the issuer's COSE_Sign1 signature
+//
+// IssuerAuth is cbor.RawMessage, not []byte: ISO 18013-5 has
+// `IssuerAuth = COSE_Sign1`, so the four-element COSE array must sit inline at
+// this position. A []byte field would encode it as a CBOR byte string wrapping
+// those bytes, which no conformant verifier can read — Multipaz, for one, does
+// `issuerSigned["issuerAuth"].asCoseSign1` on a structured item. Same reasoning
+// as DeviceAuth.DeviceSignature, which already had it.
 type IssuerSigned struct {
 	NameSpaces map[string][]Tag24Item `cbor:"nameSpaces"` // only DISCLOSED items travel here
-	IssuerAuth []byte                 `cbor:"issuerAuth"` // COSE_Sign1 over MSO — unchanged across presentations
+	IssuerAuth cbor.RawMessage        `cbor:"issuerAuth"` // COSE_Sign1 over MSO — unchanged across presentations
 }
 
 // Tag24Item holds the raw Tag-24 wrapped bytes of one IssuerSignedItem
 // "frozen" bytes — must not be re-encoded, otherwise digest won't match
+//
+// The custom marshalling is load-bearing rather than cosmetic. ISO 18013-5 has
+// `IssuerNameSpaces = {+ NameSpace => [+ IssuerSignedItemBytes]}` with
+// `IssuerSignedItemBytes = #6.24(bstr .cbor IssuerSignedItem)`, so each array
+// element is the tag-24 value itself. Left to fxamacker/cbor's struct default
+// this one-field struct encodes as the map {"EncodedItem": <bstr>} — a Go field
+// name on the wire, wrapping the tag-24 value in a second byte-string layer.
+// That round-trips against this package and against nothing else.
+//
+// EncodedItem already holds the complete tag-24 encoding (see tag24Wrap), so
+// marshalling emits it verbatim and unmarshalling captures it verbatim; the
+// digest is taken over exactly these bytes either way, which is why fixing the
+// transport shape does not disturb any signature or digest.
 type Tag24Item struct {
 	EncodedItem []byte
+}
+
+// MarshalCBOR emits the pre-encoded tag-24 item as-is.
+func (t Tag24Item) MarshalCBOR() ([]byte, error) {
+	if len(t.EncodedItem) == 0 {
+		return nil, fmt.Errorf("mdoc: Tag24Item has no encoded item to marshal")
+	}
+	return t.EncodedItem, nil
+}
+
+// UnmarshalCBOR captures the tag-24 item's raw bytes without re-encoding them,
+// verifying only that this really is a tag 24 wrapping a byte string.
+func (t *Tag24Item) UnmarshalCBOR(data []byte) error {
+	var rawTag cbor.RawTag
+	if err := cbor.Unmarshal(data, &rawTag); err != nil {
+		return fmt.Errorf("mdoc: issuerSignedItem is not tag-24 embedded CBOR: %w", err)
+	}
+	if rawTag.Number != 24 {
+		return fmt.Errorf("mdoc: issuerSignedItem has CBOR tag %d, want 24", rawTag.Number)
+	}
+	var inner []byte
+	if err := cbor.Unmarshal(rawTag.Content, &inner); err != nil {
+		return fmt.Errorf("mdoc: tag-24 issuerSignedItem does not wrap a byte string: %w", err)
+	}
+	t.EncodedItem = append([]byte(nil), data...)
+	return nil
 }
 
 // DeviceAuthentication is the CBOR array that deviceAuth signs over
 // It is a CBOR array (not map) — hence the toarray tag on the blank field
 // This structure is built fresh every presentation — ties deviceAuth to one session
+//
+// DeviceNameSpaces is cbor.RawMessage for the reason given on
+// IssuerSigned.IssuerAuth: ISO 18013-5's DeviceNameSpacesBytes is
+// `#6.24(bstr .cbor DeviceNameSpaces)`, and the field already holds that
+// complete tag-24 encoding, so it must go on the wire inline rather than inside
+// another byte string. Signer and verifier build this identically (holder.go and
+// verifier.go both call tag24Wrap on the same empty map), so the change moves
+// both sides together and the signature is unaffected.
 type DeviceAuthentication struct {
 	_                 struct{}          `cbor:",toarray"`
 	Context           string            // always "DeviceAuthentication"
 	SessionTranscript SessionTranscript // fresh per session — defeats replay attacks
 	DocType           string
-	DeviceNameSpaces  []byte // Tag24(empty map) for AV — no holder-added claims
+	DeviceNameSpaces  cbor.RawMessage // Tag24(empty map) for AV — no holder-added claims
 }
 
 // SessionTranscript binds a presentation to a specific verifier session

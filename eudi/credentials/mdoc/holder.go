@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
 )
 
@@ -85,7 +84,9 @@ func (h *Holder) SignDeviceAuth(docType string, transcript SessionTranscript) ([
 		return nil, fmt.Errorf("create device signer: %w", err)
 	}
 
-	msg := cose.NewSign1Message()
+	// Untagged, for the reason given in issuer.go: ISO 18013-5's
+	// DeviceSignature is a bare COSE_Sign1 array, not COSE_Sign1_Tagged.
+	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers}
 	msg.Payload = payload
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	// unprotected headers intentionally empty — no cert in deviceAuth
@@ -106,5 +107,5 @@ func (h *Holder) SignDeviceAuth(docType string, transcript SessionTranscript) ([
 	// serialized for transmission, not what was signed.
 	msg.Payload = nil
 
-	return cbor.Marshal(msg)
+	return msg.MarshalCBOR()
 }

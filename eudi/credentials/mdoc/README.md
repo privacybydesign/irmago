@@ -40,7 +40,8 @@ that both directions are wired for real; see the sections below for what's left.
 | MSO construction | ✓ | version, digestAlgorithm, valueDigests, docType, validityInfo, deviceKeyInfo |
 | `deviceKeyInfo` in MSO | ✓ | holder's public key embedded at issuance, COSEKey uses `keyasint` (real CBOR int keys per RFC 9053) |
 | `MobileSecurityObjectBytes`/`DeviceAuthenticationBytes` framing | ✓ | issuerAuth's and deviceAuth's payloads are each Tag24-wrapped as a whole (`24(<<{...}>>)`), not just the individual items inside them — confirmed against the AV Blueprint's own §A.11 worked example (MSO) and Multipaz's `MdocDocument.kt` signing code (DeviceAuthentication) |
-| COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert |
+| COSE_Sign1 issuerAuth | ✓ | ES256, x5chain (header 33) carries DS + IACA cert. Written as the bare four-element array ISO 18013-5 specifies, not go-cose's tag-18 `COSE_Sign1_Tagged`; `decodeCoseSign1` reads either, since the tag is outside `Sig_structure` |
+| ISO wire shape at every CBOR position | ✓ | `issuerAuth`/`deviceSignature` inline COSE arrays, `IssuerSignedItemBytes` and `deviceSigned.nameSpaces` bare `#6.24(bstr)`. A Go `[]byte` field encodes as a byte string *wrapping* the value, and a one-field struct as a map keyed by the Go field name — both round-trip against this package and no other implementation, so `wireformat_test.go` decodes a real `DeviceResponse` generically (into `any`) and asserts each position |
 | Two-level certificate chain | ✓ | IACA root CA → DS cert, real x509 chain walk |
 | Chain attack rejection | ✓ | untrusted root rejected before signature check |
 | Document Signer extended key usage | ✓ | the DS cert must be authorized for `1.0.18013.5.1.2` (ISO 18013-5 Annex B.1.2) — see `checkDocumentSignerEKU`. Chaining to a trusted IACA root is not on its own evidence of being a document signer: a real trust model issues for several roles under one root, so a certificate issued for another purpose (TLS, reader auth) must not be able to sign an MSO. A certificate with no EKU extension is accepted, per RFC 5280 §4.2.1.12 |
@@ -49,6 +50,7 @@ that both directions are wired for real; see the sections below for what's left.
 | Selective disclosure | ✓ | holder filters items, issuerAuth reused unchanged |
 | Digest verification | ✓ | constant-time comparison via `crypto/subtle` |
 | Tamper detection | ✓ | digest mismatch on value tampering |
+| `docType` bound to the signed MSO | ✓ | `MDoc.docType` is covered by no digest and no signature, so it is compared against `MSO.docType` and a mismatch is rejected; `VerificationResult.DocType` reports the signed value and stays empty on failures rather than echoing an unauthenticated one. Without this, re-labelling one unsigned field yielded a valid result carrying the attacker's docType — which `credential_format_parser_mdoc.go` stores as the credential's type, and DCQL `doctype_value` matching keys off. See `verifier_doctype_test.go` |
 | `deviceSigned` / `deviceAuth` | ✓ | `SignDeviceAuth` + `VerifyWithDeviceAuth` — fresh COSE_Sign1 per session, checked against `deviceKeyInfo` |
 | Device-binding replay/clone rejection | ✓ | wrong signer and wrong-session deviceAuth both rejected |
 | `DeviceSigned` wrapper struct | ✓ | `AttachDeviceSigned` populates an `MDoc.DeviceSigned` field (deviceAuth + empty deviceNameSpaces), matching ISO 18013-5's actual document shape instead of passing deviceAuth bytes around separately |
@@ -122,6 +124,9 @@ monolithic test file:
 | `deviceresponse_test.go` | `TestVerifyDeviceResponseRejectsMissingDeviceSigned` | A document without `DeviceSigned` attached is rejected with a descriptive error, not a nil-dereference panic |
 | `deviceresponse_test.go` | `TestNewDeviceResponseSupportsMultipleDocuments` | A `DeviceResponse` bundling two distinct holders' documents from the same issuer verifies each document independently and correctly |
 | `deviceresponse_test.go` | `TestDeviceAuthSignatureEncodesInline` | `DeviceAuth.DeviceSignature` embeds as structured CBOR (`cbor.RawMessage`), not as an opaque re-encoded byte string |
+
+| `wireformat_test.go` | `TestWireIssuerAuthIsBareCoseSign1Array`, `TestWireIssuerSignedItemsAreTag24`, `TestWireDeviceSignedShape`, `TestWireRoundTripsThroughGenericCBOR`, `TestVerifierAcceptsTaggedCoseSign1` | Decodes a real `DeviceResponse` **generically** — into `any`, never this package's structs, since a round trip through the same types cannot detect a wrong shape — and asserts the ISO 18013-5 encoding at each position, plus that the frozen item bytes survive the round trip and the document still verifies |
+| `verifier_doctype_test.go` | `TestTamperedEnvelopeDocTypeIsRejectedByVerify`, `…AtIssuanceVerification`, `TestVerifierRequestedDocTypeMustMatchSignedMSO`, `TestSignedDocTypeIsReportedNotTheEnvelopeValue` | The unsigned envelope `docType` must equal the signed `MSO.docType`, at every entry point that reports or consumes one |
 
 `testhelpers_test.go` holds `buildHappyPathMDoc`, `keysOf`, and `unwrapTag24Generic` —
 shared fixtures/helpers used across the files above, rather than duplicated per-file.

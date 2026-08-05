@@ -8,3 +8,8 @@ errors_*.go
 vendor/
 irma/irma
 .claude/settings.local.json
+
+# Editor settings are per-developer: the Go/gopls CGO_ENABLED and toolchain PATH
+# entries needed on one machine (e.g. an msys64 install on Windows) are wrong on
+# every other one.
+.vscode/

@@ -10,10 +10,13 @@ import (
 	"sort"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/didjwk"
+	"github.com/privacybydesign/irmago/eudi/didkey"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -220,20 +223,32 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 		return err
 	}
 
+	// Absent configuration is tolerated: everything read from it below is display
+	// metadata, which degrades to empty rather than making a verified credential
+	// unstorable. The batch's Format deliberately does not come from here — see
+	// below.
 	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
 
 	batch := &models.CredentialBatch{
 		IssuerURL:                first.IssuerURL,
 		VerifiableCredentialType: first.VerifiableCredentialType,
-		Format:                   models.CredentialFormat(credentialConfiguration.Format),
-		Hash:                     hash,
-		ProcessedSdJwtPayload:    datatypes.JSON(first.ResolvedClaims),
-		CredentialIssuer:         first.IssuerURL,
-		IssuerDisplay:            slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
-		CredentialMetadata:       convertCredentialMetadata(credentialConfiguration),
-		BatchSize:                uint(len(parsedCredentials)),
-		RemainingCount:           uint(len(parsedCredentials)),
-		Instances:                buildInstances(parsedCredentials),
+		// The format of the credential that was actually parsed and verified, not
+		// the one the issuer's metadata advertises. The two normally agree — the
+		// advertised format is what selected this parser — but the metadata is an
+		// unverified claim, and the map index above yields a zero-valued
+		// configuration when credentialConfigurationId is absent from it. That
+		// silently stored the batch with an empty Format, which every later
+		// format-keyed read then misses: GetBatchesByDocType finds nothing, and the
+		// DCQL handlers dispatch on format to decide who owns a credential.
+		Format:                first.Format,
+		Hash:                  hash,
+		ProcessedSdJwtPayload: datatypes.JSON(first.ResolvedClaims),
+		CredentialIssuer:      first.IssuerURL,
+		IssuerDisplay:         slices.Collect(issuerMetadata.Display.ToStorageModelIterator()),
+		CredentialMetadata:    convertCredentialMetadata(credentialConfiguration),
+		BatchSize:             uint(len(parsedCredentials)),
+		RemainingCount:        uint(len(parsedCredentials)),
+		Instances:             buildInstances(parsedCredentials),
 	}
 
 	if first.IssuedAt != nil {
@@ -438,10 +453,10 @@ func matchAllHolderBindingKeys(
 			}
 			keyID, err = matchHolderBindingKey(cnf, keyByThumbprint, keyByDidUrl)
 		} else {
-			if p.HolderBindingKeyThumbprint == nil && p.HolderBindingKeyDidUrl == nil {
+			if p.HolderBindingKeyThumbprint == nil && p.HolderBindingKeyPublicKey == nil {
 				return nil, fmt.Errorf("credential %d requires holder binding but carries no key-binding data", i)
 			}
-			keyID, err = matchHolderBindingKeyByIdentifiers(p.HolderBindingKeyDidUrl, p.HolderBindingKeyThumbprint, keyByDidUrl, keyByThumbprint)
+			keyID, err = matchHolderBindingKeyByIdentifiers(p, keyByDidUrl, keyByThumbprint)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("credential %d: %w", i, err)
@@ -454,18 +469,67 @@ func matchAllHolderBindingKeys(
 // matchHolderBindingKeyByIdentifiers is matchHolderBindingKey's generic
 // counterpart for formats with no cnf claim (mso_mdoc), taking already-
 // extracted identifiers instead of an sdjwt.CnfField.
-func matchHolderBindingKeyByIdentifiers(didUrl, thumbprint *string, keyByDidUrl, keyByThumbprint map[string]datatypes.UUID) (datatypes.UUID, error) {
-	if didUrl != nil {
-		if keyID, ok := keyByDidUrl[*didUrl]; ok {
-			return keyID, nil
-		}
-	}
+func matchHolderBindingKeyByIdentifiers(p *ParsedCredential, keyByDidUrl, keyByThumbprint map[string]datatypes.UUID) (datatypes.UUID, error) {
+	thumbprint, didUrls := holderBindingKeyIdentifiers(p)
+
 	if thumbprint != nil {
 		if keyID, ok := keyByThumbprint[*thumbprint]; ok {
 			return keyID, nil
 		}
 	}
+	for _, didUrl := range didUrls {
+		if keyID, ok := keyByDidUrl[didUrl]; ok {
+			return keyID, nil
+		}
+	}
 	return datatypes.UUID{}, fmt.Errorf("no matching holder binding key found")
+}
+
+// holderBindingKeyIdentifiers lists every identifier under which the stored
+// holder binding key for this credential could have been recorded.
+//
+// A stored key carries a thumbprint or a DID URL and never both, chosen by the
+// binding method the credential configuration asked for (see
+// holderBindingKeyService.storePrivateKeys). A format like mso_mdoc reads a bare
+// public key out of the credential and cannot tell which was used, so rather
+// than guess, derive all of them the same way the proof builder did and let the
+// caller try each. Deriving from the public key is exactly reproducible:
+// did:key is a multibase encoding of the key, and did:jwk is base64url of the
+// serialized JWK — which is why the JWK is marked for signature use here, as
+// JwtProofBuilder does, since that field is part of the encoded document.
+//
+// A derivation that fails is skipped rather than fatal: it only means one
+// candidate cannot be formed, and the remaining ones may still match.
+func holderBindingKeyIdentifiers(p *ParsedCredential) (thumbprint *string, didUrls []string) {
+	thumbprint = p.HolderBindingKeyThumbprint
+	if p.HolderBindingKeyPublicKey == nil {
+		return thumbprint, nil
+	}
+
+	if didKey, err := didkey.Create(*p.HolderBindingKeyPublicKey); err == nil {
+		didUrls = append(didUrls, didKey)
+	}
+
+	pubJwk, err := jwk.Import(p.HolderBindingKeyPublicKey)
+	if err != nil {
+		return thumbprint, didUrls
+	}
+	if err := pubJwk.Set(jwk.KeyUsageKey, jwk.ForSignature); err != nil {
+		return thumbprint, didUrls
+	}
+	builder := didjwk.DocumentBuilder{}
+	doc, err := builder.FromJwk(pubJwk)
+	if err != nil || len(doc.AssertionMethod) == 0 {
+		return thumbprint, didUrls
+	}
+	// VerificationRef is `any`; didjwk fills it with the "<did>#0" string, which
+	// is what JwtProofBuilder puts in the proof's kid and therefore what
+	// keybinder_service stored.
+	didJwkUrl, ok := doc.AssertionMethod[0].(string)
+	if !ok {
+		return thumbprint, didUrls
+	}
+	return thumbprint, append(didUrls, didJwkUrl)
 }
 
 func (s *credentialService) deleteOrphanedKeys(publicKeyIdentifiers []models.PublicHolderBindingKey) {

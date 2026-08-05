@@ -15,9 +15,12 @@ import (
 // NameSpaces (any holder-asserted claims — always empty for this profile,
 // since eu.europa.ec.av.1 has no holder-added attributes) and DeviceAuth
 // (the COSE_Sign1 proving device possession).
+// NameSpaces is cbor.RawMessage for the same reason as
+// DeviceAuthentication.DeviceNameSpaces: ISO 18013-5's DeviceNameSpacesBytes is
+// a tag-24 value at this position, and the field already holds that encoding.
 type DeviceSigned struct {
-	NameSpaces []byte     `cbor:"nameSpaces"` // Tag24(empty map) — see holder.go's SignDeviceAuth
-	DeviceAuth DeviceAuth `cbor:"deviceAuth"`
+	NameSpaces cbor.RawMessage `cbor:"nameSpaces"` // Tag24(empty map) — see holder.go's SignDeviceAuth
+	DeviceAuth DeviceAuth      `cbor:"deviceAuth"`
 }
 
 // DeviceAuth holds the holder's device signature. ISO 18013-5 defines this

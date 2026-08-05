@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	cose "github.com/veraison/go-cose"
 )
 
@@ -250,7 +249,12 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 		return nil, fmt.Errorf("create signer: %w", err)
 	}
 
-	msg := cose.NewSign1Message()
+	// UntaggedSign1Message, not Sign1Message: ISO 18013-5's `IssuerAuth =
+	// COSE_Sign1` is RFC 8152's bare four-element array, and go-cose's
+	// Sign1Message marshals the COSE_Sign1_Tagged form instead (prefixing tag
+	// 18, 0xd2). The tag sits outside Sig_structure, so this changes only the
+	// envelope, never the signature.
+	msg := cose.UntaggedSign1Message{Headers: cose.NewSign1Message().Headers}
 	msg.Payload = msoBytes
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 
@@ -268,7 +272,7 @@ func (iss *Issuer) Issue(docType string, namespace string, claims map[string]any
 		return nil, fmt.Errorf("sign mso: %w", err)
 	}
 
-	coseBytes, err := cbor.Marshal(msg)
+	coseBytes, err := msg.MarshalCBOR()
 	if err != nil {
 		return nil, fmt.Errorf("marshal cose: %w", err)
 	}

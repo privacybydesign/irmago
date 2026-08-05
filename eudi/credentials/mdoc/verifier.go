@@ -29,6 +29,37 @@ import (
 // certificate it arrives in UnknownExtKeyUsage rather than ExtKeyUsage.
 var isoMdocDocumentSignerEKU = asn1.ObjectIdentifier{1, 0, 18013, 5, 1, 2}
 
+// decodeCoseSign1 decodes either COSE_Sign1 serialization into the same
+// message type.
+//
+// ISO 18013-5 puts the bare four-element array at issuerAuth and
+// deviceSignature, which is what this package now writes (see issuer.go and
+// holder.go). Reading is deliberately more permissive than writing: go-cose's
+// Sign1Message insists on the tag-18 prefix and UntaggedSign1Message refuses
+// it, so accepting only one form would make the verifier reject real documents
+// from whichever party disagrees with us. The tag is outside Sig_structure and
+// carries no security meaning, so accepting both costs nothing — everything
+// that matters is still checked against the signature afterwards.
+func decodeCoseSign1(data []byte) (*cose.Sign1Message, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty COSE_Sign1")
+	}
+	// 0xd2 = tag 18, the COSE_Sign1_Tagged prefix.
+	if data[0] == 0xd2 {
+		var tagged cose.Sign1Message
+		if err := tagged.UnmarshalCBOR(data); err != nil {
+			return nil, err
+		}
+		return &tagged, nil
+	}
+	var untagged cose.UntaggedSign1Message
+	if err := untagged.UnmarshalCBOR(data); err != nil {
+		return nil, err
+	}
+	msg := cose.Sign1Message(untagged)
+	return &msg, nil
+}
+
 // checkDocumentSignerEKU rejects a leaf certificate that is not authorized to
 // sign mdocs.
 //
@@ -154,14 +185,18 @@ type VerificationResult struct {
 // *MSO alongside a result with Error set on any failure; result.DocType,
 // result.DeviceKey, and result.ValidityInfo are always populated on success.
 func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult) {
+	// DocType is deliberately left empty until the MSO has been decoded and its
+	// docType matched against the envelope's (step 5c). Seeding it from
+	// mdoc.DocType would put an unauthenticated, attacker-controlled string into
+	// every failure result, where a caller logging or displaying it would treat
+	// it as though verification had vouched for it.
 	result := VerificationResult{
-		DocType:    mdoc.DocType,
 		Attributes: make(map[string]any),
 	}
 
 	// Step 1: decode COSE_Sign1
-	var msg cose.Sign1Message
-	if err := cbor.Unmarshal(mdoc.IssuerSigned.IssuerAuth, &msg); err != nil {
+	msg, err := decodeCoseSign1(mdoc.IssuerSigned.IssuerAuth)
+	if err != nil {
 		result.Error = fmt.Sprintf("decode cose: %v", err)
 		return nil, result
 	}
@@ -218,7 +253,7 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 	// Step 3: verify the full chain
 	// x509.Verify walks: DS cert → intermediates → trusted root
 	// This is what prevents a chain attack — attacker's root won't be in trustedRoots
-	_, err := dsCert.Verify(x509.VerifyOptions{
+	_, err = dsCert.Verify(x509.VerifyOptions{
 		Roots:         v.trustedRoots,
 		Intermediates: intermediates,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
@@ -276,6 +311,28 @@ func (v *Verifier) verifyIssuerAuthAndMSO(mdoc *MDoc) (*MSO, VerificationResult)
 			mso.ValidityInfo.ValidUntil.Format(time.RFC3339), now.Format(time.RFC3339))
 		return nil, result
 	}
+
+	// Step 5c: bind the document's docType to the signed one.
+	//
+	// MDoc.DocType sits in the document map next to issuerSigned and is covered
+	// by nothing — no digest, no signature. MSO.docType is inside the MSO the DS
+	// certificate signed. Left uncompared, an attacker who re-labels the envelope
+	// gets a Valid result carrying their docType, and callers that read the
+	// envelope field believe it: eudi/services' mdoc parser stores it as the
+	// credential's VerifiableCredentialType, which is what DCQL doctype_value
+	// matching and the scheme's relying-party authorization then key off. So an
+	// age-verification credential could be filed and presented as a PID.
+	//
+	// From here on result.DocType is the signed value, so callers reading it
+	// cannot pick up the envelope's claim by accident.
+	if mdoc.DocType != mso.DocType {
+		result.Error = fmt.Sprintf(
+			"docType mismatch: document envelope says %q but the signed MSO says %q",
+			mdoc.DocType, mso.DocType,
+		)
+		return nil, result
+	}
+	result.DocType = mso.DocType
 
 	result.ValidityInfo = mso.ValidityInfo
 
@@ -410,10 +467,25 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
+	// The docType the verifier asked for must be the one the issuer signed.
+	// Verify() has already established that result.DocType is MSO.docType, so
+	// this compares against the signed value rather than the envelope. Without
+	// it a caller-supplied docType would still be caught — the reconstructed
+	// DeviceAuthentication payload below would not match the signature — but
+	// only as an opaque "deviceAuth signature invalid".
+	if docType != result.DocType {
+		result.Valid = false
+		result.Error = fmt.Sprintf(
+			"docType mismatch: verifier requested %q but the signed MSO says %q",
+			docType, result.DocType,
+		)
+		return result
+	}
+
 	// Re-decode the MSO to get deviceKeyInfo. Verify() already proved
 	// msg.Payload is authentic (signature + chain checked), so this is safe.
-	var msg cose.Sign1Message
-	if err := cbor.Unmarshal(mdoc.IssuerSigned.IssuerAuth, &msg); err != nil {
+	msg, err := decodeCoseSign1(mdoc.IssuerSigned.IssuerAuth)
+	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("decode cose (deviceAuth phase): %v", err)
 		return result
@@ -435,8 +507,8 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 	// Decode the deviceAuth COSE_Sign1. Its transmitted Payload is nil —
 	// SignDeviceAuth detaches it before returning, matching the AV
 	// Blueprint spec's own example (deviceSignature payload: null).
-	var deviceMsg cose.Sign1Message
-	if err := cbor.Unmarshal(deviceAuthBytes, &deviceMsg); err != nil {
+	deviceMsg, err := decodeCoseSign1(deviceAuthBytes)
+	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("decode deviceAuth cose: %v", err)
 		return result
@@ -460,7 +532,7 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 	expectedDeviceAuth := DeviceAuthentication{
 		Context:           "DeviceAuthentication",
 		SessionTranscript: transcript,
-		DocType:           docType,
+		DocType:           result.DocType, // the signed value; equal to docType by the check above
 		DeviceNameSpaces:  emptyNS,
 	}
 	expectedPayload, err := tag24Wrap(expectedDeviceAuth)
