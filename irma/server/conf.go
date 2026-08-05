@@ -107,8 +107,7 @@ type Configuration struct {
 
 type RedisClient struct {
 	*redis.Client
-	FailoverMode bool
-	KeyPrefix    string
+	KeyPrefix string
 }
 
 type RedisSettings struct {
@@ -497,9 +496,8 @@ func (conf *Configuration) RedisClient() (*RedisClient, error) {
 		keyPrefix = conf.RedisSettings.Username + ":"
 	}
 	conf.redisClient = &RedisClient{
-		Client:       cl,
-		FailoverMode: failoverMode,
-		KeyPrefix:    keyPrefix,
+		Client:    cl,
+		KeyPrefix: keyPrefix,
 	}
 	return conf.redisClient, nil
 }
