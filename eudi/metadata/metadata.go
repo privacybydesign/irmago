@@ -141,7 +141,12 @@ const (
 	CredentialFormatIdentifier_W3CVCLD_ProofSuite CredentialFormatIdentifier = "ldp_vc"
 	CredentialFormatIdentifier_MsoMdoc            CredentialFormatIdentifier = "mso_mdoc"
 	CredentialFormatIdentifier_SdJwtVc            CredentialFormatIdentifier = "dc+sd-jwt"
-	CredentialFormatIdentifier_SdJwtVc_Legacy     CredentialFormatIdentifier = "vc+sd-jwt"
+	// CredentialFormatIdentifier_SdJwtVcdm is an SD-JWT-secured W3C VCDM 2.0
+	// credential (VC-JOSE-COSE §3.2). Per the format-id convention decided in
+	// issues #678/#683, `vc+sd-jwt` always denotes SD-JWT-secured VCDM, while
+	// `dc+sd-jwt` is content-dispatched on the payload's data model
+	// (`vct` → IETF SD-JWT VC, `@context`+`type` → VCDM).
+	CredentialFormatIdentifier_SdJwtVcdm CredentialFormatIdentifier = "vc+sd-jwt"
 
 	ProofTypeIdentifier_JWT         ProofTypeIdentifier = "jwt"
 	ProofTypeIdentifier_DIVP        ProofTypeIdentifier = "di_vp"

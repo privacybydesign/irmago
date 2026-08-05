@@ -15,6 +15,11 @@ type CredentialFormat string
 
 const (
 	CredentialFormatSdJwtVc CredentialFormat = "dc+sd-jwt"
+	// CredentialFormatSdJwtVcdm is an SD-JWT-secured W3C VCDM 2.0 credential
+	// (VC-JOSE-COSE §3.2). Stored in the same tables as SD-JWT VC batches
+	// per the storage decision (#679): raw secured blob per instance plus
+	// the extracted document as batch metadata, distinguished by this format.
+	CredentialFormatSdJwtVcdm CredentialFormat = "vc+sd-jwt"
 )
 
 // CredentialBatch groups all credential instances issued from a single credential_configuration_id

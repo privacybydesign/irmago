@@ -16,8 +16,11 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
@@ -642,4 +645,147 @@ func toStr(v any) string {
 		return s
 	}
 	return ""
+}
+
+// createTestVcdmSdJwt builds an SD-JWT-secured VCDM credential signed with the
+// test issuer key, with one selectively-disclosable credentialSubject leaf and
+// a holder cnf key. typ distinguishes the `vc+sd-jwt` media type from a
+// VCDM-shaped `dc+sd-jwt`.
+func createTestVcdmSdJwt(t *testing.T, typ string, x5c []string) string {
+	t.Helper()
+	cnf, err := sdjwt.HolderKeyClaim(testdata.ParseHolderPubJwk())
+	require.NoError(t, err)
+
+	claims := []*sdjwt.ClaimElement{
+		sdjwt.Array(vcdm.ContextKey, sdjwt.Item(vcdm.ContextV2)),
+		sdjwt.Array(vcdm.TypeKey, sdjwt.Item(vcdm.TypeVerifiableCredential), sdjwt.Item("ExampleCredential")),
+		sdjwt.Claim(vcdm.IssuerKey, "https://openid4vc.staging.yivi.app"),
+		sdjwt.Claim(vcdm.ValidFromKey, "2020-01-01T00:00:00Z"),
+		sdjwt.Claim(vcdm.ValidUntilKey, "2035-01-01T00:00:00Z"),
+		sdjwt.Object(vcdm.CredentialSubjectKey,
+			sdjwt.Claim("id", "did:example:holder"),
+			sdjwt.SdClaim("given_name", "Alice"),
+		),
+		cnf,
+	}
+
+	built, err := sdjwt.NewBuilder().
+		WithPayload(claims...).
+		WithIssuerCertificateChain(x5c).
+		WithTyp(typ).
+		Build(sdjwttest.NewEcdsaJwtCreatorWithIssuerTestKey())
+	require.NoError(t, err)
+	return string(built)
+}
+
+func testX5cChain(t *testing.T) []string {
+	t.Helper()
+	certChain, err := utils.ParsePemCertificateChainToX5cFormat(testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes)
+	require.NoError(t, err)
+	return certChain
+}
+
+func Test_expectedDataModel(t *testing.T) {
+	x5c := testX5cChain(t)
+	vcdmCredential := createTestVcdmSdJwt(t, vcdmsdjwt.MediaTypeDcSdJwt, x5c)
+
+	holderKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	holderJwkKey, err := jwk.Import(holderKey)
+	require.NoError(t, err)
+	sdJwtVcCredential, err := createTestSdJwtVcWithHolderKey(
+		"test.credential.type", "https://test-issuer.example.com",
+		map[string]string{"name": "Test User"}, x5c, holderJwkKey)
+	require.NoError(t, err)
+
+	vcdmConfig := metadata.CredentialConfiguration{Format: metadata.CredentialFormatIdentifier_SdJwtVcdm}
+	dcConfig := metadata.CredentialConfiguration{Format: metadata.CredentialFormatIdentifier_SdJwtVc}
+
+	t.Run("vc+sd-jwt format id is always VCDM", func(t *testing.T) {
+		model, err := expectedDataModel(vcdmConfig, nil)
+		require.NoError(t, err)
+		require.Equal(t, vcdm.DataModelVCDM, model)
+	})
+
+	t.Run("dc+sd-jwt with a vct payload routes to SD-JWT VC", func(t *testing.T) {
+		model, err := expectedDataModel(dcConfig, []CredentialInstance{{Credential: string(sdJwtVcCredential)}})
+		require.NoError(t, err)
+		require.Equal(t, vcdm.DataModelSdJwtVc, model)
+	})
+
+	t.Run("dc+sd-jwt with a VCDM payload routes to VCDM", func(t *testing.T) {
+		model, err := expectedDataModel(dcConfig, []CredentialInstance{{Credential: vcdmCredential}})
+		require.NoError(t, err)
+		require.Equal(t, vcdm.DataModelVCDM, model)
+	})
+
+	t.Run("mixed data models in one batch are rejected", func(t *testing.T) {
+		_, err := expectedDataModel(dcConfig, []CredentialInstance{
+			{Credential: string(sdJwtVcCredential)},
+			{Credential: vcdmCredential},
+		})
+		require.ErrorContains(t, err, "heterogeneous")
+	})
+
+	t.Run("undecodable credential is rejected", func(t *testing.T) {
+		_, err := expectedDataModel(dcConfig, []CredentialInstance{{Credential: "not-a-jwt"}})
+		require.ErrorContains(t, err, "data-model dispatch")
+	})
+}
+
+func Test_openid4vciSession_obtainCredential_vcdmSuccessResponse(t *testing.T) {
+	chain := testdata.SdJwtVc_IssuerCert_openid4vc_staging_yivi_app_Bytes
+	x5c := testX5cChain(t)
+
+	tests := []struct {
+		name   string
+		typ    string
+		format metadata.CredentialFormatIdentifier
+	}{
+		{"vc+sd-jwt format id", vcdmsdjwt.MediaTypeVcSdJwt, metadata.CredentialFormatIdentifier_SdJwtVcdm},
+		{"VCDM payload under dc+sd-jwt", vcdmsdjwt.MediaTypeDcSdJwt, metadata.CredentialFormatIdentifier_SdJwtVc},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testCredential := createTestVcdmSdJwt(t, tt.typ, x5c)
+
+			credEndpointHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				resp, _ := json.Marshal(CredentialResponse{
+					Credentials: []CredentialInstance{{Credential: testCredential}},
+				})
+				w.Write(resp)
+			})
+
+			sess, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
+			defer ts.Close()
+
+			config := sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"]
+			config.Format = tt.format
+			config.CredentialDefinition = &metadata.W3CCredentialDefinition{
+				Context: []string{vcdm.ContextV2},
+				Type:    []string{vcdm.TypeVerifiableCredential, "ExampleCredential"},
+			}
+			sess.credentialIssuerMetadata.CredentialConfigurationsSupported["credential-config-1"] = config
+
+			sess.vcdmHolderVerifier = vcdmsdjwt.NewHolderVerificationProcessor(
+				vcdmsdjwt.CreateDefaultVerificationContext(chain),
+			)
+
+			fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
+			require.NoError(t, err)
+			require.NotNil(t, fetched)
+			require.Len(t, fetched.verifiedVcdms, 1)
+			require.Empty(t, fetched.verifiedSdJwtVcs)
+
+			doc := fetched.verifiedVcdms[0].Document
+			require.Equal(t,
+				vcdm.ContextV2+" "+vcdm.TypeVerifiableCredential+" ExampleCredential",
+				doc.TypeIdentity())
+			subjects, err := doc.CredentialSubjects()
+			require.NoError(t, err)
+			require.Equal(t, "Alice", subjects[0]["given_name"])
+		})
+	}
 }

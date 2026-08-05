@@ -16,6 +16,7 @@ import (
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/sdjwt/sdjwttest"
@@ -64,6 +65,13 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 
 	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContext)
 
+	vcdmVerificationContext := vcdmsdjwt.VerificationContext{
+		X509VerificationContext: &conf.Issuers,
+		Clock:                   eudi_jwt.NewSystemClock(),
+		JwtVerifier:             sdjwt.NewJwxJwtVerifier(),
+	}
+	vcdmHolderVerifier := vcdmsdjwt.NewHolderVerificationProcessor(vcdmVerificationContext)
+
 	credStore := db.NewCredentialStore(s.Db())
 	credentialService := services.NewCredentialService(
 		credStore,
@@ -72,7 +80,7 @@ func createOpenID4VCiClientForTesting(t *testing.T) (storage.Storage, *Client) {
 		services.NewRevocationService(nil, credStore),
 		nil,
 	)
-	client, err := NewClient(&http.Client{}, conf, holderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
+	client, err := NewClient(&http.Client{}, conf, holderVerifier, vcdmHolderVerifier, credentialService, services.NewHolderBindingKeyService(conf.Storage.Db()), nil)
 	require.NoError(t, err)
 	client.AllowInsecureHttpForTesting()
 

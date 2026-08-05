@@ -18,6 +18,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/proofs"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/internal/httpext"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
@@ -40,6 +42,7 @@ type session struct {
 	storage                  storage.Storage
 	credentialService        services.CredentialService
 	holderVerifier           *sdjwtvc.HolderVerificationProcessor
+	vcdmHolderVerifier       *vcdmsdjwt.HolderVerificationProcessor
 	holderKeyBinder          HolderKeyBinder
 
 	// vctResolver provides cached raw bytes of fetched SD-JWT VC type
@@ -208,10 +211,14 @@ func (s *session) perform() {
 }
 
 // fetchedCredential holds the result of fetching and verifying credentials
-// for a single credential configuration, before they are stored.
+// for a single credential configuration, before they are stored. A batch is
+// homogeneous — all instances are copies of one logical credential — so
+// exactly one of verifiedSdJwtVcs and verifiedVcdms is populated, according to
+// the data model the batch was dispatched to (see obtainCredential).
 type fetchedCredential struct {
 	credentialConfigurationId      string
 	verifiedSdJwtVcs               []*sdjwtvc.VerifiedSdJwtVc
+	verifiedVcdms                  []*vcdmsdjwt.VerifiedSdJwtVcdm
 	requireCryptographicKeyBinding bool
 	publicKeyIdentifiers           []models.PublicHolderBindingKey
 	keyBindingService              HolderKeyBinder
@@ -362,13 +369,24 @@ func (s *session) verifyVctIntegrity(fetched []*fetchedCredential) error {
 
 func (s *session) storeCredentials(fetched []*fetchedCredential) error {
 	for _, fc := range fetched {
-		err := s.credentialService.VerifyAndStoreIssuedCredentials(
-			fc.verifiedSdJwtVcs,
-			fc.credentialConfigurationId,
-			*s.credentialIssuerMetadata,
-			fc.requireCryptographicKeyBinding,
-			fc.publicKeyIdentifiers,
-		)
+		var err error
+		if len(fc.verifiedVcdms) > 0 {
+			err = s.credentialService.VerifyAndStoreIssuedVcdmCredentials(
+				fc.verifiedVcdms,
+				fc.credentialConfigurationId,
+				*s.credentialIssuerMetadata,
+				fc.requireCryptographicKeyBinding,
+				fc.publicKeyIdentifiers,
+			)
+		} else {
+			err = s.credentialService.VerifyAndStoreIssuedCredentials(
+				fc.verifiedSdJwtVcs,
+				fc.credentialConfigurationId,
+				*s.credentialIssuerMetadata,
+				fc.requireCryptographicKeyBinding,
+				fc.publicKeyIdentifiers,
+			)
+		}
 		if err != nil {
 			fc.cleanupKeys()
 			return fmt.Errorf("failed to store credentials for %q: %v", fc.credentialConfigurationId, err)
@@ -390,12 +408,6 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			continue
 		}
 
-		// Use the first credential in the batch as source of attribute values.
-		var payload sdjwt.ProcessedPayload
-		if len(fc.verifiedSdJwtVcs) > 0 {
-			payload = fc.verifiedSdJwtVcs[0].ProcessedSdJwtPayload
-		}
-
 		displays := metadata.ToTranslateableList(config.CredentialMetadata.Display)
 		name := clientmodels.Resolve(metadata.ConvertDisplayToTranslatedString(displays), s.locale)
 
@@ -410,30 +422,42 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 		issuerImage := services.LoadResolvedLogo(issuerLogoManager,
 			metadata.LogoURIsByLanguage(s.credentialIssuerMetadata.Display), s.locale)
 
-		attrs := buildAttributesWithValues(config.CredentialMetadata.Claims, payload, s.locale)
-
 		var batchSize *uint
 		if batch != nil {
 			n := batch.BatchSize
 			batchSize = &n
 		}
 
-		var issuanceDate, expiryDate *int64
-		if len(fc.verifiedSdJwtVcs) > 0 {
-			jwt := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload
-			issuanceDate = jwt.IssuedAt
-			expiryDate = jwt.Expiry
-		}
-
-		// The issued JWT's vct claim is authoritative for the credential id —
-		// it is what was signed and what the stored batch is keyed by. The
-		// issuer's well-known document may carry a placeholder (e.g. veramo's
+		// Use the first credential in the batch as source of attribute values,
+		// dates and the credential id. The verified credential's own type
+		// claims are authoritative for the credential id — they are what was
+		// signed and what the stored batch is keyed by; the issuer's
+		// well-known document may carry a placeholder (e.g. veramo's
 		// "unknown"), which would leave the issuance log pointing at nothing.
-		credentialId := config.VerifiableCredentialType
-		if len(fc.verifiedSdJwtVcs) > 0 {
-			if vct := fc.verifiedSdJwtVcs[0].IssuerSignedJwtPayload.VerifiableCredentialType; vct != "" {
-				credentialId = vct
+		var attrs []clientmodels.Attribute
+		var issuanceDate, expiryDate *int64
+		credentialId := credentialConfigurationTypeIdentity(config)
+		format := clientmodels.Format_SdJwtVc
+
+		claimDisplays, claimOrder := claimDisplayLookups(config.CredentialMetadata.Claims, s.locale)
+		if len(fc.verifiedVcdms) > 0 {
+			first := fc.verifiedVcdms[0]
+			attrs = services.BuildAttributesFromVcdmDocument(first.Document, claimDisplays, claimOrder)
+			issuanceDate, expiryDate, _ = services.VcdmIssuanceValidity(first)
+			credentialId = first.Document.TypeIdentity()
+			format = clientmodels.Format_SdJwtVcdm
+		} else {
+			var payload sdjwt.ProcessedPayload
+			if len(fc.verifiedSdJwtVcs) > 0 {
+				first := fc.verifiedSdJwtVcs[0]
+				payload = first.ProcessedSdJwtPayload
+				issuanceDate = first.IssuerSignedJwtPayload.IssuedAt
+				expiryDate = first.IssuerSignedJwtPayload.Expiry
+				if vct := first.IssuerSignedJwtPayload.VerifiableCredentialType; vct != "" {
+					credentialId = vct
+				}
 			}
+			attrs = services.BuildAttributesFromPayload(&payload, claimDisplays, claimOrder)
 		}
 
 		cred := clientmodels.Credential{
@@ -447,7 +471,7 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 			Image:                 image,
 			CredentialInstanceIds: map[clientmodels.CredentialFormat]string{},
 			BatchInstanceCountsRemaining: map[clientmodels.CredentialFormat]*uint{
-				clientmodels.Format_SdJwtVc: batchSize,
+				format: batchSize,
 			},
 			Attributes:   attrs,
 			IssuanceDate: issuanceDate,
@@ -465,6 +489,14 @@ func (s *session) buildOfferedCredentials(fetched []*fetchedCredential) []*clien
 // appear in declared order, payload-only claims are appended alphabetically.
 // Claims without a metadata display entry produce attributes with DisplayName: nil.
 func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjwt.ProcessedPayload, locale string) []clientmodels.Attribute {
+	displayLookup, metadataOrder := claimDisplayLookups(claims, locale)
+	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
+}
+
+// claimDisplayLookups derives the display-name lookup (resolved to the given
+// locale) and declared-order index from the issuer metadata's claim
+// descriptions, keyed by claim path.
+func claimDisplayLookups(claims []metadata.ClaimsDescription, locale string) (map[string]string, map[string]int) {
 	displayLookup := map[string]string{}
 	metadataOrder := map[string]int{}
 	for i, c := range claims {
@@ -475,8 +507,7 @@ func buildAttributesWithValues(claims []metadata.ClaimsDescription, payload sdjw
 		}
 		displayLookup[key] = clientmodels.Resolve(claimDisplayToTranslatedString(c.Display), locale)
 	}
-
-	return services.BuildAttributesFromPayload(&payload, displayLookup, metadataOrder)
+	return displayLookup, metadataOrder
 }
 
 func claimDisplayToTranslatedString(displays []metadata.Display) clientmodels.TranslatedString {
@@ -848,27 +879,86 @@ func (s *session) obtainCredential(credentialConfigurationId string, cNonce *str
 		return nil, fmt.Errorf("invalid credential response: %v", err)
 	}
 
-	verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
-	for i, cred := range credentialResponse.Credentials {
-		verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
-		if err != nil {
-			return nil, fmt.Errorf("failed to verify credential: %v", err)
-		}
-		verifiedSdJwtVcs[i] = verifiedSdJwt
-	}
-
-	err = sdjwtvc.CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs)
-	if err != nil {
-		return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
-	}
-
-	return &fetchedCredential{
+	fetched := &fetchedCredential{
 		credentialConfigurationId:      credentialConfigurationId,
-		verifiedSdJwtVcs:               verifiedSdJwtVcs,
 		requireCryptographicKeyBinding: requireCryptographicKeyBinding,
 		publicKeyIdentifiers:           publicKeyIdentifiers,
 		keyBindingService:              keyBindingService,
-	}, nil
+	}
+
+	dataModel, err := expectedDataModel(credentialConfig, credentialResponse.Credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	switch dataModel {
+	case vcdm.DataModelVCDM:
+		verifiedVcdms := make([]*vcdmsdjwt.VerifiedSdJwtVcdm, len(credentialResponse.Credentials))
+		for i, cred := range credentialResponse.Credentials {
+			verified, err := s.vcdmHolderVerifier.ParseAndVerifySdJwtVcdm(vcdmsdjwt.SdJwtVcdmKb(cred.Credential))
+			if err != nil {
+				return nil, fmt.Errorf("failed to verify credential: %v", err)
+			}
+			verifiedVcdms[i] = verified
+		}
+
+		if err := vcdmsdjwt.CheckKeyBindingConfirmationUniqueness(verifiedVcdms); err != nil {
+			return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
+		}
+		fetched.verifiedVcdms = verifiedVcdms
+	default:
+		verifiedSdJwtVcs := make([]*sdjwtvc.VerifiedSdJwtVc, len(credentialResponse.Credentials))
+		for i, cred := range credentialResponse.Credentials {
+			verifiedSdJwt, err := s.holderVerifier.ParseAndVerifySdJwtVc(sdjwtvc.SdJwtVcKb(cred.Credential))
+			if err != nil {
+				return nil, fmt.Errorf("failed to verify credential: %v", err)
+			}
+			verifiedSdJwtVcs[i] = verifiedSdJwt
+		}
+
+		if err := sdjwtvc.CheckKeyBindingConfirmationUniqueness(verifiedSdJwtVcs); err != nil {
+			return nil, fmt.Errorf("key binding confirmation uniqueness check failed: %v", err)
+		}
+		fetched.verifiedSdJwtVcs = verifiedSdJwtVcs
+	}
+
+	return fetched, nil
+}
+
+// expectedDataModel decides which credential data model the received
+// credentials must verify as (#678/#683): the `vc+sd-jwt` format id always
+// denotes SD-JWT-secured VCDM, while `dc+sd-jwt` is dispatched on the decoded
+// payload of the received credentials — an `@context`+`type` marks a W3C VCDM
+// document, anything else (a `vct`, or unrecognised structure) goes to the
+// IETF SD-JWT VC verifier, which enforces its own payload requirements.
+//
+// Detection reads unverified structure only to pick a verifier: each verifier
+// re-checks the payload's data model after verifying the proof, so a
+// mis-detected credential fails verification rather than being trusted. A
+// batch must be homogeneous — its instances are copies of one logical
+// credential — so mixed data models within one response are rejected here.
+func expectedDataModel(config metadata.CredentialConfiguration, credentials []CredentialInstance) (vcdm.DataModel, error) {
+	if config.Format == metadata.CredentialFormatIdentifier_SdJwtVcdm {
+		return vcdm.DataModelVCDM, nil
+	}
+
+	model := vcdm.DataModelUnknown
+	for i, cred := range credentials {
+		payload, err := sdjwt.DecodeJwtPayload(sdjwt.SdJwt(cred.Credential))
+		if err != nil {
+			return vcdm.DataModelUnknown, fmt.Errorf("could not decode credential %d for data-model dispatch: %v", i, err)
+		}
+		detected := vcdm.Detect(payload)
+		if i == 0 {
+			model = detected
+			continue
+		}
+		if detected != model {
+			return vcdm.DataModelUnknown, fmt.Errorf(
+				"credential batch is heterogeneous: instance 0 is %s but instance %d is %s", model, i, detected)
+		}
+	}
+	return model, nil
 }
 
 // requestNonce requests a fresh nonce from the issuer's nonce endpoint
