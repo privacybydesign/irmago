@@ -50,6 +50,10 @@ func TestVerifierValidator(t *testing.T) {
 	t.Run("ParseAndVerifyAuthorizationRequest uses client_metadata client_name when present", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_UsesClientMetadataName)
 	t.Run("ParseAndVerifyAuthorizationRequest downloads the logo referenced in client_metadata", testParseAndVerifyAuthorizationRequestClientMetadataWithLogoUri_DownloadsLogo)
 	t.Run("ParseAndVerifyAuthorizationRequest continues without a logo when it fails to download", testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_ContinuesWithoutLogo)
+
+	// Certificate authorization is independent of how the verifier presents itself
+	t.Run("ParseAndVerifyAuthorizationRequest still validates certificate authorization when client_metadata names the verifier", testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_StillValidatesCertificateAuthorization)
+	t.Run("ParseAndVerifyAuthorizationRequest skips query validation for a third party certificate", testParseAndVerifyAuthorizationRequestThirdPartyCertificate_SkipsQueryValidation)
 }
 
 func testParseAndVerifyAuthorizationRequestFailureEmptyX5cArray(t *testing.T) {
@@ -346,6 +350,48 @@ func testParseAndVerifyAuthorizationRequestClientMetadataWithInvalidLogoUri_Cont
 	require.NoError(t, err)
 	require.Equal(t, "Acme Verifier", requestorInfo.Organization.LegalName["en"])
 	require.Nil(t, requestorInfo.Organization.Logo)
+}
+
+// A verifier that names itself through client_metadata must not thereby escape the
+// authorization carried in its certificate. The display name and the authorization
+// check read different sources, and sharing one if/else-if chain between them let a
+// verifier widen its own authorization just by naming itself in the request it signs.
+func testParseAndVerifyAuthorizationRequestClientMetadataWithClientName_StillValidatesCertificateAuthorization(t *testing.T) {
+	// Setup test data with client_metadata.client_name set, on a certificate that does
+	// carry scheme data (PkiOption_None) and so has an authorized set to check against.
+	authRequestJwt, verifierValidator := setupTest(t, func(token *jwt.Token) {
+		token.Claims.(jwt.MapClaims)["client_metadata"] = map[string]any{
+			"client_name": "Acme Verifier",
+		}
+	}, testdata.PkiOption_None)
+
+	// Refuse every query, so a validation that runs at all is visible in the error.
+	verifierValidator.(*RequestorCertificateStoreVerifierValidator).
+		validatorFactory = &MockQueryValidatorFactory{failsQueryValidation: true}
+
+	// Parse and verify the authorization request
+	_, _, _, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to verify queried credentials: query validation failed")
+}
+
+// The other half of the same rule: a certificate without scheme data registers no
+// attribute sets, so there is nothing to validate against and the query is allowed.
+// This pins the fix above to certificates that actually carry an authorized set.
+func testParseAndVerifyAuthorizationRequestThirdPartyCertificate_SkipsQueryValidation(t *testing.T) {
+	// Setup test data with a certificate that carries no scheme data
+	authRequestJwt, verifierValidator := setupTest(t, nil, testdata.PkiOption_MissingSchemeData)
+
+	// Refuse every query, so a validation that runs at all would fail the request.
+	verifierValidator.(*RequestorCertificateStoreVerifierValidator).
+		validatorFactory = &MockQueryValidatorFactory{failsQueryValidation: true}
+
+	// Parse and verify the authorization request
+	_, _, requestorInfo, err := verifierValidator.ParseAndVerifyAuthorizationRequest(authRequestJwt)
+
+	require.NoError(t, err)
+	require.Equal(t, EndEntityCN, requestorInfo.Organization.LegalName["en"])
 }
 
 func setupTest(t *testing.T, tokenModifier func(token *jwt.Token), opts testdata.PkiGenerationOptions) (authRequestJwt string, verifierValidator VerifierValidator) {

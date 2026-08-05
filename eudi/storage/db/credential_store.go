@@ -48,8 +48,14 @@ type CredentialStore interface {
 	// the given vct string. Does not preload instances.
 	GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error)
 
+	// GetBatchesByDocType returns all mso_mdoc CredentialBatches whose VerifiableCredentialType
+	// matches the given docType string. Unlike GetBatchesByVCT it also filters on Format, since
+	// one table holds every format and a docType is only meaningful for mso_mdoc.
+	GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error)
+
 	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
-	// not yet been marked as used. Returns ErrNotFound if all instances are used.
+	// not yet been marked as used, with its holder binding key (and algorithm-specific
+	// metadata) preloaded. Returns ErrNotFound if all instances are used.
 	GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error)
 
 	// MarkInstanceUsed sets Used = true on the given instance and decrements RemainingCount
@@ -91,15 +97,30 @@ func NewCredentialStore(db *gorm.DB) CredentialStore {
 	}
 }
 
-func (s *credentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
-	var batches []*models.CredentialBatch
-	err := s.db.
-		Model(&models.CredentialBatch{}).
+// withBatchDisplayPreloads eager-loads every association needed to render a
+// batch: the issuer's display entries, and the credential metadata tree
+// (its display entries, its claims, and each claim's display entries).
+//
+// Centralized because a missing preload does not fail — it silently yields
+// empty display metadata, so the credential surfaces with a blank issuer name
+// and unnamed attributes, which is easy to ship and hard to notice. Every
+// batch lookup that a display or log path can reach goes through here so the
+// lookups cannot drift apart. That already happened once: mdoc_dcql reads
+// batches via GetBatchesByDocType and GetBatchByHash, both of which
+// under-preloaded relative to GetCredentialBatchList, leaving mdoc permission
+// screens and disclosure logs without issuer names or claim display names.
+func withBatchDisplayPreloads(db *gorm.DB) *gorm.DB {
+	return db.
 		Preload("IssuerDisplay").
 		Preload("CredentialMetadata").
 		Preload("CredentialMetadata.Display").
 		Preload("CredentialMetadata.Claims").
-		Preload("CredentialMetadata.Claims.Display").
+		Preload("CredentialMetadata.Claims.Display")
+}
+
+func (s *credentialStore) GetCredentialBatchList() ([]*models.CredentialBatch, error) {
+	var batches []*models.CredentialBatch
+	err := withBatchDisplayPreloads(s.db.Model(&models.CredentialBatch{})).
 		Find(&batches).Error
 	return batches, err
 }
@@ -121,7 +142,7 @@ func (s *credentialStore) GetBatchByHash(hash string) (*models.CredentialBatch, 
 	}
 
 	var batch models.CredentialBatch
-	err := s.db.First(&batch, "hash = ?", hash).Error
+	err := withBatchDisplayPreloads(s.db).First(&batch, "hash = ?", hash).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -138,10 +159,33 @@ func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch
 	}
 
 	var batches []*models.CredentialBatch
-	err := s.db.
-		Preload("CredentialMetadata").
-		Preload("CredentialMetadata.Display").
+	err := withBatchDisplayPreloads(s.db).
 		Where("verifiable_credential_type = ?", vct).
+		Find(&batches).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return batches, nil
+}
+
+// GetBatchesByDocType filters on Format as well as the type column. Delegating to
+// GetBatchesByVCT matched on verifiable_credential_type alone, so an SD-JWT batch whose
+// vct happened to equal the requested docType was handed to the mdoc DCQL handler, which
+// then treated an SD-JWT payload as a namespace map. Nothing downstream re-checks the
+// format, so the discriminator belongs in the query.
+//
+// The match is exact rather than "not some other format": a batch with an empty Format
+// predates the fix that stores the verified parser's format (see credential_service.go)
+// and cannot be assumed to be an mdoc.
+func (s *credentialStore) GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error) {
+	if docType == "" {
+		return nil, fmt.Errorf("docType is required")
+	}
+
+	var batches []*models.CredentialBatch
+	err := withBatchDisplayPreloads(s.db).
+		Where("verifiable_credential_type = ? AND format = ?", docType, models.CredentialFormatMsoMdoc).
 		Find(&batches).Error
 	if err != nil {
 		return nil, err
@@ -157,6 +201,8 @@ func (s *credentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.Iss
 
 	var instance models.IssuedCredentialInstance
 	err := s.db.
+		Preload("HolderBindingKey").
+		Preload("HolderBindingKey.ECDSA").
 		Where("credential_batch_id = ? AND used = ?", batchID, false).
 		First(&instance).
 		Error

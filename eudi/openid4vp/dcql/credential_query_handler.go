@@ -21,6 +21,11 @@ type DisclosureSelection struct {
 	ClaimPaths [][]any
 	// Whether the verifier requires a cryptographic holder binding proof for this credential.
 	RequireHolderBinding bool
+	// The verifier's response_uri from the Authorization Request. Only used by formats whose
+	// holder-binding proof is bound to the OpenID4VP session transcript (e.g. mso_mdoc's
+	// deviceAuth, which signs over [clientId, nonce, responseUri]) -- SD-JWT's key-binding JWT
+	// only needs nonce/clientId and ignores this field.
+	ResponseUri string
 }
 
 // PreparedDisclosure contains the VP token response data and log information

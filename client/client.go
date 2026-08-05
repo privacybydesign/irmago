@@ -24,6 +24,7 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/eudi_sdjwt_dcql"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/irma_sdjwt_dcql"
+	"github.com/privacybydesign/irmago/eudi/openid4vp/mdoc_dcql"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/services"
 	"github.com/privacybydesign/irmago/eudi/storage"
@@ -174,7 +175,13 @@ func New(
 	)
 	irmaSdJwtDcqlHandler := irma_sdjwt_dcql.NewIrmaSdJwtVcDcqlHandler(sdjwtvcStorage, irmaConf, irmaKeyBinder, currentLocale)
 
-	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler}, verifierValidator, currentLocale)
+	// Register the mso_mdoc handler for credentials issued via OID4VCI (e.g. the AV
+	// Blueprint's proof_of_age credential). No fetchers here (unlike the SD-JWT
+	// handler above): there's no standardized online discovery document for an mdoc
+	// doctype to describe credentials the wallet has never seen.
+	mdocDcqlHandler := mdoc_dcql.NewMdocDcqlHandler(eudiStorage, currentLocale)
+
+	openid4vpClient, err := openid4vp.NewClient(eudiConf, []dcql.DcqlCredentialQueryHandler{irmaSdJwtDcqlHandler, eudiSdJwtDcqlHandler, mdocDcqlHandler}, verifierValidator, currentLocale)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate new openid4vp client: %v", err)
 	}
@@ -218,11 +225,14 @@ func New(
 		StatusChecker: statusChecker,
 	}
 
-	// Initiate the OpenID4VCI client
+	// Initiate the OpenID4VCI client. It derives its own per-format credential
+	// parsers from eudiConf and holderVerifier, so there is nothing to register
+	// here when a new credential format is added.
+	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI)
 	openid4vciClient, err := openid4vci.NewClient(
 		common.HTTPClient,
 		eudiConf,
-		sdjwtvc.NewHolderVerificationProcessor(sdJwtVcVerificationContextOpenID4VCI),
+		holderVerifier,
 		credentialService,
 		services.NewHolderBindingKeyService(eudiConf.Storage.Db()),
 		currentLocale,

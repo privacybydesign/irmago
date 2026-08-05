@@ -403,7 +403,7 @@ func (session *openid4vpSession) prepareDisclosures(
 	selections []dcql.DisclosureSelection,
 ) ([]dcql.QueryResponse, []clientmodels.LogCredential, error) {
 	prepared, err := session.dcqlHandler.PrepareDisclosure(
-		session.request.DcqlQuery, selections, session.request.Nonce, session.request.ClientId,
+		session.request.DcqlQuery, selections, session.request.Nonce, session.request.ClientId, session.request.ResponseUri,
 	)
 	if err != nil {
 		return nil, nil, err

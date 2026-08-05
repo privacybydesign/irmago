@@ -389,6 +389,62 @@ func TestGetBatchesByVCT_EmptyVCT(t *testing.T) {
 	require.Error(t, err)
 }
 
+// --- GetBatchesByDocType ---
+
+// One shared table serves every credential format, distinguished only by the Format column,
+// so GetBatchesByDocType has to filter on both.
+func TestGetBatchesByDocType_Found(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	mdocBatch := newBatch("hash-doctype-1")
+	mdocBatch.Format = models.CredentialFormatMsoMdoc
+	mdocBatch.VerifiableCredentialType = "eu.europa.ec.av.1"
+	require.NoError(t, store.StoreBatch(mdocBatch))
+
+	batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	assert.Equal(t, "hash-doctype-1", batches[0].Hash)
+}
+
+// A docType is only meaningful for mso_mdoc. Without the format filter this returned the
+// SD-JWT batch too, and the mdoc DCQL handler -- which never re-checks the format -- went on
+// to read an SD-JWT payload as a namespace map.
+func TestGetBatchesByDocType_ExcludesOtherFormatsWithTheSameTypeString(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	const shared = "eu.europa.ec.av.1"
+
+	mdocBatch := newBatch("hash-doctype-mdoc")
+	mdocBatch.Format = models.CredentialFormatMsoMdoc
+	mdocBatch.VerifiableCredentialType = shared
+	require.NoError(t, store.StoreBatch(mdocBatch))
+
+	sdJwtBatch := newBatch("hash-doctype-sdjwt")
+	sdJwtBatch.Format = models.CredentialFormatSdJwtVc
+	sdJwtBatch.VerifiableCredentialType = shared
+	require.NoError(t, store.StoreBatch(sdJwtBatch))
+
+	batches, err := store.GetBatchesByDocType(shared)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	assert.Equal(t, "hash-doctype-mdoc", batches[0].Hash)
+	assert.Equal(t, models.CredentialFormatMsoMdoc, batches[0].Format)
+
+	// The mirror direction still sees both, since GetBatchesByVCT is format-agnostic by
+	// contract and has no mdoc-specific caller to protect.
+	byVct, err := store.GetBatchesByVCT(shared)
+	require.NoError(t, err)
+	assert.Len(t, byVct, 2)
+}
+
+func TestGetBatchesByDocType_EmptyDocType(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	_, err := store.GetBatchesByDocType("")
+	require.Error(t, err)
+}
+
 func TestGetBatchesByVCT_FiltersCorrectly(t *testing.T) {
 	store := newTestCredentialStore(t)
 
@@ -430,6 +486,19 @@ func TestGetUnusedInstance_ReturnsUnusedInstance(t *testing.T) {
 	instance, err := store.GetUnusedInstance(batch.ID)
 	require.NoError(t, err)
 	assert.False(t, instance.Used)
+}
+
+func TestGetUnusedInstance_PreloadsHolderBindingKey(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	batch := newBatchWithInstancesAndKeys("hash-unused-instance-key", 1)
+	require.NoError(t, store.StoreBatch(batch))
+
+	instance, err := store.GetUnusedInstance(batch.ID)
+	require.NoError(t, err)
+	require.NotNil(t, instance.HolderBindingKey)
+	require.NotNil(t, instance.HolderBindingKey.ECDSA)
+	assert.Equal(t, "P-256", instance.HolderBindingKey.ECDSA.CurveName)
 }
 
 // --- MarkInstanceUsed ---
@@ -604,4 +673,64 @@ func TestDeleteBatch_Success(t *testing.T) {
 
 	_, err := store.GetBatchByHash("hash-delete-success")
 	require.ErrorIs(t, err, ErrNotFound)
+}
+
+// TestBatchLookupsPreloadDisplayMetadata pins that every batch lookup a display
+// or log path can reach eager-loads the same associations. A missing preload
+// does not fail — it silently yields empty display metadata, which is how
+// mdoc_dcql ended up rendering permission screens with a blank issuer name and
+// unnamed attributes while the SD-JWT handler (which uses the fully-preloaded
+// GetCredentialBatchList) looked fine.
+func TestBatchLookupsPreloadDisplayMetadata(t *testing.T) {
+	assertPreloaded := func(t *testing.T, batch *models.CredentialBatch) {
+		t.Helper()
+		require.NotNil(t, batch)
+		assert.NotEmpty(t, batch.IssuerDisplay, "IssuerDisplay must be preloaded (issuer name/logo)")
+		require.NotNil(t, batch.CredentialMetadata, "CredentialMetadata must be preloaded")
+		assert.NotEmpty(t, batch.CredentialMetadata.Display, "credential display entries must be preloaded")
+		require.NotEmpty(t, batch.CredentialMetadata.Claims, "claims must be preloaded (claim display names)")
+		assert.NotEmpty(t, batch.CredentialMetadata.Claims[0].Display, "each claim's display entries must be preloaded")
+	}
+
+	t.Run("GetCredentialBatchList", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		require.NoError(t, store.StoreBatch(newBatch("hash-preload-list")))
+
+		batches, err := store.GetCredentialBatchList()
+		require.NoError(t, err)
+		require.Len(t, batches, 1)
+		assertPreloaded(t, batches[0])
+	})
+
+	t.Run("GetBatchByHash", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		require.NoError(t, store.StoreBatch(newBatch("hash-preload-byhash")))
+
+		batch, err := store.GetBatchByHash("hash-preload-byhash")
+		require.NoError(t, err)
+		assertPreloaded(t, batch)
+	})
+
+	t.Run("GetBatchesByVCT", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		require.NoError(t, store.StoreBatch(newBatch("hash-preload-byvct")))
+
+		batches, err := store.GetBatchesByVCT("https://vct.example.com/MyCredential")
+		require.NoError(t, err)
+		require.Len(t, batches, 1)
+		assertPreloaded(t, batches[0])
+	})
+
+	t.Run("GetBatchesByDocType", func(t *testing.T) {
+		store := newTestCredentialStore(t)
+		mdocBatch := newBatch("hash-preload-bydoctype")
+		mdocBatch.Format = models.CredentialFormatMsoMdoc
+		mdocBatch.VerifiableCredentialType = "eu.europa.ec.av.1"
+		require.NoError(t, store.StoreBatch(mdocBatch))
+
+		batches, err := store.GetBatchesByDocType("eu.europa.ec.av.1")
+		require.NoError(t, err)
+		require.Len(t, batches, 1)
+		assertPreloaded(t, batches[0])
+	})
 }

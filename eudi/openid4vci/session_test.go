@@ -18,6 +18,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
+	"github.com/privacybydesign/irmago/eudi/services"
+	"github.com/privacybydesign/irmago/eudi/storage/db/models"
 	"github.com/privacybydesign/irmago/eudi/storage/sqlcipherstorage"
 	"github.com/privacybydesign/irmago/eudi/utils"
 	"github.com/privacybydesign/irmago/testdata"
@@ -194,15 +196,18 @@ func Test_openid4vciSession_obtainCredential_successResponses(t *testing.T) {
 	sess, ts := setupTestEnvironment(t, NonceNotRequired, credEndpointHandler)
 	defer ts.Close()
 
-	sess.holderVerifier = sdjwtvc.NewHolderVerificationProcessor(
+	holderVerifier := sdjwtvc.NewHolderVerificationProcessor(
 		sdjwtvc.CreateDefaultVerificationContext(chain),
 	)
+	sess.credentialFormatParsers = services.CredentialFormatParsers{
+		models.CredentialFormatSdJwtVc: services.NewSdJwtVcCredentialFormatParser(holderVerifier),
+	}
 
 	fetched, err := sess.obtainCredential("credential-config-1", nil, "test-token")
 	require.NoError(t, err)
 	require.NotNil(t, fetched)
 	require.Equal(t, "credential-config-1", fetched.credentialConfigurationId)
-	require.Len(t, fetched.verifiedSdJwtVcs, 1)
+	require.Len(t, fetched.parsedCredentials, 1)
 	require.False(t, fetched.requireCryptographicKeyBinding)
 }
 

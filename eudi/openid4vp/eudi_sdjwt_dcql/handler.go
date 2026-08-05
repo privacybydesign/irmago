@@ -138,7 +138,7 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 
 	hasExhaustedBatch := false
 	for _, batch := range batches {
-		if !isBatchValid(batch, now) {
+		if !dcql.IsBatchValid(batch, now) {
 			continue
 		}
 		// Skip exhausted batches: when a batch was issued with multiple instances
@@ -169,9 +169,9 @@ func (h *SdJwtVcDcqlHandler) FindCandidates(query dcql.CredentialQuery) (*dcql.C
 			Name:                        credentialDisplayName(batch, locale),
 			Issuer:                      h.issuerTrustedParty(batch, locale),
 			Format:                      clientmodels.Format_SdJwtVc,
-			BatchInstanceCountRemaining: batchInstanceCountRemaining(batch),
+			BatchInstanceCountRemaining: dcql.BatchInstanceCountRemaining(batch),
 			Attributes:                  attributes,
-			ExpiryDate:                  expiryUnix(batch),
+			ExpiryDate:                  dcql.BatchExpiryUnix(batch),
 			Image:                       image,
 			Revoked:                     h.revocation != nil && h.revocation.IsRevoked(instance),
 			RevocationSupported:         instance.StatusListURI != nil,
@@ -831,7 +831,7 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 		}
 		if len(values) > 0 {
 			for _, reqVal := range values {
-				if claimValuesEqual(val, reqVal) {
+				if dcql.ClaimValuesEqual(val, reqVal) {
 					return true
 				}
 			}
@@ -863,33 +863,6 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 		}
 	}
 	return false
-}
-
-// claimValuesEqual compares two values from JSON-decoded data. JSON numbers are
-// float64, so we normalize both sides to float64 for numeric comparison.
-func claimValuesEqual(actual, expected any) bool {
-	// Direct equality covers strings and booleans.
-	if actual == expected {
-		return true
-	}
-	// JSON numbers are float64; the constraint value may also be float64.
-	// Normalize both to float64 for comparison.
-	af, aOk := toFloat64(actual)
-	ef, eOk := toFloat64(expected)
-	return aOk && eOk && af == ef
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	default:
-		return 0, false
-	}
 }
 
 func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {
@@ -928,7 +901,7 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 		Image:        h.credentialImage(batch, locale),
 		Issuer:       h.issuerTrustedParty(batch, locale),
 		Attributes:   attrs,
-		ExpiryDate:   expiryUnix(batch),
+		ExpiryDate:   dcql.BatchExpiryUnix(batch),
 	}
 
 	if batch.IssuedAt.Valid {
@@ -937,29 +910,6 @@ func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, c
 	}
 
 	return log
-}
-
-func expiryUnix(batch *models.CredentialBatch) *int64 {
-	if batch.ExpiresAt.Valid {
-		x := batch.ExpiresAt.V.Unix()
-		return &x
-	}
-	return nil
-}
-
-// isBatchValid returns false if the credential batch is expired or not yet valid.
-// Unix epoch (time.Unix(0,0)) is treated as "not set" because the storage layer
-// currently always marks ExpiresAt/NotBefore as Valid, even when the JWT has no
-// exp/nbf claims — storing 0 as the timestamp.
-func isBatchValid(batch *models.CredentialBatch, now time.Time) bool {
-	epoch := time.Unix(0, 0)
-	if batch.ExpiresAt.Valid && !batch.ExpiresAt.V.Equal(epoch) && now.After(batch.ExpiresAt.V) {
-		return false
-	}
-	if batch.NotBefore.Valid && !batch.NotBefore.V.Equal(epoch) && now.Before(batch.NotBefore.V) {
-		return false
-	}
-	return true
 }
 
 // flattenForDisclosure recursively flattens arrays and objects into scalar
@@ -1187,15 +1137,6 @@ func pathLess(a, b []any, metadataOrder map[string]int) bool {
 		}
 	}
 	return len(a) < len(b)
-}
-
-// batchInstanceCountRemaining returns nil for batch-of-1 credentials (infinitely
-// reusable) and a pointer to the remaining count for larger batches.
-func batchInstanceCountRemaining(batch *models.CredentialBatch) *uint {
-	if batch.BatchSize <= 1 {
-		return nil
-	}
-	return &batch.RemainingCount
 }
 
 // credentialImage loads the credential logo that resolves for the locale from
