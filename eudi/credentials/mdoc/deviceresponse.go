@@ -40,9 +40,9 @@ type DeviceAuth struct {
 // from a deviceAuth signature already produced by Holder.SignDeviceAuth.
 // Kept separate from SignDeviceAuth itself so existing callers that just
 // want the raw deviceAuth bytes (e.g. Verifier.VerifyWithDeviceAuth, which
-// takes them as a parameter rather than reading mdoc.DeviceSigned) don't
-// need to change — this is purely additive, for building a real
-// DeviceResponse to bundle up and transmit.
+// takes the signature as a parameter and works with or without a
+// DeviceSigned envelope) don't need to change — this is purely additive,
+// for building a real DeviceResponse to bundle up and transmit.
 func AttachDeviceSigned(mdoc *MDoc, deviceAuthBytes []byte) (*MDoc, error) {
 	emptyNS, err := tag24Wrap(map[string]any{})
 	if err != nil {

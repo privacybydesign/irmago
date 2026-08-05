@@ -121,9 +121,13 @@ func (t *Tag24Item) UnmarshalCBOR(data []byte) error {
 // IssuerSigned.IssuerAuth: ISO 18013-5's DeviceNameSpacesBytes is
 // `#6.24(bstr .cbor DeviceNameSpaces)`, and the field already holds that
 // complete tag-24 encoding, so it must go on the wire inline rather than inside
-// another byte string. Signer and verifier build this identically (holder.go and
-// verifier.go both call tag24Wrap on the same empty map), so the change moves
-// both sides together and the signature is unaffected.
+// another byte string.
+//
+// The holder puts tag24(empty map) here — the AV profile has no holder-asserted
+// claims — and transmits those same bytes at deviceSigned.nameSpaces. The
+// verifier rebuilds this structure from the transmitted bytes rather than
+// assuming them, so the two sides agree without depending on a shared encoding
+// choice; see deviceNameSpacesForVerification.
 type DeviceAuthentication struct {
 	_                 struct{}          `cbor:",toarray"`
 	Context           string            // always "DeviceAuthentication"

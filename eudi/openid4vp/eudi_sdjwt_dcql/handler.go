@@ -831,7 +831,7 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 		}
 		if len(values) > 0 {
 			for _, reqVal := range values {
-				if claimValuesEqual(val, reqVal) {
+				if dcql.ClaimValuesEqual(val, reqVal) {
 					return true
 				}
 			}
@@ -863,33 +863,6 @@ func claimMatchesPath(path []any, values []any, payload *sdjwt.ProcessedPayload)
 		}
 	}
 	return false
-}
-
-// claimValuesEqual compares two values from JSON-decoded data. JSON numbers are
-// float64, so we normalize both sides to float64 for numeric comparison.
-func claimValuesEqual(actual, expected any) bool {
-	// Direct equality covers strings and booleans.
-	if actual == expected {
-		return true
-	}
-	// JSON numbers are float64; the constraint value may also be float64.
-	// Normalize both to float64 for comparison.
-	af, aOk := toFloat64(actual)
-	ef, eOk := toFloat64(expected)
-	return aOk && eOk && af == ef
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	default:
-		return 0, false
-	}
 }
 
 func (h *SdJwtVcDcqlHandler) buildLogCredential(batch *models.CredentialBatch, claimPaths [][]any) clientmodels.LogCredential {

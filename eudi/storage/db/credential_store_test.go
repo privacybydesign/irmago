@@ -389,10 +389,10 @@ func TestGetBatchesByVCT_EmptyVCT(t *testing.T) {
 	require.Error(t, err)
 }
 
-// GetBatchesByDocType queries the same column as GetBatchesByVCT -- one shared table serves
-// every credential format, distinguished only by the Format column. This test uses an
-// mso_mdoc-formatted batch purely to document that GetBatchesByDocType is the natural name
-// for mdoc callers (an mdoc credential has no vct), not because the schema branches on format.
+// --- GetBatchesByDocType ---
+
+// One shared table serves every credential format, distinguished only by the Format column,
+// so GetBatchesByDocType has to filter on both.
 func TestGetBatchesByDocType_Found(t *testing.T) {
 	store := newTestCredentialStore(t)
 
@@ -405,6 +405,44 @@ func TestGetBatchesByDocType_Found(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	assert.Equal(t, "hash-doctype-1", batches[0].Hash)
+}
+
+// A docType is only meaningful for mso_mdoc. Without the format filter this returned the
+// SD-JWT batch too, and the mdoc DCQL handler -- which never re-checks the format -- went on
+// to read an SD-JWT payload as a namespace map.
+func TestGetBatchesByDocType_ExcludesOtherFormatsWithTheSameTypeString(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	const shared = "eu.europa.ec.av.1"
+
+	mdocBatch := newBatch("hash-doctype-mdoc")
+	mdocBatch.Format = models.CredentialFormatMsoMdoc
+	mdocBatch.VerifiableCredentialType = shared
+	require.NoError(t, store.StoreBatch(mdocBatch))
+
+	sdJwtBatch := newBatch("hash-doctype-sdjwt")
+	sdJwtBatch.Format = models.CredentialFormatSdJwtVc
+	sdJwtBatch.VerifiableCredentialType = shared
+	require.NoError(t, store.StoreBatch(sdJwtBatch))
+
+	batches, err := store.GetBatchesByDocType(shared)
+	require.NoError(t, err)
+	require.Len(t, batches, 1)
+	assert.Equal(t, "hash-doctype-mdoc", batches[0].Hash)
+	assert.Equal(t, models.CredentialFormatMsoMdoc, batches[0].Format)
+
+	// The mirror direction still sees both, since GetBatchesByVCT is format-agnostic by
+	// contract and has no mdoc-specific caller to protect.
+	byVct, err := store.GetBatchesByVCT(shared)
+	require.NoError(t, err)
+	assert.Len(t, byVct, 2)
+}
+
+func TestGetBatchesByDocType_EmptyDocType(t *testing.T) {
+	store := newTestCredentialStore(t)
+
+	_, err := store.GetBatchesByDocType("")
+	require.Error(t, err)
 }
 
 func TestGetBatchesByVCT_FiltersCorrectly(t *testing.T) {

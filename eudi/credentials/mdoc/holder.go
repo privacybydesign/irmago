@@ -98,13 +98,13 @@ func (h *Holder) SignDeviceAuth(docType string, transcript SessionTranscript) ([
 
 	// Detach the payload before transmitting: the AV Blueprint spec's own
 	// worked example (Annex A §A.11) shows deviceSignature's payload as
-	// `null`, not the actual DeviceAuthentication bytes — the verifier
-	// already knows every input (its own session transcript, the fixed
-	// empty deviceNameSpaces, the docType it requested) and reconstructs
-	// this structure itself rather than receiving it explicitly. The
-	// signature above was computed over the real payload bytes and
-	// remains valid; clearing msg.Payload now only affects what's
-	// serialized for transmission, not what was signed.
+	// `null`, not the actual DeviceAuthentication bytes — the verifier has
+	// every input already (its own session transcript, the docType it
+	// requested, and the deviceNameSpaces transmitted alongside this
+	// signature) and reconstructs this structure itself rather than
+	// receiving it explicitly. The signature above was computed over the
+	// real payload bytes and remains valid; clearing msg.Payload now only
+	// affects what's serialized for transmission, not what was signed.
 	msg.Payload = nil
 
 	return msg.MarshalCBOR()

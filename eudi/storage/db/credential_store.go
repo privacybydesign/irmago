@@ -48,9 +48,9 @@ type CredentialStore interface {
 	// the given vct string. Does not preload instances.
 	GetBatchesByVCT(vct string) ([]*models.CredentialBatch, error)
 
-	// GetBatchesByDocType returns all CredentialBatches whose VerifiableCredentialType matches
-	// the given mso_mdoc docType string. Equivalent query to GetBatchesByVCT, named separately
-	// so mdoc call sites read naturally (an mdoc credential has no vct).
+	// GetBatchesByDocType returns all mso_mdoc CredentialBatches whose VerifiableCredentialType
+	// matches the given docType string. Unlike GetBatchesByVCT it also filters on Format, since
+	// one table holds every format and a docType is only meaningful for mso_mdoc.
 	GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error)
 
 	// GetUnusedInstance returns one IssuedCredentialInstance from the given batch that has
@@ -169,8 +169,29 @@ func (s *credentialStore) GetBatchesByVCT(vct string) ([]*models.CredentialBatch
 	return batches, nil
 }
 
+// GetBatchesByDocType filters on Format as well as the type column. Delegating to
+// GetBatchesByVCT matched on verifiable_credential_type alone, so an SD-JWT batch whose
+// vct happened to equal the requested docType was handed to the mdoc DCQL handler, which
+// then treated an SD-JWT payload as a namespace map. Nothing downstream re-checks the
+// format, so the discriminator belongs in the query.
+//
+// The match is exact rather than "not some other format": a batch with an empty Format
+// predates the fix that stores the verified parser's format (see credential_service.go)
+// and cannot be assumed to be an mdoc.
 func (s *credentialStore) GetBatchesByDocType(docType string) ([]*models.CredentialBatch, error) {
-	return s.GetBatchesByVCT(docType)
+	if docType == "" {
+		return nil, fmt.Errorf("docType is required")
+	}
+
+	var batches []*models.CredentialBatch
+	err := withBatchDisplayPreloads(s.db).
+		Where("verifiable_credential_type = ? AND format = ?", docType, models.CredentialFormatMsoMdoc).
+		Find(&batches).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return batches, nil
 }
 
 func (s *credentialStore) GetUnusedInstance(batchID datatypes.UUID) (*models.IssuedCredentialInstance, error) {

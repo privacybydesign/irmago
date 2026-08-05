@@ -7,100 +7,11 @@ import (
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 )
 
-// TestClaimValuesEqualDoesNotPanicOnUncomparableValues is the regression test
-// for the crash vector: both operands are decoded from untrusted input into
-// `any`, and Go's == panics when two interface values share an uncomparable
-// dynamic type. An array-valued claim compared against an array in a DCQL
-// `values` constraint is that case, and it was reached while rendering the
-// permission screen — so a crafted authorization request killed the wallet
-// before the user was asked to consent.
-func TestClaimValuesEqualDoesNotPanicOnUncomparableValues(t *testing.T) {
-	// These are the shapes encoding/json produces, which is what both the cached
-	// ResolvedClaims and the verifier's query decode into.
-	decode := func(t *testing.T, raw string) any {
-		t.Helper()
-		var v any
-		if err := json.Unmarshal([]byte(raw), &v); err != nil {
-			t.Fatalf("decode %s: %v", raw, err)
-		}
-		return v
-	}
-
-	cases := []struct {
-		name           string
-		actual, expect string
-		want           bool
-	}{
-		{"identical arrays", `["a","b"]`, `["a","b"]`, true},
-		{"arrays differing in an element", `["a","b"]`, `["a","c"]`, false},
-		{"arrays differing in length", `["a"]`, `["a","b"]`, false},
-		{"nested arrays", `[["a",1],["b",2]]`, `[["a",1],["b",2]]`, true},
-		{"nested arrays differing deep", `[["a",1]]`, `[["a",2]]`, false},
-		{"identical objects", `{"x":1,"y":[2,3]}`, `{"x":1,"y":[2,3]}`, true},
-		{"objects differing in a value", `{"x":1}`, `{"x":2}`, false},
-		{"objects differing in key set", `{"x":1}`, `{"x":1,"y":2}`, false},
-		{"array against string", `["a"]`, `"a"`, false},
-		{"object against array", `{"x":1}`, `[1]`, false},
-		{"null against null", `null`, `null`, true},
-		{"null against value", `null`, `1`, false},
-		{"empty arrays", `[]`, `[]`, true},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			actual := decode(t, tc.actual)
-			expected := decode(t, tc.expect)
-			// A panic here fails the test rather than taking the process down,
-			// because the testing framework recovers per-test — the point is that
-			// it must not panic at all.
-			if got := claimValuesEqual(actual, expected); got != tc.want {
-				t.Errorf("claimValuesEqual(%s, %s) = %v, want %v", tc.actual, tc.expect, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestClaimValuesEqualAcrossDecoders pins that a claim value and a query
-// constraint match even when they arrived through different decoders: CBOR
-// yields uint64/int64 for integers, JSON yields float64 for every number. With
-// a bare ==, a value constraint on an integer claim never matched.
-func TestClaimValuesEqualAcrossDecoders(t *testing.T) {
-	cases := []struct {
-		name           string
-		actual, expect any
-		want           bool
-	}{
-		{"cbor uint64 vs json float64", uint64(18), float64(18), true},
-		{"cbor int64 negative vs json float64", int64(-7), float64(-7), true},
-		{"json float64 vs cbor uint64", float64(21), uint64(21), true},
-		{"different integers", uint64(18), float64(21), false},
-		{"integral float vs int", float64(18.0), int(18), true},
-		{"non-integral float vs int", float64(18.5), int(18), false},
-		{"non-integral floats equal", float64(18.5), float64(18.5), true},
-		{"bool vs bool", true, true, true},
-		{"bool mismatch", true, false, false},
-		{"bool vs number", true, float64(1), false},
-		{"string vs string", "NL", "NL", true},
-		{"string vs number", "18", float64(18), false},
-		{"cbor map keys vs json map keys", map[any]any{"x": uint64(1)}, map[string]any{"x": float64(1)}, true},
-		{"cbor map with non-string key", map[any]any{uint64(1): "x"}, map[string]any{"1": "x"}, false},
-		{"byte strings equal", []byte{1, 2, 3}, []byte{1, 2, 3}, true},
-		{"byte strings differ", []byte{1, 2, 3}, []byte{1, 2, 4}, false},
-		{"uint64 beyond int64 range, equal", uint64(1) << 63, uint64(1) << 63, true},
-		{"uint64 beyond int64 range, differing", uint64(1) << 63, uint64(3) << 62, false},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := claimValuesEqual(tc.actual, tc.expect); got != tc.want {
-				t.Errorf("claimValuesEqual(%#v, %#v) = %v, want %v", tc.actual, tc.expect, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestClaimMatchesWithArrayValueConstraint exercises the panic through the
-// caller that actually reaches it, rather than the helper alone.
+// TestClaimMatchesWithArrayValueConstraint exercises the uncomparable-type
+// panic through the caller that actually reaches it, rather than the shared
+// comparison helper alone (which dcql.TestClaimValuesEqual* covers). The path
+// is FindCandidates -> selectClaims -> claimMatches, all of which run while the
+// permission screen is being rendered.
 func TestClaimMatchesWithArrayValueConstraint(t *testing.T) {
 	var resolvedClaims map[string]map[string]any
 	if err := json.Unmarshal([]byte(`{"eu.europa.ec.av.1":{"age_over_NN":["18","21"]}}`), &resolvedClaims); err != nil {
@@ -124,5 +35,54 @@ func TestClaimMatchesWithArrayValueConstraint(t *testing.T) {
 	otherClaim := dcql.Claim{Path: []any{"eu.europa.ec.av.1", "age_over_NN"}, Values: other}
 	if claimMatches(otherClaim, resolvedClaims) {
 		t.Error("an array-valued claim matched a different array constraint")
+	}
+}
+
+// TestSelectClaimsWithArrayValueConstraintFromMdlDocType is the reviewer's
+// reproduction: an mdl-style array element (driving_privileges) against an
+// array-valued constraint, entering at selectClaims as FindCandidates does.
+func TestSelectClaimsWithArrayValueConstraintFromMdlDocType(t *testing.T) {
+	var resolvedClaims map[string]map[string]any
+	if err := json.Unmarshal([]byte(`{"org.iso.18013.5.1":{"driving_privileges":["A","B"]}}`), &resolvedClaims); err != nil {
+		t.Fatalf("decode resolved claims: %v", err)
+	}
+
+	var values []any
+	if err := json.Unmarshal([]byte(`[["A","B"]]`), &values); err != nil {
+		t.Fatalf("decode query values: %v", err)
+	}
+
+	query := dcql.CredentialQuery{
+		Claims: []dcql.Claim{{
+			Path:   []any{"org.iso.18013.5.1", "driving_privileges"},
+			Values: values,
+		}},
+	}
+
+	selected := selectClaims(query, resolvedClaims)
+	if len(selected) != 1 {
+		t.Fatalf("selectClaims returned %d claims, want 1", len(selected))
+	}
+}
+
+// TestClaimMatchesIntegerAcrossDecoders covers the second half of the report:
+// mdoc claim values come out of CBOR as uint64/int64 while the DCQL constraint
+// comes out of JSON as float64, so an age check compared unequal and a correct
+// credential failed to match.
+func TestClaimMatchesIntegerAcrossDecoders(t *testing.T) {
+	// uint64 is what the CBOR decoder yields for an unsigned integer element.
+	resolvedClaims := map[string]map[string]any{
+		"eu.europa.ec.av.1": {"age_in_years": uint64(21)},
+	}
+
+	// float64 is what encoding/json yields for the verifier's constraint.
+	var values []any
+	if err := json.Unmarshal([]byte(`[21]`), &values); err != nil {
+		t.Fatalf("decode query values: %v", err)
+	}
+
+	claim := dcql.Claim{Path: []any{"eu.europa.ec.av.1", "age_in_years"}, Values: values}
+	if !claimMatches(claim, resolvedClaims) {
+		t.Error("a CBOR uint64 claim value did not match an equal JSON number constraint")
 	}
 }

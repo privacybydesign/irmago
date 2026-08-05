@@ -514,26 +514,51 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
-	// Rebuild the DeviceAuthentication payload using the verifier's OWN
-	// session transcript — since the wire message carries no payload,
-	// this reconstruction is now the ONLY source of the bytes fed into
-	// Sig_structure for verification below. If a signature was produced
-	// over a different transcript (a different session, or replayed from
-	// elsewhere), the hash won't match and Verify() will fail outright —
-	// there's no separate "payload matches" check needed anymore, since
-	// supplying the payload ourselves and verifying against it collapses
-	// both checks (content + signature) into one.
-	emptyNS, err := tag24Wrap(map[string]any{})
+	// Rebuild the DeviceAuthentication payload the holder signed. Two of its four
+	// elements come from deliberately different places:
+	//
+	//   - SessionTranscript is the verifier's OWN. The verifier is the authority on
+	//     the session, so substituting its own copy is what defeats replay: a
+	//     signature produced over a different transcript (a different session, or
+	//     replayed from elsewhere) hashes differently and fails below. Since the
+	//     transmitted COSE_Sign1 has a detached (null) payload, this reconstruction
+	//     is the only source of the bytes fed into Sig_structure, which collapses
+	//     "content matches" and "signature valid" into a single check.
+	//
+	//   - DeviceNameSpaces are the RECEIVED bytes. ISO 18013-5 transmits
+	//     DeviceNameSpacesBytes at deviceSigned.nameSpaces precisely so a verifier
+	//     can rebuild this structure, and taking them from the wire is not a
+	//     relaxation — the signature covers them, so substituted bytes can only
+	//     make a valid signature fail. Reconstructing tag24(empty map) here
+	//     instead conflated the two cases above: a conformant holder that encoded
+	//     its empty map any other way (indefinite-length, say) was rejected with
+	//     "signature invalid", which was not what had gone wrong, and the received
+	//     field was left neither verified nor rejected.
+	//
+	// Whether any device-signed namespaces are ACCEPTABLE is a separate question,
+	// answered by the profile check after the signature has been verified.
+	deviceNameSpaces, err := deviceNameSpacesForVerification(mdoc)
 	if err != nil {
 		result.Valid = false
-		result.Error = fmt.Sprintf("encode empty nameSpaces: %v", err)
+		result.Error = err.Error()
 		return result
 	}
+
+	// Decode now only to establish that the payload being signed over is
+	// well-formed; its contents are judged after verification, since a rule
+	// enforced on unauthenticated bytes proves nothing about the holder.
+	deviceNameSpaceMap, err := decodeDeviceNameSpaces(deviceNameSpaces)
+	if err != nil {
+		result.Valid = false
+		result.Error = fmt.Sprintf("malformed deviceSigned.nameSpaces: %v", err)
+		return result
+	}
+
 	expectedDeviceAuth := DeviceAuthentication{
 		Context:           "DeviceAuthentication",
 		SessionTranscript: transcript,
 		DocType:           result.DocType, // the signed value; equal to docType by the check above
-		DeviceNameSpaces:  emptyNS,
+		DeviceNameSpaces:  deviceNameSpaces,
 	}
 	expectedPayload, err := tag24Wrap(expectedDeviceAuth)
 	if err != nil {
@@ -555,8 +580,87 @@ func (v *Verifier) VerifyWithDeviceAuth(mdoc *MDoc, namespace string, docType st
 		return result
 	}
 
+	// Profile check, on authenticated content. Data in DeviceSigned is
+	// self-asserted by the holder rather than attested by the issuer, and the AV
+	// Blueprint profile has no holder-asserted claims, so any namespace here is
+	// outside what this verifier is prepared to interpret. Rejecting is the
+	// conservative choice: accepting would mean carrying claims the issuer never
+	// signed, and callers read VerificationResult.Attributes without being able to
+	// tell the two apart. A profile that does want them would surface them in a
+	// field of their own instead of relaxing this.
+	//
+	// DeviceAuthValid stays false even though the signature verified, so a caller
+	// that reads it without checking Valid cannot mistake this for acceptance.
+	if len(deviceNameSpaceMap) != 0 {
+		namespaces := make([]string, 0, len(deviceNameSpaceMap))
+		for ns := range deviceNameSpaceMap {
+			namespaces = append(namespaces, ns)
+		}
+		slices.Sort(namespaces)
+		result.Valid = false
+		result.Error = fmt.Sprintf(
+			"device-signed namespaces are not permitted in this profile: the deviceAuth "+
+				"signature is valid, but the document asserts %d holder-signed namespace(s) %v, "+
+				"which carry no issuer attestation",
+			len(namespaces), namespaces,
+		)
+		return result
+	}
+
 	result.DeviceAuthValid = true
 	return result
+}
+
+// deviceNameSpacesForVerification returns the DeviceNameSpacesBytes to rebuild
+// DeviceAuthentication with — the transmitted bytes whenever there is a
+// DeviceSigned envelope to take them from.
+//
+// The fallback covers VerifyWithDeviceAuth's other call shape, where deviceAuth
+// arrives as a parameter and no DeviceResponse has been assembled yet (the demo
+// and this package's tests call Issue/SelectiveDisclose/SignDeviceAuth directly).
+// There is nothing on the wire to read in that case, and the only thing a holder
+// in this profile signs is the empty map, so assume it: a wrong assumption is
+// caught by the signature check either way.
+func deviceNameSpacesForVerification(mdoc *MDoc) (cbor.RawMessage, error) {
+	if mdoc.DeviceSigned != nil {
+		if len(mdoc.DeviceSigned.NameSpaces) == 0 {
+			return nil, fmt.Errorf("deviceSigned is present but carries no nameSpaces")
+		}
+		return mdoc.DeviceSigned.NameSpaces, nil
+	}
+
+	empty, err := tag24Wrap(map[string]any{})
+	if err != nil {
+		return nil, fmt.Errorf("encode empty nameSpaces: %w", err)
+	}
+	return cbor.RawMessage(empty), nil
+}
+
+// decodeDeviceNameSpaces validates that raw really is
+// `DeviceNameSpacesBytes = #6.24(bstr .cbor DeviceNameSpaces)` and returns the
+// namespaces it wraps, their contents left undecoded.
+//
+// The emptiness of the result is what the profile check tests, rather than a byte
+// comparison against tag24Wrap(map[string]any{}): CBOR admits more than one
+// encoding of an empty map, and comparing bytes would reject a conformant holder
+// for choosing a different one — the very brittleness this replaced.
+func decodeDeviceNameSpaces(raw cbor.RawMessage) (map[string]cbor.RawMessage, error) {
+	var rawTag cbor.RawTag
+	if err := cbor.Unmarshal(raw, &rawTag); err != nil {
+		return nil, fmt.Errorf("not tag-24 embedded CBOR: %w", err)
+	}
+	if rawTag.Number != 24 {
+		return nil, fmt.Errorf("has CBOR tag %d, want 24", rawTag.Number)
+	}
+	var inner []byte
+	if err := cbor.Unmarshal(rawTag.Content, &inner); err != nil {
+		return nil, fmt.Errorf("tag 24 does not wrap a byte string: %w", err)
+	}
+	var namespaces map[string]cbor.RawMessage
+	if err := cbor.Unmarshal(inner, &namespaces); err != nil {
+		return nil, fmt.Errorf("embedded DeviceNameSpaces is not a map: %w", err)
+	}
+	return namespaces, nil
 }
 
 // VerifyDeviceResponse verifies every document in a DeviceResponse via
