@@ -20,6 +20,14 @@ const (
 )
 
 // CredentialFormat identifies the format of a credential.
+//
+// Adding a constant here is a breaking change for the Yivi app until irmamobile
+// is updated to match. irmamobile mirrors this list as the Dart enum
+// CredentialFormat (yivi_core/lib/src/models/log_entry.dart), and the decoders
+// json_serializable generates for it take no unknownValue: an unlisted string
+// throws out of fromJson and takes the whole event payload with it, not just
+// the one field. So a format the app does not know is not a credential it skips,
+// it is a screen that fails to build.
 type CredentialFormat string
 
 const (

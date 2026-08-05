@@ -156,6 +156,13 @@ func ecdsaPublicKeyFromCOSE(k COSEKey) (*ecdsa.PublicKey, error) {
 // and returns the ecdsa type the rest of this package works with.
 func ecdsaPublicKeyFromCoordinates(x, y *big.Int) (*ecdsa.PublicKey, error) {
 	curve := elliptic.P256()
+	// FillBytes panics rather than erroring when the value does not fit the
+	// destination buffer, so an over-wide coordinate has to be rejected before
+	// it gets there. These coordinates come off the wire, and the callers'
+	// contract is to fail the key rather than the process.
+	if x.BitLen() > curve.Params().BitSize || y.BitLen() > curve.Params().BitSize {
+		return nil, fmt.Errorf("coordinate wider than P-256: x=%d bits, y=%d bits", x.BitLen(), y.BitLen())
+	}
 	byteLen := (curve.Params().BitSize + 7) / 8 // 32 for P-256
 	uncompressed := make([]byte, 1+2*byteLen)
 	uncompressed[0] = 4
