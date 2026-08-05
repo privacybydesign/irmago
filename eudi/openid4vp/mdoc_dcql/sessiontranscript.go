@@ -17,9 +17,9 @@ import (
 // key to thumbprint, hence the CBOR null in HandoverInfo below.
 //
 // Construction (matches Multipaz's vpSessionTranscript in
-// org.multipaz.verification.VerificationUtil, cross-checked against the
-// local clone at D:\Yivi\multipaz — the AV Blueprint itself only specifies
-// the OpenID4VP request-level requirements, not this byte-level formula):
+// org.multipaz.verification.VerificationUtil — the AV Blueprint itself only
+// specifies the OpenID4VP request-level requirements, not this byte-level
+// formula):
 //
 //	HandoverInfo      = [clientId, nonce, null, responseUri]
 //	Handover          = ["OpenID4VPHandover", SHA-256(CBOR(HandoverInfo))]
