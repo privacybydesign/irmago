@@ -414,6 +414,56 @@ func TestGetCredentialMetadataList_IssuerLogoOnNonFirstDisplay(t *testing.T) {
 	require.NotNil(t, result[0].Issuer.Image, "issuer logo must resolve even when it's not on the first display entry")
 }
 
+// ========== missingDisplayMetadataReason ==========
+
+func TestMissingDisplayMetadataReason(t *testing.T) {
+	display := metadata.CredentialDisplays{{Display: metadata.Display{Name: "Age Verification"}}}
+	claims := []metadata.ClaimsDescription{{Path: metadata.ClaimsPathPointer{"eu.europa.ec.av.1", "age_over_18"}}}
+
+	t.Run("configuration absent names the configuration id", func(t *testing.T) {
+		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{}, false)
+
+		require.Contains(t, reason, "av-config")
+		require.Contains(t, reason, "advertises no credential configuration")
+	})
+
+	t.Run("configuration without credential_metadata points at the draft shape", func(t *testing.T) {
+		// What an issuer emitting display/claims directly on the configuration looks
+		// like from here — the field is simply absent, so nothing is read.
+		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{
+			Format: metadata.CredentialFormatIdentifier_MsoMdoc,
+		}, true)
+
+		require.Contains(t, reason, "no credential_metadata")
+		require.Contains(t, reason, "older OID4VCI draft")
+	})
+
+	t.Run("credential_metadata without display entries", func(t *testing.T) {
+		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{
+			CredentialMetadata: &metadata.CredentialMetadata{Claims: claims},
+		}, true)
+
+		require.Contains(t, reason, "no display entries")
+	})
+
+	t.Run("display without claims costs the attribute labels only", func(t *testing.T) {
+		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{
+			CredentialMetadata: &metadata.CredentialMetadata{Display: display},
+		}, true)
+
+		require.Contains(t, reason, "no claims")
+		require.Contains(t, reason, "without labels")
+	})
+
+	t.Run("complete display metadata reports nothing", func(t *testing.T) {
+		reason := missingDisplayMetadataReason("av-config", metadata.CredentialConfiguration{
+			CredentialMetadata: &metadata.CredentialMetadata{Display: display, Claims: claims},
+		}, true)
+
+		require.Empty(t, reason)
+	})
+}
+
 // ========== VerifyAndStoreIssuedCredentials ==========
 
 func TestVerifyAndStoreIssuedCredentials_EmptySlice(t *testing.T) {

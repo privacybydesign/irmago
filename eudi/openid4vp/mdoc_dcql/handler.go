@@ -15,6 +15,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi"
 	stdmdoc "github.com/privacybydesign/irmago/eudi/credentials/mdoc"
 	"github.com/privacybydesign/irmago/eudi/openid4vp/dcql"
 	"github.com/privacybydesign/irmago/eudi/services"
@@ -457,10 +458,25 @@ func credentialDisplayName(batch *models.CredentialBatch, locale string) string 
 // metadata. mdoc claim paths are always exactly [namespace, elementIdentifier],
 // so no wildcard handling is ever needed here, unlike eudi_sdjwt_dcql's
 // generic claimPathMatchesMetadataPath-based version.
+//
+// A bare [elementIdentifier] path is accepted as a fallback, because the stored
+// path is whatever the issuer published: convertCredentialMetadata writes
+// credential_metadata.claims[].path through verbatim, and the AV profile
+// specifies no display metadata at all, so nothing obliges an issuer to use the
+// two-component form. Without the fallback a one-component path matches nothing
+// and the attribute silently renders with no label — no error, no log, and the
+// credential's own name still resolving, which is a hard failure to attribute to
+// the issuer's metadata. The fallback only applies once the exact match has been
+// ruled out across every claim, so a correctly published path always wins.
 func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifier string, locale string) *string {
 	if batch.CredentialMetadata == nil {
 		return nil
 	}
+
+	// Display rows of the first bare-element path matching this element, used
+	// only if no exact [namespace, elementIdentifier] path matches.
+	var fallbackDisplay []models.ClaimDisplay
+
 	for _, claim := range batch.CredentialMetadata.Claims {
 		if len(claim.Display) == 0 {
 			continue
@@ -469,13 +485,52 @@ func claimDisplayName(batch *models.CredentialBatch, namespace, elementIdentifie
 		if err := json.Unmarshal(claim.Path, &path); err != nil {
 			continue
 		}
-		ns, el, ok := mdocPathParts(path)
-		if !ok || ns != namespace || el != elementIdentifier {
+
+		if ns, el, ok := mdocPathParts(path); ok {
+			if ns == namespace && el == elementIdentifier {
+				return resolveClaimName(claim.Display, locale)
+			}
 			continue
 		}
-		if ts := services.ClaimNamesByLanguage(claim.Display); len(ts) > 0 {
-			return clientmodels.ResolvePtr(ts, locale)
+
+		if el, ok := bareElementPath(path); ok && el == elementIdentifier && fallbackDisplay == nil {
+			fallbackDisplay = claim.Display
 		}
+	}
+
+	if fallbackDisplay == nil {
+		return nil
+	}
+
+	// Worth a warning rather than a silent recovery: the label is only rendered
+	// because the wallet guessed the namespace the issuer left out, and the fix
+	// belongs in the issuer's metadata.
+	eudi.Logger.Warnf(
+		"credential %q labels claim %q with a one-component path [%q]; mdoc claim paths should be [%q, %q]",
+		batch.VerifiableCredentialType, elementIdentifier, elementIdentifier, namespace, elementIdentifier)
+
+	return resolveClaimName(fallbackDisplay, locale)
+}
+
+// bareElementPath reports the element identifier of a one-component claim path,
+// the shape an issuer publishes when it treats an mdoc element like a flat
+// SD-JWT claim name.
+func bareElementPath(path []any) (elementIdentifier string, ok bool) {
+	if len(path) != 1 {
+		return "", false
+	}
+	el, isString := path[0].(string)
+	if !isString {
+		return "", false
+	}
+	return el, true
+}
+
+// resolveClaimName resolves the locale-appropriate name out of a claim's display
+// rows, yielding nil when the rows carry no usable name.
+func resolveClaimName(display []models.ClaimDisplay, locale string) *string {
+	if ts := services.ClaimNamesByLanguage(display); len(ts) > 0 {
+		return clientmodels.ResolvePtr(ts, locale)
 	}
 	return nil
 }

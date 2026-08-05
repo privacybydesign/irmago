@@ -227,7 +227,16 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	// metadata, which degrades to empty rather than making a verified credential
 	// unstorable. The batch's Format deliberately does not come from here — see
 	// below.
-	credentialConfiguration := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
+	credentialConfiguration, credentialConfigurationFound := issuerMetadata.CredentialConfigurationsSupported[credentialConfigurationId]
+
+	// Say so when the credential is going to have no display text. Without this the
+	// degradation above is entirely silent: the wallet renders the raw vct/docType
+	// in its place, and nothing records whether the issuer's metadata lacked the
+	// configuration, lacked credential_metadata within it, or carried no display
+	// entries — three issuer-side causes that look identical from the app.
+	if reason := missingDisplayMetadataReason(credentialConfigurationId, credentialConfiguration, credentialConfigurationFound); reason != "" {
+		eudi.Logger.Warnf("credential from issuer %q will render as its raw type %q: %s", first.IssuerURL, first.VerifiableCredentialType, reason)
+	}
 
 	batch := &models.CredentialBatch{
 		IssuerURL:                first.IssuerURL,
@@ -376,6 +385,35 @@ func buildInstances(parsedCredentials []*ParsedCredential) []models.IssuedCreden
 func hashGeneric(credType string, resolvedClaimsBytes []byte) (string, error) {
 	combined := append([]byte(credType), resolvedClaimsBytes...)
 	return fmt.Sprintf("%x", sha256.Sum256(combined)), nil
+}
+
+// missingDisplayMetadataReason explains why a credential stored against this
+// configuration will have no display text, or returns "" when the configuration
+// carries display metadata.
+//
+// The reasons are distinct problems with distinct fixes, which is why they are
+// worth telling apart rather than reporting as one "no display" case:
+//   - the configuration is absent, so the offer's credential_configuration_id does
+//     not match any key the issuer advertises;
+//   - the configuration has no credential_metadata, which is what an issuer
+//     emitting an older OID4VCI draft looks like from here — those place display
+//     and claims directly on the configuration, while metadata.CredentialConfiguration
+//     reads them only from the nested credential_metadata object;
+//   - the metadata is present but empty, so the issuer genuinely advertises no
+//     display text (or no per-claim text, which costs the attribute labels rather
+//     than the credential name).
+func missingDisplayMetadataReason(configID string, config metadata.CredentialConfiguration, configFound bool) string {
+	switch {
+	case !configFound:
+		return fmt.Sprintf("the issuer advertises no credential configuration %q", configID)
+	case config.CredentialMetadata == nil:
+		return fmt.Sprintf("configuration %q carries no credential_metadata (an issuer using an older OID4VCI draft puts display and claims on the configuration itself, which is not read)", configID)
+	case len(config.CredentialMetadata.Display) == 0:
+		return fmt.Sprintf("configuration %q carries credential_metadata with no display entries", configID)
+	case len(config.CredentialMetadata.Claims) == 0:
+		return fmt.Sprintf("configuration %q carries no claims, so its attributes will render without labels", configID)
+	}
+	return ""
 }
 
 func convertCredentialMetadata(config metadata.CredentialConfiguration) *models.CredentialMetadata {

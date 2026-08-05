@@ -120,6 +120,18 @@ When the databases and MailHog are running, the tests can be run using:
 * The option `./...` makes sure all tests are run. You can also limit the number of tests by only running the tests from a single directory or even from a single file, for example only running all tests in the directory `./internal/sessiontest`. When you only want to execute one single test, for example the `TestDisclosureSession` test, you can do this by adding the option `-run TestDisclosureSession`.
 * The option `-p 1` is necessary to prevent parallel execution of tests. Most tests use file manipulation and therefore tests can interfere.
 
+### Trusting the test TLS certificate
+
+Some EUDI tests reach the veramo issuer and the EUDI Python PID issuer through the
+`tls_proxy` service over HTTPS on ports 8443–8445. Their certificate is the self-signed
+`testdata/configurations/certs/localhost.crt`, so a `go test` run on the host must trust
+it: that directory's README gives the Linux command, and on macOS or Windows it has to go
+into the platform's own trust store. Without it these tests fail on
+`tls: failed to verify certificate: x509: certificate signed by unknown authority`
+rather than being skipped; the whole `TestSessionHandler/openid4vp/sdjwtvc` group goes red
+this way. Running the tests in Docker (`docker-compose run test`, below) needs no setup:
+that service installs the certificate into its own trust store before running.
+
 ### Running without Docker
 
 If installing Docker or Docker alternatives is not an option for you, then you can exclude all tests that use those by additionally passing `--tags=local_tests`:

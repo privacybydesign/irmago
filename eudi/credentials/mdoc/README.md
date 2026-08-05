@@ -124,7 +124,6 @@ monolithic test file:
 | `deviceresponse_test.go` | `TestVerifyDeviceResponseRejectsMissingDeviceSigned` | A document without `DeviceSigned` attached is rejected with a descriptive error, not a nil-dereference panic |
 | `deviceresponse_test.go` | `TestNewDeviceResponseSupportsMultipleDocuments` | A `DeviceResponse` bundling two distinct holders' documents from the same issuer verifies each document independently and correctly |
 | `deviceresponse_test.go` | `TestDeviceAuthSignatureEncodesInline` | `DeviceAuth.DeviceSignature` embeds as structured CBOR (`cbor.RawMessage`), not as an opaque re-encoded byte string |
-
 | `wireformat_test.go` | `TestWireIssuerAuthIsBareCoseSign1Array`, `TestWireIssuerSignedItemsAreTag24`, `TestWireDeviceSignedShape`, `TestWireRoundTripsThroughGenericCBOR`, `TestVerifierAcceptsTaggedCoseSign1` | Decodes a real `DeviceResponse` **generically** — into `any`, never this package's structs, since a round trip through the same types cannot detect a wrong shape — and asserts the ISO 18013-5 encoding at each position, plus that the frozen item bytes survive the round trip and the document still verifies |
 | `verifier_doctype_test.go` | `TestTamperedEnvelopeDocTypeIsRejectedByVerify`, `…AtIssuanceVerification`, `TestVerifierRequestedDocTypeMustMatchSignedMSO`, `TestSignedDocTypeIsReportedNotTheEnvelopeValue` | The unsigned envelope `docType` must equal the signed `MSO.docType`, at every entry point that reports or consumes one |
 
@@ -146,6 +145,8 @@ Tests for the protocol layers live with the code they cover, not here:
 | `eudi/services/credential_service_test.go` | `TestBuildMdocAttributesFromResolvedClaims_OrdersAndConvertsDisplayNames`, `…_NoMetadataStillEmitsValues` — permission-dialog attribute building |
 | `eudi/openid4vci/metadata_validators_test.go` | `mso_mdoc` accepted as a supported credential format, and `credential_signing_alg_values_supported` validated as COSE algorithm identifiers — ES256 (`-7`) required, an identifier ISO 18013-5 permits but this wallet cannot verify distinguished from one it does not permit at all |
 | `eudi/storage/db/credential_store_test.go` | `GetBatchesByDocType` against an `mso_mdoc` batch |
+| `eudi/openid4vp/mdoc_age_verification_test.go` | `TestOpenID4VP_MdocAgeVerification` — the EU Age Verification profile (`eu.europa.ec.av.1`) across the two stages that decide a presentation and fail independently: whether the relying party is authorized to ask (its certificate's authorized sets, via the real `SchemeQueryValidator`) and whether the wallet can answer (a genuinely issued mdoc in storage, matched by `mdoc_dcql`). Also pins display-name resolution, including from the one-component claim path an issuer may publish |
+| `internal/sessiontest/openid4vp_mdoc_av_disclosure_test.go` | `TestSessionHandler/openid4vp/mdoc-av` — the only mdoc disclosure that runs end to end against a real verifier (the EU reference `eudi-srv-web-verifier-endpoint` container): DCQL matching, the device-signed `DeviceResponse`, and the verifier accepting it, with the returned `vp_token` decoded from CBOR and its Tag-24 items unwrapped. A second subtest asks for an unauthorized docType and requires the refusal, so the passing case cannot pass by a skipped authorization check |
 
 ### `decode/` — standalone CBOR/COSE inspector
 

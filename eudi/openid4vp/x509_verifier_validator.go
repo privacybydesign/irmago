@@ -50,16 +50,36 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 		return nil, nil, nil, fmt.Errorf("failed to get end-entity certificate from x5c header: %v", err)
 	}
 
+	// What the verifier is authorized to ask for comes from its certificate
+	// alone, and is decided independently of how the verifier is displayed.
+	//
+	// A Yivi issued certificate carries the relying party's authorized attribute
+	// sets in its scheme extension, and a query outside those sets has to be
+	// refused however the verifier chooses to present itself. This check used to
+	// share one if/else-if chain with the display name below, which made it
+	// skippable: a request carrying client_metadata.client_name took the first
+	// branch, so the certificate's authorization was never read and every query
+	// was accepted — a verifier could widen its own authorization just by naming
+	// itself in the request it signs.
+	//
+	// TODO: we'll need to figure out if/how we want to authorize on attribute level when we're dealing with a non-Yivi issued certificate. For now, we only support that functionality for Yivi issued certificates, and we authorize all attribute for certificates issued by third parties.
+	certRequestorInfo, certSchemeErr := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert)
+	if certSchemeErr == nil {
+		queryValidator := v.validatorFactory.CreateQueryValidator(&certRequestorInfo.RelyingParty)
+		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
+		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
+		}
+	}
+
 	// Try to get verifier metadata in order:
 	// 1. From the verifier metadata in the authorization request (if present)
 	// 2. From the certificate OID (if it's a Yivi issued certificate)
 	// 3. Use the CN from the certificate, without a logo, as a fallback (if all else fails)
-
 	requestorInfo := &scheme.RelyingPartyRequestor{}
 
-	// TODO: we'll need to figure out if/how we want to authorize on attribute level when we're dealing with a non-Yivi issued certificate. For now, we only support that functionality for Yivi issued certificates, and we authorize all attribute for certificates issued by third parties.
-
-	if authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil {
+	switch {
+	case authRequest.ClientMetadata != nil && authRequest.ClientMetadata.ClientName != nil:
 		requestorInfo.Organization.LegalName = map[string]string{"en": *authRequest.ClientMetadata.ClientName}
 
 		if authRequest.ClientMetadata.LogoUri != nil {
@@ -74,17 +94,13 @@ func (v *RequestorCertificateStoreVerifierValidator) ParseAndVerifyAuthorization
 				}
 			}
 		}
-	} else if info, err := utils.GetRequestorInfoFromCertificate[scheme.RelyingPartyRequestor](leafCert); err == nil {
-		// Try to get the requestor info from the certificate. If this fails, most likely the certificate is not a Yivi issued certificate, and we'll fall back to the CN in the certificate
-		requestorInfo = info
 
-		// If the certificate is a Yivi issued certificate, we also validate the credential queries in the authorization request against the requestor's allowed queries in the certificate. This ensures that the verifier is only requesting credentials that it is authorized to request.
-		queryValidator := v.validatorFactory.CreateQueryValidator(&requestorInfo.RelyingParty)
-		credQueries := dcqlQueryToCredentialQueryInfos(authRequest.DcqlQuery)
-		if err := queryValidator.ValidateCredentialQueries(credQueries); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to verify queried credentials: %v", err)
-		}
-	} else {
+	case certSchemeErr == nil:
+		requestorInfo = certRequestorInfo
+
+	default:
+		// Reading the requestor info from the certificate failed, so most likely it is
+		// not a Yivi issued certificate and we fall back to the CN in the certificate.
 		requestorInfo.Organization.LegalName = map[string]string{"en": leafCert.Subject.CommonName}
 	}
 

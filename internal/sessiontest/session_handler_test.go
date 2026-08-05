@@ -8,6 +8,7 @@ import (
 func TestSessionHandler(t *testing.T) {
 	t.Run("openid4vp/irma-sdjwt", testSessionHandlerForOpenID4VPWithIrmaSdJwts)
 	t.Run("openid4vp/sdjwtvc", testSessionHandlerForOpenID4VPWithSdJwtVcs)
+	t.Run("openid4vp/mdoc-av", testSessionHandlerForOpenID4VPWithMdocAv)
 	t.Run("openid4vci/sdjwtvc/pre-authorized", testSessionHandlerForOpenID4VCIPreAuth)
 	t.Run("openid4vci/sdjwtvc/status-list", testSessionHandlerForOpenID4VCIStatusList)
 	t.Run("openid4vci/sdjwtvc/auth-code", testSessionHandlerForOpenID4VCIAuthCode)
