@@ -1003,3 +1003,28 @@ func TestIsHttpVct(t *testing.T) {
 		assert.Equal(t, c.want, isHttpVct(c.vct), "vct=%q", c.vct)
 	}
 }
+
+// A stored SD-JWT-secured VCDM batch (vc+sd-jwt, #682) must never be offered
+// for a dc+sd-jwt DCQL query — not even when the verifier echoes the batch's
+// composite type identity as a vct value.
+func TestFindCandidates_VcdmBatchExcluded(t *testing.T) {
+	h, store := newTestHandler(t)
+
+	typeIdentity := "https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential"
+	batch := newTestBatch("hash-vcdm", typeIdentity, map[string]any{
+		"credentialSubject": map[string]any{"email": "test@example.com"},
+	})
+	batch.Format = models.CredentialFormatSdJwtVcdm
+	require.NoError(t, store.StoreBatch(batch))
+
+	query := parseDcqlQuery(t, `{
+		"id": "q1",
+		"format": "dc+sd-jwt",
+		"meta": {"vct_values": ["https://www.w3.org/ns/credentials/v2 VerifiableCredential ExampleCredential"]},
+		"claims": [{"path": ["credentialSubject", "email"]}]
+	}`)
+
+	result, err := h.FindCandidates(query)
+	require.NoError(t, err)
+	assert.Empty(t, result.OwnedCandidates, "an SD-JWT-secured VCDM batch is not a dc+sd-jwt candidate")
+}

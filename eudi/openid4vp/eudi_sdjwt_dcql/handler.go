@@ -387,6 +387,13 @@ func (h *SdJwtVcDcqlHandler) findBatches(query dcql.CredentialQuery) ([]*models.
 	}
 	var filtered []*models.CredentialBatch
 	for _, batch := range allBatches {
+		// This handler serves the IETF SD-JWT VC (dc+sd-jwt) format only. A
+		// stored SD-JWT-secured VCDM batch (vc+sd-jwt) must not be matched to
+		// a dc+sd-jwt DCQL query, even when a verifier echoes its composite
+		// type identity as a vct value.
+		if batch.Format != models.CredentialFormatSdJwtVc {
+			continue
+		}
 		if _, ok := vctSet[batch.VerifiableCredentialType]; ok {
 			filtered = append(filtered, batch)
 		}

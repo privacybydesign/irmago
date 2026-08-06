@@ -14,6 +14,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/statuslist"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/sdjwt"
 	"github.com/privacybydesign/irmago/eudi/storage/db"
@@ -28,6 +30,17 @@ type CredentialService interface {
 	GetCredentialMetadataList() ([]*clientmodels.Credential, error)
 	VerifyAndStoreIssuedCredentials(
 		verifiedSdJwtVcs []*sdjwtvc.VerifiedSdJwtVc,
+		credentialConfigurationId string,
+		metadata metadata.CredentialIssuerMetadata,
+		requireCryptographicKeyBinding bool,
+		publicKeyIdentifiers []models.PublicHolderBindingKey,
+	) error
+
+	// VerifyAndStoreIssuedVcdmCredentials is the SD-JWT-secured W3C VCDM
+	// counterpart of VerifyAndStoreIssuedCredentials; see the implementation
+	// for the storage model (#679).
+	VerifyAndStoreIssuedVcdmCredentials(
+		verified []*vcdmsdjwt.VerifiedSdJwtVcdm,
 		credentialConfigurationId string,
 		metadata metadata.CredentialIssuerMetadata,
 		requireCryptographicKeyBinding bool,
@@ -98,7 +111,15 @@ func (s *credentialService) GetCredentialMetadataList() ([]*clientmodels.Credent
 		issuerName := display.IssuerName
 		credentialName := display.CredentialName
 
-		attrs := BuildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
+		// The claim tree is rooted differently per data model (#679): VCDM
+		// attributes live under the document's credentialSubject, SD-JWT VC
+		// attributes are the payload's top-level non-registered claims.
+		var attrs []clientmodels.Attribute
+		if batch.Format == models.CredentialFormatSdJwtVcdm && processedSdJwtPayload != nil {
+			attrs = BuildAttributesFromVcdmDocument(vcdm.Document(*processedSdJwtPayload), display.ClaimNames, display.ClaimOrder)
+		} else {
+			attrs = BuildAttributesFromPayload(processedSdJwtPayload, display.ClaimNames, display.ClaimOrder)
+		}
 
 		var iat, exp *int64
 		if batch.ExpiresAt.Valid {
@@ -203,8 +224,12 @@ func (s *credentialService) VerifyAndStoreIssuedCredentials(
 	// mismatch aborts the issuance without deleting the user's existing batch.
 	var matchedKeyIDs []datatypes.UUID
 	if requireCryptographicKeyBinding {
+		cnfs := make([]*sdjwt.CnfField, len(verifiedSdJwtVcs))
+		for i, v := range verifiedSdJwtVcs {
+			cnfs[i] = v.IssuerSignedJwtPayload.Confirm
+		}
 		var err error
-		matchedKeyIDs, err = matchAllHolderBindingKeys(verifiedSdJwtVcs, publicKeyIdentifiers)
+		matchedKeyIDs, err = matchAllHolderBindingKeys(cnfs, publicKeyIdentifiers)
 		if err != nil {
 			s.deleteOrphanedKeys(publicKeyIdentifiers)
 			return err
@@ -270,13 +295,22 @@ func (s *credentialService) computeHashAndDeleteExisting(vc *sdjwtvc.VerifiedSdJ
 
 	// If a batch with this hash already exists, delete it so the new issuance
 	// replaces it (e.g. with updated timestamps or a fresh holder binding key).
-	if existing, err := s.credentialStore.GetBatchByHash(hash); err == nil {
-		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
-			return "", nil, fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
-		}
+	if err := s.deleteExistingBatchByHash(hash); err != nil {
+		return "", nil, err
 	}
 
 	return hash, processedPayload, nil
+}
+
+// deleteExistingBatchByHash deletes a stored batch with the given hash, if
+// any, so a re-issuance of the same logical credential replaces it.
+func (s *credentialService) deleteExistingBatchByHash(hash string) error {
+	if existing, err := s.credentialStore.GetBatchByHash(hash); err == nil {
+		if err := s.credentialStore.DeleteBatch(existing.ID); err != nil {
+			return fmt.Errorf("failed to delete existing batch before re-issuance: %w", err)
+		}
+	}
+	return nil
 }
 
 // statusReferenceOf returns the credential's Token Status List reference, or
@@ -399,7 +433,7 @@ func convertCredentialMetadata(config metadata.CredentialConfiguration) *models.
 // holder binding key. Returns an error if any credential cannot be matched,
 // ensuring the caller can abort before any side effects.
 func matchAllHolderBindingKeys(
-	vcs []*sdjwtvc.VerifiedSdJwtVc,
+	cnfs []*sdjwt.CnfField,
 	publicKeyIdentifiers []models.PublicHolderBindingKey,
 ) ([]datatypes.UUID, error) {
 	keyByThumbprint := map[string]datatypes.UUID{}
@@ -413,9 +447,8 @@ func matchAllHolderBindingKeys(
 		}
 	}
 
-	result := make([]datatypes.UUID, len(vcs))
-	for i, v := range vcs {
-		cnf := v.IssuerSignedJwtPayload.Confirm
+	result := make([]datatypes.UUID, len(cnfs))
+	for i, cnf := range cnfs {
 		if cnf == nil {
 			return nil, fmt.Errorf("credential %d requires holder binding but has no cnf claim", i)
 		}

@@ -16,6 +16,8 @@ import (
 	"github.com/privacybydesign/irmago/eudi"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc"
 	"github.com/privacybydesign/irmago/eudi/credentials/sdjwtvc/typemetadata"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdm"
+	"github.com/privacybydesign/irmago/eudi/credentials/vcdmsdjwt"
 	"github.com/privacybydesign/irmago/eudi/metadata"
 	"github.com/privacybydesign/irmago/eudi/services"
 )
@@ -31,6 +33,11 @@ type Client struct {
 	httpClient     *http.Client
 	currentSession *session
 	holderVerifier *sdjwtvc.HolderVerificationProcessor
+
+	// vcdmHolderVerifier verifies received SD-JWT-secured VCDM credentials;
+	// received credentials are routed between it and holderVerifier by data
+	// model (see session.obtainCredential).
+	vcdmHolderVerifier *vcdmsdjwt.HolderVerificationProcessor
 
 	credentialService services.CredentialService
 
@@ -55,6 +62,7 @@ type Client struct {
 func NewClient(httpClient *http.Client,
 	config *eudi.Configuration,
 	holderVerifier *sdjwtvc.HolderVerificationProcessor,
+	vcdmHolderVerifier *vcdmsdjwt.HolderVerificationProcessor,
 	credentialService services.CredentialService,
 	holderKeyBinder HolderKeyBinder,
 	currentLocale *clientmodels.CurrentLocale,
@@ -66,18 +74,20 @@ func NewClient(httpClient *http.Client,
 		return nil, fmt.Errorf("holderKeyBinder cannot be nil")
 	}
 	return &Client{
-		httpClient:        httpClient,
-		Configuration:     config,
-		holderVerifier:    holderVerifier,
-		credentialService: credentialService,
-		holderKeyBinder:   holderKeyBinder,
-		currentLocale:     currentLocale,
+		httpClient:         httpClient,
+		Configuration:      config,
+		holderVerifier:     holderVerifier,
+		vcdmHolderVerifier: vcdmHolderVerifier,
+		credentialService:  credentialService,
+		holderKeyBinder:    holderKeyBinder,
+		currentLocale:      currentLocale,
 	}, nil
 }
 
 func (client *Client) AllowInsecureHttpForTesting() {
 	client.allowInsecureHttp = true
 	client.holderVerifier.SetAllowInsecureDidWeb(true)
+	client.vcdmHolderVerifier.SetAllowInsecureDidWeb(true)
 }
 
 // NewSession starts an OpenID4VCI issuance session. `redirectUri` is the OAuth
@@ -176,6 +186,7 @@ func (client *Client) handleCredentialOffer(
 		handler:                    handler,
 		httpClient:                 client.httpClient,
 		holderVerifier:             client.holderVerifier,
+		vcdmHolderVerifier:         client.vcdmHolderVerifier,
 		holderKeyBinder:            client.holderKeyBinder,
 		storage:                    client.Configuration.Storage,
 		credentialService:          client.credentialService,
@@ -374,8 +385,9 @@ func (client *Client) convertToCredentialInfoList(
 	result := make([]*clientmodels.CredentialDescriptor, 0, len(requestedCredentialConfigs))
 	for _, configID := range requestedCredentialConfigs {
 		if config, ok := credentialIssuerMetadata.CredentialConfigurationsSupported[configID]; ok {
-			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
-				// We only support SD-JWT VCs for now
+			if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
+				config.Format != metadata.CredentialFormatIdentifier_SdJwtVcdm {
+				// We only support the SD-JWT-secured formats for now
 				continue
 			}
 
@@ -393,7 +405,7 @@ func (client *Client) convertToCredentialInfoList(
 				metadata.LogoURIsByLanguage(config.CredentialMetadata.Display), locale)
 
 			result = append(result, &clientmodels.CredentialDescriptor{
-				CredentialId: config.VerifiableCredentialType,
+				CredentialId: credentialConfigurationTypeIdentity(config),
 				Name:         name,
 				Issuer: clientmodels.TrustedParty{
 					Name: issuerName,
@@ -404,6 +416,22 @@ func (client *Client) convertToCredentialInfoList(
 		}
 	}
 	return result, nil
+}
+
+// credentialConfigurationTypeIdentity returns the credential type identity a
+// configuration advertises: the `vct` for an IETF SD-JWT VC, or the
+// @context+type composite for an SD-JWT-secured VCDM credential (either format
+// id; a `dc+sd-jwt` configuration is content-dispatched, #678/#683). This is
+// display-only: after issuance the verified credential's own type claims are
+// authoritative (see buildOfferedCredentials).
+func credentialConfigurationTypeIdentity(config metadata.CredentialConfiguration) string {
+	if config.VerifiableCredentialType != "" {
+		return config.VerifiableCredentialType
+	}
+	if config.CredentialDefinition != nil {
+		return vcdm.TypeIdentity(config.CredentialDefinition.Context, config.CredentialDefinition.Type)
+	}
+	return ""
 }
 
 func convertClaimsToAttributes(claims []metadata.ClaimsDescription, locale string) []clientmodels.Attribute {
@@ -502,8 +530,10 @@ func (client *Client) resolveCredentialMetadataFromVct(
 		if !ok {
 			continue
 		}
-		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc &&
-			config.Format != metadata.CredentialFormatIdentifier_SdJwtVc_Legacy {
+		// VCT type metadata only exists for the IETF SD-JWT VC data model; an
+		// SD-JWT-secured VCDM configuration (`vc+sd-jwt`, or a VCDM-shaped
+		// `dc+sd-jwt`) has no `vct` and is skipped via vctLooksFetchable below.
+		if config.Format != metadata.CredentialFormatIdentifier_SdJwtVc {
 			continue
 		}
 		// vct can legally be a non-URL string identifier; if so, there's

@@ -3,6 +3,7 @@ package vcdm
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -94,12 +95,7 @@ func (d Document) Types() []string {
 
 // HasType reports whether the credential's `type` includes t.
 func (d Document) HasType(t string) bool {
-	for _, have := range d.Types() {
-		if have == t {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(d.Types(), t)
 }
 
 // ID returns the top-level `id` of the credential, if present as a string.

@@ -1049,3 +1049,143 @@ func TestGetSupportedSignatureAlgorithms(t *testing.T) {
 		})
 	}
 }
+
+// The `vc+sd-jwt` format id denotes an SD-JWT-secured W3C VCDM credential
+// (#678/#683): a VCDM-shaped credential_definition is required and a `vct` is
+// not allowed.
+func TestValidateCredentialConfiguration_SdJwtVcdm(t *testing.T) {
+	vcdmDefinition := &metadata.W3CCredentialDefinition{
+		Context: []string{"https://www.w3.org/ns/credentials/v2"},
+		Type:    []string{"VerifiableCredential", "ExampleCredential"},
+	}
+
+	tests := []struct {
+		name        string
+		config      metadata.CredentialConfiguration
+		expectedErr string
+	}{
+		{
+			name: "valid VCDM configuration",
+			config: metadata.CredentialConfiguration{
+				Format:               metadata.CredentialFormatIdentifier_SdJwtVcdm,
+				CredentialDefinition: vcdmDefinition,
+			},
+		},
+		{
+			name: "credential_definition without @context is valid",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVcdm,
+				CredentialDefinition: &metadata.W3CCredentialDefinition{
+					Type: []string{"VerifiableCredential", "ExampleCredential"},
+				},
+			},
+		},
+		{
+			name: "vct is not allowed",
+			config: metadata.CredentialConfiguration{
+				Format:                   metadata.CredentialFormatIdentifier_SdJwtVcdm,
+				CredentialDefinition:     vcdmDefinition,
+				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+			},
+			expectedErr: "'vct' is not allowed for SD-JWT-secured VCDM credential format",
+		},
+		{
+			name: "credential_definition is required",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVcdm,
+			},
+			expectedErr: "missing 'credential_definition' for SD-JWT-secured VCDM credential format",
+		},
+		{
+			name: "type must include VerifiableCredential",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVcdm,
+				CredentialDefinition: &metadata.W3CCredentialDefinition{
+					Type: []string{"ExampleCredential"},
+				},
+			},
+			expectedErr: `'credential_definition.type' must include "VerifiableCredential" for SD-JWT-secured VCDM credential format`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := CredentialConfigurationValidator{}
+			err := validator.Verify(&tt.config)
+			if tt.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, tt.expectedErr)
+			}
+		})
+	}
+}
+
+// A `dc+sd-jwt` configuration is content-dispatched (#678/#683): a `vct`
+// routes to the IETF SD-JWT VC verifier, a credential_definition without
+// `vct` routes to the VCDM verifier, and neither is rejected by the SD-JWT VC
+// verifier's vct requirement.
+func TestValidateCredentialConfiguration_DcSdJwtContentDispatch(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      metadata.CredentialConfiguration
+		expectedErr string
+	}{
+		{
+			name: "vct routes to the SD-JWT VC verifier",
+			config: metadata.CredentialConfiguration{
+				Format:                   metadata.CredentialFormatIdentifier_SdJwtVc,
+				VerifiableCredentialType: "https://issuer.example.com/credential/my-type",
+			},
+		},
+		{
+			name: "credential_definition routes to the VCDM verifier",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
+				CredentialDefinition: &metadata.W3CCredentialDefinition{
+					Type: []string{"VerifiableCredential", "ExampleCredential"},
+				},
+			},
+		},
+		{
+			name: "credential_definition missing VerifiableCredential is rejected by the VCDM verifier",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
+				CredentialDefinition: &metadata.W3CCredentialDefinition{
+					Type: []string{"ExampleCredential"},
+				},
+			},
+			expectedErr: `'credential_definition.type' must include "VerifiableCredential" for SD-JWT-secured VCDM credential format`,
+		},
+		{
+			name: "neither vct nor credential_definition is rejected",
+			config: metadata.CredentialConfiguration{
+				Format: metadata.CredentialFormatIdentifier_SdJwtVc,
+			},
+			expectedErr: "missing 'vct' field for SD-JWT VC credential format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := CredentialConfigurationValidator{}
+			err := validator.Verify(&tt.config)
+			if tt.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, tt.expectedErr)
+			}
+		})
+	}
+}
+
+func TestValidateSupportedFeatures_SdJwtVcdmIsSupported(t *testing.T) {
+	validator := CredentialConfigurationValidator{}
+	err := validator.ValidateSupportedFeatures(&metadata.CredentialConfiguration{
+		Format: metadata.CredentialFormatIdentifier_SdJwtVcdm,
+		CredentialDefinition: &metadata.W3CCredentialDefinition{
+			Type: []string{"VerifiableCredential", "ExampleCredential"},
+		},
+	})
+	require.NoError(t, err)
+}
