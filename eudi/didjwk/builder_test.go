@@ -190,6 +190,21 @@ func Test_Resolve_Given_SymmetricKey_ReturnsError(t *testing.T) {
 	require.ErrorContains(t, err, "requires an asymmetric public key")
 }
 
+func Test_Resolve_Given_PaddedBase64_ReturnsError(t *testing.T) {
+	// The spec's syntax is "base64url-value := [A-Za-z0-9_-]+", so the "=" of a padded
+	// encoding is not part of a did:jwk. The JWK below is 79 bytes, which pads.
+	const jwkJson = `{"crv":"Ed25519","kty":"OKP","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}`
+	padded := Prefix + base64.URLEncoding.EncodeToString([]byte(jwkJson))
+	require.Contains(t, padded, "=", "test needs an input that actually pads")
+
+	_, err := Resolve(padded)
+	require.ErrorContains(t, err, "failed to base64url-decode did:jwk")
+
+	// The same JWK without padding resolves.
+	_, err = Resolve(encodeDid(jwkJson))
+	require.NoError(t, err)
+}
+
 func Test_Resolve_Given_UnknownFragment_ReturnsError(t *testing.T) {
 	didJwk := encodeDid(`{"crv":"Ed25519","kty":"OKP","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}`)
 
@@ -203,6 +218,22 @@ func Test_Resolve_Given_UnknownFragment_ReturnsError(t *testing.T) {
 
 	_, err = Resolve(didJwk + "#0")
 	require.NoError(t, err)
+}
+
+func Test_ResolveDocument_Given_JwkWithKid_StillReferencesFragmentZero(t *testing.T) {
+	// The spec: "If the JWK contains a `kid` value it is _not_ used as the reference, `#0`
+	// is the only valid value." A DID minted by another party may well carry a `kid`.
+	didJwk := encodeDid(`{"kty":"OKP","crv":"Ed25519","kid":"my-signing-key-2026","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}`)
+
+	doc, err := ResolveDocument(didJwk)
+
+	require.NoError(t, err)
+	require.Equal(t, didJwk+"#0", doc.VerificationMethod[0].ID)
+	require.Equal(t, []did.VerificationRef{did.VerificationRef(didJwk + "#0")}, doc.AssertionMethod)
+
+	// And the JWK's own kid is not accepted as a fragment.
+	_, err = Resolve(didJwk + "#my-signing-key-2026")
+	require.ErrorContains(t, err, `invalid did:jwk fragment "my-signing-key-2026"`)
 }
 
 func Test_ResolveDocument_Given_ForeignMemberOrdering_KeepsTheDidUnchanged(t *testing.T) {
