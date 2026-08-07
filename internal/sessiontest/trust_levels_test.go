@@ -10,6 +10,7 @@ import (
 
 	"github.com/privacybydesign/irmago/client"
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/internal/testkeyshare"
 	"github.com/privacybydesign/irmago/irma"
@@ -21,8 +22,8 @@ import (
 //
 // Each test publishes its own LoTE from an in-process server and points the
 // wallet at it through the construction seam
-// (lote.RecognizedSources, assigned by instantiateClientWithTrustLists), so
-// nothing depends on a published list existing.
+// (client.Config.RecognizedTrustLists, passed by instantiateClientWithTrustLists),
+// so nothing depends on a published list existing.
 //
 // # The parties, and how to give one a rung
 //
@@ -142,7 +143,7 @@ func testVerifierRungsFollowTheList(t *testing.T) {
 
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
 		lote.NewTestEntity("Curated Verifier BV", "",
-			lote.NewTestDidService(lote.ServiceTypeVerifier, verifierDid))))
+			lote.NewTestDidService(trust.RoleVerifier, verifierDid))))
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 
 	listed := discloseToVeramoVerifier(t, c, 3, sessionHandler)
@@ -154,7 +155,7 @@ func testVerifierRungsFollowTheList(t *testing.T) {
 	// Marked on Yivi's own list: Yivi vouching for the party, the top rung.
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 2,
 		lote.NewTestEntity("Curated Verifier BV", "",
-			lote.NewTestDidService(lote.ServiceTypeVerifier, verifierDid, lote.MarkingOnboardedByYivi))))
+			lote.NewTestDidService(trust.RoleVerifier, verifierDid, lote.MarkingOnboardedByYivi))))
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 
 	marked := discloseToVeramoVerifier(t, c, 4, sessionHandler)
@@ -182,7 +183,7 @@ func testDisclosureCandidatesRankTheIssuer(t *testing.T) {
 
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
 		lote.NewTestEntity("Listed Issuer BV", "",
-			lote.NewTestDidService(lote.ServiceTypeIssuer, testIssuerDid))))
+			lote.NewTestDidService(trust.RoleIssuer, testIssuerDid))))
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 
 	require.Equal(t, clientmodels.TrustLevel_Medium, candidateIssuerLevel(t, c, 3, sessionHandler),
@@ -241,7 +242,7 @@ func testStoredCredentialFollowsTheList(t *testing.T) {
 
 	// The issuer is granted on a recognized list, and the wallet fetches it.
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
-		lote.NewTestEntity("Listed Issuer BV", "", lote.NewTestDidService(lote.ServiceTypeIssuer, testIssuerDid))))
+		lote.NewTestEntity("Listed Issuer BV", "", lote.NewTestDidService(trust.RoleIssuer, testIssuerDid))))
 	require.NoError(t, c.RefreshTrustLists(context.Background()))
 
 	require.Equal(t, clientmodels.TrustLevel_Medium, storedIssuerLevel(t, c),
@@ -267,7 +268,7 @@ func testStoredCredentialFollowsTheList(t *testing.T) {
 // side: an entry granting the issuer, carrying no marking, is somebody
 // vouching for the party.
 func testListedIssuerRanksMedium(t *testing.T) {
-	c, sessionHandler := clientWithIssuerList(t, false, lote.NewTestDidService(lote.ServiceTypeIssuer, testIssuerDid))
+	c, sessionHandler := clientWithIssuerList(t, false, lote.NewTestDidService(trust.RoleIssuer, testIssuerDid))
 	defer c.Close()
 
 	requireIssuedAtLevel(t, c, sessionHandler, clientmodels.TrustLevel_Medium)
@@ -278,7 +279,7 @@ func testListedIssuerRanksMedium(t *testing.T) {
 // its scheme certificate would give.
 func testMarkedIssuerRanksHigh(t *testing.T) {
 	c, sessionHandler := clientWithIssuerList(t, true,
-		lote.NewTestDidService(lote.ServiceTypeIssuer, testIssuerDid, lote.MarkingOnboardedByYivi))
+		lote.NewTestDidService(trust.RoleIssuer, testIssuerDid, lote.MarkingOnboardedByYivi))
 	defer c.Close()
 
 	requireIssuedAtLevel(t, c, sessionHandler, clientmodels.TrustLevel_High)
@@ -292,7 +293,7 @@ func testMarkedIssuerRanksHigh(t *testing.T) {
 // condition makes this read high.
 func testForeignMarkingStaysMedium(t *testing.T) {
 	c, sessionHandler := clientWithIssuerList(t, false,
-		lote.NewTestDidService(lote.ServiceTypeIssuer, testIssuerDid, lote.MarkingOnboardedByYivi))
+		lote.NewTestDidService(trust.RoleIssuer, testIssuerDid, lote.MarkingOnboardedByYivi))
 	defer c.Close()
 
 	requireIssuedAtLevel(t, c, sessionHandler, clientmodels.TrustLevel_Medium)
@@ -302,7 +303,7 @@ func testForeignMarkingStaysMedium(t *testing.T) {
 // trust as an issuer: the same party, the same list, the wrong grant.
 func testIssuerListedInTheWrongRoleStaysLow(t *testing.T) {
 	c, sessionHandler := clientWithIssuerList(t, true,
-		lote.NewTestDidService(lote.ServiceTypeVerifier, testIssuerDid, lote.MarkingOnboardedByYivi))
+		lote.NewTestDidService(trust.RoleVerifier, testIssuerDid, lote.MarkingOnboardedByYivi))
 	defer c.Close()
 
 	requireIssuedAtLevel(t, c, sessionHandler, clientmodels.TrustLevel_Low)
@@ -345,7 +346,7 @@ func testOverAskFailsAtTopRung(t *testing.T) {
 	// attributes it may ask for.
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
 		lote.NewTestEntity("Yivi B.V.", "",
-			lote.NewTestCertificateService(lote.ServiceTypeVerifier,
+			lote.NewTestCertificateService(trust.RoleVerifier,
 				signer.NewTestPartyCertificate(t, "unused-party", ""),
 				lote.MarkingOnboardedByYivi))))
 
@@ -410,7 +411,7 @@ func testCertificateKeyingNeedsBothHalves(t *testing.T) {
 			name: "the right key with the wrong legal entity",
 			entry: func(t *testing.T, _ *lote.TestLoteSigner) lote.Entity {
 				return lote.NewTestEntity(curatedName, "VATNL-999999999",
-					lote.NewTestSkiService(lote.ServiceTypeVerifier, verifierLeaf))
+					lote.NewTestSkiService(trust.RoleVerifier, verifierLeaf))
 			},
 		},
 		{
@@ -418,7 +419,7 @@ func testCertificateKeyingNeedsBothHalves(t *testing.T) {
 			entry: func(t *testing.T, signer *lote.TestLoteSigner) lote.Entity {
 				stranger := signer.NewTestPartyCertificate(t, "stranger.example.com", "")
 				return lote.NewTestEntity(curatedName, "",
-					lote.NewTestSkiService(lote.ServiceTypeVerifier, stranger))
+					lote.NewTestSkiService(trust.RoleVerifier, stranger))
 			},
 		},
 	} {
@@ -458,7 +459,7 @@ func testIssuerKeyedOnItsCertificate(t *testing.T) {
 	server := lote.NewTestLoteServer(t)
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
 		lote.NewTestEntity(curatedName, "",
-			lote.NewTestSkiService(lote.ServiceTypeIssuer, eudiPidIssuerLeaf(t)))))
+			lote.NewTestSkiService(trust.RoleIssuer, eudiPidIssuerLeaf(t)))))
 
 	c, _, sessionHandler := instantiateClientWithTrustLists(t, readEudiPidIssuerPyCA(t), "en", signer.RootCert,
 		[]lote.Source{server.Source(testTrustListId, false)})

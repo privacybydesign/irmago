@@ -557,8 +557,8 @@ func TestLogReadDoesNotReResolveTrustLevels(t *testing.T) {
 func TestLogRead_PreFeatureRowsRenderLevelless(t *testing.T) {
 	svc, database := newTestLogServiceOnDB(t, "en")
 
-	// RequestorTrustLevel and IssuerTrustLevel stay nil throughout: the columns
-	// did not exist when these rows were written.
+	// RequestorTrustLevel and IssuerTrustLevel stay empty throughout: the
+	// columns did not exist when these rows were written.
 	legacy := func(vct string, verified bool) *models.EudiLogEntry {
 		return &models.EudiLogEntry{
 			ID:            datatypes.NewUUIDv4(),
@@ -601,22 +601,20 @@ func TestLogRead_PreFeatureRowsRenderLevelless(t *testing.T) {
 }
 
 // TestStoredTrustLevel_AbsentIsDistinctFromLow pins the storage encoding the
-// levelless rendering rests on: a verdict of low is stored, an unevaluated
-// party is stored as NULL, and the two do not collapse into each other.
+// levelless rendering rests on: a verdict of low is stored as "low", an
+// unevaluated party stores nothing, and the two do not collapse into each other.
 func TestStoredTrustLevel_AbsentIsDistinctFromLow(t *testing.T) {
-	require.Nil(t, storedTrustLevel(clientmodels.TrustLevel_Unevaluated))
+	require.Empty(t, string(clientmodels.TrustLevel_Unevaluated))
 	for _, level := range []clientmodels.TrustLevel{
 		clientmodels.TrustLevel_Low,
 		clientmodels.TrustLevel_Medium,
 		clientmodels.TrustLevel_High,
 	} {
-		stored := storedTrustLevel(level)
-		require.NotNil(t, stored, "%q is a verdict and has to be stored", level)
-		require.Equal(t, level, loggedTrustLevel(stored))
+		stored := string(level)
+		require.NotEmpty(t, stored, "%q is a verdict and has to be stored", level)
 		require.Equal(t, level, loggedIssuerTrustLevel(stored, false),
 			"a stored level wins over the legacy boolean")
 	}
-	require.Equal(t, clientmodels.TrustLevel_Unevaluated, loggedTrustLevel(nil))
-	require.Equal(t, clientmodels.TrustLevel_High, loggedIssuerTrustLevel(nil, true))
-	require.Equal(t, clientmodels.TrustLevel_Unevaluated, loggedIssuerTrustLevel(nil, false))
+	require.Equal(t, clientmodels.TrustLevel_High, loggedIssuerTrustLevel("", true))
+	require.Equal(t, clientmodels.TrustLevel_Unevaluated, loggedIssuerTrustLevel("", false))
 }

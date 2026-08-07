@@ -22,6 +22,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/privacybydesign/irmago/common/clientmodels"
 	eudi_jwt "github.com/privacybydesign/irmago/eudi/jwt"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/stretchr/testify/require"
 )
 
@@ -193,7 +194,7 @@ func NewTestEntity(name, organizationIdentifier string, services ...Service) Ent
 }
 
 // NewTestCertificateService builds a granted service keyed on a certificate.
-func NewTestCertificateService(serviceType ServiceType, partyCert *x509.Certificate, markings ...string) Service {
+func NewTestCertificateService(serviceType trust.Role, partyCert *x509.Certificate, markings ...string) Service {
 	return Service{
 		Type:            serviceType,
 		Status:          ServiceStatusGranted,
@@ -204,7 +205,7 @@ func NewTestCertificateService(serviceType ServiceType, partyCert *x509.Certific
 
 // NewTestSkiService builds a granted service keyed on a certificate's subject
 // key identifier rather than on the certificate itself.
-func NewTestSkiService(serviceType ServiceType, partyCert *x509.Certificate, markings ...string) Service {
+func NewTestSkiService(serviceType trust.Role, partyCert *x509.Certificate, markings ...string) Service {
 	return Service{
 		Type:            serviceType,
 		Status:          ServiceStatusGranted,
@@ -214,7 +215,7 @@ func NewTestSkiService(serviceType ServiceType, partyCert *x509.Certificate, mar
 }
 
 // NewTestDidService builds a granted service keyed on a DID.
-func NewTestDidService(serviceType ServiceType, did string, markings ...string) Service {
+func NewTestDidService(serviceType trust.Role, did string, markings ...string) Service {
 	return Service{
 		Type:            serviceType,
 		Status:          ServiceStatusGranted,

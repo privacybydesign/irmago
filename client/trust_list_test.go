@@ -92,7 +92,7 @@ func TestClient_RefreshTrustLists_ListedVerifierRanksMedium(t *testing.T) {
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
-		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(lote.ServiceTypeVerifier, did))))
+		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did))))
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 	c := newClientWithTrustLists(t, storagePath, signer, []lote.Source{server.Source(testTrustListId, false)})
@@ -111,7 +111,7 @@ func TestClient_TrustListSurvivesARestart(t *testing.T) {
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
-		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(lote.ServiceTypeVerifier, did))))
+		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did))))
 	source := server.Source(testTrustListId, false)
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
@@ -143,10 +143,8 @@ func TestClient_UnreachableTrustList_LeavesTheWalletUsable(t *testing.T) {
 }
 
 func TestClient_NoRecognizedLists_RefreshHasNothingToDo(t *testing.T) {
-	// What a released wallet does today: RecognizedSources is empty, so the
+	// What a released wallet does today: it names no recognized lists, so the
 	// list channel contributes nothing and a refresh has nothing to fail at.
-	require.Empty(t, lote.RecognizedSources)
-
 	signer := lote.NewTestLoteSigner(t)
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 	c := newClientWithTrustLists(t, storagePath, signer, nil)
@@ -162,7 +160,7 @@ func TestClient_RefreshTrustLists_MarkedOnYivisListRanksHigh(t *testing.T) {
 	server := lote.NewTestLoteServer(t)
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1,
 		lote.NewTestEntity("Listed BV", "",
-			lote.NewTestDidService(lote.ServiceTypeVerifier, did, lote.MarkingOnboardedByYivi))))
+			lote.NewTestDidService(trust.RoleVerifier, did, lote.MarkingOnboardedByYivi))))
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
 	// The same list, once as Yivi's own and once as another operator's: the
@@ -227,7 +225,7 @@ func TestStoredCredentialIssuerRanksAtRead(t *testing.T) {
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
 	listed := lote.NewTestList(testTrustListId, 1,
-		lote.NewTestEntity("Listed Issuer BV", "", lote.NewTestDidService(lote.ServiceTypeIssuer, issuer)))
+		lote.NewTestEntity("Listed Issuer BV", "", lote.NewTestDidService(trust.RoleIssuer, issuer)))
 	server.Serve(t, signer, listed)
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
@@ -258,7 +256,7 @@ func TestTrustListRefreshNotifiesOnContentChange(t *testing.T) {
 
 	signer := lote.NewTestLoteSigner(t)
 	server := lote.NewTestLoteServer(t)
-	entity := lote.NewTestEntity("Listed Issuer BV", "", lote.NewTestDidService(lote.ServiceTypeIssuer, issuer))
+	entity := lote.NewTestEntity("Listed Issuer BV", "", lote.NewTestDidService(trust.RoleIssuer, issuer))
 	server.Serve(t, signer, lote.NewTestList(testTrustListId, 1, entity))
 
 	storagePath := filepath.Join(test.CreateTestStorage(t), "client")
@@ -279,7 +277,7 @@ func TestTrustListRefreshNotifiesOnContentChange(t *testing.T) {
 	// The entry is withdrawn: this changes what the wallet says about the party.
 	withdrawn := entity
 	withdrawn.Services = []lote.Service{{
-		Type:            lote.ServiceTypeIssuer,
+		Type:            trust.RoleIssuer,
 		Status:          lote.ServiceStatusWithdrawn,
 		DigitalIdentity: lote.DigitalIdentity{OtherIds: []lote.OtherId{{Type: lote.OtherIdTypeDid, Value: issuer}}},
 	}}

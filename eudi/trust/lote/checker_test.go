@@ -22,6 +22,25 @@ func TestMain(m *testing.M) {
 
 const testListId = "urn:yivi:trustlist:test"
 
+// memoryStore is a Store for the tests that need one to survive being handed to
+// a second Checker. It lives here rather than in the package proper: production
+// has one store, the database one, and a checker built without any keeps its
+// lists in memory for the run anyway.
+//
+// No lock: the checker touches its store only from Refresh and loadPersisted,
+// both of which hold c.mu.
+type memoryStore map[string][]byte
+
+func (s memoryStore) Get(listId string) ([]byte, bool) {
+	raw, ok := s[listId]
+	return raw, ok
+}
+
+func (s memoryStore) Put(listId string, rawJws []byte) error {
+	s[listId] = rawJws
+	return nil
+}
+
 // fixture wires a checker against a mutable test server publishing one list.
 type fixture struct {
 	signer *TestLoteSigner
@@ -34,7 +53,7 @@ func newFixture(t *testing.T, operatedByYivi bool) *fixture {
 	t.Helper()
 	signer := NewTestLoteSigner(t)
 	server := NewTestLoteServer(t)
-	store := NewMemoryStore()
+	store := memoryStore{}
 	return &fixture{
 		signer: signer,
 		server: server,
@@ -61,7 +80,7 @@ func TestChecker_ListedVerifierIsGranted(t *testing.T) {
 	verifier := f.signer.NewTestPartyCertificate(t, "verifier.example.com", "VATNL-000000001")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 		NewTestEntity("Listed BV", "VATNL-000000001",
-			NewTestCertificateService(ServiceTypeVerifier, verifier)),
+			NewTestCertificateService(trust.RoleVerifier, verifier)),
 	))
 
 	listing := f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: verifier})
@@ -77,7 +96,7 @@ func TestChecker_UnlistedVerifierIsNotGranted(t *testing.T) {
 	listed := f.signer.NewTestPartyCertificate(t, "listed.example.com", "")
 	stranger := f.signer.NewTestPartyCertificate(t, "stranger.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
-		NewTestEntity("Listed BV", "", NewTestCertificateService(ServiceTypeVerifier, listed)),
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, listed)),
 	))
 
 	snapshot := f.refreshed(t).Snapshot()
@@ -89,7 +108,7 @@ func TestChecker_GrantsAreRoleTyped(t *testing.T) {
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
-		NewTestEntity("Issuing BV", "", NewTestCertificateService(ServiceTypeIssuer, party)),
+		NewTestEntity("Issuing BV", "", NewTestCertificateService(trust.RoleIssuer, party)),
 	))
 
 	snapshot := f.refreshed(t).Snapshot()
@@ -103,7 +122,7 @@ func TestChecker_GrantsAreRoleTyped(t *testing.T) {
 func TestChecker_WithdrawnServiceIsNotGranted(t *testing.T) {
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
-	service := NewTestCertificateService(ServiceTypeVerifier, party)
+	service := NewTestCertificateService(trust.RoleVerifier, party)
 	service.Status = ServiceStatusWithdrawn
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1, NewTestEntity("Former BV", "", service)))
 
@@ -114,7 +133,7 @@ func TestChecker_EntryKeyedOnSubjectKeyIdentifier(t *testing.T) {
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "VATNL-000000002")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
-		NewTestEntity("Key BV", "VATNL-000000002", NewTestSkiService(ServiceTypeVerifier, party)),
+		NewTestEntity("Key BV", "VATNL-000000002", NewTestSkiService(trust.RoleVerifier, party)),
 	))
 
 	require.NotNil(t, f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
@@ -126,7 +145,7 @@ func TestChecker_OrganizationIdentifierIsPartOfTheKey(t *testing.T) {
 	// The entry names the right key but the wrong legal entity. Both halves of
 	// the key have to hold, so it does not grant.
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
-		NewTestEntity("Someone Else BV", "VATNL-999999999", NewTestSkiService(ServiceTypeVerifier, party)),
+		NewTestEntity("Someone Else BV", "VATNL-999999999", NewTestSkiService(trust.RoleVerifier, party)),
 	))
 
 	require.Nil(t, f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
@@ -136,7 +155,7 @@ func TestChecker_DidMatchesThroughOtherId(t *testing.T) {
 	f := newFixture(t, false)
 	const did = "did:web:verifier.example.com"
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
-		NewTestEntity("DID BV", "", NewTestDidService(ServiceTypeVerifier, did)),
+		NewTestEntity("DID BV", "", NewTestDidService(trust.RoleVerifier, did)),
 	))
 
 	snapshot := f.refreshed(t).Snapshot()
@@ -163,7 +182,7 @@ func TestChecker_MarkingOnlyCountsOnYivisOwnList(t *testing.T) {
 			party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 			f.server.Serve(t, f.signer, NewTestList(testListId, 1,
 				NewTestEntity("Marked BV", "",
-					NewTestCertificateService(ServiceTypeVerifier, party, MarkingOnboardedByYivi)),
+					NewTestCertificateService(trust.RoleVerifier, party, MarkingOnboardedByYivi)),
 			))
 
 			listing := f.refreshed(t).Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party})
@@ -177,7 +196,7 @@ func TestChecker_MarkingOnlyCountsOnYivisOwnList(t *testing.T) {
 func TestChecker_ServiceNameOverridesTheEntityName(t *testing.T) {
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
-	service := NewTestCertificateService(ServiceTypeVerifier, party)
+	service := NewTestCertificateService(trust.RoleVerifier, party)
 	service.Name = clientmodels.TranslatedString{"en": "The Service"}
 	service.LogoURI = "https://example.com/service.png"
 	entity := NewTestEntity("The Operator", "", service)
@@ -250,7 +269,7 @@ func TestChecker_SequenceNumberMayNotRegress(t *testing.T) {
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	granting := NewTestList(testListId, 7,
-		NewTestEntity("Listed BV", "", NewTestCertificateService(ServiceTypeVerifier, party)))
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party)))
 	f.server.Serve(t, f.signer, granting)
 
 	checker := f.refreshed(t)
@@ -275,7 +294,7 @@ func TestChecker_ReissueWithTheSameSequenceNumberIsAccepted(t *testing.T) {
 	require.Nil(t, checker.Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
 
 	f.server.Serve(t, f.signer, NewTestList(testListId, 3,
-		NewTestEntity("Listed BV", "", NewTestCertificateService(ServiceTypeVerifier, party))))
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
 	requireRefreshed(t, checker)
 
 	require.NotNil(t, checker.Snapshot().Lookup(trust.RoleVerifier, trust.Evidence{Certificate: party}))
@@ -285,7 +304,7 @@ func TestChecker_AListPastItsNextUpdateStopsGranting(t *testing.T) {
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	list := NewTestList(testListId, 1,
-		NewTestEntity("Listed BV", "", NewTestCertificateService(ServiceTypeVerifier, party)))
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party)))
 	list.SchemeInformation.NextUpdate = time.Now().Add(time.Hour)
 	f.server.Serve(t, f.signer, list)
 
@@ -306,7 +325,7 @@ func TestChecker_SnapshotIsPinned(t *testing.T) {
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
-		NewTestEntity("Listed BV", "", NewTestCertificateService(ServiceTypeVerifier, party))))
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
 
 	checker := f.refreshed(t)
 	pinned := checker.Snapshot()
@@ -325,7 +344,7 @@ func TestChecker_PersistedListSurvivesARestart(t *testing.T) {
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 4,
-		NewTestEntity("Listed BV", "", NewTestCertificateService(ServiceTypeVerifier, party))))
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
 	f.refreshed(t)
 
 	// A fresh checker over the same store, and the server gone: what the wallet
@@ -340,7 +359,7 @@ func TestChecker_PersistedListIsReverifiedAgainstTheCurrentAnchors(t *testing.T)
 	f := newFixture(t, false)
 	party := f.signer.NewTestPartyCertificate(t, "party.example.com", "")
 	f.server.Serve(t, f.signer, NewTestList(testListId, 1,
-		NewTestEntity("Listed BV", "", NewTestCertificateService(ServiceTypeVerifier, party))))
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
 	f.refreshed(t)
 
 	// The anchors have moved on and no longer cover the signer, as they would
@@ -366,7 +385,7 @@ func TestChecker_SourcesAreIndependent(t *testing.T) {
 	bad := NewTestLoteServer(t)
 	party := signer.NewTestPartyCertificate(t, "party.example.com", "")
 	good.Serve(t, signer, NewTestList("urn:good", 1,
-		NewTestEntity("Listed BV", "", NewTestCertificateService(ServiceTypeVerifier, party))))
+		NewTestEntity("Listed BV", "", NewTestCertificateService(trust.RoleVerifier, party))))
 	bad.Close()
 
 	checker := NewChecker(Config{

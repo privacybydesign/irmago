@@ -23,16 +23,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
-)
-
-// ServiceType is the role an entry grants trust for. Trust as an issuer and
-// trust as a verifier are separate grants: an entity listed to issue
-// credentials is not thereby listed to ask for them.
-type ServiceType string
-
-const (
-	ServiceTypeIssuer   ServiceType = "issuer"
-	ServiceTypeVerifier ServiceType = "verifier"
+	"github.com/privacybydesign/irmago/eudi/trust"
 )
 
 // ServiceStatus is the current status of a grant (TS 119 612 `ServiceStatus`).
@@ -114,8 +105,14 @@ type Entity struct {
 // Service is one grant (TS 119 612 `TSPService`): this entity, in this role,
 // with this identity, in this state.
 type Service struct {
-	// Type is the role the grant is for. An unknown value matches no role.
-	Type ServiceType `json:"type"`
+	// Type is the role the grant is for: trust as an issuer and trust as a
+	// verifier are separate grants, so an entity listed to issue credentials is
+	// not thereby listed to ask for them. An unknown value matches no role.
+	//
+	// It is [trust.Role] rather than a type of its own because the wire values
+	// are the ladder's own role names; a second type would only be those same
+	// two strings, needing a mapping that could drift.
+	Type trust.Role `json:"type"`
 
 	// Status is the state of the grant. Anything other than granted is no
 	// grant — a withdrawn service is listed so the withdrawal is visible, not

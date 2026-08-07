@@ -103,13 +103,14 @@ type Config struct {
 	// clientmodels.DefaultFallbackLanguage; the app changes it with SetLocale.
 	Locale string
 
-	// RecognizedTrustLists replaces the compiled-in set of recognized trust
-	// lists. Nil takes lote.RecognizedSources, which is what a released wallet
-	// consults; integration tests and staging builds name their own.
+	// RecognizedTrustLists are the recognized trust lists this wallet consults.
+	// Empty consults none, which is what a released wallet does today: Yivi does
+	// not publish its LoTE yet, so every party is ranked by the certificate
+	// channel alone. Integration tests and staging builds name their own.
 	//
-	// This is the one seam the wallet exposes for pointing at a list other than
-	// the published ones, and it belongs here rather than in a mutable package
-	// variable so that what a wallet consults is fixed by the call that built it.
+	// When the list is published, the released set belongs here — passed by the
+	// call that builds the wallet — rather than in a package variable, so that
+	// what a wallet consults is fixed by that call.
 	RecognizedTrustLists []lote.Source
 }
 
@@ -198,15 +199,10 @@ func New(cfg Config) (*Client, error) {
 	// The lists are signed by Yivi and chain to the Yivi root, so they are
 	// validated against the issuer anchors; both trust models pin the same root.
 	//
-	// Nil means the compiled-in set: a released wallet consults what it shipped
-	// with, and only a test or a staging build names its own.
-	recognizedLists := cfg.RecognizedTrustLists
-	if recognizedLists == nil {
-		recognizedLists = lote.RecognizedSources
-	}
-
+	// An empty source set — what a released wallet passes today, since Yivi does
+	// not publish its LoTE yet — leaves the certificate channel alone in force.
 	trustChecker := lote.NewChecker(lote.Config{
-		Sources:     recognizedLists,
+		Sources:     cfg.RecognizedTrustLists,
 		X509Context: &eudiConf.Issuers,
 		Store:       db.NewTrustListStore(eudiStorage.Db()),
 		HTTPClient:  common.HTTPClient,

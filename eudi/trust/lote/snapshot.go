@@ -51,21 +51,13 @@ func grants(entity *Entity, service *Service, role trust.Role, ev trust.Evidence
 	if service.Status != ServiceStatusGranted {
 		return false
 	}
-	if !matchesRole(service.Type, role) {
+	// An entry whose type is not one of the ladder's roles matches nothing: the
+	// caller only ever asks about a real role, so an unknown wire value cannot
+	// equal it.
+	if service.Type != role {
 		return false
 	}
 	return matchesIdentity(entity, service, ev)
-}
-
-func matchesRole(serviceType ServiceType, role trust.Role) bool {
-	switch role {
-	case trust.RoleIssuer:
-		return serviceType == ServiceTypeIssuer
-	case trust.RoleVerifier:
-		return serviceType == ServiceTypeVerifier
-	default:
-		return false
-	}
 }
 
 // matchesIdentity checks the party against the service's digital identities.

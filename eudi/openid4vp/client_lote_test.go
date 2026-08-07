@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/privacybydesign/irmago/common/clientmodels"
+	"github.com/privacybydesign/irmago/eudi/trust"
 	"github.com/privacybydesign/irmago/eudi/trust/lote"
 	"github.com/privacybydesign/irmago/testdata"
 	"github.com/stretchr/testify/require"
@@ -49,7 +50,7 @@ func newListFixtureOperatedByYivi(t *testing.T, operatedByYivi bool) *listFixtur
 func (f *listFixture) grant(t *testing.T, sequenceNumber uint64, did string, markings ...string) {
 	t.Helper()
 	f.server.Serve(t, f.signer, lote.NewTestList(trustListId, sequenceNumber,
-		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(lote.ServiceTypeVerifier, did, markings...))))
+		lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did, markings...))))
 }
 
 // checker returns a checker over this list, refreshed once.
@@ -107,14 +108,14 @@ func TestNewSession_ListDegradations_CapTheVerifierAtLow(t *testing.T) {
 			degrade: func(t *testing.T, f *listFixture, did string) {
 				impostor := lote.NewTestLoteSigner(t)
 				f.server.Serve(t, impostor, lote.NewTestList(trustListId, 1,
-					lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(lote.ServiceTypeVerifier, did))))
+					lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did))))
 			},
 		},
 		{
 			name: "expired next_update",
 			degrade: func(t *testing.T, f *listFixture, did string) {
 				list := lote.NewTestList(trustListId, 1,
-					lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(lote.ServiceTypeVerifier, did)))
+					lote.NewTestEntity("Listed BV", "", lote.NewTestDidService(trust.RoleVerifier, did)))
 				list.SchemeInformation.NextUpdate = time.Now().Add(-time.Hour)
 				f.server.Serve(t, f.signer, list)
 			},

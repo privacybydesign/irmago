@@ -45,8 +45,8 @@ type Config struct {
 	// validate against.
 	X509Context eudi_jwt.X509VerificationContext
 
-	// Store persists the signed documents. Nil falls back to an in-memory
-	// store, so the wallet re-fetches on every start.
+	// Store persists the signed documents. Nil keeps them in memory only, so
+	// the wallet re-fetches on every start.
 	Store Store
 
 	// HTTPClient is used for list downloads. Nil falls back to
@@ -101,17 +101,13 @@ type Checker struct {
 // re-verified against the anchors on first use; one that no longer verifies is
 // dropped, exactly as if it had never been fetched.
 func NewChecker(cfg Config) *Checker {
-	store := cfg.Store
-	if store == nil {
-		store = NewMemoryStore()
-	}
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
 	}
 	c := &Checker{
 		sources:     cfg.Sources,
-		store:       store,
+		store:       cfg.Store,
 		x509Context: cfg.X509Context,
 		httpClient:  cfg.HTTPClient,
 		maxBody:     cfg.MaxBodyBytes,
@@ -123,6 +119,9 @@ func NewChecker(cfg Config) *Checker {
 }
 
 func (c *Checker) loadPersisted() {
+	if c.store == nil {
+		return
+	}
 	c.loadOnce.Do(func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -214,10 +213,12 @@ func (c *Checker) refreshSource(ctx context.Context, source Source) (bool, error
 			previous.SchemeInformation.SequenceNumber, verified.list.SchemeInformation.SequenceNumber)
 	}
 
-	if err := c.store.Put(source.ListId, verified.rawJws); err != nil {
-		// The list is good; only persisting it failed. Use it for this run
-		// rather than throwing away a valid download over a storage problem.
-		eudi.Logger.Warnf("lote: persisting list %q: %v", source.ListId, err)
+	if c.store != nil {
+		if err := c.store.Put(source.ListId, verified.rawJws); err != nil {
+			// The list is good; only persisting it failed. Use it for this run
+			// rather than throwing away a valid download over a storage problem.
+			eudi.Logger.Warnf("lote: persisting list %q: %v", source.ListId, err)
+		}
 	}
 	c.held[source.ListId] = verified.list
 

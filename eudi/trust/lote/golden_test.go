@@ -143,7 +143,7 @@ func TestGoldenDocumentVerifiesAndParses(t *testing.T) {
 	require.Len(t, party.Services, 1)
 
 	service := party.Services[0]
-	require.Equal(t, ServiceTypeVerifier, service.Type)
+	require.Equal(t, trust.RoleVerifier, service.Type)
 	require.Equal(t, ServiceStatusGranted, service.Status)
 	require.Equal(t, goldenPartyCertificate(t).Raw, service.DigitalIdentity.X509Certificate,
 		"the certificate key form carries the DER")
@@ -184,7 +184,7 @@ func TestGoldenReadableCopyMatchesTheSignedOne(t *testing.T) {
 // the whole channel — store, checker, snapshot, keying — as of the pinned date,
 // so the shapes above are not merely parsed but acted on.
 func TestGoldenDocumentGrantsThroughTheChecker(t *testing.T) {
-	store := NewMemoryStore()
+	store := memoryStore{}
 	require.NoError(t, store.Put(goldenListId, goldenRaw(t)))
 
 	checker := NewChecker(Config{
