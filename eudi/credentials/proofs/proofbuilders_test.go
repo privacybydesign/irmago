@@ -12,6 +12,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/privacybydesign/irmago/eudi/didkey"
 	"github.com/stretchr/testify/require"
 )
 
@@ -166,6 +167,49 @@ func Test_JwtProofBuilder_Build_DIDJwkMethod_SetsKidToDIDAssertionMethod(t *test
 	require.True(t, hasKid, "kid header should be present for DID_JWK binding method")
 	require.True(t, strings.HasPrefix(kid, "did:jwk:"), "kid should be a did:jwk DID, got: %s", kid)
 	require.True(t, strings.HasSuffix(kid, "#0"), "kid should reference the DID assertion method (#0), got: %s", kid)
+}
+
+func Test_JwtProofBuilder_Build_DIDKeyMethod_KidResolvesToPublicKey(t *testing.T) {
+	key := mustGenerateECKey(t)
+
+	builder := NewJwtProofBuilder(
+		"https://issuer.example.com",
+		"https://server.example.com",
+		jwa.ES256(),
+		nil,
+		fixedClock{t: testFixedTime},
+		CryptographicBindingMethod_DID_KEY,
+	)
+
+	result, err := builder.Build(key)
+	require.NoError(t, err)
+
+	jwtStr, ok := result.(string)
+	require.True(t, ok)
+	require.NotEmpty(t, jwtStr)
+
+	headers := parseProtectedHeaders(t, jwtStr)
+
+	typ, hasTyp := headers.Type()
+	require.True(t, hasTyp)
+	require.Equal(t, "openid4vci-proof+jwt", typ)
+
+	kid, hasKid := headers.KeyID()
+	require.True(t, hasKid, "kid header should be present for DID_KEY binding method")
+	require.True(t, strings.HasPrefix(kid, didkey.Prefix), "kid should be a did:key DID, got: %s", kid)
+
+	_, hasJwk := headers.JWK()
+	require.False(t, hasJwk, "jwk header should not be present for DID_KEY binding method")
+
+	// Resolve the kid back to the holder public key and verify the signature with it
+	resolved, err := didkey.Resolve(kid)
+	require.NoError(t, err)
+	resolvedKey, ok := resolved.(ecdsa.PublicKey)
+	require.True(t, ok)
+	require.True(t, key.PublicKey.Equal(&resolvedKey))
+
+	_, err = jws.Verify([]byte(jwtStr), jws.WithKey(jwa.ES256(), &resolvedKey))
+	require.NoError(t, err)
 }
 
 func Test_JwtProofBuilder_Build_COSEMethod_ReturnsUnsupportedError(t *testing.T) {

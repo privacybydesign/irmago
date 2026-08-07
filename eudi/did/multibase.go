@@ -1,6 +1,7 @@
 package did
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -15,10 +16,14 @@ type MultibaseHeader byte
 const (
 	MultibaseHeader_Base58BTC      MultibaseHeader = 'z'
 	MultibaseHeader_Base64UrlNoPad MultibaseHeader = 'u'
+)
 
-	multicodecHeaderEd25519 = "\xed\x01"
-	multicodecHeaderP256    = "\x80\x24"
-	multicodecHeaderP384    = "\x81\x24"
+// Multicodec prefixes (unsigned varint encodings of the codes in the multicodec
+// registry): ed25519-pub (0xed), p256-pub (0x1200) and p384-pub (0x1201).
+var (
+	multicodecHeaderEd25519 = []byte{0xed, 0x01}
+	multicodecHeaderP256    = []byte{0x80, 0x24}
+	multicodecHeaderP384    = []byte{0x81, 0x24}
 )
 
 type Encoder interface {
@@ -128,19 +133,19 @@ func publicKeyFromMultibaseBytes(data []byte) (any, error) {
 	header := data[:2]
 	keyData := data[2:]
 
-	switch string(header) {
-	case multicodecHeaderEd25519: // Ed25519 multicodec header
+	switch {
+	case bytes.Equal(header, multicodecHeaderEd25519):
 		if len(keyData) != ed25519.PublicKeySize {
 			return nil, fmt.Errorf("invalid Ed25519 public key size: expected %d bytes, got %d bytes", ed25519.PublicKeySize, len(keyData))
 		}
 		return ed25519.PublicKey(keyData), nil
-	case multicodecHeaderP256: // P-256 multicodec header
+	case bytes.Equal(header, multicodecHeaderP256):
 		x, y := elliptic.UnmarshalCompressed(elliptic.P256(), keyData)
 		if x == nil || y == nil {
 			return nil, fmt.Errorf("invalid P-256 public key data")
 		}
 		return ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, nil
-	case multicodecHeaderP384: // P-384 multicodec header
+	case bytes.Equal(header, multicodecHeaderP384):
 		x, y := elliptic.UnmarshalCompressed(elliptic.P384(), keyData)
 		if x == nil || y == nil {
 			return nil, fmt.Errorf("invalid P-384 public key data")
