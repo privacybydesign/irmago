@@ -89,7 +89,7 @@ func requirePublicKey(key jwk.Key) error {
 type DocumentBuilder struct{}
 
 // FromJwk creates a DID Document from a given JWK, based on the did:jwk method specification, found here: https://github.com/quartzjer/did-jwk/blob/main/spec.md
-// Note that the JWK is expected to be a public key. If it contains private key material, an error will be returned.
+// Note that the JWK must be an asymmetric public key: a JWK carrying private key material, or a symmetric key, is rejected.
 func (b *DocumentBuilder) FromJwk(key jwk.Key) (*did.Document, error) {
 	if err := requirePublicKey(key); err != nil {
 		return nil, err
