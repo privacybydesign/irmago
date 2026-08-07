@@ -207,11 +207,7 @@ func (p *KidKeyProvider) FetchKeys(ctx context.Context, sink jws.KeySink, sig *j
 func (p *KidKeyProvider) resolveDidDocument(issClaim string) (*did.Document, error) {
 	switch {
 	case strings.HasPrefix(issClaim, didjwk.Prefix):
-		key, err := didjwk.Resolve(issClaim)
-		if err != nil {
-			return nil, err
-		}
-		return (&didjwk.DocumentBuilder{}).FromJwk(key)
+		return didjwk.ResolveDocument(issClaim)
 
 	case strings.HasPrefix(issClaim, didweb.Prefix):
 		resolver := didweb.DocumentResolver{

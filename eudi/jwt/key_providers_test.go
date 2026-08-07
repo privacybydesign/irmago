@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -568,6 +569,37 @@ func Test_KidKeyProvider_FetchKeys_DidJwk_FullKidHeader_UsedAsIs(t *testing.T) {
 	sig := msg.Signatures()[0]
 
 	p := NewKidKeyProvider(didJwk+"#0", false)
+	sink := &testKeySink{}
+	err = p.FetchKeys(context.Background(), sink, sig, msg)
+
+	require.NoError(t, err)
+	require.Equal(t, jwa.ES256(), sink.alg)
+	require.NotNil(t, sink.key)
+}
+
+func Test_KidKeyProvider_FetchKeys_DidJwk_ForeignMemberOrdering_FeedsKeyAndAlgorithmToSink(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubJWK, err := jwk.Import(privKey.Public())
+	require.NoError(t, err)
+
+	// A did:jwk minted by an implementation that serializes the JWK members in a different
+	// order than jwx does. The spec puts no ordering requirement on the encoded JWK, so
+	// resolution has to work off the DID as given instead of re-encoding the parsed key.
+	var members map[string]any
+	pubJson, err := json.Marshal(pubJWK)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(pubJson, &members))
+	reordered := fmt.Sprintf(
+		`{"kty":%q,"crv":%q,"x":%q,"y":%q}`,
+		members["kty"], members["crv"], members["x"], members["y"],
+	)
+	didJwk := didjwk.Prefix + base64.RawURLEncoding.EncodeToString([]byte(reordered))
+
+	msg := newTestJWSMessageSigned(t, didJwk, privKey, jwa.ES256())
+	sig := msg.Signatures()[0]
+
+	p := NewKidKeyProvider("#0", false)
 	sink := &testKeySink{}
 	err = p.FetchKeys(context.Background(), sink, sig, msg)
 
